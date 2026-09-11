@@ -22,6 +22,8 @@ pub(super) struct Formula {
     pub revision: u32,
     #[serde(default)]
     pub keg_only: bool,
+    #[serde(default)]
+    pub keg_only_reason: Option<KegOnlyReason>,
     /// runtime dependencies (formula names)
     #[serde(default)]
     pub dependencies: Vec<String>,
@@ -90,6 +92,13 @@ pub(super) struct Variation {
     pub build_dependencies: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct KegOnlyReason {
+    /// ":provided_by_macos", another reason symbol, or free text
+    #[serde(default)]
+    pub reason: String,
+}
+
 impl Formula {
     /// keg directory name: version plus brew's bottle revision suffix
     pub(super) fn pkg_version(&self) -> Result<String> {
@@ -103,6 +112,22 @@ impl Formula {
         } else {
             stable.clone()
         })
+    }
+
+    /// Mirrors brew's KegOnlyReason#applicable?: keg-only reasons tied to
+    /// macOS (:provided_by_macos, :shadowed_by_macos) do not apply on other
+    /// OSes, where brew links these formulae normally.
+    pub(super) fn keg_only_for_target(&self) -> bool {
+        if !self.keg_only {
+            return false;
+        }
+        if cfg!(target_os = "macos") {
+            return true;
+        }
+        !matches!(
+            self.keg_only_reason.as_ref().map(|r| r.reason.as_str()),
+            Some(":provided_by_macos") | Some(":shadowed_by_macos")
+        )
     }
 
     /// runtime dependencies for the given bottle tag, applying `variations`
@@ -265,6 +290,33 @@ pub(super) fn github_raw_base(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn keg_only_formula(reason: Option<&str>) -> Formula {
+        let mut json = serde_json::json!({
+            "name": "zip",
+            "versions": {"stable": "3.0"},
+            "keg_only": true,
+        });
+        if let Some(reason) = reason {
+            json["keg_only_reason"] = serde_json::json!({"reason": reason});
+        }
+        serde_json::from_value(json).unwrap()
+    }
+
+    #[test]
+    fn macos_keg_only_reasons_only_apply_on_macos() {
+        for reason in [":provided_by_macos", ":shadowed_by_macos"] {
+            let formula = keg_only_formula(Some(reason));
+            assert_eq!(formula.keg_only_for_target(), cfg!(target_os = "macos"));
+        }
+    }
+
+    #[test]
+    fn other_keg_only_reasons_apply_everywhere() {
+        assert!(keg_only_formula(Some(":versioned_formula")).keg_only_for_target());
+        assert!(keg_only_formula(Some("free-text reason")).keg_only_for_target());
+        assert!(keg_only_formula(None).keg_only_for_target());
+    }
 
     #[test]
     fn github_tap_urls_allow_trailing_slashes() {

@@ -665,6 +665,11 @@ end
         );
         assert_eq!(formula.build_dependencies, ["cmake", "ninja"]);
         assert!(formula.keg_only);
+        assert_eq!(
+            formula.keg_only_reason.as_ref().map(|r| r.reason.as_str()),
+            Some(":versioned_formula")
+        );
+        assert!(formula.keg_only_for_target());
         assert!(formula.bottle.is_empty());
         Ok(())
     }

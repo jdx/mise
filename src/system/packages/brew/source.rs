@@ -163,7 +163,8 @@ pub(super) async fn build(
         closure,
         /* poured_from_bottle */ false,
     );
-    let linked = receipt.and_then(|()| pour::link_keg(name, &pkg_version, formula.keg_only));
+    let linked =
+        receipt.and_then(|()| pour::link_keg(name, &pkg_version, formula.keg_only_for_target()));
     if let Err(err) = linked {
         if let Err(rm_err) = crate::file::remove_all(&keg) {
             warn!(
@@ -487,6 +488,7 @@ mod tests {
             },
             revision: 0,
             keg_only: false,
+            keg_only_reason: None,
             dependencies: vec![],
             build_dependencies: vec![],
             bottle,
