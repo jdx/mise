@@ -1626,7 +1626,9 @@ fn lockfile_path_for_tool_source_with_root(
     monorepo_root: Option<&Path>,
 ) -> Option<(PathBuf, bool)> {
     match source {
-        ToolSource::MiseToml(path) => Some(lockfile_path_for_config(path, monorepo_root)),
+        ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path) => {
+            Some(lockfile_path_for_config(path, monorepo_root))
+        }
         ToolSource::IdiomaticVersionFile(path) => config
             .config_files
             .iter()
@@ -3628,7 +3630,7 @@ pub(crate) fn read_lockfile_for_tool_source(
     config: &Config,
     source: &ToolSource,
 ) -> Result<Lockfile> {
-    if let ToolSource::MiseToml(path) = source {
+    if let ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path) = source {
         return Ok(read_lockfile_for_config_path(config, path));
     }
 

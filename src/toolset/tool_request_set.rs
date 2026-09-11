@@ -219,6 +219,11 @@ impl ToolRequestSetBuilder {
         for cf in config_files.values().rev() {
             trs = merge(trs, cf.to_tool_request_set()?);
         }
+        if self.config_files.is_none() {
+            config.daemons()?.add_tool_requests(&mut trs)?;
+        } else {
+            crate::daemons::load(config_files)?.add_tool_requests(&mut trs)?;
+        }
         Ok(trs)
     }
 

@@ -54,6 +54,19 @@ pub(crate) struct Unuse {
 impl Unuse {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        let requests = config.get_tool_request_set().await?;
+        for ta in &self.installed_tool {
+            if requests
+                .sources
+                .get(&ta.ba)
+                .is_some_and(|s| s.is_mise_toml_daemon())
+            {
+                warn!(
+                    "{} is declared by [daemons]; edit that declaration to remove it",
+                    ta.ba
+                );
+            }
+        }
         let cf = self.get_config_file(&config).await?;
         let system_config = config::is_system_config(cf.get_path());
         let tools = cf.to_tool_request_set()?.tools;
@@ -119,16 +132,19 @@ impl Unuse {
             info!("removed: {removals} from {}", display_path(cf.get_path()));
         }
 
-        if !self.no_prune {
-            prune(
-                &config,
-                self.installed_tool
-                    .iter()
-                    .map(|ta| ta.ba.as_ref())
-                    .collect(),
-                false,
-            )
-            .await?;
+        let prune_tools: Vec<_> = self
+            .installed_tool
+            .iter()
+            .filter(|ta| {
+                !requests
+                    .sources
+                    .get(&ta.ba)
+                    .is_some_and(|s| s.is_mise_toml_daemon())
+            })
+            .map(|ta| ta.ba.as_ref())
+            .collect();
+        if !self.no_prune && !prune_tools.is_empty() {
+            prune(&config, prune_tools, false).await?;
         }
         if !removed.is_empty() || !self.no_prune {
             let shim_scope = match (system_config, self.no_prune) {

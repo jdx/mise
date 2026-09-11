@@ -311,7 +311,9 @@ impl Upgrade {
         let mut failed_config_files = HashSet::new();
         let mut outdated_with_config_files = vec![];
         for o in outdated.iter() {
-            if let (Some(path), Some(_bump)) = (o.source.path(), &o.bump) {
+            if let (Some(path), Some(_bump)) = (o.source.path(), &o.bump)
+                && !o.source.is_mise_toml_daemon()
+            {
                 let cf = if let Some(cf) = parsed_config_files.get(path) {
                     Some(Arc::clone(cf))
                 } else if failed_config_files.contains(path) {

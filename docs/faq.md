@@ -375,7 +375,7 @@ You can use usage in file tasks to get autocompletion working; see [file task ar
 
 ### What is pitchfork?
 
-[pitchfork](https://pitchfork.jdx.dev/) is a process manager for developers.
+[pitchfork](https://pitchfork.jdx.dev/) is a process manager for developers. Mise can manage custom processes and database presets through its experimental [daemon integration](/daemons).
 
 It handles daemon management with features like automatic restarts on failure, smart readiness checks, shell-based auto-start/stop when entering project directories, and cron-style scheduling for periodic tasks.
 

@@ -161,6 +161,7 @@ pub(crate) struct Config {
     /// Provider errors remain on the graph so strict consumers can reject it.
     workspace_project_graph_cache:
         Mutex<Option<Arc<crate::task::workspace::WorkspaceProjectGraph>>>,
+    daemons: once_cell::sync::OnceCell<crate::daemons::DaemonSet>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_results: OnceCell<EnvResults>,
@@ -216,7 +217,7 @@ impl Config {
     /// lockfile enforcement. Non-config sources remain governed only by the
     /// invocation-wide `locked` setting/flag.
     pub(crate) fn tool_config_locked(&self, source: &ToolSource) -> bool {
-        let ToolSource::MiseToml(path) = source else {
+        let (ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path)) = source else {
             return false;
         };
         let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {
@@ -278,6 +279,7 @@ impl Config {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: self.all_aliases.clone(),
@@ -347,6 +349,7 @@ impl Config {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -369,6 +372,7 @@ impl Config {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: config.all_aliases.clone(),
@@ -590,6 +594,11 @@ impl Config {
     pub(crate) async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)
     }
+    pub(crate) fn daemons(&self) -> Result<&crate::daemons::DaemonSet> {
+        self.daemons
+            .get_or_try_init(|| crate::daemons::load(&self.config_files))
+    }
+
     pub(crate) async fn get_tool_request_set(self: &Arc<Self>) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
             .get_or_try_init(async || ToolRequestSetBuilder::new().build(self).await)
@@ -1401,7 +1410,8 @@ impl Config {
             trace!("env_cache: using cached non-tool env results");
             return Ok(env_results);
         }
-        let entries = self
+        let mut entries = self.daemons()?.env_entries();
+        let explicit_entries: Vec<_> = self
             .config_files
             .iter()
             .rev()
@@ -1413,6 +1423,7 @@ impl Config {
             .into_iter()
             .flatten()
             .collect();
+        entries.extend(explicit_entries);
         // trace!("load_env: entries: {:#?}", entries);
         let mut env_results = EnvResults::resolve(
             self,
@@ -6848,6 +6859,7 @@ mod tests {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -6933,6 +6945,7 @@ mod tests {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases,
@@ -7022,6 +7035,7 @@ mod tests {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -7113,6 +7127,7 @@ mod tests {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -7174,6 +7189,7 @@ mod tests {
                 hooks: OnceCell::new(),
                 tasks_cache: Arc::new(DashMap::new()),
                 workspace_project_graph_cache: Mutex::new(None),
+                daemons: Default::default(),
                 tool_request_set: OnceCell::new(),
                 toolset: OnceCell::new(),
                 all_aliases,
@@ -7260,6 +7276,7 @@ config_roots = ["apps/api", "apps/web"]
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -7434,6 +7451,7 @@ config_roots = ["apps/api", "apps/web"]
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),

@@ -48,6 +48,8 @@ pub(crate) struct HookEnv {
     /// Show "mise: <TOOL>@<VERSION>" message when changing directories
     #[usage(long, hide = true)]
     status: bool,
+    #[usage(long, hide = true)]
+    shell_pid: Option<u32>,
 }
 
 impl HookEnv {
@@ -139,6 +141,22 @@ impl HookEnv {
         // Use env_with_path_and_split which handles caching internally
         let (mut mise_env, env_remove, user_paths, tool_paths, env_watch_files) =
             ts.env_with_path_and_split(&config).await?;
+        let daemon_commands = match crate::daemons::hook_env::emit(
+            &config,
+            &ts,
+            &mise_env,
+            self.shell_pid,
+            &*shell,
+            self.force,
+        )
+        .await
+        {
+            Ok(commands) => commands,
+            Err(err) => {
+                warn!("daemon auto lifecycle: {err:#}");
+                String::new()
+            }
+        };
         mise_env.remove(&*PATH_KEY);
 
         // Create config_paths from user_paths for display_status and build_session
@@ -226,6 +244,7 @@ impl HookEnv {
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
+        miseprint!("{daemon_commands}")?;
 
         // Build and output alias commands
         let alias_output =

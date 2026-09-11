@@ -36,6 +36,7 @@ fn main() -> Result<()> {
     build_notification_helper()?;
 
     let aqua_registry = load_aqua_registry()?;
+    codegen_daemon_presets()?;
     codegen_settings();
     codegen_registry(&aqua_registry.packages);
     codegen_aqua_standard_registry(&aqua_registry)?;
@@ -1259,4 +1260,67 @@ pub(crate) struct MisercSettings {"#
     lines.push("}".to_string());
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
+}
+
+fn codegen_daemon_presets() -> Result<()> {
+    let dir = Path::new("registry/daemon-presets");
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let mut paths = fs::read_dir(dir)?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
+    paths.sort();
+    let mut code = String::from("&[\n");
+    for path in paths {
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        println!("cargo:rerun-if-changed={}", path.display());
+        let content = fs::read_to_string(&path)?;
+        let value: toml::Value = toml::from_str(&content)?;
+        for key in ["tool", "binary", "description"] {
+            if value.get(key).and_then(toml::Value::as_str).is_none() {
+                return Err(eyre!("{}: missing {key}", path.display()));
+            }
+        }
+        if value
+            .get("port")
+            .and_then(toml::Value::as_integer)
+            .is_none()
+            || value
+                .get("daemon")
+                .and_then(|v| v.get("run"))
+                .and_then(toml::Value::as_str)
+                .is_none()
+        {
+            return Err(eyre!("{}: missing port or daemon.run", path.display()));
+        }
+        // Match the runtime Preset shape: a successful registry build must not
+        // embed a preset that fails deserialization when first selected.
+        let valid_port = value
+            .get("port")
+            .and_then(toml::Value::as_integer)
+            .is_some_and(|port| (1..=65535).contains(&port));
+        let valid_options = value.get("options").is_some_and(toml::Value::is_table);
+        let valid_exports = value
+            .get("exports")
+            .and_then(toml::Value::as_table)
+            .is_some_and(|exports| exports.values().all(toml::Value::is_str));
+        if !valid_port || !valid_options || !valid_exports {
+            return Err(eyre!(
+                "{}: invalid preset port, options, or exports",
+                path.display()
+            ));
+        }
+        code.push_str(&format!(
+            "({:?}, {}),\n",
+            path.file_stem().unwrap().to_string_lossy(),
+            raw_string_literal(&content)
+        ));
+    }
+    code.push(']');
+    fs::write(
+        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("daemon_presets.rs"),
+        code,
+    )?;
+    Ok(())
 }

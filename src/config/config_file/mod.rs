@@ -145,6 +145,10 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
         None
     }
 
+    fn daemon_declarations(&self) -> IndexMap<String, crate::daemons::Declaration> {
+        IndexMap::new()
+    }
+
     fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
         Ok(Default::default())
     }

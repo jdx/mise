@@ -120,6 +120,33 @@ impl ToolsetBuilder {
             }
             ts.merge(cf.to_toolset()?);
         }
+        let scoped_files = config_files
+            .iter()
+            .filter(|(_, cf)| match self.scope {
+                ConfigScope::All => true,
+                ConfigScope::LocalOnly => !config::is_global_config(cf.get_path()),
+                ConfigScope::GlobalOnly => config::is_global_config(cf.get_path()),
+            })
+            .map(|(path, cf)| (path.clone(), cf.clone()))
+            .collect();
+        let scoped_daemons;
+        let daemons = if self.config_files.is_none() && matches!(self.scope, ConfigScope::All) {
+            config.daemons()?
+        } else {
+            scoped_daemons = crate::daemons::load(&scoped_files)?;
+            &scoped_daemons
+        };
+        if !daemons.daemons.values().any(|daemon| daemon.tool.is_some()) {
+            return Ok(());
+        }
+        let mut requests = crate::toolset::ToolRequestSet::new();
+        for versions in ts.versions.values() {
+            for request in &versions.requests {
+                requests.add_version(request.clone(), request.source());
+            }
+        }
+        daemons.add_tool_requests(&mut requests)?;
+        ts.merge(requests.into_toolset());
         Ok(())
     }
 
@@ -251,7 +278,7 @@ impl ToolsetBuilder {
                     tvr.apply_config_options(config_options);
                 }
                 if self.resolve_options.use_locked_version {
-                    let scope = match configured.first() {
+                    let scope = match configured.iter().find(|request| request.is_os_supported()) {
                         Some(configured) if configured.source().path().is_some() => {
                             LockfileScope::Source(configured.source().clone())
                         }
@@ -336,7 +363,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bare_runtime_arg_uses_platform_supported_configured_version() {
+    async fn runtime_args_use_platform_supported_version_and_lockfile_owner() {
         crate::toolset::install_state::init().await.unwrap();
         let ba = Arc::new(BackendArg::from("dummy"));
         let inactive_os = match crate::cli::version::OS.as_str() {
@@ -345,35 +372,46 @@ mod tests {
         };
         let mut inactive_options = parse_tool_options(r#"selected="inactive""#);
         inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        let active_source = ToolSource::MiseTomlDaemon("/project/mise.toml".into());
         let inactive = ToolRequest::new_with_options(
             ba.clone(),
             "1.0.0",
             inactive_options,
-            ToolSource::Unknown,
+            ToolSource::MiseToml("/project/child/mise.toml".into()),
         )
         .unwrap();
         let active = ToolRequest::new_with_options(
             ba.clone(),
             "2.0.0",
             parse_tool_options(r#"selected="active""#),
-            ToolSource::Unknown,
+            active_source.clone(),
         )
         .unwrap();
-        let mut toolset = Toolset::new(ToolSource::Unknown);
-        toolset.add_version(inactive);
-        toolset.add_version(active);
+        for argument in ["dummy", "dummy@2.0.0"] {
+            for include_active in [true, false] {
+                let mut toolset = Toolset::new(ToolSource::Unknown);
+                toolset.add_version(inactive.clone());
+                if include_active {
+                    toolset.add_version(active.clone());
+                }
+                ToolsetBuilder::new()
+                    .with_args(&[argument.parse().unwrap()])
+                    .with_default_to_latest(true)
+                    .load_runtime_args(&mut toolset)
+                    .unwrap();
 
-        let arg = "dummy".parse::<ToolArg>().unwrap();
-        ToolsetBuilder::new()
-            .with_args(&[arg])
-            .with_default_to_latest(true)
-            .load_runtime_args(&mut toolset)
-            .unwrap();
-
-        let requests = &toolset.versions.get(&ba).unwrap().requests;
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].version(), "2.0.0");
-        assert_eq!(requests[0].options().get("selected"), Some("active"));
+                let requests = &toolset.versions.get(&ba).unwrap().requests;
+                assert_eq!(requests.len(), 1);
+                if include_active {
+                    assert_eq!(requests[0].version(), "2.0.0");
+                    assert_eq!(requests[0].options().get("selected"), Some("active"));
+                    assert_eq!(requests[0].lockfile_source(), Some(&active_source));
+                } else {
+                    assert_eq!(requests[0].lockfile_source(), None);
+                    assert_eq!(requests[0].options().get("selected"), None);
+                }
+            }
+        }
     }
 
     #[tokio::test]

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mise daemon preset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "description",
+    "tool",
+    "binary",
+    "port",
+    "daemon",
+    "exports",
+    "options"
+  ],
+  "properties": {
+    "description": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "binary": {
+      "type": "string"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "daemon": {
+      "type": "object",
+      "required": ["run"],
+      "properties": {
+        "run": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "options": {
+      "type": "object"
+    },
+    "exports": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}
