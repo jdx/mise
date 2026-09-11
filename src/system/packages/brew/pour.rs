@@ -42,6 +42,62 @@ pub(super) fn linked_version(name: &str) -> Option<String> {
     record_keg(name, &opt).map(|(version, _)| version)
 }
 
+pub(super) fn strict_package_root(name: &str) -> Result<PathBuf> {
+    let prefix = prefix::prefix();
+    let prefix = if prefix.is_absolute() {
+        prefix
+    } else {
+        std::env::current_dir()
+            .wrap_err_with(|| {
+                format!(
+                    "cannot resolve relative Homebrew prefix {}",
+                    prefix.display()
+                )
+            })?
+            .join(prefix)
+    };
+    let opt = prefix.join("opt").join(name);
+    let rack = prefix.join("Cellar").join(name);
+    let metadata =
+        std::fs::symlink_metadata(&opt).map_err(|err| package_root_io_error(name, &opt, err))?;
+    if !metadata.is_symlink() {
+        bail!(
+            "invalid opt record for brew:{name} at {}: expected a symbolic link; inspect it and restore the formula's correct opt link",
+            opt.display()
+        );
+    }
+    let target =
+        std::fs::canonicalize(&opt).map_err(|err| package_root_io_error(name, &opt, err))?;
+    let canonical_rack =
+        std::fs::canonicalize(&rack).map_err(|err| package_root_io_error(name, &rack, err))?;
+    let metadata =
+        std::fs::metadata(&target).map_err(|err| package_root_io_error(name, &target, err))?;
+    if !metadata.is_dir() || target.parent() != Some(canonical_rack.as_path()) {
+        bail!(
+            "invalid opt record for brew:{name} at {}: target {} must be a directory directly inside {}; inspect it and restore the formula's correct opt link",
+            opt.display(),
+            target.display(),
+            canonical_rack.display()
+        );
+    }
+    Ok(opt)
+}
+
+fn package_root_io_error(name: &str, path: &Path, err: std::io::Error) -> eyre::Report {
+    let context = if err.kind() == std::io::ErrorKind::NotFound {
+        format!(
+            "brew:{name} has no usable installed opt link: {}; install or reconcile it with `mise bootstrap packages apply brew:{name}`",
+            path.display()
+        )
+    } else {
+        format!(
+            "cannot inspect brew:{name} at {}; check access or the reported filesystem condition",
+            path.display()
+        )
+    };
+    eyre::Report::new(err).wrap_err(context)
+}
+
 /// Return the active keg version and whether one of its active records can be repaired locally.
 pub(super) fn linked_state(name: &str) -> Option<(String, bool)> {
     let opt = prefix::prefix().join("opt").join(name);

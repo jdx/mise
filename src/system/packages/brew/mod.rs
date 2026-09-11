@@ -18,8 +18,9 @@
 //! metadata or mise's metadata-only Ruby shim. mise never shells out to `brew`.
 
 use async_trait::async_trait;
-use eyre::bail;
+use eyre::{WrapErr, bail};
 use std::collections::HashMap;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
@@ -47,6 +48,38 @@ pub(crate) use cask::{
     BrewCaskManager, apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan,
 };
 pub(crate) use maintenance::{apply_prune_plan, default_tap_url, linked_formulae, prune_plan};
+
+pub(crate) fn package_root(name: &str) -> Result<PathBuf> {
+    let parts = name.split('/').collect::<Vec<_>>();
+    if !matches!(parts.len(), 1 | 3)
+        || parts.iter().any(|part| {
+            part.is_empty()
+                || part
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control() || matches!(c, ':' | '\\'))
+                || !is_normal_formula_component(part)
+        })
+    {
+        bail!(
+            "invalid brew formula {name:?}; use brew:<formula> or brew:<owner>/<tap>/<formula> with normal, nonempty path components"
+        );
+    }
+    if parts.len() == 3 && parts[0] == "homebrew" && parts[1] == "cask" {
+        bail!("brew:{name}: the Homebrew cask namespace is unsupported for formula lookup");
+    }
+    let formula = request_formula_name(name);
+    assert!(
+        is_normal_formula_component(formula),
+        "validated formula must normalize to exactly one normal path component"
+    );
+    pour::strict_package_root(formula)
+        .wrap_err_with(|| format!("failed to locate installed brew:{name}"))
+}
+
+fn is_normal_formula_component(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+}
 
 impl BrewManager {
     pub(crate) fn new() -> Self {
