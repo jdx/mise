@@ -41531,6 +41531,22 @@ packages:
       - goos: windows
         format: zip
   - type: github_release
+    repo_owner: getgaal
+    repo_name: gaal
+    description: A single CLI to keep your local repositories, AI agent skills, and MCP server configurations in sync
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: gaal-{{.OS}}-{{.Arch}}
+        format: raw
+      - version_constraint: "true"
+        asset: gaal-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+  - type: github_release
     repo_owner: getgauge
     repo_name: gauge
     asset: gauge-{{trimV .Version}}-{{.OS}}.{{.Arch}}.zip
@@ -103469,6 +103485,7 @@ packages:
     repo_owner: yadm-dev
     repo_name: yadm
     description: Yet Another Dotfiles Manager
+    version_source: github_tag
     path: yadm
     aliases:
       - name: TheLocehiliosan/yadm

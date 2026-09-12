@@ -1,5 +1,97 @@
 # Changelog
 
+## [2026.9.6](https://github.com/jdx/mise/compare/v2026.9.5..v2026.9.6) - 2026-09-12
+
+### 🚀 Features
+
+- **(bootstrap)** declare Dock applications in order by @azohra in [#13075](https://github.com/jdx/mise/pull/13075)
+- **(brew)** implement `mise bootstrap packages where` for keg-only packages by @himkt in [#13083](https://github.com/jdx/mise/pull/13083)
+- **(cli)** add configurable output truncation by @jdx in [#13112](https://github.com/jdx/mise/pull/13112)
+- **(daemons)** manage project daemons and database presets with pitchfork by @jdx in [#13085](https://github.com/jdx/mise/pull/13085)
+- **(doctor)** add project diagnostic checks by @jdx in [#13062](https://github.com/jdx/mise/pull/13062)
+- **(dotfiles)** infer variant sources from dotfiles root by @jdx in [#13087](https://github.com/jdx/mise/pull/13087)
+- **(fmt)** sort lists whose order carries no meaning by @jrandolf in [#13058](https://github.com/jdx/mise/pull/13058)
+- **(vfox)** add backend tool discovery by @jdx in [#13111](https://github.com/jdx/mise/pull/13111)
+
+### 🐛 Bug Fixes
+
+- **(asdf)** avoid recursive compatibility dispatch by @jdx in [#13114](https://github.com/jdx/mise/pull/13114)
+- **(bootstrap)** explain macos defaults type differences by @jdx in [#13096](https://github.com/jdx/mise/pull/13096)
+- **(bootstrap)** find ssh and tar on Windows for remote bootstrap by @JamBalaya56562 in [#13117](https://github.com/jdx/mise/pull/13117)
+- **(brew)** link keg-only-on-macOS formulae on Linux by @lil-lon in [#13108](https://github.com/jdx/mise/pull/13108)
+- **(config)** merge monorepo settings across overlays by @jdx in [#13084](https://github.com/jdx/mise/pull/13084)
+- **(config)** scope runtime lockfile lookup to effective tool config by @nettlesh in [#13042](https://github.com/jdx/mise/pull/13042)
+- **(doctor)** align project check roots, dir expansion, schema, and signals by @jdx in [#13089](https://github.com/jdx/mise/pull/13089)
+- **(dotfiles)** honor global yes setting when tracking files by @nettlesh in [#13072](https://github.com/jdx/mise/pull/13072)
+- **(dotfiles)** warn when tracking a symlink without its source by @jdx in [#13095](https://github.com/jdx/mise/pull/13095)
+- **(http)** make shared extraction opt-in by @jdx in [#13059](https://github.com/jdx/mise/pull/13059)
+- **(lockfile)** allow packslip to replace legacy provenance by @jdx in [#13105](https://github.com/jdx/mise/pull/13105)
+- **(nushell)** wrap hide-env in try instead of in-env guard by @i-api in [#13071](https://github.com/jdx/mise/pull/13071)
+- **(packslip)** skip unsupported lockfile targets by @jdx in [#13102](https://github.com/jdx/mise/pull/13102)
+- **(schema)** model dotfiles manifests by @risu729 in [#12741](https://github.com/jdx/mise/pull/12741)
+- **(task)** auto-install tools for run task references by @jdx in [#13086](https://github.com/jdx/mise/pull/13086)
+- **(upgrade)** detect letter-suffixed version updates by @jdx in [#13119](https://github.com/jdx/mise/pull/13119)
+- extract structured flight steps from tap casks by @jdx in [#13060](https://github.com/jdx/mise/pull/13060)
+
+### 📚 Documentation
+
+- **(agents)** write PR titles and descriptions for release notes by @jdx in [#13090](https://github.com/jdx/mise/pull/13090)
+- **(task)** organise task-running guidance by @azohra in [#13077](https://github.com/jdx/mise/pull/13077)
+- diagram tracked dotfile synchronization by @jdx in [#13069](https://github.com/jdx/mise/pull/13069)
+- diagram artifact cache execution by @jdx in [#13068](https://github.com/jdx/mise/pull/13068)
+- diagram tool configuration precedence by @jdx in [#13067](https://github.com/jdx/mise/pull/13067)
+- illustrate bootstrap machine resources by @jdx in [#13066](https://github.com/jdx/mise/pull/13066)
+- illustrate project environment switching by @jdx in [#13065](https://github.com/jdx/mise/pull/13065)
+- prevent landing tabs from shifting content by @jdx in [#13107](https://github.com/jdx/mise/pull/13107)
+- prohibit drive-by AI discussion spam by @jdx in [#13110](https://github.com/jdx/mise/pull/13110)
+
+### ⚡ Performance
+
+- **(lockfile)** avoid scheduling cached generation targets by @jdx in [#13101](https://github.com/jdx/mise/pull/13101)
+- **(lockfile)** skip generation for current warm installs by @jdx in [#13103](https://github.com/jdx/mise/pull/13103)
+- **(oci)** leave same-repository base layers remote during push by @jdx in [#13055](https://github.com/jdx/mise/pull/13055)
+- **(oci)** cache local tool layers across image builds by @jdx in [#13056](https://github.com/jdx/mise/pull/13056)
+
+### 📦️ Dependency Updates
+
+- update rust crate aube-registry to v2.2.14 by @renovate[bot] in [#13015](https://github.com/jdx/mise/pull/13015)
+- update communique to v1.4.0 by @jdx in [#13104](https://github.com/jdx/mise/pull/13104)
+- update rattler by @renovate[bot] in [#12966](https://github.com/jdx/mise/pull/12966)
+- update rust crate aube to v2.2.14 by @renovate[bot] in [#13014](https://github.com/jdx/mise/pull/13014)
+- update rust crate usage-lib to v6.9.0 by @renovate[bot] in [#12892](https://github.com/jdx/mise/pull/12892)
+- update rust crate usage-cli to v6.9.0 by @renovate[bot] in [#12891](https://github.com/jdx/mise/pull/12891)
+
+### 📦 Registry
+
+- add mpv (conda:mpv) by @i-api in [#13049](https://github.com/jdx/mise/pull/13049)
+- use conda for postgres, redis, and mongodb by @jdx in [#13061](https://github.com/jdx/mise/pull/13061)
+- add agent-browser by @3w36zj6 in [#13088](https://github.com/jdx/mise/pull/13088)
+- add himalaya ([github:pimalaya/himalaya](https://github.com/pimalaya/himalaya)) by @i-api in [#13091](https://github.com/jdx/mise/pull/13091)
+- fix editorconfig-checker 4.0.1 by @jdx in [#13098](https://github.com/jdx/mise/pull/13098)
+- fix mc downloads from MinIO releases by @jdx in [#13113](https://github.com/jdx/mise/pull/13113)
+
+### Chore
+
+- **(ci)** replace actionlint with zizmor by @jdx in [#13097](https://github.com/jdx/mise/pull/13097)
+
+### Ci
+
+- increase vfox runner memory by @jdx in [#13118](https://github.com/jdx/mise/pull/13118)
+
+### New Contributors
+
+- @lil-lon made their first contribution in [#13108](https://github.com/jdx/mise/pull/13108)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`getgaal/gaal`](https://github.com/getgaal/gaal)
+
+#### Updated Packages (1)
+
+- [`yadm-dev/yadm`](https://github.com/yadm-dev/yadm)
+
 ## [2026.9.5](https://github.com/jdx/mise/compare/v2026.9.4..v2026.9.5) - 2026-09-10
 
 ### 🚀 Features
