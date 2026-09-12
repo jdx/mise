@@ -548,8 +548,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 [[package]]
 name = "aube"
 version = "2.2.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37b0981f0d268ec2301019077a81531ac5d7c48cb158ccb1c77e2d7c1c7f2db4"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-linker",
@@ -604,9 +603,8 @@ dependencies = [
 
 [[package]]
 name = "aube-codes"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0ce615dba0f654c6175b1ca4ee12cd45baff9355969084cdf719aeb475090c5"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "serde",
  "serde_json",
@@ -614,9 +612,8 @@ dependencies = [
 
 [[package]]
 name = "aube-linker"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "452f9540580d1a7ae93eaf2742817f8c2aae22fb96a39432a80b05fd0859a83f"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-lockfile",
@@ -643,9 +640,8 @@ dependencies = [
 
 [[package]]
 name = "aube-lockfile"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b652f270869b94c9947bf451f1caff2020a65639d10a7f80a4943eb0c0d9b067"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-manifest",
@@ -669,9 +665,8 @@ dependencies = [
 
 [[package]]
 name = "aube-manifest"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "960387dfe0a3790afc035f99e6ce3e407197e7c54b352518662947b58dc34d43"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-util",
@@ -686,8 +681,7 @@ dependencies = [
 [[package]]
 name = "aube-registry"
 version = "2.2.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d54f44b29caa7f2af3a62f2a5c30c4fd20b5daa6cf39d2f90230962e14b7e686"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-manifest",
@@ -712,9 +706,8 @@ dependencies = [
 
 [[package]]
 name = "aube-resolver"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71eeec7668b4930b108160a294acd5ed23b6083e92c1d447b7ab5ce40931977a"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-lockfile",
@@ -737,14 +730,13 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
- "zstd",
+ "zstd 0.14.0",
 ]
 
 [[package]]
 name = "aube-runtime"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46a9976625cb729e26d89424539c8fdc853c62be429464134d5871706e7ec99b"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-manifest",
@@ -767,9 +759,8 @@ dependencies = [
 
 [[package]]
 name = "aube-scripts"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27a4ed30c5cffed974372767270dc854c7024d3e89d9581df9a8604cf36edb4d"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-manifest",
@@ -787,9 +778,8 @@ dependencies = [
 
 [[package]]
 name = "aube-settings"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19f9199710c2d8bb0073cdfe856b751a5a8e759afbe2e1995f9c5c4ecde8b1d4"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-util",
@@ -801,9 +791,8 @@ dependencies = [
 
 [[package]]
 name = "aube-store"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54f5a772c74cf7607a315d65a329ca828f91c59e6d0ebba7344e80b1c8b88487"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-util",
  "base64 0.23.1",
@@ -828,9 +817,8 @@ dependencies = [
 
 [[package]]
 name = "aube-util"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9bb44d2b7808a4fe590d9a2c6b5d5f97daa2effccd9e21d355fe4068d745432"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "blake3",
@@ -850,9 +838,8 @@ dependencies = [
 
 [[package]]
 name = "aube-workspace"
-version = "2.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1679cfb8c8500a58a54be9bfcf6015bf17e88ef34738ffd8b7160de2cbfab37"
+version = "2.2.14"
+source = "git+https://github.com/aubepkg/aube.git?rev=4586246d3fac561743962c1ef639bce6561b66c9#4586246d3fac561743962c1ef639bce6561b66c9"
 dependencies = [
  "aube-codes",
  "aube-manifest",
@@ -2223,8 +2210,8 @@ dependencies = [
  "compression-core",
  "flate2",
  "memchr",
- "zstd",
- "zstd-safe",
+ "zstd 0.13.3",
+ "zstd-safe 7.3.0",
 ]
 
 [[package]]
@@ -2780,7 +2767,7 @@ dependencies = [
  "libc",
  "sha2 0.10.9",
  "windows-sys 0.59.0",
- "zstd",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -6640,7 +6627,7 @@ dependencies = [
  "xz2",
  "zip 8.6.0",
  "zipsign-api",
- "zstd",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -8417,7 +8404,7 @@ dependencies = [
  "tracing",
  "url",
  "zip 8.6.0",
- "zstd",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -8508,7 +8495,7 @@ dependencies = [
  "wasmtimer",
  "web-sys",
  "windows-sys 0.61.2",
- "zstd",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -11094,7 +11081,7 @@ dependencies = [
  "which",
  "xz2",
  "zip 8.6.0",
- "zstd",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -11327,9 +11314,9 @@ dependencies = [
 
 [[package]]
 name = "usage-config"
-version = "6.8.0"
+version = "6.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e19abc7aba3ff3392f63704558fd25d86fb3dd193de4809bf4173a7dd67b4129"
+checksum = "a7a13c2ea7afa83b9f9e1e78f73a8d2e51746c10bf5285340a59ac78b769a7c5"
 
 [[package]]
 name = "usage-derive"
@@ -12521,7 +12508,7 @@ dependencies = [
  "typed-path",
  "zeroize",
  "zopfli",
- "zstd",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -12566,7 +12553,16 @@ version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
 dependencies = [
- "zstd-safe",
+ "zstd-safe 7.3.0",
+]
+
+[[package]]
+name = "zstd"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf06bd8162af0734b344780deb55b42a2429ae430870d13fcc12f238e880fe6e"
+dependencies = [
+ "zstd-safe 8.0.0",
 ]
 
 [[package]]
@@ -12574,6 +12570,15 @@ name = "zstd-safe"
 version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64d80649ab6db9d9f6f9c80a40becd948eda4714a0a5ac8c4d157a32231c7882"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae42c0555055784c70058d19ba8e275528e8a99a706684868ace5da4e716a4ab"
 dependencies = [
  "zstd-sys",
 ]

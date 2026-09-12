@@ -23,9 +23,11 @@ static SKIP_PROMPT: Mutex<bool> = Mutex::new(false);
 pub(crate) enum Confirmation {
     Yes,
     No,
+    /// The prompt was displayed, but stdin reached EOF before an answer was
+    /// supplied. This is still a safe refusal, but it is not a user decision.
+    Unanswered,
     /// The question never reached anyone: nothing was drawable on stderr, or
-    /// mise is generating usage/completions. A prompt that *was* displayed and
-    /// then went unanswered is [`Confirmation::No`], not this.
+    /// mise is generating usage/completions.
     Unavailable,
 }
 
@@ -127,12 +129,7 @@ fn read_confirm_from_stdin(message: &str, default_yes: bool) -> eyre::Result<Con
 /// gets wrong (it applies the default) and the reason this exists.
 fn parse_confirm_answer(line: Option<&str>, default_yes: bool) -> eyre::Result<Confirmation> {
     let Some(line) = line else {
-        // A decline, not `Unavailable`: the question *was* put on stderr and
-        // stdin ended without an answer, so nothing was consented to.
-        // `Unavailable` is reserved for the question never reaching anyone.
-        // Keeping it a decline is also what every caller already assumed, and
-        // leaves silence safe to read as "no" for any that come later.
-        return Ok(Confirmation::No);
+        return Ok(Confirmation::Unanswered);
     };
     let answer = line.trim().to_lowercase();
     if answer.is_empty() {
@@ -222,11 +219,16 @@ mod tests {
 
     #[test]
     fn eof_is_not_consent() {
-        // The prompt was displayed and stdin ended without an answer. That has
-        // to read as a decline, whichever way the default points -- callers
-        // that act only on an explicit "no" must not take it as permission.
-        assert_eq!(parse_confirm_answer(None, true).unwrap(), Confirmation::No);
-        assert_eq!(parse_confirm_answer(None, false).unwrap(), Confirmation::No);
+        // The prompt was displayed, but nobody answered. This remains distinct
+        // from both an explicit decline and a prompt that could not be shown.
+        assert_eq!(
+            parse_confirm_answer(None, true).unwrap(),
+            Confirmation::Unanswered
+        );
+        assert_eq!(
+            parse_confirm_answer(None, false).unwrap(),
+            Confirmation::Unanswered
+        );
     }
 
     #[test]

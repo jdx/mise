@@ -555,7 +555,7 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
             // sticky and silent, so recording one for an answer nobody gave
             // would stop the config from applying with nothing to explain why.
             Confirmation::No => add_ignored(config_root.to_path_buf())?,
-            Confirmation::Unavailable => {}
+            Confirmation::Unanswered | Confirmation::Unavailable => {}
         }
     }
     Err(UntrustedConfig(path.into()))?
