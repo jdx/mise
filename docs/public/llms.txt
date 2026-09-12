@@ -154,7 +154,7 @@
 - [Presets](https://mise.jdx.dev/mise-cookbook/presets.html): A preset is a task you write to create a project's starting configuration. Store it as a global file task so it is available in new repositories.
 - [Shell tricks](https://mise.jdx.dev/mise-cookbook/shell-tricks.html): A collection of shell utilities that build on mise.
 - [Team](https://mise.jdx.dev/team.html): mise is maintained by Jeff Dickey with help from the community. For questions, feedback, and bug reports, use the channels on the Contact page.
-- [Contributing](https://mise.jdx.dev/contributing.html): mise has a specific scope and design taste. Unless the change is obvious, start a discussion or mention what you plan to do in Discord before opening a PR.
+- [Contributing](https://mise.jdx.dev/contributing.html): AI-assisted responses are welcome, including one-off responses from people trying to help. This is especially true when you are answering your own question, are directly involved in or personally…
 - [External Resources](https://mise.jdx.dev/external-resources.html): Articles, videos, and related tools from the mise community. Examples reflect the version available when they were published; check the current configuration and CLI reference when adapting older…
 
 ## Advanced

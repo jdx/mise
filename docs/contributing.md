@@ -5,6 +5,18 @@ outline: [2, 3]
 
 # Contributing
 
+## Community Participation
+
+AI-assisted responses are welcome, including one-off responses from people trying to help.
+This is especially true when you are answering your own question, are directly involved in or
+personally connected to the original question, or are an established project contributor. In
+all cases, review and verify the response before posting it.
+
+Do not use AI to spam project support channels with drive-by answers across Discussions when
+you have no connection to the questions or the project. This includes raw, lightly edited, or
+disclosed model output. This policy is intended to prevent discussion spam, not discourage
+individual responses. Accounts that engage in this behavior will be blocked from the project.
+
 ## Contribution Expectations
 
 mise has a specific scope and design taste. Unless the change is obvious,
