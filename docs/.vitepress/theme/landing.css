@@ -999,7 +999,8 @@ a:hover > div + .card-link::after {
   color: var(--vp-c-success-1);
 }
 .workbench-terminal {
-  min-height: 170px;
+  /* Reserve four transcript lines so switching examples cannot resize the hero. */
+  min-height: 173px;
   padding: 16px 22px 20px;
   background: #251d26;
   color: #f3eaf0;
