@@ -10447,7 +10447,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -11291,9 +11291,9 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-argv"
-version = "6.8.0"
+version = "6.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80dcf875185d0520e1a0675f6d413749e5050fde359eede97e45d0b9690eedbd"
+checksum = "333c9ed163434485e14c3bf118d30b0807074b3e2299db8c9e69b7eabf39fd65"
 
 [[package]]
 name = "usage-cli"
@@ -11322,9 +11322,9 @@ dependencies = [
 
 [[package]]
 name = "usage-derive"
-version = "6.8.0"
+version = "6.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "778373c082248ae6050e96beb69c817cf109b8c8e925fbcbdf2155a12e517442"
+checksum = "86fa7c440b17d36322931bde270c9afd169b825748f4d3ac8c429ee35e46fab0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11355,9 +11355,9 @@ dependencies = [
 
 [[package]]
 name = "usage-rs"
-version = "6.8.0"
+version = "6.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "894bcecc06869ce740fde1135ac8ee60d82bf33e88f34e4fee434a62e98e15e8"
+checksum = "512b7935fb7beba9f62333d2aac8470f586fb71d75f359e655d569385d6eee8a"
 dependencies = [
  "usage-argv",
  "usage-derive",
@@ -11367,18 +11367,18 @@ dependencies = [
 
 [[package]]
 name = "usage-test"
-version = "6.8.0"
+version = "6.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e75d170ba4aad33319a2a9ffc77494143559ec6173eef287750d439aab006169"
+checksum = "829f0255b5229f240769dd355fb843b2d61b893d7d44432e58d25297b9502cec"
 dependencies = [
  "usage-argv",
 ]
 
 [[package]]
 name = "usage-validation"
-version = "6.8.0"
+version = "6.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ebdffbd14e4c6c8267340f697842c6cd30b6cd56a8c4f83154e6f6ecace9ad9"
+checksum = "678d31041680866221e1eb8cb5e954600974a958ff6ded28693477c13fc884cb"
 dependencies = [
  "expr-lang",
 ]

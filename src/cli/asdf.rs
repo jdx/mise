@@ -1,10 +1,13 @@
+use std::ffi::OsStr;
 use std::sync::Arc;
 
 use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::Cli;
+use crate::cli::install::Install;
 use crate::cli::ls_remote::LsRemote;
+use crate::cli::reshim::Reshim;
 use crate::config::Config;
 use crate::toolset::ToolsetBuilder;
 
@@ -24,18 +27,26 @@ impl Asdf {
         args.append(&mut self.args);
 
         match args.get(1).map(|s| s.as_str()) {
-            Some("reshim") => Box::pin(Cli::run(&args)).await,
+            Some("reshim") => parse_forwarded_args::<Reshim>(&args)?.run().await,
             Some("list") => list_versions(&config, &args).await,
             Some("install") => {
                 if args.len() == 4 {
                     let version = args.pop().unwrap();
                     args[2] = format!("{}@{}", args[2], version);
                 }
-                Box::pin(Cli::run(&args)).await
+                Box::pin(parse_forwarded_args::<Install>(&args)?.run()).await
             }
             _ => Box::pin(Cli::run(&args)).await,
         }
     }
+}
+
+fn parse_forwarded_args<T: usage_rs::spec::CommandArgs>(args: &[String]) -> Result<T> {
+    let argv = args[1..]
+        .iter()
+        .map(|arg| OsStr::new(arg.as_str()))
+        .collect_vec();
+    usage_rs::parse_args_from_argv(&argv).map_err(|err| super::usage_error(&argv, err))
 }
 
 async fn list_versions(config: &Arc<Config>, args: &[String]) -> Result<()> {
