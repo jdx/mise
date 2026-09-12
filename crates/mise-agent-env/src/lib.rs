@@ -133,7 +133,7 @@ where
             && !is_false(&raw)
         {
             let mut agent = classify_generic(&raw);
-            if agent == Agent::ClaudeCode && present("CLAUDE_CODE_IS_COWORK") {
+            if agent == Agent::ClaudeCode && enabled("CLAUDE_CODE_IS_COWORK") {
                 agent = Agent::ClaudeCowork;
             }
             let detection = Detection { agent, signal };
@@ -362,6 +362,16 @@ mod tests {
     fn false_provider_values_are_ignored() {
         for value in ["0", "false", "no", "off"] {
             assert_eq!(detect(&[("CLAUDECODE", value)]), None);
+            assert_eq!(detect(&[("CLAUDE_CODE_IS_COWORK", value)]), None);
+            assert_eq!(
+                detect(&[
+                    ("AI_AGENT", "claude-code"),
+                    ("CLAUDE_CODE_IS_COWORK", value)
+                ])
+                .unwrap()
+                .agent,
+                Agent::ClaudeCode
+            );
             assert_eq!(detect(&[("OPENCODE", value)]), None);
         }
     }
