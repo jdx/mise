@@ -25,6 +25,7 @@ const CODE_RESOURCES: &[u8] = include_bytes!(concat!(
     "/mise-notify.app/Contents/_CodeSignature/CodeResources"
 ));
 
+/// Reports whether the embedded helper was signed for release distribution.
 pub(super) fn release_signed() -> bool {
     env!("MISE_NOTIFICATION_RELEASE_SIGNED") == "1"
 }
@@ -49,6 +50,7 @@ fn bundle_fingerprint() -> String {
     crate::hash::hash_to_str(&(HELPER, INFO, ICON))
 }
 
+/// Returns the executable path inside a notification helper bundle.
 fn executable(app: &Path) -> PathBuf {
     app.join("Contents/MacOS/mise-notify")
 }
@@ -70,6 +72,7 @@ fn complete(app: &Path) -> bool {
         && app.join("Contents/Resources/mise.icns").is_file()
 }
 
+/// Builds a command to display a notification with the embedded helper.
 pub(super) fn notification(title: &str, body: &str) -> Result<Command> {
     if !release_signed() {
         bail!("the embedded notification helper is not Developer ID signed");
@@ -78,6 +81,7 @@ pub(super) fn notification(title: &str, body: &str) -> Result<Command> {
     Ok(notification_command(&app, title, body))
 }
 
+/// Creates the notification command with literal title and body arguments.
 fn notification_command(app: &Path, title: &str, body: &str) -> Command {
     let mut command = Command::new(executable(app));
     command.args([title, body]);

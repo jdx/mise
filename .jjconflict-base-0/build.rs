@@ -19,6 +19,7 @@ mod lockfile_rollout;
 
 // cfg_aliases 0.2.1 emits semicolon-terminated helper macros in expression
 // position, which the latest nightly compiler rejects as future-incompatible.
+/// Generates build metadata, registries, and the embedded notification helper.
 #[allow(semicolon_in_expressions_from_macros)]
 fn main() -> Result<()> {
     let release = (
