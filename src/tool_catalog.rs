@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use futures_util::future;
+use futures_util::{StreamExt, future, stream};
 use itertools::Itertools;
 
 use crate::cache::CacheManagerBuilder;
@@ -10,6 +10,8 @@ use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::registry::{REGISTRY, RegistryTool, tool_enabled};
 use crate::toolset::install_state;
 use crate::{dirs, timeout};
+
+const BACKEND_CATALOG_CONCURRENCY: usize = 8;
 
 #[derive(Debug, Clone)]
 pub(crate) enum ToolCatalogSource {
@@ -40,6 +42,13 @@ impl ToolCatalogEntry {
                 .or_else(|| tool.backends().first().copied())
                 .unwrap_or_default(),
             ToolCatalogSource::VfoxBackend => self.description.as_deref().unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn selectable(&self) -> bool {
+        match &self.source {
+            ToolCatalogSource::Registry(tool) => !tool.backends().is_empty(),
+            ToolCatalogSource::VfoxBackend => true,
         }
     }
 }
@@ -101,7 +110,11 @@ pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
                 (plugin_name, tools)
             })
         });
-    for (plugin_name, tools) in future::join_all(backend_catalogs).await {
+    let backend_catalogs = stream::iter(backend_catalogs)
+        .buffered(BACKEND_CATALOG_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+    for (plugin_name, tools) in backend_catalogs {
         entries.extend(tools.into_iter().filter_map(|tool| {
             let name = tool.name.trim();
             if !valid_tool_name(name) {

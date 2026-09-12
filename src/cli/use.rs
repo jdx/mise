@@ -521,6 +521,7 @@ impl Use {
         for tool in crate::tool_catalog::search("")
             .await
             .into_iter()
+            .filter(|tool| tool.selectable())
             .unique_by(|tool| tool.canonical_id().to_string())
         {
             let id = tool.canonical_id().to_string();
