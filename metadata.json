@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2AYVDP5JMAEA3S6CJGPJVTB",
+  "strategy": "manual-commit",
+  "branch": "codex/no-truncate-agent-output",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/mise-agent-env/Cargo.toml",
+    "crates/mise-agent-env/README.md",
+    "crates/mise-agent-env/src/lib.rs",
+    "e2e/cli/test_term_width",
+    "e2e/tasks/test_task_display_truncation",
+    "settings.toml",
+    "src/cli/args/mod.rs",
+    "src/cli/args/truncate.rs",
+    "src/cli/config/ls.rs",
+    "src/cli/dotfiles/status.rs",
+    "src/cli/hook_env.rs",
+    "src/cli/ls.rs",
+    "src/cli/mod.rs",
+    "src/config/settings.rs",
+    "src/env.rs",
+    "src/output.rs",
+    "src/task/mod.rs",
+    "src/task/task_output.rs",
+    "src/toolset/mod.rs",
+    "src/ui/multi_progress_report.rs",
+    "src/ui/table.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 208403,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 12929024,
+    "output_tokens": 31499,
+    "api_call_count": 91
+  }
+}
