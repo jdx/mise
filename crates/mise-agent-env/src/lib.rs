@@ -41,8 +41,8 @@ pub enum Agent {
     Trae,
     VeCli,
     Warp,
-    /// An agent identified only through the vendor-neutral `AI_AGENT` or
-    /// `AGENT` variable.
+    /// An agent identified only through the vendor-neutral `AI_AGENT`
+    /// variable.
     Other,
 }
 
@@ -128,7 +128,7 @@ where
     // A named generic value is authoritative. A flag-like value proves an
     // agent is present but lets a specific marker below identify it first.
     let mut generic = None;
-    for signal in ["AI_AGENT", "AGENT"] {
+    for signal in ["AI_AGENT"] {
         if let Some(raw) = value(signal)
             && !is_false(&raw)
         {
@@ -340,9 +340,15 @@ mod tests {
 
     #[test]
     fn generic_flag_yields_to_a_specific_signal() {
-        let detected = detect(&[("AGENT", "1"), ("OPENCODE", "1")]).unwrap();
+        let detected = detect(&[("AI_AGENT", "1"), ("OPENCODE", "1")]).unwrap();
         assert_eq!(detected.agent, Agent::OpenCode);
         assert_eq!(detected.signal, "OPENCODE");
+    }
+
+    #[test]
+    fn ignores_ambiguous_agent_variable() {
+        assert_eq!(detect(&[("AGENT", "1")]), None);
+        assert_eq!(detect(&[("AGENT", "build-runner")]), None);
     }
 
     #[test]

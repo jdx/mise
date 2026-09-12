@@ -94,7 +94,9 @@ impl MiseTable {
         }
         Self {
             table,
-            truncate: false,
+            // Preserve the historical one-line row default. The small set of
+            // commands exposing truncation controls override this explicitly.
+            truncate: true,
         }
     }
 
@@ -111,9 +113,8 @@ impl MiseTable {
 
     pub(crate) fn add_row(&mut self, row: impl Into<Row>) {
         let mut row = row.into();
-        // Commands opt into compact rows. The shared presentation policy can
-        // still disable them through configuration, a CLI override, or agent
-        // detection.
+        // Selected commands can disable compact rows through configuration, a
+        // CLI override, or agent detection.
         if self.truncate && crate::env::should_truncate() {
             row.max_height(1);
         }
