@@ -8,6 +8,10 @@ For questions about mise, start a [GitHub Discussion](https://github.com/jdx/mis
 This keeps answers searchable and lets other users help. The project uses Discussions for
 bug reports and feature requests as well as general questions.
 
+Before participating, read the [community participation policy](/contributing.html#community-participation).
+AI-generated or AI-assisted answers to other users' questions are prohibited, and accounts
+that post them will be blocked from the project.
+
 - [Troubleshooting & Bug Reports](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports):
   include the command, relevant configuration, expected and actual behavior, and reviewed
   `mise doctor` output. See [Troubleshooting](/troubleshooting.html) for useful diagnostics.

@@ -5,6 +5,15 @@ outline: [2, 3]
 
 # Contributing
 
+## Community Participation
+
+Do not post AI-generated or AI-assisted answers to other users' questions in GitHub
+Discussions or other project support channels. This includes raw, lightly edited, or
+disclosed model output. Accounts that post these replies will be blocked from the project.
+
+AI assistance is allowed when working on a contribution you are submitting, but you are
+responsible for reviewing and verifying the result.
+
 ## Contribution Expectations
 
 mise has a specific scope and design taste. Unless the change is obvious,
