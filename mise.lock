@@ -326,36 +326,42 @@ checksum = "sha256:79b72e62c5e9555bd22d49fed628b13e25f7a95f828707d3a243b975d90a5
 url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-aarch64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558081705"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-arm64-musl"]
 checksum = "sha256:8a64929c178b65fced8c800450d0c1bb60f1851b66c0b1022fdc51b6098f09d5"
 url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-aarch64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558081250"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64"]
 checksum = "sha256:c14a432005f9e06b7dffb998080fdfe920fb343ee6766db1d57b8f0ff067a3b7"
 url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558081120"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-baseline"]
 checksum = "sha256:c14a432005f9e06b7dffb998080fdfe920fb343ee6766db1d57b8f0ff067a3b7"
 url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558081120"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-musl"]
 checksum = "sha256:9967bcbd615e50e205ad222cc3408ffb50cd1c47b82dfb925d71f801a22c35cb"
 url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558081428"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:9967bcbd615e50e205ad222cc3408ffb50cd1c47b82dfb925d71f801a22c35cb"
 url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558081428"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.macos-arm64"]
 checksum = "sha256:0d183c2f46544d09e3b89b9322ea6a8ed8435f9b6cb1a46e5db90155755554af"
@@ -363,18 +369,21 @@ url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-aar
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558082375"
 provenance = "github-attestations"
 provenance_verified = true
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.windows-x64"]
 checksum = "sha256:b90740aa7bd9dd0a49b2003801141fd6721bdecd1324d2baf8d36e53389ad2db"
 url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558084652"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.windows-x64-baseline"]
 checksum = "sha256:b90740aa7bd9dd0a49b2003801141fd6721bdecd1324d2baf8d36e53389ad2db"
 url = "https://github.com/jdx/communique/releases/download/v1.4.0/communique-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/communique/releases/assets/558084652"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [[tools.gh]]
 version = "2.100.0"
