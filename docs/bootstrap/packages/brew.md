@@ -318,8 +318,8 @@ export PATH="/opt/homebrew/bin:$PATH"
 
 Keg-only formulae are not linked there. Use their `<prefix>/opt/<formula>` path
 when configuring compilers or services that need them. As with brew, formulae
-that are keg-only only because macOS already provides them (such as `zip` and
-`unzip`) are not keg-only on Linux and are linked normally.
+that are keg-only only because macOS already provides them are not keg-only on
+Linux and are linked normally.
 
 ## Coexistence with a real Homebrew
 
