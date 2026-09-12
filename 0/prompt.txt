@@ -1,0 +1,1 @@
+this is merged so we can revert the todo we did earlier today [https://github.com/aquaproj/aqua-registry/pull/60567#issuecomment-5649038515](https://github.com/aquaproj/aqua-registry/pull/60567#issuecomment-5649038515)
