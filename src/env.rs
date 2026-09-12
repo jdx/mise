@@ -862,12 +862,13 @@ pub(crate) static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(
 /// Force progress bars even in non-TTY (for debugging)
 pub(crate) static MISE_FORCE_PROGRESS: Lazy<bool> =
     Lazy::new(|| var_is_true("MISE_FORCE_PROGRESS"));
-/// stderr is a PTY that logs every frame instead of redrawing it. AI coding
-/// agents run commands in such terminals: `isatty` says yes, but cursor-up and
-/// erase-line are recorded rather than applied, so an animated display becomes
-/// one copy of the whole live region per tick. Treated like CI.
-pub(crate) static FRAME_LOGGING_TERMINAL: Lazy<bool> =
-    Lazy::new(|| var_is_true("CLAUDECODE") || var("AI_AGENT").is_ok_and(|v| !v.is_empty()));
+/// Whether an AI coding agent is driving this process.
+pub(crate) static AI_AGENT: Lazy<bool> = Lazy::new(mise_agent_env::is_agent);
+
+/// Whether terminal-width presentation output should be truncated.
+pub(crate) fn should_truncate() -> bool {
+    crate::config::Settings::get().truncate && !*AI_AGENT
+}
 
 // python
 pub(crate) static PYENV_ROOT: Lazy<PathBuf> =

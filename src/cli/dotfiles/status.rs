@@ -1,6 +1,7 @@
 use eyre::Result;
 use serde_json::json;
 
+use crate::cli::args::TruncateOptions;
 use crate::config::Config;
 use crate::path::PathExt;
 use crate::system;
@@ -29,6 +30,9 @@ mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync"###
     )
 )]
 pub(crate) struct DotfilesStatus {
+    #[usage(flatten)]
+    truncate: TruncateOptions,
+
     /// Only show these targets
     #[usage(value_name = "TARGET")]
     targets: Vec<String>,
@@ -178,6 +182,7 @@ impl DotfilesStatus {
             if !file_rows.is_empty() {
                 let mut table =
                     MiseTable::new(false, &["Target", "Mode", "Source", "Config", "State"]);
+                table.truncate(self.truncate.truncate);
                 for row in file_rows {
                     table.add_row(row);
                 }
@@ -185,6 +190,7 @@ impl DotfilesStatus {
             }
             if !edit_rows.is_empty() {
                 let mut table = MiseTable::new(false, &["File", "Edit", "Config", "State"]);
+                table.truncate(self.truncate.truncate);
                 for row in edit_rows {
                     table.add_row(row);
                 }

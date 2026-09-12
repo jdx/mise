@@ -3725,6 +3725,21 @@ env = "MISE_TRACE"
 hide = true
 type = "Bool"
 
+[truncate]
+default = true
+description = "Truncate long terminal output to fit the available width."
+docs = """
+Set to `false` to preserve complete values in terminal-width-aware output such as table cells and
+task command lines. This does not disable safety limits on captured command output, HTTP response
+bodies, or history data.
+
+AI coding agents automatically receive untruncated presentation output regardless of this setting.
+Commands that support truncation also accept `--truncate` and `--no-truncate` for a one-off
+override.
+"""
+env = "MISE_TRUNCATE"
+type = "Bool"
+
 [trusted_config_paths]
 default = []
 description = """This is a list of config paths that mise will automatically mark as \

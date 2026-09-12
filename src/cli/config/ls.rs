@@ -1,3 +1,4 @@
+use crate::cli::args::TruncateOptions;
 use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -18,6 +19,9 @@ Path                        Tools
     )
 )]
 pub(crate) struct ConfigLs {
+    #[usage(flatten)]
+    truncate: TruncateOptions,
+
     /// Output in JSON format
     #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
@@ -53,6 +57,7 @@ impl ConfigLs {
             .map(|cf| cf.as_ref())
             .collect_vec();
         let mut table = MiseTable::new(self.no_header, &["Path", "Tools"]);
+        table.truncate(self.truncate.truncate);
         for cfg in configs {
             let ts = cfg.to_tool_request_set().unwrap();
             let tools = ts.list_tools().into_iter().join(", ");
@@ -86,7 +91,7 @@ impl ConfigLs {
             };
             table.add_row(vec![Cell::new(display_path(f)), tools]);
         }
-        table.truncate(true).print()
+        table.print()
     }
 
     async fn display_json(&self) -> Result<()> {

@@ -19,6 +19,9 @@ by a config file (active) whether or not they are installed.
 - **`[INSTALLED_TOOL]…`** — Only show tool versions from [TOOL]
 
 ## Flags
+- **`--truncate`** — Truncate long terminal output to fit the available width
+
+  **Default:** `true`
 - **`-c --current`** — Only show tool versions currently specified in a mise.toml
 - **`-g --global`** — Only show tool versions currently specified in the global mise.toml
 - **`-i --installed`** — Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)

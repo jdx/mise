@@ -30,7 +30,7 @@ Manage dotfiles from `[dotfiles]`
 - [`mise bootstrap dotfiles recover [--keep-current] [-y --yes] [OPERATION]`](/cli/bootstrap/dotfiles/recover.html)
 - [`mise bootstrap dotfiles rollback [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/rollback.html)
 - [`mise bootstrap dotfiles save [FLAGS] [PATH]…`](/cli/bootstrap/dotfiles/save.html)
-- [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.html)
+- [`mise bootstrap dotfiles status [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/status.html)
 - [`mise bootstrap dotfiles sync [--fetch-only] [--best-effort]`](/cli/bootstrap/dotfiles/sync.html)
 - [`mise bootstrap dotfiles track [FLAGS] <PATH>…`](/cli/bootstrap/dotfiles/track.html)
 - [`mise bootstrap dotfiles unapply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/unapply.html)

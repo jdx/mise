@@ -65,7 +65,7 @@ impl TaskOutput {
 }
 
 /// Returns the first line of a message for display unless task_show_full_cmd is true
-/// In CI mode, returns the full first line without truncation
+/// In CI or when presentation truncation is disabled, returns the full first line
 /// Otherwise, truncates to terminal width with ellipsis
 pub(crate) fn trunc(prefix: &str, msg: &str) -> String {
     let settings = Settings::get();
@@ -75,7 +75,7 @@ pub(crate) fn trunc(prefix: &str, msg: &str) -> String {
         return msg.to_string();
     }
     let msg = msg.lines().next().unwrap_or_default();
-    if settings.ci {
+    if settings.ci || !env::should_truncate() {
         return msg.to_string();
     }
     let prefix_len = console::measure_text_width(prefix);

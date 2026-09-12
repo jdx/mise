@@ -13,6 +13,9 @@ description: "Manage config files"
 Manage config files
 
 ## Flags
+- **`--truncate`** — Truncate long terminal output to fit the available width
+
+  **Default:** `true`
 - **`-J --json`** — Output in JSON format
 - **`--no-header`** — Do not print table header
 - **`--tracked-configs`** — List all tracked config files
