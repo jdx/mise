@@ -57846,6 +57846,30 @@ packages:
     supported_envs:
       - linux
       - darwin
+  - type: github_release
+    repo_owner: kjanat
+    repo_name: actionlint
+    description: Find problems in your GitHub Actions workflows
+    search_words:
+      - lint
+      - linter
+      - workflow
+      - ci
+      - github-actions
+    asset: actionlint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    checksum:
+      type: github_release
+      asset: actionlint_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    overrides:
+      - goos: windows
+        format: zip
+    github_artifact_attestations:
+      enabled: true
+    build:
+      type: go_install
+      path: actionlint.kjanat.dev/cmd/actionlint
   - type: github_content
     repo_owner: kjokjo
     repo_name: ipcalc
@@ -67100,26 +67124,20 @@ packages:
         overrides:
           - goos: windows
             asset: minc
-  - type: http
+  - type: github_release
     repo_owner: minio
     repo_name: mc
     description: Unix like utilities for object store
-    url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}
-    complete_windows_ext: false
+    asset: mc.{{.OS}}-{{.Arch}}.{{.Version}}
     windows_arm_emulation: true
     format: raw
-    overrides:
-      - goos: windows
-        files:
-          - name: mc
-            link: mc.exe
     checksum:
-      type: http
+      type: github_release
       algorithm: sha256
-      url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.sha256sum
+      asset: "{{.Asset}}.sha256sum"
     minisign:
-      type: http
-      url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.minisig
+      type: github_release
+      asset: "{{.Asset}}.minisig"
       public_key: RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav
   - type: github_release
     repo_owner: miniscruff
@@ -80202,6 +80220,62 @@ packages:
           type: http
           url: https://developers.redhat.com/content-gateway/rest/mirror/pub/openshift-v4/clients/odo/{{.Version}}/odo-{{.OS}}-{{.Arch}}.exe.sha256
           algorithm: sha256
+  - type: github_release
+    repo_owner: redhat-et
+    repo_name: ripwire
+    description: A zero-dependency CLI and MCP server for finding context in codebases
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.2.2")
+        asset: ripwire-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ripwire
+            src: ripwire-{{trimV .Version}}-{{.OS}}-{{.Arch}}/ripwire
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.5")
+        asset: ripwire-0.2.2-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ripwire
+            src: ripwire-0.2.2-{{.OS}}-{{.Arch}}/ripwire
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: ripwire-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ripwire
+            src: ripwire-{{trimV .Version}}-{{.OS}}-{{.Arch}}/ripwire
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
   - name: redhat.com/openshift-install
     type: http
     url: https://mirror.openshift.com/pub/openshift-v4/{{.Arch}}/clients/ocp/{{trimV .Version}}/openshift-install-{{.OS}}.tar.gz
