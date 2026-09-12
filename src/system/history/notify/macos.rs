@@ -19,6 +19,7 @@ const ICON: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/mise-notify.app/Contents/Resources/mise.icns"
 ));
+#[cfg(mise_notification_has_signature_resources)]
 const CODE_RESOURCES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/mise-notify.app/Contents/_CodeSignature/CodeResources"
@@ -31,19 +32,37 @@ pub(super) fn release_signed() -> bool {
 fn app_path(root: &Path) -> PathBuf {
     // A versioned directory permits safe replacement without modifying a
     // running helper. The bundle identifier remains stable across versions.
-    let fingerprint = crate::hash::hash_to_str(&(HELPER, INFO, ICON, CODE_RESOURCES));
+    let fingerprint = bundle_fingerprint();
     root.join(fingerprint).join("mise.app")
+}
+
+#[cfg(mise_notification_has_signature_resources)]
+fn bundle_fingerprint() -> String {
+    crate::hash::hash_to_str(&(HELPER, INFO, ICON, CODE_RESOURCES))
+}
+
+#[cfg(not(mise_notification_has_signature_resources))]
+fn bundle_fingerprint() -> String {
+    crate::hash::hash_to_str(&(HELPER, INFO, ICON))
 }
 
 fn executable(app: &Path) -> PathBuf {
     app.join("Contents/MacOS/mise-notify")
 }
 
+#[cfg(mise_notification_has_signature_resources)]
 fn complete(app: &Path) -> bool {
     executable(app).is_file()
         && app.join("Contents/Info.plist").is_file()
         && app.join("Contents/Resources/mise.icns").is_file()
         && app.join("Contents/_CodeSignature/CodeResources").is_file()
+}
+
+#[cfg(not(mise_notification_has_signature_resources))]
+fn complete(app: &Path) -> bool {
+    executable(app).is_file()
+        && app.join("Contents/Info.plist").is_file()
+        && app.join("Contents/Resources/mise.icns").is_file()
 }
 
 pub(super) fn notification(title: &str, body: &str) -> Result<Command> {
@@ -78,11 +97,13 @@ fn ensure_app(root: &Path) -> Result<PathBuf> {
     let contents = staged.join("Contents");
     std::fs::create_dir_all(contents.join("MacOS"))?;
     std::fs::create_dir_all(contents.join("Resources"))?;
+    #[cfg(mise_notification_has_signature_resources)]
     std::fs::create_dir_all(contents.join("_CodeSignature"))?;
     std::fs::write(executable(&staged), HELPER)?;
     std::fs::set_permissions(executable(&staged), std::fs::Permissions::from_mode(0o755))?;
     std::fs::write(contents.join("Info.plist"), INFO)?;
     std::fs::write(contents.join("Resources/mise.icns"), ICON)?;
+    #[cfg(mise_notification_has_signature_resources)]
     std::fs::write(
         contents.join("_CodeSignature/CodeResources"),
         CODE_RESOURCES,
@@ -121,6 +142,7 @@ mod tests {
                 .unwrap()
                 .success()
         );
+        #[cfg(mise_notification_has_signature_resources)]
         assert!(
             Command::new("/usr/bin/codesign")
                 .args(["--verify", "--strict"])
