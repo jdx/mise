@@ -1,12 +1,3 @@
+backends = ["aqua:minio/mc", "asdf:mise-plugins/mise-mc"]
 description = "Unix like utilities for object store (minio)"
 version_order = "source"
-
-[[backends]]
-full = "github:minio/mc"
-
-[backends.options]
-github_attestations = false
-rename_exe = "mc"
-
-[[backends]]
-full = "asdf:mise-plugins/mise-mc"
