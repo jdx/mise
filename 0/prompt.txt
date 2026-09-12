@@ -1,13 +1,1 @@
-i ban users from doing this: [https://github.com/jdx/mise/discussions/13106#discussioncomment-18408404](https://github.com/jdx/mise/discussions/13106#discussioncomment-18408404)
-
-but it's not called out that this is banned in policy
-
----
-
-should we put it in agents.md too?
-
-i am totally fine and even encourage ai responses btw. it's these drive-by ones that I want to ban. if the user is answering their own question, are directly involved, or have some personal connection to the original question, or it's a contributor like risu, then i am totally fine with it
-
----
-
 i also don't want to scare people away from responding with ai, so explain this is to prevent people spamming my discussions, not to prevent one-off responses
