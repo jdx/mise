@@ -80,6 +80,9 @@ pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
                 && !settings.disable_backends.contains(*plugin_name)
         })
         .filter_map(|(plugin_name, _)| {
+            if !backend_query_targets_plugin(plugin_name, query) {
+                return None;
+            }
             let plugin_path = dirs::PLUGINS.join(plugin_name);
             let has_list = plugin_path.join("hooks/backend_list_tools.lua").exists();
             let search_query = backend_search_query(plugin_name, query);
@@ -140,6 +143,12 @@ pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
         .into_iter()
         .unique_by(|entry| entry.id.clone())
         .collect()
+}
+
+fn backend_query_targets_plugin(plugin_name: &str, query: &str) -> bool {
+    query
+        .split_once(':')
+        .is_none_or(|(prefix, _)| prefix == plugin_name)
 }
 
 fn backend_search_query<'a>(plugin_name: &str, query: &'a str) -> Option<&'a str> {
@@ -275,5 +284,14 @@ mod tests {
         assert_eq!(backend_search_query("npm", "npm:"), None);
         assert_eq!(backend_search_query("npm", "cargo:react"), None);
         assert_eq!(backend_search_query("npm", ""), None);
+    }
+
+    #[test]
+    fn test_backend_query_targets_plugin() {
+        assert!(backend_query_targets_plugin("npm", ""));
+        assert!(backend_query_targets_plugin("npm", "react"));
+        assert!(backend_query_targets_plugin("npm", "npm:"));
+        assert!(backend_query_targets_plugin("npm", "npm:react"));
+        assert!(!backend_query_targets_plugin("npm", "cargo:react"));
     }
 }
