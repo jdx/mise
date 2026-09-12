@@ -6485,7 +6485,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.9.5"
+version = "2026.9.6"
 dependencies = [
  "age 0.12.1",
  "aho-corasick",
@@ -11327,9 +11327,9 @@ dependencies = [
 
 [[package]]
 name = "usage-config"
-version = "6.8.0"
+version = "6.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e19abc7aba3ff3392f63704558fd25d86fb3dd193de4809bf4173a7dd67b4129"
+checksum = "a7a13c2ea7afa83b9f9e1e78f73a8d2e51746c10bf5285340a59ac78b769a7c5"
 
 [[package]]
 name = "usage-derive"
