@@ -746,7 +746,7 @@ Run tasks and their dependencies
 .RE
 .TP
 \fBsearch\fR
-Search for tools in the registry
+Search for available tools
 .TP
 \fBself\-update\fR
 Update mise itself
@@ -6328,9 +6328,9 @@ Run multiple tasks, each with its own arguments.
 mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 .RE
 .SH "MISE SEARCH"
-Search for tools in the registry
+Search for available tools
 
-Searches the registry for tools matching NAME.
+Searches the registry and installed backend catalogs for tools matching NAME.
 
 By default, it will show all tools that fuzzy match the search term. For
 non\-fuzzy matches, use the `\-\-match\-type` flag.
@@ -6351,6 +6351,12 @@ Match type: equal, contains, or fuzzy
 .TP
 \fB\-\-no\-header\fR
 Don't display headers
+.TP
+\fB\-\-complete\fR
+Print all tools with descriptions for shell completions
+.TP
+\fB\-\-complete\-ids\fR
+Print only tool identifiers for shell completions
 .TP
 \fB\-h, \-\-help\fR
 Print help

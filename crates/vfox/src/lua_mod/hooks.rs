@@ -10,7 +10,7 @@ pub(super) struct HookFunc {
 }
 
 #[rustfmt::skip]
-pub(super) const HOOK_FUNCS: [HookFunc; 17] = [
+pub(super) const HOOK_FUNCS: [HookFunc; 18] = [
     HookFunc { _name: "Available", filename: "available" },
     HookFunc { _name: "PreInstall", filename: "pre_install" },
     HookFunc { _name: "EnvKeys", filename: "env_keys" },
@@ -21,6 +21,7 @@ pub(super) const HOOK_FUNCS: [HookFunc; 17] = [
 
     // backend
     HookFunc { _name: "BackendListTools", filename: "backend_list_tools" },
+    HookFunc { _name: "BackendSearchTools", filename: "backend_search_tools" },
     HookFunc { _name: "BackendListVersions", filename: "backend_list_versions" },
     HookFunc { _name: "BackendInstall", filename: "backend_install" },
     HookFunc { _name: "BackendExecEnv", filename: "backend_exec_env" },

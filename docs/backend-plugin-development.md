@@ -26,6 +26,7 @@ Backend plugins are written in Lua (currently version 5.1). They use three requi
 methods and can optionally expose their tool catalog. Each method is implemented in its own file:
 
 - `hooks/backend_list_tools.lua` - Optionally lists discoverable tools
+- `hooks/backend_search_tools.lua` - Optionally searches a large tool catalog
 - `hooks/backend_list_versions.lua` - Lists available versions for a tool
 - `hooks/backend_install.lua` - Installs a specific version of a tool
 - `hooks/backend_exec_env.lua` - Sets up environment variables for a tool
@@ -52,6 +53,25 @@ end
 `name` is required and `description` is optional. Return a finite, useful catalog; package-manager
 backends should not enumerate an entire ecosystem. mise caches the response using the remote
 version cache duration, and uses stale cached results when a refresh fails.
+
+### BackendSearchTools
+
+Optionally searches a large or changing catalog without enumerating it in full. mise calls this
+hook when `mise search` or shell completion has a non-empty query. A plugin may implement this
+hook, `BackendListTools`, or both.
+
+```lua
+function PLUGIN:BackendSearchTools(ctx)
+    local results = search_registry(ctx.query)
+    return {
+        tools = results,
+    }
+end
+```
+
+The response has the same shape as `BackendListTools`. For example, an npm-style backend can query
+its registry for `ctx.query`, while still using `BackendListTools` for a small set of featured tools.
+Search responses are cached separately for each query.
 
 ### BackendListVersions
 
@@ -155,7 +175,8 @@ my-backend-plugin/
 │   ├── backend_list_versions.lua   # BackendListVersions hook
 │   ├── backend_install.lua         # BackendInstall hook
 │   ├── backend_exec_env.lua        # BackendExecEnv hook
-│   └── backend_list_tools.lua      # Optional BackendListTools hook
+│   ├── backend_list_tools.lua      # Optional finite tool catalog
+│   └── backend_search_tools.lua    # Optional query-driven tool search
 
 ```
 
@@ -279,6 +300,12 @@ Backend plugins receive context through the `ctx` parameter passed to each hook 
 
 `BackendListTools` currently receives an empty context table. Tool-specific options are unavailable
 until a tool has been selected.
+
+### BackendSearchTools Context
+
+| Variable    | Description                     | Example   |
+| ----------- | ------------------------------- | --------- |
+| `ctx.query` | The tool name or prefix to find | `"prett"` |
 
 ### BackendListVersions Context
 

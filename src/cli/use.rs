@@ -518,7 +518,7 @@ impl Use {
             .filtering(true)
             .filterable(true)
             .theme(&theme);
-        for tool in crate::tool_catalog::list()
+        for tool in crate::tool_catalog::search("")
             .await
             .into_iter()
             .unique_by(|tool| tool.canonical_id().to_string())

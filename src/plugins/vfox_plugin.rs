@@ -162,6 +162,16 @@ impl VfoxPlugin {
         Ok((vfox, rx))
     }
 
+    pub(crate) async fn backend_search_tools(
+        &self,
+        query: String,
+    ) -> Result<Option<Vec<vfox::BackendTool>>> {
+        let (vfox, _log_rx) = self.vfox()?;
+        vfox.backend_search_tools(&self.name, query)
+            .await
+            .map_err(Into::into)
+    }
+
     pub(crate) async fn backend_list_tools(&self) -> Result<Option<Vec<vfox::BackendTool>>> {
         let (vfox, _log_rx) = self.vfox()?;
         vfox.backend_list_tools(&self.name)

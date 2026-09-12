@@ -2,14 +2,27 @@
 
 PLUGIN_DIR="$PWD/catalog-plugin"
 MARKER="$PWD/catalog-calls"
+SEARCH_MARKER="$PWD/catalog-search-calls"
 mkdir -p "$PLUGIN_DIR/hooks"
 
 cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
 PLUGIN = {
-    name = "catalog",
+    name = "catalog_plugin",
     version = "0.1.0",
     description = "backend tool discovery test plugin",
 }
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_search_tools.lua" <<LUA
+function PLUGIN:BackendSearchTools(ctx)
+    local marker = io.open([[$SEARCH_MARKER]], "a")
+    marker:write(ctx.query .. "\n")
+    marker:close()
+    if ctx.query == "dynamic" then
+        return {tools = {{name = "dynamic", description = "A dynamically discovered tool"}}}
+    end
+    return {tools = {}}
+end
 LUA
 
 cat >"$PLUGIN_DIR/hooks/backend_list_tools.lua" <<LUA
@@ -45,14 +58,18 @@ function PLUGIN:BackendExecEnv(ctx)
 end
 LUA
 
-mise plugins link catalog "$PLUGIN_DIR"
+mise plugins link catalog_plugin "$PLUGIN_DIR"
 
-assert_contains "mise search --match-type equal formatter" "catalog:formatter  A formatter from a backend plugin"
-assert_contains "mise search --match-type equal catalog:formatter" "catalog:formatter"
-assert_contains "mise search --match-type equal linter" "catalog:linter"
+assert_contains "mise search --match-type equal formatter" "catalog_plugin:formatter  A formatter from a backend plugin"
+assert_contains "mise search --match-type equal catalog_plugin:formatter" "catalog_plugin:formatter"
+assert_contains "mise search --match-type equal linter" "catalog_plugin:linter"
 assert_fail "mise search --match-type equal other:backend" "not found in registry or installed backend catalogs"
-assert_contains "mise search --complete-ids" "catalog:formatter"
-assert_contains "mise search --complete" 'catalog\:formatter:A formatter from a backend plugin'
+assert_contains "mise search --complete-ids" "catalog_plugin:formatter"
+assert_contains "mise search --complete" 'catalog_plugin\:formatter:A formatter from a backend plugin'
+assert_contains "mise search --match-type equal dynamic" "catalog_plugin:dynamic  A dynamically discovered tool"
+assert_contains "mise search --match-type equal catalog_plugin:dynamic" "catalog_plugin:dynamic"
+assert_contains "mise search --complete catalog_plugin:dynamic" 'catalog_plugin\:dynamic:A dynamically discovered tool'
 
 # Repeated discovery reads the cached catalog instead of executing the hook again.
 assert "wc -l < '$MARKER' | tr -d ' '" "1"
+assert "grep -c '^dynamic$' '$SEARCH_MARKER'" "1"

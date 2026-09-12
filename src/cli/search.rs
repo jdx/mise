@@ -74,7 +74,7 @@ pub(crate) struct Search {
 
 impl Search {
     pub(crate) async fn run(self) -> Result<()> {
-        let tools = crate::tool_catalog::list().await;
+        let tools = crate::tool_catalog::search(self.name.as_deref().unwrap_or_default()).await;
         if self.complete {
             self.print_completions(&tools, true);
             return Ok(());

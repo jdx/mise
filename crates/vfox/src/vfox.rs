@@ -13,8 +13,10 @@ use crate::error::Result;
 use crate::hooks::available::AvailableVersion;
 use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
-use crate::hooks::backend_list_tools::{BackendListToolsContext, BackendTool};
+use crate::hooks::backend_list_tools::BackendListToolsContext;
 use crate::hooks::backend_list_versions::BackendListVersionsContext;
+use crate::hooks::backend_search_tools::BackendSearchToolsContext;
+use crate::hooks::backend_tools::BackendTool;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
@@ -545,13 +547,35 @@ impl Vfox {
         plugin.backend_list_versions(ctx).await.map(|r| r.versions)
     }
 
+    pub async fn backend_search_tools(
+        &self,
+        sdk: &str,
+        query: String,
+    ) -> Result<Option<Vec<BackendTool>>> {
+        let plugin = self.get_sdk_with_env(sdk)?;
+        if !plugin
+            .get_metadata()?
+            .hooks
+            .contains("backend_search_tools")
+        {
+            return Ok(None);
+        }
+        let ctx = BackendSearchToolsContext { query };
+        plugin
+            .backend_search_tools(ctx)
+            .await
+            .map(|r| Some(r.tools))
+    }
+
     pub async fn backend_list_tools(&self, sdk: &str) -> Result<Option<Vec<BackendTool>>> {
         let plugin = self.get_sdk_with_env(sdk)?;
         if !plugin.get_metadata()?.hooks.contains("backend_list_tools") {
             return Ok(None);
         }
-        let ctx = BackendListToolsContext {};
-        plugin.backend_list_tools(ctx).await.map(|r| Some(r.tools))
+        plugin
+            .backend_list_tools(BackendListToolsContext {})
+            .await
+            .map(|r| Some(r.tools))
     }
 
     pub async fn backend_install(
@@ -1298,6 +1322,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_backend_search_tools() {
+        let vfox = Vfox::test();
+        let tools = vfox
+            .backend_search_tools("dummy-backend", "dem".into())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            tools,
+            vec![BackendTool {
+                name: "search-dem".into(),
+                description: Some("A dynamically discovered tool".into()),
+            }]
+        );
+    }
+
+    #[tokio::test]
     async fn test_backend_list_tools() {
         let vfox = Vfox::test();
         let tools = vfox
@@ -1305,18 +1346,17 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        assert_eq!(tools[0].name, "demo");
+    }
+
+    #[tokio::test]
+    async fn test_backend_search_tools_is_optional() {
+        let vfox = Vfox::test();
         assert_eq!(
-            tools,
-            vec![
-                BackendTool {
-                    name: "demo".into(),
-                    description: Some("A tool exposed by a backend plugin".into()),
-                },
-                BackendTool {
-                    name: "other".into(),
-                    description: None,
-                },
-            ]
+            vfox.backend_search_tools("dummy", "dem".into())
+                .await
+                .unwrap(),
+            None
         );
     }
 
