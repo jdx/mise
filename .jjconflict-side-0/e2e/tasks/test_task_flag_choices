@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Test that flags with choices work in mise.toml tasks
+
+cat <<'EOF' >mise.toml
+[tasks.deploy]
+run = 'echo "Deploying to $usage_stage"'
+usage = '''
+flag "--stage <stage>" default="preview" {
+  choices "preview" "production"
+}
+'''
+EOF
+
+# Test with default value
+assert "mise run deploy" "Deploying to preview"
+
+# Test with valid choice
+assert "mise run deploy --stage production" "Deploying to production"
+
+# Test with invalid choice should fail
+assert_fail "mise run deploy --stage invalid"
+
+# Test flag choices using template syntax in run script
+cat <<'EOF' >mise.toml
+[tasks.deploy]
+run = 'echo "Deploying to {{flag(name="stage", default="preview", choices=["preview", "production"])}}"'
+EOF
+
+# Test with default value
+assert "mise run deploy" "Deploying to preview"
+
+# Test with valid choice
+assert "mise run deploy --stage production" "Deploying to production"
+
+# Test with invalid choice should fail
+assert_fail "mise run deploy --stage invalid"

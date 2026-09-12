@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# `disable_tools = ["python"]` turned the tool off but left its venv activated: VIRTUAL_ENV and the
+# venv's bin directory stayed on PATH while `mise which python` reported the tool as absent.
+# See: https://github.com/jdx/mise/discussions/4690
+
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+
+cat >.mise.toml <<EOF
+[env._.python]
+venv = {path = "{{config_root}}/.venv", create=true}
+[tools]
+python = "3.12.3"
+EOF
+
+mise i
+
+# Control first, and it has to come first: the venv must exist on disk before the suppression means
+# anything. With no .venv yet, "no VIRTUAL_ENV" is just the tool being unavailable to create one.
+assert_contains "mise env -s bash" "VIRTUAL_ENV"
+assert "mise x -- which python" "$PWD/.venv/bin/python"
+assert "test -d .venv && echo yes" "yes"
+
+# Now disable the tool from a local config, which is how the reporter drives it.
+cat >mise.local.toml <<EOF
+[settings]
+disable_tools = ["python"]
+EOF
+
+# The venv is still on disk, so this is the case that used to leak.
+assert "test -d .venv && echo yes" "yes"
+assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+assert_not_contains "mise env -s bash" ".venv/bin"
+
+# enable_tools is an allowlist, so one that leaves python out disables the venv the same way.
+cat >mise.local.toml <<EOF
+[settings]
+enable_tools = ["node"]
+EOF
+
+assert_not_contains "mise env -s bash" "VIRTUAL_ENV"
+
+# ...and naming python in the allowlist brings it back, which pins that this is the tool gate
+# rather than the local config merely displacing the env directive.
+cat >mise.local.toml <<EOF
+[settings]
+enable_tools = ["python"]
+EOF
+
+# All three, not just VIRTUAL_ENV: the reported symptom was `which python` resolving into the
+# venv's bin directory, so a restore that only put VIRTUAL_ENV back would still be broken.
+assert_contains "mise env -s bash" "VIRTUAL_ENV"
+assert_contains "mise env -s bash" ".venv/bin"
+assert "mise x -- which python" "$PWD/.venv/bin/python"

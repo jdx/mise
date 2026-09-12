@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_GPG_VERIFY=false
+
+SERVER_PORT_FILE="$TMPDIR/tool_stub_checksum_port"
+MISE_TOOL_STUB_TEST_PORT_FILE="$SERVER_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/tool_stub_test_server.py" 0 &
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$SERVER_PORT_FILE" "tool stub checksum server port" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$SERVER_PORT_FILE")
+
+mkdir -p generate_tool_stub_checksum_test
+cd generate_tool_stub_checksum_test
+
+# The default remains BLAKE3.
+mise generate tool-stub checksum-default --url "http://127.0.0.1:$SERVER_PORT/tool"
+assert_contains "cat checksum-default" 'checksum = "blake3:'
+
+# SHA256 can be selected and is accepted by the tool-stub runtime.
+mise generate tool-stub checksum-sha \
+  --url "http://127.0.0.1:$SERVER_PORT/tool" \
+  --checksum-algorithm sha256
+assert_contains "cat checksum-sha" 'checksum = "sha256:6090f722764a96fd596fa91a2d079e98e19f6e5bf945b93ba4209875c01f1c61"'
+assert "./checksum-sha" "tool-stub-checksum"
+
+# Platform checksums use the selected algorithm.
+mise generate tool-stub checksum-platform \
+  --platform-url "linux-x64:http://127.0.0.1:$SERVER_PORT/tool" \
+  --checksum-algorithm sha256
+assert_contains "cat checksum-platform" 'checksum = "sha256:6090f722764a96fd596fa91a2d079e98e19f6e5bf945b93ba4209875c01f1c61"'
+
+# --fetch fills only missing checksums with the selected algorithm.
+cat >checksum-fetch <<EOF
+#!/usr/bin/env -S mise tool-stub
+
+[platforms.macos-arm64]
+url = "http://127.0.0.1:$SERVER_PORT/tool"
+checksum = "blake3:existing_checksum_should_not_change"
+
+[platforms.linux-x64]
+url = "http://127.0.0.1:$SERVER_PORT/tool"
+EOF
+mise generate tool-stub checksum-fetch --fetch --checksum-algorithm sha256
+assert_contains "cat checksum-fetch" 'checksum = "blake3:existing_checksum_should_not_change"'
+assert_contains "cat checksum-fetch" 'checksum = "sha256:6090f722764a96fd596fa91a2d079e98e19f6e5bf945b93ba4209875c01f1c61"'
+
+# Invalid and inapplicable combinations fail during argument parsing.
+assert_fail "mise generate tool-stub checksum-invalid --url 'http://127.0.0.1:$SERVER_PORT/tool' --checksum-algorithm sha512"
+assert_fail "mise generate tool-stub checksum-skip --url 'http://127.0.0.1:$SERVER_PORT/tool' --skip-download --checksum-algorithm sha256"
+assert_fail "mise generate tool-stub checksum-lock --lock --checksum-algorithm sha256"

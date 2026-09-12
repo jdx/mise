@@ -1,0 +1,5 @@
+backends = ["aqua:openai/tart"]
+description = "macOS and Linux VMs on Apple Silicon to use in CI and other automations"
+os = ["macos"]
+test = { cmd = "tart --version", expected = "{{version}}" }
+version_order = "semver"

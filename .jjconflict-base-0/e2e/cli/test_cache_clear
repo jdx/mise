@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# Test cache clear with simple plugin name
+mkdir -p "$MISE_CACHE_DIR/tiny"
+echo "test" >"$MISE_CACHE_DIR/tiny/data"
+assert_directory_exists "$MISE_CACHE_DIR/tiny"
+assert "mise cache clear tiny"
+assert_directory_not_exists "$MISE_CACHE_DIR/tiny"
+
+# Test cache clear with github:owner/repo style name
+# The cache dir uses kebab-case: github:owner/repo -> github-owner-repo
+mkdir -p "$MISE_CACHE_DIR/github-test-repo"
+echo "test" >"$MISE_CACHE_DIR/github-test-repo/data"
+assert_directory_exists "$MISE_CACHE_DIR/github-test-repo"
+assert "mise cache clear github:test/repo"
+assert_directory_not_exists "$MISE_CACHE_DIR/github-test-repo"
+
+# Test cache clear all
+mkdir -p "$MISE_CACHE_DIR/foo"
+echo "test" >"$MISE_CACHE_DIR/foo/data"
+assert_directory_exists "$MISE_CACHE_DIR/foo"
+assert "mise cache clear"
+assert_directory_not_exists "$MISE_CACHE_DIR/foo"

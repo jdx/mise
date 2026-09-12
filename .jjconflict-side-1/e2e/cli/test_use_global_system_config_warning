@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+cat >"$MISE_SYSTEM_DIR/config.toml" <<EOF
+[tools]
+tiny = "1.0.0"
+EOF
+
+assert_not_contains "mise use -g tiny@1.0.0 --dry-run 2>&1" "overrides the global config"
+
+cat >mise.toml <<EOF
+[tools]
+tiny = "2.0.0"
+EOF
+
+assert_contains "mise use -g tiny@1.0.0 --dry-run 2>&1" "overrides the global config"

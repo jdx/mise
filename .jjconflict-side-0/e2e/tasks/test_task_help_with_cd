@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# Create a subdirectory with a task
+mkdir -p subdir
+cat <<EOF >subdir/mise.toml
+[tasks.build]
+run = 'echo "Building project"'
+description = 'Build the project'
+EOF
+
+# For tasks WITHOUT usage spec, --help shows task info instead of executing
+assert_contains "mise run --cd subdir build --help 2>&1 || true" "Task: build"
+assert_contains "mise run --cd subdir build --help 2>&1 || true" "Description: Build the project"
+
+# -- separator still passes --help through to the task
+assert "mise run --cd subdir build -- --help 2>&1 || true" "[build] $ echo \"Building project\" --help
+Building project --help"
+
+# Also test with a task that has arguments
+cat <<EOF >subdir/mise.toml
+[tasks.deploy]
+run = 'echo "Deploying {{arg(name="env")}}"'
+description = 'Deploy to environment'
+EOF
+
+assert_contains "mise run --cd subdir deploy --help 2>&1 || true" "Usage:"
+assert_contains "mise run --cd subdir deploy --help 2>&1 || true" "<env>"
+assert_not_contains "mise run --cd subdir deploy --help 2>&1 || true" "Deploying"
+
+# `-- --help` bypasses the usage parser even for tasks with usage specs,
+# so --help is forwarded to the underlying script.
+# See https://github.com/jdx/mise/discussions/5460
+assert_contains "mise run --cd subdir deploy -- --help 2>&1 || true" "Deploying  --help"

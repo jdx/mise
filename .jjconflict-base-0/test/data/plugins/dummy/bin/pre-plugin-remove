@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+echo "plugin-remove ${ASDF_PLUGIN_PATH}"

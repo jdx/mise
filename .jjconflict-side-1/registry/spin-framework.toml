@@ -1,0 +1,5 @@
+backends = ["github:spinframework/spin"]
+bins = ["spin"]
+description = "Spin is the open source developer tool for building and running serverless applications powered by WebAssembly."
+test = { cmd = "spin --version", expected = "spin {{version}}" }
+version_order = "semver"

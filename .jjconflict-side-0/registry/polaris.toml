@@ -1,0 +1,3 @@
+backends = ["aqua:FairwindsOps/polaris", "asdf:particledecay/asdf-polaris"]
+description = "Validation of best practices in your Kubernetes clusters"
+version_order = "semver"

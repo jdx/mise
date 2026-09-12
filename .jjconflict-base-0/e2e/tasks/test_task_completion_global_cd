@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/10069
+# Completion must work when a root global flag (e.g. -C/--cd) precedes `run`, or a `run`
+# flag precedes the task, when the task has a positional arg with choices. Both are
+# handled by the usage parser: it keeps the inherited global recognized while descending
+# (jdx/usage#649) and scans for the subcommand across any known flag, global or not
+# (jdx/usage#738). mise used to promote `-r`/`-S` to global in the completion spec
+# because their root globals are long-only, so the parser dropped the shorts that exist
+# only on the non-global `run` redeclarations; that workaround is no longer needed.
+#
+# The `-- ''` cases additionally depend on the mounted task spec NOT declaring a
+# `--`-gated catch-all arg: usage 5 routes an explicit `--` onto whichever arg declared
+# the separator (jdx/usage#762), so such an arg swallows the word being completed and
+# these fall back to filenames. See `tasks::ls::display_usage`.
+#
+# Needs usage >= 3.5.7. `latest` only reaches it once it clears the default 24h
+# minimum_release_age, so opt out of the delay here.
+export MISE_MINIMUM_RELEASE_AGE=0s
+
+cat <<'EOF' >mise.toml
+[tools]
+"usage" = { version = "latest", os = ["linux", "macos"] }
+
+[tasks."sample:run"]
+usage = 'arg "<profile>" { choices "alpha" "beta" "gamma" }'
+run = 'printf "%s" "$usage_profile"'
+EOF
+
+mise usage >./mise.usage.kdl
+
+# baseline: completion of the profile arg works without the global flag
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+
+# regression: with the global -C <dir> flag before `run`, completion must still
+# offer the choices (previously errored: Invalid choice for arg profile: -C)
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise -C . run sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+
+# also cover the `tasks run` path, which shares the same flags/mount
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise -C . tasks run sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+
+# orphan-short flags: -r/--raw and -S/--silent have no short on the root global, so the
+# shorts exist only on the non-global `run` redeclarations. They must stay recognized
+# before the mounted task (previously errored: unexpected word).
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -r sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -S sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+
+# and the same two over the `tasks run` path
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise tasks run -r sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise tasks run -S sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+
+# purely-local `run` flags (no root global of the same name at all) must not hide the
+# task either — `mise run --force <task>` used to fail with "unexpected word"
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run --force sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -f sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"
+
+# including one that takes a value, which must be consumed rather than read as the task
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -o interleave sample:run -- ''" "alpha		alpha
+beta		beta
+gamma		gamma"

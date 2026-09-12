@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+cat <<EOF >mise.toml
+[env]
+ENV_TMPL_EXEC = "{{ exec(command='echo foo') }}"
+EOF
+assert_contains "mise env -s zsh | grep ENV_TMPL_EXEC" "export ENV_TMPL_EXEC=foo"
+
+# Inner double quotes in an exec() command must survive to the shell. This is
+# the same run_once path shared with the Windows cmd-verbatim fix; on Unix it
+# guards against a regression in the refactor. `echo "a b"` must resolve to
+# exactly `a b` (echo strips the quotes) — not `"a b"` or a backslash-escaped
+# variant, which a broken refactor could produce.
+cat <<EOF >mise.toml
+[env]
+ENV_TMPL_EXEC_QUOTED = "{{ exec(command='echo \"a b\"') }}"
+EOF
+assert_json_partial_object "mise env --json" "ENV_TMPL_EXEC_QUOTED" '{
+  "ENV_TMPL_EXEC_QUOTED": "a b"
+}'
+
+cat <<EOF >mise.toml
+[env]
+B = "{{ env.A }}"
+EOF
+A=a assert_contains "mise env -s bash | grep B" "export B=a"
+
+cat <<EOF >mise.toml
+[env]
+A = "a"
+B = "{{ env.A }}"
+EOF
+assert_contains "mise env -s bash | grep B" "export B=a"
+
+cat <<EOF >mise.toml
+[env]
+FOO = "foo"
+
+[tasks.foo]
+env.BAR = "bar"
+
+run = """
+printf '\$FOO: %s\n' \$FOO
+printf '\$BAR: %s\n' \$BAR
+echo "{% raw %}{{ env.FOO }}{% endraw %}: {{ env.FOO }}"
+echo "{% raw %}{{ env.BAR }}{% endraw %}: {{ env.BAR }}"
+"""
+EOF
+assert "mise run --trace foo" '$FOO: foo
+$BAR: bar
+{{ env.FOO }}: foo
+{{ env.BAR }}: bar'
+
+cat <<EOF >mise.toml
+[env]
+FOO = "foo"
+
+[tasks.foo]
+env.BAR = "{{ env.FOO }}"
+env.BAZ = "{{ env.BAR }}"
+
+run = "printf '\$BAZ: %s\n' \$BAZ"
+EOF
+assert "mise run --trace foo" '$BAZ: foo'
+
+cat <<EOF >mise.toml
+[env]
+FOO = "/foo"
+_.source = { path = "env.sh", tools = true }
+_.path = "{{ env.FOO }}"
+EOF
+cat <<EOF >env.sh
+#!/usr/bin/env bash
+export BAR="\$PATH"
+EOF
+assert_contains "mise env -s bash | grep BAR" "export BAR='/foo:"
+
+cat <<EOF >mise.toml
+[vars]
+MY_VAR = "my_var"
+
+[env]
+FOO = "{{vars.MY_VAR}}"
+EOF
+
+assert_json_partial_object "mise env --json" "FOO" '{
+  "FOO": "my_var"
+}'
+
+cat <<EOF >mise.local.toml
+[vars]
+MY_VAR = "mise.local.toml"
+EOF
+
+assert_json_partial_object "mise env --json" "FOO" '{
+  "FOO": "mise.local.toml"
+}'

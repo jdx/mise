@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Managed writes protect the actual manual-file preimage, not its last save.
+require_cmd git
+mkdir -p ~/manual-managed "$MISE_CONFIG_DIR/templates"
+printf 'saved output\n' >~/manual-managed/output
+printf 'saved sibling\n' >~/manual-managed/sibling
+printf 'deployment\n' >"$MISE_CONFIG_DIR/templates/output"
+assert_succeed 'mise bootstrap dotfiles track ~/manual-managed --no-autosave'
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+
+[dotfiles."~/manual-managed/output"]
+mode = "copy"
+source = "templates/output"
+TOML
+printf 'unsaved output\n' >~/manual-managed/output
+printf 'unsaved sibling\n' >~/manual-managed/sibling
+assert_succeed 'mise bootstrap dotfiles apply --yes'
+assert 'cat ~/manual-managed/output' 'deployment'
+repository="$MISE_STATE_DIR/history/repo.git"
+before=$(mise bootstrap dotfiles history --json | jq -r '.[0].operation.before')
+assert "git --git-dir='$repository' show '$before:home/manual-managed/output'" 'unsaved output'
+assert "git --git-dir='$repository' show main:home/manual-managed/sibling" 'saved sibling'
+assert_succeed 'mise bootstrap dotfiles undo --yes'
+assert 'cat ~/manual-managed/output' 'unsaved output'
+
+assert 'cat ~/manual-managed/sibling' 'unsaved sibling'
+assert "git --git-dir='$repository' show main:home/manual-managed/sibling" 'saved sibling'
+assert_fail "git --git-dir='$repository' cat-file -e main:config/templates/output"
+
+# Captured external commands can undo their observed tracked-file interval.
+assert_succeed "mise bootstrap dotfiles capture -- sh -c 'printf captured >~/manual-managed/output'"
+assert 'cat ~/manual-managed/output' 'captured'
+assert_succeed 'mise bootstrap dotfiles undo --yes'
+assert 'cat ~/manual-managed/output' 'unsaved output'
+
+# Enrollment removal is not a deletion to undo, and newly enrolled files
+# have no historical preimage from when they were still untracked.
+assert_succeed 'mise bootstrap dotfiles capture -- mise bootstrap dotfiles untrack ~/manual-managed'
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.affected | length'" '0'
+printf 'preexisting manual\n' >~/fresh-manual
+assert_succeed 'mise bootstrap dotfiles capture -- mise bootstrap dotfiles track ~/fresh-manual --no-autosave'
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].operation.affected | length'" '0'
+assert "git --git-dir='$repository' show main:home/fresh-manual" 'preexisting manual'

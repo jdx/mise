@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+mise plugin install tiny
+mkdir -p system-config
+export MISE_SYSTEM_CONFIG_FILE="$PWD/system-config/config.toml"
+
+# System tools are strict by default, but a distribution can exempt its
+# rolling system config without weakening project or user-global tools.
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+
+assert_fail_contains "MISE_LOCKED=1 mise install --dry-run 2>&1" "dummy@latest is not in the lockfile"
+cat >>"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+
+[settings]
+locked_scopes = ["project", "global"]
+EOF
+assert_contains "MISE_LOCKED=1 mise install --dry-run 2>&1" "would install"
+assert_contains "MISE_LOCKED=1 MISE_LOCKFILE=0 mise install --dry-run 2>&1" "would install"
+
+# User-global config has its own independently selectable scope.
+rm "$MISE_SYSTEM_CONFIG_FILE"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+tiny = "1"
+EOF
+
+assert_fail_contains "MISE_LOCKED=1 mise install --dry-run 2>&1" "tiny@1 is not in the lockfile"
+assert_contains "MISE_LOCKED=1 MISE_LOCKED_SCOPES=project,system mise install --dry-run 2>&1" "would install"
+
+# A project cannot weaken the user's locked-mode policy because the scope
+# selection setting is global-only.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+
+[settings]
+locked_scopes = []
+EOF
+
+assert_fail_contains "MISE_LOCKED=1 mise install --dry-run 2>&1" "dummy@latest is not in the lockfile"
+
+# Config-root policy is authoritative even when invocation-wide locking omits
+# that scope.
+rm mise.toml "$MISE_CONFIG_DIR/config.toml"
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tool_config]
+locked = true
+
+[tools]
+dummy = "latest"
+EOF
+
+assert_fail_contains "MISE_LOCKED=1 MISE_LOCKED_SCOPES=project,global mise install --dry-run 2>&1" "tool_config.locked"
+
+# Direct arguments do not have a config scope and remain strict.
+rm "$MISE_SYSTEM_CONFIG_FILE"
+assert_fail_contains "MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install --dry-run jq@1.7.1 2>&1" "No lockfile URL found"
+
+# Unsupported values fail closed instead of silently weakening locked mode.
+assert_fail_contains "MISE_LOCKED_SCOPES=projct mise settings get locked_scopes 2>&1" 'invalid locked_scopes value "projct"'

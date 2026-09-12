@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+mise use -g watchexec@latest
+
+cat <<'EOF' >mise.dev.toml
+[tasks.watch-env]
+run = 'echo "MISE_ENV=$MISE_ENV"'
+EOF
+
+LOG_FILE=$(mktemp)
+mise --env dev watch watch-env >"$LOG_FILE" 2>&1 &
+WATCH_PID=$!
+
+trap 'kill "$WATCH_PID" 2>/dev/null || true' EXIT
+
+for _ in $(seq 1 40); do
+  grep -q "MISE_ENV=dev" "$LOG_FILE" && break
+  sleep 0.5
+done
+
+if ! grep -q "MISE_ENV=dev" "$LOG_FILE"; then
+  fail "Expected watched task to inherit MISE_ENV=dev, got: $(tr -d '\0' <"$LOG_FILE")"
+fi
+
+ok "mise watch propagates --env to watched tasks"

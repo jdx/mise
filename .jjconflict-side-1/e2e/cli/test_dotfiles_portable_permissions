@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Permission metadata travels with ordinary trees, not machine-local trailers.
+require_cmd git
+require_cmd jq
+export MISE_HISTORY_NOTIFY=false
+
+mkdir -p ~/mode-files
+printf 'one\n' >~/mode-files/one
+printf 'two\n' >~/mode-files/two
+chmod 700 ~/mode-files
+chmod 600 ~/mode-files/one ~/mode-files/two
+assert_succeed "mise bootstrap dotfiles track ~/mode-files --no-autosave"
+repo="$MISE_STATE_DIR/history/repo.git"
+assert "git --git-dir='$repo' show main:.mise-history/manifest.json | jq -r '.permissions[\"home/mode-files/one\"]'" "384"
+assert "git --git-dir='$repo' show main:.mise-history/manifest.json | jq -r '.permissions[\"home/mode-files\"]'" "448"
+
+# Saving one child cannot capture a chmod on its unsaved sibling.
+chmod 400 ~/mode-files/one
+chmod 640 ~/mode-files/two
+assert_succeed "mise bootstrap dotfiles save ~/mode-files/one"
+assert "git --git-dir='$repo' show main:.mise-history/manifest.json | jq -r '.permissions[\"home/mode-files/one\"]'" "256"
+assert "git --git-dir='$repo' show main:.mise-history/manifest.json | jq -r '.permissions[\"home/mode-files/two\"]'" "384"
+
+# A new operational store derives permissions from the cloned ordinary Git tree.
+clone_state="$PWD/cloned-state"
+mkdir -p "$clone_state/history"
+git clone -q --bare "$repo" "$clone_state/history/repo.git"
+assert "MISE_STATE_DIR='$clone_state' mise bootstrap dotfiles history show latest --json | jq -r '.tree.modes[\"~/mode-files/one\"]'" "256"
+assert "MISE_STATE_DIR='$clone_state' mise bootstrap dotfiles history show latest --json | jq -r '.tree.modes[\"~/mode-files/two\"]'" "384"
+
+# Untracking removes permission metadata without touching live files.
+assert_succeed "mise bootstrap dotfiles untrack ~/mode-files"
+assert "git --git-dir='$repo' show main:.mise-history/manifest.json | jq '.permissions | length'" "0"
+assert_succeed "test -f ~/mode-files/one"
+assert_succeed "test -f ~/mode-files/two"

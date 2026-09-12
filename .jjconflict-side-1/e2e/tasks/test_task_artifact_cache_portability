@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = '''
+mkdir -p dist/empty
+printf 'upper\n' >dist/Case.txt
+printf 'lower\n' >dist/case.txt
+printf '#!/usr/bin/env sh\necho executable\n' >dist/tool
+chmod 751 dist/tool
+ln -s Case.txt dist/link
+printf 'ran\n' >>runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+EOF
+
+printf 'input\n' >input.txt
+
+mkdir case-probe
+printf 'upper\n' >case-probe/Case.txt
+printf 'lower\n' >case-probe/case.txt
+case_sensitive_fs=false
+if [[ $(find case-probe -maxdepth 1 -type f -iname '*ase.txt' | wc -l | tr -d ' ') == 2 ]]; then
+  case_sensitive_fs=true
+fi
+rm -rf case-probe
+
+assert_portable_outputs() {
+  assert "test -x dist/tool && echo executable" "executable"
+  assert "test -L dist/link && readlink dist/link" "Case.txt"
+  assert "test -d dist/empty && echo empty-directory" "empty-directory"
+  if $case_sensitive_fs; then
+    assert "cat dist/link" "upper"
+    assert "cat dist/Case.txt" "upper"
+    assert "cat dist/case.txt" "lower"
+    assert "find dist -maxdepth 1 -type f -iname '*ase.txt' | wc -l | tr -d ' '" "2"
+  else
+    assert "cat dist/link" "lower"
+  fi
+}
+
+mise run build
+assert_portable_outputs
+assert "wc -l <runs.txt | tr -d ' '" "1"
+
+rm -rf dist
+assert_contains "mise run build 2>&1" "restored outputs from cache"
+assert_portable_outputs
+assert "wc -l <runs.txt | tr -d ' '" "1"

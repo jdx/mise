@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+cat <<EOF >mise.toml
+[tools]
+"vfox:version-fox/vfox-cmake" = "3.30.2"
+EOF
+
+# Generate lockfile - should include a URL from the vfox plugin
+mise lock --platform "$PLATFORM"
+assert "test -f mise.lock"
+assert_contains "cat mise.lock" "url ="
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Tera's quote filter must preserve paths containing POSIX shell metacharacters.
+project="quote dir ' \$ \\"
+mkdir -p "$project"
+
+cat <<'EOF' >"$project/mise.toml"
+[tasks.quote]
+run = """
+set -eu
+printf '%s\n' {{ config_root | quote }}
+touch {{ config_root | quote }}/created
+"""
+EOF
+
+expected="$PWD/$project"
+output="$(mise --cd "$project" run quote)"
+
+if [ "$output" != "$expected" ]; then
+  echo "expected: $expected" >&2
+  echo "actual:   $output" >&2
+  exit 1
+fi
+
+test -f "$project/created"

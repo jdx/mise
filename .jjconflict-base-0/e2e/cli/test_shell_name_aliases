@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# `mise activate` and `mise completion` name PowerShell differently -- `pwsh` and `powershell` --
+# because their accepted values come from two different enums. Setup runs the two commands one
+# after the other, so whichever name a user learns first used to be rejected by the other.
+#
+# Both names are accepted by both commands now. Nothing here is Windows-specific: the argument
+# parsing is the same everywhere, which is why this lives in the unix e2e.
+#
+# The aliases are not hidden: `mise usage` renders them, so both names are listed as choices in
+# `mise.usage.kdl` and the generated CLI docs. That is checked by the `render` lint, not here.
+
+assert_succeed "mise activate pwsh"
+assert_succeed "mise activate powershell"
+
+assert_succeed "mise completion powershell"
+assert_succeed "mise completion pwsh"
+
+# Accepted has to mean equivalent, not merely "exits 0".
+assert "diff <(mise activate pwsh) <(mise activate powershell) && echo same" "same"
+assert "diff <(mise completion powershell) <(mise completion pwsh) && echo same" "same"

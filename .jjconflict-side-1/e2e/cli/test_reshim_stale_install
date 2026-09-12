@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# Regression test: a stale install directory whose version name can't be
+# re-resolved (e.g. a registry-backed tool whose dir is literally "latest"
+# and whose backend can't reach the network) must not break `mise reshim`.
+#
+# Before the fix, `Toolset::list_installed_versions` called `.resolve()` on
+# every on-disk version; a single resolution failure aborted the whole
+# rebuild with `failed to rebuild shims: no versions found for <tool>`.
+
+shimdir="$MISE_DATA_DIR/shims"
+
+# Install a normal tool so there are real shims to create.
+mise i dummy@1.0.0
+
+# Fabricate a stale install for a github-backed tool that is NOT in any
+# config. The dir is named "latest" — a non-concrete version that mise
+# would otherwise try to resolve against the network.
+stale_install="$MISE_DATA_DIR/installs/buck2/latest"
+mkdir -p "$stale_install/bin"
+cat >"$stale_install/bin/buck2" <<'EOF'
+#!/usr/bin/env bash
+echo "fake buck2"
+EOF
+chmod +x "$stale_install/bin/buck2"
+
+# Register the stale install in the manifest so mise loads a backend for it.
+# Without this, `backend::list()` skips bare install dirs that lack a backend
+# meta, so the bug path is never hit.
+cat >>"$MISE_DATA_DIR/installs/.mise-installs.toml" <<'EOF'
+
+[buck2]
+short = "buck2"
+full = "github:facebook/buck2"
+explicit_backend = false
+EOF
+
+# With MISE_OFFLINE=1, resolving "latest" for a github-backed tool returns
+# Err("no versions found for buck2"). The fix must keep reshim from failing
+# in that case.
+MISE_OFFLINE=1 mise reshim
+
+# Real tool's shim must still be created — proves the rebuild ran to
+# completion rather than aborting early.
+assert "readlink $shimdir/dummy" "$(which mise)"

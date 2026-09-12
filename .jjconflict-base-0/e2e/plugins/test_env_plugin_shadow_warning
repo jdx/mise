@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Test: env-only vfox plugin shadowing a registry entry emits a warning at install time
+
+# Create a git repo that looks like a vfox env plugin
+repo_dir="$TMPDIR/vfox-jq-env"
+mkdir -p "$repo_dir/hooks"
+cat >"$repo_dir/metadata.lua" <<'SCRIPT'
+PLUGIN = {}
+PLUGIN.name = "jq"
+PLUGIN.version = "0.0.1"
+PLUGIN.description = "test env plugin"
+SCRIPT
+cat >"$repo_dir/hooks/mise_env.lua" <<'SCRIPT'
+function PLUGIN:MiseEnv(ctx)
+    return {
+        { key = "JQ_TEST", value = "1" }
+    }
+end
+SCRIPT
+git -C "$repo_dir" init -q
+git -C "$repo_dir" add .
+git -C "$repo_dir" commit -q -m "init"
+
+# Install the env plugin with name "jq" (which exists in the registry)
+assert_contains "mise plugin install jq file://$repo_dir 2>&1" "shadowing"

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+plugin_repo="$TMPDIR/annotated-plugin"
+mkdir -p "$plugin_repo"
+cp -R "$ROOT/test/data/plugins/dummy/." "$plugin_repo/"
+
+git -C "$plugin_repo" -c init.defaultBranch=main init -q
+git -C "$plugin_repo" add .
+git -C "$plugin_repo" commit -q -m "release v1"
+v1_sha="$(git -C "$plugin_repo" rev-parse HEAD)"
+git -C "$plugin_repo" tag -a v1 -m v1
+
+echo v2 >"$plugin_repo/version"
+git -C "$plugin_repo" add version
+git -C "$plugin_repo" commit -q -m "release v2"
+v2_sha="$(git -C "$plugin_repo" rev-parse HEAD)"
+git -C "$plugin_repo" tag -a v2 -m v2
+
+echo main >"$plugin_repo/version"
+git -C "$plugin_repo" commit -q -am "advance main"
+
+mise plugin install annotated-ref "file://$plugin_repo#v1"
+installed_sha="$(git -C "$MISE_DATA_DIR/plugins/annotated-ref" rev-parse HEAD)"
+[[ $installed_sha == "$v1_sha" ]] || fail "annotated v1 install resolved $installed_sha, expected $v1_sha"
+
+mise plugins update annotated-ref#v2
+updated_sha="$(git -C "$MISE_DATA_DIR/plugins/annotated-ref" rev-parse HEAD)"
+[[ $updated_sha == "$v2_sha" ]] || fail "annotated v2 update resolved $updated_sha, expected $v2_sha"

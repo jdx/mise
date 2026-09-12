@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tools]
+dummy = 'latest'
+
+[hooks.enter]
+shell = "bash"
+script = [
+  'export MISE_HOOK_SCRIPT_ARRAY_ONE=one',
+  'export MISE_HOOK_SCRIPT_ARRAY_TWO=two',
+]
+
+[hooks.leave]
+shell = "bash"
+scripts = [
+  'export MISE_HOOK_SCRIPTS_ARRAY_LEFT=yes',
+]
+
+[hooks]
+preinstall = { scripts = ['echo PRE_SCRIPT_ONE', 'echo PRE_SCRIPT_TWO'] }
+postinstall = { script = ['echo POST_SCRIPT_ONE', 'echo POST_SCRIPT_TWO'] }
+EOF
+
+output=$(mise install 2>&1)
+assert_contains "echo '$output'" "PRE_SCRIPT_ONE"
+assert_contains "echo '$output'" "PRE_SCRIPT_TWO"
+assert_contains "echo '$output'" "POST_SCRIPT_ONE"
+assert_contains "echo '$output'" "POST_SCRIPT_TWO"
+
+eval "$(mise hook-env)"
+
+cd ~ || exit 1
+eval "$(mise hook-env)"
+# shellcheck disable=SC2016
+assert 'echo "$MISE_HOOK_SCRIPTS_ARRAY_LEFT"' "yes"
+
+cd ~/workdir || exit 1
+eval "$(mise hook-env)"
+# shellcheck disable=SC2016
+assert 'echo "$MISE_HOOK_SCRIPT_ARRAY_ONE"' "one"
+# shellcheck disable=SC2016
+assert 'echo "$MISE_HOOK_SCRIPT_ARRAY_TWO"' "two"

@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+redactions = ["SECRET"]
+
+[settings]
+experimental = true
+
+[env]
+SECRET = "cache-secret"
+
+[task_config.cache]
+enabled = true
+
+[tasks.build]
+run = '''
+mkdir -p dist
+printf 'stdout-line\n'
+printf 'stderr-line\n' >&2
+printf 'secret=%s\n' "$SECRET"
+printf 'artifact\n' > dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist"]
+
+[tasks.partial]
+run = '''
+mkdir -p partial-dist
+printf 'partial-stdout\n'
+printf 'partial-stderr\n' >&2
+printf 'artifact\n' > partial-dist/result.txt
+printf 'ran\n' >> partial-runs.txt
+'''
+sources = ["partial.txt"]
+outputs = ["partial-dist"]
+silent = "stdout"
+
+[tasks.raw]
+run = '''
+mkdir -p raw-dist
+printf 'raw-output\n'
+printf 'artifact\n' > raw-dist/result.txt
+printf 'ran\n' >> raw-runs.txt
+'''
+sources = ["raw.txt"]
+outputs = ["raw-dist"]
+raw = true
+
+[tasks.hidden-first]
+run = '''
+mkdir -p hidden-dist
+printf 'hidden-stdout\n'
+printf 'hidden-stderr\n' >&2
+printf 'artifact\n' > hidden-dist/result.txt
+printf 'ran\n' >> hidden-runs.txt
+'''
+sources = ["hidden.txt"]
+outputs = ["hidden-dist"]
+EOF
+
+printf 'input\n' >input.txt
+printf 'partial\n' >partial.txt
+printf 'raw\n' >raw.txt
+printf 'hidden\n' >hidden.txt
+
+# Capture streams during a normal execution.
+output="$(mise run --output prefix build 2>&1)"
+assert_contains "echo \"$output\"" "stdout-line"
+assert_contains "echo \"$output\"" "stderr-line"
+assert_contains "echo \"$output\"" "secret=[redacted]"
+assert_not_contains "echo \"$output\"" "cache-secret"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# A fresh-output cache hit also replays the stored streams.
+output="$(mise run --output prefix build 2>&1)"
+assert_contains "echo \"$output\"" "sources up-to-date, skipping"
+assert_contains "echo \"$output\"" "[build] stdout-line"
+assert_contains "echo \"$output\"" "[build] stderr-line"
+assert_contains "echo \"$output\"" "[build] secret=[redacted]"
+assert_not_contains "echo \"$output\"" "cache-secret"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Replay uses the current prefix style rather than storing formatted lines.
+rm -rf dist
+output="$(mise run --output prefix build 2>&1)"
+assert_contains "echo \"$output\"" "[build] stdout-line"
+assert_contains "echo \"$output\"" "[build] stderr-line"
+assert_contains "echo \"$output\"" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# The same cached streams can be replayed without prefixes in interleave mode.
+rm -rf dist
+output="$(mise run --output interleave build 2>&1)"
+assert_contains "echo \"$output\"" "stdout-line"
+assert_contains "echo \"$output\"" "stderr-line"
+assert_not_contains "echo \"$output\"" "[build] stdout-line"
+assert_not_contains "echo \"$output\"" "[build] stderr-line"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Quiet hides mise metadata but still replays task output using the chosen style.
+rm -rf dist
+output="$(mise run --quiet --output prefix build 2>&1)"
+assert_contains "echo \"$output\"" "[build] stdout-line"
+assert_contains "echo \"$output\"" "[build] stderr-line"
+assert_not_contains "echo \"$output\"" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Silent mode suppresses both cached streams.
+rm -rf dist
+output="$(mise run --output silent build 2>&1)"
+assert "echo -n \"$output\"" ""
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Per-stream silence is also applied during replay.
+output="$(mise run partial 2>&1)"
+assert_not_contains "echo \"$output\"" "partial-stdout"
+assert_contains "echo \"$output\"" "partial-stderr"
+rm -rf partial-dist
+output="$(mise run partial 2>&1)"
+assert_not_contains "echo \"$output\"" "partial-stdout"
+assert_contains "echo \"$output\"" "partial-stderr"
+assert "wc -l < partial-runs.txt | tr -d ' '" "1"
+
+# Streams captured during a silent execution remain available to a later
+# cache hit with visible output.
+output="$(mise run --output silent hidden-first 2>&1)"
+assert "echo -n \"$output\"" ""
+rm -rf hidden-dist
+output="$(mise run --output prefix hidden-first 2>&1)"
+assert_contains "echo \"$output\"" "[hidden-first] hidden-stdout"
+assert_contains "echo \"$output\"" "[hidden-first] hidden-stderr"
+assert "wc -l < hidden-runs.txt | tr -d ' '" "1"
+
+# Raw tasks retain inherited stdio and conservatively bypass artifact caching.
+mise run raw
+rm -rf raw-dist
+mise run raw
+assert "wc -l < raw-runs.txt | tr -d ' '" "2"

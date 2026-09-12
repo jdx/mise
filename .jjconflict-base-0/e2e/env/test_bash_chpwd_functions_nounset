@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Verify that bash's zsh-like cd wrapper does not fail under nounset if the
+# chpwd_functions array is unset.
+
+eval "$(mise activate bash)"
+unset chpwd_functions
+cd .

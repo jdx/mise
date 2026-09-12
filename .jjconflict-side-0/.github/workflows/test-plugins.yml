@@ -1,0 +1,193 @@
+name: test-plugins
+
+# Test Top 50 asdf plugins install correctly and the most common can print their
+# current version
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ["test-plugins"]
+  schedule:
+    # run at midnight on sunday (utc?)
+    - cron: 0 0 * * 0
+  #  pull_request:
+  #    branches: ["main"]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  build-linux:
+    if: >
+      github.event_name == 'workflow_dispatch'
+      || github.repository == 'jdx/mise'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install cross
+        uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
+        with:
+          tool: cross
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if: false makes this read-only
+        with:
+          shared-key: build
+          save-if: false
+      - run: scripts/build-tarball.sh x86_64-unknown-linux-gnu
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: |
+            dist/*.tar.xz
+            dist/*.tar.gz
+          if-no-files-found: error
+  test-install-and-run:
+    runs-on: ubuntu-latest
+    needs: [build-linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - plugin: node
+            command: mise exec node@latest -- node -v
+          - plugin: ruby
+            command: mise exec ruby@latest -- ruby --version
+          - plugin: python
+            command: mise exec python@latest -- python -V
+          - plugin: direnv
+            command: mise exec direnv@latest -- direnv --version
+          - plugin: erlang
+            command: mise exec erlang@27.2 -- erl -eval 'erlang:display(erlang:system_info(otp_release)), halt().'  -noshell
+          - plugin: elixir
+            command: |
+              mise use --global erlang@27.2
+              eval "$(mise env bash)"
+              mise use --global elixir@1.17.3
+              eval "$(mise env bash)"
+              mise exec -- elixir --version
+          - plugin: golang
+            command: mise exec golang@latest -- go version
+          - plugin: java
+            command: mise exec java@openjdk -- java -version
+          - plugin: terraform
+            command: mise exec terraform@latest -- terraform -v
+          # - plugin: yarn
+          #   command: mise exec yarn@latest -- yarn --version
+          - plugin: deno
+            command: mise exec deno@latest -- deno --version
+          - plugin: bun
+            command: mise exec bun@latest -- bun --version
+          - plugin: kubectl
+            command: mise exec kubectl@latest -- kubectl version --client
+          - plugin: dotnet
+            command: mise exec dotnet@latest -- dotnet --list-sdks
+          - plugin: flutter
+            command: mise exec flutter@latest -- flutter --version
+          # - plugin: crystal
+          #   command: mise exec crystal@latest -- crystal -v
+          - plugin: neovim
+            command: mise exec neovim@latest -- nvim --version
+          - plugin: php
+            command: mise exec php@latest -- php -v php
+          - plugin: rust
+            command: mise exec rust@nightly -- rustc -V
+          # TODO: has some sort of readline bug on ubuntu-24
+          # - plugin: postgres
+          #   command: mise exec postgres@latest -- psql -V
+    steps:
+      - name: apt-get
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv re2c libcurl4-openssl-dev libgd-dev libonig-dev autoconf bison build-essential curl gettext git libgd-dev libcurl4-openssl-dev libedit-dev libicu-dev libjpeg-dev libmysqlclient-dev libonig-dev libpng-dev libpq-dev libreadline-dev libsqlite3-dev libssl-dev libxml2-dev libzip-dev openssl pkg-config re2c zlib1g-dev
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+          # dist/mise-v1.16.0-linux-x64.tar.xz
+          # x86_64-unknown-linux-gnu-v1.16.0-linux-x64.tar.xz
+      - run: tar -C "$HOME" -xvJf dist/mise-*-linux-x64.tar.xz
+      - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - run: mise -v
+      - name: ${{matrix.command}}
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: ${{matrix.command}}
+        env:
+          MISE_EXPERIMENTAL: "1"
+  test-install:
+    # Tests installing the top 50 plugins not already tested in `test-install-and-run`.
+    # installing is a better-than-nothing smoke test that the plugin is correctly implemented
+    # and behaves as expected with mise.
+    runs-on: ubuntu-latest
+    needs: [build-linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        plugins:
+          - waypoint
+          - vault
+          - tfc-agent
+          - terraform-ls
+          - serf
+          - sentinel
+          - packer
+          - nomad
+          - levant
+          - consul
+          - boundary
+          # - postgres
+          - rust
+          - action-validator
+          - dotnet-core
+          - neovim
+          - poetry
+          - lua
+          - redis
+          - gcloud
+          - helm
+          - gleam
+          - awscli
+          - dart
+          - conan
+          # TODO: - awsebcli fails in asdf and mise the same way
+          - aws-sam-cli
+          - ansible-base
+          - kotlin
+          - pnpm
+          - ocaml
+          # TODO: - rebar install erlang first
+          # TODO: - julia seems to have quit working, likely an issue with the plugin
+          - elm
+          # TODO: - R install libcurl
+          - nim
+          - mysql
+          - minikube
+          - gradle
+          - zig
+          - shellcheck
+          - scala
+          # TODO: - maven
+          - kustomize
+          - graalvm
+          - sbcl
+          - qsv
+    steps:
+      - name: Install zsh/fish/direnv
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: tarball-x86_64-unknown-linux-gnu
+          path: dist
+      - run: tar -C "$HOME" -xvJf dist/mise-*-linux-x64.tar.xz
+      - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - name: mise install ${{matrix.plugins}}@latest
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: mise install ${{matrix.plugins}}@latest

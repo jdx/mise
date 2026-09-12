@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+if [[ $PLATFORM == "linux-x64" ]]; then
+  EXTRA_PLATFORM="macos-x64"
+else
+  EXTRA_PLATFORM="linux-x64"
+fi
+
+SRV="$PWD/relock-server"
+PORT_FILE="$TMPDIR/relock-server-port"
+mkdir -p "$SRV"
+
+python3 - "$SRV" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
+import http.server
+import os
+import socketserver
+import sys
+
+srv, port_file = sys.argv[1], sys.argv[2]
+os.chdir(srv)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as f:
+        f.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "relock HTTP server port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+CURRENT_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+EXTRA_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+OLD_CURRENT_SHA="cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+OLD_EXTRA_SHA="dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+
+cat >"$SRV/checksums.json" <<JSON
+{
+  "platforms": {
+    "$PLATFORM": "$CURRENT_SHA",
+    "$EXTRA_PLATFORM": "$EXTRA_SHA"
+  }
+}
+JSON
+
+# The http tool is already at the config version, so upgrading dummy is the only
+# install in this run. The stale http lock entry below should still be rewritten
+# by update_lockfiles and then re-locked with URL/checksum platform metadata.
+mise install dummy@1.0.0
+mkdir -p "$MISE_DATA_DIR/installs/http-relock-target/2.0.0/bin"
+cat >"$MISE_DATA_DIR/installs/http-relock-target/2.0.0/bin/relock-target" <<'EOF'
+#!/usr/bin/env bash
+echo relock-target 2.0.0
+EOF
+chmod +x "$MISE_DATA_DIR/installs/http-relock-target/2.0.0/bin/relock-target"
+
+cat >mise.toml <<EOF
+[tools]
+dummy = "1"
+
+[tools."http:relock-target"]
+version = "2.0.0"
+url = "http://127.0.0.1:${PORT}/relock-target-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz"
+checksum_url = "http://127.0.0.1:${PORT}/checksums.json"
+checksum_expr = '"sha256:" + fromJSON(body).platforms[os + "-" + arch]'
+bin_path = "bin"
+EOF
+
+cat >mise.lock <<EOF
+[[tools."http:relock-target"]]
+version = "1.0.0"
+backend = "http:relock-target"
+"platforms.$PLATFORM" = { url = "http://127.0.0.1:${PORT}/relock-target-1.0.0-${PLATFORM}.tar.gz", checksum = "sha256:${OLD_CURRENT_SHA}" }
+"platforms.$EXTRA_PLATFORM" = { url = "http://127.0.0.1:${PORT}/relock-target-1.0.0-${EXTRA_PLATFORM}.tar.gz", checksum = "sha256:${OLD_EXTRA_SHA}" }
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+mise upgrade dummy --bump
+
+assert_contains "cat mise.toml" 'dummy = "2"'
+assert_contains "cat mise.lock" '[[tools."http:relock-target"]]'
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert_not_contains "cat mise.lock" 'version = "1.0.0"'
+assert_not_contains "cat mise.lock" "relock-target-1.0.0"
+
+assert_contains "cat mise.lock" "\"platforms.$PLATFORM\""
+assert_contains "cat mise.lock" "relock-target-2.0.0-${PLATFORM}.tar.gz"
+assert_contains "cat mise.lock" "sha256:${CURRENT_SHA}"
+
+assert_contains "cat mise.lock" "\"platforms.$EXTRA_PLATFORM\""
+assert_contains "cat mise.lock" "relock-target-2.0.0-${EXTRA_PLATFORM}.tar.gz"
+assert_contains "cat mise.lock" "sha256:${EXTRA_SHA}"

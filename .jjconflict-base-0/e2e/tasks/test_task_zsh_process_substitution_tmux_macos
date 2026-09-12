@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Regression coverage for https://github.com/jdx/mise/discussions/9790.
+# On macOS, moving a non-interactive zsh task into its own process group while
+# mise remains attached to tmux's controlling terminal can stop zsh during
+# process substitution. Linux does not exhibit the same job-control behavior.
+
+set -euo pipefail
+
+if [[ $(uname -s) != Darwin ]]; then
+  exit 0
+fi
+
+# Unix-domain socket paths are short on macOS, while the e2e TMPDIR is deeply
+# nested. Use an explicit short path instead of tmux's default /private/tmp dir.
+socket="/tmp/mise-zps-${RANDOM}-$$.sock"
+logfile="$TMPDIR/mise-zsh-procsub-log-${RANDOM}-$$"
+statusfile="$TMPDIR/mise-zsh-procsub-status-${RANDOM}-$$"
+
+cleanup() {
+  tmux -S "$socket" kill-server 2>/dev/null || true
+}
+trap cleanup EXIT
+
+cat <<'EOF' >mise.toml
+[tasks.procsub]
+shell = "zsh -c"
+run = "while IFS= read -r -d ':' e; do echo \"got: $e\"; done < <(printf 'a:b:c:')"
+
+[tasks.dummy]
+run = "echo dummy"
+
+[tasks.all]
+depends = ["procsub", "dummy"]
+EOF
+
+printf -v tmux_command \
+  'cd %q && mise run --jobs 2 all >%q 2>&1; printf "%%s\\n" "$?" >%q' \
+  "$PWD" "$logfile" "$statusfile"
+tmux -S "$socket" new-session -d -s repro "$tmux_command"
+
+for _ in {1..100}; do
+  if [[ -f $statusfile ]]; then
+    break
+  fi
+  sleep 0.1
+done
+
+if [[ ! -f $statusfile ]]; then
+  tmux -S "$socket" capture-pane -p -t repro 2>/dev/null || true
+  cat "$logfile"
+  fail "parallel zsh task did not finish under tmux"
+fi
+
+status=$(cat "$statusfile")
+if [[ $status -ne 0 ]]; then
+  cat "$logfile"
+  fail "parallel zsh task exited with status $status"
+fi
+
+for expected in "got: a" "got: b" "got: c" "dummy"; do
+  if ! grep -Fq "$expected" "$logfile"; then
+    cat "$logfile"
+    fail "missing expected output: $expected"
+  fi
+done

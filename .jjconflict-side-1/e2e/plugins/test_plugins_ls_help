@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+assert_contains "mise plugins ls --help" "-c, --core"
+assert_contains "mise plugins ls --help" "--user"
+assert_contains "mise plugins ls --help" "This is the default behavior but can be used with --core"
+assert_contains "mise plugins ls --help" "to show core and user plugins"

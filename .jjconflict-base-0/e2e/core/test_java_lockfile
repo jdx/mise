@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# Test that core:java resolves lockfile URLs without installing first.
+export MISE_LOCKFILE=1
+
+detect_platform
+CURRENT_PLATFORM="$MISE_PLATFORM"
+if [[ $MISE_PLATFORM_OS == "linux" ]] && type -P ldd >/dev/null && ldd --version 2>&1 | grep -qi musl; then
+  CURRENT_PLATFORM="$CURRENT_PLATFORM-musl"
+fi
+
+cat <<'EOF' >mise.toml
+[tools]
+java = "corretto-17.0.2.8.1"
+EOF
+
+rm -f mise.lock
+mise uninstall java@corretto-17.0.2.8.1 2>/dev/null || true
+
+mise lock --platform "$CURRENT_PLATFORM,windows-x64"
+
+assert_contains "cat mise.lock" '[[tools.java]]'
+assert_contains "cat mise.lock" 'version = "corretto-17.0.2.8.1"'
+assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
+assert_contains "cat mise.lock" 'checksum = "'
+assert_contains "cat mise.lock" 'url = "https://'
+assert_contains "cat mise.lock" '"platforms.windows-x64"'
+assert_contains "cat mise.lock" 'amazon-corretto-17.0.2.8.1-windows-x64-jdk.zip'
+
+assert "mise install --locked --dry-run"

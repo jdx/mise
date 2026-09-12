@@ -1,0 +1,4 @@
+backends = ["aqua:alexpasmantier/television"]
+description = "The revolution will (not) be televised"
+test = { cmd = "tv --version", expected = "television {{version}}" }
+version_order = "semver"

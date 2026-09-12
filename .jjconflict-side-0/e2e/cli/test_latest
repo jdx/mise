@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Java
+# assert shorthand is a N.N.N version
+assert "mise latest java | grep -E '^[0-9]+(\\.[0-9]+)*$'"
+# assert vendor version ends with -N.N.N(-SUFFIX)?
+assert "mise latest java@temurin | grep -E '\\-[0-9]+(\\.[0-9]+)*(\..*)?$'"
+# assert vendor 21 version ends with -21.N.N(-SUFFIX)?
+assert "mise latest java@temurin-21 | grep -E '\\-21(\\.[0-9]+)*(\..*)?$'"
+# assert base vendor preference (e.g. liberica instead of liberica-nik)
+assert "mise latest java@liberica | grep -E 'liberica\\-[0-9]+(\\.[0-9]+)*(\..*)?$'"
+
+# Python
+# assert shorthand is a N.N.N version
+assert "mise latest python | grep -E '^[0-9]+(\\.[0-9]+)*$'"
+# assert vendor version ends with -N.N.N
+assert "mise latest python@anaconda | grep -E '\\-[0-9]+(\\.[0-9]+)*$'"
+# assert vendor 2 version ends with -2.N.N
+assert "mise latest python@anaconda-2 | grep -E '\\-2(\\.[0-9]+)*$'"
+
+# Ruby
+# assert shorthand is a N.N.N version
+assert "mise latest ruby | grep -E '^[0-9]+(\\.[0-9]+)*$'"
+# assert base flavour preference (e.g. truffleruby instead of truffleruby+graalvm)
+assert "mise latest ruby@truffleruby | grep -E '^truffleruby\\-[0-9]+(\\.[0-9]+)*$'"
+# assert an explicit flavour still resolves to that flavour
+assert "mise latest ruby@truffleruby+graalvm | grep -E '^truffleruby\\+graalvm\\-[0-9]+(\\.[0-9]+)*$'"
+# assert vendor 22 version ends with -22.N.N
+assert "mise latest ruby@truffleruby-22 | grep -E '\\-22(\\.[0-9]+)*$'"
+
+# sub-N: is accepted by use/install/ls-remote, so it has to work here too — it used to
+# be rejected as "invalid version". dummy publishes 1.0.0, 1.1.0 and 2.0.0.
+assert "mise latest dummy@sub-1:2" "1.1.0"
+# the base may be an alias, which has to be resolved before subtracting
+mise alias set dummy lts 2
+assert "mise latest dummy@sub-1:lts" "1.1.0"
+mise alias unset dummy lts
+# ...and the base may be `latest`, directly or through an alias
+assert "mise latest dummy@sub-1:latest" "1.1.0"
+mise alias set dummy stable latest
+assert "mise latest dummy@sub-1:stable" "1.1.0"
+mise alias unset dummy stable

@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# A GitHub release with no assets has nothing to install from -- mise never
+# falls back to the auto-generated source archive -- so listing it advertises a
+# version that only fails. Real cases: pypa/hatch hatch-v1.7.0 and every
+# kitlangton/ghui release below v0.4.0.
+#
+# The `/releases/latest` shortcut has to agree with the listing, or `latest`
+# resolves to a version the listing does not offer.
+#
+# Served from a local stand-in for the GitHub API so the fixture is stable and
+# the test needs no network.
+
+PORT_FILE="$PWD/server-port"
+
+python3 - "$PORT_FILE" <<'PY' &
+import http.server
+import json
+import socketserver
+import sys
+
+port_file = sys.argv[1]
+
+WITH_ASSET = {
+    "tag_name": "v2.0.0",
+    "draft": False,
+    "prerelease": False,
+    "created_at": "2026-02-01T00:00:00Z",
+    "published_at": "2026-02-01T00:00:00Z",
+    "assets": [
+        {
+            "name": "tool-x86_64-unknown-linux-gnu.tar.gz",
+            "browser_download_url": "https://example.invalid/tool.tar.gz",
+            "url": "https://example.invalid/api/tool.tar.gz",
+        }
+    ],
+}
+
+# Published, not a draft, but nothing attached -- and marked as the repo's
+# "Latest", which is what makes the shortcut interesting.
+WITHOUT_ASSET = {
+    "tag_name": "v3.0.0",
+    "draft": False,
+    "prerelease": False,
+    "created_at": "2026-03-01T00:00:00Z",
+    "published_at": "2026-03-01T00:00:00Z",
+    "assets": [],
+}
+
+
+class ReleasesHandler(http.server.BaseHTTPRequestHandler):
+    def reply(self, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path.endswith("/releases/latest"):
+            self.reply(WITHOUT_ASSET)
+        elif path.endswith("/releases"):
+            self.reply([WITHOUT_ASSET, WITH_ASSET])
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), ReleasesHandler) as httpd:
+    with open(port_file, "w") as file:
+        file.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "github api stand-in port" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$PORT_FILE")
+
+TOOL="github:acme/tool[api_url=http://127.0.0.1:$SERVER_PORT]"
+
+# The release that carries an asset is listed. Asserting this first is what
+# keeps the next line from passing vacuously -- if the listing were empty for
+# some unrelated reason, this would fail before it.
+assert_contains "mise ls-remote --no-versions-host '$TOOL'" "2.0.0"
+
+# The one with none is not.
+assert_not_contains "mise ls-remote --no-versions-host '$TOOL'" "3.0.0"
+
+# `latest` must not take the `/releases/latest` shortcut to a release the
+# listing just excluded: it falls through and resolves against the list.
+export MISE_USE_VERSIONS_HOST=0
+assert "mise latest '$TOOL'" "2.0.0"
+
+# A platform-specific direct URL makes asset-less releases installable. It must
+# not reuse the filtered cache populated above, even though the repository and
+# API URL are otherwise identical. `prerelease = true` makes `latest` use the
+# cached listing path instead of the `/releases/latest` shortcut.
+cat >mise.toml <<EOF
+[tools."github:acme/tool"]
+version = "latest"
+api_url = "http://127.0.0.1:$SERVER_PORT"
+prerelease = true
+
+[tools."github:acme/tool".platforms]
+linux-x64 = { url = "https://example.invalid/tool-linux-x64.tar.gz" }
+linux-arm64 = { url = "https://example.invalid/tool-linux-arm64.tar.gz" }
+macos-x64 = { url = "https://example.invalid/tool-macos-x64.tar.gz" }
+macos-arm64 = { url = "https://example.invalid/tool-macos-arm64.tar.gz" }
+EOF
+
+CONFIGURED_TOOL="github:acme/tool"
+assert_contains "mise ls-remote --no-versions-host '$CONFIGURED_TOOL'" "3.0.0"
+assert "mise latest '$CONFIGURED_TOOL'" "3.0.0"

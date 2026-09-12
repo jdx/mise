@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tools]
+npm = "latest"
+EOF
+
+cat <<EOF >mise.lock
+$LOCKFILE_HEADER
+
+[[tools.npm]]
+version = "11.17.0"
+backend = "npm:npm"
+EOF
+
+assert_contains "MISE_LOG_LEVEL=trace mise install --locked --dry-run npm 2>&1" "[npm:npm@11.17.0]"
+
+mkdir -p "$MISE_DATA_DIR/installs/npm/11.17.0"
+cat <<EOF >"$MISE_DATA_DIR/installs/.mise-installs.toml"
+[npm]
+short = "npm"
+full = "aqua:npm/cli"
+explicit_backend = false
+EOF
+
+cat <<EOF >mise.lock
+$LOCKFILE_HEADER
+
+[[tools.npm]]
+version = "11.99.0"
+backend = "npm:npm"
+EOF
+
+assert_contains "MISE_LOG_LEVEL=trace mise install --locked --dry-run npm 2>&1" "[npm:npm@11.99.0]"

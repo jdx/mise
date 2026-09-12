@@ -1,0 +1,10 @@
+description = "Pure Scala Artifact Fetching"
+version_order = "semver"
+# test = { cmd = "cs --help", expected = "Coursier is the Scala application" }
+
+bins = ["cs"]
+[[backends]]
+full = "github:coursier/coursier"
+
+[[backends]]
+full = "asdf:jiahuili430/asdf-coursier"

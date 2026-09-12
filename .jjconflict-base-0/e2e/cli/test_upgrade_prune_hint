@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+export CI=0 MISE_DEBUG=0 MISE_TRACE=0 MISE_LOG_LEVEL=info MISE_FORCE_PROGRESS=0
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "1"
+[settings]
+upgrade.prune_after = "12h"
+TOML
+mise install dummy@1.0.0 >/dev/null 2>&1
+
+python3 - <<'PYTHON'
+import errno
+import os
+from pathlib import Path
+import pty
+import re
+import subprocess
+
+
+def upgrade(env, *args):
+    master, slave = pty.openpty()
+    # Hints require an attended terminal for both stdout and stderr.
+    proc = subprocess.Popen(
+        ["mise", "upgrade", *args], stdin=slave, stdout=slave, stderr=slave, env=env
+    )
+    os.close(slave)
+    output = bytearray()
+    try:
+        while True:
+            try:
+                chunk = os.read(master, 8192)
+            except OSError as error:
+                if error.errno == errno.EIO:
+                    break
+                raise
+            if not chunk:
+                break
+            output.extend(chunk)
+    finally:
+        os.close(master)
+    plain = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", output.decode(errors="replace"))
+    assert proc.wait() == 0, plain
+    return plain
+
+
+env = dict(os.environ)
+hint = "old tool versions are kept for 12h before automatic pruning"
+first = upgrade(env)
+assert hint in first, first
+assert "mise settings set upgrade.auto_prune false" in first, first
+assert "dummy 1.0.0 → 1.1.0" in first, first
+marker = Path(env["MISE_STATE_DIR"]) / "hints" / "upgrade_auto_prune"
+assert marker.is_file()
+second = upgrade(env, "--bump")
+assert "dummy 1.1.0 → 2.0.0" in second, second
+assert hint not in second, second
+
+# A fresh hint state proves disable_hints suppresses the hint before its first
+# display, without disabling the pruning schedule itself.
+subprocess.run(["mise", "uninstall", "dummy", "--all"], check=True, capture_output=True)
+subprocess.run(["mise", "install", "dummy@1.0.0"], check=True, capture_output=True)
+Path("mise.toml").write_text('[tools]\ndummy = "1"\n[settings]\nupgrade.prune_after = "12h"\n')
+disabled = dict(env, MISE_STATE_DIR=str(Path.cwd() / "disabled-state"),
+                MISE_DISABLE_HINTS="upgrade_auto_prune")
+output = upgrade(disabled)
+assert hint not in output, output
+assert "dummy 1.0.0 → 1.1.0" in output, output
+state = Path(disabled["MISE_STATE_DIR"])
+assert not (state / "hints" / "upgrade_auto_prune").exists()
+assert (state / "tool-purgatory.json").is_file()
+PYTHON

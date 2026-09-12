@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# Verify __MISE_EXE is exported so child shells can access it
+
+# 1) activate output contains 'export __MISE_EXE='
+assert_contains "mise activate bash" "export __MISE_EXE="
+
+# 2) __MISE_EXE should be an absolute path (starts with /)
+assert_contains "mise activate bash" "export __MISE_EXE=/"
+
+# 3) Child shell can access __MISE_EXE because it is exported
+eval "$(mise activate bash --no-hook-env)"
+assert "bash -c 'echo \$__MISE_EXE'" "$__MISE_EXE"

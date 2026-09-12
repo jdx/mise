@@ -1,0 +1,66 @@
+# Cross configuration for mise
+# Use cross 0.2.5 images which are based on Ubuntu 16.04 (glibc 2.23)
+# This ensures compatibility with Amazon Linux 2 (glibc 2.26) and other older systems
+
+[build.env]
+passthrough = [
+  "RUST_BACKTRACE",
+  "CARGO_TERM_COLOR",
+  "AWS_LC_SYS_EXTERNAL_BINDGEN",
+  "BINDGEN_EXTRA_CLANG_ARGS",
+]
+
+# Explicitly use 0.2.5 images for GNU targets (Ubuntu 16.04, glibc 2.23)
+# The x86_64 targets are the PGO targets (see scripts/pgo.bash): RUSTFLAGS
+# passthrough is scoped to them so -Cprofile-generate/-Cprofile-use reach
+# cargo inside the container without silently injecting host RUSTFLAGS
+# into every other cross build.
+[target.x86_64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5"
+
+[target.x86_64-unknown-linux-gnu.env]
+passthrough = ["RUSTFLAGS"]
+
+[target.aarch64-unknown-linux-gnu]
+# Keep this pinned so the release binary does not inherit a newer glibc
+# floor when cross-rs updates its floating main image.
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5"
+pre-build = [
+  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-dev clang curl",
+  "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable",
+  ". ~/.cargo/env && cargo install --force --locked bindgen-cli",
+  "ln -s ~/.cargo/bin/bindgen /usr/local/bin/bindgen",
+]
+
+[target.armv7-unknown-linux-gnueabihf]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:0.2.5"
+pre-build = [
+  "dpkg --add-architecture armhf",
+  "apt-get update && apt-get install -y apt-transport-https ca-certificates gnupg pkg-config wget",
+  "wget -qO /tmp/apt.llvm.org.asc https://apt.llvm.org/llvm-snapshot.gpg.key",
+  "gpg --batch --no-default-keyring --keyring /tmp/apt.llvm.org.gpg --import /tmp/apt.llvm.org.asc",
+  "test \"$(gpg --batch --no-default-keyring --keyring /tmp/apt.llvm.org.gpg --with-colons --fingerprint | awk -F: '$1 == \"fpr\" { print $10; exit }')\" = \"6084F3CF814B57C1CF12EFD515CF4D18AF4F7421\"",
+  "install -m 0644 /tmp/apt.llvm.org.gpg /usr/share/keyrings/apt.llvm.org.gpg",
+  "echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/apt.llvm.org.gpg] https://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main' > /etc/apt/sources.list.d/llvm.list",
+  "apt-get update && apt-get install -y libclang-6.0-dev",
+]
+
+[target.armv7-unknown-linux-gnueabihf.env]
+passthrough = [
+  "BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_gnueabihf",
+  "LIBCLANG_PATH",
+]
+
+
+# Musl targets for static linking
+[target.x86_64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5"
+
+[target.x86_64-unknown-linux-musl.env]
+passthrough = ["RUSTFLAGS"]
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
+
+[target.armv7-unknown-linux-musleabi]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabi:0.2.5"

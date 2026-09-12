@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+require_cmd fish
+exec fish --no-config "$TEST_DIR/fish_first_prompt.fish"

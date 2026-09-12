@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+export MISE_SHIMS_DIR="$HOME/.local/share/mise/user-shims"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/.local/share/mise/system-shims"
+export PATH="$MISE_SHIMS_DIR:$MISE_SYSTEM_SHIMS_DIR:$PATH"
+
+# Non-registry tools must declare their command names. Implicit install skips
+# them, while invoking the bootstrap shim installs and executes the tool even
+# when general not-found auto-install is disabled.
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+
+mise reshim
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+mise install
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 dummy --version" "This is Dummy 1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Provisioning can opt into installing every configured lazy declaration.
+mise uninstall --all dummy
+mise install --include-lazy
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# An explicit install request still installs a lazy declaration.
+mise uninstall --all dummy
+mise install dummy
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Registry shorthands derive bootstrap commands from registry bin metadata.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+tiny = { version = "1.0.0", lazy = true }
+EOF
+mise reshim
+assert_succeed "test -e '$MISE_SHIMS_DIR/rtx-tiny'"
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 rtx-tiny --version" "rtx-tiny: v1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/tiny/1.0.0"
+
+# Explicit backends cannot borrow bin metadata from a similarly named registry
+# entry and must declare lazy_bins.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+"aqua:tinygo-org/tinygo" = { version = "0.39.0", lazy = true }
+EOF
+assert_fail_contains "mise reshim --force 2>&1" "set lazy_bins explicitly"
+# A failed forced rebuild must leave the previously working farm intact.
+assert_succeed "test -e '$MISE_SHIMS_DIR/rtx-tiny'"
+
+# Fail after desired-set validation while materializing a replacement shim.
+# The staged rebuild must still leave the live farm intact.
+long_bin="$(printf 'x%.0s' {1..300})"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["$long_bin"] }
+EOF
+assert_fail "mise reshim --force"
+assert_succeed "test -e '$MISE_SHIMS_DIR/rtx-tiny'"
+
+# A higher-precedence project selection blocks a global lazy fallback, even
+# when the selected project version is missing.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "2.0.0", lazy = false }
+EOF
+mise uninstall --all dummy
+mise reshim
+assert_fail "MISE_NOT_FOUND_AUTO_INSTALL=0 dummy --version"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"

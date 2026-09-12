@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+
+# Set MISE_TEST_PITCHFORK to test a local build instead of the released version.
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  # Exercise this exact release even during the default release-age delay.
+  mise install pitchfork@2.25.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.25.0)"
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_AUTOSTOP_DELAY=0s
+export PITCHFORK_INTERVAL=100ms
+export PITCHFORK_PROXY_ENABLE=false
+mkdir -p "$PITCHFORK_STATE_DIR" "$PITCHFORK_CONFIG_DIR"
+# Keep the fixture executable available when testing mise prune.
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+
+mkdir -p project other
+cd project
+project_dir="$PWD"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "exec sleep 600"
+ready_delay = 0
+auto = ["start", "stop"]
+TOML
+assert "test ! -f '$PITCHFORK_CONFIG_DIR/config.toml'"
+assert_contains "mise daemons ls --json" '"status": "available"'
+assert "test ! -f '$PITCHFORK_CONFIG_DIR/config.toml'"
+mise daemons start
+assert_contains "mise daemons ls --json" '"status": "running"'
+# A second profile cannot overwrite a running project.
+assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" 'another daemon profile is active'
+mise daemons stop
+
+# An explicit start restores a registration removed outside mise.
+registration=$(pitchfork config list --json | jq -r '.[0].config[0]')
+pitchfork config remove "$registration"
+assert "test $(pitchfork config list --json | jq length) -eq 0"
+mise daemons start
+assert_contains "mise daemons ls --json" '"status": "running"'
+assert "test $(pitchfork config list --json | jq length) -eq 1"
+mise daemons stop
+
+# Evaluate the activation output, preserving each simulated shell's environment.
+hook_session() {
+  local key="daemon_session_$1"
+  export __MISE_DAEMON_SESSIONS="${!key-}"
+  eval "$(mise hook-env --shell-pid "$1" --force -s bash)"
+  printf -v "$key" '%s' "${__MISE_DAEMON_SESSIONS:-}"
+}
+# Each shell owns an independent session. Explicit --force also exercises retry paths.
+sleep 600 &
+second_pid=$!
+trap 'if [[ -n ${activation_pid:-} ]]; then kill "$activation_pid" 2>/dev/null || true; fi; kill "$second_pid" 2>/dev/null || true; pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+hook_session $$
+hook_session "$second_pid"
+for _ in {1..100}; do
+  sessions=$(pitchfork project list --json)
+  [[ $(jq 'length' <<<"$sessions") == 2 ]] && break
+  sleep 0.1
+done
+assert "test $(pitchfork project list --json | jq length) -eq 2"
+# Tool/shim writes from initial startup may invalidate one prompt. Once stable,
+# unchanged prompts must not register configs or emit session commands.
+sleep 1
+for _ in {1..5}; do
+  hook_output=$(mise hook-env --shell-pid "$second_pid" -s bash)
+  eval "$hook_output"
+done
+assert "test ${#hook_output} -eq 0"
+
+# A new activated shell must enter even when it inherits an up-to-date hook cache.
+cat >"$TMPDIR/activation.fish" <<'FISH'
+mise activate fish | source
+jobs -p >"$CHILD_JOBS"
+while not test -f "$CHILD_DONE"
+  sleep 0.1
+end
+FISH
+cat >"$TMPDIR/activation.sh" <<'SH'
+eval "$(mise activate "$1")"
+jobs -p >"$CHILD_JOBS"
+while [[ ! -f "$CHILD_DONE" ]]; do sleep 0.1; done
+SH
+for activation_shell in bash zsh fish; do
+  export CHILD_DONE="$TMPDIR/$activation_shell.done"
+  export CHILD_JOBS="$TMPDIR/$activation_shell.jobs"
+  if [[ $activation_shell == fish ]]; then
+    fish "$TMPDIR/activation.fish" &
+  else
+    "$activation_shell" "$TMPDIR/activation.sh" "$activation_shell" &
+  fi
+  activation_pid=$!
+  for _ in {1..100}; do
+    [[ $(pitchfork project list --json | jq length) == 3 ]] && break
+    sleep 0.1
+  done
+  assert "test $(pitchfork project list --json | jq length) -eq 3"
+  assert "test ! -s '$CHILD_JOBS'"
+  touch "$CHILD_DONE"
+  wait "$activation_pid"
+  unset activation_pid
+  for _ in {1..100}; do
+    [[ $(pitchfork project list --json | jq length) == 2 ]] && break
+    sleep 0.1
+  done
+  assert "test $(pitchfork project list --json | jq length) -eq 2"
+done
+
+mise daemons stop
+assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" "another daemon profile is active"
+mise daemons start
+cd ../other
+# A failed leave must retain enough shell state for a later forced hook to retry.
+mv ~/bin/pitchfork ~/bin/pitchfork.real
+cat >~/bin/pitchfork <<'SH'
+#!/bin/sh
+exit 1
+SH
+chmod +x ~/bin/pitchfork
+hook_session $$
+sleep 0.2
+assert "test $(~/bin/pitchfork.real project list --json | jq length) -eq 2"
+mv ~/bin/pitchfork.real ~/bin/pitchfork
+hook_session $$
+for _ in {1..100}; do
+  [[ $(pitchfork project list --json | jq length) == 1 ]] && break
+  sleep 0.1
+done
+assert "test $(pitchfork project list --json | jq length) -eq 1"
+cd "$project_dir"
+assert_contains "mise daemons ls --json" '"status": "running"'
+cd ../other
+hook_session "$second_pid"
+for _ in {1..100}; do
+  [[ $(pitchfork project list --json | jq length) == 0 ]] && break
+  sleep 0.1
+done
+assert "test $(pitchfork project list --json | jq length) -eq 0"
+cd "$project_dir"
+mise daemons stop
+
+# Leaving while readiness is pending must not strand a shell session.
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "exec sleep 600"
+ready_delay = 4
+auto = ["start", "stop"]
+TOML
+hook_session $$
+sleep 0.2
+assert "test ! -d '$MISE_STATE_DIR/daemons/sessions'"
+cd ../other
+hook_session $$
+sleep 5
+for _ in {1..100}; do
+  [[ $(pitchfork project list --json | jq length) == 0 ]] && break
+  sleep 0.1
+done
+assert "test $(pitchfork project list --json | jq length) -eq 0"
+cd "$project_dir"
+mise daemons stop
+
+# Empty declarations detach the generated file and keep stopped IDs inspectable.
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+TOML
+mise daemons stop
+assert "test $(pitchfork config list --json | jq length) -eq 1"
+# Synchronization belongs to start, even when there are no remaining daemons.
+mise daemons start 2>/dev/null || true
+assert "test $(pitchfork config list --json | jq length) -eq 0"

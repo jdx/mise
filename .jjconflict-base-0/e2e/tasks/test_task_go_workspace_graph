@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+
+[monorepo.projects."go:example.com/acme/api"]
+depends_add = ["go:example.com/acme/lib"]
+EOF
+
+cat <<'EOF' >go.work
+go 1.25
+
+use (
+  ./cmd/api
+  ./lib
+)
+EOF
+
+mkdir -p cmd/api lib
+
+cat <<'EOF' >cmd/api/go.mod
+module example.com/acme/api
+
+go 1.25
+
+require example.com/acme/lib v0.0.0
+EOF
+
+cat <<'EOF' >lib/go.mod
+module example.com/acme/lib
+
+go 1.25
+EOF
+
+assert_contains "mise tasks graph" "go:example.com/acme/api"
+assert_contains "mise tasks graph" "cmd/api"
+assert_contains "mise tasks graph" '"workspace_source":"go.mod"'
+assert_contains "mise tasks graph --explain" "Project: go:example.com/acme/api"
+assert_contains "mise tasks graph --explain" "go:example.com/acme/lib — configuration"
+
+assert_json "mise tasks graph --json | jq '.projects | map({id, root, dependencies})'" '[
+  {
+    "id": "go:example.com/acme/api",
+    "root": "cmd/api",
+    "dependencies": [
+      "go:example.com/acme/lib"
+    ]
+  },
+  {
+    "id": "go:example.com/acme/lib",
+    "root": "lib",
+    "dependencies": []
+  }
+]'
+
+assert_json "mise tasks graph --json | jq '.projects[] | select(.id == \"go:example.com/acme/api\") | .provenance'" '{
+  "provider": "go",
+  "source": "cmd/api/go.mod"
+}'

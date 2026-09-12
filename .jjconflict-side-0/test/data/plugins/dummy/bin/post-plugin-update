@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+echo "plugin updated path=${ASDF_PLUGIN_PATH} old git-ref=${ASDF_PLUGIN_PREV_REF} new git-ref=${ASDF_PLUGIN_POST_REF}"

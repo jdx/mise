@@ -1,0 +1,6 @@
+backends = ["aqua:vercel-labs/agent-browser"]
+bins = ["agent-browser"]
+description = "Browser automation CLI for AI agents"
+os = ["linux", "macos", "windows"]
+test = { cmd = "agent-browser --version", expected = "agent-browser {{version}}" }
+version_order = "semver"

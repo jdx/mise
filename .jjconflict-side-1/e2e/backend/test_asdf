@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+assert "mise x asdf:jdx/mise-tiny -- mise-tiny" "mise-tiny: v3.1.0"
+assert "mise x asdf:https://github.com/jdx/mise-tiny -- mise-tiny" "mise-tiny: v3.1.0"

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/9275:
+# `mise upgrade` must actually reinstall tools pinned to a channel version
+# (e.g. `@latest`, `@nightly`) when the resolved remote version differs from
+# what is on disk — even if a dir named after the channel already exists.
+#
+# Before the fix, `is_version_installed` returned early as soon as
+# `tv.request.install_path()` existed. For `ToolRequest::Version { version: "latest" }`
+# the request path is `installs/<id>/latest/`, which can exist as a real
+# directory from a prior install whose resolve fell back to using the alias
+# literally (e.g. first install ran offline or the remote briefly returned no
+# versions). The resolved version (`tv.version == "2.0.0"`) was never checked,
+# so `install_version_` was skipped and the user saw `✓ installed 2.0.0`
+# while the on-disk binary was stale.
+#
+# The fix extends the existing `ToolRequest::Prefix` guard: when the request
+# path's basename differs from `tv.version`, fall through to check the
+# resolved path instead.
+
+cat <<TOML >mise.toml
+[tools]
+dummy = "latest"
+TOML
+mise uninstall dummy --all
+
+# Simulate the bad state: a real `latest/` dir (not a runtime symlink) sitting
+# where a previous install left it. `runtime_symlinks::rebuild` leaves real
+# dirs alone, so once this state exists, every subsequent `mise upgrade` was
+# short-circuited by the early return in `is_version_installed`.
+mkdir -p "$MISE_DATA_DIR/installs/dummy/latest"
+touch "$MISE_DATA_DIR/installs/dummy/latest/stale-sentinel"
+
+mise up
+
+# The resolved version dir must now exist — proving `install_version_` ran.
+assert "test -d $MISE_DATA_DIR/installs/dummy/2.0.0"
+
+# And runtime resolution must use the new concrete install, not the stale dir.
+assert "mise where dummy" "$MISE_DATA_DIR/installs/dummy/2.0.0"
+
+# The active binary must report the new version.
+assert_contains "mise x dummy -- dummy" "This is Dummy 2.0.0"
+
+rm -f mise.toml

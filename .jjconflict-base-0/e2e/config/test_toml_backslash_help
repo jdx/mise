@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# A backslash starts an escape inside a TOML basic string, so the most ordinary thing a Windows
+# user writes -- `"C:\Users\you"` -- fails with a complaint about unicode digits or an expected
+# escape character. Neither mentions the backslash that caused it. `docs/configuration.md` explains
+# the trap, but only under the `path:` tool scope, and nothing connected the error to it.
+
+# Control: the literal-string form the help recommends actually works, so the failure below is
+# about the quoting and not about the value.
+cat <<'TOML' >mise.toml
+[env]
+P = 'C:\Users\you'
+TOML
+assert_contains "mise env" 'C:\Users\you'
+
+cat <<'TOML' >mise.toml
+[env]
+P = "C:\Users\you"
+TOML
+# Matched on single words: miette wraps the help line, so a phrase can be split across lines.
+assert_fail_contains "mise env" "help:"
+assert_fail_contains "mise env" "backslash"
+assert_fail_contains "mise env" "literal"
+
+# The other escape error the toml crate produces for a Windows path. Different message, same cause,
+# so the advice has to reach it too.
+cat <<'TOML' >mise.toml
+[env]
+P = "C:\dev"
+TOML
+assert_fail_contains "mise env" "backslash"
+
+# Control that matters most: a parse error with no backslash on the failing line must not collect
+# the advice. Help that shows up everywhere is worth nothing where it belongs.
+cat <<'TOML' >mise.toml
+[env]
+fdsfads
+TOML
+assert_fail_contains "mise env" "Invalid TOML in config file"
+assert "mise env 2>&1 | grep -c 'help:' || true" "0"

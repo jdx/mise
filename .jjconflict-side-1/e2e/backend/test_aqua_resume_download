@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_HTTP_RETRIES=0
+
+detect_platform
+
+mkdir -p fixture/resume-tool/bin registry
+cat <<'EOF_TOOL' >fixture/resume-tool/bin/resume-tool
+#!/usr/bin/env sh
+echo resumed download
+EOF_TOOL
+chmod +x fixture/resume-tool/bin/resume-tool
+tar -czf artifact.tar.gz -C fixture resume-tool
+
+cat <<'EOF_SERVER' >server.py
+import http.server
+import pathlib
+import socket
+
+artifact = pathlib.Path("artifact.tar.gz").read_bytes()
+request_count = 0
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        global request_count
+        request_count += 1
+        range_header = self.headers.get("Range", "")
+        if_range = self.headers.get("If-Range", "")
+        with open("requests.log", "a", encoding="utf-8") as log:
+            log.write(f"{request_count} range={range_header} if-range={if_range}\n")
+
+        if request_count == 1:
+            midpoint = len(artifact) // 2
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(artifact)))
+            self.send_header("ETag", '"resume-v1"')
+            self.end_headers()
+            self.wfile.write(artifact[:midpoint])
+            self.wfile.flush()
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+            return
+
+        if range_header.startswith("bytes="):
+            offset = int(range_header.removeprefix("bytes=").removesuffix("-"))
+            body = artifact[offset:]
+            self.send_response(206)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Range", f"bytes {offset}-{len(artifact) - 1}/{len(artifact)}")
+            self.send_header("ETag", '"resume-v1"')
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(artifact)))
+        self.send_header("ETag", '"resume-v1"')
+        self.end_headers()
+        self.wfile.write(artifact)
+
+    def log_message(self, *_args):
+        pass
+
+
+server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+pathlib.Path("server.port").write_text(str(server.server_port), encoding="utf-8")
+server.serve_forever()
+EOF_SERVER
+
+python3 server.py &
+server_pid=$!
+trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+wait_for_file server.port "HTTP server port"
+port="$(cat server.port)"
+
+cat >registry/registry.yml <<EOF_REGISTRY
+packages:
+  - type: http
+    name: example/resume-tool
+    supported_envs:
+      - darwin
+      - linux
+    url: http://127.0.0.1:$port/artifact.tar.gz
+    files:
+      - name: resume-tool
+        src: resume-tool/bin/resume-tool
+EOF_REGISTRY
+
+export MISE_AQUA_REGISTRY_URL="file://$PWD/registry"
+
+assert_fail "mise install aqua:example/resume-tool@1.0.0"
+assert_succeed "find '$MISE_DATA_DIR/downloads' -name '*.mise-part' -type f | grep -q ."
+assert_succeed "find '$MISE_DATA_DIR/downloads' -name '*.mise-part.json' -type f | grep -q ."
+
+mise install aqua:example/resume-tool@1.0.0
+assert "mise exec aqua:example/resume-tool@1.0.0 -- resume-tool" "resumed download"
+assert_contains "sed -n '1p' requests.log" 'range= if-range='
+assert_contains "cat requests.log" 'range=bytes='
+assert_contains "cat requests.log" 'if-range="resume-v1"'
+assert_fail "find '$MISE_DATA_DIR/downloads' -name '*.mise-part' -type f | grep -q ."
+assert_fail "find '$MISE_DATA_DIR/downloads' -name '*.mise-part.json' -type f | grep -q ."

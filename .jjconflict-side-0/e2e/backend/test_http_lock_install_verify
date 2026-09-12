@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+# Full loop: `mise lock` resolves a published checksum for the http backend, and
+# a subsequent install verifies the artifact against that locked checksum. A
+# tampered lock checksum must make the install fail. Covers both the SHASUMS
+# checksum source and a JSON manifest resolved via `checksum_expr`.
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+SRV="$PWD/srv"
+mkdir -p "$SRV"
+
+# sha256 of the artifact bytes; BAD_SHA is a non-matching hash.
+REAL_SHA="34a3c3a03073287eea9375cd9838e60a3b875715005eb2cc854a4461cf2c428d"
+BAD_SHA="5acbfff1b086e0f920c5857527976199018afe0cbf16e28d42c7eb9c683508e5"
+
+printf '#!/bin/sh\necho mytool ok\n' >"$SRV/mytool"
+printf '%s  mytool\n' "$REAL_SHA" >"$SRV/mytool_SHASUMS"
+
+# Serve the directory on an ephemeral port
+PORT_FILE="$TMPDIR/mise_lock_verify_port"
+python3 - "$SRV" "$PORT_FILE" <<'PY' &
+import http.server, socketserver, sys, os
+srv, port_file = sys.argv[1], sys.argv[2]
+os.chdir(srv)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+    with open(port_file, "w") as f:
+        f.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "lock verify port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[tools."http:mytool-lock-verify"]
+version = "1.0.0"
+bin = "mytool"
+url = "http://127.0.0.1:${PORT}/mytool"
+checksum_url = "http://127.0.0.1:${PORT}/mytool_SHASUMS"
+EOF
+
+# Lock resolves the published checksum for the current platform.
+mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" "sha256:${REAL_SHA}"
+
+# Install verifies the downloaded artifact against the locked checksum.
+mise install --locked
+assert_contains "mise x -- mytool" "mytool ok"
+
+# Tamper with the locked checksum: install must now fail on mismatch.
+sed "s/${REAL_SHA}/${BAD_SHA}/" mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
+assert_fail "mise install --locked -f"
+
+# === Same loop, but the checksum comes from a JSON manifest via checksum_expr ===
+# sha256 of the exprtool artifact bytes, published under the host's platform key
+# (os mapped macos->darwin / windows->win32) in a manifest.
+EXPR_SHA="27a981b64e117ad76f205346574c47bff47693a0fc73e30c6e86587e0d1aeb05"
+printf '#!/bin/sh\necho exprtool ok\n' >"$SRV/exprtool"
+
+os="${PLATFORM%%-*}"
+arch="${PLATFORM#*-}"
+case "$os" in
+  macos) mapped_os="darwin" ;;
+  windows) mapped_os="win32" ;;
+  *) mapped_os="linux" ;;
+esac
+cat >"$SRV/expr_manifest.json" <<JSON
+{ "platforms": { "${mapped_os}-${arch}": { "checksum": "${EXPR_SHA}" } } }
+JSON
+
+rm -f mise.lock
+cat >mise.toml <<EOF
+[tools."http:exprtool-lock-verify"]
+version = "1.0.0"
+bin = "exprtool"
+url = "http://127.0.0.1:${PORT}/exprtool"
+checksum_url = "http://127.0.0.1:${PORT}/expr_manifest.json"
+checksum_expr = '"sha256:" + fromJSON(body).platforms[(os == "macos" ? "darwin" : (os == "windows" ? "win32" : "linux")) + "-" + arch].checksum'
+EOF
+
+# Lock resolves the manifest checksum, and install verifies the artifact.
+mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" "sha256:${EXPR_SHA}"
+mise install --locked
+assert_contains "mise x -- exprtool" "exprtool ok"
+
+# A tampered manifest-resolved checksum must also fail the install.
+sed "s/${EXPR_SHA}/${BAD_SHA}/" mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
+assert_fail "mise install --locked -f"

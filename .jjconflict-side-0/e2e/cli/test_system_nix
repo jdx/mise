@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# Neither config-only use nor export may execute a package manager.
+cat >"$HOME/bin/nix" <<'SH'
+#!/bin/sh
+echo invoked > "$HOME/nix-invoked"
+exit 99
+SH
+cp "$HOME/bin/nix" "$HOME/bin/apt-get"
+chmod +x "$HOME/bin/nix" "$HOME/bin/apt-get"
+
+assert_succeed "mise bootstrap packages use --no-install --dry-run nix:ripgrep apt:curl"
+assert_fail "test -f mise.toml"
+assert_succeed "mise bootstrap packages use --no-install nix:ripgrep apt:curl"
+assert_contains "cat mise.toml" '"nix:ripgrep" = "latest"'
+assert_contains "cat mise.toml" '"apt:curl" = "latest"'
+assert_fail "test -f '$HOME/nix-invoked'"
+assert_contains "mise bootstrap packages export --format nix" 'pkgs."ripgrep"'
+assert_not_contains "mise bootstrap packages export --format nix" 'curl'
+
+# Global declarations merge with local declarations and respect selectors.
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[bootstrap.packages]
+"nix:jq" = "latest"
+"nix:ripgrep" = "bad-pin-overridden-locally"
+TOML
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"nix:ripgrep" = "latest"
+"nix:python3Packages.pip" = "latest"
+"nix:unused" = { env = "not-enabled" }
+"nix:windows-only" = { os = "windows" }
+"nix:removed" = { state = "absent" }
+TOML
+assert_contains "mise bootstrap packages export --format nix" 'pkgs."jq"'
+assert_contains "mise bootstrap packages export --format nix" 'pkgs."python3Packages"."pip"'
+assert_not_contains "mise bootstrap packages export --format nix" 'unused'
+assert_not_contains "mise bootstrap packages export --format nix" 'windows-only'
+assert_not_contains "mise bootstrap packages export --format nix" 'removed'
+assert_succeed "MISE_SYSTEM_PACKAGES_MANAGERS=apt mise bootstrap packages export --format nix > empty.nix"
+assert_not_contains "cat empty.nix" 'pkgs."'
+
+# Full references are opaque, including SSH usernames containing @.
+assert_succeed "mise bootstrap packages use --no-install 'nix:git+ssh://git@example.test/repo?ref=main#hello'"
+assert_contains "cat mise.toml" '"nix:git+ssh://git@example.test/repo?ref=main#hello" = "latest"'
+assert_fail "(mise bootstrap packages export --format nix > rejected.nix)"
+assert_succeed "test ! -s rejected.nix"
+assert_fail "mise bootstrap packages use --no-install nix:hello@1"
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"nix:hello" = "1.0"
+TOML
+assert_fail "(mise bootstrap packages export --format nix > rejected.nix)"
+assert_succeed "test ! -s rejected.nix"
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+'nix:${builtins.abort}' = "latest"
+TOML
+assert_fail "(mise bootstrap packages export --format nix > rejected.nix)"
+assert_succeed "test ! -s rejected.nix"
+assert_fail "test -f '$HOME/nix-invoked'"

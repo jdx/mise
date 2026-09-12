@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# mise's `cd` setting is applied after `--cd`'s two checks have run, and the `chdir` it performs can
+# still fail. That failure was dropped at the call site and met an unwrap further on, so it aborted
+# the process instead of being reported.
+#
+# Driven through `MISE_CD` rather than `--cd`, for two reasons. `validate_cd_path` only inspects the
+# CLI flag, so the environment route reaches the `chdir` with nothing in front of it and a plain
+# missing directory is enough to get there. And it needs no permission tricks: this suite runs in a
+# container as root in CI, where `chmod` cannot stop `chdir` and a permission-based reproduction
+# would quietly test nothing.
+
+target="$PWD/not-here"
+
+set +e
+out="$(MISE_CD="$target" mise env 2>&1)"
+status=$?
+set -e
+
+assert_not_contains_text "$out" "panicked"
+assert_contains_text "$out" "failed to set current directory"
+assert_contains_text "$out" "not-here"
+# The number rather than the sentence in front of it: Rust appends `os error N` itself, while the
+# text comes from the OS and is localised.
+assert_contains_text "$out" "os error 2"
+# It has to actually fail. An error message printed on a successful exit would satisfy every
+# assertion above. Written as "not zero" rather than a specific code, which is all this pins.
+assert_not_contains_text "exit=$status" "exit=0"
+
+# Control: the same variable pointing somewhere real, so the failure above is pinned on the target
+# rather than on MISE_CD being set at all.
+assert "MISE_CD='$PWD' mise env >/dev/null && echo entered" "entered"

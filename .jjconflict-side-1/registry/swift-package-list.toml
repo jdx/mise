@@ -1,0 +1,8 @@
+backends = [
+  "github:FelixHerrmann/swift-package-list",
+  "spm:FelixHerrmann/swift-package-list",
+  "asdf:mise-plugins/mise-swift-package-list",
+]
+bins = ["swift-package-list"]
+description = "A command-line tool to get all used Swift Package dependencies"
+version_order = "semver"

@@ -1,0 +1,10 @@
+aliases = ["entire"]
+backends = [
+  "aqua:entireio/cli",
+  "github:entireio/cli",
+  "go:github.com/entireio/cli/cmd/entire",
+]
+bins = ["entire", "git-remote-entire"]
+description = "Entire is a new developer platform that hooks into your git workflow to capture AI agent sessions on every push, unifying your code with its context and reasoning."
+test = { cmd = "entire version", expected = "Entire CLI {{version}}" }
+version_order = "semver"

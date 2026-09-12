@@ -1,0 +1,9 @@
+aliases = ["dotnet-core"]
+backends = [
+  "core:dotnet",
+  "vfox:mise-plugins/vfox-dotnet",
+  "asdf:mise-plugins/mise-dotnet",
+]
+description = ".NET SDK"
+idiomatic_files = ["global.json"]
+version_order = "semver"

@@ -1,0 +1,13 @@
+description = "Modern diagram scripting language that turns text to diagrams"
+test = { cmd = "d2 --version", expected = "v{{version}}" }
+version_order = "semver"
+
+bins = ["d2"]
+[[backends]]
+full = "aqua:d2lang/d2"
+
+[[backends]]
+full = "github:terrastruct/d2"
+
+[backends.options]
+strip_components = "1"

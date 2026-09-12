@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+remote_config:
+  repository: "jdx/coderabbit"
+  ref: "main"
+  path: ".coderabbit.yaml"

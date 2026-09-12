@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+#MISE description="Fetch GPG keys for signing or verification"
+# shellcheck disable=SC2129
+set -euxo pipefail
+
+# Fetch all Node.js release keys from the official nodejs/release-keys repository
+# This includes all current and legacy release maintainer keys
+rm -rf src/assets/gpg
+mkdir -p src/assets/gpg
+
+# Clone nodejs/release-keys once instead of making many raw.githubusercontent.com
+# requests. The raw host is prone to 429 throttling on shared CI egress.
+NODE_KEYS_REPO="https://github.com/nodejs/release-keys.git"
+NODE_KEYS_CHECKOUT="$(mktemp -d)"
+trap 'rm -rf "$NODE_KEYS_CHECKOUT"' EXIT
+
+echo "Cloning Node.js release keys..."
+if ! git clone --depth 1 --single-branch --branch main "$NODE_KEYS_REPO" "$NODE_KEYS_CHECKOUT"; then
+	echo "ERROR: Failed to clone nodejs/release-keys" >&2
+	exit 1
+fi
+
+key_count=0
+while IFS= read -r fingerprint || [[ -n $fingerprint ]]; do
+	[[ -z $fingerprint ]] && continue
+	key_file="$NODE_KEYS_CHECKOUT/keys/$fingerprint.asc"
+	echo "Adding key: $fingerprint"
+	if [[ ! -f $key_file ]]; then
+		echo "ERROR: Missing key $key_file" >&2
+		exit 1
+	fi
+	cat "$key_file" >>"src/assets/gpg/node.asc"
+	echo "" >>"src/assets/gpg/node.asc"
+	key_count=$((key_count + 1))
+done <"$NODE_KEYS_CHECKOUT/keys.list"
+echo "Successfully fetched $key_count Node.js release keys"
+
+# Swift release keys
+SWIFT_KEYS=(
+	"https://swift.org/keys/automatic-signing-key-4.asc"
+	"https://swift.org/keys/release-key-swift-5.x.asc"
+	"https://swift.org/keys/release-key-swift-6.x.asc"
+)
+for url in "${SWIFT_KEYS[@]}"; do
+	echo "Fetching Swift key: $url"
+	if ! curl -fLSs --compressed "$url" >>src/assets/gpg/swift.asc; then
+		echo "ERROR: Failed to download $url" >&2
+		exit 1
+	fi
+	echo "" >>src/assets/gpg/swift.asc
+done
+echo "Successfully fetched ${#SWIFT_KEYS[@]} Swift release keys"

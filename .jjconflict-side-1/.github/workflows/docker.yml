@@ -1,0 +1,187 @@
+name: docker
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || github.token }}
+
+jobs:
+  docker:
+    name: docker-${{ matrix.flavor }}
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor:
+          - alpine
+          - deb
+          - e2e
+          - rpm
+          - copr
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Log in to the Container registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/jdx/mise:${{ matrix.flavor }}
+          labels: ${{ steps.meta.outputs.labels }}
+          file: packaging/${{ matrix.flavor }}/Dockerfile
+  dockerhub:
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os: ubuntu-latest
+            tag_suffix: amd64
+            platform: linux/amd64
+          - os: ubuntu-24.04-arm
+            tag_suffix: arm64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Prepare
+        run: |
+          platform="${{ matrix.platform.platform }}"
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: |
+            jdxcode/mise
+            ghcr.io/jdx/mise
+      - name: Login to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          username: jdxcode
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          platforms: ${{ matrix.platform.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,"name=jdxcode/mise,ghcr.io/jdx/mise",push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+      - name: Upload digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+  merge:
+    runs-on: ubuntu-latest
+    needs: [dockerhub]
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+      - name: Login to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          username: jdxcode
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: jdx
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: |
+            jdxcode/mise
+            ghcr.io/jdx/mise
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # Validate the ref name against a strict Docker tag pattern before
+          # placing it into shell expansion. github.ref_name is otherwise
+          # attacker-influenced through the tag/branch trigger.
+          if ! [[ "$REF_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::Invalid ref name for Docker manifest: $REF_NAME" >&2
+            exit 1
+          fi
+          # shellcheck disable=SC2046
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "jdxcode/mise:${REF_NAME}@sha256:%s " *)
+          # shellcheck disable=SC2046
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "ghcr.io/jdx/mise:${REF_NAME}@sha256:%s " *)
+          # shellcheck disable=SC2046
+          docker buildx imagetools create -t jdxcode/mise:latest \
+            $(printf "jdxcode/mise:${REF_NAME}@sha256:%s " *)
+          # shellcheck disable=SC2046
+          docker buildx imagetools create -t ghcr.io/jdx/mise:latest \
+            $(printf "ghcr.io/jdx/mise:${REF_NAME}@sha256:%s " *)
+      - name: Inspect image
+        env:
+          META_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          # docker/metadata-action normally produces well-formed semver tags,
+          # but validate before interpolation for consistency with the manifest
+          # step above so no GitHub-expression-derived value reaches the shell
+          # without a guard.
+          if ! [[ "$META_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::Invalid Docker tag from metadata-action: $META_VERSION" >&2
+            exit 1
+          fi
+          docker buildx imagetools inspect "jdxcode/mise:${META_VERSION}"
+          docker buildx imagetools inspect "ghcr.io/jdx/mise:${META_VERSION}"

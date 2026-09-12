@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Bootstrap records ordinary boundaries for explicitly tracked files only.
+# Temporary recovery data for untracked writes is never durable file history.
+# shellcheck disable=SC2016
+require_cmd git
+repository="$MISE_STATE_DIR/history/repo.git"
+mkdir -p "$MISE_CONFIG_DIR/dotfiles"
+printf 'one\n' >"$MISE_CONFIG_DIR/dotfiles/copied"
+printf 'untracked-secret\n' >"$HOME/.copied"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.copied" = { source = "dotfiles/copied", mode = "copy" }
+TOML
+assert_succeed 'mise bootstrap dotfiles apply --dry-run'
+assert_succeed 'mise bootstrap dotfiles apply --yes'
+assert 'cat ~/.copied' one
+assert 'mise bootstrap dotfiles history --json -n 0 | jq length' 0
+assert_fail "git --git-dir=$repository rev-parse --verify HEAD"
+
+# Enroll the managed output without displacing its deployment declaration.
+assert_succeed 'mise bootstrap dotfiles track ~/.copied'
+before=$(git --git-dir="$repository" rev-parse HEAD)
+printf 'two\n' >"$MISE_CONFIG_DIR/dotfiles/copied"
+assert_succeed 'mise bootstrap --yes --only dotfiles'
+assert 'cat ~/.copied' two
+assert "git --git-dir=$repository show HEAD:home/.copied" two
+assert "git --git-dir=$repository show $before:home/.copied" one
+assert 'mise bootstrap dotfiles history --json | jq -r ".[0].trigger, .[1].trigger"' $'bootstrap\nbootstrap-before'
+assert 'mise bootstrap dotfiles history --json | jq -r ".[0].operation.status"' completed
+assert 'mise bootstrap dotfiles history --json | jq ".[0].operation.journal | length"' 0
+assert_not_contains "git --git-dir=$repository ls-tree -r --name-only HEAD" 'config/'
+assert_not_contains "git --git-dir=$repository log --format=%B" 'untracked-secret'
+assert_not_contains "git --git-dir=$repository log --format=%B" '--only'
+assert_contains "mise bootstrap dotfiles history diff $before latest --patch --path ~/.copied" '+two'
+
+# Tracked restoration uses the same Git ancestry; completed private journals go away.
+assert_succeed "mise bootstrap dotfiles rollback ~/.copied --to $before --yes"
+assert 'cat ~/.copied' one
+assert_succeed 'mise bootstrap dotfiles undo --yes'
+assert 'cat ~/.copied' two
+assert_succeed "git --git-dir=$repository merge-base --is-ancestor $before HEAD"
+assert "find $MISE_STATE_DIR/history/pending -type f | wc -l | tr -d ' '" 0

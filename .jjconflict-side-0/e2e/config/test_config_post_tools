@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[[env]]
+A_PATH = "foo: {{ env.PATH }}"
+B_PATH = { value = "foo: {{ env.PATH }}", tools = true }
+[[env]]
+_.path = {value = "tiny-{{env.JDXCODE_TINY}}-tiny", tools = true}
+
+[tools]
+tiny = "1.0.0"
+EOF
+
+mise i
+assert_not_contains "mise env | grep A_PATH" "tiny"
+assert_contains "mise env | grep B_PATH" "tiny"
+
+assert_contains "mise dr path" "tiny-1.0.0-tiny"

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<EOF
+[tools]
+erlang = '1'
+[plugins]
+erlang = 'https://github.com/jdx/mise-tiny'
+EOF
+
+assert "mise x erlang -- mise-tiny" "mise-tiny: v1.1.0"

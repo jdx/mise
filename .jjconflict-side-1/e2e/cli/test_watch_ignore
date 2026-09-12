@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Regression test for #7776: --ignore / --ignore-file / --print-events are
+# parsed by `mise watch` but must be forwarded onto the watchexec command line
+# it builds. We assert on the `$ watchexec ...` line that mise logs (with
+# MISE_DEBUG=1) right before spawning watchexec.
+
+mise use -g watchexec@latest
+mise tasks add example -- echo 'running example'
+
+echo 'spec/**/*.rb' >.mise-watch-ignore
+
+output_file=.watch_ignore_output
+rm -f "${output_file}"
+
+MISE_DEBUG=1 mise watch --ignore 'spec/**/*.rb' --ignore-file .mise-watch-ignore --print-events example >"${output_file}" 2>&1 &
+PID_TO_KILL=$!
+
+# Wait for the constructed watchexec command line to be logged. Anchor on the
+# exact `$ watchexec ` debug prefix (debug!("$ watchexec {}", ...)) so unrelated
+# output mentioning "watchexec" (e.g. tool-resolution logs) can't satisfy the
+# loop early and kill the process before the command line is flushed.
+for _ in $(seq 1 40); do
+  grep -Fq '$ watchexec ' "${output_file}" && break
+  sleep 0.5
+done
+
+kill -SIGINT "$PID_TO_KILL" 2>/dev/null || true
+
+assert_contains "cat ${output_file}" "--ignore spec/**/*.rb"
+assert_contains "cat ${output_file}" "--ignore-file .mise-watch-ignore"
+assert_contains "cat ${output_file}" "--print-events"

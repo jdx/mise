@@ -1,0 +1,14 @@
+---
+source: src/env_diff.rs
+expression: diff.to_patches()
+---
+[
+    Change(
+        "b",
+        "3",
+    ),
+    Add(
+        "c",
+        "4",
+    ),
+]

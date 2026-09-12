@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+task.output = "interleave"
+
+[tasks.a]
+run = '''printf %s "$MISE_TASK_COLOR" | od -An -tx1 | tr -d ' \n' > a.color'''
+output = "prefix"
+
+[tasks.b]
+run = '''printf %s "$MISE_TASK_COLOR" | od -An -tx1 | tr -d ' \n' > b.color'''
+output = "prefix"
+
+[tasks.disabled]
+run = '''printf %s "$MISE_TASK_COLOR" > disabled.color'''
+output = "prefix"
+
+[tasks.interleave]
+run = '''printf %s "$MISE_TASK_COLOR" > interleave.color'''
+
+[tasks.override]
+run = '''printf %s "$MISE_TASK_COLOR" | od -An -tx1 | tr -d ' \n' > override.color'''
+output = "prefix"
+env = { MISE_TASK_COLOR = "user-value" }
+
+[tasks.keep]
+run = '''printf %s "$MISE_TASK_COLOR" > keep.color'''
+output = "keep-order"
+
+[tasks.timed]
+run = '''printf %s "$MISE_TASK_COLOR" > timed.color'''
+output = "timed"
+
+[tasks.replacing]
+run = '''printf %s "$MISE_TASK_COLOR" > replacing.color'''
+output = "replacing"
+
+[tasks.replacing_fallback]
+run = '''printf %s "$MISE_TASK_COLOR" > replacing-fallback.color'''
+output = "replacing"
+
+[tasks.quiet]
+run = '''printf %s "$MISE_TASK_COLOR" > quiet.color'''
+output = "prefix"
+quiet = true
+
+[tasks.raw]
+run = '''printf %s "$MISE_TASK_COLOR" > raw.color'''
+output = "prefix"
+raw = true
+
+[tasks.parent]
+run = "mise run child"
+output = "prefix"
+
+[tasks.child]
+run = '''printf %s "$MISE_TASK_COLOR" > child.color'''
+output = "interleave"
+EOF
+
+CLICOLOR_FORCE=1 MISE_FORCE_PROGRESS=1 mise run a ::: b ::: override ::: interleave ::: keep ::: timed ::: replacing ::: quiet ::: raw
+assert "cat a.color" "1b5b33356d"
+assert "cat b.color" "1b5b33366d"
+assert "cat override.color" "1b5b33346d"
+assert_empty "cat interleave.color" ""
+assert "od -An -tx1 keep.color | tr -d ' \n' | cut -c1-4" "1b5b"
+assert "od -An -tx1 timed.color | tr -d ' \n' | cut -c1-4" "1b5b"
+assert "od -An -tx1 replacing.color | tr -d ' \n' | cut -c1-4" "1b5b"
+assert_empty "cat quiet.color" ""
+assert_empty "cat raw.color" ""
+
+CI=1 CLICOLOR_FORCE=1 mise run replacing_fallback
+assert "od -An -tx1 replacing-fallback.color | tr -d ' \n' | cut -c1-4" "1b5b"
+
+NO_COLOR=1 mise run disabled
+assert_empty "cat disabled.color" ""
+
+CLICOLOR_FORCE=1 mise run parent
+assert_empty "cat child.color" ""

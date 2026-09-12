@@ -1,0 +1,10 @@
+description = "A strongly-typed language that compiles to JavaScript"
+version_order = "source"
+# test = { cmd = "purs --version", expected = "{{version}}" }
+
+bins = ["purs"]
+[[backends]]
+full = "github:purescript/purescript"
+
+[[backends]]
+full = "asdf:jrrom/asdf-purescript"

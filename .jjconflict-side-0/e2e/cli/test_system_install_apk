@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Linux" ]] || ! command -v apk >/dev/null || [[ "$(id -u)" != 0 ]]; then
+  exit 0
+fi
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"apk:bc" = "latest"
+EOF
+
+apk del bc >/dev/null 2>&1 || true
+
+assert_contains "mise bootstrap packages status" "missing"
+assert_fail "mise bootstrap packages status --missing"
+
+assert_contains "mise bootstrap packages apply --dry-run" "apk add -- bc"
+assert_contains "mise bootstrap packages apply apk:bc --dry-run" "apk add -- bc"
+
+mise bootstrap packages apply --yes
+assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "mise bootstrap packages status --missing"
+
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already installed"
+
+assert_contains "mise bootstrap packages upgrade --dry-run" "apk upgrade --available --update-cache -- bc"
+
+apk del bc >/dev/null 2>&1 || true
+assert_succeed "mise bootstrap packages use --yes apk:bc"
+assert_contains "cat mise.toml" '"apk:bc" = "latest"'
+assert_contains "mise bootstrap packages status" "installed"

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# minimum_release_age gates remote version selection. It must not make an
+# already-installed version ineligible during ordinary toolset resolution.
+
+marker="$HOME/remote-versions-fetched"
+cp -RL "$MISE_DATA_DIR/plugins/dummy" "$MISE_DATA_DIR/plugins/spy"
+
+mise install spy@1.0.0
+mise install spy@2.0.0
+
+# Make a remote lookup observable and fatal. Ordinary resolution should use
+# the latest installed match without calling this script, even with an
+# explicit release-age policy.
+cat >"$MISE_DATA_DIR/plugins/spy/bin/list-all" <<EOF
+#!/usr/bin/env bash
+touch "$marker"
+exit 1
+EOF
+cat >"$MISE_DATA_DIR/plugins/spy/bin/latest-stable" <<EOF
+#!/usr/bin/env bash
+touch "$marker"
+exit 1
+EOF
+rm -rf "$MISE_CACHE_DIR/spy"
+
+cat >mise.toml <<EOF
+[settings]
+minimum_release_age = "2d"
+
+[tools]
+spy = "latest"
+EOF
+
+# Resolution is concrete, while bin-paths intentionally exposes the fuzzy
+# request's runtime symlink.
+assert "mise current spy" "2.0.0"
+assert "mise bin-paths" "$MISE_DATA_DIR/installs/spy/latest/bin"
+assert "test ! -e '$marker'"
+
+output="$(mise prune --dry-run --tools --yes 2>&1)"
+assert_contains_text "$output" "spy@1.0.0"
+assert_not_contains_text "$output" "spy@2.0.0"

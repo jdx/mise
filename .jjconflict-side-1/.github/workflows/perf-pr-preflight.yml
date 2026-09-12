@@ -1,0 +1,18 @@
+name: perf-pr-preflight
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - ".github/**"
+      - "mise.lock"
+      - "mise.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  complete:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "The default-branch controller will independently validate this pull request."

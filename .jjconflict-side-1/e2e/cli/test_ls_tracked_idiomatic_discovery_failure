@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+mkdir -p "$MISE_DATA_DIR/plugins/failing" "$MISE_STATE_DIR/tracked-configs" project other
+cat <<'EOF' >"$MISE_DATA_DIR/plugins/failing/metadata.lua"
+error("intentional metadata discovery failure")
+EOF
+cat <<'EOF' >project/package.json
+{
+  "name": "tracked-overlap"
+}
+EOF
+# Simulate a file that was tracked before the enabled plugin's metadata began failing.
+ln -s "$PWD/project/package.json" "$MISE_STATE_DIR/tracked-configs/failing-plugin"
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+experimental = true
+idiomatic_version_file_enable_tools = ["failing"]
+EOF
+
+output=$(mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "error loading tracked config file"
+assert_contains "echo '$output'" "intentional metadata discovery failure"
+assert_contains "echo '$output'" "project/package.json"
+assert_not_contains "echo '$output'" "skipping disabled idiomatic tracked config"

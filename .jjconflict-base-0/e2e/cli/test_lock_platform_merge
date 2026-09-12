@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+# Test that lockfile platform info merging preserves URLs and prefers sha256 over blake3
+
+export MISE_LOCKFILE=1
+
+echo "=== Testing lockfile platform merge preserves URL and sha256 checksum ==="
+rm -f mise.toml mise.lock
+
+# Create a mise.toml with a tool
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+
+# Create an existing lockfile with sha256 checksum and URL for current platform
+# This simulates what the lockfile looks like after `mise lock` generates it
+cat <<'EOF' >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.linux-x64" = { checksum = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5", url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64" }
+"platforms.linux-arm64" = { checksum = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4c5", url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-arm64" }
+"platforms.macos-x64" = { checksum = "sha256:0bbe619e663e0de2c550be2fe7e7e4b0a3f6e9a5e6c8d0d8ddf88ba6d0c3c2d6", url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-amd64" }
+"platforms.macos-arm64" = { checksum = "sha256:0bbe619e663e0de2c550be2fe7e7e4b0a3f6e9a5e6c8d0d8ddf88ba6d0c3c2d7", url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64" }
+"platforms.windows-x64" = { checksum = "sha256:3f8a60f8c9c4e6d0f3b0e8d0c9f0a0b0c0d0e0f0a0b0c0d0e0f0a0b0c0d0e0f0", url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-windows-amd64.exe" }
+EOF
+
+# Run mise lock to re-resolve the current platform
+# This should merge the new platform info with existing, preserving URLs
+mise lock --platform linux-x64 2>&1
+
+# Verify the URL is still present for linux-x64 (should not be lost during merge)
+assert_contains "cat mise.lock" 'url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64"'
+
+# Verify sha256 checksum is preserved (not replaced with blake3)
+assert_contains "cat mise.lock" 'sha256:'
+
+# Verify other platforms' entries are also preserved
+assert_contains "cat mise.lock" 'platforms.macos-arm64'
+assert_contains "cat mise.lock" 'platforms.windows-x64'
+
+echo "=== Testing merge with blake3 checksum prefers sha256 ==="
+rm -f mise.lock
+
+# Create a lockfile where one platform has blake3 (simulating local install)
+# and existing has sha256 (from mise lock)
+cat <<'EOF' >mise.lock
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.linux-x64" = { checksum = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5", url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64" }
+EOF
+
+# Run mise lock which may try to update with new checksums
+mise lock --platform linux-x64 2>&1
+
+# Verify sha256 is still present (not replaced)
+assert_contains "cat mise.lock" 'sha256:'
+
+# Verify URL is preserved
+assert_contains "cat mise.lock" 'url = "https://github.com/jqlang/jq/releases'
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.toml
+
+echo "mise lock platform merge tests passed!"

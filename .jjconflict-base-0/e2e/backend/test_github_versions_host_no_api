@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# Verify the github backend can install from real mise-versions release and
+# attestation metadata without contacting api.github.com.
+
+SERVER_PORT_FILE="$TMPDIR/github_api_blocker_port"
+HEADERS_LOG_DIR="$TMPDIR/github_api_blocker_logs"
+mkdir -p "$HEADERS_LOG_DIR"
+
+MISE_HTTP_TEST_PORT_FILE="$SERVER_PORT_FILE" python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" 0 "$HEADERS_LOG_DIR" &
+SERVER_PID=$!
+
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+wait_for_file "$SERVER_PORT_FILE" "GitHub API blocker port file" 30 "$SERVER_PID"
+SERVER_PORT=$(cat "$SERVER_PORT_FILE")
+
+rm -rf "$MISE_CACHE_DIR/github"
+mise uninstall communique 2>/dev/null || true
+
+cat <<EOF >mise.toml
+[settings]
+url_replacements = { "https://api.github.com" = "http://127.0.0.1:$SERVER_PORT" }
+
+[tools]
+communique = "1.1.3"
+EOF
+
+assert_succeed "mise install"
+assert_contains "mise x -- communique --version" "communique 1.1.3"
+
+if compgen -G "$HEADERS_LOG_DIR/request_*.json" >/dev/null; then
+  cat "$HEADERS_LOG_DIR"/request_*.json
+  fail "api.github.com was contacted; install should use mise-versions metadata"
+fi

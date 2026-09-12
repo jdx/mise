@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+touch mise.toml
+assert_empty "mise --no-config cfg"
+MISE_NO_CONFIG=1 assert_empty "mise cfg"

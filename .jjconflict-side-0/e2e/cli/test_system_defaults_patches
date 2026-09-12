@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+domain="com.mise.defaults-patch-test.$$"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "Shortcuts"
+path = ["64", "enabled"]
+value = true
+EOF_CONFIG
+cat >mise.toml <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "Shortcuts"
+path = ["64", "enabled"]
+value = false
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "Shortcuts"
+path = ["literal.key", "items"]
+value = [1, true, "three"]
+EOF_CONFIG
+if [[ $(uname) != Darwin ]]; then
+  require_cmd jq
+  assert 'mise bootstrap macos defaults status --json | jq -c ".macos_defaults.entries[0] | [.host, .path, .value, .state]"' '["any",["64","enabled"],false,"skipped"]'
+  mise bootstrap status --json | jq -c .macos_defaults >aggregate.json
+  assert 'mise bootstrap macos defaults status --json | jq -c .macos_defaults' "$(cat aggregate.json)"
+  assert_contains 'mise bootstrap macos defaults status' skipped
+  assert_succeed 'mise bootstrap macos defaults apply --yes'
+else
+  require_cmd jq
+  # Core Foundation writes outside the harness HOME, to the user's preference store.
+  # Remove only this test's preference domain.
+  trap 'defaults delete "$domain" >/dev/null 2>&1 || true; defaults -currentHost delete "$domain" >/dev/null 2>&1 || true' EXIT
+  defaults write "$domain" Shortcuts '{ "64" = { enabled = 1; parameters = (32, 49, 1048576); }; "65" = { enabled = 1; }; }'
+  assert_contains 'mise bootstrap macos defaults apply --dry-run' 'Shortcuts["64"]["enabled"] = false'
+  assert_succeed 'mise bootstrap macos defaults apply --yes'
+  assert_succeed 'mise bootstrap macos defaults status --missing'
+  assert 'mise bootstrap macos defaults status --json | jq ".macos_defaults.entries | length"' 2
+  assert 'mise bootstrap macos defaults status --json | jq -c ".macos_defaults.entries[0].path"' '["64","enabled"]'
+  assert_contains "defaults read '$domain' Shortcuts" parameters
+  assert_contains "defaults read '$domain' Shortcuts" 65
+  assert_contains 'mise bootstrap macos defaults apply --yes 2>&1' '2 value(s) already set'
+  # The same path on the current host reads and preserves that scope's siblings.
+  defaults -currentHost write "$domain" Shortcuts '{ "64" = { enabled = 1; }; hostOnly = 42; }'
+  cat >>mise.toml <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "Shortcuts"
+host = "current"
+path = ["64", "enabled"]
+value = false
+EOF_CONFIG
+  assert_contains 'mise bootstrap macos defaults apply --dry-run' '(current host)'
+  assert_succeed 'mise bootstrap macos defaults apply --yes'
+  assert_succeed 'mise bootstrap macos defaults status --missing'
+  assert_contains "defaults -currentHost read '$domain' Shortcuts" hostOnly
+  assert_contains "defaults read '$domain' Shortcuts" parameters
+  assert_contains 'mise bootstrap macos defaults apply --yes 2>&1' '3 value(s) already set'
+  # Overlapping declarations fail even when one already matches the stored value.
+  cat >>mise.toml <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "Shortcuts"
+path = ["64"]
+value = { enabled = false }
+EOF_CONFIG
+  assert_fail 'mise bootstrap macos defaults apply --yes' 'overlapping macOS defaults declarations'
+  # A whole-value declaration and a patch must not compete for the same key.
+  cat >mise.toml <<EOF_CONFIG
+[bootstrap.macos.defaults."$domain"]
+Shortcuts = {}
+EOF_CONFIG
+  assert_fail 'mise bootstrap macos defaults apply --yes' 'overlapping macOS defaults declarations'
+  cat >mise.toml <<EOF_CONFIG
+[[bootstrap.macos.defaults_entries]]
+domain = "$domain"
+key = "Other"
+path = []
+value = false
+EOF_CONFIG
+  assert_fail 'mise bootstrap macos defaults status' 'defaults patch path must not be empty'
+fi

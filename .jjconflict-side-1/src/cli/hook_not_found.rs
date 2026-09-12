@@ -1,0 +1,38 @@
+use crate::request_exit;
+
+use eyre::Result;
+
+use crate::config::{Config, Settings};
+use crate::shell::ShellType;
+use crate::toolset::ToolsetBuilder;
+
+/// [internal] called by shell when a command is not found
+#[derive(Debug, usage_rs::Args)]
+#[usage(hide = true)]
+pub(crate) struct HookNotFound {
+    /// Attempted bin to run
+    #[usage()]
+    bin: String,
+
+    /// Shell type to generate script for
+    #[usage(long, short, value_enum)]
+    shell: Option<ShellType>,
+}
+
+impl HookNotFound {
+    pub(crate) async fn run(self) -> Result<()> {
+        let mut config = Config::get().await?;
+        let settings = Settings::try_get()?;
+        if settings.not_found_auto_install {
+            let mut ts = ToolsetBuilder::new().build(&config).await?;
+            if ts
+                .install_missing_bin(&mut config, &self.bin)
+                .await?
+                .is_some()
+            {
+                return Ok(());
+            }
+        }
+        Err(request_exit(127))
+    }
+}
