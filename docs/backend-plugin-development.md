@@ -22,13 +22,56 @@ Backend plugins extend the standard vfox plugin system with dedicated backend ho
 
 Backend plugins are generally a git repository but can also be a directory (via `mise plugin link`).
 
-Backend plugins are written in Lua (currently version 5.1). They use three main backend methods, each implemented in its own file:
+Backend plugins are written in Lua (currently version 5.1). They use three required backend
+methods and can optionally expose their tool catalog. Each method is implemented in its own file:
 
+- `hooks/backend_list_tools.lua` - Optionally lists discoverable tools
+- `hooks/backend_search_tools.lua` - Optionally searches a large tool catalog
 - `hooks/backend_list_versions.lua` - Lists available versions for a tool
 - `hooks/backend_install.lua` - Installs a specific version of a tool
 - `hooks/backend_exec_env.lua` - Sets up environment variables for a tool
 
 ## Backend Methods
+
+### BackendListTools
+
+Optionally lists the tools managed by this backend. mise prefixes every returned name with the
+installed plugin name and includes the resulting `plugin:tool` identifiers in `mise search`, shell
+completion, and the interactive `mise use` selector.
+
+```lua
+function PLUGIN:BackendListTools(ctx)
+    return {
+        tools = {
+            {name = "formatter", description = "Formats source files"},
+            {name = "linter", description = "Checks source files"},
+        },
+    }
+end
+```
+
+`name` is required and `description` is optional. Return a finite, useful catalog; package-manager
+backends should not enumerate an entire ecosystem. mise caches the response using the remote
+version cache duration, and uses stale cached results when a refresh fails.
+
+### BackendSearchTools
+
+Optionally searches a large or changing catalog without enumerating it in full. mise calls this
+hook when `mise search` or shell completion has a non-empty query. A plugin may implement this
+hook, `BackendListTools`, or both.
+
+```lua
+function PLUGIN:BackendSearchTools(ctx)
+    local results = search_registry(ctx.query)
+    return {
+        tools = results,
+    }
+end
+```
+
+The response has the same shape as `BackendListTools`. For example, an npm-style backend can query
+its registry for `ctx.query`, while still using `BackendListTools` for a small set of featured tools.
+Search responses are cached separately for each query.
 
 ### BackendListVersions
 
@@ -131,7 +174,9 @@ my-backend-plugin/
 ├── hooks/
 │   ├── backend_list_versions.lua   # BackendListVersions hook
 │   ├── backend_install.lua         # BackendInstall hook
-│   └── backend_exec_env.lua        # BackendExecEnv hook
+│   ├── backend_exec_env.lua        # BackendExecEnv hook
+│   ├── backend_list_tools.lua      # Optional finite tool catalog
+│   └── backend_search_tools.lua    # Optional query-driven tool search
 
 ```
 
@@ -250,6 +295,17 @@ substitute for an options contract.
 ## Context Variables
 
 Backend plugins receive context through the `ctx` parameter passed to each hook function:
+
+### BackendListTools Context
+
+`BackendListTools` currently receives an empty context table. Tool-specific options are unavailable
+until a tool has been selected.
+
+### BackendSearchTools Context
+
+| Variable    | Description                     | Example   |
+| ----------- | ------------------------------- | --------- |
+| `ctx.query` | The tool name or prefix to find | `"prett"` |
 
 ### BackendListVersions Context
 

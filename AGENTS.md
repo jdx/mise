@@ -365,6 +365,8 @@ Discussions from accounts with no connection to the questions or project; those 
 blocked. Preserve this anti-spam distinction when writing or enforcing community policy, and
 do not discourage individual AI-assisted responses from people trying to help.
 
+Write pull request descriptions for users and reviewers, not as a list of files or implementation steps. Lead with the user-visible problem and outcome. For user-facing behavior, include concrete command or configuration examples that show how the change works, and explain materially different use cases or tradeoffs (for example, bounded catalogs versus query-driven search). Keep implementation details and test commands in secondary sections.
+
 When AI contributes GitHub content—including a pull request description, review, pull request
 comment, or discussion post—append this disclosure:
 

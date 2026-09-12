@@ -261,7 +261,7 @@
 - [mise registry](https://mise.jdx.dev/cli/registry.html): List registry shorthand names and their backends
 - [mise reshim](https://mise.jdx.dev/cli/reshim.html): Create shims for executables provided by installed tools
 - [mise run](https://mise.jdx.dev/cli/run.html): Run tasks and their dependencies
-- [mise search](https://mise.jdx.dev/cli/search.html): Search for tools in the registry
+- [mise search](https://mise.jdx.dev/cli/search.html): Search for available tools
 - [mise self-update](https://mise.jdx.dev/cli/self-update.html): Update mise itself
 - [mise set](https://mise.jdx.dev/cli/set.html): Set environment variables in mise.toml
 - [mise settings](https://mise.jdx.dev/cli/settings.html): Manage settings
