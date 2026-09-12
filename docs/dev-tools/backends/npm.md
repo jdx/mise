@@ -271,8 +271,9 @@ To exempt only selected versions, use aube's package-version pattern syntax:
 
 ### `allow_low_downloads`
 
-Allows the requested package to install even though its weekly download count falls below aube's
-`lowDownloadThreshold` (1000 by default). Without it, aube refuses:
+Explicitly approves the requested package for aube's reputation checks. This includes a weekly
+download count below `lowDownloadThreshold` (1000 by default), a name similar to a popular package,
+or a newly registered package name. Without it, aube refuses; for example:
 
 ```
 refusing to add some-tool: only 930 weekly downloads (threshold: 1000).
@@ -285,16 +286,15 @@ refusing to add some-tool: only 930 weekly downloads (threshold: 1000).
 
 The exemption is scoped to the package you asked for, written to the aube install's
 `.config/aube/config.toml` under `allowedUnpopularPackages`. Transitive dependencies stay gated,
-and the threshold itself is left alone — so this cannot silently admit an unpopular dependency
-you did not choose.
+and aube's malicious-package advisory check still runs. The reputation thresholds themselves are
+left alone, so this cannot silently admit an unapproved dependency.
 
-An npm tool resolved from `mise.lock` is trusted automatically for this download-count check, so
-reproducing an existing lockfile does not require `allow_low_downloads`. The explicit option is
+An npm tool resolved from `mise.lock` is trusted automatically for these three reputation checks,
+so reproducing an existing lockfile does not require `allow_low_downloads`. The explicit option is
 still required to approve the first unlocked install.
 
-Download count is a popularity signal, not a safety one: a low count means few others have vetted
-the package, so prefer confirming you trust the publisher over reaching for this. It does not affect
-`npm`, `pnpm`, or `bun` installs.
+These are reputation signals, not proof that a package is unsafe. Verify the package name and
+publisher before approving it. This option does not affect `npm`, `pnpm`, or `bun` installs.
 
 ### `aube_args`
 
