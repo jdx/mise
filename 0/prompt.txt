@@ -1,0 +1,9 @@
+i don't think this should be global, only a handful of commands have this
+
+---
+
+make a pr and reply to the user discussion
+
+---
+
+address pr feedback and failing checks until it settles
