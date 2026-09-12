@@ -65,7 +65,7 @@ case "$1 $2" in
 					;;
 			esac
 			done
-		if ! $toolchain_exists && [[ -z "$profile" || "$profile" == "default" ]]; then
+		if ! $toolchain_exists && [[ -z "$profile" || "$profile" == "default" || "$profile" == "d" ]]; then
 			printf '%s\n' clippy rust-docs rustfmt >>"$MISE_CARGO_HOME/components"
 		fi
 		sort -u "$MISE_CARGO_HOME/components" -o "$MISE_CARGO_HOME/components" 2>/dev/null || true
@@ -125,17 +125,28 @@ assert_contains "cat '$MISE_CARGO_HOME/components'" "rustfmt"
 
 cat >mise.toml <<EOF
 [tools]
+rust = { version = "1.81.0", profile = "d" }
+EOF
+
+sed -i '/^rustfmt$/d' "$MISE_CARGO_HOME/components"
+assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
+mise install
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "5"
+assert_contains "cat '$MISE_CARGO_HOME/components'" "rustfmt"
+
+cat >mise.toml <<EOF
+[tools]
 rust = { version = "1.81.0", components = ["rustfmt", "rust-src"], targets = ["wasm32-unknown-unknown"] }
 EOF
 
 assert_fail_contains "mise install rust --dry-run-code 2>&1" "would install"
 
 mise exec -- rustc -V
-assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "5"
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "6"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "rustfmt"
 assert_contains "cat '$MISE_CARGO_HOME/components'" "rust-src"
 assert_contains "cat '$MISE_CARGO_HOME/targets'" "wasm32-unknown-unknown"
 
 mise install
-assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "5"
+assert_contains "grep -c '^toolchain install' '$MISE_CARGO_HOME/rustup.log'" "6"
 assert_contains "mise install rust --dry-run-code 2>&1" "already installed"
