@@ -1,0 +1,13 @@
+investigate [https://github.com/jdx/mise/discussions/13109](https://github.com/jdx/mise/discussions/13109)
+
+---
+
+hmm most of these are not static though
+
+---
+
+how would this work?
+
+---
+
+make a pr, post a reply

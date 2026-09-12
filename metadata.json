@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2AYVDP5JMAEA3S6CJGPJVTB",
   "strategy": "manual-commit",
   "branch": "codex/no-truncate-agent-output",
-  "checkpoints_count": 3,
+  "checkpoints_count": 7,
   "files_touched": [
     "Cargo.lock",
     "Cargo.toml",
@@ -36,13 +36,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 208403,
+    "input_tokens": 215435,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 12929024,
-    "output_tokens": 31499,
-    "api_call_count": 91
+    "cache_read_tokens": 13254144,
+    "output_tokens": 33126,
+    "api_call_count": 98
   }
 }
