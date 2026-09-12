@@ -74,10 +74,12 @@ opt-level = 3
 [dependencies]
 age = { version = "0.12", features = ["ssh", "plugin"] }
 aho-corasick = "1"
-aube-registry = { version = "2", default-features = false, features = [
+aube-registry = { version = "2", git = "https://github.com/aubepkg/aube.git", rev = "4586246d3fac561743962c1ef639bce6561b66c9", default-features = false, features = [
   "rustls",
 ] }
-aube = { version = "2", default-features = false, features = ["rustls"] }
+aube = { version = "2", git = "https://github.com/aubepkg/aube.git", rev = "4586246d3fac561743962c1ef639bce6561b66c9", default-features = false, features = [
+  "rustls",
+] }
 async-backtrace = "0.2"
 async-trait = "0.1"
 aws-config = { version = "1", default-features = false, features = [

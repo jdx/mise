@@ -1097,7 +1097,7 @@ impl NPMBackend {
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
             control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
-                .with_prompt_handler(Arc::new(AubePromptHandler)),
+                .with_prompt_decision_handler(Arc::new(AubePromptHandler)),
             // Run dependency lifecycle scripts on the node mise resolved as a
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
@@ -1505,12 +1505,23 @@ impl aube::embed::InstallReporter for AubeProgressReporter {
 #[derive(Debug)]
 struct AubePromptHandler;
 
-impl aube::embed::InstallPromptHandler for AubePromptHandler {
-    fn confirm(&self, prompt: aube::embed::InstallPrompt) -> aube::embed::InstallPromptFuture<'_> {
+impl aube::embed::InstallPromptDecisionHandler for AubePromptHandler {
+    fn decide(
+        &self,
+        prompt: aube::embed::InstallPrompt,
+    ) -> aube::embed::InstallPromptDecisionFuture<'_> {
         Box::pin(async move {
-            crate::ui::prompt::confirm_with_default(aube_prompt_message(&prompt), false)
-                .map(|answer| answer.is_yes())
-                .map_err(|err| miette::miette!("{err:#}"))
+            let answer =
+                crate::ui::prompt::confirm_with_default(aube_prompt_message(&prompt), false)
+                    .map_err(|err| miette::miette!("{err:#}"))?;
+            Ok(match answer {
+                crate::ui::prompt::Confirmation::Yes => aube::embed::InstallPromptDecision::Accept,
+                crate::ui::prompt::Confirmation::No => aube::embed::InstallPromptDecision::Decline,
+                crate::ui::prompt::Confirmation::Unanswered
+                | crate::ui::prompt::Confirmation::Unavailable => {
+                    aube::embed::InstallPromptDecision::Unavailable
+                }
+            })
         })
     }
 }
@@ -1858,6 +1869,17 @@ fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> St
              Investigation guide and known exceptions: \
              https://aube.jdx.dev/security#trust-policy"
         ));
+    } else if matches!(
+        err.code().map(|c| c.to_string()).as_deref(),
+        Some(
+            "ERR_AUBE_LOW_DOWNLOAD_PACKAGE"
+                | "ERR_AUBE_NEW_PACKAGE_NAME"
+                | "ERR_AUBE_SIMILAR_PACKAGE_NAME"
+        )
+    ) {
+        msg.push_str(&format!(
+            "\n  help: after verifying the package, set `allow_low_downloads = true` on `{tool_full}` to approve it"
+        ));
     } else if let Some(help) = err.help() {
         msg.push_str(&format!("\n  help: {help}"));
     }
@@ -2145,6 +2167,29 @@ mod tests {
         assert!(msg.contains("aube install failed: something else failed"));
         assert!(msg.contains("help: try again later"));
         assert!(!msg.contains("trust_policy_excludes"));
+    }
+
+    #[test]
+    fn test_build_aube_install_error_message_uses_mise_prompt_gate_remedy() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("refusing to add @n8n/cli: only 569 weekly downloads (threshold: 1000)")]
+        #[diagnostic(
+            code(ERR_AUBE_LOW_DOWNLOAD_PACKAGE),
+            help("pass --allow-low-downloads to bypass")
+        )]
+        struct LowDownloads;
+
+        let report = miette::Report::new(LowDownloads);
+        let msg = build_aube_install_error_message(&report, "npm:@n8n/cli");
+
+        assert!(msg.contains("569 weekly downloads"));
+        assert!(msg.contains("allow_low_downloads = true"));
+        assert!(msg.contains("`npm:@n8n/cli`"));
+        assert!(!msg.contains("--allow-low-downloads"));
+        assert!(!msg.contains("mise add"));
     }
 
     fn assert_npm_view_versions_time(data: &serde_json::Value) {
