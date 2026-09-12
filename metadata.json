@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M29GWWNV92CR8JN48FEC86WP",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-landing-task-tab-shift",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/.vitepress/theme/landing.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 81318,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1447680,
+    "output_tokens": 5182,
+    "api_call_count": 25
+  }
+}
