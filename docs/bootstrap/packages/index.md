@@ -145,6 +145,31 @@ for managers that aren't available on the current machine are written without
 installing — that's how a shared config picks up `apt:` lines authored on a
 Mac.
 
+### Locate an installed package
+
+Use `mise bootstrap packages where brew:unzip` to print an installed Homebrew
+formula's stable, absolute `opt` root. The command currently supports brew
+formulae on macOS arm64 and Linux x86_64/arm64, including keg-only formulae:
+
+```sh
+if package_root="$(mise bootstrap packages where brew:unzip)"; then
+  export PATH="$package_root/bin:$PATH"
+fi
+```
+
+Use canonical formula names: aliases are not resolved. Qualified inputs such
+as `brew:homebrew/core/unzip` or `brew:owner/tap/unzip` query the same local
+`unzip` rack without checking tap provenance. A declaration and the Homebrew
+executable are unnecessary. Missing or invalid installations fail with empty
+stdout; install separately with `mise bootstrap packages apply brew:unzip` or
+restore the opt link as directed by the diagnostic.
+
+This local query reads settings from environment variables and global CLI
+options only. Project/global configuration and `.miserc.toml`, their executable
+templates, automatic updates, and startup housekeeping are outside its lookup
+path. See [formula roots](/bootstrap/packages/brew.html#locate-an-installed-formula)
+for naming, output, and upgrade semantics.
+
 ### Import and prune
 
 ```sh

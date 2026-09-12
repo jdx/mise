@@ -963,6 +963,7 @@ enum BootstrapPackagesCommands {
     Status(status::SystemStatus),
     Upgrade(upgrade::SystemUpgrade),
     Use(r#use::SystemUse),
+    Where(super::system::r#where::SystemWhere),
 }
 
 /// Manage git repo checkouts from `[bootstrap.repos]`
@@ -1292,6 +1293,16 @@ struct BootstrapUserStatus {
 }
 
 impl Bootstrap {
+    /// Identify local lookup so dispatch can bypass bootstrap configuration and hooks.
+    pub(super) fn is_packages_where(&self) -> bool {
+        matches!(
+            self.command,
+            Some(Commands::Packages(BootstrapPackages {
+                command: BootstrapPackagesCommands::Where(_),
+            }))
+        )
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run
     }
@@ -4322,6 +4333,7 @@ impl BootstrapPackages {
             BootstrapPackagesCommands::Status(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Upgrade(cmd) => cmd.run().await,
             BootstrapPackagesCommands::Use(cmd) => cmd.run().await,
+            BootstrapPackagesCommands::Where(cmd) => cmd.run().await,
         }
     }
 }

@@ -126,6 +126,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap packages status", Read),
     ("bootstrap packages upgrade", Write),
     ("bootstrap packages use", Write),
+    ("bootstrap packages where", Read),
     ("bootstrap plan", Read),
     ("bootstrap plugins", Read),
     ("bootstrap plugins apply", Write),

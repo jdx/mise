@@ -319,6 +319,44 @@ export PATH="/opt/homebrew/bin:$PATH"
 Keg-only formulae are not linked there. Use their `<prefix>/opt/<formula>` path
 when configuring compilers or services that need them.
 
+### Locate an installed formula
+
+`mise bootstrap packages where brew:unzip` prints the installed formula's
+absolute `<prefix>/opt/unzip` root as one line. Append `/bin` to use its commands,
+including commands from keg-only formulae:
+
+```sh
+if package_root="$(mise bootstrap packages where brew:unzip)"; then
+  export PATH="$package_root/bin:$PATH"
+fi
+```
+
+The lookup works for formulae installed by mise or Homebrew, with no package
+declaration or Homebrew executable required. Library-only formulae also have
+roots, so a successful lookup does not guarantee a `bin` directory exists.
+The stable `opt` spelling follows upgrades that repoint the link. It describes
+the active installation at lookup time; a concurrent upgrade or unlink can
+change the target before a later command uses it.
+
+Use the canonical installed formula name, such as `brew:openssl@3`.
+`brew:homebrew/core/unzip` and `brew:owner/tap/unzip` both query the local
+`unzip` rack; the lookup does not verify tap provenance or resolve aliases.
+`@latest` and numeric `@` suffixes are literal parts of the formula name.
+The command supports brew formulae on macOS arm64 and Linux x86_64/arm64;
+casks and other package managers are unsupported.
+
+A missing or unusable `opt` link produces an error on stderr, a nonzero exit
+status, and empty stdout. Install or reconcile the formula separately with
+`mise bootstrap packages apply brew:unzip`; inspect and restore an invalid
+link as directed by the error. Lookup reads local records without repairing
+them, downloading metadata, running subprocesses, or selecting another Cellar
+version.
+
+For this query, settings come exclusively from environment variables and global
+CLI options, including `--cd`. Project/global configuration and `.miserc.toml`
+are outside its inputs, so their errors and executable templates cannot affect
+the lookup. Automatic updates and startup housekeeping are skipped.
+
 ## Coexistence with a real Homebrew
 
 mise pours bottles into the Cellar exactly the way brew does and writes

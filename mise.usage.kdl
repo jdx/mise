@@ -19,6 +19,8 @@ source_code_link_template #"""
 {%- set path = "system/upgrade.rs" -%}
 {%- elif path == "bootstrap/packages/use" -%}
 {%- set path = "system/use.rs" -%}
+{%- elif path == "bootstrap/packages/where" -%}
+{%- set path = "system/where.rs" -%}
 {%- elif path is starting_with(pat="bootstrap/packages/brew") -%}
 {%- set path = "system/brew/mod.rs" -%}
 {%- elif path == "bootstrap/dotfiles/add" -%}
@@ -1508,6 +1510,20 @@ mise bootstrap packages use brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.
 mise bootstrap packages use -g brew:postgresql@17
 mise bootstrap packages use apt:curl@8.5.0-2
 """#
+        }
+        cmd where help="Print the stable root of an installed Homebrew formula" effect=read {
+            long_help #"""
+Print the stable root of an installed Homebrew formula
+
+Use an explicit brew:<formula> or brew:<owner>/<tap>/<formula> with the
+canonical installed formula name. Qualified names use the final component
+as the local rack name; aliases and tap provenance are not resolved.
+Settings come from environment variables and global CLI options only.
+The returned opt path follows upgrades and may change after this lookup.
+Missing or invalid installations produce empty stdout and a nonzero exit status.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PACKAGE> help="Explicit brew formula to locate"
         }
     }
     cmd plan help="Show the changes declarative bootstrap resources would make" effect=read {

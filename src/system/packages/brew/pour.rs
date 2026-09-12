@@ -42,6 +42,70 @@ pub(super) fn linked_version(name: &str) -> Option<String> {
     record_keg(name, &opt).map(|(version, _)| version)
 }
 
+/// Return the absolute opt path only when its symlink resolves to a keg directly inside the formula rack.
+/// Preserve the configured prefix spelling and report invalid records without repairing them.
+pub(super) fn strict_package_root(name: &str) -> Result<PathBuf> {
+    if let Some(prefix) = std::env::var_os("MISE_SYSTEM_BREW_PREFIX")
+        && prefix.to_str().is_none()
+    {
+        bail!("the prefix cannot be printed as a single UTF-8 path; use a compatible prefix path");
+    }
+    let prefix = prefix::prefix();
+    let prefix = if prefix.is_absolute() {
+        prefix
+    } else {
+        std::env::current_dir()
+            .wrap_err_with(|| {
+                format!(
+                    "cannot resolve relative Homebrew prefix {}",
+                    prefix.display()
+                )
+            })?
+            .join(prefix)
+    };
+    let opt = prefix.join("opt").join(name);
+    let rack = prefix.join("Cellar").join(name);
+    let metadata =
+        std::fs::symlink_metadata(&opt).map_err(|err| package_root_io_error(name, &opt, err))?;
+    if !metadata.is_symlink() {
+        bail!(
+            "invalid opt record for brew:{name} at {}: expected a symbolic link; inspect it and restore the formula's correct opt link",
+            opt.display()
+        );
+    }
+    let target =
+        std::fs::canonicalize(&opt).map_err(|err| package_root_io_error(name, &opt, err))?;
+    let canonical_rack =
+        std::fs::canonicalize(&rack).map_err(|err| package_root_io_error(name, &rack, err))?;
+    let metadata =
+        std::fs::metadata(&target).map_err(|err| package_root_io_error(name, &target, err))?;
+    if !metadata.is_dir() || target.parent() != Some(canonical_rack.as_path()) {
+        bail!(
+            "invalid opt record for brew:{name} at {}: target {} must be a directory directly inside {}; inspect it and restore the formula's correct opt link",
+            opt.display(),
+            target.display(),
+            canonical_rack.display()
+        );
+    }
+    Ok(opt)
+}
+
+/// Retain the filesystem error while adding lookup context and actionable recovery guidance.
+fn package_root_io_error(name: &str, path: &Path, err: std::io::Error) -> eyre::Report {
+    let context = if err.kind() == std::io::ErrorKind::NotFound {
+        format!(
+            "brew:{name} has no usable installed opt link: {}; install or reconcile it with `mise bootstrap packages apply brew:{name}`",
+            path.display()
+        )
+    } else {
+        format!(
+            "cannot inspect brew:{name} at {}; check access or the reported filesystem condition",
+            path.display()
+        )
+    };
+    eyre::Report::new(err).wrap_err(context)
+}
+
 /// Return the active keg version and whether one of its active records can be repaired locally.
 pub(super) fn linked_state(name: &str) -> Option<(String, bool)> {
     let opt = prefix::prefix().join("opt").join(name);
@@ -646,6 +710,8 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::system::packages::brew::package_root;
+    use std::os::unix::fs::{PermissionsExt, symlink};
     use tokio::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::const_new(());
@@ -1127,5 +1193,373 @@ mod tests {
             ),
             PathBuf::from("../Cellar/jq/1.7")
         );
+    }
+
+    /// Create the minimal rack layout needed to test lookup independently of installation metadata.
+    fn query_keg(prefix: &Path, name: &str, version: &str) -> Result<PathBuf> {
+        let keg = prefix.join("Cellar").join(name).join(version);
+        std::fs::create_dir_all(&keg)?;
+        std::fs::create_dir_all(prefix.join("opt"))?;
+        Ok(keg)
+    }
+
+    /// Require stable absolute opt output and verify that it resolves to the expected keg.
+    fn assert_query_target(name: &str, opt: &Path, keg: &Path) -> Result<()> {
+        let root = package_root(name)?;
+        assert_eq!(root, opt);
+        assert!(root.is_absolute());
+        assert_eq!(root.canonicalize()?, keg.canonicalize()?);
+        Ok(())
+    }
+
+    #[test]
+    /// Treat version suffixes literally and qualified requests as names for the same local rack.
+    fn package_root_normalizes_plain_versioned_and_qualified_names() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        for name in ["widget", "openssl@3", "widget@latest", "widget@1.2"] {
+            let keg = query_keg(&prefix, name, "opaque-active")?;
+            let opt = prefix.join("opt").join(name);
+            symlink(&keg, &opt)?;
+            for request in [
+                name.to_string(),
+                format!("homebrew/core/{name}"),
+                format!("owner/tap/{name}"),
+                format!("another/tap/{name}"),
+            ] {
+                assert_query_target(&request, &opt, &keg)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Validate names before touching the prefix so malformed requests receive identifier diagnostics.
+    fn package_root_rejects_invalid_identifiers_before_filesystem_lookup() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix.join("missing-prefix"));
+        for name in [
+            "",
+            ".",
+            "..",
+            "/widget",
+            "../widget",
+            "owner/widget",
+            "a/b/c/d",
+            "a//widget",
+            "a/b/widget/",
+            "a/./widget",
+            "../b/widget",
+            "a/../widget",
+            "a/b/..",
+            "a/b/.",
+            "widget:name",
+            "a:b/c/widget",
+            "a/b/widget:name",
+            "widget\\name",
+            "a\\b/c/widget",
+            " widget",
+            "wid get",
+            "a/ b/widget",
+            "widget\n",
+            "widget\r",
+            "wid\tget",
+            "a/b/wid\0get",
+            "a/b/wid\u{7f}get",
+            "wid\u{a0}get",
+        ] {
+            let error = format!("{:#}", package_root(name).unwrap_err());
+            assert!(error.contains("brew:"), "{name:?}: {error}");
+            assert!(!error.contains("missing-prefix"), "{name:?}: {error}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Keep cask requests separate even when a same-named formula is installed.
+    fn package_root_rejects_the_cask_namespace() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        symlink(keg, prefix.join("opt/widget"))?;
+        let error = format!("{:#}", package_root("homebrew/cask/widget").unwrap_err());
+        assert!(error.contains("cask"), "{error}");
+        Ok(())
+    }
+
+    #[test]
+    /// Allow minimal keg-only installations whose only active record is a relative opt symlink.
+    fn package_root_accepts_relative_opt_without_receipts_or_public_links() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let opt = prefix.join("opt/widget");
+        symlink("../Cellar/widget/active", &opt)?;
+        assert_query_target("widget", &opt, &keg)?;
+        assert!(!prefix.join("bin").exists());
+        assert!(!prefix.join("var/homebrew/linked/widget").exists());
+        assert_eq!(std::fs::read_dir(keg)?.count(), 0);
+        Ok(())
+    }
+
+    #[test]
+    /// Use the active opt target instead of version ordering, leaving both keg payloads unchanged.
+    fn package_root_follows_only_the_active_opaque_version_and_preserves_records() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let old = query_keg(&prefix, "widget", "old-channel")?;
+        let new = query_keg(&prefix, "widget", "2099.12.31")?;
+        let opt = prefix.join("opt/widget");
+        std::fs::write(old.join("payload"), "old")?;
+        std::fs::write(new.join("payload"), "new")?;
+        symlink(&old, &opt)?;
+        assert_query_target("widget", &opt, &old)?;
+        assert_eq!(std::fs::read_link(&opt)?, old);
+        std::fs::remove_file(&opt)?;
+        symlink(&new, &opt)?;
+        assert_query_target("widget", &opt, &new)?;
+        assert_eq!(std::fs::read_link(&opt)?, new);
+        assert_eq!(std::fs::read_to_string(old.join("payload"))?, "old");
+        assert_eq!(std::fs::read_to_string(new.join("payload"))?, "new");
+        Ok(())
+    }
+
+    #[test]
+    /// Return the user-facing prefix spelling while validating its canonical filesystem target.
+    fn package_root_preserves_symlinked_prefix_and_spaces() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, base) = canonical_tempdir()?;
+        let prefix = base.join("prefix with spaces");
+        let alias = base.join("prefix alias");
+        let keg = query_keg(&prefix, "widget", "active")?;
+        symlink(&prefix, &alias)?;
+        symlink(&keg, prefix.join("opt/widget"))?;
+        let _guard = BrewPrefixGuard::set(&alias);
+        assert_query_target("widget", &alias.join("opt/widget"), &keg)
+    }
+
+    #[test]
+    /// Anchor relative prefix settings to the current directory before returning a usable path.
+    fn package_root_makes_relative_prefix_absolute() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let cwd = std::env::current_dir()?;
+        let tmp = tempfile::tempdir_in(&cwd)?;
+        let relative = tmp.path().strip_prefix(&cwd)?;
+        let _guard = BrewPrefixGuard::set(relative);
+        let keg = query_keg(tmp.path(), "widget", "active")?;
+        symlink("../Cellar/widget/active", tmp.path().join("opt/widget"))?;
+        assert_query_target("widget", &cwd.join(relative).join("opt/widget"), &keg)
+    }
+
+    #[test]
+    /// Require an active opt record rather than inferring one from Cellar or linked-keg entries.
+    fn package_root_requires_opt_even_with_cellar_or_linked_keg() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, base) = canonical_tempdir()?;
+        for state in [
+            "missing-prefix",
+            "empty-prefix",
+            "cellar-only",
+            "linked-only",
+        ] {
+            let prefix = base.join(state);
+            let _guard = BrewPrefixGuard::set(&prefix);
+            if state != "missing-prefix" {
+                std::fs::create_dir_all(&prefix)?;
+            }
+            if matches!(state, "cellar-only" | "linked-only") {
+                let keg = query_keg(&prefix, "widget", "active")?;
+                if state == "linked-only" {
+                    std::fs::create_dir_all(prefix.join("var/homebrew/linked"))?;
+                    symlink(keg, prefix.join("var/homebrew/linked/widget"))?;
+                }
+            }
+            let error = format!("{:#}", package_root("widget").unwrap_err());
+            assert!(error.contains("widget"), "{state}: {error}");
+            assert!(
+                error.contains(&prefix.display().to_string()),
+                "{state}: {error}"
+            );
+            assert!(error.contains("apply brew:widget"), "{state}: {error}");
+            assert!(!prefix.join("opt/widget").exists());
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Report a missing target with installation guidance while preserving the link for inspection.
+    fn package_root_rejects_dangling_opt_without_repairing_it() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        std::fs::create_dir_all(prefix.join("opt"))?;
+        let opt = prefix.join("opt/widget");
+        let target = Path::new("../Cellar/widget/missing");
+        symlink(target, &opt)?;
+        let error = format!("{:#}", package_root("widget").unwrap_err());
+        assert!(error.contains(&opt.display().to_string()), "{error}");
+        assert!(error.contains("apply brew:widget"), "{error}");
+        assert_eq!(std::fs::read_link(opt)?, target);
+        Ok(())
+    }
+
+    #[test]
+    /// Require opt symlinks and preserve invalid entries for explicit user repair.
+    fn package_root_rejects_regular_directory_and_file_opt_records() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, base) = canonical_tempdir()?;
+        for directory in [true, false] {
+            let prefix = base.join(directory.to_string());
+            let _guard = BrewPrefixGuard::set(&prefix);
+            query_keg(&prefix, "widget", "active")?;
+            let opt = prefix.join("opt/widget");
+            if directory {
+                std::fs::create_dir(&opt)?;
+            } else {
+                std::fs::write(&opt, "untouched")?;
+            }
+            let error = format!("{:#}", package_root("widget").unwrap_err());
+            assert!(error.contains(&opt.display().to_string()), "{error}");
+            assert!(!opt.symlink_metadata()?.is_symlink());
+            if !directory {
+                assert_eq!(std::fs::read_to_string(opt)?, "untouched");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Accept only a direct keg directory in the requested rack, preserving rejected link targets.
+    fn package_root_rejects_foreign_nested_rack_and_file_targets() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let foreign = query_keg(&prefix, "foreign", "active")?;
+        std::fs::create_dir(keg.join("nested"))?;
+        let file = prefix.join("Cellar/widget/file");
+        std::fs::write(&file, "untouched")?;
+        let opt = prefix.join("opt/widget");
+        for target in [
+            foreign,
+            keg.join("nested"),
+            prefix.join("Cellar/widget"),
+            file,
+        ] {
+            symlink(&target, &opt)?;
+            let error = format!("{:#}", package_root("widget").unwrap_err());
+            assert!(error.contains(&opt.display().to_string()), "{error}");
+            assert_eq!(std::fs::read_link(&opt)?, target);
+            std::fs::remove_file(&opt)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Validate the final canonical target rather than rejecting a legitimate intermediary symlink.
+    fn package_root_accepts_outside_intermediary_resolving_to_its_keg() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let intermediary = prefix.join("intermediary");
+        symlink(&keg, &intermediary)?;
+        let opt = prefix.join("opt/widget");
+        symlink(intermediary, &opt)?;
+        assert_query_target("widget", &opt, &keg)
+    }
+
+    #[test]
+    /// Resolve symlinks before parent traversal so lexical normalization cannot disguise a foreign keg.
+    fn package_root_uses_filesystem_dotdot_semantics_to_reject_foreign_target() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let outside = prefix.join("outside");
+        std::fs::create_dir_all(outside.join("child"))?;
+        std::fs::create_dir(outside.join("active"))?;
+        symlink(outside.join("child"), prefix.join("Cellar/widget/jump"))?;
+        let opt = prefix.join("opt/widget");
+        symlink("../Cellar/widget/jump/../active", &opt)?;
+        assert_ne!(opt.canonicalize()?, keg);
+        assert!(package_root("widget").is_err());
+        Ok(())
+    }
+
+    #[test]
+    /// Accept a valid keg reached through symlinks and parent traversal under filesystem semantics.
+    fn package_root_uses_filesystem_dotdot_semantics_to_accept_local_target() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        std::fs::create_dir(prefix.join("outside"))?;
+        std::fs::create_dir(prefix.join("Cellar/widget/child"))?;
+        symlink(
+            prefix.join("Cellar/widget/child"),
+            prefix.join("outside/jump"),
+        )?;
+        let opt = prefix.join("opt/widget");
+        symlink("../outside/jump/../active", &opt)?;
+        assert_query_target("widget", &opt, &keg)
+    }
+
+    #[test]
+    /// Preserve the OS loop error and failing opt path for filesystem diagnosis.
+    fn package_root_preserves_symlink_loop_io_error_and_path() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        query_keg(&prefix, "widget", "active")?;
+        let opt = prefix.join("opt/widget");
+        symlink("widget", &opt)?;
+        let expected = opt.canonicalize().unwrap_err();
+        let error = package_root("widget").unwrap_err();
+        assert!(format!("{error:#}").contains(&opt.display().to_string()));
+        let io = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<std::io::Error>());
+        assert_eq!(
+            io.expect("retain underlying filesystem error")
+                .raw_os_error(),
+            expected.raw_os_error()
+        );
+        assert_eq!(std::fs::read_link(opt)?, Path::new("widget"));
+        Ok(())
+    }
+
+    #[test]
+    /// Retain permission diagnostics on non-root hosts and restore fixture access for cleanup.
+    fn package_root_preserves_permission_denial_and_path() -> Result<()> {
+        if nix::unistd::geteuid().is_root() {
+            return Ok(());
+        }
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let opt = prefix.join("opt/widget");
+        symlink(&keg, &opt)?;
+        let rack = prefix.join("Cellar/widget");
+        let permissions = rack.metadata()?.permissions();
+        std::fs::set_permissions(&rack, std::fs::Permissions::from_mode(0o0))?;
+        let result = package_root("widget");
+        std::fs::set_permissions(&rack, permissions)?;
+        let error = result.unwrap_err();
+        assert!(format!("{error:#}").contains(&opt.display().to_string()));
+        let io = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<std::io::Error>());
+        assert_eq!(
+            io.expect("retain underlying filesystem error").kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        Ok(())
     }
 }

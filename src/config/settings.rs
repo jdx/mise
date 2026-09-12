@@ -303,6 +303,7 @@ impl IdiomaticVersionFileSettings {
 }
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
+static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
 /// Caches the resolved `safe` value from the most recent settings load so
 /// `safe_mode()` answers correctly during the config parse pass that runs before
 /// settings are (re)loaded — e.g. after `Config::reset()`. This captures `safe`
@@ -982,6 +983,11 @@ impl Settings {
     /// [`Self::try_get`]. Root-specific callers can require trusted project files without
     /// reproducing config discovery or precedence rules.
     fn load_sources_from(root: Option<&Path>, policy: SettingsLoadPolicy) -> Result<Self> {
+        let policy = if PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed) {
+            SettingsLoadPolicy::ENVIRONMENT_ONLY
+        } else {
+            policy
+        };
         if policy.trust == SettingsTrustPolicy::TrustedOnly && !is_loaded() {
             bail!("trusted settings resolution requires the base settings to be loaded");
         }
@@ -1061,6 +1067,23 @@ impl Settings {
         }
         let settings = builder.load()?;
         *BASE_SETTINGS.write().unwrap() = Some(Arc::new(settings));
+        Ok(())
+    }
+
+    /// Select process-wide query isolation before parsing can trigger lazy settings or miserc reads.
+    pub(crate) fn select_package_query_sources() {
+        PACKAGE_QUERY_SETTINGS.store(true, Ordering::Relaxed);
+    }
+
+    /// Report whether this invocation requires environment-only settings and local diagnostics.
+    pub(crate) fn is_package_query() -> bool {
+        PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed)
+    }
+
+    /// Apply CLI overrides and validate environment settings after query isolation is selected.
+    pub(crate) fn init_package_query(cli: &crate::cli::Cli) -> Result<()> {
+        Self::add_cli_matches(cli);
+        Self::try_get()?;
         Ok(())
     }
 

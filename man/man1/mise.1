@@ -388,6 +388,9 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap packages where\fR
+Print the stable root of an installed Homebrew formula
+.TP
 \fBbootstrap plan\fR
 Show the changes declarative bootstrap resources would make
 .TP
@@ -2859,6 +2862,28 @@ mise bootstrap packages use brew:jq brew\-cask:firefox winget:BurntSushi.ripgrep
 mise bootstrap packages use \-g brew:postgresql@17
 mise bootstrap packages use apt:curl@8.5.0\-2
 .RE
+.SH "MISE BOOTSTRAP PACKAGES WHERE"
+Print the stable root of an installed Homebrew formula
+
+Use an explicit brew:<formula> or brew:<owner>/<tap>/<formula> with the
+canonical installed formula name. Qualified names use the final component
+as the local rack name; aliases and tap provenance are not resolved.
+Settings come from environment variables and global CLI options only.
+The returned opt path follows upgrades and may change after this lookup.
+Missing or invalid installations produce empty stdout and a nonzero exit status.
+.PP
+\fBUsage:\fR mise bootstrap packages where [OPTIONS] <PACKAGE>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Explicit brew formula to locate
 .SH "MISE BOOTSTRAP PLAN"
 Show the changes declarative bootstrap resources would make
 
