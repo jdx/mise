@@ -1723,8 +1723,12 @@ pub(crate) fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
 /// Returns the first directly spawnable executable in PATH, expanding configured
 /// executable extensions on Windows when `name` has no extension.
 pub(crate) fn which_spawnable(name: &str) -> Option<PathBuf> {
+    _which_spawnable(name, &env::PATH)
+}
+
+fn _which_spawnable(name: &str, paths: &[PathBuf]) -> Option<PathBuf> {
     let names = executable_names(name);
-    env::PATH.iter().find_map(|dir| {
+    paths.iter().find_map(|dir| {
         names
             .iter()
             .map(|name| dir.join(name))
@@ -4887,6 +4891,22 @@ mod tests {
         for name in ["tool.ps1", "tool.PS1", "tool.vbs", "tool", r"C:\x\tool"] {
             assert!(!can_execute_directly(Path::new(name)), "{name}");
         }
+    }
+
+    /// `which` joins the bare name, so on Windows it never finds `ssh.exe`; host tools that
+    /// mise spawns by resolved path must go through `which_spawnable`.
+    #[cfg(windows)]
+    #[test]
+    fn which_spawnable_finds_the_exe_that_which_misses() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = [dir.path().to_path_buf()];
+        fs::write(dir.path().join("ssh.exe"), "").unwrap();
+
+        assert_eq!(_which("ssh", &paths), None);
+        assert_eq!(
+            _which_spawnable("ssh", &paths),
+            Some(dir.path().join("ssh.exe"))
+        );
     }
 
     fn io(raw: i32) -> std::io::Error {
