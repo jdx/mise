@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+mise install dummy@1.0.0 dummy@1.1.0
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "latest", foo = "one", "vars.foo" = "two" }
+TOML
+
+# Keep initial backend discovery on ASDF so each case exercises candidate
+# selection rather than validation of the initially selected backend.
+cat >base.lock <<'TOML'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "0.0.0"
+backend = "asdf:dummy"
+specifiers = ["unrelated"]
+TOML
+
+cat >valid.entry <<'TOML'
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+TOML
+
+cat >stale.entry <<'TOML'
+
+[[tools.dummy]]
+version = "9.9.0"
+backend = "aqua:jdx/hk"
+specifiers = ["latest"]
+options = { "vars.foo" = "stale" }
+TOML
+
+# A broken candidate cannot discard a match already found or prevent a later match.
+for order in 'valid.entry stale.entry' 'stale.entry valid.entry'; do
+  read -r first second <<<"$order"
+  cat base.lock "$first" "$second" >mise.lock
+  assert "MISE_LOCKED=1 mise which dummy --tool dummy@latest --version" "1.0.0"
+done
+
+# Mixed-format lockfiles must retain their existing unbound-pin fallback too.
+sed '/^specifiers = /d' valid.entry >unbound.entry
+cat base.lock stale.entry unbound.entry >mise.lock
+assert "MISE_LOCKED=1 mise which dummy --tool dummy@latest --version" "1.0.0"
+
+# Without a valid candidate, retain the backend error even in unlocked mode.
+cat base.lock stale.entry >mise.lock
+assert_fail_contains "mise which dummy --tool dummy@latest 2>&1" 'conflicting aqua var'
+
+# A broken candidate must not hide ambiguity between two valid bindings.
+cat base.lock stale.entry valid.entry >mise.lock
+cat >>mise.lock <<'TOML'
+
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+specifiers = ["latest"]
+TOML
+assert_fail_contains "mise which dummy --tool dummy@latest 2>&1" 'lockfile contains multiple resolutions for dummy@latest with the same options'

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# e2e:non-root
+
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  # Exercise this exact release even during the default release-age delay.
+  mise install pitchfork@2.25.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.25.0)"
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_PROXY_ENABLE=false
+# Keep the fixture executable available when testing mise prune.
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+pg_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+redis_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+# A compound override must initialize first and leave the database as the tracked PID.
+cat >start-postgres <<'SH'
+#!/bin/sh
+data=$(find "$MISE_STATE_DIR/daemons" -path '*/data/postgres' -type d -print -quit)
+test -f "$data/PG_VERSION" || exit 1
+exec postgres -D "$data" -p "$PGPORT" -h 127.0.0.1 -k ''
+SH
+cat >mise.toml <<TOML
+[tools]
+pitchfork = "system"
+postgres = "18"
+[daemons.postgres]
+preset = "postgres"
+version = "18"
+port = $pg_port
+options.database = "integration"
+run = "echo starting && exec sh ./start-postgres"
+[daemons.redis]
+preset = "redis"
+version = "8"
+port = $redis_port
+TOML
+# Lock both explicit postgres and implicit redis under this config before enforcing it.
+export MISE_LOCKFILE=1
+mise lock --platform linux-x64
+assert_contains "cat mise.lock" '[[tools.redis]]'
+cat >>mise.toml <<'TOML'
+[tool_config]
+locked = true
+TOML
+mise daemons start
+pg_pid=$(mise daemons ls --json | jq -r '.[] | select(.name == "postgres") | .pid')
+assert_contains "ps -p '$pg_pid' -o comm=" postgres
+assert_contains "mise daemons ls --json" '"status": "running"'
+mise exec -- psql -h 127.0.0.1 -p "$pg_port" -U postgres -d integration -c 'CREATE TABLE proof (value integer); INSERT INTO proof VALUES (42);'
+assert_contains "mise exec -- redis-cli -h 127.0.0.1 -p '$redis_port' SET proof retained" OK
+mise daemons stop
+assert_fail "kill -0 '$pg_pid'"
+mise daemons start
+assert_contains "mise exec -- psql -h 127.0.0.1 -p '$pg_port' -U postgres -d integration -Atc 'SELECT value FROM proof'" 42
+assert_contains "mise exec -- redis-cli -h 127.0.0.1 -p '$redis_port' GET proof" retained
+mise daemons stop
+pg_install=$(mise where postgres)
+mise unuse redis
+mise prune --tools
+assert "test -x '$pg_install/bin/psql'"
+assert_contains "mise exec -- psql --version" "18."
+
+# Incompatible metadata fails without deleting existing contents.
+data_dir=$(find "$MISE_STATE_DIR/daemons" -path '*/data/redis' -type d -print -quit)
+echo redis:0 >"$data_dir/.mise-daemon-version"
+assert_contains "mise daemons start redis 2>&1 || true" 'incompatible redis data'
+assert "test -d '$data_dir/appendonlydir'"
+
+# Incomplete data is not mistaken for a successfully initialized instance.
+mkdir -p "$TMPDIR/incomplete"
+echo preserved >"$TMPDIR/incomplete/user-data"
+assert_contains "mise exec -- mise daemons __init redis '$TMPDIR/incomplete' postgres 2>&1 || true" "daemon data was not initialized completely"
+assert_contains "cat '$TMPDIR/incomplete/user-data'" preserved
+
+# A missing PostgreSQL marker reports incomplete initialization clearly.
+pg_data=$(find "$MISE_STATE_DIR/daemons" -path '*/data/postgres' -type d -print -quit)
+mv "$pg_data/PG_VERSION" "$pg_data/PG_VERSION.saved"
+assert_contains "mise exec -- mise daemons __init postgres '$pg_data' integration 2>&1 || true" 'daemon data was not initialized completely'
+mv "$pg_data/PG_VERSION.saved" "$pg_data/PG_VERSION"

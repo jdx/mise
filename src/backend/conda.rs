@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::http::{HTTP, apply_url_replacements};
 use crate::install_context::InstallContext;
-use crate::lockfile::{self, Lockfile, PlatformInfo};
+use crate::lockfile::{Lockfile, PlatformInfo};
 use crate::toolset::{ToolVersion, ToolVersionOptions};
 use crate::{backend::Backend, dirs, parallel};
 use crate::{file, hash};
@@ -422,7 +422,7 @@ impl CondaBackend {
     }
 
     fn read_lockfile_for_tool(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<Lockfile> {
-        lockfile::read_lockfile_for_tool_source(&ctx.config, tv.request.source())
+        tv.request.read_lockfile(&ctx.config)
     }
 
     /// Install from a fresh solve (no lockfile deps).

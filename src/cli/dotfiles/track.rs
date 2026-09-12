@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use eyre::{Result, bail};
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::file::{self, display_path};
 use crate::path::PathExt;
 use crate::system::files::{FileMode, FileRequest};
@@ -117,7 +117,7 @@ impl DotfilesTrack {
             }
             declared.push((target_key, target));
         }
-        if !self.yes && console::user_attended_stderr() {
+        if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
             let list = declared
                 .iter()
                 .map(|(key, _)| key.as_str())
@@ -352,7 +352,35 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
             bail!("dotfiles: {key} could not be tracked: {reason}");
         }
     }
-    baseline(&tracked, declared).await
+    baseline(&tracked, declared).await?;
+    for (key, target) in declared {
+        if target.is_symlink() {
+            // This resolver is read-only, follows dangling chains, and bounds
+            // traversal so cyclic links cannot hang an advisory check.
+            let source = match resolve_symlink_source(target) {
+                Ok(source) => source,
+                Err(error) => {
+                    warn!(
+                        "dotfiles: {key} is a symlink; history saves and syncs the link, not its contents. Could not resolve its source: {error}"
+                    );
+                    continue;
+                }
+            };
+            if !tracked.would_capture(&source)? {
+                warn!(
+                    "dotfiles: {key} is a symlink; history saves and syncs the link, not its contents. Its source {} is not tracked for capture; track the source with `mise bootstrap dotfiles track {}` (and check any exclusions) to include its contents",
+                    display_path(&source),
+                    shell_words::quote(&source.to_string_lossy()),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolve link chains using the same path representation as tracked entries.
+fn resolve_symlink_source(target: &Path) -> Result<PathBuf> {
+    file::atomic_write_target(target).map(|source| normalize_target(&source))
 }
 
 /// Saves the baseline checkpoint of newly tracked paths; a failure fails
@@ -504,6 +532,18 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
 #[cfg(test)]
 mod declaration_tests {
     use super::*;
+
+    #[test]
+    fn resolved_sources_use_tracking_path_representation() {
+        let temporary = tempfile::tempdir().unwrap();
+        let source = temporary.path().join("source");
+        std::fs::write(&source, "contents").unwrap();
+        let tracked = normalize_target(&source);
+        // Windows canonicalization adds a verbatim prefix. No symlink
+        // privilege is needed to exercise the resolver's final path format.
+        let canonical = source.canonicalize().unwrap();
+        assert_eq!(resolve_symlink_source(&canonical).unwrap(), tracked);
+    }
 
     #[test]
     fn declaration_commands_fail_promptly_on_contention() {

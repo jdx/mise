@@ -2,6 +2,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::task::{Deps, Task};
 use eyre::Result;
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{Mutex, Semaphore, mpsc};
@@ -14,6 +15,7 @@ pub(crate) struct SchedMsg {
     pub task: Task,
     pub deps: Arc<Mutex<Deps>>,
     pub allow_during_interruption: bool,
+    pub install_tools: bool,
 }
 
 impl SchedMsg {
@@ -22,6 +24,18 @@ impl SchedMsg {
             task,
             deps,
             allow_during_interruption,
+            install_tools: false,
+        }
+    }
+
+    pub(crate) fn injected(
+        task: Task,
+        deps: Arc<Mutex<Deps>>,
+        allow_during_interruption: bool,
+    ) -> Self {
+        Self {
+            install_tools: true,
+            ..Self::new(task, deps, allow_during_interruption)
         }
     }
 }
@@ -219,7 +233,7 @@ impl Scheduler {
         mut spawn_job: F,
     ) -> Result<()>
     where
-        F: FnMut(Task, Arc<Mutex<Deps>>, bool) -> Fut,
+        F: FnMut(Task, Arc<Mutex<Deps>>, bool, bool) -> Fut,
         Fut: std::future::Future<Output = Result<()>>,
         S: Fn() -> bool,
         I: Fn() -> bool,
@@ -232,6 +246,7 @@ impl Scheduler {
             continue_on_error,
         } = hooks;
         let mut sched_rx = self.take_receiver().expect("receiver already taken");
+        let mut pending_jobs = FuturesUnordered::new();
         let mut stop_cleanup_done = false;
 
         loop {
@@ -243,6 +258,7 @@ impl Scheduler {
                         task,
                         deps: deps_for_remove,
                         allow_during_interruption,
+                        install_tools,
                     }) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
@@ -258,7 +274,12 @@ impl Scheduler {
                                 continue;
                             }
                         }
-                        spawn_job(task, deps_for_remove, allow_during_interruption).await?;
+                        pending_jobs.push(spawn_job(
+                            task,
+                            deps_for_remove,
+                            allow_during_interruption,
+                            install_tools,
+                        ));
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => break,
@@ -295,18 +316,28 @@ impl Scheduler {
             }
 
             // Exit if main deps finished and nothing is running/queued
-            if *main_done_rx.borrow() && self.in_flight_count() == 0 && !drained_any {
+            if *main_done_rx.borrow()
+                && self.in_flight_count() == 0
+                && pending_jobs.is_empty()
+                && !drained_any
+            {
                 trace!("scheduler drain complete; exiting loop");
                 break;
             }
 
             // Await either new work or main_done change
             tokio::select! {
+                result = pending_jobs.next(), if !pending_jobs.is_empty() => {
+                    if let Some(result) = result {
+                        result?;
+                    }
+                }
                 m = sched_rx.recv() => {
                     if let Some(SchedMsg {
                         task,
                         deps: deps_for_remove,
                         allow_during_interruption,
+                        install_tools,
                     }) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && (!continue_on_error || was_interrupted()) {
@@ -321,7 +352,12 @@ impl Scheduler {
                                 continue;
                             }
                         }
-                        spawn_job(task, deps_for_remove, allow_during_interruption).await?;
+                        pending_jobs.push(spawn_job(
+                            task,
+                            deps_for_remove,
+                            allow_during_interruption,
+                            install_tools,
+                        ));
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon
                     }

@@ -3796,7 +3796,7 @@
     "doctor": {
       "description": "Project diagnostic checks, run explicitly with mise doctor project.",
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "checks": {
           "type": "object",
@@ -3824,7 +3824,7 @@
               },
               "dir": {
                 "type": "string",
-                "description": "Working directory. Relative paths resolve from the declaring config's project root; absolute paths are used as given."
+                "description": "Working directory. Relative paths resolve from the declaring config's root (the invocation directory for global and system config); a leading ~/ and absolute paths are used as given."
               },
               "shell": {
                 "description": "Shell command, including the command flag, as in tasks.",
@@ -4180,7 +4180,7 @@
     },
     "dotfiles": {
       "type": "object",
-      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path or a logical name when every variant overrides the target",
+      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path or a logical name when every variant overrides the target; an omitted source for the latter resolves the relative key under dotfiles.root",
       "additionalProperties": {
         "oneOf": [
           {
@@ -4289,7 +4289,7 @@
                     },
                     "target": {
                       "type": "string",
-                      "description": "deployment destination override; requires source and is not supported in track mode"
+                      "description": "deployment destination override; requires either an explicit source or a safe relative entry key when every variant has a target, and is not supported in track mode"
                     }
                   }
                 }
@@ -4751,6 +4751,15 @@
               "type": "object",
               "description": "curated Dock preferences that compile into macOS defaults",
               "properties": {
+                "apps": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(?:/|~/(?!/)).+\\.[aA][pP][pP]/*$"
+                  },
+                  "uniqueItems": true,
+                  "description": "Pinned application paths in order; absolute or ~/ paths ending in .app. An empty array removes application tiles."
+                },
                 "autohide_delay": {
                   "type": "number",
                   "description": "delay before showing the Dock"
@@ -5703,6 +5712,59 @@
     },
     "doctor": {
       "$ref": "#/$defs/doctor"
+    },
+    "daemons": {
+      "description": "Experimental project daemons: custom pitchfork commands or managed presets.",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Version request for a preset matching the daemon name."
+          },
+          {
+            "type": "object",
+            "required": ["run"],
+            "not": {
+              "required": ["preset"]
+            },
+            "properties": {
+              "run": {
+                "type": "string"
+              },
+              "mise": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": ["preset", "version"],
+            "properties": {
+              "preset": {
+                "type": "string",
+                "enum": ["postgres", "redis"]
+              },
+              "version": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "options": {
+                "type": "object"
+              },
+              "run": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
     }
   }
 }

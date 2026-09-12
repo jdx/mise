@@ -16,3 +16,15 @@ assert_contains "mise x conda:jq@1.7.1 -- jq --version" "jq-1.7.1"
 # postgresql has ~23 dependencies including ncurses, readline, openssl, etc.
 # This tests that hardcoded library paths are correctly patched
 assert_contains "mise x conda:postgresql@17.2 -- psql --version" "17.2"
+
+# A borrowed runtime pin must also select the owning conda dependency table.
+export MISE_LOCKFILE=1
+detect_platform
+cat >mise.toml <<'TOML'
+[tools]
+"conda:jq" = "1.7.1"
+TOML
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'conda_deps = ['
+mise uninstall conda:jq@1.7.1
+assert_contains "MISE_LOCKED=1 mise x conda:jq@1.7.1 -- jq --version" "jq-1.7.1"

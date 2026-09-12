@@ -7,6 +7,8 @@
 
 use indexmap::IndexMap;
 
+mod dock;
+
 use crate::result::Result;
 
 /// The host scope is part of a preference's identity.
@@ -38,6 +40,8 @@ pub(crate) struct DefaultsRequest {
     /// A nonempty dictionary path, or None to replace the whole preference.
     pub path: Option<Vec<String>>,
     pub value: DefaultsValue,
+    /// The winning friendly Dock declaration uses application identity, not raw plist equality.
+    pub dock_apps: bool,
 }
 
 impl DefaultsRequest {
@@ -232,11 +236,16 @@ fn status_sync(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
         let current = selected_value(current.as_ref(), req)?;
         let state = match current {
             Some(current) => {
-                if req.value.matches(current) {
+                let matches = if req.dock_apps {
+                    dock::matches(&req.value, current)?
+                } else {
+                    req.value.matches(current)
+                };
+                if matches {
                     DefaultsState::Set
                 } else {
                     DefaultsState::Differs {
-                        current: display_plist(current),
+                        current: display_difference(&req.value, current),
                     }
                 }
             }
@@ -280,6 +289,9 @@ pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result
 /// Reject conflicting ownership before inspecting or writing preferences.
 fn validate_requests(requests: &[DefaultsRequest]) -> Result<()> {
     for (i, request) in requests.iter().enumerate() {
+        if request.dock_apps {
+            dock::paths(&request.value)?;
+        }
         if let Some(path) = &request.path {
             eyre::ensure!(
                 !path.is_empty(),
@@ -360,7 +372,10 @@ fn prepare_writes(
     for request in requests {
         let domain = canonical_domain(&request.domain);
         let key = (domain.to_string(), request.key.clone(), request.host);
-        if let Some(path) = &request.path {
+        if request.dock_apps {
+            let current = read(domain, &request.key, request.host)?;
+            writes.insert(key, dock::reconcile(&request.value, current.as_ref())?);
+        } else if let Some(path) = &request.path {
             if !writes.contains_key(&key) {
                 let current = read(domain, &request.key, request.host)?
                     .unwrap_or_else(|| plist::Value::Dictionary(plist::Dictionary::new()));
@@ -377,6 +392,39 @@ fn prepare_writes(
         }
     }
     Ok(writes)
+}
+
+fn display_difference(expected: &DefaultsValue, current: &plist::Value) -> String {
+    let expected_type = match expected {
+        DefaultsValue::Bool(_) => "boolean",
+        DefaultsValue::Int(_) => "integer",
+        DefaultsValue::Float(_) => "real",
+        DefaultsValue::Str(_) => "string",
+        DefaultsValue::Array(_) => "array",
+        DefaultsValue::Dict(_) => "dictionary",
+    };
+    let current_type = plist_type(current);
+    let value = display_plist(current);
+    if expected_type == current_type {
+        value
+    } else {
+        format!("{value} ({current_type}; expected {expected_type})")
+    }
+}
+
+fn plist_type(value: &plist::Value) -> &'static str {
+    match value {
+        plist::Value::Boolean(_) => "boolean",
+        plist::Value::Integer(_) => "integer",
+        plist::Value::Real(_) => "real",
+        plist::Value::String(_) => "string",
+        plist::Value::Array(_) => "array",
+        plist::Value::Dictionary(_) => "dictionary",
+        plist::Value::Data(_) => "data",
+        plist::Value::Date(_) => "date",
+        plist::Value::Uid(_) => "uid",
+        _ => "unknown",
+    }
 }
 
 fn display_plist(value: &plist::Value) -> String {
@@ -581,6 +629,45 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
+    fn test_dock_apps_native_round_trip() {
+        let domain = format!("com.mise.dock-test.{}", uuid::Uuid::now_v7());
+        let temp = tempfile::tempdir().unwrap();
+        let app = temp.path().join("Example App.app");
+        std::fs::create_dir(&app).unwrap();
+        let request = DefaultsRequest {
+            domain: domain.clone(),
+            key: "persistent-apps".into(),
+            host: HostScope::Any,
+            path: None,
+            dock_apps: true,
+            value: DefaultsValue::Array(vec![DefaultsValue::Str(app.to_str().unwrap().into())]),
+        };
+        let result = (|| -> Result<()> {
+            write_all(std::slice::from_ref(&request))?;
+            assert_eq!(
+                status_sync(std::slice::from_ref(&request))?[0].state,
+                DefaultsState::Set
+            );
+            let original = read(&domain, &request.key, HostScope::Any)?.unwrap();
+            write_all(std::slice::from_ref(&request))?;
+            assert_eq!(
+                read(&domain, &request.key, HostScope::Any)?.unwrap(),
+                original
+            );
+            let clear = DefaultsRequest {
+                value: DefaultsValue::Array(vec![]),
+                ..request.clone()
+            };
+            write_all(std::slice::from_ref(&clear))?;
+            assert_eq!(status_sync(&[clear])?[0].state, DefaultsState::Set);
+            Ok(())
+        })();
+        macos::remove(&domain, "persistent-apps", HostScope::Any).unwrap();
+        result.unwrap();
+    }
+
+    #[test]
     fn test_from_toml() {
         assert_eq!(
             DefaultsValue::from_toml(&val("true")),
@@ -646,6 +733,36 @@ mod tests {
     }
 
     #[test]
+    fn differing_types_are_visible_even_when_values_render_identically() {
+        for (expected, current, display) in [
+            (
+                DefaultsValue::Int(2),
+                plist::Value::Real(2.0),
+                "2 (real; expected integer)",
+            ),
+            (
+                DefaultsValue::Float(15.0),
+                plist::Value::Integer(15.into()),
+                "15 (integer; expected real)",
+            ),
+            (
+                DefaultsValue::Int(2),
+                plist::Value::String("2".into()),
+                "2 (string; expected integer)",
+            ),
+            (
+                DefaultsValue::Bool(true),
+                plist::Value::String("true".into()),
+                "true (string; expected boolean)",
+            ),
+            (DefaultsValue::Int(2), plist::Value::Integer(3.into()), "3"),
+        ] {
+            assert!(!expected.matches(&current));
+            assert_eq!(display_difference(&expected, &current), display);
+        }
+    }
+
+    #[test]
     fn test_matches() {
         assert!(DefaultsValue::Bool(true).matches(&plist::Value::Boolean(true)));
         assert!(DefaultsValue::Bool(false).matches(&plist::Value::Boolean(false)));
@@ -686,6 +803,7 @@ mod tests {
     fn test_host_scopes_are_independent() {
         let domain = format!("com.mise.defaults-test.{}", uuid::Uuid::now_v7());
         let any = DefaultsRequest {
+            dock_apps: false,
             domain: domain.clone(),
             key: "ScopeValue".into(),
             host: HostScope::Any,
@@ -718,6 +836,7 @@ mod tests {
 
     fn patch(path: &[&str], value: DefaultsValue) -> DefaultsRequest {
         DefaultsRequest {
+            dock_apps: false,
             domain: "com.mise.patch-test".into(),
             key: "Shortcuts".into(),
             host: HostScope::Any,
@@ -919,6 +1038,7 @@ mod tests {
         let reqs = vec![
             // key doesn't exist in a real domain
             DefaultsRequest {
+                dock_apps: false,
                 host: HostScope::Any,
                 path: None,
                 domain: "NSGlobalDomain".into(),
@@ -927,6 +1047,7 @@ mod tests {
             },
             // domain doesn't exist at all
             DefaultsRequest {
+                dock_apps: false,
                 host: HostScope::Any,
                 path: None,
                 domain: "com.mise.nonexistent".into(),
@@ -958,6 +1079,7 @@ mod tests {
         .unwrap();
 
         write_all(&[DefaultsRequest {
+            dock_apps: false,
             host: HostScope::Any,
             path: None,
             domain: domain.into(),

@@ -239,6 +239,102 @@ async fn resolve(
 
 pub(crate) type Tool = (crate::cli::args::BackendArg, ToolVersion);
 
+/// A conservative check for a complete, unfiltered warm install. Compare the
+/// resolved inputs, not file timestamps: environment-dependent options and
+/// verification settings can change without editing mise.toml.
+///
+/// Multiple requests for one short and shared dependency tables use the normal
+/// generator, which owns binding conflicts and dependency-table cleanup.
+pub(crate) fn is_current(
+    previous: &Lockfile,
+    tools: &[Tool],
+    platforms: &[Platform],
+) -> Result<bool> {
+    if tools.is_empty()
+        || platforms.is_empty()
+        || previous.tools.len() != tools.len()
+        || !previous.conda_packages.is_empty()
+        || !previous.pkgx_packages.is_empty()
+        || Settings::get().force_provenance_verify()
+    {
+        return Ok(false);
+    }
+    let mut shorts = BTreeSet::new();
+    for (ba, tv) in tools {
+        if !shorts.insert(&ba.short) {
+            return Ok(false);
+        }
+        let Some(entries) = previous.tools.get(&ba.short) else {
+            return Ok(false);
+        };
+        let backend = tv.backend()?;
+        let stored_backend = ba.stored_full();
+        let specifier = tv.request.version();
+        let mut covered: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
+        for platform in platforms {
+            for platform in backend.platform_variants(platform) {
+                let options = backend.resolve_lockfile_options(
+                    &tv.request,
+                    &PlatformTarget::new(platform.clone()),
+                )?;
+                let Some((index, entry)) = entries.iter().enumerate().find(|(_, entry)| {
+                    entry.version == tv.version
+                        && entry.backend.as_deref() == Some(stored_backend.as_str())
+                        && entry.options == options
+                }) else {
+                    return Ok(false);
+                };
+                let bindings_current = if previous.uses_request_bindings() {
+                    entry.specifiers.len() == 1 && entry.specifiers.contains(&specifier)
+                } else {
+                    entry.specifiers.is_empty()
+                };
+                let key = platform.to_key();
+                let Some(info) = entry.platforms.get(&key) else {
+                    return Ok(false);
+                };
+                if !bindings_current || !can_reuse(info) {
+                    return Ok(false);
+                }
+                validate_provenance_settings(ba, tv, &key, info)?;
+                if let Some(error) = check_single_tool_provenance(
+                    Some(entries),
+                    &ba.short,
+                    &tv.version,
+                    &stored_backend,
+                    &key,
+                    info.provenance.as_ref(),
+                ) {
+                    bail!("{error}");
+                }
+                covered.entry(index).or_default().insert(key);
+            }
+        }
+        // Extra versions, option variants, or platforms must still be pruned.
+        // Counting distinct entries also rejects duplicate version/option rows.
+        if covered.is_empty()
+            || covered.len() != entries.len()
+            || covered
+                .iter()
+                .any(|(index, keys)| keys.len() != entries[*index].platforms.len())
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn can_reuse(info: &PlatformInfo) -> bool {
+    info.checksum.is_some()
+        && info.url.is_some()
+        && info.signer.is_none()
+        && info
+            .additional_artifacts
+            .iter()
+            .all(|artifact| artifact.checksum.is_some())
+        && !Settings::get().force_provenance_verify()
+}
+
 pub(crate) async fn generate(
     previous: &Lockfile,
     tools: &[Tool],
@@ -302,6 +398,7 @@ pub(crate) async fn generate(
     report.set_length(targets.len() as u64);
     let semaphore = Arc::new(Semaphore::new(crate::jobs::normalize(jobs)));
     let mut tasks = JoinSet::new();
+    let mut resolved = Vec::new();
     for (ordinal, (ba, tv, platform, options)) in targets.into_iter().enumerate() {
         let actual = installed
             .iter()
@@ -334,24 +431,39 @@ pub(crate) async fn generate(
                 .and_then(|entry| entry.platforms.get(&platform.to_key()))
                 .cloned()
         });
+        if let Some(info) = &previous_info
+            && let Err(error) = validate_provenance_settings(&ba, &tv, &platform.to_key(), info)
+        {
+            tasks.shutdown().await;
+            return Err(error);
+        }
+        // Complete cached artifacts need neither I/O nor a spawned task. Keep them
+        // in the same ordered result stream so all downgrade checks still run.
+        let reusable = previous_info.as_ref().filter(|info| can_reuse(info));
+        if actual.is_none()
+            && let Some(info) = reusable
+        {
+            resolved.push((
+                ordinal,
+                tv.request.version(),
+                (
+                    ba.short.clone(),
+                    tv.version.clone(),
+                    ba.stored_full(),
+                    platform,
+                    Ok(info.clone()),
+                    options,
+                    BTreeMap::new(),
+                    BTreeMap::new(),
+                    LockResolutionStatus::Optional,
+                ),
+            ));
+            continue;
+        }
         let semaphore = semaphore.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire().await?;
-            if let Some(info) = &previous_info {
-                validate_provenance_settings(&ba, &tv, &platform.to_key(), info)?;
-            }
-            let mut resolution = if let Some(info) = actual.or_else(|| {
-                previous_info.clone().filter(|info| {
-                    info.checksum.is_some()
-                        && info.url.is_some()
-                        && info.signer.is_none()
-                        && info
-                            .additional_artifacts
-                            .iter()
-                            .all(|artifact| artifact.checksum.is_some())
-                        && !Settings::get().force_provenance_verify()
-                })
-            }) {
+            let mut resolution = if let Some(info) = actual {
                 (
                     ba.short.clone(),
                     tv.version.clone(),
@@ -375,8 +487,8 @@ pub(crate) async fn generate(
             Ok::<_, eyre::Report>((ordinal, tv.request.version(), resolution))
         });
     }
-    let mut completed = 0;
-    let mut resolved = Vec::new();
+    let mut completed = resolved.len() as u64;
+    report.set_position(completed);
     while let Some(result) = tasks.join_next().await {
         let (ordinal, specifier, resolution) =
             match result.map_err(eyre::Report::from).and_then(|r| r) {
@@ -415,7 +527,7 @@ pub(crate) async fn generate(
                 })
                 .filter_map(|old| old.platforms.get(&platform.to_key()))
             {
-                ensure_no_downgrade(old, &info)?;
+                ensure_no_downgrade(old, &info, &backend)?;
             }
         }
         if let Some(error) = check_single_tool_provenance(
@@ -452,8 +564,19 @@ pub(crate) async fn generate(
     Ok(candidate)
 }
 
-fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
-    if new.provenance < old.provenance {
+fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {
+    // A verified Packslip signer is the replacement trust baseline for an
+    // artifact authenticated by its signed release manifest. Older incremental
+    // lock updates could carry detected GitHub provenance into a Packslip entry,
+    // but complete generation intentionally does not persist that unverified
+    // link. Without a signer, retain the ordinary provenance ratchet.
+    let packslip_signer_replaces_provenance =
+        backend.starts_with("packslip:") && new.signer.is_some();
+    if provenance_is_downgrade(
+        old.provenance.as_ref(),
+        new.provenance.as_ref(),
+        packslip_signer_replaces_provenance,
+    ) {
         bail!(
             "lockfile generation would downgrade recorded provenance; previous files were preserved"
         );
@@ -478,7 +601,11 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
             .iter()
             .find(|new| new.url == artifact.url)
             .or_else(|| replacements.next());
-        if replacement.and_then(|a| a.provenance.as_ref()) < artifact.provenance.as_ref() {
+        if provenance_is_downgrade(
+            artifact.provenance.as_ref(),
+            replacement.and_then(|a| a.provenance.as_ref()),
+            packslip_signer_replaces_provenance,
+        ) {
             bail!(
                 "lockfile generation would downgrade additional artifact provenance; previous files were preserved"
             );
@@ -487,12 +614,33 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo) -> Result<()> {
     Ok(())
 }
 
+fn provenance_is_downgrade(
+    old: Option<&ProvenanceType>,
+    new: Option<&ProvenanceType>,
+    packslip_signer_replaces_provenance: bool,
+) -> bool {
+    if packslip_signer_replaces_provenance
+        && old.is_some_and(ProvenanceType::is_github_attestations)
+    {
+        return false;
+    }
+    new < old
+}
+
 fn validate_provenance_settings(
     ba: &crate::cli::args::BackendArg,
     tv: &ToolVersion,
     platform: &str,
     info: &PlatformInfo,
 ) -> Result<()> {
+    if info.provenance.is_none()
+        && info
+            .additional_artifacts
+            .iter()
+            .all(|artifact| artifact.provenance.is_none())
+    {
+        return Ok(());
+    }
     let mut tv = tv.clone();
     tv.lock_platforms.insert(platform.to_owned(), info.clone());
     let validate = |tv: &ToolVersion| -> Result<()> {
@@ -742,6 +890,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn supported_target_is_kept_when_another_target_is_unsupported() {
+        crate::backend::load_tools().await.unwrap();
+        let generated = generate(
+            &previous(),
+            &[tool()],
+            &[
+                Platform::parse("linux-x64").unwrap(),
+                Platform::parse("windows-arm64").unwrap(),
+            ],
+            false,
+            false,
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        let platforms = &generated.tools["fixture"][0].platforms;
+        assert!(platforms.contains_key("linux-x64"));
+        assert!(!platforms.contains_key("windows-arm64"));
+    }
+
+    #[tokio::test]
     async fn unchanged_entries_reuse_metadata_without_network_and_are_stable() {
         crate::backend::load_tools().await.unwrap();
         let old = previous();
@@ -757,6 +927,198 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(generated.tools, again.tools);
+    }
+
+    #[tokio::test]
+    async fn cached_and_unsupported_targets_keep_cached_metadata() {
+        crate::backend::load_tools().await.unwrap();
+        let old = previous();
+        let platforms = vec![
+            Platform::parse("windows-arm64").unwrap(),
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        let generated = generate(&old, &[tool()], &platforms, false, false, 2, &[])
+            .await
+            .unwrap();
+        assert_eq!(old.tools, generated.tools);
+    }
+
+    #[tokio::test]
+    async fn cached_additional_artifact_provenance_is_still_validated() {
+        crate::backend::load_tools().await.unwrap();
+        let ba = BackendArg::new("fixture".into(), Some("github:example/fixture".into()));
+        let request = ToolRequest::new(Arc::new(ba.clone()), "1", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0".into());
+        let mut old = previous();
+        old.tools.get_mut("fixture").unwrap()[0].backend = Some(ba.stored_full());
+        for info in old.tools.get_mut("fixture").unwrap()[0]
+            .platforms
+            .values_mut()
+        {
+            // The github backend must reject this provenance even though every
+            // artifact has a checksum and the primary artifact has no provenance.
+            info.additional_artifacts.push(ArtifactInfo {
+                url: "https://example.invalid/extra".into(),
+                checksum: Some("sha256:unchanged".into()),
+                provenance: Some(ProvenanceType::Minisign),
+                ..Default::default()
+            });
+        }
+        let error = generate(
+            &old,
+            &[(ba, tv)],
+            &[Platform::parse("linux-x64").unwrap()],
+            false,
+            false,
+            2,
+            &[],
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("unexpected provenance type"));
+    }
+
+    #[tokio::test]
+    async fn current_lockfile_matches_full_generation_in_both_formats() {
+        crate::backend::load_tools().await.unwrap();
+        let tools = vec![tool()];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        for version in [0, 1] {
+            let mut old = previous();
+            old.lockfile_version = version;
+            if version == 0 {
+                old.tools.get_mut("fixture").unwrap()[0].specifiers.clear();
+            }
+            assert!(is_current(&old, &tools, &platforms).unwrap());
+            let generated = generate(&old, &tools, &platforms, false, false, 2, &[])
+                .await
+                .unwrap();
+            assert_eq!(old.tools, generated.tools);
+        }
+    }
+
+    #[tokio::test]
+    async fn current_check_requires_exact_scope_and_bindings() {
+        crate::backend::load_tools().await.unwrap();
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        let tools = vec![tool()];
+        let old = previous();
+        assert!(!is_current(&old, &tools, &platforms[..1]).unwrap());
+        let mut extra_platform = platforms.clone();
+        extra_platform.push(Platform::parse("linux-arm64").unwrap());
+        assert!(!is_current(&old, &tools, &extra_platform).unwrap());
+        assert!(!is_current(&old, &[], &platforms).unwrap());
+        assert!(!is_current(&old, &tools, &[]).unwrap());
+        assert!(!is_current(&old, &[tool(), tool()], &platforms).unwrap());
+
+        let mut changed = old.clone();
+        changed
+            .tools
+            .insert("obsolete".into(), old.tools["fixture"].clone());
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed
+            .tools
+            .get_mut("fixture")
+            .unwrap()
+            .push(old.tools["fixture"][0].clone());
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0].version = "other-tag".into();
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0].backend = Some("http:other".into());
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0]
+            .options
+            .insert("format".into(), "tar.gz".into());
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0]
+            .specifiers
+            .clear();
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0]
+            .specifiers
+            .insert("obsolete".into());
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed
+            .conda_packages
+            .insert("linux-x64".into(), BTreeMap::new());
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed
+            .pkgx_packages
+            .insert("linux-x64".into(), BTreeMap::new());
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+    }
+
+    #[tokio::test]
+    async fn current_check_requires_complete_artifacts_and_valid_provenance() {
+        crate::backend::load_tools().await.unwrap();
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        let tools = vec![tool()];
+        let old = previous();
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0]
+            .platforms
+            .get_mut("linux-x64")
+            .unwrap()
+            .checksum = None;
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0]
+            .platforms
+            .get_mut("linux-x64")
+            .unwrap()
+            .url = None;
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0]
+            .platforms
+            .get_mut("linux-x64")
+            .unwrap()
+            .signer = Some("signer".into());
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+        let mut changed = old.clone();
+        changed.tools.get_mut("fixture").unwrap()[0]
+            .platforms
+            .get_mut("linux-x64")
+            .unwrap()
+            .additional_artifacts
+            .push(ArtifactInfo {
+                url: "https://example.invalid/extra".into(),
+                ..Default::default()
+            });
+        assert!(!is_current(&changed, &tools, &platforms).unwrap());
+
+        let ba = BackendArg::new("fixture".into(), Some("github:example/fixture".into()));
+        let request = ToolRequest::new(Arc::new(ba.clone()), "1", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0".into());
+        let entry = &mut changed.tools.get_mut("fixture").unwrap()[0];
+        entry.backend = Some(ba.stored_full());
+        let artifact = &mut entry
+            .platforms
+            .get_mut("linux-x64")
+            .unwrap()
+            .additional_artifacts[0];
+        artifact.checksum = Some("sha256:unchanged".into());
+        artifact.provenance = Some(ProvenanceType::Minisign);
+        let error = is_current(&changed, &[(ba, tv)], &platforms).unwrap_err();
+        assert!(error.to_string().contains("unexpected provenance type"));
     }
 
     #[tokio::test]
@@ -848,6 +1210,7 @@ mod tests {
             );
             old.bind_request("erlang", "28", "28.0", &options);
         }
+        assert!(is_current(&old, &[(ba.clone(), tv.clone())], &platforms).unwrap());
         let generated = generate(&old, &[(ba, tv)], &platforms, false, false, 2, &[])
             .await
             .unwrap();
@@ -861,10 +1224,40 @@ mod tests {
             provenance_verified: Some(false),
             ..Default::default()
         };
-        assert!(ensure_no_downgrade(&old, &PlatformInfo::default()).is_err());
+        assert!(ensure_no_downgrade(&old, &PlatformInfo::default(), "github:o/r").is_err());
         let mut new = old.clone();
         new.provenance_verified = None;
-        assert!(ensure_no_downgrade(&old, &new).is_ok());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_ok());
+    }
+
+    #[test]
+    fn packslip_replaces_legacy_provenance_with_its_signer_chain() {
+        let old = PlatformInfo {
+            provenance: Some(ProvenanceType::GithubAttestations),
+            signer: Some(
+                "sigstore-oidc:https://github.com/o/r/.github/workflows/release.yml".into(),
+            ),
+            ..Default::default()
+        };
+        let mut new = old.clone();
+        new.provenance = None;
+
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_ok());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
+
+        new.signer = None;
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+
+        new.signer =
+            Some("sigstore-oidc:https://github.com/o/r/.github/workflows/other.yml".into());
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+
+        new.signer = old.signer.clone();
+        let old = PlatformInfo {
+            provenance: Some(ProvenanceType::Slsa { url: None }),
+            ..old
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
     }
 
     #[test]
@@ -876,7 +1269,27 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert!(ensure_no_downgrade(&old, &PlatformInfo::default()).is_err());
+        assert!(ensure_no_downgrade(&old, &PlatformInfo::default(), "github:o/r").is_err());
+
+        let mut new = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/o/r/.github/workflows/release.yml".into(),
+            ),
+            ..Default::default()
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_ok());
+
+        let old = PlatformInfo {
+            additional_artifacts: vec![ArtifactInfo {
+                provenance: Some(ProvenanceType::Slsa { url: None }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
+
+        new.signer = None;
+        assert!(ensure_no_downgrade(&old, &new, "packslip:github.com/o/r").is_err());
     }
 
     #[test]
@@ -897,12 +1310,12 @@ mod tests {
         };
         let mut new = old.clone();
         new.additional_artifacts.reverse();
-        assert!(ensure_no_downgrade(&old, &new).is_ok());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_ok());
         new.additional_artifacts[1].url = "https://example.com/verified-v2".into();
-        assert!(ensure_no_downgrade(&old, &new).is_ok());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_ok());
         new.additional_artifacts[1].provenance = None;
-        assert!(ensure_no_downgrade(&old, &new).is_err());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
         new.additional_artifacts.pop();
-        assert!(ensure_no_downgrade(&old, &new).is_err());
+        assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
     }
 }

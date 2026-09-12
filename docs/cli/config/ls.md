@@ -24,7 +24,7 @@ List config files currently in use
 mise config ls
 Path                        Tools
 ~/.config/mise/config.toml  pitchfork
-~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta
+~/src/mise/mise.toml        bun, cargo-binstall, cargo:cargo-insta
 ```
 
 <!-- generated reference navigation -->

@@ -50,13 +50,25 @@ cat >project/mise.toml <<'TOML'
 [doctor.checks.project]
 run = "test -f project-marker"
 shell = "sh -c"
+[doctor.checks.tilde_dir]
+run = "test -f home-marker"
+dir = "~/home-dir"
 TOML
 # Clear the parent invalid config before testing nested projects.
 cat >mise.toml <<'TOML'
 TOML
 touch project/project-marker project/nested/invocation-marker
+mkdir -p "$HOME/home-dir" && touch "$HOME/home-dir/home-marker"
 assert_succeed "MISE_GLOBAL_CONFIG_FILE=$PWD/global/config.toml mise --cd project/nested doctor project --json > directories.json"
-assert_succeed "jq -e '[.checks[].status] == [\"pass\", \"pass\", \"pass\"]' directories.json"
+assert_succeed "jq -e '[.checks[].status] == [\"pass\", \"pass\", \"pass\", \"pass\"]' directories.json"
+
+# A mise.toml directly in $HOME is project configuration rooted at $HOME.
+cat >"$HOME/mise.toml" <<'TOML'
+[doctor.checks.home]
+run = "test -f home-dir/home-marker"
+TOML
+assert_succeed "mise --cd project/nested doctor project --json | jq -e '[.checks[] | select(.name == \"home\") | .status] == [\"pass\"]'"
+rm "$HOME/mise.toml"
 
 # OS aliases and architecture selectors use the same matcher as tools.
 cat >mise.toml <<TOML

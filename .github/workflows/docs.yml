@@ -29,7 +29,7 @@ jobs:
     if: ${{ (github.actor == 'jdx' || github.actor == 'mise-en-dev') && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.user.login == 'jdx' || github.event.pull_request.user.login == 'mise-en-dev'))) }}
     permissions:
       contents: read
-    uses: ./.github/workflows/docs-impl.yml
+    uses: $/.github/workflows/docs-impl.yml
     with:
       trusted: true
     secrets:
@@ -41,7 +41,7 @@ jobs:
     if: ${{ (github.actor != 'jdx' && github.actor != 'mise-en-dev') || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'))) }}
     permissions:
       contents: read
-    uses: ./.github/workflows/docs-impl.yml
+    uses: $/.github/workflows/docs-impl.yml
     with:
       trusted: false
 

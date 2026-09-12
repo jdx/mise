@@ -1,0 +1,9 @@
+backends = [
+  "github:pimalaya/himalaya",
+  "aqua:pimalaya/himalaya",
+  "cargo:himalaya",
+]
+bins = ["himalaya"]
+description = "CLI to manage emails"
+test = { cmd = "himalaya --version", expected = "himalaya v{{version}}" }
+version_order = "semver"

@@ -46,15 +46,15 @@ task. There are no implicit project checks: declare the requirements you need.
 
 Each `[doctor.checks.<name>]` table supports:
 
-| Field         | Meaning                                                                                                                                             |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run`         | Required shell command; exit zero to pass.                                                                                                          |
-| `description` | Human-readable requirement. Defaults to the check name in text output.                                                                              |
-| `hint`        | Guidance shown after a failure or execution error. Never executed.                                                                                  |
-| `timeout`     | Positive duration such as `500ms` or `5s`; defaults to `10s`.                                                                                       |
-| `dir`         | Working directory. Relative paths resolve from the declaring configuration's project root; absolute paths are used as given. Defaults to that root. |
-| `shell`       | Executable and arguments, including the command flag, such as `"bash -c"` or `"pwsh -Command"`. Defaults to mise's inline task shell.               |
-| `os`          | OS or OS/arch selector, or a nonempty list, such as `"linux/arm64"` or `["linux", "darwin"]`. Omit to run everywhere.                               |
+| Field         | Meaning                                                                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`         | Required shell command; exit zero to pass.                                                                                                           |
+| `description` | Human-readable requirement. Defaults to the check name in text output.                                                                               |
+| `hint`        | Guidance shown after a failure or execution error. Never executed.                                                                                   |
+| `timeout`     | Positive duration such as `500ms` or `5s`; defaults to `10s`.                                                                                        |
+| `dir`         | Working directory. Relative paths resolve from the declaring configuration's root; `~/` and absolute paths are used as given. Defaults to that root. |
+| `shell`       | Executable and arguments, including the command flag, such as `"bash -c"` or `"pwsh -Command"`. Defaults to mise's inline task shell.                |
+| `os`          | OS or OS/arch selector, or a nonempty list, such as `"linux/arm64"` or `["linux", "darwin"]`. Omit to run everywhere.                                |
 
 Checks use the active configuration hierarchy, including environment-specific
 configuration. A higher-precedence definition replaces the entire check of the
@@ -76,18 +76,21 @@ accidentally print a credential into the report. Use `description` and `hint` to
 explain the requirement and remedy; run the command directly for its detailed
 output.
 
-Absolute paths and `..` components in `dir` are allowed, as with task working
-directories. The configuration root anchors relative paths; it is not a
-filesystem boundary. Checks can intentionally inspect a sibling checkout or
+Absolute paths, a leading `~/`, and `..` components in `dir` are allowed, as
+with task working directories; templates are not rendered. The configuration
+root anchors relative paths; it is not a filesystem boundary. Checks can intentionally inspect a sibling checkout or
 shared local service directory. Checks declared in global or system configuration
-use the invocation directory as their root, like tasks. Shell overrides use task
+use the invocation directory as their root, like tasks; a `mise.toml` directly in
+the home directory is project configuration and anchors at the home directory. Shell overrides use task
 quoting conventions and honor `windows_powershell_no_profile`. The OS selector
 accepts the same aliases (`darwin`, `win`, `amd64`, and others) as tool filters;
 `os = []` is rejected. Unknown `[doctor]` container options are ignored for
-forward compatibility, while unknown check fields are rejected to catch typos.
+forward compatibility (the JSON schema allows them too), while unknown check
+fields are rejected to catch typos.
 
 On Unix, Ctrl-C, SIGTERM, and SIGHUP cancel running checks and close their owned
-process groups, including when doctor runs inside a mise task. As with any cleanup
+process groups, including when doctor runs inside a mise task. A signal the
+parent ignored, such as SIGHUP under `nohup`, stays ignored. As with any cleanup
 that requires the supervisor to run, SIGKILL prevents cleanup; stop doctor with
 SIGTERM before escalating to SIGKILL.
 

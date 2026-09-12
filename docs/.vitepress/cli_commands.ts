@@ -291,6 +291,9 @@ export const commands: { [key: string]: Command } = {
           use: {
             hide: false,
           },
+          where: {
+            hide: false,
+          },
         },
       },
       plan: {
@@ -412,6 +415,35 @@ export const commands: { [key: string]: Command } = {
   },
   current: {
     hide: true,
+  },
+  daemons: {
+    hide: false,
+    subcommands: {
+      __init: {
+        hide: true,
+      },
+      logs: {
+        hide: false,
+      },
+      ls: {
+        hide: false,
+      },
+      restart: {
+        hide: false,
+      },
+      start: {
+        hide: false,
+      },
+      status: {
+        hide: false,
+      },
+      stop: {
+        hide: false,
+      },
+      tui: {
+        hide: false,
+      },
+    },
   },
   deactivate: {
     hide: false,

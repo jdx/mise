@@ -145,6 +145,10 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
         None
     }
 
+    fn daemon_declarations(&self) -> IndexMap<String, crate::daemons::Declaration> {
+        IndexMap::new()
+    }
+
     fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
         Ok(Default::default())
     }
@@ -260,6 +264,7 @@ impl dyn ConfigFile {
                     if let ToolRequest::Version {
                         version: _version,
                         source,
+                        lockfile_scope,
                         options,
                         backend,
                     } = tr
@@ -267,6 +272,7 @@ impl dyn ConfigFile {
                         tr = ToolRequest::Version {
                             version: tv.version,
                             source,
+                            lockfile_scope,
                             options,
                             backend,
                         };
@@ -824,14 +830,22 @@ pub(crate) fn trust(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Marks a trusted config as a monorepo root, allowing all descendant configs to be trusted
-pub(crate) fn mark_as_monorepo_root(path: &Path) -> Result<()> {
+/// Synchronizes the derived monorepo marker used to trust descendant configs.
+pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
     let config_root = config_trust_root(path);
     let hashed_path = trust_path(&config_root);
     let monorepo_marker = with_appended_extension(&hashed_path, "monorepo");
-    if !monorepo_marker.exists() {
+    if enabled && !monorepo_marker.exists() {
         file::create_dir_all(monorepo_marker.parent().unwrap())?;
         file::write(&monorepo_marker, "")?;
+    } else if !enabled && monorepo_marker.exists() {
+        file::remove_file(&monorepo_marker)?;
+        if let Ok(config_root) = config_root.canonicalize() {
+            IS_TRUSTED
+                .lock()
+                .unwrap()
+                .retain(|path| path == &config_root || !path.starts_with(&config_root));
+        }
     }
     Ok(())
 }

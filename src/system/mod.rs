@@ -791,10 +791,14 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                     ),
                 }
             }
+            let dock_apps = sys.macos.dock.contains_key("apps")
+                && !raw.contains_key(&("com.apple.dock".into(), "persistent-apps".into()));
             for (key, value) in merge_raw_over_friendly_macos_defaults(friendly, raw) {
+                let is_dock_apps =
+                    dock_apps && key.0 == "com.apple.dock" && key.1 == "persistent-apps";
                 merged.insert(
                     (canonical_domain(&key.0).into(), key.1, HostScope::Any, None),
-                    value,
+                    (value, is_dock_apps),
                 );
             }
             for entry in sys.macos.defaults_entries {
@@ -805,15 +809,16 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                         entry.host,
                         entry.path,
                     ),
-                    entry.value,
+                    (entry.value, false),
                 );
             }
         }
     }
     let mut out = vec![];
-    for ((domain, key, host, path), value) in merged {
+    for ((domain, key, host, path), (value, dock_apps)) in merged {
         match DefaultsValue::from_toml(&value) {
             Some(value) => out.push(DefaultsRequest {
+                dock_apps,
                 domain,
                 key,
                 host,
@@ -1020,6 +1025,22 @@ fn merge_dock_defaults(
 ) {
     for (key, value) in entries {
         match key.as_str() {
+            "apps" => insert_friendly_default(
+                out,
+                "com.apple.dock",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "persistent-apps",
+                    expected: |value| {
+                        value
+                            .as_array()
+                            .is_some_and(|apps| apps.iter().all(|app| app.as_str().is_some()))
+                    },
+                    expected_type: "array of application paths",
+                },
+                value.clone(),
+            ),
             "autohide_delay" => insert_friendly_default(
                 out,
                 "com.apple.dock",
@@ -2474,6 +2495,34 @@ mod tests {
         merge_friendly_macos_defaults(&mut out, &macos);
 
         assert!(out.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_dock_apps_precedence_keeps_winning_semantics() -> Result<()> {
+        let friendly = r#"[bootstrap.macos.dock]
+apps = ["/Applications/Example.app"]"#;
+        let raw = r#"[bootstrap.macos.defaults."com.apple.dock"]
+persistent-apps = []"#;
+        let explicit = r#"[[bootstrap.macos.defaults_entries]]
+domain = "com.apple.dock"
+key = "persistent-apps"
+value = []"#;
+        let config = Config::get().await?;
+        for (local, global, expected_friendly) in [
+            (friendly.to_string(), raw, true),
+            (raw.to_string(), friendly, false),
+            (format!("{friendly}\n{raw}"), "", false),
+            (format!("{friendly}\n{explicit}"), "", false),
+        ] {
+            let (_tmp, files) =
+                config_map_from_toml(&[("local.toml", &local), ("global.toml", global)])?;
+            let requests = defaults_from_config(&config.with_config_files(files));
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].dock_apps, expected_friendly);
+            assert_eq!(requests[0].key, "persistent-apps");
+        }
+        Ok(())
     }
 
     #[test]

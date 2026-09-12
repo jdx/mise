@@ -388,6 +388,9 @@ Add bootstrap packages to [bootstrap.packages] and install them
 \fIAliases: \fRu
 .RE
 .TP
+\fBbootstrap packages where\fR
+Print the stable root of an installed Homebrew formula
+.TP
 \fBbootstrap plan\fR
 Show the changes declarative bootstrap resources would make
 .TP
@@ -501,6 +504,36 @@ Set a value in one mise TOML file
 .TP
 \fBdeactivate\fR
 Print the script to disable mise in the current shell session
+.TP
+\fBdaemons\fR
+[experimental] Manage project daemons with pitchfork
+.RS
+\fIAliases: \fRdaemon
+.RE
+.TP
+\fBdaemons start\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons stop\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons restart\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons ls\fR
+List project daemons without starting a supervisor or registering configuration.
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
+\fBdaemons logs\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons status\fR
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.TP
+\fBdaemons tui\fR
+Open pitchfork's dashboard with optional pitchfork TUI flags.
 .TP
 \fBdoctor\fR
 Check mise installation for possible problems
@@ -2829,6 +2862,28 @@ mise bootstrap packages use brew:jq brew\-cask:firefox winget:BurntSushi.ripgrep
 mise bootstrap packages use \-g brew:postgresql@17
 mise bootstrap packages use apt:curl@8.5.0\-2
 .RE
+.SH "MISE BOOTSTRAP PACKAGES WHERE"
+Print the stable root of an installed Homebrew formula
+
+Use an explicit brew:<formula> or brew:<owner>/<tap>/<formula> with the
+canonical installed formula name. Qualified names use the final component
+as the local rack name; aliases and tap provenance are not resolved.
+Settings come from environment variables and global CLI options only.
+The returned opt path follows upgrades and may change after this lookup.
+Missing or invalid installations produce empty stdout and a nonzero exit status.
+.PP
+\fBUsage:\fR mise bootstrap packages where [OPTIONS] <PACKAGE>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PACKAGE>\fR
+Explicit brew formula to locate
 .SH "MISE BOOTSTRAP PLAN"
 Show the changes declarative bootstrap resources would make
 
@@ -3518,7 +3573,7 @@ Print help
 mise config ls
 Path                        Tools
 ~/.config/mise/config.toml  pitchfork
-~/src/mise/mise.toml        actionlint, bun, cargo\-binstall, cargo:cargo\-insta
+~/src/mise/mise.toml        bun, cargo\-binstall, cargo:cargo\-insta
 .RE
 .SH "MISE CONFIG SET"
 Set a value in one mise TOML file
@@ -3617,6 +3672,93 @@ Fish
 .RS 4
 command mise deactivate | source
 .RE
+.SH "MISE DAEMONS"
+[experimental] Manage project daemons with pitchfork
+
+Define commands or managed Postgres/Redis presets in [daemons].
+With no subcommand, list configured and previously managed daemons.
+.PP
+\fBUsage:\fR mise daemons [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS START"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons start [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS STOP"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons stop [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS RESTART"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons restart [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS LS"
+List project daemons without starting a supervisor or registering configuration.
+.PP
+\fBUsage:\fR mise daemons ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS LOGS"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons logs [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS STATUS"
+Arguments passed to pitchfork; daemon names may be short or qualified.
+.PP
+\fBUsage:\fR mise daemons status [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS TUI"
+Open pitchfork's dashboard with optional pitchfork TUI flags.
+.PP
+\fBUsage:\fR mise daemons tui [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP

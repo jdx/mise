@@ -5,7 +5,9 @@ author "Jeff Dickey <@jdx>"
 about "Dev tools, env vars, and tasks in one CLI"
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
-{%- if path == "bootstrap/packages/apply" -%}
+{%- if path == "daemons" or path is starting_with(pat="daemons/") -%}
+{%- set path = "daemons.rs" -%}
+{%- elif path == "bootstrap/packages/apply" -%}
 {%- set path = "system/install.rs" -%}
 {%- elif path == "bootstrap/packages/import" -%}
 {%- set path = "system/import.rs" -%}
@@ -17,6 +19,8 @@ source_code_link_template #"""
 {%- set path = "system/upgrade.rs" -%}
 {%- elif path == "bootstrap/packages/use" -%}
 {%- set path = "system/use.rs" -%}
+{%- elif path == "bootstrap/packages/where" -%}
+{%- set path = "system/where.rs" -%}
 {%- elif path is starting_with(pat="bootstrap/packages/brew") -%}
 {%- set path = "system/brew/mod.rs" -%}
 {%- elif path == "bootstrap/dotfiles/add" -%}
@@ -1507,6 +1511,20 @@ mise bootstrap packages use -g brew:postgresql@17
 mise bootstrap packages use apt:curl@8.5.0-2
 """#
         }
+        cmd where help="Print the stable root of an installed Homebrew formula" effect=read {
+            long_help #"""
+Print the stable root of an installed Homebrew formula
+
+Use an explicit brew:<formula> or brew:<owner>/<tap>/<formula> with the
+canonical installed formula name. Qualified names use the final component
+as the local rack name; aliases and tap provenance are not resolved.
+Settings come from environment variables and global CLI options only.
+The returned opt path follows upgrades and may change after this lookup.
+Missing or invalid installations produce empty stdout and a nonzero exit status.
+"""#
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PACKAGE> help="Explicit brew formula to locate"
+        }
     }
     cmd plan help="Show the changes declarative bootstrap resources would make" effect=read {
         long_help #"""
@@ -2014,7 +2032,7 @@ mise config get tools.python
 mise config ls
 Path                        Tools
 ~/.config/mise/config.toml  pitchfork
-~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta
+~/src/mise/mise.toml        bun, cargo-binstall, cargo:cargo-insta
 """#
     }
     cmd set help="Set a value in one mise TOML file" effect=write {
@@ -2113,6 +2131,52 @@ new shells will activate mise again.
     flag "-h --help" help="Print help" action=help builtin=#true
     example "eval \"$(command mise deactivate)\"" help="Bash or Zsh, calling the executable rather than the activation function"
     example "command mise deactivate | source" help=Fish
+}
+cmd daemons args_conflicts_with_subcommands=#true help="[experimental] Manage project daemons with pitchfork" effect=read {
+    alias daemon
+    long_help #"""
+[experimental] Manage project daemons with pitchfork
+
+Define commands or managed Postgres/Redis presets in [daemons].
+With no subcommand, list configured and previously managed daemons.
+"""#
+    flag --json
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd start help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[ARGS]…" required=#false double_dash=automatic var=#true
+    }
+    cmd stop help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[ARGS]…" required=#false double_dash=automatic var=#true
+    }
+    cmd restart help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[ARGS]…" required=#false double_dash=automatic var=#true
+    }
+    cmd ls help="List project daemons without starting a supervisor or registering configuration." effect=read {
+        alias list
+        flag --json
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
+    cmd logs help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[ARGS]…" required=#false double_dash=automatic var=#true
+    }
+    cmd status help="Arguments passed to pitchfork; daemon names may be short or qualified." effect=read unknown_flags=value {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[ARGS]…" required=#false double_dash=automatic var=#true
+    }
+    cmd tui help="Open pitchfork's dashboard with optional pitchfork TUI flags." unknown_flags=value {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[ARGS]…" required=#false double_dash=automatic var=#true
+    }
+    cmd __init hide=#true {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <PRESET>
+        arg <DATA>
+        arg <DATABASE>
+    }
 }
 cmd direnv hide=#true help="Output direnv function to use mise inside direnv" effect=read {
     long_help #"""
@@ -2972,6 +3036,9 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
         }
     }
     flag --status help="Show \"mise: <TOOL>@<VERSION>\" message when changing directories" hide=#true
+    flag --shell-pid hide=#true {
+        arg <SHELL_PID>
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
 }
 cmd hook-not-found hide=#true help="[internal] called by shell when a command is not found" effect=write {

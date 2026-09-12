@@ -745,9 +745,9 @@ cargo machete --with-metadata
 
 #### GitHub Actions Development
 If modifying GitHub Actions workflows:
-- Use `actionlint` to validate workflow files: `mise run lint`
+- Run `mise run lint` for the repository's configured checks
 - Self-hosted runners are configured for performance testing
-- Configuration variables are allowed (see `.github/actionlint.yaml`)
+- Run the zizmor workflow for security auditing
 
 ### Conventional Commits
 

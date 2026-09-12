@@ -126,6 +126,12 @@ impl ToolVersion {
             let tv = Self::new(request.clone(), request.version());
             return Ok(tv.with_before_date(opts.before_date));
         }
+        if matches!(
+            request,
+            ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }
+        ) {
+            Self::ensure_unlocked_resolution_allowed(config, &request, &opts)?;
+        }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
                 Self::resolve_version(config, request, &v, &opts).await?
@@ -357,6 +363,37 @@ impl ToolVersion {
         };
         Some(pathname.replace([':', '/'], "-"))
     }
+    fn ensure_unlocked_resolution_allowed(
+        config: &Config,
+        request: &ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<()> {
+        let settings = Settings::get();
+        let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
+        let invocation_locked = config.invocation_locked_for(request.source(), settings.locked);
+        if (invocation_locked || tool_config_locked)
+            && opts.use_locked_version
+            && settings.lockfile_enabled()
+            && !has_linked_version(request.ba())
+            && request
+                .lockfile_source()
+                .and_then(ToolSource::path)
+                .is_some()
+        {
+            let hint = if tool_config_locked && !invocation_locked {
+                "Run `mise lock` to update the lockfile, or disable `tool_config.locked`"
+            } else {
+                "Run `mise install` without --locked to update the lockfile"
+            };
+            bail!(
+                "{}@{} is not in the lockfile\nhint: {hint}",
+                request.ba().short,
+                request.version()
+            );
+        }
+        Ok(())
+    }
+
     async fn resolve_version(
         config: &Arc<Config>,
         request: ToolRequest,
@@ -387,26 +424,7 @@ impl ToolVersion {
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
-        let settings = Settings::get();
-        let tool_config_locked = config.tool_config_locked(request.source());
-        let invocation_locked = config.invocation_locked_for(request.source(), settings.locked);
-        if (invocation_locked || tool_config_locked)
-            && opts.use_locked_version
-            && settings.lockfile_enabled()
-            && !has_linked_version(request.ba())
-            && request.source().path().is_some()
-        {
-            let hint = if tool_config_locked && !invocation_locked {
-                "Run `mise lock` to update the lockfile, or disable `tool_config.locked`"
-            } else {
-                "Run `mise install` without --locked to update the lockfile"
-            };
-            bail!(
-                "{}@{} is not in the lockfile\nhint: {hint}",
-                request.ba().short,
-                request.version()
-            );
-        }
+        Self::ensure_unlocked_resolution_allowed(config, &request, opts)?;
 
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
@@ -1059,9 +1077,13 @@ mod tests {
             "registry".to_string(),
             toml::Value::String("https://registry.example.test".to_string()),
         );
-        let request =
+        let mut request =
             ToolRequest::new_with_options(backend, "latest", options, ToolSource::Argument)
                 .unwrap();
+        let owner = ToolSource::MiseToml("/project/mise.toml".into());
+        request.set_lockfile_scope(crate::toolset::tool_request::LockfileScope::Source(
+            owner.clone(),
+        ));
         let lt = LockfileTool {
             version: "11.17.0".to_string(),
             backend: Some("npm:npm".to_string()),
@@ -1077,6 +1099,8 @@ mod tests {
         assert!(tv.locked);
         assert!(tv.resolved_from_lockfile());
         assert_eq!(tv.ba().full_without_opts(), "npm:npm");
+        assert_eq!(tv.request.source(), &ToolSource::Argument);
+        assert_eq!(tv.request.lockfile_source(), Some(&owner));
         assert_eq!(options.depends, Some(vec!["node".to_string()]));
         assert_eq!(
             options.install_env.get("NODE_OPTIONS"),

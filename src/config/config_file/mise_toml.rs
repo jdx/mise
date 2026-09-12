@@ -405,6 +405,8 @@ pub(crate) struct MiseToml {
     #[serde(default)]
     shell_alias: IndexMap<String, String>,
     #[serde(default)]
+    daemons: IndexMap<String, crate::daemons::Declaration>,
+    #[serde(default)]
     wrappers: IndexMap<String, CommandWrapper>,
     #[serde(skip)]
     doc: Mutex<OnceCell<DocumentMut>>,
@@ -501,8 +503,7 @@ pub(crate) struct EnvList(pub(crate) Vec<EnvDirective>);
 pub(crate) struct MonorepoConfig {
     /// Explicit list of config roots for monorepo task discovery.
     /// Supports single-level glob patterns (*).
-    #[serde(default)]
-    pub config_roots: Vec<String>,
+    pub config_roots: Option<Vec<String>>,
     /// Use a single lockfile at the monorepo root for descendant config roots.
     /// None follows the rollout default; true opts in, false keeps colocated locks.
     pub lockfile: Option<bool>,
@@ -1257,6 +1258,10 @@ impl ConfigFile for MiseToml {
             .collect()
     }
 
+    fn daemon_declarations(&self) -> IndexMap<String, crate::daemons::Declaration> {
+        self.daemons.clone()
+    }
+
     fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
         self.warn_deprecated_env_keys();
         let env_entries = self.env.0.iter().cloned();
@@ -1944,6 +1949,7 @@ impl Clone for MiseToml {
             alias: self.alias.clone(),
             tool_alias: self.tool_alias.clone(),
             shell_alias: self.shell_alias.clone(),
+            daemons: self.daemons.clone(),
             wrappers: self.wrappers.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),

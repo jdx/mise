@@ -7,7 +7,7 @@ use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::hash;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::lockfile::{self, Lockfile, PlatformInfo};
+use crate::lockfile::{Lockfile, PlatformInfo};
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, file};
 use async_trait::async_trait;
@@ -192,7 +192,7 @@ impl PkgxBackend {
     }
 
     fn read_lockfile_for_tool(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<Lockfile> {
-        lockfile::read_lockfile_for_tool_source(&ctx.config, tv.request.source())
+        tv.request.read_lockfile(&ctx.config)
     }
 
     async fn install_from_locked(

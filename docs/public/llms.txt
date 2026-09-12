@@ -105,6 +105,7 @@
 - [sops](https://mise.jdx.dev/environments/secrets/sops.html): mise reads encrypted secret files and makes values available as environment variables via env._.file.
 - [age](https://mise.jdx.dev/environments/secrets/age.html): Encrypt individual environment variable values directly in mise.toml using age encryption. Encryption and decryption are built into mise.
 - [Hooks](https://mise.jdx.dev/hooks.html): mise can automatically execute scripts during a mise activate session. Except for the preinstall and postinstall hooks, these require the mise activate shell hook to be installed in your shell.
+- [Daemons](https://mise.jdx.dev/daemons.html): Daemon management requires experimental = true. It requires pitchfork 2.25.0 or later for external configuration support.
 - [direnv](https://mise.jdx.dev/direnv.html): direnv and mise both change the environment when you enter a directory. Their shell hooks can disagree about which PATH entries to add, restore, or remove.
 
 ## Tasks
@@ -201,6 +202,14 @@
 - [mise config get](https://mise.jdx.dev/cli/config/get.html): Display a value from one mise TOML file
 - [mise config ls](https://mise.jdx.dev/cli/config/ls.html): List config files currently in use
 - [mise config set](https://mise.jdx.dev/cli/config/set.html): Set a value in one mise TOML file
+- [mise daemons](https://mise.jdx.dev/cli/daemons.html): [experimental] Manage project daemons with pitchfork
+- [mise daemons logs](https://mise.jdx.dev/cli/daemons/logs.html): Arguments passed to pitchfork; daemon names may be short or qualified.
+- [mise daemons ls](https://mise.jdx.dev/cli/daemons/ls.html): List project daemons without starting a supervisor or registering configuration.
+- [mise daemons restart](https://mise.jdx.dev/cli/daemons/restart.html): Arguments passed to pitchfork; daemon names may be short or qualified.
+- [mise daemons start](https://mise.jdx.dev/cli/daemons/start.html): Arguments passed to pitchfork; daemon names may be short or qualified.
+- [mise daemons status](https://mise.jdx.dev/cli/daemons/status.html): Arguments passed to pitchfork; daemon names may be short or qualified.
+- [mise daemons stop](https://mise.jdx.dev/cli/daemons/stop.html): Arguments passed to pitchfork; daemon names may be short or qualified.
+- [mise daemons tui](https://mise.jdx.dev/cli/daemons/tui.html): Open pitchfork's dashboard with optional pitchfork TUI flags.
 - [mise deactivate](https://mise.jdx.dev/cli/deactivate.html): Print the script to disable mise in the current shell session
 - [mise deps](https://mise.jdx.dev/cli/deps.html): [experimental] Manage project dependencies
 - [mise deps add](https://mise.jdx.dev/cli/deps/add.html): Add a dependency

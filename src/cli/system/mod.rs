@@ -9,3 +9,4 @@ pub(super) mod status;
 pub(super) mod upgrade;
 #[path = "use.rs"]
 pub(super) mod r#use;
+pub(super) mod r#where;

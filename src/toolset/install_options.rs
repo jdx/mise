@@ -33,6 +33,11 @@ pub(crate) struct InstallOptions {
     /// skip confirmation prompts (e.g. installing missing plugin system deps).
     /// Defaults to the global `yes` setting; `mise bootstrap --yes` also sets it.
     pub yes: bool,
+    /// Reload global configuration after installation.
+    ///
+    /// Task-only tools resolved while a run is active must leave the live config
+    /// alone because sibling tasks may still be using it.
+    pub reload_config: bool,
 }
 
 impl Default for InstallOptions {
@@ -54,6 +59,7 @@ impl Default for InstallOptions {
             install_dir: None,
             scoped_install_dirs: false,
             yes: Settings::get().yes,
+            reload_config: true,
         }
     }
 }
