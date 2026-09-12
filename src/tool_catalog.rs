@@ -88,7 +88,7 @@ pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
             let search_query = backend_search_query(plugin_name, query);
             let has_search = search_query.is_some()
                 && plugin_path.join("hooks/backend_search_tools.lua").exists();
-            (has_list || has_search).then(|| async move {
+            (has_list || has_search).then_some(async move {
                 let list_tools = async {
                     if has_list {
                         cached_backend_list_tools(plugin_name, &plugin_path).await
