@@ -325,8 +325,9 @@ impl MultiProgressReport {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_multi_progress_report() {
+    #[tokio::test]
+    async fn test_multi_progress_report() {
+        crate::backend::load_tools().await.unwrap();
         let mpr = MultiProgressReport::get();
         let pr = mpr.add("PREFIX");
         pr.finish_with_message("test".into());

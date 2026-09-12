@@ -144,12 +144,17 @@ jobs:
           cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- cargo test --all-features --ignore-rust-version
-      # `cargo test` above resolves to the root package, so the workspace members are built as
+      # The CI profile fails any individual test that takes longer than one second.
+      - run: mise x -- cargo nextest run --profile ci --all-features --ignore-rust-version --no-fail-fast
+      - name: cargo test (doctests)
+        run: cargo test --doc --all-features --ignore-rust-version
+      # `cargo nextest` above resolves to the root package, so the workspace members are built as
       # dependencies but never tested. Run them separately rather than adding --workspace to the
       # line above, which would extend --all-features to members whose features are exclusive.
       - name: cargo test (workspace members)
-        run: cargo test --workspace --exclude mise --ignore-rust-version
+        run: mise x -- cargo nextest run --profile ci --workspace --exclude mise --ignore-rust-version --no-fail-fast
+      - name: cargo test (workspace member doctests)
+        run: cargo test --doc --workspace --exclude mise --ignore-rust-version
       # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos
