@@ -1,0 +1,276 @@
+use std::path::PathBuf;
+
+use async_trait::async_trait;
+
+use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSource};
+
+use super::{TaskFileArtifact, TaskFileProvider};
+
+#[derive(Debug)]
+pub(super) struct RemoteTaskHttpBuilder {
+    store_path: PathBuf,
+    use_cache: bool,
+}
+
+impl RemoteTaskHttpBuilder {
+    pub(super) fn new() -> Self {
+        Self {
+            store_path: env::temp_dir(),
+            use_cache: false,
+        }
+    }
+
+    pub(super) fn with_cache(mut self, use_cache: bool) -> Self {
+        if use_cache {
+            self.store_path = dirs::CACHE.join("remote-http-tasks-cache");
+            self.use_cache = true;
+        }
+        self
+    }
+
+    pub(super) fn build(self) -> RemoteTaskHttp {
+        RemoteTaskHttp {
+            storage_path: self.store_path,
+            is_cached: self.use_cache,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct RemoteTaskHttp {
+    storage_path: PathBuf,
+    is_cached: bool,
+}
+
+impl RemoteTaskHttp {
+    fn get_cache_key(&self, file: &str) -> String {
+        hash::hash_sha256_to_str(file)
+    }
+
+    async fn download_file(&self, file: &str, destination: &PathBuf) -> Result<()> {
+        trace!("Downloading file: {}", file);
+        HTTP.download_file(file, destination, None).await?;
+        file::make_executable(destination)?;
+        Ok(())
+    }
+
+    async fn get_unique_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        let cache_key = self.get_cache_key(file);
+        file::create_dir_all(&self.storage_path)?;
+        let artifact_dir = tempfile::Builder::new()
+            .prefix(&format!("{cache_key}-"))
+            .tempdir_in(&self.storage_path)?
+            .keep();
+        let destination = artifact_dir.join("task");
+        let artifact = TaskFileArtifact::temporary(destination.clone(), artifact_dir);
+        self.download_file(file, &destination).await?;
+        Ok(artifact)
+    }
+}
+
+#[async_trait]
+impl TaskFileProvider for RemoteTaskHttp {
+    fn is_match(&self, file: &str) -> bool {
+        RemoteSource::parse_http(file).is_some()
+    }
+
+    async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
+        let cache_key = self.get_cache_key(file);
+        let destination = self.storage_path.join(&cache_key);
+
+        match self.is_cached {
+            true => {
+                trace!("Cache mode enabled");
+
+                if destination.exists() {
+                    debug!("Using cached file: {:?}", destination);
+                    return Ok(destination);
+                }
+            }
+            false => {
+                trace!("Cache mode disabled");
+
+                if destination.exists() {
+                    file::remove_file(&destination)?;
+                }
+            }
+        }
+
+        self.download_file(file, &destination).await?;
+        Ok(destination)
+    }
+
+    async fn get_local_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
+        if self.is_cached {
+            return Ok(TaskFileArtifact::persistent(
+                self.get_local_path(file).await?,
+            ));
+        }
+        self.get_unique_artifact(file).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_is_match() {
+        let provider = RemoteTaskHttpBuilder::new().build();
+
+        // Positive cases
+        assert!(provider.is_match("http://myhost.com/test.txt"));
+        assert!(provider.is_match("https://myhost.com/test.txt"));
+        assert!(provider.is_match("https://mydomain.com/myfile.py"));
+        assert!(provider.is_match("https://subdomain.mydomain.com/myfile.sh"));
+        assert!(provider.is_match("https://subdomain.mydomain.com/myfile.sh?query=1"));
+
+        // Negative cases
+        assert!(!provider.is_match("https://myhost.com/js/"));
+        assert!(!provider.is_match("https://myhost.com"));
+        assert!(!provider.is_match("https://myhost.com/"));
+    }
+
+    #[tokio::test]
+    async fn test_http_remote_task_get_local_path_without_cache() {
+        let paths = vec![
+            "/myfile.py",
+            "/subpath/myfile.sh",
+            "/myfile.sh?query=1&sdfsdf=2",
+        ];
+        let mut server = mockito::Server::new_async().await;
+
+        for request_path in paths {
+            let mocked_server: mockito::Mock = server
+                .mock("GET", request_path)
+                .with_status(200)
+                .with_body("Random content")
+                .expect(2)
+                .create_async()
+                .await;
+
+            let provider = RemoteTaskHttpBuilder::new().build();
+            let request_url = format!("{}{}", server.url(), request_path);
+            let cache_key = provider.get_cache_key(&request_url);
+
+            let mut local_paths = vec![];
+            for _ in 0..2 {
+                let artifact = provider.get_local_artifact(&request_url).await.unwrap();
+                let local_path = artifact.path.clone();
+                assert!(local_path.exists());
+                assert!(local_path.is_file());
+                assert!(
+                    local_path
+                        .parent()
+                        .unwrap()
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with(&cache_key)
+                );
+                local_paths.push((local_path, artifact));
+            }
+            assert_ne!(local_paths[0].0, local_paths[1].0);
+            let retained_paths = local_paths
+                .iter()
+                .map(|(path, _)| path.clone())
+                .collect::<Vec<_>>();
+            drop(local_paths);
+            assert!(retained_paths.iter().all(|path| !path.exists()));
+
+            mocked_server.assert();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_http_remote_task_get_local_path_with_cache() {
+        let paths = vec![
+            "/myfile.py",
+            "/subpath/myfile.sh",
+            "/myfile.sh?query=1&sdfsdf=2",
+        ];
+        let mut server = mockito::Server::new_async().await;
+
+        for request_path in paths {
+            let mocked_server = server
+                .mock("GET", request_path)
+                .with_status(200)
+                .with_body("Random content")
+                .expect(1)
+                .create_async()
+                .await;
+
+            let provider = RemoteTaskHttpBuilder::new().with_cache(true).build();
+            let request_url = format!("{}{}", server.url(), request_path);
+            let cache_key = provider.get_cache_key(&request_url);
+
+            for _ in 0..2 {
+                let path = provider.get_local_path(&request_url).await.unwrap();
+                assert!(path.exists());
+                assert!(path.is_file());
+                assert!(path.ends_with(&cache_key));
+            }
+
+            mocked_server.assert();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_no_cache_http_artifact_owns_download_directory_during_transfer() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        use std::time::{Duration, Instant};
+
+        let started = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        let started_server = started.clone();
+        let release_server = release.clone();
+        let mut server = mockito::Server::new_async().await;
+        let remote = server
+            .mock("GET", "/cancelled-task")
+            .with_status(200)
+            .with_chunked_body(move |writer| {
+                writer.write_all(b"#!/usr/bin/env bash\n")?;
+                writer.flush()?;
+                started_server.store(true, Ordering::SeqCst);
+                let deadline = Instant::now() + Duration::from_secs(2);
+                while !release_server.load(Ordering::SeqCst) && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                writer.write_all(b"echo late\n")
+            })
+            .create_async()
+            .await;
+
+        let storage = tempfile::tempdir().unwrap();
+        let provider = RemoteTaskHttp {
+            storage_path: storage.path().to_path_buf(),
+            is_cached: false,
+        };
+        let url = format!("{}/cancelled-task", server.url());
+        let fetch = tokio::spawn(async move { provider.get_local_artifact(&url).await });
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !started.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let entries = std::fs::read_dir(storage.path())
+            .unwrap()
+            .collect::<std::io::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].file_type().unwrap().is_dir());
+
+        fetch.abort();
+        assert!(fetch.await.unwrap_err().is_cancelled());
+        release.store(true, Ordering::SeqCst);
+        assert_eq!(std::fs::read_dir(storage.path()).unwrap().count(), 0);
+        remote.assert_async().await;
+    }
+}

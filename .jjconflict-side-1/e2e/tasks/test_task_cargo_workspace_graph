@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+EOF
+
+cat <<'EOF' >Cargo.toml
+[workspace]
+members = ["crates/app", "crates/core", "crates/shared"]
+
+[workspace.dependencies]
+shared = { path = "crates/shared" }
+EOF
+
+mkdir -p crates/app crates/core crates/shared crates/build-helper
+
+cat <<'EOF' >crates/app/Cargo.toml
+[package]
+name = "app"
+version = "0.1.0"
+
+[dependencies]
+renamed-core = { package = "core", path = "../core" }
+
+[dev-dependencies]
+shared = { workspace = true }
+
+[target.'cfg(unix)'.build-dependencies]
+build-helper = { path = "../build-helper" }
+EOF
+
+for crate in core shared build-helper; do
+  cat <<EOF >"crates/$crate/Cargo.toml"
+[package]
+name = "$crate"
+version = "0.1.0"
+EOF
+done
+
+assert_contains "mise tasks graph" "cargo:app"
+assert_contains "mise tasks graph" "crates/app"
+assert_contains "mise tasks graph" '"workspace_source":"Cargo.toml"'
+assert_contains "mise tasks graph --explain" "Project: cargo:app"
+assert_contains "mise tasks graph --explain" "cargo:core — cargo (crates/app/Cargo.toml)"
+
+assert_json "mise tasks graph --json | jq '.projects | map({id, root, dependencies})'" '[
+  {
+    "id": "cargo:app",
+    "root": "crates/app",
+    "dependencies": [
+      "cargo:build-helper",
+      "cargo:core",
+      "cargo:shared"
+    ]
+  },
+  {
+    "id": "cargo:build-helper",
+    "root": "crates/build-helper",
+    "dependencies": []
+  },
+  {
+    "id": "cargo:core",
+    "root": "crates/core",
+    "dependencies": []
+  },
+  {
+    "id": "cargo:shared",
+    "root": "crates/shared",
+    "dependencies": []
+  }
+]'
+
+assert_json "mise tasks graph --json | jq '.projects[] | select(.id == \"cargo:app\") | {
+  project: .provenance,
+  dependency: .dependency_provenance[\"cargo:core\"]
+}'" '{
+  "project": {
+    "provider": "cargo",
+    "source": "crates/app/Cargo.toml"
+  },
+  "dependency": {
+    "provider": "cargo",
+    "source": "crates/app/Cargo.toml"
+  }
+}'

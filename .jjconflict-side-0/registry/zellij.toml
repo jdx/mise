@@ -1,0 +1,8 @@
+backends = [
+  "aqua:zellij-org/zellij",
+  "asdf:chessmango/asdf-zellij",
+  "cargo:zellij",
+]
+description = "A terminal workspace with batteries included"
+test = { cmd = "zellij --version", expected = "zellij {{version}}" }
+version_order = "semver"

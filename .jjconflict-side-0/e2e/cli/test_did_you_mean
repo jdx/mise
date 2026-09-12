@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Test "Did you mean?" suggestions for unknown tools
+
+set -euo pipefail
+export RUST_BACKTRACE=0
+export MISE_FRIENDLY_ERROR=1
+
+# Test: Typo of a known mise registry tool should suggest the correct name
+assert_fail "mise use nod" "Did you mean?"
+assert_fail "mise use nod" "node"
+
+# Test: Typo of python should suggest python
+assert_fail "mise use pythn" "python"
+
+# Test: Aqua Cargo and GoInstall packages should use runnable backend suggestions
+assert_not_contains "mise use wasmi_cli 2>&1 || true" "aqua:crates.io/wasmi_cli"
+assert_fail "mise use wasmi_cli" "cargo:wasmi_cli"
+assert_not_contains "mise use benchstat 2>&1 || true" "aqua:golang.org/x/perf/cmd/benchstat"
+assert_fail "mise use benchstat" "go:golang.org/x/perf/cmd/benchstat"
+assert_fail "mise use mapotf" "go:github.com/Azure/mapotf"
+assert_fail "mise use ifacemaker" "go:github.com/vburenin/ifacemaker"
+
+# Test: Aqua GoBuild packages should not appear in suggestions
+assert_not_contains "mise use ycat 2>&1 || true" "aqua:goccy/go-yaml/ycat"
+assert_not_contains "mise use ycat 2>&1 || true" "go:github.com/goccy/go-yaml"
+assert_not_contains "mise use kics 2>&1 || true" "aqua:Checkmarx/kics"
+
+# Test: Completely unrelated name should not show suggestions
+assert_fail "mise use somethingnonexistent" "not found in mise tool registry"

@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+
+export DEPS_SUFFIX=expanded
+mkdir -p work
+echo input >work/input-expanded
+
+cat >mise.toml <<'EOF'
+[vars]
+label = "rendered"
+
+[deps.setup]
+sources = ["{{ config_root }}/work/input-$DEPS_SUFFIX"]
+outputs = ["{{ config_root }}/work/output-$DEPS_SUFFIX"]
+run = 'printf "%s\n" "{{ config_root }}|$RUNTIME_VALUE|{{ vars.label }}" > output-$DEPS_SUFFIX; echo run >> runs'
+dir = "{{ config_root }}/work"
+description = "setup-$DEPS_SUFFIX"
+timeout = "${DEPS_TIMEOUT:-5s}"
+
+[deps.setup.env]
+RUNTIME_VALUE = "provider-$DEPS_SUFFIX"
+EOF
+
+assert_fail_contains "mise deps setup --explain" "Command: setup-expanded"
+assert_contains "mise prepare --dry-run --only setup 2>&1" "setup"
+mise deps --force --only setup
+assert "cat work/output-expanded" "$PWD|provider-expanded|rendered"
+assert "wc -l < work/runs | tr -d ' '" "1"
+
+# The rendered source and output paths participate in freshness checks.
+mise deps --only setup
+assert "wc -l < work/runs | tr -d ' '" "1"
+echo changed >work/input-expanded
+mise deps --only setup
+assert "wc -l < work/runs | tr -d ' '" "2"
+
+# Each monorepo provider uses the config_root of the file that defines it.
+mkdir -p monorepo/apps/a monorepo/apps/b
+cat >monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["apps/*"]
+EOF
+for app in a b; do
+  cat >"monorepo/apps/$app/mise.toml" <<'EOF'
+[deps.render]
+outputs = ["{{ config_root }}/root.txt"]
+run = "printf '%s' '{{ config_root }}' > root.txt"
+dir = "{{ config_root }}"
+EOF
+done
+(
+  cd monorepo
+  mise deps --monorepo --force
+)
+assert "cat monorepo/apps/a/root.txt" "$PWD/monorepo/apps/a"
+assert "cat monorepo/apps/b/root.txt" "$PWD/monorepo/apps/b"
+
+# Invalid templates fail before the provider command starts.
+mkdir invalid
+cat >invalid/mise.toml <<'EOF'
+[deps.bad]
+auto = true
+sources = ["{{ missing }}"]
+run = "touch side-effect"
+
+[tasks.default]
+run = "touch task-side-effect"
+EOF
+assert_fail_contains "cd invalid && mise deps --force" 'deps provider "bad" field "sources[0]"'
+assert_fail "test -e invalid/side-effect"
+assert_fail_contains "cd invalid && mise run default" 'deps provider "bad" field "sources[0]"'
+assert_fail "test -e invalid/task-side-effect"
+
+# Provider env templates are rendered after the effective layered and tools env is known.
+mkdir effective-env
+cat >effective-env/mise.toml <<'EOF'
+[env]
+LAYERED_VALUE = "from-base"
+TOOLS_VALUE = { value = "from-tools", tools = true }
+EOF
+cat >effective-env/mise.local.toml <<'EOF'
+[deps.render]
+sources = ["{{ env.LAYERED_VALUE }}.source"]
+outputs = ["{{ env.LAYERED_VALUE }}.result"]
+run = "printf '%s' \"$VALUE\" > {{ env.LAYERED_VALUE }}.result; echo run >> runs"
+env = { VALUE = "{{ env.LAYERED_VALUE }}|{{ env.TOOLS_VALUE }}" }
+description = "{{ env.TOOLS_VALUE }}"
+EOF
+touch effective-env/from-base.source
+(
+  cd effective-env
+  mise deps --force
+)
+assert "cat effective-env/from-base.result" "from-base|from-tools"
+assert "wc -l < effective-env/runs | tr -d ' '" "1"
+assert_contains "cd effective-env && mise deps render --explain 2>&1" "Status: fresh"
+assert "wc -l < effective-env/runs | tr -d ' '" "1"
+sed -i.bak 's/from-tools/from-tools-changed/' effective-env/mise.toml
+assert_fail_contains "cd effective-env && mise deps render --explain" "provider command changed"
+(
+  cd effective-env
+  mise deps
+)
+assert "cat effective-env/from-base.result" "from-base|from-tools-changed"
+assert "wc -l < effective-env/runs | tr -d ' '" "2"
+
+# Invalid deps templates encountered during uv venv discovery remain configuration errors.
+mkdir invalid-uv
+touch invalid-uv/uv.lock
+cat >invalid-uv/mise.toml <<'EOF'
+[settings]
+python.uv_venv_auto = "source"
+
+[deps.uv]
+sources = ["{{ invalid("]
+EOF
+assert_fail_contains "cd invalid-uv && mise env" 'deps provider "uv" field "sources[0]"'
+
+# Disabling shell expansion leaves provider values unchanged while Tera still renders.
+mkdir no-shell-expand
+cat >no-shell-expand/mise.toml <<'EOF'
+[vars]
+prefix = "rendered"
+
+[settings]
+env_shell_expand = false
+
+[deps.literal]
+outputs = ["{{ config_root }}/result"]
+run = "printf '%s' \"$VALUE\" > result"
+env = { VALUE = "{{ vars.prefix }}-$DEPS_SUFFIX" }
+EOF
+(
+  cd no-shell-expand
+  mise deps --force
+)
+literal_deps_suffix="$(printf '\044DEPS_SUFFIX')"
+assert "cat no-shell-expand/result" "rendered-$literal_deps_suffix"
+
+# Providers excluded from this invocation are not rendered.
+mkdir filtered
+cat >filtered/mise.toml <<'EOF'
+[deps.selected]
+outputs = ["selected"]
+run = "touch selected"
+
+[deps.unselected]
+sources = ["{{ env.MISSING_VALUE }}"]
+run = "touch unselected"
+EOF
+(
+  cd filtered
+  mise deps --force --only selected
+)
+assert "test -e filtered/selected"
+assert_fail "test -e filtered/unselected"
+rm filtered/selected
+(
+  cd filtered
+  mise deps --force --skip unselected
+)
+assert "test -e filtered/selected"
+assert_fail "test -e filtered/unselected"
+
+# Non-auto providers are not rendered during automatic task dependency checks.
+mkdir manual
+cat >manual/mise.toml <<'EOF'
+[deps.manual]
+sources = ["{{ env.MISSING_VALUE }}"]
+run = "touch provider-side-effect"
+
+[tasks.default]
+run = "touch task-side-effect"
+EOF
+(
+  cd manual
+  mise run default
+)
+assert "test -e manual/task-side-effect"
+assert_fail "test -e manual/provider-side-effect"

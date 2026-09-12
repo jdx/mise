@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# One typo in a config file used to be reported three times. The settings loader printed a raw,
+# unprefixed block once per settings build -- and settings are built twice per run, because
+# `add_cli_matches` resets them so CLI flags take effect -- and then the config loader reported the
+# same file again, properly, through miette.
+#
+# The raw print also went straight to stderr, so the log level could not reach it and `--quiet`
+# could not silence it.
+
+# Control: with a config that parses, none of the assertions below can pass by accident.
+cat <<'TOML' >mise.toml
+[tools]
+TOML
+assert "mise --version 2>&1 | grep -c 'Error loading settings file' || true" "0"
+
+cat <<'TOML' >mise.toml
+[env]
+Bad = "C:\x"
+TOML
+
+# Exactly once, compared exactly: `assert_contains` would have passed on the old behaviour too,
+# since three renderings contain the string just as well as one does.
+assert "mise --version 2>&1 | grep -c 'Error loading settings file'" "1"
+
+# It goes through the logger now, so it carries the usual prefix instead of arriving bare.
+assert "mise --version 2>&1 | grep -c 'WARN.*Error loading settings file'" "1"
+
+# Being a warning, the log level now reaches it. This is the point of routing it through the
+# logger, not a side effect.
+assert "mise --quiet --version 2>&1 | grep -c 'Error loading settings file' || true" "0"
+
+# Queued warnings are flushed once CLI flags are known, and several startup steps between those two
+# points can fail first. A bad `--cd` is one of them: the diagnostic must not be swallowed just
+# because the command left early.
+assert_fail_contains "mise --cd no-such-dir env" "Error loading settings file"
+
+# The log level reaches those early exits too, but only by a route that exists before the flags are
+# parsed. `MISE_QUIET` is read from the environment during the first settings build, so it applies
+# on every path; `--quiet` cannot, on a command that left before `add_cli_matches` ran. Both cases
+# below are that: flags the parser rejected never became flags at all, and `--cd` is checked by
+# `validate_cd_path` ahead of `add_cli_matches`, on purpose, so a bad directory never reaches the
+# settings. Pinning the reachable half keeps that boundary honest.
+#
+# The other half -- a `--cd` directory that passes both checks and still refuses the `chdir`, which
+# is where `--quiet` has to come from the flags rather than from a settings build -- is not pinned
+# here: this suite runs as root in CI, where `chmod` cannot stop `chdir`. See `cli/test_cd_bad_target`.
+assert "MISE_QUIET=1 mise --cd no-such-dir env 2>&1 | grep -c 'Error loading settings file' || true" "0"
+assert "MISE_QUIET=1 mise --badflag 2>&1 | grep -c 'Error loading settings file' || true" "0"
+
+# The config loader still reports the file, and still fails: this collapses a duplicate, it does
+# not hide the failure.
+assert_fail_contains "mise env" "Invalid TOML in config file"
+
+# Two settings files failing the same way must stay two reports. mise reads several settings files
+# and the parser text alone is byte-identical between them, so a message that does not name its
+# file would collapse the pair and the second file would never be mentioned.
+cp mise.toml "$MISE_CONFIG_DIR/config.toml"
+assert "mise --version 2>&1 | grep -c 'Error loading settings file'" "2"
+assert "mise --version 2>&1 | grep 'Error loading settings file' | sort -u | wc -l | tr -d ' '" "2"

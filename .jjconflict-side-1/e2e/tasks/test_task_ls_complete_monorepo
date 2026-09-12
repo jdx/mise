@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Verify task completion output includes monorepo tasks when using // paths
+
+# Root config marks repo as monorepo. WEB_OUTPUT is also defined here with a
+# different value to verify subproject env wins when rendering subproject tasks.
+cat <<'CONFIG' >mise.toml
+monorepo_root = true
+
+[env]
+WEB_OUTPUT = "root-dist"
+
+[monorepo]
+config_roots = ["apps/*"]
+
+[tasks.root-task]
+run = 'echo root'
+CONFIG
+
+# App subproject task that should appear in completions. Its sources/outputs
+# reference env vars from the subproject's own [env] section — rendering these
+# from the monorepo root used to fail with "Variable `env...` not found" and
+# break completion for the whole monorepo:
+# https://github.com/jdx/mise/discussions/10126
+mkdir -p apps/web/src
+echo "snapshot input" >apps/web/src/input.txt
+cat <<'CONFIG' >apps/web/mise.toml
+[env]
+WEB_SOURCE = "src"
+WEB_OUTPUT = "dist"
+
+[tasks.update-snapshots]
+description = "Update monorepo snapshots"
+sources = ["{{env.WEB_SOURCE}}/*.txt"]
+outputs = ["{{env.WEB_OUTPUT}}/done.txt"]
+run = 'mkdir -p "$WEB_OUTPUT" && echo updating snapshots > "$WEB_OUTPUT/done.txt" && echo updating snapshots'
+CONFIG
+mkdir -p apps/web/mise-tasks
+cat <<'CONFIG' >apps/web/mise-tasks/script-snapshots
+#!/usr/bin/env bash
+#MISE description="Update monorepo script snapshots"
+#MISE sources=["{{env.WEB_SOURCE}}/*.txt"]
+#MISE outputs=["{{env.WEB_OUTPUT}}/script-done.txt"]
+mkdir -p "$WEB_OUTPUT"
+echo script snapshots >"$WEB_OUTPUT/script-done.txt"
+echo script snapshots
+CONFIG
+chmod +x apps/web/mise-tasks/script-snapshots
+
+# Completion output should include the //-prefixed task path with escaped colon
+assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
+assert_contains "mise task ls --complete" '//apps/web\:script-snapshots:Update monorepo script snapshots'
+# Running from the monorepo root renders the task templates with the
+# subproject's env (WEB_OUTPUT=dist, not the root's root-dist)
+assert "mise -q run //apps/web:update-snapshots" "updating snapshots"
+assert "cat apps/web/dist/done.txt" "updating snapshots"
+assert "mise -q run //apps/web:script-snapshots" "script snapshots"
+assert "cat apps/web/dist/script-done.txt" "script snapshots"
+
+# A task with a template that legitimately fails to render must not break
+# loading tasks from other subprojects
+mkdir -p apps/broken
+cat <<'CONFIG' >apps/broken/mise.toml
+[task_config]
+includes = ["tasks.toml", "mise-tasks"]
+
+[tasks.broken-task]
+sources = ["{{env.DOES_NOT_EXIST}}/*"]
+run = 'echo broken'
+CONFIG
+cat <<'CONFIG' >apps/broken/tasks.toml
+[broken-included-task]
+sources = ["{{env.DOES_NOT_EXIST}}/*"]
+run = 'echo broken include'
+CONFIG
+mkdir -p apps/broken/mise-tasks
+cat <<'CONFIG' >apps/broken/mise-tasks/broken-script
+#!/usr/bin/env bash
+#MISE sources=["{{env.DOES_NOT_EXIST}}/*"]
+echo broken script
+CONFIG
+chmod +x apps/broken/mise-tasks/broken-script
+assert_contains "mise task ls --complete" '//apps/web\:update-snapshots:Update monorepo snapshots'
+assert_not_contains "mise task ls --complete" '//apps/broken\:broken-task'
+assert_not_contains "mise task ls --complete" '//apps/broken\:broken-included-task'
+assert_not_contains "mise task ls --complete" '//apps/broken\:broken-script'

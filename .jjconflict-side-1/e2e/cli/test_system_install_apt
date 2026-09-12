@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# e2e:writable-rootfs — installing a deb writes to /var and /usr, which the
+# e2e Docker sandbox mounts read-only by default
+
+# requires a Debian-ish Linux running as root (the CI container case);
+# elsewhere this test is a no-op
+if [[ "$(uname)" != "Linux" ]] || ! command -v apt-get >/dev/null || [[ "$(id -u)" != 0 ]]; then
+  exit 0
+fi
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"apt:bc" = "latest"
+EOF
+
+apt-get remove -y bc >/dev/null 2>&1 || true
+
+assert_contains "mise bootstrap packages status" "missing"
+assert_fail "mise bootstrap packages status --missing"
+
+# dry-run prints the command without installing
+assert_contains "mise bootstrap packages apply --dry-run" "apt-get install -y -- bc"
+assert_contains "mise bootstrap packages status" "missing"
+
+# explicit manager:package specs work, configured or not
+assert_contains "mise bootstrap packages apply apt:bc --dry-run" "apt-get install -y -- bc"
+
+mise bootstrap packages apply --yes
+assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "mise bootstrap packages status --missing"
+assert_succeed "bc --version"
+
+# second install is a no-op
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already installed"
+
+# upgrade refreshes lists and only touches installed packages
+assert_contains "mise bootstrap packages upgrade --dry-run" "apt-get update"
+assert_contains "mise bootstrap packages upgrade --dry-run" "apt-get install -y --only-upgrade -- bc"
+assert_succeed "mise bootstrap packages upgrade --yes"
+
+# `use` writes the config entry and installs in one step
+rm mise.toml
+apt-get remove -y bc >/dev/null 2>&1 || true
+assert_succeed "mise bootstrap packages use --yes apt:bc"
+assert_contains "cat mise.toml" '"apt:bc" = "latest"'
+assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "bc --version"

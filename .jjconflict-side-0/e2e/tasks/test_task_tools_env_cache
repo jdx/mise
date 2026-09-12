@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Test that task-level tools work correctly when the config has an [env] section
+# and multiple tasks run, some with tools and some without.
+# Reproduces issue: https://github.com/jdx/mise/discussions/7778
+#
+# The bug: When env resolution cache is used, it doesn't account for task-specific
+# tools. Task A (no tools) runs first and caches env. Task B (has tools) uses
+# cached env which doesn't have its tools in PATH.
+
+cat <<EOF >mise.toml
+[env]
+TEST_VAR = "test-value"
+
+[tasks.build]
+run = "echo building"
+
+[tasks.deploy-aws]
+run = "rtx-tiny"
+tools = { tiny = "1" }
+wait_for = ["build"]
+
+[tasks.deploy]
+depends = ["build", "deploy-aws"]
+EOF
+
+# Running deploy directly should work (deploy-aws gets its tools)
+assert_contains "mise run deploy" "rtx-tiny: v1.1.0"
+
+# Running deploy-aws directly should also work
+assert_contains "mise run deploy-aws" "rtx-tiny: v1.1.0"
+
+# Test with multiple dependency tasks where one has tools and one doesn't
+cat <<EOF >mise.toml
+[env]
+FOO = "bar"
+
+[tasks.no-tools]
+run = "echo no-tools-task"
+
+[tasks.with-tools]
+run = "rtx-tiny"
+tools = { tiny = "2" }
+
+[tasks.parent]
+depends = ["no-tools", "with-tools"]
+EOF
+
+# Both dependency tasks should execute correctly
+assert_contains "mise run parent" "no-tools-task"
+assert_contains "mise run parent" "rtx-tiny: v2.1.0"

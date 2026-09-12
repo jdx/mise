@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Regression test for #8786: parallel task output must be streamed rather than
+# retained for the lifetime of the command. Replacing output still keeps a
+# bounded tail so hidden stdout can be diagnosed when a command fails.
+
+cat <<'EOF' >mise.toml
+[tasks.noisy]
+run = '''
+i=0
+while [ "$i" -lt 2000 ]; do
+  printf 'noisy-%04d\n' "$i"
+  i=$((i + 1))
+done
+'''
+
+[tasks.other]
+run = "echo other-done"
+EOF
+
+mise run noisy ::: other >output.txt 2>&1
+assert_contains "cat output.txt" "[noisy] noisy-0000"
+assert_contains "cat output.txt" "[noisy] noisy-1999"
+assert_contains "cat output.txt" "[other] other-done"
+
+cat <<'EOF' >mise.toml
+[settings.task]
+output = "replacing"
+
+[tasks.failing]
+run = '''
+i=0
+while [ "$i" -lt 10000 ]; do
+  printf 'hidden-%05d\n' "$i"
+  i=$((i + 1))
+done
+exit 1
+'''
+EOF
+
+status=0
+MISE_FORCE_PROGRESS=1 MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 mise run failing >output.txt 2>&1 || status=$?
+assert "test '$status' -ne 0"
+assert_contains "cat output.txt" "[output truncated; showing last 64 KiB]"
+assert_not_contains "cat output.txt" "hidden-00000"
+assert_contains "cat output.txt" "hidden-09999"

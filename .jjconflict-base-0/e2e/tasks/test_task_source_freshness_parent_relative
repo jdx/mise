@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# A source above the task directory must take part in the freshness decision,
+# not merely match the source matcher: patterns are enumerated by `glob` from
+# the pattern's own literal prefix, so `..` reaches outside the task directory.
+
+mkdir -p shared pkg
+printf 'v1\n' >shared/lib.txt
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+dir = "pkg"
+run = "mkdir -p dist && cat ../shared/lib.txt >dist/out.txt"
+sources = ["../shared/**/*"]
+outputs = ["dist/out.txt"]
+EOF
+
+mise run build
+assert "cat pkg/dist/out.txt" "v1"
+
+# The parent-relative source is in the cache key and unchanged.
+assert_contains "mise run build 2>&1" "sources up-to-date, skipping"
+
+# Editing it must invalidate the task even though it sits above the task
+# directory. A matcher fix that left enumeration blind would skip here.
+printf 'v2\n' >shared/lib.txt
+assert_not_contains "mise run build 2>&1" "sources up-to-date, skipping"
+assert "cat pkg/dist/out.txt" "v2"
+
+# Adding a file under the parent-relative glob invalidates too.
+assert_contains "mise run build 2>&1" "sources up-to-date, skipping"
+printf 'extra\n' >shared/other.txt
+assert_not_contains "mise run build 2>&1" "sources up-to-date, skipping"

@@ -1,0 +1,4 @@
+backends = ["aqua:EmbarkStudios/cargo-deny"]
+description = "Cargo plugin for linting your dependencies"
+test = { cmd = "cargo-deny --version", expected = "cargo-deny {{version}}" }
+version_order = "semver"

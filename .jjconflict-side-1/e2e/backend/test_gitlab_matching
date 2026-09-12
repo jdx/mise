@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# Test the `matching` / `matching_regex` options on the GITLAB backend.
+#
+# The github/gitlab/forgejo backends share one AssetMatcher, but each threads the
+# filter through its OWN resolve_*_asset_url_for_target function. This exercises
+# the gitlab path against the real GitLab release API so it can't silently drift
+# from github (the shared option plumbing is also covered by the unit test
+# backend::github::tests::test_matching_plumbing_parity_across_git_backends).
+#
+# gitlab:jdxcode/mise-test-fixtures v1.0.0 ships THREE assets:
+#   fd-8.7.0.tar.gz, hello-world-1.0.0.tar.gz, hello-world-2.0.0.tar.gz
+# None carry OS/arch tokens, so platform autodetection scores them equally and the
+# shortest-name tiebreak picks fd-8.7.0.tar.gz by default. `matching` narrows the
+# candidate set BEFORE autodetection, so matching=hello-world selects a hello-world
+# asset instead — proving the filter actually changes selection on the gitlab path.
+
+export MISE_EXPERIMENTAL=1
+
+# A matching value that excludes every asset must FAIL asset selection on the
+# gitlab path with an error that names the filter — proving `matching` is parsed
+# and threaded into resolve_gitlab_asset_url_for_target rather than silently
+# ignored (if it were ignored, autodetection would succeed and pick fd). The
+# expected substring asserts it failed on the filter-excluded path, not an
+# unrelated error (network, bad tag). Run BEFORE any successful install, since an
+# already-installed version makes `mise install` a no-op (the install dir is keyed
+# by repo+version, NOT by the matching value).
+assert_fail 'mise install "gitlab:jdxcode/mise-test-fixtures[matching=does-not-exist]@1.0.0"' "filtered by matching"
+
+# A syntactically invalid matching_regex (unclosed group) must be a hard error on
+# the gitlab path, NOT silently ignored (which would fall back to autodetection and
+# install fd). The substring asserts it failed specifically on regex compilation.
+assert_fail 'mise install "gitlab:jdxcode/mise-test-fixtures[matching_regex=hello(]@1.0.0"' "invalid matching_regex"
+
+# matching=hello-world narrows the three assets to the two hello-world-* ones; the
+# shortest-name/lexicographic tiebreak then picks hello-world-1.0.0.tar.gz (NOT the
+# default fd-8.7.0.tar.gz). bin_path + postinstall match that asset's layout, so
+# the installed binary runs end-to-end.
+cat <<EOF >mise.toml
+[tools]
+"gitlab:jdxcode/mise-test-fixtures" = { version = "1.0.0", matching = "hello-world", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+mise uninstall gitlab:jdxcode/mise-test-fixtures
+
+# matching_regex selects on the gitlab path too: ^hello-world-1 matches only
+# hello-world-1.0.0.tar.gz, so the same binary installs and runs.
+cat <<EOF >mise.toml
+[tools]
+"gitlab:jdxcode/mise-test-fixtures" = { version = "1.0.0", matching_regex = "^hello-world-1", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+mise install
+assert_contains "mise x -- hello-world" "hello world"

@@ -1,0 +1,4 @@
+backends = ["aqua:tauri-apps/tauri/cargo-tauri"]
+description = "Build smaller, faster, and more secure desktop and mobile applications with a web frontend"
+test = { cmd = "cargo-tauri --version", expected = "tauri-cli {{version}}" }
+version_order = "semver"

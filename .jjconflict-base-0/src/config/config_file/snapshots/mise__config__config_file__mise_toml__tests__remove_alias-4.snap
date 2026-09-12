@@ -1,0 +1,14 @@
+---
+source: src/config/config_file/mise_toml.rs
+expression: cf
+---
+MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
+    alias: {
+        "node": Alias {
+            backend: None,
+            versions: {
+                "18": "18.0.0",
+            },
+        },
+    },
+}

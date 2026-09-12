@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+env = ["PROFILE"]
+
+[tasks.build]
+run = '''
+mkdir -p dist/empty
+printf '%s:%s\n' "$PROFILE" "$(cat input.txt)" > dist/result.txt
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist", "dist/result.txt"]
+
+[tasks.inspect]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+
+[tasks.fail]
+run = "false"
+sources = ["input.txt"]
+outputs = []
+EOF
+
+printf 'one\n' >input.txt
+
+assert_contains "PROFILE=debug mise run build 2>&1" "cache miss: no matching cache entry"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+assert "cat dist/result.txt" "debug:one"
+
+# Cache explanations show the contributing input groups without exposing values.
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "cache key inputs:"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "task definition:"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "sources:"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "source: input.txt"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "pattern: dist"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "pattern: dist/result.txt"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "resolved outputs: 1"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "output: dist"
+assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "output: dist/result.txt"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "environment PROFILE: set"
+assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "environment PROFILE: debug"
+assert_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "platform:"
+assert_not_contains "PROFILE=debug mise run --task-cache-explain build 2>&1" "cache key:"
+assert_contains "PROFILE=debug mise run --dry-run --task-cache-explain build 2>&1" "cache key inputs:"
+assert_json \
+  "PROFILE=debug mise run --dry-run --task-cache-explain-json build | jq '{task, cache_key_length: (.cache_key | length), format, source_paths, output_patterns, output_paths, environment}'" \
+  '{
+    "task": "build",
+    "cache_key_length": 64,
+    "format": 2,
+    "source_paths": ["input.txt", "mise.toml"],
+    "output_patterns": ["dist", "dist/result.txt"],
+    "output_paths": ["dist"],
+    "environment": {"PROFILE": true}
+  }'
+assert_json \
+  "PROFILE=debug mise run --dry-run --task-cache-explain-json build ::: inspect | jq -s 'map(.task) | sort'" \
+  '["build", "inspect"]'
+assert_fail_contains \
+  "mise run --task-cache-explain-json build 2>&1" \
+  "the following required arguments were not provided"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Existing fresh outputs use the normal fast freshness path.
+cache_stats="$(PROFILE=debug mise run --task-cache-stats build 2>&1)"
+assert_contains "echo \"$cache_stats\"" "sources up-to-date, skipping"
+assert_contains "echo \"$cache_stats\"" "Task cache: no lookups"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Missing outputs are restored from the local artifact cache without executing.
+rm -rf dist
+cache_stats="$(PROFILE=debug mise run --task-cache-stats build 2>&1)"
+assert_contains "echo \"$cache_stats\"" "restored outputs from cache"
+assert_contains "echo \"$cache_stats\"" "Task cache: 1/1 hits (100%)"
+assert_contains "echo \"$cache_stats\"" "10 B restored"
+assert_not_contains "echo \"$cache_stats\"" "0ns saved"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+assert "cat dist/result.txt" "debug:one"
+assert_succeed "test -d dist/empty"
+
+# Clearing the artifact cache invalidates the fast freshness skip even when
+# outputs remain, so the task executes once to repopulate the cache.
+mise cache clear
+cache_stats="$(PROFILE=debug mise run --task-cache-stats build 2>&1)"
+assert_not_contains "echo \"$cache_stats\"" "sources up-to-date, skipping"
+assert_contains "echo \"$cache_stats\"" "Task cache: 0/1 hits (0%), 0 B restored, 0ns saved"
+assert "wc -l < runs.txt | tr -d ' '" "2"
+assert_fail_contains \
+  "mise run --task-cache-stats fail 2>&1" \
+  "Task cache: 0/1 hits (0%), 0 B restored, 0ns saved"
+rm -rf dist
+assert_contains "PROFILE=debug mise run build 2>&1" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "2"
+
+# An allowlisted ambient environment change produces a cache miss.
+PROFILE=release mise run build
+assert "wc -l < runs.txt | tr -d ' '" "3"
+assert "cat dist/result.txt" "release:one"
+
+# Source content changes also produce a miss and a distinct artifact.
+printf 'two\n' >input.txt
+PROFILE=release mise run build
+assert "wc -l < runs.txt | tr -d ' '" "4"
+assert "cat dist/result.txt" "release:two"
+
+# The new result is independently restorable.
+rm -rf dist
+assert_contains "PROFILE=release mise run build 2>&1" "restored outputs from cache"
+assert "wc -l < runs.txt | tr -d ' '" "4"
+assert "cat dist/result.txt" "release:two"
+
+# Dry runs must not restore outputs or mutate artifact cache state.
+rm -rf dist
+assert_fail_contains \
+  "mise run --dry-run --task-cache-stats build 2>&1" \
+  "cannot be used with"
+PROFILE=release mise run --dry-run build
+assert_fail "test -e dist"
+assert "wc -l < runs.txt | tr -d ' '" "4"
+
+# Usage-derived environment values participate in the cache key.
+cat <<'EOF' >>mise.toml
+
+[tasks.usage-cache]
+usage = 'arg "<value>"'
+run = '''
+mkdir -p usage-dist
+printf '%s\n' "$usage_value" > usage-dist/result.txt
+printf 'ran\n' >> usage-runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["usage-dist"]
+env = { usage_value = "default" }
+cache = { enabled = true }
+EOF
+
+mise run usage-cache alpha
+rm -rf usage-dist
+mise run usage-cache beta
+assert "cat usage-dist/result.txt" "beta"
+assert "wc -l < usage-runs.txt | tr -d ' '" "2"
+
+# A task-local cache setting overrides the scoped default.
+cat <<'EOF' >>mise.toml
+
+[tasks.uncached]
+run = '''
+mkdir -p uncached-dist
+printf 'ran\n' >> uncached-runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["uncached-dist"]
+cache = { enabled = false }
+
+[tasks.ineligible]
+run = "printf 'ran\n' >> ineligible-runs.txt"
+EOF
+
+mise run uncached
+rm -rf uncached-dist
+mise run uncached
+assert "wc -l < uncached-runs.txt | tr -d ' '" "2"
+
+# Tasks without sources and explicit outputs do not inherit the cache default.
+mise run ineligible
+assert "wc -l < ineligible-runs.txt | tr -d ' '" "1"

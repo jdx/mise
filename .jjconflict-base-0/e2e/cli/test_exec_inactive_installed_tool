@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# Regression test for discussion #4407: `mise install <tool>` writes to no config
+# file, so the tool's bin dir never joins the PATH `mise exec` builds and the bin
+# fails to resolve. That failure used to surface as a bare ENOENT ("couldn't exec
+# process") with no hint that mise had just installed the tool.
+
+mise install dummy@1.0.0
+
+# Installed, but activated nowhere, so this still fails -- it should now say why.
+assert_fail_contains "mise exec -- dummy" "installed but not activated"
+assert_fail_contains "mise exec -- dummy" "mise use dummy"
+assert_fail_contains "mise exec -- dummy" "mise exec dummy -- dummy"
+
+# The command the hint suggests has to actually work.
+assert_contains "mise exec dummy -- dummy" "1.0.0"
+
+# A bin belonging to no installed tool keeps the original error untouched: the
+# hint is only added when mise can name the tool providing it.
+unknown_out="$(mise exec -- not-a-tool-4407 2>&1 || true)"
+assert_contains_text "$unknown_out" "couldn't exec process"
+assert_not_contains_text "$unknown_out" "installed but not activated"

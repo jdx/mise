@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "skipping: bootstrap system service tests require Linux"
+  exit 0
+fi
+
+missing_service="mise-bootstrap-missing-$$"
+invalid_notify_file="$PWD/invalid-notify"
+
+cat <<EOF >mise.toml
+[bootstrap.files."$invalid_notify_file"]
+content = "unchanged"
+notify = ["not-configured"]
+EOF
+
+# Notification typos fail during preflight, before an earlier phase can leave
+# the host partially provisioned.
+assert_fail "mise bootstrap --yes" "notifies unconfigured bootstrap service"
+assert_fail "mise bootstrap --skip services --yes" "notifies unconfigured bootstrap service"
+assert_fail "mise bootstrap files apply --yes" "notifies unconfigured bootstrap service"
+assert_fail "test -e $invalid_notify_file"
+
+cat <<EOF >mise.toml
+[bootstrap.services.$missing_service]
+state = "stopped"
+enabled = false
+EOF
+
+# A missing unit remains visible but fails closed instead of treating absence
+# as a safe stopped/disabled state. This test never changes the host.
+assert_contains "mise bootstrap services status" "$missing_service"
+assert_contains "mise bootstrap services status" "unknown"
+assert_contains "mise bootstrap services status --json" '"action": "unknown"'
+assert_fail "mise bootstrap services status --missing"
+assert_contains "mise bootstrap status" "$missing_service"
+assert_fail "mise bootstrap status --missing"
+assert_contains "mise bootstrap plan" "service:$missing_service"
+assert_not_contains "mise bootstrap plan" "not inspected"
+assert_contains "mise bootstrap services apply --dry-run --yes 2>&1" "manual action required"
+assert_fail "mise bootstrap services apply --yes" "refusing unsafe change"
+assert_succeed "mise bootstrap --only services --dry-run --yes"

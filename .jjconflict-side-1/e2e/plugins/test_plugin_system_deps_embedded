@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Embedded vfox plugins ship compiled into the binary and have no plugin
+# directory, so reading declarations from the directory alone dropped every one
+# of them. lua declares cc/make/curl (and readline as optional); those must be
+# reported like any filesystem plugin's, rather than surfacing as a failed
+# compile partway through `mise install`.
+
+cat >mise.toml <<'TOML'
+[tools]
+lua = "5.4.8"
+TOML
+
+out="$(MISE_EXPERIMENTAL=1 mise bootstrap status 2>&1 || true)"
+
+assert_contains_text "$out" "lua: cc"
+assert_contains_text "$out" "lua: make"
+assert_contains_text "$out" "lua: curl"
+# declared `optional`, so it is reported but never blocks or prompts
+assert_contains_text "$out" "lua: pkg-config readline"
+
+# a user-installed plugin directory still wins over the embedded copy
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/lua"
+mkdir -p "$PLUGIN_DIR"
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "lua"
+PLUGIN.version = "0.1.0"
+PLUGIN.systemDependencies = {
+	{ bin = "overridden-binary-xyz" },
+}
+LUA
+
+out="$(MISE_EXPERIMENTAL=1 mise bootstrap status 2>&1 || true)"
+assert_contains_text "$out" "overridden-binary-xyz"
+assert_not_contains_text "$out" "lua: curl"

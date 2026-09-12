@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# A `path:` value is resolved into `ctx.rootPath` for path-mode tools, which plugin hooks build
+# shell commands with, so it is checked against a list of shell-quote-breaking characters (#9814).
+#
+# On Windows `\` is the path separator rather than a shell escape, so it is rewritten to `/` before
+# that check. Here it is a shell escape and a legal character in a filename, so it stays rejected.
+# This is the end-to-end guard that the rewrite did not leak off Windows.
+
+mkdir -p tools/bin
+
+cat >mise.toml <<'EOF'
+[tools]
+node = { path = '/tmp/\rm' }
+EOF
+assert_fail_contains "mise ls --current" "invalid tool path"
+
+cat >mise.toml <<'EOF'
+[tools]
+node = { path = '/tmp/$(id)' }
+EOF
+assert_fail_contains "mise ls --current" "invalid tool path"
+
+# The control: an ordinary path resolves, so the assertions above are about the character and not
+# about `path:` being broken in this sandbox.
+cat >mise.toml <<'EOF'
+[tools]
+node = { path = "./tools/bin" }
+EOF
+assert_contains "mise ls --current" "tools/bin"

@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+export MISE_OFFLINE=1
+export DAEMON_LOG="$PWD/pitchfork.log"
+: >"$DAEMON_LOG"
+cat >~/bin/pitchfork <<'SH'
+#!/usr/bin/env bash
+printf 'cwd=%s args=%s\n' "$PWD" "$*" >> "$DAEMON_LOG"
+case "$1" in
+  usage)
+    if [[ ${OLD_PITCHFORK:-0} == 1 ]]; then echo 'cmd start {}'; else echo 'cmd config help="External files" {'; fi
+    ;;
+  status) exit 1 ;;
+  supervisor) printf '{"status":"%s"}\n' "${SUPERVISOR_STATUS:-down}" ;;
+  project) echo '[]' ;;
+esac
+SH
+chmod u+x ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons]
+postgres = "18"
+redis = "8"
+[daemons.analytics]
+preset = "postgres"
+version = "18"
+port = 5433
+[env]
+PGPORT = "1234"
+TOML
+assert_fail_contains "mise daemons start nonexistent 2>&1" 'no matching project daemons'
+assert_fail_contains "mise daemons start --force nonexistent 2>&1" 'no matching project daemons'
+assert_fail_contains "mise daemons start postgres nonexistent 2>&1" 'no matching project daemons'
+for action in start stop restart; do
+  assert_fail_contains "mise daemons $action --group web 2>&1" 'use pitchfork directly'
+  assert_fail_contains "mise daemons $action postgres --group=web 2>&1" 'use pitchfork directly'
+done
+assert "test ! -s '$DAEMON_LOG'"
+assert_contains "mise daemons ls --json" '"preset": "postgres"'
+assert_contains "mise env -s bash" 'PGPORT=1234'
+assert_contains "mise env -s bash" 'redis://127.0.0.1:6379'
+assert_not_contains "cat '$DAEMON_LOG'" 'config add'
+assert_not_contains "cat '$DAEMON_LOG'" 'supervisor'
+assert_contains "mise ls --json" 'mise.toml-daemon'
+assert_contains "mise unuse postgres 2>&1" 'declared by [daemons]'
+assert_contains "cat mise.toml" 'postgres = "18"'
+
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "sleep 30"
+ready_cmd = "echo {{ env.SOMETHING }}"
+TOML
+assert_fail "OLD_PITCHFORK=1 mise daemons start"
+assert_contains "OLD_PITCHFORK=1 mise daemons start 2>&1 || true" 'external configuration support'
+mise daemons start
+assert_contains "cat '$DAEMON_LOG'" 'config add'
+assert_contains "cat '$DAEMON_LOG'" '/api'
+assert "test ! -f pitchfork.toml"
+generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+assert_contains "cat '$generated'" 'mise = true'
+assert_not_contains "cat '$generated'" 'MISE_ENV = ""'
+assert_contains "cat '$generated'" '{{ env.SOMETHING }}'
+mise daemons stop
+assert_contains "cat '$DAEMON_LOG'" 'args=stop '
+assert_fail "MISE_EXPERIMENTAL=0 mise daemons ls"
+assert_fail "MISE_SAFE=1 mise daemons start"
+
+cat >mise.toml <<'TOML'
+[daemons]
+unknown_preset = "1"
+TOML
+assert_contains "mise daemons ls 2>&1 || true" 'available presets: postgres, redis'
+cat >mise.toml <<'TOML'
+[daemons.bad]
+version = "18"
+TOML
+assert_contains "mise daemons ls 2>&1 || true" 'requires preset'
+cat >mise.toml <<'TOML'
+[daemons.".."]
+preset = "postgres"
+version = "18"
+TOML
+assert_contains "mise daemons ls 2>&1 || true" 'invalid daemon name'
+
+# Preset tool requests obey their declaring configuration's lock policy.
+cat >mise.toml <<'TOML'
+[tool_config]
+locked = true
+[daemons]
+postgres = "18"
+TOML
+assert_fail_contains "MISE_LOCKFILE=1 mise install --dry-run 2>&1" "tool_config.locked"
+
+# The dashboard opens once in the current project, even with inherited daemons.
+: >mise.toml
+mkdir -p tui-parent/child
+cd tui-parent
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.parent]
+run = "sleep 30"
+TOML
+cd child
+cat >mise.toml <<'TOML'
+[daemons.child]
+run = "sleep 30"
+TOML
+: >"$DAEMON_LOG"
+SUPERVISOR_STATUS=up mise daemons tui -- --help
+assert "test $(grep -c 'args=tui --help$' "$DAEMON_LOG") -eq 1"
+assert_contains "cat '$DAEMON_LOG'" "cwd=$PWD args=tui --help"
+assert_fail "mise daemons tui"
+
+assert_fail "mise daemons tui parent"
+
+# Updating a profile must persist ownership even if mise=false leaves the config unchanged.
+mkdir -p "$HOME/profile-cache"
+cd "$HOME/profile-cache"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "sleep 30"
+mise = false
+auto = ["start"]
+TOML
+MISE_ENV=first mise daemons start
+profile_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+unset __MISE_SESSION
+MISE_ENV=second mise hook-env --shell-pid "$$" -s bash >"$TMPDIR/profile-hook"
+assert_contains "jq -r '.profile[]' '$profile_state'" second

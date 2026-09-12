@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+SYSTEM_INSTALL="$MISE_SYSTEM_DATA_DIR/installs/poetry/1.0.0"
+USER_INSTALL="$MISE_DATA_DIR/installs/poetry/1.0.0"
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/poetry"
+
+mkdir -p "$MISE_SYSTEM_DIR" "$PLUGIN_DIR/hooks" "$SYSTEM_INSTALL/bin"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "poetry"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = ""
+PLUGIN.license = "MIT"
+PLUGIN.description = "Dummy poetry vfox plugin"
+PLUGIN.minRuntimeVersion = "0.3.0"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	local bin_path = ctx.path .. "/bin"
+	if RUNTIME.osType == "windows" then
+		bin_path = ctx.path .. "\\bin"
+	end
+	return {
+		{ key = "PATH", value = bin_path },
+	}
+end
+LUA
+
+cat >"$SYSTEM_INSTALL/bin/poetry" <<'SH'
+#!/usr/bin/env sh
+echo "poetry 1.0.0"
+SH
+chmod +x "$SYSTEM_INSTALL/bin/poetry"
+
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'TOML'
+[tools]
+poetry = "1.0.0"
+TOML
+
+assert "mise bin-paths poetry" "$SYSTEM_INSTALL/bin"
+assert_not_contains "mise bin-paths poetry" "$USER_INSTALL/bin"

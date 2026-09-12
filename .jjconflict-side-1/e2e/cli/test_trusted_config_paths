@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p project_a project_b
+
+cat <<EOF >project_a/.mise.toml
+[env]
+PROJECT = "a"
+EOF
+
+cat <<EOF >project_b/.mise.toml
+[env]
+PROJECT = "b"
+EOF
+
+DIR_A="$(cd project_a && pwd)"
+DIR_B="$(cd project_b && pwd)"
+
+# Single trusted path: config in DIR_A is loaded
+cd project_a
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$DIR_A mise env" "PROJECT=a"
+
+# Multiple colon-separated paths: both configs are loaded
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$DIR_A:$DIR_B mise env" "PROJECT=a"
+cd ../project_b
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$DIR_A:$DIR_B mise env" "PROJECT=b"

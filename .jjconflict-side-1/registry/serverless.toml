@@ -1,0 +1,12 @@
+description = "Serverless Framework"
+version_order = "semver"
+
+bins = ["serverless", "sls"]
+[[backends]]
+full = "npm:serverless"
+
+[backends.options]
+allow_builds = ["serverless"]
+
+[[backends]]
+full = "asdf:mise-plugins/mise-serverless"

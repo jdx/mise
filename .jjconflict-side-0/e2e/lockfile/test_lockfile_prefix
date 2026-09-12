@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+# Test that the lockfile pins `prefix:` version selectors: `mise install` must
+# respect the locked version instead of re-resolving to the newest prefix match.
+# https://github.com/jdx/mise/discussions/5781
+
+export MISE_LOCKFILE=1
+
+cat <<EOF >mise.toml
+[tools]
+dummy = "prefix:1"
+
+[settings]
+lockfile = true
+EOF
+
+# dummy exposes 1.0.0, 1.1.0, 2.0.0 — lock to the older 1.0.0
+cat <<EOF >mise.lock
+[[tools.dummy]]
+version = "1.0.0"
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+mise install
+assert "mise ls dummy --json --current | jq -r '.[0].requested_version'" "prefix:1"
+# must be the locked 1.0.0, not the newest prefix match 1.1.0
+assert "mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
+assert_contains "cat mise.lock" 'version = "1.0.0"'
+assert_not_contains "cat mise.lock" 'version = "1.1.0"'
+
+# a second install is a no-op and must not rewrite the lockfile
+mise install
+assert_contains "cat mise.lock" 'version = "1.0.0"'
+assert_not_contains "cat mise.lock" 'version = "1.1.0"'
+
+# mise upgrade still bypasses the lock and bumps within the prefix range
+mise upgrade dummy
+assert "mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert_contains "cat mise.lock" 'version = "1.1.0"'
+
+# a lock entry that does not match the prefix is ignored (fresh resolution)
+cat <<EOF >mise.lock
+[[tools.dummy]]
+version = "2.0.0"
+EOF
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+mise install
+assert "mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert_contains "cat mise.lock" 'version = "1.1.0"'
+
+# a stale entry that textually starts with the prefix but crosses a version
+# boundary (10.0.0 vs prefix:1) must be rejected, not pinned
+cat <<EOF >mise.lock
+[[tools.dummy]]
+version = "10.0.0"
+EOF
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+mise install
+assert "mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert_contains "cat mise.lock" 'version = "1.1.0"'
+
+# an alias that resolves to a `prefix:` selector is pinned the same way
+cat <<EOF >mise.toml
+[tools]
+dummy = "my1"
+
+[tool_alias.dummy.versions]
+my1 = "prefix:1"
+
+[settings]
+lockfile = true
+EOF
+cat <<EOF >mise.lock
+[[tools.dummy]]
+version = "1.0.0"
+EOF
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+mise install
+assert "mise ls dummy --json --current | jq -r '.[0].requested_version'" "my1"
+assert "mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
+assert_contains "cat mise.lock" 'version = "1.0.0"'

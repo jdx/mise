@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Manual capture, absence, and permission isolation use the ordinary parent.
+require_cmd git
+repository="$MISE_STATE_DIR/history/repo.git"
+echo v1 >~/.manual
+assert_succeed 'mise bootstrap dotfiles track ~/.manual --no-autosave'
+first=$(git --git-dir="$repository" rev-parse HEAD)
+echo v2 >~/.manual
+assert_succeed 'mise bootstrap dotfiles save --description unrelated'
+assert "git --git-dir=$repository show HEAD:home/.manual" v1
+assert_contains 'mise bootstrap dotfiles history diff --patch --path ~/.manual' '+v2'
+assert_succeed 'mise bootstrap dotfiles save ~/.manual'
+assert "git --git-dir=$repository show HEAD:home/.manual" v2
+rm ~/.manual
+assert_succeed 'mise bootstrap dotfiles save ~/.manual'
+echo recreated >~/.manual
+assert_succeed 'mise bootstrap dotfiles save --description unrelated-again'
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/.manual"
+assert_succeed 'mise bootstrap dotfiles save ~/.manual'
+assert "git --git-dir=$repository show HEAD:home/.manual" recreated
+mkdir -p ~/manual-dir
+echo a1 >~/manual-dir/a
+echo b1 >~/manual-dir/b
+chmod 600 ~/manual-dir/b
+assert_succeed 'mise bootstrap dotfiles track ~/manual-dir --no-autosave'
+echo a2 >~/manual-dir/a
+echo b2 >~/manual-dir/b
+chmod 644 ~/manual-dir/b
+assert_succeed 'mise bootstrap dotfiles save ~/manual-dir/a'
+assert "git --git-dir=$repository show HEAD:home/manual-dir/a" a2
+assert "git --git-dir=$repository show HEAD:home/manual-dir/b" b1
+assert "git --git-dir=$repository show HEAD:.mise-history/manifest.json | jq '.permissions[\"home/manual-dir/b\"]'" 384
+# Old versions remain reachable indefinitely; no promoted/checkpoint refs.
+assert_succeed "git --git-dir=$repository merge-base --is-ancestor $first HEAD"
+assert "git --git-dir=$repository show $first:home/.manual" v1
+assert "git --git-dir=$repository for-each-ref --format='%(refname)' refs/promoted refs/checkpoints" ''
+assert_fail 'mise settings set history.keep_count 1'
+assert_fail 'mise bootstrap dotfiles save ~/.never-tracked'

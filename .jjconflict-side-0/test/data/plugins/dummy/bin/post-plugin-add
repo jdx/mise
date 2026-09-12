@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+echo "plugin add path=${ASDF_PLUGIN_PATH} source_url=${ASDF_PLUGIN_SOURCE_URL}"

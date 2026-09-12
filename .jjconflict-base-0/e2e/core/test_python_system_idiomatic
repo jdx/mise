@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+mise settings set idiomatic_version_file_enable_tools python
+echo system >.python-version
+
+assert_contains "mise ls --current python 2>&1" "system"
+assert_not_contains "mise ls --current python 2>&1" "@system is deprecated"
+assert_contains "mise x python@system -- true 2>&1" "@system is deprecated"

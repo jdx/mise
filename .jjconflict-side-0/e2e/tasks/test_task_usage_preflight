@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >source-env.sh
+echo sourced >>source-count
+export SOURCE_VALUE=from-source
+EOF
+
+cat <<'EOF' >mise.toml
+[tasks.dependency]
+run = 'echo dependency >> basic-runs'
+
+[tasks.parent]
+usage = 'arg "<name>"'
+depends = ["dependency"]
+run = 'echo "parent:$usage_name" >> basic-runs'
+
+[tasks.transitive-leaf]
+run = 'echo leaf >> transitive-runs'
+
+[tasks.transitive-invalid]
+usage = 'arg "<name>"'
+depends = ["transitive-leaf"]
+run = 'echo middle >> transitive-runs'
+
+[tasks.transitive-root]
+depends = ["transitive-invalid"]
+run = 'echo root >> transitive-runs'
+
+[tasks.dynamic-syntax-dependency]
+run = 'echo dependency >> dynamic-syntax-runs'
+
+[tasks.dynamic-syntax-invalid]
+usage = 'arg "<name>" {{'
+depends = ["dynamic-syntax-dependency"]
+run = 'echo invalid >> dynamic-syntax-runs'
+
+[tasks.dynamic-env-dependency]
+run = 'echo dependency >> dynamic-env-runs'
+
+[tasks.dynamic-env]
+usage = '''
+{% if env.DYNAMIC_USAGE == "enabled" %}
+arg "<name>"
+{% endif %}
+'''
+depends = ["dynamic-env-dependency"]
+env = { DYNAMIC_USAGE = "enabled" }
+run = 'echo "task:$usage_name" >> dynamic-env-runs'
+
+[tasks.valid-root]
+run = 'echo valid >> multi-root-runs'
+
+[tasks.invalid-root]
+usage = 'arg "<name>"'
+run = 'echo invalid >> multi-root-runs'
+
+[tasks.post-invalid]
+usage = 'arg "<name>"'
+run = 'echo post >> post-runs'
+
+[tasks.post-parent]
+depends_post = ["post-invalid"]
+run = 'echo parent >> post-runs'
+
+[tasks.wait-invalid]
+usage = 'arg "<name>"'
+run = 'echo waited >> wait-runs'
+
+[tasks.waiter]
+wait_for = ["wait-invalid"]
+run = 'echo waiter >> wait-runs'
+
+[tasks.wait-root]
+depends = ["wait-invalid", "waiter"]
+run = 'echo root >> wait-runs'
+
+[tasks.env-arg]
+usage = 'arg "<name>" env="TASK_NAME"'
+env = { TASK_NAME = "configured" }
+run = 'echo "$usage_name"'
+
+[tasks.generate-env-file]
+run = 'echo "GENERATED_VALUE=from-dependency" > generated.env'
+
+[tasks.file-env]
+usage = 'arg "<name>" env="GENERATED_VALUE"'
+depends = ["generate-env-file"]
+run = 'echo "$usage_name"'
+
+[tasks.file-env.env]
+_.file = "generated.env"
+
+[tasks.generate-mixed-env-file]
+run = 'echo "MIXED_VALUE=from-dependency" > mixed.env'
+
+[tasks.mixed-env-invalid]
+usage = 'arg "<name>" env="MIXED_VALUE"'
+depends = ["generate-mixed-env-file"]
+run = 'echo "$usage_name" >> mixed-runs'
+
+[tasks.mixed-env-invalid.env]
+_.file = "mixed.env"
+
+[tasks.source-env]
+usage = 'arg "<name>" env="SOURCE_VALUE"'
+run = 'echo "$usage_name"'
+
+[tasks.source-env.env]
+_.source = "source-env.sh"
+
+[tasks.raw]
+raw_args = true
+usage = 'arg "<name>"'
+depends = ["raw-dependency"]
+run = 'echo "raw:$@" >> raw-runs'
+
+[tasks.raw-dependency]
+run = 'echo dependency >> raw-runs'
+
+[tasks.help-passthrough]
+usage = 'arg "<name>"'
+depends = ["help-dependency"]
+run = 'echo "help:$@" >> help-runs'
+
+[tasks.help-dependency]
+run = 'echo dependency >> help-runs'
+
+[tasks.fresh]
+usage = 'arg "<name>"'
+sources = ["source"]
+outputs = ["output"]
+run = 'echo "$usage_name" >> fresh-runs; touch output'
+EOF
+
+# Invalid root arguments are rejected before any dependency command starts.
+assert_fail_contains "mise run parent" "Missing required arg: <name>"
+test ! -e basic-runs
+
+# A valid invocation retains the normal dependency ordering and argument parsing.
+mise run parent accepted
+assert "cat basic-runs" "dependency
+parent:accepted"
+
+# A usage error in a transitive dependency prevents its own prerequisites too.
+assert_fail_contains "mise run transitive-root" "Missing required arg: <name>"
+test ! -e transitive-runs
+
+# Deterministic syntax errors in dynamic usage are rejected before dependencies.
+assert_fail_contains "mise run dynamic-syntax-invalid" "invalid usage template"
+test ! -e dynamic-syntax-runs
+
+# A dynamic usage template may produce a different valid spec once task env is
+# available. Its syntax is checked preflight, but argument validation is safely
+# deferred until the runtime context is available.
+mise run dynamic-env accepted
+assert "cat dynamic-env-runs" "dependency
+task:accepted"
+
+# One invalid root prevents every root in the same invocation from starting.
+assert_fail_contains "mise run valid-root ::: invalid-root" "Missing required arg: <name>"
+test ! -e multi-root-runs
+
+# Post dependencies and wait_for-linked scheduled occurrences are part of the
+# same preflight. wait_for does not schedule its target by itself, so wait-root
+# introduces both occurrences without making the invalid task a CLI root.
+assert_fail_contains "mise run post-parent" "Missing required arg: <name>"
+test ! -e post-runs
+assert_fail_contains "mise run wait-root" "Missing required arg: <name>"
+test ! -e wait-runs
+
+# Usage errors are invocation errors, not runtime failures handled by
+# --continue-on-error.
+assert_fail_contains "mise run --continue-on-error valid-root ::: invalid-root" \
+  "Missing required arg: <name>"
+test ! -e multi-root-runs
+
+# Task-level env is available while validating env= usage arguments.
+assert "mise run env-arg" "configured"
+
+# Environment inputs produced by dependencies are resolved only after those
+# dependencies run, and source directives execute only once at runtime.
+assert "mise run file-env" "from-dependency"
+
+# An unavailable env-backed input does not suppress an independent CLI error.
+assert_fail_contains "mise run mixed-env-invalid value extra" "unexpected word: extra"
+test ! -e mixed.env
+test ! -e mixed-runs
+
+assert "mise run source-env" "from-source"
+assert "cat source-count" "sourced"
+
+# Compatibility escape hatches continue to bypass the usage parser.
+mise run raw --anything
+assert "cat raw-runs" "dependency
+raw: --anything"
+mise run help-passthrough -- --help
+assert "cat help-runs" "dependency
+help: --help"
+
+# Fresh tasks are still invalid invocations when required arguments are absent.
+touch source
+mise run fresh accepted
+assert_fail_contains "mise run fresh" "Missing required arg: <name>"
+assert "cat fresh-runs" "accepted"

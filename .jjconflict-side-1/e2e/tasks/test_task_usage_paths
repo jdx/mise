@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+# Task sources and outputs can depend on parsed usage arguments. Each argument
+# value must retain an independent freshness identity.
+cat <<'EOF' >mise.toml
+[tasks.generate]
+usage = 'arg "<name>"'
+sources = ["{{usage.name}}.in"]
+outputs = ["{{usage.name}}.out"]
+run = '''
+cat {{usage.name}}.in > {{usage.name}}.out
+echo {{usage.name}} >> runs.log
+'''
+
+[tasks.parent]
+depends = [{ task = "generate", args = ["three"] }]
+run = 'echo parent'
+EOF
+
+echo one >one.in
+echo two >two.in
+echo three >three.in
+
+mise run generate one
+mise run generate two
+mise run generate one
+assert "cat runs.log" "one
+two"
+
+echo changed >>one.in
+mise run generate one
+assert "cat runs.log" "one
+two
+one"
+
+# Transitive tasks must resolve their own usage-dependent paths before their
+# freshness checks run.
+mise run parent
+mise run parent
+assert "cat runs.log" "one
+two
+one
+three"
+
+# Environment and usage values can coexist in one output template. A
+# dependency-level env value must override the task's initial rendering env.
+cat <<'EOF' >mise.toml
+[env]
+BASE_DIR = "workspace"
+
+[tasks.child]
+usage = 'arg "<name>"'
+env = { OUT_DIR = "default" }
+sources = ["{{env.BASE_DIR}}/{{env.OUT_DIR}}/{{usage.name}}.in"]
+outputs = ["{{env.BASE_DIR}}/artifact.txt"]
+run = 'cat "$BASE_DIR/$OUT_DIR/{{usage.name}}.in" > "$BASE_DIR/artifact.txt"; echo run >> child-runs.log'
+
+[tasks.mixed-output]
+usage = 'arg "<name>"'
+env = { OUT_DIR = "default" }
+sources = ["{{env.BASE_DIR}}/{{env.OUT_DIR}}/{{usage.name}}.in"]
+outputs = ["{{env.BASE_DIR}}/{{env.OUT_DIR}}/{{usage.name}}.txt"]
+run = 'cat "$BASE_DIR/$OUT_DIR/{{usage.name}}.in" > "$BASE_DIR/$OUT_DIR/{{usage.name}}.txt"; echo run >> mixed-runs.log'
+
+[tasks.parent]
+depends = [
+  { task = "child", args = ["artifact"], env = { OUT_DIR = "dist" } },
+  { task = "mixed-output", args = ["artifact"], env = { OUT_DIR = "dist" } },
+]
+EOF
+
+mkdir -p workspace/dist
+echo content >workspace/dist/artifact.in
+mise run parent
+mise run parent
+assert "test -f workspace/artifact.txt && echo present" "present"
+assert "test -f workspace/dist/artifact.txt && echo present" "present"
+assert "wc -l <child-runs.log" "1"
+assert "wc -l <mixed-runs.log" "1"
+echo changed >workspace/dist/artifact.in
+mise run parent
+assert "wc -l <child-runs.log" "2"
+assert "wc -l <mixed-runs.log" "2"
+
+# Literal text outside a Tera tag must not be mistaken for a usage reference.
+cat <<'EOF' >mise.toml
+[env]
+DOCS_DIR = "docs"
+
+[tasks.docs]
+sources = ["docs-input.txt"]
+outputs = ["{{env.DOCS_DIR}}/usage.md"]
+run = 'mkdir -p "$DOCS_DIR"; touch "$DOCS_DIR/usage.md"; echo run >> docs-runs.log'
+EOF
+
+touch docs-input.txt
+mise run docs
+mise run docs
+assert "wc -l <docs-runs.log" "1"

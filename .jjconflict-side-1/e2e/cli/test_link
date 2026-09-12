@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+
+mise install tiny@1.0.1 tiny@3.1.0
+mkdir -p tmp/tiny
+mise link tiny@9.8.7 tmp/tiny
+
+assert_contains "mise ls tiny" "tiny  9.8.7 (symlink)"
+
+# Regression test for https://github.com/jdx/mise/discussions/3539:
+# a stale `incomplete` marker left behind by a previously-interrupted install
+# must not cause a freshly-linked tool to be reported as missing (`mise use`
+# and `mise doctor` treat any version with an `incomplete` marker as not
+# installed). `mise link` should clear that marker.
+mkdir -p tmp/tiny2
+mkdir -p "$MISE_CACHE_DIR/tiny/9.9.9"
+touch "$MISE_CACHE_DIR/tiny/9.9.9/incomplete"
+mkdir -p "$MISE_CACHE_DIR/tiny/9.9.8"
+touch "$MISE_CACHE_DIR/tiny/9.9.8/incomplete"
+mise link tiny@9.9.9 tmp/tiny2
+
+# `mise ls -i` only lists versions considered installed; the linked version
+# must appear despite the pre-existing stale marker.
+assert_contains "mise ls -i tiny" "tiny  9.9.9 (symlink)"
+# the stale marker should have been removed by `mise link`.
+assert "test ! -f \"$MISE_CACHE_DIR/tiny/9.9.9/incomplete\""
+# a sibling version's marker must not be affected.
+assert "test -f \"$MISE_CACHE_DIR/tiny/9.9.8/incomplete\""
+
+# Re-linking the same target should repair a newly-created stale marker without
+# requiring --force.
+touch "$MISE_CACHE_DIR/tiny/9.9.9/incomplete"
+mise link tiny@9.9.9 tmp/tiny2
+assert "test ! -f \"$MISE_CACHE_DIR/tiny/9.9.9/incomplete\""
+
+# A dangling external link is not a complete install and must keep the marker.
+mise link tiny@9.9.8 tmp/missing
+assert "test -f \"$MISE_CACHE_DIR/tiny/9.9.8/incomplete\""
+
+# Path equality alone must not treat an ordinary managed install as an existing
+# external link.
+mkdir -p "$MISE_CACHE_DIR/tiny/3.1.0"
+touch "$MISE_CACHE_DIR/tiny/3.1.0/incomplete"
+assert_fail "mise link tiny@3.1.0 \"$MISE_DATA_DIR/installs/tiny/3.1.0\""
+assert_fail "mise link --force tiny@3.1.0 \"$MISE_DATA_DIR/installs/tiny/3.1.0\""
+assert_directory_exists "$MISE_DATA_DIR/installs/tiny/3.1.0"
+assert "test -f \"$MISE_CACHE_DIR/tiny/3.1.0/incomplete\""
+
+# A filesystem alias to the managed install is still the install itself.
+# In particular, --force must not remove the directory before replacing it
+# with a link back through the alias.
+touch "$MISE_DATA_DIR/installs/tiny/3.1.0/sentinel"
+ln -s "$MISE_DATA_DIR/installs/tiny/3.1.0" tmp/tiny-managed-alias
+assert_fail "mise link --force tiny@3.1.0 tmp/tiny-managed-alias"
+assert "test -f \"$MISE_DATA_DIR/installs/tiny/3.1.0/sentinel\""
+
+# Request-style versions use their normalized install pathname for both the
+# symlink and incomplete marker.
+mkdir -p tmp/tiny-ref
+mkdir -p "$MISE_CACHE_DIR/tiny/ref-feature-foo"
+touch "$MISE_CACHE_DIR/tiny/ref-feature-foo/incomplete"
+mise link tiny@ref:feature/foo tmp/tiny-ref
+assert "test ! -f \"$MISE_CACHE_DIR/tiny/ref-feature-foo/incomplete\""
+assert "mise where tiny@ref:feature/foo" "$MISE_DATA_DIR/installs/tiny/ref-feature-foo"
+assert "readlink \"$MISE_DATA_DIR/installs/tiny/ref-feature-foo\"" "$PWD/tmp/tiny-ref"
+
+# Selector-style requests do not identify a stable install pathname and must be
+# rejected instead of creating an unreachable link.
+#
+# Snapshot link names because `tiny/latest` is already a valid runtime symlink;
+# every rejection below must leave the complete install-link set unchanged.
+find "$MISE_DATA_DIR/installs" -type l -print | sort >tmp/install-links-before
+assert_fail_contains "mise link tiny@prefix:9 tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link tiny@path:tmp/tiny2 tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link tiny@sub-0:9 tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link tiny@system tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link tiny@latest tmp/tiny2" "only supports concrete versions and refs"
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+assert_fail_contains "mise link zig@master tmp/tiny2" "only supports concrete versions and refs"
+assert "test ! -e \"$MISE_DATA_DIR/installs/zig/master\" && test ! -L \"$MISE_DATA_DIR/installs/zig/master\""
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+
+cat >mise.toml <<'EOF'
+[tool_alias]
+linked-tiny = "asdf:mise-plugins/mise-tiny"
+
+[tool_alias.tiny.versions]
+lts = "3.1.0"
+EOF
+assert_fail_contains "mise link tiny@lts tmp/tiny2" "only supports concrete versions and refs"
+assert "test ! -e \"$MISE_DATA_DIR/installs/tiny/lts\" && test ! -L \"$MISE_DATA_DIR/installs/tiny/lts\""
+assert "find \"$MISE_DATA_DIR/installs\" -type l -print | sort | diff -u tmp/install-links-before -"
+
+# Backend aliases must be loaded before validating whether their versions are
+# concrete.
+mise link linked-tiny@9.9.6 tmp/tiny2
+assert "readlink \"$MISE_DATA_DIR/installs/linked-tiny/9.9.6\"" "$PWD/tmp/tiny2"
+
+# Marker removal errors remain strict, while the marker itself is preserved.
+mkdir -p tmp/tiny3
+mkdir -p "$MISE_CACHE_DIR/tiny/9.9.7/incomplete"
+assert_fail "mise link tiny@9.9.7 tmp/tiny3"
+assert "test -d \"$MISE_CACHE_DIR/tiny/9.9.7/incomplete\""
+
+# A link whose target went away is still an entry occupying its version's name. It used to be
+# invisible to `mise ls` -- no config names it, and every check resolved the link before answering
+# -- while `mise uninstall` refused it as "not installed", so nothing could free the name again.
+mkdir -p tmp/tiny-vanishing
+mise link tiny@9.9.4 tmp/tiny-vanishing
+# Control: while the target is there it is an ordinary linked version.
+assert_contains "mise ls tiny" "tiny  9.9.4 (symlink)"
+rmdir tmp/tiny-vanishing
+
+# It is reported, and reported as broken rather than as an ordinary symlink.
+assert_contains "mise ls tiny" "tiny  9.9.4 (broken symlink)"
+# ...but not as installed. `mise link` already makes that call by keeping the incomplete marker
+# for a dangling link, and `-i` lists only what is installed.
+assert "mise ls -i tiny | grep -c 9.9.4 || true" "0"
+assert "mise ls --json tiny | jq -r '.[] | select(.version == \"9.9.4\") | \"\\(.broken) \\(.installed)\"'" "true false"
+
+# The point of showing it: `uninstall` can now free the name.
+assert "mise uninstall tiny@9.9.4"
+# `test ! -e` alone proves nothing here -- it follows the link, so it was already true while the
+# entry existed. `-L` is what distinguishes removed from dangling.
+assert "test ! -L \"$MISE_DATA_DIR/installs/tiny/9.9.4\" && test ! -e \"$MISE_DATA_DIR/installs/tiny/9.9.4\""
+assert "mise ls tiny | grep -c 9.9.4 || true" "0"
+
+# The regression control: a live link still uninstalls to the link only, leaving the directory it
+# points at -- which belongs to the user, not to mise.
+mkdir -p tmp/tiny-kept
+touch tmp/tiny-kept/sentinel
+mise link tiny@9.9.3 tmp/tiny-kept
+assert_contains "mise ls tiny" "tiny  9.9.3 (symlink)"
+assert "mise uninstall tiny@9.9.3"
+assert "test ! -L \"$MISE_DATA_DIR/installs/tiny/9.9.3\""
+assert "test -f tmp/tiny-kept/sentinel"

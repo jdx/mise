@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<EOF
+[plugins]
+myplugin = "https://github.com/jbadeau/mise-nix"
+EOF
+
+assert_matches "mise latest myplugin:hello" '^[0-9]'
+assert_contains "mise plugin ls" "myplugin"
+assert_contains "mise plugin ls --urls" "https://github.com/jbadeau/mise-nix"

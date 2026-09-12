@@ -1,0 +1,3 @@
+backends = ["aqua:sachaos/viddy", "asdf:ryodocx/asdf-viddy"]
+description = "A modern watch command. Time machine and pager etc"
+version_order = "semver"

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# The history store owns its locks, even when a service and an interactive
+# shell use different cache directories (for example, a macOS LaunchAgent
+# that does not read XDG_CACHE_HOME from .zshenv).
+require_cmd git
+
+export MISE_HISTORY_WATCH_DEBOUNCE=100ms
+
+echo initial >~/watched
+assert_succeed "mise bootstrap dotfiles track ~/watched"
+
+cat <<'EOF' >>"$MISE_CONFIG_DIR/config.toml"
+
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+EOF
+
+MISE_CACHE_DIR="$HOME/service-cache" mise bootstrap dotfiles watch --json >watch.log 2>&1 &
+watcher=$!
+operation=""
+cleanup() {
+  if [[ -n $operation ]]; then
+    touch "$HOME/release-operation"
+    wait "$operation" || true
+  fi
+  kill "$watcher" 2>/dev/null || true
+  wait "$watcher" || true
+}
+trap cleanup EXIT
+
+for _ in $(seq 1 100); do
+  grep -q '"event":"started"' watch.log && break
+  sleep 0.2
+done
+assert_contains "cat watch.log" '"event":"started"'
+
+# MISE_CACHE_DIR in the harness differs from the watcher's cache.
+assert "mise bootstrap dotfiles status --json | jq -r .history.watcher" "running"
+assert "mise doctor --json 2>/dev/null | jq -r .dotfiles.watcher" "running"
+# --once also takes the singleton lock, and exits even if that lock regresses.
+assert_contains "mise bootstrap dotfiles watch --once --json" '"event":"already-running"'
+
+# Exercise the XDG fallback as well as the explicit mise cache override.
+assert "env -u MISE_CACHE_DIR XDG_CACHE_HOME='$HOME/shell-cache' mise bootstrap dotfiles status --json | jq -r .history.watcher" "running"
+assert_contains "env -u MISE_CACHE_DIR XDG_CACHE_HOME='$HOME/shell-cache' mise bootstrap dotfiles watch --once --json" '"event":"already-running"'
+
+# A different store still permits its own watcher, even with the same cache.
+assert_not_contains "MISE_STATE_DIR='$HOME/other-state' MISE_CACHE_DIR='$HOME/service-cache' mise bootstrap dotfiles watch --once --json" '"event":"already-running"'
+
+# An operation from the shell cache must also exclude captures by the
+# watcher in the service cache. Intermediate file contents are not history.
+# shellcheck disable=SC2016
+mise bootstrap dotfiles capture -- sh -c '
+  echo intermediate >"$HOME/watched"
+  touch "$HOME/operation-ready"
+  while [ ! -f "$HOME/release-operation" ]; do sleep 0.1; done
+  echo final >"$HOME/watched"
+' >operation.log 2>&1 &
+operation=$!
+for _ in $(seq 1 100); do
+  [[ -f $HOME/operation-ready ]] && break
+  sleep 0.2
+done
+assert_succeed "test -f '$HOME/operation-ready'"
+before="$(mise bootstrap dotfiles history --json -n 0 | jq length)"
+sleep 2
+assert "mise bootstrap dotfiles history --json -n 0 | jq length" "$before"
+touch "$HOME/release-operation"
+wait "$operation"
+operation=""
+assert "mise bootstrap dotfiles history --json -n 0 | jq length" "$((before + 1))"
+
+kill -TERM "$watcher"
+wait "$watcher"
+trap - EXIT
+assert "mise bootstrap dotfiles status --json | jq -r .history.watcher" "declared-not-running"
+# Releasing the lock permits another watcher from either cache directory.
+assert_not_contains "mise bootstrap dotfiles watch --once --json" '"event":"already-running"'

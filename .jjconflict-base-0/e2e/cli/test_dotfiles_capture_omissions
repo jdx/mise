@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# An unreadable/oversized member must not turn into a shared deletion or stop
+# unrelated configuration from being saved.
+require_cmd git
+mkdir -p ~/capture-members/empty-repo
+git -C ~/capture-members/empty-repo init -q
+printf 'saved large member\n' >~/capture-members/large
+chmod 600 ~/capture-members/large
+printf 'first\n' >~/capture-members/other
+assert_succeed 'mise bootstrap dotfiles track ~/capture-members'
+repo="$MISE_STATE_DIR/history/repo.git"
+assert "git --git-dir='$repo' show main:home/capture-members/large" 'saved large member'
+
+dd if=/dev/zero of=~/capture-members/large bs=1048576 count=20 2>/dev/null
+chmod 644 ~/capture-members/large
+printf 'second\n' >~/capture-members/other
+assert_succeed 'mise bootstrap dotfiles save'
+assert "git --git-dir='$repo' show main:home/capture-members/other" 'second'
+assert "git --git-dir='$repo' show main:home/capture-members/large" 'saved large member'
+assert "git --git-dir='$repo' show main:.mise-history/manifest.json | jq '.permissions[\"home/capture-members/large\"]'" '384'
+
+# An explicit exclusion still removes the saved member from future trees.
+assert_succeed "mise bootstrap dotfiles exclude '~/capture-members/large'"
+assert_succeed 'mise bootstrap dotfiles save'
+assert_fail "git --git-dir='$repo' cat-file -e main:home/capture-members/large"
+assert_succeed 'test -f ~/capture-members/large'

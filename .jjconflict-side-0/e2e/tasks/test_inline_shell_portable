@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# Model a shell whose -c operand must immediately follow the flag (FreeBSD).
+mkdir -p bin
+cat >bin/sh <<'EOF'
+#!/bin/sh
+if [ "$1" != -o ] || [ "$2" != errexit ] || [ "$3" != -c ] || [ "$#" != 4 ]; then
+  echo 'incorrect inline shell arguments' >&2
+  exit 99
+fi
+exec /bin/sh "$@"
+EOF
+chmod +x bin/sh
+export PATH="$PWD/bin:$PATH"
+
+cat >mise.toml <<'EOF'
+[tasks.hello]
+run = "echo portable-inline-shell"
+
+[tasks.fail]
+run = "false; echo should-not-run"
+EOF
+
+assert_contains "mise run hello" "portable-inline-shell"
+assert_fail "mise run fail"
+assert_not_contains "mise run fail 2>&1 || true" "incorrect inline shell arguments"
+assert_not_contains "mise run --quiet fail 2>&1 || true" "should-not-run"

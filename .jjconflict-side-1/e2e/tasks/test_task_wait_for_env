@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+# Test 1: wait_for with name-only matching against env overrides
+# "test" has no direct dependency on "setup", only wait_for.
+# "build" depends on "VERBOSE=1 setup".
+# Without the name-based matching fix, wait_for would fail to find "setup"
+# because it's running as "VERBOSE=1 setup".
+# Use a file to verify ordering: setup sleeps then writes, test writes after.
+cat <<EOF >mise.toml
+[tasks.setup]
+run = 'sleep 0.3 && echo setup >> order.txt'
+
+[tasks.build]
+depends = ["VERBOSE=1 setup"]
+run = 'echo build'
+
+[tasks.test]
+wait_for = ["setup"]
+run = 'echo test >> order.txt'
+EOF
+
+rm -f order.txt
+mise run test ::: build
+assert "cat order.txt" "setup
+test"
+
+# Test 2: wait_for with name-only matching against args overrides
+cat <<'EOF' >mise.toml
+[tasks.setup]
+run = 'sleep 0.3 && echo setup >> order.txt # args: $@'
+
+[tasks.build]
+depends = ["setup myarg"]
+run = 'echo build'
+
+[tasks.test]
+wait_for = ["setup"]
+run = 'echo test >> order.txt'
+EOF
+
+rm -f order.txt
+mise run test ::: build
+assert "cat order.txt" "setup
+test"
+
+# Test 3: wait_for with env specified should do identity matching
+cat <<EOF >mise.toml
+[tasks.setup]
+run = 'sleep 0.3 && echo setup >> order.txt'
+
+[tasks.build]
+depends = ["VERBOSE=1 setup"]
+run = 'echo build'
+
+[tasks.test]
+wait_for = ["VERBOSE=1 setup"]
+run = 'echo test >> order.txt'
+EOF
+
+rm -f order.txt
+mise run test ::: build
+assert "cat order.txt" "setup
+test"
+
+# Test 4: wait_for with args specified should do identity matching
+cat <<'EOF' >mise.toml
+[tasks.setup]
+run = 'sleep 0.3 && echo setup >> order.txt # args: $@'
+
+[tasks.build]
+depends = ["setup myarg"]
+run = 'echo build'
+
+[tasks.test]
+wait_for = ["setup myarg"]
+run = 'echo test >> order.txt'
+EOF
+
+rm -f order.txt
+mise run test ::: build
+assert "cat order.txt" "setup
+test"

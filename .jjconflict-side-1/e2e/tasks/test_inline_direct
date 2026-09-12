@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+mkdir -p bin child
+cat >bin/sh <<'EOF'
+#!/bin/sh
+export INLINE_SHELL_USED=shell
+exec /bin/sh "$@"
+EOF
+cat >bin/probe <<'EOF'
+#!/bin/sh
+printf '%s\n' "${INLINE_SHELL_USED:-direct}" "$PWD" "${CHECK_ENV:-unset}" "$@"
+EOF
+cat >bin/fail-probe <<'EOF'
+#!/bin/sh
+echo failed-probe >&2
+exit 23
+EOF
+cat >bin/plain-probe <<'EOF'
+echo interpreted-by-shell
+EOF
+chmod +x bin/sh bin/probe bin/fail-probe bin/plain-probe
+export PATH="$PWD/bin:$PATH"
+
+cat >mise.toml <<'EOF'
+[tasks.direct]
+run = "probe first --key=value"
+dir = "child"
+env = { CHECK_ENV = "child-env" }
+[tasks.native]
+run = "env"
+[tasks.explicit]
+run = "probe"
+shell = "sh -o errexit -c"
+[tasks.expansion]
+run = "probe $CHECK_ENV"
+env = { CHECK_ENV = "expanded" }
+[tasks.init]
+run = "probe"
+env = { ENV = "" }
+[tasks.bash-init]
+run = "probe"
+env = { BASH_ENV = "" }
+[tasks.plain]
+run = "plain-probe"
+[tasks.fail]
+run = "fail-probe"
+[tasks.missing]
+run = "missing-inline-command-12935"
+EOF
+
+# Deliberately pass dollar syntax literally, without shell expansion.
+# shellcheck disable=SC2016
+literal_arg='$literal'
+assert "mise run -q direct -- 'literal space' '$literal_arg' '*.rs'" "$(printf 'direct\n%s/child\nchild-env\nfirst\n--key=value\nliteral space\n%s\n*.rs' "$PWD" "$literal_arg")"
+# Native env really bypasses the PATH-provided sh (not just a shell exec-ing it).
+assert_not_contains "mise run -q native" "INLINE_SHELL_USED="
+assert_contains "mise run -q explicit" "shell"
+assert_contains "mise run -q --shell 'sh -o errexit -c' direct" "shell"
+assert_contains "mise run -q expansion" "expanded"
+assert_contains "mise run -q expansion" "shell"
+assert_contains "mise run -q init" "shell"
+assert_contains "mise run -q bash-init" "shell"
+assert "mise run -q plain" "interpreted-by-shell"
+assert_fail_contains "mise run -q fail" "failed-probe"
+assert 'mise run -q fail >/dev/null 2>&1; echo $?' "23"
+assert_fail "mise run -q missing"
+assert_contains "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='sh -o errexit -c' mise run -q direct" "shell"
+# Relative and empty PATH components retain shell lookup semantics.
+assert_contains "PATH='$PATH:.' mise run -q direct" "shell"
+assert_contains "PATH='$PATH:' mise run -q direct" "shell"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[settings]
+unix_default_inline_shell_args = "sh -o errexit -c"
+EOF
+assert_contains "mise run -q direct" "shell"

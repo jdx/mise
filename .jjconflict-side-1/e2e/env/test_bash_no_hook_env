@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# `--no-hook-env` means mise does not apply the environment. zsh, fish and pwsh all keep their
+# activation-time hook-env call inside the flag's guard; bash did too, until the script moved out
+# of bash.rs into src/assets/bash/activate.sh (#8920) and the call was left outside it. From then
+# on a bash shell activated with the flag had the config's env applied anyway — the one thing the
+# flag says it will not do.
+
+printf '[env]\nNO_HOOK_ENV_PROBE = "applied"\n' >mise.toml
+
+# An inherited value would be printed by the probe and read as the environment having been applied,
+# so the only value the probe can see is one activation set.
+unset NO_HOOK_ENV_PROBE
+
+# The activation script is captured, then eval'd, so that a `mise activate` that fails and emits
+# nothing is a failed probe rather than an empty eval that quietly prints "unset".
+probe() {
+  bash --noprofile --norc -c \
+    "activation=\"\$(mise activate bash $1)\" || exit \$?
+     eval \"\$activation\" || exit \$?
+     echo \"\${NO_HOOK_ENV_PROBE:-unset}\"" | tail -1
+}
+
+if ! with_flag="$(probe --no-hook-env)"; then
+  echo "activation with --no-hook-env failed"
+  exit 1
+fi
+if [ "$with_flag" != "unset" ]; then
+  echo "--no-hook-env applied the environment at activation: NO_HOOK_ENV_PROBE=$with_flag"
+  exit 1
+fi
+
+# The control. Without it the check above would also pass against a mise that never applies the
+# environment at all, or against a config that was never loaded.
+if ! without_flag="$(probe "")"; then
+  echo "activation without the flag failed"
+  exit 1
+fi
+if [ "$without_flag" != "applied" ]; then
+  echo "expected activation without the flag to apply the environment, got: $without_flag"
+  exit 1
+fi

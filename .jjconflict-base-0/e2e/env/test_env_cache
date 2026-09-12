@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Test env caching feature
+
+# Enable env caching with encryption key (as would be set by `mise activate`)
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+# Create a basic config with env vars
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+CACHE_TEST_VAR="value1"
+EOF
+
+# First run should compute env and create cache
+assert_contains "mise env -s bash" "CACHE_TEST_VAR=value1"
+
+# Second run should use cached env (same result)
+assert_contains "mise env -s bash" "CACHE_TEST_VAR=value1"
+
+# Modify config - cache should be invalidated due to mtime change
+sleep 1 # Ensure mtime is different
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+CACHE_TEST_VAR="value2"
+EOF
+
+# Should reflect the new value
+assert_contains "mise env -s bash" "CACHE_TEST_VAR=value2"
+
+# Test that cache dir exists when caching is enabled
+assert_directory_exists "$HOME/.local/state/mise/env-cache"
+
+# Disable caching and verify it still works
+unset MISE_ENV_CACHE
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+CACHE_TEST_VAR="value3"
+EOF
+
+assert_contains "mise env -s bash" "CACHE_TEST_VAR=value3"

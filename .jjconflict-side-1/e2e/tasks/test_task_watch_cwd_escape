@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# Regression: a task whose cwd is a subdirectory (`dir`) but whose `sources`
+# escape that cwd via `..` must still be watched. The anchor/project-origin
+# has to widen up to the common ancestor so watchexec's filter actually
+# matches the out-of-cwd source file when it changes.
+
+mise use -g watchexec
+
+mkdir -p packages/foo shared/src
+
+cat <<EOF >mise.toml
+[tasks.build]
+dir = "packages/foo"
+sources = ["../../shared/src/*.ts"]
+run = "echo built"
+EOF
+
+touch shared/src/index.ts
+
+LOG_FILE=$(mktemp)
+mise watch build >"$LOG_FILE" 2>&1 &
+WATCH_PID=$!
+
+trap 'kill $WATCH_PID' EXIT
+
+# Wait for the initial run before asserting the re-run.
+for _ in $(seq 1 40); do
+  grep -q "built" "$LOG_FILE" && break
+  sleep 0.5
+done
+if ! grep -q "built" "$LOG_FILE"; then
+  fail "Initial run never produced output; got: $(cat "$LOG_FILE")"
+fi
+
+echo "" >"$LOG_FILE" # clear so we only capture the re-run
+
+# Touch the source that lives *outside* the task's cwd.
+touch shared/src/index.ts
+for _ in $(seq 1 40); do
+  grep -q "built" "$LOG_FILE" && break
+  sleep 0.5
+done
+
+if ! grep -q "built" "$LOG_FILE"; then
+  fail "Expected re-run after changing ../../shared/src source, got: $(tr -d '\0' <"$LOG_FILE")"
+fi
+ok "mise watch retriggers on cwd-escaping (..) source"

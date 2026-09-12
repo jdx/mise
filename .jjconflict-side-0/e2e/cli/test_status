@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+eval "$(mise activate bash)"
+mise use dummy@1.0.0
+
+mise settings status.show_env=1
+assert "mise set FOO=1"
+assert "mise hook-env 2>&1 >/dev/null" "mise +FOO" && _mise_hook
+assert "mise set FOO=2"
+assert "mise hook-env 2>&1 >/dev/null" "mise ~FOO" && _mise_hook
+assert "mise set --rm FOO"
+assert "mise hook-env 2>&1 >/dev/null" "mise -FOO" && _mise_hook
+echo "FOO=3" >.env
+assert "mise set _.file=.env"
+assert "mise hook-env 2>&1 >/dev/null" "mise +FOO" && _mise_hook
+assert "mise set _.path=./node_modules/.bin"
+assert "mise hook-env 2>&1 >/dev/null" "mise +./node_modules/.bin" && _mise_hook
+
+mise settings status.show_tools=1
+assert "mise hook-env 2>&1 >/dev/null" "mise +dummy@1.0.0" && _mise_hook
+mise use --rm dummy
+assert "mise hook-env 2>&1 >/dev/null" "mise -dummy@1.0.0" && _mise_hook

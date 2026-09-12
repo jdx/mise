@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[task_config.cache]
+enabled = true
+
+[tasks.check]
+run = '''
+printf 'check-stdout\n'
+printf 'check-stderr\n' >&2
+printf 'ran\n' >> runs.txt
+'''
+sources = ["input.txt"]
+outputs = []
+EOF
+
+printf 'one\n' >input.txt
+
+# Explicitly empty outputs inherit the scoped cache default and store logs
+# without creating an artifact archive.
+output="$(mise run --output prefix check 2>&1)"
+assert_contains "echo \"$output\"" "[check] check-stdout"
+assert_contains "echo \"$output\"" "[check] check-stderr"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+assert "find \"$MISE_CACHE_DIR/task-artifacts/v2\" -type f -name '*.json' | wc -l | tr -d ' '" "1"
+assert "find \"$MISE_CACHE_DIR/task-artifacts/v2\" -type f -name '*.tar.zst' | wc -l | tr -d ' '" "0"
+
+# A current result hit skips execution and replays its cached logs.
+output="$(mise run --output prefix check 2>&1)"
+assert_contains "echo \"$output\"" "sources up-to-date, skipping"
+assert_contains "echo \"$output\"" "[check] check-stdout"
+assert_contains "echo \"$output\"" "[check] check-stderr"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# The manifest can restore the successful result after local state is removed.
+rm -rf "$MISE_STATE_DIR/task-artifacts"
+output="$(mise run --output prefix check 2>&1)"
+assert_contains "echo \"$output\"" "restored result from cache"
+assert_contains "echo \"$output\"" "[check] check-stdout"
+assert_contains "echo \"$output\"" "[check] check-stderr"
+assert "wc -l < runs.txt | tr -d ' '" "1"
+
+# Changed inputs miss and replace the result-only cache entry.
+printf 'two\n' >input.txt
+mise run check
+assert "wc -l < runs.txt | tr -d ' '" "2"
+
+# Clearing the cache forces execution even if local freshness state remains.
+mise cache clear
+mise run check
+assert "wc -l < runs.txt | tr -d ' '" "3"

@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+SERVER_ROOT="$TMPDIR/task-tool-lock-server"
+PORT_FILE="$TMPDIR/task-tool-lock-server-port"
+mkdir -p "$SERVER_ROOT/task-only-1.0.0/bin"
+
+cat >"$SERVER_ROOT/task-only-1.0.0/bin/task-only" <<'EOF'
+#!/usr/bin/env bash
+echo task-only-ok
+EOF
+chmod +x "$SERVER_ROOT/task-only-1.0.0/bin/task-only"
+tar -C "$SERVER_ROOT" -czf "$SERVER_ROOT/task-only-1.0.0.tar.gz" task-only-1.0.0
+CHECKSUM=$(shasum -a 256 "$SERVER_ROOT/task-only-1.0.0.tar.gz" | awk '{print $1}')
+printf '1.0.0\n2.0.0\n' >"$SERVER_ROOT/versions.txt"
+
+python3 - "$SERVER_ROOT" "$PORT_FILE" <<'PY' >/dev/null 2>&1 &
+import http.server
+import os
+import socketserver
+import sys
+
+root, port_file = sys.argv[1], sys.argv[2]
+os.chdir(root)
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as server:
+    with open(port_file, "w") as file:
+        file.write(str(server.server_address[1]))
+    server.serve_forever()
+PY
+SERVER_PID=$!
+cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+trap cleanup EXIT
+
+wait_for_file "$PORT_FILE" "task tool lock HTTP server port file" 30 "$SERVER_PID"
+PORT=$(cat "$PORT_FILE")
+
+cat >mise.toml <<EOF
+[task_config]
+includes = ["tasks.toml"]
+
+[task_templates.locked]
+tools."http:template-only" = { version = "1.0.0", url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz", checksum = "sha256:${CHECKSUM}" }
+
+[tasks.from-template]
+extends = "locked"
+run = "true"
+
+[tasks.task-only]
+run = "task-only > task-ran"
+
+[tasks.task-only.tools."http:task-only"]
+version = "1.0.0"
+url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz"
+checksum = "sha256:${CHECKSUM}"
+bin_path = "task-only-1.0.0/bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/task-only-1.0.0/bin/task-only"
+EOF
+
+cat >tasks.toml <<EOF
+[included]
+run = "true"
+tools."http:included-only" = { version = "1.0.0", url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz", checksum = "sha256:${CHECKSUM}" }
+EOF
+
+if ! output=$(mise lock --dry-run --platform "$PLATFORM" 2>&1); then
+  echo "$output" >&2
+  fail "task-only lock dry-run failed"
+fi
+assert_contains "echo '$output'" "http:task-only@1.0.0"
+assert_not_contains "echo '$output'" "No tools configured to lock"
+assert "test ! -e mise.lock"
+assert "test ! -e task-ran"
+assert "test ! -e '$MISE_DATA_DIR/installs/http-task-only/1.0.0'"
+
+mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" '[[tools."http:task-only"]]'
+assert_contains "cat mise.lock" 'version = "1.0.0"'
+assert_contains "cat mise.lock" "checksum = \"sha256:${CHECKSUM}\""
+assert_contains "cat mise.lock" '[[tools."http:template-only"]]'
+assert_contains "cat mise.lock" '[[tools."http:included-only"]]'
+
+cp mise.lock mise.lock.before-task
+mise run task-only
+assert_contains "cat task-ran" "task-only-ok"
+assert "cmp mise.lock.before-task mise.lock"
+
+cat >>mise.toml <<EOF
+
+[tasks.latest]
+run = "true"
+
+[tasks.latest.tools."http:task-latest"]
+version = "latest"
+url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz"
+version_list_url = "http://127.0.0.1:${PORT}/versions.txt"
+
+[tasks.variant-one]
+run = "true"
+
+[tasks.variant-one.tools."http:task-variant"]
+version = "1.0.0"
+url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz"
+rename_exe = "one"
+
+[tasks.variant-two]
+run = "true"
+
+[tasks.variant-two.tools."http:task-variant"]
+version = "1.0.0"
+url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz"
+rename_exe = "two"
+EOF
+
+mise lock --platform "$PLATFORM"
+assert_contains "cat mise.lock" '[[tools."http:task-latest"]]'
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert "test \"\$(grep -c '\[\[tools.\"http:task-variant\"\]\]' mise.lock)\" -eq 2"
+assert_contains "cat mise.lock" 'rename_exe = "one"'
+assert_contains "cat mise.lock" 'rename_exe = "two"'
+
+mise lock http:task-only --dry-run --platform "$PLATFORM"
+
+cat >mise.toml <<'EOF'
+[tasks.no-tools]
+run = "true"
+EOF
+rm tasks.toml
+
+mise lock --platform "$PLATFORM"
+assert_not_contains "cat mise.lock" 'http:task-only'
+assert_not_contains "cat mise.lock" 'http:task-latest'
+assert_not_contains "cat mise.lock" 'http:task-variant'
+
+cat >mise.test.toml <<EOF
+[tasks.environment-only]
+run = "true"
+tools."http:environment-only" = { version = "1.0.0", url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz", checksum = "sha256:${CHECKSUM}" }
+EOF
+
+env MISE_ENV=test mise lock --platform "$PLATFORM"
+assert_contains "cat mise.test.lock" '[[tools."http:environment-only"]]'
+assert_not_contains "cat mise.lock" 'http:environment-only'
+
+cat >mise.local.toml <<EOF
+[tasks.local-only]
+run = "true"
+tools."http:local-only" = { version = "1.0.0", url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz", checksum = "sha256:${CHECKSUM}" }
+EOF
+
+mise lock --local --platform "$PLATFORM"
+assert_contains "cat mise.local.lock" '[[tools."http:local-only"]]'
+assert_not_contains "cat mise.lock" 'http:local-only'
+
+mkdir -p monorepo/packages/app
+cat >monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo/packages/app/mise.toml <<EOF
+[tasks.child-only]
+run = "true"
+tools."http:child-only" = { version = "1.0.0", url = "http://127.0.0.1:${PORT}/task-only-1.0.0.tar.gz", checksum = "sha256:${CHECKSUM}" }
+EOF
+
+(cd monorepo && mise lock --platform "$PLATFORM")
+assert_contains "cat monorepo/mise.lock" '[[tools."http:child-only"]]'
+assert "test ! -e monorepo/packages/app/mise.lock"

@@ -1,0 +1,18 @@
+system_extra = """
+Write release notes for mise users, not a commit log.
+
+Start with a short summary only when it adds useful context. For substantial releases, explain the main theme and why it matters before the categorized sections. For very small releases, be direct and modest: one sentence like "This is a small release that fixes ..." is enough, and it is okay to skip a Highlights section entirely.
+
+Calibrate the length and enthusiasm to the actual changes:
+- Major user-facing releases should have a concise narrative summary and a small Highlights section.
+- Medium releases should briefly group the most important additions and fixes.
+- Small releases should not be inflated; prefer a compact Added/Fixed/Changed list.
+- Dependency updates, CI changes, release plumbing, and other internal work should be omitted unless they directly affect users.
+
+When writing bullets, explain the user-visible impact instead of restating the commit subject. For important user-facing features, include a short command or config example when it would help users understand how to try the feature. Keep examples focused and omit them for small fixes or self-explanatory changes. Prefer grouped, readable sections such as Highlights, Added, Fixed, Changed, Documentation, and New Contributors. Include PR links and contributor usernames when available, but do not thank @jdx.
+"""
+
+context = "mise prepares project dev environments by managing tools, environment variables, and tasks in one CLI. It manages dev tools, environment variables, tasks, bootstrap/system setup, lockfiles, and release provenance across platforms."
+
+[defaults]
+emoji = false

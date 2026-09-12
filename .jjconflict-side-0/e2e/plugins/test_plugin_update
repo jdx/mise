@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+mise plugin install tiny https://github.com/mise-plugins/rtx-tiny.git
+mise plugins update tiny

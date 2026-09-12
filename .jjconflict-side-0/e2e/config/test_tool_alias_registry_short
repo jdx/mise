@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# A `[tool_alias]` value with no backend prefix names a *tool*, so it should
+# resolve through the registry. Left alone it reaches the plugin path instead,
+# which builds an asdf repo URL out of the name -- so the alias either silently
+# installs a different tool through a backend this repo no longer accepts new
+# plugins for (`myjq = "jq"` fetched mise-plugins/asdf-jq), or fails outright
+# when no such plugin exists (`llama = "llama.cpp"`).
+# See: https://github.com/jdx/mise/discussions/9316
+
+cat >mise.toml <<'EOF'
+[tool_alias]
+myjq = "jq"
+llama = "llama.cpp"
+notatool = "definitely-not-in-the-registry"
+mynode = "nodejs"
+mytool = "aqua:jqlang/jq"
+EOF
+
+# `mise tool` resolves the backend without listing versions, so this needs no
+# network and cannot be satisfied by a cached listing. The backend it prints is
+# the whole point: before the fix `myjq` reported a bare `jq`, which is a tool
+# name rather than a backend, and `llama` failed to resolve at all.
+assert_contains "mise tool myjq" "aqua:jqlang/jq"
+assert_contains "mise tool llama" "github:ggml-org/llama.cpp"
+
+# Resolving the backend is only half of it. Options, version order and OS
+# support all key on a registry short, and `llama` is not one -- so without
+# carrying the resolved key into those lookups the alias would install the right
+# tool and then misread every version of it. `llama.cpp` exists in the registry
+# precisely because of its non-standard versioning, which is what this pins.
+assert_contains "mise tool llama" 'version_prefix=String("b")'
+
+# A legacy spelling still finds its canonical entry.
+assert_contains "mise tool mynode" "core:node"
+
+# A value the registry does not know keeps its current meaning, so anyone whose
+# alias names a plugin rather than a tool is unaffected. Matching the message
+# rather than just a nonzero exit: a bare `assert_fail` would stay green if this
+# started failing through some unrelated path.
+assert_fail_contains "mise tool notatool" "not found in mise tool registry"
+
+# An explicit backend is passed through untouched.
+assert_contains "mise tool mytool" "aqua:jqlang/jq"

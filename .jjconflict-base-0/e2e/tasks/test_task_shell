@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.shell-invalid]
+shell = 'invalid_shell'
+run = 'echo "invalid shell"'
+[tasks.shell]
+shell = 'bash -c'
+run = 'echo "using shell $0"'
+EOF
+
+assert "mise run shell" "using shell bash"
+# A forwarded arg is appended to the inline command, so it does NOT shift the
+# shell's $0 (which stays "bash"); before the Windows fix, `bash -c <script> arg`
+# made the first arg $0. See #9355.
+assert "mise run shell -- myarg" "using shell bash myarg"
+assert_fail "mise run shell-invalid" "invalid shell"
+
+cat <<EOF >mise.toml
+tasks.escapeme = "echo \"{{arg(name='a')}}\""
+tasks.escapeme_var = "echo \"{{arg(name='a', var=true)}}\""
+tasks.bashshebang1 = """
+#!/usr/bin/env -S bash
+echo "{{arg(name='a')}}"
+echo "{{arg(name='b', var=true)}}"
+"""
+tasks.bashshebang2 = """
+#!/usr/bin/env bash
+echo "{{arg(name='a')}}"
+echo "{{arg(name='b', var=true)}}"
+"""
+tasks.bashshebang3 = """
+#!/bin/bash
+echo "{{arg(name='a')}}"
+echo "{{arg(name='b', var=true)}}"
+"""
+tasks.bashshebangargs = """
+#!/usr/bin/env bash
+printf '<%s>\\n' "\$@"
+"""
+tasks.escapenode = """
+#!/usr/bin/env -S python3
+print("{{arg(name='a')}}")
+print("{{arg(name='b', var=true)}}")
+"""
+EOF
+
+assert "mise run escapeme 'hello world'" "'hello world'"
+assert "mise run escapeme_var hello 'world of mise'" "hello 'world of mise'"
+assert "mise run bashshebang1 'a with space' hello 'world of mise'" "'a with space'
+hello 'world of mise'"
+assert "mise run bashshebang2 my_a hello 'world of mise'" "my_a
+hello 'world of mise'"
+assert "mise run bashshebang3 my_a hello 'world of mise'" "my_a
+hello 'world of mise'"
+assert "mise run bashshebangargs 'a with space' second" "<a with space>
+<second>"
+assert "mise run escapenode my_a hello 'world of mise'" "my_a
+hello 'world of mise'"
+assert "mise run escapenode 'a with space' hello 'world of mise'" "a with space
+hello 'world of mise'"

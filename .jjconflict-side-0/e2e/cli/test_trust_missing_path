@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# `mise trust <path>` does not record trust against the path as typed: it resolves it to a trust
+# root first, and that resolution is purely lexical -- `config_root` counts path components and
+# never looks at the filesystem. A path that does not exist therefore resolved to its *parent*,
+# which mise then trusted, reported as success, and exited 0 for. `mise untrust` did the same in
+# reverse. A typo granted (or revoked) trust for a directory the user never named.
+
+# The test harness pre-trusts the test dir via MISE_TRUSTED_CONFIG_PATHS; clear it so the configs
+# below actually start out untrusted.
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p outer/inner
+cat <<EOF >mise.toml
+[env]
+ROOT = "1"
+EOF
+cat <<EOF >outer/inner/mise.toml
+[env]
+INNER = "1"
+EOF
+
+# Control: the directory that used to be trusted by accident starts out untrusted, so the
+# assertion at the end is about the failed command rather than about a directory that was never
+# trusted in the first place.
+assert_contains "cd outer/inner && mise trust --show" "outer/inner: untrusted"
+
+# All four routes go through one resolver, so all four are pinned: `mise trust`, its `--ignore`
+# and `--untrust` flags, and the separate `mise untrust` command.
+assert_fail_contains "mise trust $PWD/outer/inner/nope" "Path does not exist"
+assert_fail_contains "mise trust --ignore $PWD/outer/inner/nope" "Path does not exist"
+assert_fail_contains "mise trust --untrust $PWD/outer/inner/nope" "Path does not exist"
+assert_fail_contains "mise untrust $PWD/outer/inner/nope" "Path does not exist"
+
+# The error names the path it was given, not just the failure. The old message on the half of this
+# that did fail was the bare OS error, which named nothing at all.
+assert_fail_contains "mise trust $PWD/outer/inner/nope" "nope"
+
+# This is the point of the change: the failed command trusted nothing. Without it the test would
+# only pin that a typo errors, not that it stopped trusting the parent.
+assert_contains "cd outer/inner && mise trust --show" "outer/inner: untrusted"
+
+# Control: a path that exists still resolves and still works, so the check is about existence.
+assert_contains "mise trust $PWD/outer/inner/mise.toml 2>&1" "trusted"
+assert_contains "cd outer/inner && mise trust --show" "outer/inner: trusted"
+
+# Control: a directory with no config file in it yet is still trustable. Trust roots are
+# directories, so this is the case that stops "the path must exist" from becoming "the config file
+# must exist".
+mkdir -p empty-project
+assert_contains "mise trust $PWD/empty-project 2>&1" "trusted"

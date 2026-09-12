@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+mise use -g tombi@$TOMBI_VERSION
+TOMBI_LINT="mise x tombi@$TOMBI_VERSION -- tombi lint --offline --no-cache --error-on-warnings --quiet"
+cat >"$HOME/tombi.toml" <<TOML
+[schema]
+enabled = true
+strict = true
+[[schemas]]
+path = "file://$ROOT/schema/mise.json"
+include = ["encrypted-valid.toml", "encrypted-invalid.toml"]
+TOML
+cat >encrypted-valid.toml <<'TOML'
+[history.encryption]
+recipients = ["public-recipient"]
+[dotfiles]
+"~/.app" = { mode = "template", source = "secret.tera", encrypt = true }
+TOML
+assert_succeed "$TOMBI_LINT encrypted-valid.toml"
+for field in content block line template; do
+  printf '[dotfiles]\n"~/.app" = { %s = "inline", encrypt = false }\n' "$field" >encrypted-valid.toml
+  assert_succeed "$TOMBI_LINT encrypted-valid.toml"
+  printf '[dotfiles]\n"~/.app" = { %s = "inline", encrypt = true }\n' "$field" >encrypted-invalid.toml
+  assert_fail "$TOMBI_LINT encrypted-invalid.toml"
+done

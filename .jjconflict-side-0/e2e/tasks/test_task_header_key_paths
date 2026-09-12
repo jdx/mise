@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Regression test for `#MISE` header keys that the old key pattern could not see.
+#
+# The pattern deciding whether a `#MISE` line is config or usage text was
+# `[a-z0-9_.-]+`, so a dotted key with an uppercase segment or a quoted one was
+# neither collected as config nor left alone — it went to the usage parser.
+# Separately, header entries merged only one level deep, so writing one tool
+# across two lines replaced the whole table instead of adding to it.
+
+cat >mise.toml <<'TOML'
+[tools]
+TOML
+
+mkdir -p mise-tasks
+
+# An uppercase segment: the ordinary shape for an env var.
+cat >mise-tasks/envcheck <<'TASK'
+#!/usr/bin/env bash
+#MISE env.FOO = "bar"
+#MISE env.lower = "ok"
+echo "FOO=[${FOO:-unset}] lower=[${lower:-unset}]"
+TASK
+chmod +x mise-tasks/envcheck
+assert_contains "mise run envcheck" "FOO=[bar] lower=[ok]"
+
+# One tool split across lines keeps every field. Before the merge fix this
+# failed with "tool definition must include exactly one of \`version\`, ...".
+cat >mise-tasks/jqsplit <<'TASK'
+#!/usr/bin/env bash
+#MISE tools.jq.version = "1.8.1"
+#MISE tools.jq.os = ["linux", "macos"]
+jq --version
+TASK
+chmod +x mise-tasks/jqsplit
+assert_contains "mise run jqsplit" "jq-1.8.1"
+
+# A usage directive still reads as usage text rather than config. `default="4"`
+# is the token here that most resembles a config `key=value`, so the flag takes
+# a value: `jobs=4` can only come from the directive having been parsed as usage.
+cat >mise-tasks/usagecheck <<'TASK'
+#!/usr/bin/env bash
+#MISE description="has a flag"
+#USAGE flag "--jobs <jobs>" default="4"
+echo "jobs=${usage_jobs:-unset}"
+TASK
+chmod +x mise-tasks/usagecheck
+assert_contains "mise run usagecheck" "jobs=4"

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Plaintext diffs and restoration never write plaintext into Git objects.
+# shellcheck disable=SC2016
+require_cmd git
+export MISE_AGE_KEY=AGE-SECRET-KEY-142E7VJ8GUWR94MXDCYQJ7ZTQZRXKQSP9PUJU8HUQJ206QN7QPV4SM5QRL8
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history.encryption]
+recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
+[dotfiles]
+"~/.encrypted" = { mode = "track", encrypt = true, variants = [{ os = "macos" }, { os = "linux" }] }
+TOML
+printf 'original-secret\n' >"$HOME/.encrypted"
+assert_succeed 'mise bootstrap dotfiles save'
+repository="$MISE_STATE_DIR/history/repo.git"
+original=$(git --git-dir="$repository" rev-parse HEAD)
+original_blob=$(git hash-object "$HOME/.encrypted")
+printf 'edited-secret\n' >"$HOME/.encrypted"
+edited_blob=$(git hash-object "$HOME/.encrypted")
+assert_contains 'mise bootstrap dotfiles history diff --patch --path ~/.encrypted' '+edited-secret'
+assert_not_contains 'mise bootstrap dotfiles history diff --patch --path ~/.encrypted' 'mise-encrypted-file'
+assert_fail "git --git-dir=$repository cat-file -e $edited_blob"
+assert_succeed 'mise bootstrap dotfiles save'
+assert_contains "mise bootstrap dotfiles history diff $original latest --patch --path ~/.encrypted" '-original-secret'
+assert_succeed "mise bootstrap dotfiles rollback ~/.encrypted --to $original --yes"
+assert 'cat ~/.encrypted' original-secret
+assert_succeed 'mise bootstrap dotfiles undo --yes'
+assert 'cat ~/.encrypted' edited-secret
+assert_fail "git --git-dir=$repository cat-file -e $original_blob"
+assert_fail "git --git-dir=$repository cat-file -e $edited_blob"

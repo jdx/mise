@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+monorepo_root = true
+EOF
+
+cat <<'EOF' >package.json
+{
+  "packageManager": "bun@1.3.0",
+  "workspaces": ["packages/*"]
+}
+EOF
+
+cat <<'EOF' >turbo.json
+{
+  "tasks": {
+    "build": {
+      "inputs": ["src/**"],
+      "outputs": ["dist/**"],
+      "cache": true,
+      "dependsOn": ["^build"]
+    }
+  }
+}
+EOF
+
+mkdir -p packages/app packages/lib
+cat <<'EOF' >packages/app/package.json
+{
+  "name": "@scope/app",
+  "dependencies": {
+    "lib": "workspace:*"
+  },
+  "scripts": {
+    "build": "vite build"
+  }
+}
+EOF
+cat <<'EOF' >packages/lib/package.json
+{
+  "name": "lib"
+}
+EOF
+
+assert_contains "mise tasks graph" "node:@scope/app"
+assert_contains "mise tasks graph" "packages/app"
+assert_contains "mise tasks graph" '"package_manager":"bun"'
+assert_contains "mise tasks graph" '"workspace_source":"package.json"'
+assert_contains "mise tasks graph" "node:lib"
+assert_contains "mise tasks graph --explain" "Project: node:@scope/app"
+assert_contains "mise tasks graph --explain" "node:lib — node (packages/app/package.json)"
+assert_contains "mise tasks graph --explain" "Input: src/** — node (turbo.json)"
+assert_contains "mise tasks graph --explain" "Output: dist/** — node (turbo.json)"
+assert_contains "mise tasks graph --explain" "Cache: enabled — node (turbo.json)"
+assert_contains "mise tasks graph --explain" "Task dependency: ^build — node (turbo.json)"
+
+assert_json "mise tasks graph --json | jq '.projects | map({id, root, dependencies})'" '[
+  {
+    "id": "node:@scope/app",
+    "root": "packages/app",
+    "dependencies": [
+      "node:lib"
+    ]
+  },
+  {
+    "id": "node:lib",
+    "root": "packages/lib",
+    "dependencies": []
+  }
+]'
+
+assert_json "mise tasks graph --json | jq '.projects[] | select(.id == \"node:@scope/app\") | {
+  project: .provenance.provider,
+  dependency: .dependency_provenance[\"node:lib\"].provider,
+  task: .tasks.build.provenance.provider,
+  inputs: .tasks.build.suggestions.provenance.inputs.provider,
+  outputs: .tasks.build.suggestions.provenance.outputs.provider,
+  cache: .tasks.build.suggestions.provenance.cache.provider,
+  depends: .tasks.build.suggestions.provenance.depends.provider,
+  config_sources: (.tasks.build.suggestions | has(\"config_sources\"))
+}'" '{
+  "project": "node",
+  "dependency": "node",
+  "task": "node",
+  "inputs": "node",
+  "outputs": "node",
+  "cache": "node",
+  "depends": "node",
+  "config_sources": false
+}'

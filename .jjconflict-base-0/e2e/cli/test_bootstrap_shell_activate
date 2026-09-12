@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+
+# shellcheck disable=SC2016
+
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zsh = true
+fish = {enabled = true}
+bash = false
+EOF
+
+assert_fail "mise bootstrap mise-shell-activate status --missing"
+assert_fail "mise bootstrap status --missing" "zprofile"
+bootstrap_status_json="$(mise bootstrap status --json)"
+assert_contains_text "$bootstrap_status_json" '"mise_shell_activate"'
+assert_contains_text "$bootstrap_status_json" '"target": "zprofile"'
+assert_contains_text "$bootstrap_status_json" '"state": "missing"'
+status_json="$(mise bootstrap mise-shell-activate status --json)"
+assert_contains_text "$status_json" '"shell": "zsh"'
+assert_contains_text "$status_json" '"target": "zprofile"'
+assert_contains_text "$status_json" '"path": "~/.zprofile"'
+assert_contains_text "$status_json" '"mode": "shims"'
+assert_contains_text "$status_json" '"target": "zshrc"'
+assert_contains_text "$status_json" '"path": "~/.zshrc"'
+assert_contains_text "$status_json" '"mode": "activate"'
+assert_contains_text "$status_json" '"shell": "fish"'
+assert_not_contains_text "$status_json" '"shell": "bash"'
+assert_contains "mise bootstrap shell status" "~/.zshrc"
+apply_dry_run="$(mise bootstrap mise-shell-activate apply --dry-run --yes)"
+assert_contains_text "$apply_dry_run" "edit ~/.zprofile (block:activate)"
+assert_contains_text "$apply_dry_run" "edit ~/.zshrc (block:activate)"
+assert_contains_text "$apply_dry_run" "edit ~/.config/fish/config.fish (block:activate)"
+assert_fail "test -e ~/.zprofile"
+assert_fail "test -e ~/.zshrc"
+assert_fail "test -e ~/.config/fish/config.fish"
+
+assert_succeed "mise bootstrap mise-shell-activate apply --yes"
+assert_contains "cat ~/.zprofile" 'eval "$(mise activate zsh --shims)"'
+assert_contains "cat ~/.zshrc" 'eval "$(mise activate zsh)"'
+assert_contains "cat ~/.config/fish/config.fish" "mise activate fish | source"
+assert_fail "test -e ~/.bash_profile"
+assert_fail "test -e ~/.bashrc"
+assert_succeed "mise bootstrap mise-shell-activate status --missing"
+assert_succeed "mise bootstrap status --missing"
+status_json="$(mise bootstrap mise-shell-activate status --json)"
+assert_contains_text "$status_json" '"state": "applied"'
+
+sed -i.bak 's/eval "$(mise activate zsh)"/echo changed/' ~/.zshrc
+status_json="$(mise bootstrap mise-shell-activate status --json)"
+assert_contains_text "$status_json" '"state": "differs"'
+assert_contains_text "$status_json" '"reason": "block content differs"'
+assert_fail "mise bootstrap status --missing" "differs"
+
+# idempotent: re-running does not duplicate managed blocks
+assert_succeed "mise bootstrap mise-shell-activate apply --yes"
+assert_not_contains "cat ~/.zshrc" "echo changed"
+assert "grep -c 'mise activate zsh --shims' ~/.zprofile" "1"
+assert "grep -c 'mise activate zsh' ~/.zshrc" "1"
+assert "grep -c 'mise activate fish' ~/.config/fish/config.fish" "1"
+
+# explicit target modes can be used in whichever zsh startup file the user wants
+rm -f ~/.zprofile ~/.zshrc
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zprofile = "activate"
+zshrc = "shims"
+EOF
+assert_succeed "mise bootstrap mise-shell-activate apply --yes"
+assert_contains "cat ~/.zprofile" 'eval "$(mise activate zsh)"'
+assert_contains "cat ~/.zshrc" 'eval "$(mise activate zsh --shims)"'
+
+# dry-run through top-level bootstrap does not write files
+rm -f ~/.zprofile ~/.zshrc ~/.bash_profile ~/.bashrc
+rm -rf ~/.config/fish
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+bashrc = "activate"
+EOF
+bootstrap_dry_run="$(mise bootstrap --dry-run --yes)"
+assert_contains_text "$bootstrap_dry_run" "edit ~/.bashrc (block:activate)"
+assert_fail "test -e ~/.bashrc"
+
+# dry-run sees shell activation contributed by dotfile-managed mise config
+mkdir -p dotfiles/mise
+cat <<'EOF' >dotfiles/mise/config.toml
+[bootstrap.mise_shell_activate]
+zshrc = "activate"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
+EOF
+rm -f ~/.zshrc
+bootstrap_dry_run="$(mise bootstrap --dry-run --yes)"
+assert_contains_text "$bootstrap_dry_run" "edit ~/.zshrc (block:activate)"
+assert_fail "test -e ~/.zshrc"
+
+# dry-run also sees shell activation contributed by edit-managed mise config
+cat <<'EOF' >mise-config-snippet.toml
+[bootstrap.mise_shell_activate]
+zshrc = "activate"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/mise/config.toml/bootstrap" = { source = "mise-config-snippet.toml", comment = "#" }
+EOF
+rm -f ~/.config/mise/config.toml ~/.zshrc
+bootstrap_dry_run="$(mise bootstrap --dry-run --yes)"
+assert_contains_text "$bootstrap_dry_run" "edit ~/.config/mise/config.toml (block:bootstrap)"
+assert_contains_text "$bootstrap_dry_run" "edit ~/.zshrc (block:activate)"
+assert_fail "test -e ~/.config/mise/config.toml"
+assert_fail "test -e ~/.zshrc"
+
+# --skip shell skips shell activation
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+bashrc = "activate"
+EOF
+assert_succeed "mise bootstrap --yes --skip shell"
+assert_fail "test -e ~/.bashrc"
+
+# local config overrides global config by target key; table form is accepted
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[bootstrap.mise_shell_activate]
+zsh = true
+bash = true
+EOF
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zshrc = false
+fish = {enabled = true}
+EOF
+status_json="$(mise bootstrap mise-shell-activate status --json)"
+assert_contains_text "$status_json" '"target": "zprofile"'
+assert_not_contains_text "$status_json" '"target": "zshrc"'
+assert_contains_text "$status_json" '"shell": "bash"'
+assert_contains_text "$status_json" '"shell": "fish"'
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# explicit [dotfiles] edits for the same path/id win over generated activation
+rm -f ~/.zshrc
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zshrc = "activate"
+
+[dotfiles]
+"~/.zshrc/activate" = { block = "echo custom activation" }
+EOF
+assert_succeed "mise bootstrap --yes --skip tools"
+assert_contains "cat ~/.zshrc" "echo custom activation"
+assert_not_contains "cat ~/.zshrc" 'mise activate zsh'
+
+# whole-file [dotfiles] targets for the rc file also win
+rm -f ~/.zshrc
+echo "whole zshrc" >zshrc
+cat <<'EOF' >mise.toml
+[bootstrap.mise_shell_activate]
+zshrc = "activate"
+
+[dotfiles]
+"~/.zshrc" = "zshrc"
+EOF
+assert_succeed "mise bootstrap --yes --skip tools"
+assert "readlink ~/.zshrc" "$PWD/zshrc"
+assert_not_contains "cat ~/.zshrc" 'mise activate zsh'

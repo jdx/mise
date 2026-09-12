@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Test that remote git tasks can access tools from mise.toml hierarchy
+# This reproduces issue #6557 where v2025.10.3 broke remote task tool resolution
+
+set -euo pipefail
+
+echo "=== Setting up test for remote task with tools ==="
+
+# Create a parent directory with tool definition
+mkdir -p parent/child
+cd parent
+
+# Parent mise.toml with the tool
+cat >mise.toml <<'EOF'
+[tools]
+jq = "latest"
+EOF
+
+# Install the tool
+mise install
+
+# Verify tool is installed and accessible
+if ! mise where jq >/dev/null 2>&1; then
+  echo "ERROR: jq not installed"
+  exit 1
+fi
+
+cd child
+
+# Child mise.toml with remote task from mise repo (NO tools defined here)
+# This task runs its arguments with tools from the parent mise.toml.
+cat >mise.toml <<'EOF'
+[tasks.remote_lint]
+file = "git::https://github.com/jdx/mise.git//xtasks/show-output-on-failure?ref=v2025.1.17"
+EOF
+
+# Trust and try to run the remote task
+mise trust
+
+echo "=== Running remote task that needs jq from parent config ==="
+
+# First, check a simple local task that uses jq.
+cat >>mise.toml <<'EOF'
+
+[tasks.test_tool]
+run = "jq --version"
+EOF
+
+mise trust
+
+# Run the simple local task to see if jq is available
+echo "Testing local task with jq:"
+TEST_TOOL_OUTPUT="$TMPDIR/test_tool_output.txt"
+if mise run test_tool >"$TEST_TOOL_OUTPUT" 2>&1 &&
+  grep -Fq "jq-" "$TEST_TOOL_OUTPUT"; then
+  echo "✓ Local task can find jq"
+else
+  echo "✗ Local task cannot find jq"
+  cat "$TEST_TOOL_OUTPUT"
+  exit 1
+fi
+
+# Now run jq through the remote task.
+echo "Testing remote task with jq:"
+REMOTE_LINT_OUTPUT="$TMPDIR/remote_lint_output.txt"
+if mise run remote_lint -- jq --version >"$REMOTE_LINT_OUTPUT" 2>&1; then
+  echo "✓ PASS: Remote task successfully accessed jq from parent config"
+  echo "Remote task ran successfully"
+else
+  echo "✗ FAIL: Remote task could not find jq from parent config"
+  echo "Remote task output:"
+  cat "$REMOTE_LINT_OUTPUT"
+  exit 1
+fi

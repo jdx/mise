@@ -1,0 +1,28 @@
+description = "Toolkit for building native desktop apps"
+os = ["linux", "macos", "windows"]
+test = { cmd = "native-sdk --version", expected = "native {{version}}" }
+version_order = "semver"
+
+bins = ["native-sdk"]
+[[backends]]
+full = "github:vercel-labs/native"
+
+[backends.options]
+# Releases publish bare per-platform binaries rather than archives. Linux and macOS
+# are left to autodetection so that it can pick between the glibc
+# (native-sdk-linux-x64) and musl (native-sdk-linux-musl-x64) builds; a shared
+# asset_pattern would replace autodetection and pin every Linux host to glibc.
+bin = "native-sdk"
+# The repo also tags CEF bundles (e.g. cef-144.0.6+g5f7e671+chromium-144.0.7559.59)
+# in the same release stream; those are not the CLI, so list only `v`-prefixed tags.
+version_prefix = "v"
+
+# Windows assets use a `win32` infix rather than `windows`, so they are named
+# explicitly instead of relying on autodetection.
+[backends.options.platforms.windows-x64]
+asset_pattern = "native-sdk-win32-x64.exe"
+bin = "native-sdk.exe"
+
+[backends.options.platforms.windows-arm64]
+asset_pattern = "native-sdk-win32-arm64.exe"
+bin = "native-sdk.exe"

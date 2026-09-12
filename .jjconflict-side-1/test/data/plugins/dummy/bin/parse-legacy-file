@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+# shellcheck disable=SC2020
+tr <"$1" -d "dummy-"

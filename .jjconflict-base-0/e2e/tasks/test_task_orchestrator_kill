@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Regression coverage for https://github.com/jdx/mise/discussions/8345.
+# An external orchestrator (Playwright's `webServer` is the canonical case)
+# spawns mise with `detached: true`, which on POSIX calls setsid so the
+# orchestrator can later `kill -SIGKILL -pgid` to tear the whole tree down.
+# If mise then creates its own per-task process groups, that tree-kill
+# stops at mise and the grandchildren survive, holding pipes open and
+# hanging the parent.
+#
+# We simulate it with `setsid mise run serve` + `kill -KILL -PGID`.
+
+set -euo pipefail
+
+marker=$(mktemp -t serve_completed.XXXXXX)
+rm -f "$marker"
+logfile=$(mktemp)
+trap 'rm -f "$logfile" "$marker"' EXIT
+
+# Use a marker file rather than a stdout sentinel — mise echoes the source
+# command to stdout, which would false-match any literal in the script body.
+cat <<EOF >mise.toml
+[tasks.serve]
+run = "printf 'SERVE_STARTED\\n' && sleep 60 && touch '$marker'"
+EOF
+
+# `setsid` puts mise into a fresh session/pgroup, mimicking Playwright's
+# detached:true. The shell exits immediately after exec, so PGID == mise's PID.
+setsid mise run serve >"$logfile" 2>&1 &
+mise_pid=$!
+
+# Wait for mise to actually start the task before we kill it.
+deadline=$((SECONDS + 15))
+while [ "$SECONDS" -lt "$deadline" ]; do
+  if grep -q "SERVE_STARTED" "$logfile" 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+done
+
+if ! grep -q "SERVE_STARTED" "$logfile" 2>/dev/null; then
+  cat "$logfile"
+  fail "serve task never started"
+fi
+
+# Capture descendants before the kill so we can verify they actually go away.
+# `pgrep -g $pgid` lists every member of the process group — that's what the
+# orchestrator's mass-kill targets.
+pgid=$mise_pid
+echo "process group before kill:"
+pgrep -g "$pgid" -a || true
+
+# This is the orchestrator's cleanup — single SIGKILL to the whole pgroup.
+# With per-task pgroups (the bug from #8345), the inner sh + sleep are in a
+# *different* pgroup and survive this signal.
+kill -KILL -- "-$pgid" 2>/dev/null || true
+
+# Reap mise so the script doesn't leak it.
+wait "$mise_pid" 2>/dev/null || true
+
+# Give the kernel a beat to deliver signals and reap the corpses.
+sleep 1
+
+# Anything in the pgroup that's still alive is a regression — those are the
+# grandchildren that escaped the orchestrator's kill via our setpgid.
+survivors=$(pgrep -g "$pgid" -a 2>/dev/null || true)
+if [ -n "$survivors" ]; then
+  echo "survivors:"
+  echo "$survivors"
+  # Best-effort cleanup before failing so the test host stays healthy.
+  pgrep -g "$pgid" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+  fail "processes survived orchestrator's pgroup SIGKILL"
+fi
+
+# Wait a beat for any zombie sleep to finish if it survived (it shouldn't
+# have, but if it did the marker tells us). 2s is a reasonable upper bound:
+# the test machine's `sleep` would still be ~58s from completing if it
+# escaped, but if our kill was off by a fork-race window the marker would
+# show up here.
+sleep 2
+
+if [ -e "$marker" ]; then
+  fail "sleep ran to completion despite pgroup SIGKILL"
+fi
+
+echo "orchestrator pgroup kill propagated cleanly"

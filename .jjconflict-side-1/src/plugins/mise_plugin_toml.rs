@@ -1,0 +1,214 @@
+use std::path::Path;
+
+use color_eyre::Result;
+use color_eyre::eyre::eyre;
+use eyre::WrapErr;
+use toml_edit::{DocumentMut, Item, Value};
+
+use crate::{file, parse_error};
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct MisePluginTomlScriptConfig {
+    pub cache_key: Option<Vec<String>>,
+    pub data: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct MisePluginTomlPackageManagerConfig {
+    pub requires: Vec<String>,
+    pub supports_version_pins: bool,
+    pub os: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct MisePluginToml {
+    pub package_manager: MisePluginTomlPackageManagerConfig,
+    pub exec_env: MisePluginTomlScriptConfig,
+    pub list_aliases: MisePluginTomlScriptConfig,
+    pub list_bin_paths: MisePluginTomlScriptConfig,
+    pub list_idiomatic_filenames: MisePluginTomlScriptConfig,
+}
+
+impl MisePluginToml {
+    pub(crate) fn from_file(path: &Path) -> Result<Self> {
+        if !path.exists() {
+            return Ok(Default::default());
+        }
+        trace!("parsing: {}", path.display());
+        let mut rf = Self::init();
+        let body = file::read_to_string(path).wrap_err("ensure file exists and can be read")?;
+        rf.parse(&body)?;
+        Ok(rf)
+    }
+
+    fn init() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+
+    fn parse(&mut self, s: &str) -> Result<()> {
+        let doc: DocumentMut = s.parse().wrap_err("ensure file is valid TOML")?;
+        for (k, v) in doc.iter() {
+            match k {
+                "exec-env" => self.exec_env = self.parse_script_config(k, v)?,
+                "list-aliases" => self.list_aliases = self.parse_script_config(k, v)?,
+                "list-bin-paths" => self.list_bin_paths = self.parse_script_config(k, v)?,
+                "list-idiomatic-filenames" | "list-legacy-filenames" => {
+                    self.list_idiomatic_filenames = self.parse_script_config(k, v)?
+                }
+                "package-manager" => self.package_manager = self.parse_package_manager(k, v)?,
+                // These obsolete keys make the file invalid, so stop parsing if we see them.
+                "idiomatic-filenames" | "legacy-filenames" => return Ok(()),
+                _ => Err(eyre!("unknown key: {}", k))?,
+            }
+        }
+        Ok(())
+    }
+
+    fn parse_package_manager(
+        &mut self,
+        key: &str,
+        v: &Item,
+    ) -> Result<MisePluginTomlPackageManagerConfig> {
+        let Some(table) = v.as_table_like() else {
+            parse_error!(key, v, "table");
+        };
+        let mut config = MisePluginTomlPackageManagerConfig::default();
+        for (k, v) in table.iter() {
+            let full_key = format!("{key}.{k}");
+            match k {
+                "requires" => config.requires = self.parse_string_array(&full_key, v)?,
+                "supports_version_pins" | "supports-version-pins" => match v.as_bool() {
+                    Some(value) => config.supports_version_pins = value,
+                    None => parse_error!(full_key, v, "boolean"),
+                },
+                "os" => config.os = Some(self.parse_string_array(&full_key, v)?),
+                _ => parse_error!(full_key, v, "one of: requires, supports_version_pins, os"),
+            }
+        }
+        Ok(config)
+    }
+
+    fn parse_script_config(&mut self, key: &str, v: &Item) -> Result<MisePluginTomlScriptConfig> {
+        match v.as_table_like() {
+            Some(table) => {
+                let mut config = MisePluginTomlScriptConfig::default();
+                for (k, v) in table.iter() {
+                    let key = format!("{key}.{k}");
+                    match k {
+                        "cache-key" => config.cache_key = Some(self.parse_string_array(k, v)?),
+                        "data" => match v.as_value() {
+                            Some(v) => config.data = Some(self.parse_string(k, v)?),
+                            _ => parse_error!(key, v, "string"),
+                        },
+                        _ => parse_error!(key, v, "one of: cache-key"),
+                    }
+                }
+                Ok(config)
+            }
+            _ => parse_error!(key, v, "table"),
+        }
+    }
+
+    fn parse_string_array(&mut self, k: &str, v: &Item) -> Result<Vec<String>> {
+        match v.as_array() {
+            Some(arr) => {
+                let mut out = vec![];
+                for v in arr {
+                    out.push(self.parse_string(k, v)?);
+                }
+                Ok(out)
+            }
+            _ => parse_error!(k, v, "array"),
+        }
+    }
+
+    fn parse_string(&mut self, k: &str, v: &Value) -> Result<String> {
+        match v.as_str() {
+            Some(v) => Ok(v.to_string()),
+            _ => parse_error!(k, v, "string"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use indoc::formatdoc;
+    use insta::assert_debug_snapshot;
+
+    use crate::dirs;
+
+    use super::*;
+
+    #[test]
+    fn test_fixture() {
+        let cf = MisePluginToml::from_file(&dirs::HOME.join("fixtures/mise.plugin.toml")).unwrap();
+
+        assert_debug_snapshot!(cf.exec_env);
+        assert_eq!(
+            cf.list_idiomatic_filenames.data.as_deref(),
+            Some("test-idiomatic-filenames")
+        );
+        assert_eq!(
+            cf.package_manager,
+            MisePluginTomlPackageManagerConfig {
+                requires: vec!["helm".into(), "kubectl".into()],
+                supports_version_pins: true,
+                os: Some(vec!["macos".into(), "linux".into()]),
+            }
+        );
+    }
+
+    #[test]
+    fn test_exec_env() {
+        let cf = parse(&formatdoc! {r#"
+        [list-aliases]
+        data = "test-aliases"
+        [list-idiomatic-filenames]
+        data = "test-idiomatic-filenames"
+        [exec-env]
+        cache-key = ["foo", "bar"]
+        [list-bin-paths]
+        cache-key = ["foo"]
+        "#});
+
+        assert_debug_snapshot!(cf.exec_env, @r#"
+        MisePluginTomlScriptConfig {
+            cache_key: Some(
+                [
+                    "foo",
+                    "bar",
+                ],
+            ),
+            data: None,
+        }
+        "#);
+    }
+
+    #[test]
+    fn test_package_manager() {
+        let cf = parse(
+            r#"
+            [package-manager]
+            requires = ["helm", "kubectl"]
+            supports_version_pins = true
+            os = ["macos", "linux"]
+            "#,
+        );
+        assert_eq!(
+            cf.package_manager,
+            MisePluginTomlPackageManagerConfig {
+                requires: vec!["helm".into(), "kubectl".into()],
+                supports_version_pins: true,
+                os: Some(vec!["macos".into(), "linux".into()]),
+            }
+        );
+    }
+
+    fn parse(s: &str) -> MisePluginToml {
+        let mut cf = MisePluginToml::init();
+        cf.parse(s).unwrap();
+        cf
+    }
+}

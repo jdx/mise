@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+RUBY_BUILD_REPO="$PWD/ruby-build"
+RUBY_BUILD_ARGS_FILE="$PWD/ruby-build-args"
+
+mkdir -p "$RUBY_BUILD_REPO/bin"
+
+cat >"$RUBY_BUILD_REPO/install.sh" <<'SH'
+#!/bin/sh
+set -eu
+mkdir -p "$PREFIX/bin"
+cp bin/ruby-build "$PREFIX/bin/ruby-build"
+chmod +x "$PREFIX/bin/ruby-build"
+SH
+
+cat >"$RUBY_BUILD_REPO/bin/ruby-build" <<'SH'
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+--version)
+  echo "ruby-build 99999999"
+  exit 0
+  ;;
+--definitions)
+  echo "3.3.0"
+  exit 0
+  ;;
+esac
+
+printf '%s\n' "$@" >"$RUBY_BUILD_ARGS_FILE"
+
+install_path=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "3.3.0" ]; then
+    shift
+    install_path="$1"
+    break
+  fi
+  shift
+done
+
+[ -n "$install_path" ]
+mkdir -p "$install_path/bin"
+cat >"$install_path/bin/ruby" <<'RUBY'
+#!/bin/sh
+echo "ruby 3.3.0"
+RUBY
+chmod +x "$install_path/bin/ruby"
+SH
+
+git -C "$RUBY_BUILD_REPO" init
+git -C "$RUBY_BUILD_REPO" add .
+git -C "$RUBY_BUILD_REPO" -c user.name=mise -c user.email=mise@example.com commit -m init
+
+cat >mise.toml <<EOF
+[settings.ruby]
+compile = true
+ruby_build_repo = "file://$RUBY_BUILD_REPO"
+ruby_build_cli_opts = "--keep -4"
+ruby_build_opts = "--enable-yjit"
+
+[tools]
+ruby = "3.3.0"
+
+[env]
+RUBY_BUILD_ARGS_FILE = "$RUBY_BUILD_ARGS_FILE"
+EOF
+
+mise install
+
+RUBY_INSTALL_PATH="$(mise where ruby@3.3.0)"
+assert "sed -n '1p' '$RUBY_BUILD_ARGS_FILE'" "--keep"
+assert "sed -n '2p' '$RUBY_BUILD_ARGS_FILE'" "-4"
+assert "sed -n '3p' '$RUBY_BUILD_ARGS_FILE'" "3.3.0"
+assert "sed -n '4p' '$RUBY_BUILD_ARGS_FILE'" "$RUBY_INSTALL_PATH"
+assert "sed -n '5p' '$RUBY_BUILD_ARGS_FILE'" "--"
+assert "sed -n '6p' '$RUBY_BUILD_ARGS_FILE'" "--enable-yjit"
+assert "mise exec -- ruby --version" "ruby 3.3.0"

@@ -1,0 +1,5 @@
+backends = ["github:square/certstrap", "asdf:carnei-ro/asdf-certstrap"]
+bins = ["certstrap"]
+description = "Tools to bootstrap CAs, certificate requests, and signed certificates"
+test = { cmd = "certstrap --version", expected = "certstrap version {{version}}" }
+version_order = "semver"

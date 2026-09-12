@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+# This test reproduces the issue where a system cargo/rustc installation
+# becomes unavailable after leaving a mise project that uses the rust tool
+# The issue occurs when:
+# 1. User has ~/.cargo/bin in their PATH from system rustup
+# 2. They use mise's rust tool which also adds ~/.cargo/bin
+# 3. When leaving the project, that path gets removed even though it was in the original PATH
+
+# Simulate system rustup by adding executables to $HOME/.cargo/bin
+mkdir -p "$HOME/.cargo/bin"
+cat >"$HOME/.cargo/bin/rustc" <<'EOF'
+#!/usr/bin/env bash
+# Simulate system rustup - version depends on RUSTUP_TOOLCHAIN env var
+if [ -n "$RUSTUP_TOOLCHAIN" ]; then
+	echo "rustc 1.81.0 (from rustup with RUSTUP_TOOLCHAIN=$RUSTUP_TOOLCHAIN)"
+else
+	echo "rustc 1.82.0 (from system rustup)"
+fi
+EOF
+chmod +x "$HOME/.cargo/bin/rustc"
+
+cat >"$HOME/.cargo/bin/cargo" <<'EOF'
+#!/usr/bin/env bash
+echo "cargo from system rustup"
+EOF
+chmod +x "$HOME/.cargo/bin/cargo"
+
+# Add .cargo/bin to PATH (simulating system rustup installation)
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Verify system rustc is available
+assert_contains "rustc --version" "rustc 1.82.0 (from system rustup)"
+
+# Activate mise
+eval "$(mise activate bash)"
+
+# Verify system rustc is still available after activation
+assert_contains "rustc --version" "rustc 1.82.0 (from system rustup)"
+
+# Create a project directory with mise rust tool
+mkdir -p project
+cat >project/.mise.toml <<EOF
+[tools]
+rust = "1.81.0"
+EOF
+
+# DON'T create a global mise config - test without any config in parent dir
+
+# Enter the project and install mise rust
+cd project || exit 1
+mise install
+eval "$(mise hook-env)"
+
+# Debug: Check PATH state in project
+echo "DEBUG: In project"
+echo "DEBUG: PATH count of cargo/bin: $(echo "$PATH" | tr ':' '\n' | grep -c '\.cargo/bin' || echo 0)"
+echo "DEBUG: RUSTUP_TOOLCHAIN: ${RUSTUP_TOOLCHAIN:-not set}"
+
+# Verify mise rust is now active (either real rust 1.81.0 or our fake with RUSTUP_TOOLCHAIN set)
+assert_contains "rustc --version" "1.81.0"
+
+# Leave the project directory
+# shellcheck disable=SC2103
+cd ..
+eval "$(mise hook-env)"
+
+# Debug: Check PATH state after leaving
+echo "DEBUG: After leaving project"
+echo "DEBUG: PATH count of cargo/bin: $(echo "$PATH" | tr ':' '\n' | grep -c '\.cargo/bin' || echo 0)"
+echo "DEBUG: RUSTUP_TOOLCHAIN: ${RUSTUP_TOOLCHAIN:-not set}"
+echo "DEBUG: which rustc: $(which rustc 2>&1 || echo 'NOT FOUND')"
+
+# BUG: System rustc should be available again since we're out of the project
+# and ~/.cargo/bin was in the original PATH
+assert_contains "rustc --version" "rustc 1.82.0 (from system rustup)"

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# A terminal delivers Ctrl-C to the foreground process group. A task that puts
+# itself in another group therefore takes the signal while mise never sees it,
+# and the same keypress became a failure instead of an interruption.
+# https://github.com/jdx/mise/discussions/9482
+
+cat <<'TOML' >mise.toml
+[tasks.serve]
+run = """
+echo $$ > "$CHILD_PID_FILE"
+exec sleep 30
+"""
+TOML
+
+pid_file="$TMPDIR/task-child-sigint-pid"
+output_file="$TMPDIR/task-child-sigint-output"
+rm -f "$pid_file" "$output_file"
+
+CHILD_PID_FILE="$pid_file" mise run serve >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$pid_file" "task child" 30 "$mise_pid"
+
+# Signal the child only. mise keeps running, so its own Ctrl-C handler never
+# fires — which is the whole point of the report.
+kill -INT "$(cat "$pid_file")"
+
+status=0
+wait "$mise_pid" || status=$?
+output="$(cat "$output_file")"
+
+if [[ $status -ne 130 ]]; then
+  fail "expected exit code 130 after the child took SIGINT, got $status: $output"
+fi
+if [[ $output == *ERROR* ]]; then
+  fail "interruption reported as an error: $output"
+fi
+
+# `--continue-on-error` still means what it says. Only the user interrupting
+# mise overrides it; one task's child taking a signal is not a reason to drop
+# work the user asked to keep going.
+cat <<'TOML' >mise.toml
+[tasks.first]
+run = """
+echo $$ > "$CHILD_PID_FILE"
+exec sleep 30
+"""
+[tasks.second]
+run = 'echo ran > "$SECOND_MARKER"'
+TOML
+
+second_marker="$TMPDIR/task-child-sigint-second"
+rm -f "$pid_file" "$second_marker" "$output_file"
+
+CHILD_PID_FILE="$pid_file" SECOND_MARKER="$second_marker" \
+  mise run --jobs 1 --continue-on-error first ::: second >"$output_file" 2>&1 &
+mise_pid=$!
+wait_for_file "$pid_file" "task child" 30 "$mise_pid"
+kill -INT "$(cat "$pid_file")"
+
+status=0
+wait "$mise_pid" || status=$?
+if [[ $status -ne 130 ]]; then
+  fail "expected 130 with --continue-on-error, got $status: $(cat "$output_file")"
+fi
+if [[ ! -e $second_marker ]]; then
+  fail "--continue-on-error dropped the queued task: $(cat "$output_file")"
+fi

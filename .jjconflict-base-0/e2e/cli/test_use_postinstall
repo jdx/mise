@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+
+# A scoped hook is persisted with its tool and runs when that tool is installed.
+mise use --postinstall "printf single >single-hook" dummy
+assert "cat single-hook" "single"
+assert "mise config get tools.dummy.postinstall" "printf single >single-hook"
+
+# Prefix association restarts after each tool, so each tool receives only its own hook.
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-no-hook"
+mise use \
+  --postinstall "printf dummy >dummy-hook" dummy@1.0.0 \
+  --postinstall "printf tiny >tiny-hook" tiny@2.0.0 \
+  tiny-no-hook@2.0.0
+assert "cat dummy-hook" "dummy"
+assert "cat tiny-hook" "tiny"
+assert "mise config get tools.dummy.postinstall" "printf dummy >dummy-hook"
+assert "mise config get tools.tiny.postinstall" "printf tiny >tiny-hook"
+assert_fail "mise config get tools.tiny-no-hook.postinstall"
+
+# Omitting the flag preserves a configured hook. Replacing it without reinstalling updates
+# config but does not run the new command until an installation is actually requested.
+mise use dummy@1.0.0
+assert "mise config get tools.dummy.postinstall" "printf dummy >dummy-hook"
+mise use --postinstall "printf replacement >replacement-hook" dummy@1.0.0
+assert "mise config get tools.dummy.postinstall" "printf replacement >replacement-hook"
+assert_fail "test -e replacement-hook"
+mise use --force --postinstall "printf forced >forced-hook" dummy@1.0.0
+assert "cat forced-hook" "forced"
+
+# Dry-run reports the planned hook without executing it or modifying the existing entry.
+output=$(mise use --dry-run --postinstall "touch dry-run-hook" dummy@3.0.0 2>&1)
+assert_contains_text "$output" "would install"
+assert_fail "test -e dry-run-hook"
+assert "mise config get tools.dummy.version" "1.0.0"
+assert "mise config get tools.dummy.postinstall" "printf forced >forced-hook"
+
+# Invalid associations fail before any installation or config write.
+assert_fail_contains \
+  "mise use --postinstall one --postinstall two dummy@1.0.0 2>&1" \
+  "cannot be used multiple times"
+assert_fail_contains "mise use --postinstall one 2>&1" "TOOL@VERSION"
+assert_fail_contains \
+  'mise use --postinstall flag dummy[postinstall="echo inline"]@1.0.0 2>&1' \
+  "cannot combine --postinstall with an inline postinstall option"
+assert_fail_contains "mise use --force 2>&1" "TOOL@VERSION"
+
+# Command-level write selectors and version selection keep their behavior around clauses.
+mkdir write-options
+(
+  cd write-options
+  mise use --path path.toml --postinstall "touch path-hook" dummy@1.0.0
+  assert_contains "cat path.toml" "postinstall"
+
+  mise use --force --path nested.toml \
+    --postinstall "mise which dummy >nested-which; mise ls dummy --json --current | jq -r '.[0].version' >nested-ls" \
+    dummy@2.0.0
+  assert_contains "cat nested-which" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin/dummy"
+  assert "cat nested-ls" "2.0.0"
+
+  mise use --env ci --postinstall "touch env-hook" dummy@1.0.0
+  assert_contains "cat mise.ci.toml" "postinstall"
+
+  MISE_GLOBAL_CONFIG_FILE="$PWD/global.toml" \
+    mise use --global --postinstall "touch global-hook" dummy@1.0.0
+  assert_contains "cat global.toml" "postinstall"
+
+  mise use --pin --path pinned.toml --postinstall "touch pin-hook" dummy@1.0.0
+  assert_contains "cat pinned.toml" 'version = "1.0.0"'
+  assert_contains "cat pinned.toml" "postinstall"
+
+  mise use --path inline.toml --postinstall "touch inline-hook" 'dummy[foo=bar]@1.0.0'
+  assert_contains "cat inline.toml" 'foo = "bar"'
+  assert_contains "cat inline.toml" "postinstall"
+
+  printf '[tools.dummy]\nversion = "1.0.0"\nfoo = "bar"\n' >standard.toml
+  mise use --path standard.toml --postinstall "touch standard-hook" dummy@1.0.0
+  assert_contains "cat standard.toml" 'foo = "bar"'
+  assert_contains "cat standard.toml" 'postinstall = "touch standard-hook"'
+)
+
+# A hook needs a TOML tool entry. An existing .tool-versions file makes normal use keep that
+# format, while --postinstall selects mise.toml; an explicitly targeted legacy file is rejected.
+mkdir legacy-config
+printf 'dummy 1.0.0\n' >legacy-config/.tool-versions
+(
+  cd legacy-config
+  mise use --postinstall "touch legacy-hook" dummy@1.0.0
+  assert "mise config get tools.dummy.postinstall" "touch legacy-hook"
+  assert "cat .tool-versions" "dummy 1.0.0"
+  assert_contains "cat mise.toml" "postinstall"
+  assert_fail_contains \
+    "mise use --path .tool-versions --postinstall nope dummy@1.0.0 2>&1" \
+    "--postinstall requires a TOML config file"
+  mkdir ../new-legacy-config
+  assert_fail_contains \
+    "mise use --path ../new-legacy-config/.tool-versions --postinstall nope dummy@1.0.0 2>&1" \
+    "--postinstall requires a TOML config file"
+)

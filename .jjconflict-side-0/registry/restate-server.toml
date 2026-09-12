@@ -1,0 +1,10 @@
+bins = ["restate-server"]
+description = "Restate is a lightweight runtime to turn AI agents, workflows, and backend services into durable processes."
+test = { cmd = "restate-server --version", expected = "restate-server {{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "github:restatedev/restate"
+
+[backends.options]
+matching = "restate-server"

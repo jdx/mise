@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+cat <<EOF >.mise.toml
+[tasks.configtask]
+run = 'echo "configtask:"'
+[tasks.lint]
+run = 'echo "linting!"'
+[tasks.test]
+run = 'echo "testing!"'
+EOF
+
+mkdir -p .mise/tasks
+cat <<'EOF' >.mise/tasks/filetask
+#!/usr/bin/env bash
+#MISE description="This is a test build script"
+#MISE depends=["lint", "test"]
+#MISE sources=[".test-tool-versions"]
+#MISE outputs=["$MISE_PROJECT_ROOT/test-e2e/test-build-output.txt"]
+#MISE env={TEST_BUILDSCRIPT_ENV_VAR = "VALID"}
+
+set -euxo pipefail
+cd "$MISE_PROJECT_ROOT" || exit 1
+echo "running test-build script"
+mkdir -p test-e2e
+echo "TEST_BUILDSCRIPT_ENV_VAR: $TEST_BUILDSCRIPT_ENV_VAR" >test-e2e/test-build-output.txt
+echo "ARGS: $*" >>test-e2e/test-build-output.txt
+EOF
+chmod +x .mise/tasks/filetask
+
+mise r --cd "$PWD" configtask arg1 arg2 ::: filetask arg1 arg2
+assert "cat test-e2e/test-build-output.txt" "TEST_BUILDSCRIPT_ENV_VAR: VALID
+ARGS: arg1 arg2"
+
+assert "mise run test arg1 arg2 arg3" "testing! arg1 arg2 arg3"
+
+cat <<'EOF' >.mise/tasks/filetask
+#!/usr/bin/env bash
+#USAGE flag "-u --user <user>" help="User to run as"
+#USAGE flag "-p --port <port>" help="Port to run on" default="8080"
+
+echo "user=$usage_user"
+echo "port=$usage_port"
+EOF
+
+cat <<'EOF' >.mise/tasks/filetask.bat
+#windows filetask
+#USAGE flag "-u --user <user>" help="User to run as"
+#USAGE flag "-p --port <port>" help="Port to run on" default="8080"
+
+echo "user=$usage_user"
+echo "port=$usage_port"
+EOF
+assert "mise run filetask --user=jdx" "user=jdx
+port=8080"
+assert "mise run filetask --port=8081" "user=
+port=8081"
+assert_contains "mise run filetask --help 2>&1 || true" "-u --user <user>"
+assert_contains "mise run filetask --help 2>&1 || true" "-p --port <port>"
+
+cat <<'EOF' >.mise/tasks/jstask
+#!/usr/bin/env node
+//MISE description="This is a test build script"
+//MISE env={MYVAR = "1"}
+
+console.log(`MYVAR: ${process.env.MYVAR}`);
+EOF
+chmod +x .mise/tasks/jstask
+assert "mise run jstask" "MYVAR: 1"
+assert "mise tasks -x" "configtask     ./.mise.toml
+filetask       ./.mise/tasks/filetask
+jstask         ./.mise/tasks/jstask    This is a test build script
+lint           ./.mise.toml
+test           ./.mise.toml"

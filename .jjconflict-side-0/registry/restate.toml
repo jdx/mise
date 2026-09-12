@@ -1,0 +1,10 @@
+bins = ["restate"]
+description = "A command-line tool to inspect Restate services status, invocations, deployment, and much more."
+test = { cmd = "restate --version", expected = "restate-cli {{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "github:restatedev/restate"
+
+[backends.options]
+matching = "restate-cli"

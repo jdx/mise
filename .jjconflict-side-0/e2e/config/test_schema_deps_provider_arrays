@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+
+mise use -g tombi@$TOMBI_VERSION
+
+SCHEMA_PATH="$ROOT/schema/mise.json"
+TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
+TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
+assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
+
+cat >"$HOME/tombi.toml" <<EOF
+toml-version = "v1.0.0"
+
+[schema]
+enabled = true
+strict = true
+
+[[schemas]]
+path = "file://$SCHEMA_PATH"
+include = ["mise-deps.toml", "mise-bad-deps.toml"]
+EOF
+
+cat >"$HOME/workdir/mise-deps.toml" <<'TOML'
+[deps.npm]
+sources = ["package.json", "package-lock.json"]
+outputs = ["node_modules/"]
+
+[deps.codegen]
+sources = ["schema/*.graphql"]
+outputs = ["src/generated/"]
+run = "npm run codegen"
+TOML
+
+cd "$HOME/workdir"
+assert_succeed "$TOMBI_LINT mise-deps.toml"
+
+for field in sources outputs; do
+  cat >"$HOME/workdir/mise-bad-deps.toml" <<TOML
+[deps.codegen]
+$field = "single-path"
+run = "npm run codegen"
+TOML
+  assert_fail "$TOMBI_LINT mise-bad-deps.toml"
+done

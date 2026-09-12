@@ -1,0 +1,15 @@
+[package]
+name = "mise-shim"
+version = "2026.2.5"
+edition = "2024"
+license = "MIT"
+description = "Native executable shim for mise"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+
+[[bin]]
+name = "mise-shim"
+path = "src/main.rs"
+
+[dependencies]
+# zero external dependencies — only std

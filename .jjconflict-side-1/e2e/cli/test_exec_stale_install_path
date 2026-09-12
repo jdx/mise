@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# Regression test for #10345: a stale mise-managed install dir left on PATH
+# (e.g. carried in from a frozen env snapshot of a previously activated shell)
+# must not shadow the version `mise x` selects. The requested version should win
+# for the whole process tree, not just the direct command.
+
+mise install dummy@1.0.0 dummy@2.0.0
+
+# Simulate a frozen env that prepended another version's bin dir to PATH.
+export PATH="$MISE_DATA_DIR/installs/dummy/2.0.0/bin:$PATH"
+
+# The direct command was already remapped before this fix.
+assert_contains "mise x dummy@1.0.0 -- dummy" "1.0.0"
+
+# A PATH lookup inside a child process must resolve the requested version, not
+# the stale 2.0.0 dir still on the inherited PATH.
+assert_contains "mise x dummy@1.0.0 -- sh -c 'command -v dummy'" "installs/dummy/1.0.0"
+assert_not_contains "mise x dummy@1.0.0 -- sh -c 'command -v dummy'" "installs/dummy/2.0.0"

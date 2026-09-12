@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Test that tools defined in mise.toml are auto-installed for file tasks
+# Reproduces: https://github.com/jdx/mise/discussions/8014
+#
+# File tasks (scripts in mise-tasks/) previously didn't trigger auto-install
+# of tools from mise.toml because t.cf(config) returns None for file tasks.
+
+cat <<EOF >mise.toml
+[tools]
+tiny = "1"
+
+[settings]
+task.run_auto_install = true
+EOF
+
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/mytask
+#!/usr/bin/env bash
+rtx-tiny
+EOF
+chmod +x mise-tasks/mytask
+
+assert_contains "mise run mytask" "rtx-tiny: v1.1.0"

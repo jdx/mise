@@ -1,0 +1,10 @@
+bins = ["odinfmt", "ols"]
+description = "Language server for Odin"
+test = { cmd = "odinfmt -help", expected = "odinfmt [path]" } # ols itself has no CLI mode: any invocation starts the language server and blocks
+version_order = "source"
+
+[[backends]]
+full = "github:DanielGavin/ols"
+
+[backends.options]
+rename_exe = { "ols-*" = "ols", "odinfmt-*" = "odinfmt" }

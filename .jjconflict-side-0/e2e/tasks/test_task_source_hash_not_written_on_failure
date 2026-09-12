@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# The source hash must only be persisted after a task succeeds. If it is
+# written before the task runs (on mismatch detection), a failed run advances
+# the hash baseline — the next invocation sees a matching hash and existing
+# outputs and incorrectly skips the task.
+
+cat <<EOF >mise.toml
+[tasks.build]
+run = 'if [ -f poison ]; then exit 1; fi; touch out.txt && echo built'
+sources = ['src.txt']
+outputs = ['out.txt']
+EOF
+
+echo "hello" >src.txt
+
+# First run: no stored hash, no output → stale → succeeds
+assert "mise run -q build" "built"
+
+# Nothing changed → fresh
+assert_empty "mise run -q build"
+
+# Modify src so the hash changes (content + size differ)
+echo "modified content" >src.txt
+
+# Poison the task so the next run fails
+touch poison
+
+# Hash mismatch detected → task runs → fails
+assert_fail "mise run build 2>&1"
+
+# Simulate outputs being newer than sources (e.g. a pre-existing artifact).
+# This is the condition that lets the mtime check say "fresh" on the next run,
+# so only the hash baseline is left to detect staleness.
+sleep 0.1
+touch out.txt
+
+# Remove poison: the task is now able to succeed again
+rm poison
+
+# The hash must NOT have been advanced by the failed run.
+# Without fix: hash was written before the task ran → matches current src →
+#              out.txt newer than src → mtime also says fresh → task skipped (wrong).
+# With fix:    hash was not written → mismatch still detected → task re-runs → "built".
+assert "mise run -q build" "built"

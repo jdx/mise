@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+mkdir -p .config .mise
+
+cat <<'EOF' >.config/mise.toml
+[tasks.hello]
+env = { LEAKED = "lower" }
+EOF
+
+cat <<'EOF' >mise.toml
+[tasks.hello]
+description = "base description"
+run = '''
+echo "BASE_ONLY=$BASE_ONLY"
+echo "INTERMEDIATE_ONLY=$INTERMEDIATE_ONLY"
+echo "LOCAL_ONLY=$LOCAL_ONLY"
+echo "OVERRIDE=$OVERRIDE"
+echo "LEAKED=${LEAKED:-unset}"
+'''
+env = { BASE_ONLY = "base", OVERRIDE = "base" }
+
+[tasks.replaced]
+run = 'echo "BASE_ONLY=${BASE_ONLY:-unset}"'
+env = { BASE_ONLY = "base" }
+EOF
+
+cat <<'EOF' >.mise/config.local.toml
+[tasks.hello]
+env = { INTERMEDIATE_ONLY = "intermediate", OVERRIDE = "intermediate" }
+EOF
+
+cat <<'EOF' >mise.local.toml
+[tasks.hello]
+description = "local description"
+env = { LOCAL_ONLY = "local", OVERRIDE = "local" }
+
+[tasks.replaced]
+run = 'echo local command'
+EOF
+
+# A metadata-only higher-precedence definition overlays the nearest lower
+# command-bearing task. Values from the overlay win, while definitions below
+# the selected command-bearing base do not leak into the task.
+assert_contains "mise tasks hello" "local description"
+assert_contains "mise run hello" "BASE_ONLY=base"
+assert_contains "mise run hello" "INTERMEDIATE_ONLY=intermediate"
+assert_contains "mise run hello" "LOCAL_ONLY=local"
+assert_contains "mise run hello" "OVERRIDE=local"
+assert_contains "mise run hello" "LEAKED=unset"
+
+# A higher-precedence definition with its own command still replaces the lower
+# task wholesale.
+assert "mise run replaced" "local command"

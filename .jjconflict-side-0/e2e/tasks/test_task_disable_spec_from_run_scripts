@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+# Test for MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS setting
+# When enabled, mise should NOT parse run scripts for arg()/option()/flag() to infer usage spec
+# It should only use the explicit `usage` field
+
+# Test 1: Without the setting (default), Tera functions in run scripts contribute to usage spec
+cat <<'EOF' >mise.toml
+[tasks.with-tera-args]
+description = "Task with Tera template args"
+run = 'echo "arg={{arg(name="myarg")}} flag={{flag(name="myflag")}}"'
+EOF
+
+# Default behavior: arg/flag should appear in the usage spec
+assert_contains "mise tasks info with-tera-args --json" '"name": "myarg"'
+assert_contains "mise tasks info with-tera-args --json" '"name": "myflag"'
+
+# Test 2: With the setting enabled, Tera functions should NOT contribute to usage spec
+export MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS=1
+
+cat <<'EOF' >mise.toml
+[tasks.tera-only]
+description = "Task with only Tera template args in run script"
+run = 'echo "arg={{arg(name="teraarg")}} option={{option(name="teraopt")}}"'
+EOF
+
+# With setting enabled: teraarg and teraopt should NOT appear in usage spec
+assert_not_contains "mise tasks info tera-only --json" '"name": "teraarg"'
+assert_not_contains "mise tasks info tera-only --json" '"name": "teraopt"'
+
+# Test 3: With setting enabled, explicit usage field should still work
+cat <<'EOF' >mise.toml
+[tasks.with-usage-field]
+description = "Task with explicit usage field"
+usage = '''
+arg "usagearg" "An argument from usage field"
+flag "--usageflag" "A flag from usage field"
+'''
+run = 'echo "arg=$usage_usagearg flag=$usage_usageflag"'
+EOF
+
+# With setting enabled: usage field args should still appear
+assert_contains "mise tasks info with-usage-field --json" '"name": "usagearg"'
+assert_contains "mise tasks info with-usage-field --json" '"name": "usageflag"'
+
+# Test 4: With setting enabled, usage field works but tera args in run scripts are ignored
+cat <<'EOF' >mise.toml
+[tasks.mixed-usage]
+description = "Task with both usage field and Tera args"
+usage = '''
+arg "fromfield" "Arg from usage field"
+'''
+run = 'echo "field={{arg(name="fromfield")}} tera={{arg(name="fromtera")}}"'
+EOF
+
+# Only the usage field arg should appear, not the tera template arg
+assert_contains "mise tasks info mixed-usage --json" '"name": "fromfield"'
+assert_not_contains "mise tasks info mixed-usage --json" '"name": "fromtera"'
+
+# Test 5: Verify tasks still run correctly with the setting enabled
+cat <<'EOF' >mise.toml
+[tasks.run-test]
+description = "Task to verify running works"
+usage = '''
+arg "myarg" default="default_value"
+'''
+run = 'echo "value=$usage_myarg"'
+EOF
+
+assert "mise run run-test" "value=default_value"
+assert "mise run run-test custom_value" "value=custom_value"
+
+# Test 6: Verify ls --usage only shows usage field args when setting is enabled
+cat <<'EOF' >mise.toml
+[tasks.ls-test]
+description = "Task for ls usage test"
+usage = '''
+arg "visiblearg" "Should be visible"
+'''
+run = 'echo "{{arg(name="hiddenarg")}}"'
+EOF
+
+assert_contains "mise tasks ls --usage" "visiblearg"
+assert_not_contains "mise tasks ls --usage" "hiddenarg"
+
+unset MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS
+
+# Test 7: Verify default behavior is restored after unsetting
+cat <<'EOF' >mise.toml
+[tasks.restored-test]
+description = "Test restored default behavior"
+run = 'echo "arg={{arg(name="restoredarg")}}"'
+EOF
+
+# Without the setting, tera args should appear again
+assert_contains "mise tasks info restored-test --json" '"name": "restoredarg"'

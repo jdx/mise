@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+
+# Built-in providers use explicitly configured paths instead of their defaults.
+mkdir -p pnpm-project/inputs pnpm-project/packages/app
+cat >pnpm-project/pnpm-lock.yaml <<'EOF'
+lockfileVersion: '9.0'
+EOF
+echo initial >pnpm-project/inputs/app.lock
+cat >pnpm-project/mise.toml <<'EOF'
+[deps.pnpm]
+sources = ["inputs/*.lock"]
+outputs = ["packages/app/node_modules/*"]
+run = "mkdir -p packages/app/node_modules; touch packages/app/node_modules/installed-marker packages/app/node_modules/extra-marker; echo run >> .runs"
+EOF
+
+assert_contains "cd pnpm-project && mise deps --list" "inputs/app.lock"
+assert_contains "cd pnpm-project && mise deps --list" "packages/app/node_modules/*"
+assert_not_contains "cd pnpm-project && mise deps --list" "$PWD/pnpm-project/node_modules"
+
+assert "cd pnpm-project && mise deps --only pnpm"
+assert "awk 'END { print NR }' pnpm-project/.runs" "1"
+assert "cd pnpm-project && mise deps --only pnpm"
+assert "awk 'END { print NR }' pnpm-project/.runs" "1"
+
+rm pnpm-project/packages/app/node_modules/installed-marker
+assert "cd pnpm-project && mise deps --only pnpm"
+assert "awk 'END { print NR }' pnpm-project/.runs" "2"
+
+echo changed >pnpm-project/inputs/app.lock
+assert "cd pnpm-project && mise deps --only pnpm"
+assert "awk 'END { print NR }' pnpm-project/.runs" "3"
+
+rm -rf pnpm-project/packages/app/node_modules
+assert "cd pnpm-project && mise deps --only pnpm"
+assert "awk 'END { print NR }' pnpm-project/.runs" "4"
+
+# An explicit empty output list suppresses a built-in provider's optional outputs.
+mkdir uv-project
+touch uv-project/uv.lock
+cat >uv-project/mise.toml <<'EOF'
+[deps.uv]
+sources = ["uv.lock"]
+outputs = []
+run = "mkdir -p .venv; echo run >> .runs"
+EOF
+
+assert "cd uv-project && mise deps --only uv"
+assert "cd uv-project && mise deps --only uv"
+assert "awk 'END { print NR }' uv-project/.runs" "1"
+rm -rf uv-project/.venv
+assert "cd uv-project && mise deps --only uv"
+assert "awk 'END { print NR }' uv-project/.runs" "1"
+
+# Changing from default output tracking to an explicit empty list ignores paths
+# recorded under the old rules.
+mkdir uv-output-change
+touch uv-output-change/uv.lock
+cat >uv-output-change/mise.toml <<'EOF'
+[deps.uv]
+run = "mkdir -p .venv; echo run >> .runs"
+EOF
+assert "cd uv-output-change && mise deps --only uv"
+assert "awk 'END { print NR }' uv-output-change/.runs" "1"
+rm -rf uv-output-change/.venv
+cat >uv-output-change/mise.toml <<'EOF'
+[deps.uv]
+outputs = []
+run = "mkdir -p .venv; echo run >> .runs"
+EOF
+assert "cd uv-output-change && mise deps --only uv"
+assert "awk 'END { print NR }' uv-output-change/.runs" "1"
+
+# Replacing one explicit output rule with another does not enforce paths
+# recorded under the previous rule.
+mkdir output-replacement
+touch output-replacement/uv.lock
+cat >output-replacement/mise.toml <<'EOF'
+[deps.uv]
+outputs = ["old-output"]
+run = "mkdir -p old-output new-output; echo run >> .runs"
+EOF
+assert "cd output-replacement && mise deps --only uv"
+assert "awk 'END { print NR }' output-replacement/.runs" "1"
+rm -rf output-replacement/old-output
+cat >output-replacement/mise.toml <<'EOF'
+[deps.uv]
+outputs = ["new-output"]
+run = "mkdir -p old-output new-output; echo run >> .runs"
+EOF
+assert "cd output-replacement && mise deps --only uv"
+assert "awk 'END { print NR }' output-replacement/.runs" "1"
+
+# Relative overrides resolve independently for every monorepo config root.
+mkdir -p monorepo/packages/a/inputs
+cat >monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+cat >monorepo/packages/a/pnpm-lock.yaml <<'EOF'
+lockfileVersion: '9.0'
+EOF
+echo initial >monorepo/packages/a/inputs/app.lock
+cat >monorepo/packages/a/mise.toml <<'EOF'
+[deps.pnpm]
+sources = ["inputs/*.lock"]
+outputs = ["isolated/node_modules"]
+run = "mkdir -p isolated/node_modules; echo run >> .runs"
+EOF
+
+assert_contains "cd monorepo && mise deps --monorepo --list" "packages/a/inputs/app.lock"
+assert_contains "cd monorepo && mise deps --monorepo --list" "packages/a/isolated/node_modules"
+assert "cd monorepo && mise deps --monorepo --only //packages/a:pnpm"
+assert "test -d monorepo/packages/a/isolated/node_modules"
+assert_fail "test -d monorepo/isolated/node_modules"
+assert "cd monorepo && mise deps --monorepo --only //packages/a:pnpm"
+assert "awk 'END { print NR }' monorepo/packages/a/.runs" "1"

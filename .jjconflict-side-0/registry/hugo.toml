@@ -1,0 +1,7 @@
+backends = [
+  "aqua:gohugoio/hugo",
+  "asdf:NeoHsu/asdf-hugo",
+  "asdf:nklmilojevic/asdf-hugo",
+]
+description = "The world’s fastest framework for building websites"
+version_order = "source"

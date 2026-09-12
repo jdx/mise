@@ -1,0 +1,17 @@
+[package]
+name = "mise-agent-env"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Detect AI coding agents from the process environment"
+documentation = "https://docs.rs/mise-agent-env"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+readme = "README.md"
+keywords = ["ai", "agent", "cli", "detect"]
+categories = ["command-line-interface", "development-tools"]
+include = ["/README.md", "/src/**/*.rs"]
+
+[dependencies]
+# Keep detection usable in small command-line tools without pulling in a dependency tree.

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+# Test that task output prefixes include args only when the same task runs
+# multiple times with different arguments (disambiguation), and omit args
+# when there's no conflict.
+
+cat <<'EOF' >mise.toml
+[tasks.greet]
+run = 'echo "hello $1"'
+
+[tasks.build]
+run = 'echo "building"'
+EOF
+
+# When the same task runs twice with different args, prefixes should include args
+output="$(mise run greet alice ::: greet bob 2>&1)"
+assert_contains "echo \"$output\"" "[greet alice]"
+assert_contains "echo \"$output\"" "[greet bob]"
+
+# When a task runs only once, prefix should NOT include args
+output="$(mise run greet alice 2>&1)"
+assert_not_contains "echo \"$output\"" "[greet alice]"
+assert_contains "echo \"$output\"" "[greet]"
+
+# Different tasks should not trigger disambiguation
+output="$(mise run greet alice ::: build 2>&1)"
+assert_not_contains "echo \"$output\"" "[greet alice]"
+assert_contains "echo \"$output\"" "[greet]"
+assert_contains "echo \"$output\"" "[build]"

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Show output on failure for documentation generation"
+set -euo pipefail
+
+if output=$("$@" 2>&1); then
+	status=0
+else
+	status=$?
+	echo "$output" >&2
+fi
+
+exit $status

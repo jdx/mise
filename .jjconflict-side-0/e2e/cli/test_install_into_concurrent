@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A local plugin pauses the first installer before it populates the destination.
+# No network or real tool downloads are needed to exercise the replacement race.
+plugin_dir="$MISE_DATA_DIR/plugins/asdf-install-into-race"
+mkdir -p "$plugin_dir/bin"
+cat >"$plugin_dir/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo '1.0.0 2.0.0'
+EOF
+cat >"$plugin_dir/bin/install" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+touch "$INSTALL_RACE_CASE/entered-$ASDF_INSTALL_VERSION"
+if [[ "$ASDF_INSTALL_VERSION" == 1.0.0 ]]; then
+  for ((attempt = 0; attempt < 600; attempt++)); do
+    if [[ -e "$INSTALL_RACE_CASE/release" ]]; then
+      break
+    fi
+    sleep 0.05
+  done
+  test -e "$INSTALL_RACE_CASE/release"
+fi
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+echo "$ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/installed-version"
+EOF
+chmod +x "$plugin_dir/bin/list-all" "$plugin_dir/bin/install"
+
+# Force-replacing the cache must not unlink the lock protecting the destination.
+# Individual lock files are just as fatal: removing one lets the next process
+# create a replacement and install beside the holder.
+mkdir -p "$MISE_CACHE_DIR/lockfiles"
+echo preserved >"$MISE_CACHE_DIR/lockfiles/keep.txt"
+ln -s "$MISE_CACHE_DIR" cache-alias
+# A lock-directory entry that is itself a symlink pointing outward: reached
+# through the alias, resolving the whole path leads out of the lock directory,
+# but replacement would still unlink the entry sitting inside it.
+mkdir -p outside
+ln -s "$PWD/outside" "$MISE_CACHE_DIR/lockfiles/outward"
+for destination in \
+  "$MISE_CACHE_DIR" \
+  "$MISE_CACHE_DIR/lockfiles" \
+  "$MISE_CACHE_DIR/lockfiles/keep.txt" \
+  "$MISE_CACHE_DIR/lockfiles/nested/destination" \
+  "$PWD/cache-alias/lockfiles" \
+  "$PWD/cache-alias/lockfiles/keep.txt" \
+  "$PWD/cache-alias/lockfiles/outward" \
+  "$PWD/cache-alias/lockfiles/nested/destination"; do
+  assert_fail_contains "mise install-into asdf:install-into-race@1.0.0 '$destination' --yes" "overlaps mise's lock directory"
+  assert "cat '$MISE_CACHE_DIR/lockfiles/keep.txt'" preserved
+  assert "test -L '$MISE_CACHE_DIR/lockfiles/outward' && echo intact" intact
+done
+
+python3 - <<'PY'
+import os
+from pathlib import Path
+import subprocess
+import time
+
+
+def wait_until(predicate, process, description):
+    deadline = time.monotonic() + 20
+    while not predicate():
+        if process.poll() is not None:
+            raise AssertionError(f"process exited before {description}")
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"timed out waiting for {description}")
+        time.sleep(0.05)
+
+
+for alias in (False, True):
+    case = Path.cwd() / ("symlink-parent" if alias else "same-path")
+    real = case / "real"
+    real.mkdir(parents=True)
+    # Include a missing parent so normalization must resolve an existing prefix.
+    destination = real / "new-parent" / "destination"
+    if alias:
+        (case / "alias").symlink_to(real, target_is_directory=True)
+        competing_destination = case / "alias" / "new-parent" / "destination"
+    else:
+        competing_destination = destination
+    env = dict(os.environ, INSTALL_RACE_CASE=str(case), MISE_YES="0", MISE_DEBUG="1")
+    processes = []
+    try:
+        with (case / "first.log").open("w") as first_log, (case / "second.log").open("w") as second_log:
+            first = subprocess.Popen(
+                ["mise", "install-into", "asdf:install-into-race@1.0.0", str(destination)],
+                env=env, stdin=subprocess.DEVNULL, stdout=first_log, stderr=subprocess.STDOUT,
+            )
+            processes.append(first)
+            wait_until(lambda: (case / "entered-1.0.0").exists(), first, "first installer")
+            second = subprocess.Popen(
+                ["mise", "install-into", "asdf:install-into-race@2.0.0", str(competing_destination)],
+                env=env, stdin=subprocess.DEVNULL, stdout=second_log, stderr=subprocess.STDOUT,
+            )
+            processes.append(second)
+            wait_until(
+                lambda: "waiting for install-into destination lock" in (case / "second.log").read_text(),
+                second, "second process to wait for the destination lock",
+            )
+            assert not (case / "entered-2.0.0").exists()
+            (case / "release").touch()
+            assert first.wait(timeout=20) == 0
+            assert second.wait(timeout=20) != 0
+            assert "refusing to overwrite non-empty directory" in (case / "second.log").read_text()
+            assert (destination / "installed-version").read_text().strip() == "1.0.0"
+            assert not (case / "entered-2.0.0").exists()
+    except Exception:
+        for name in ("first.log", "second.log"):
+            log = case / name
+            if log.exists():
+                print(log.read_text())
+        raise
+    finally:
+        # Always release the fixture installer, including on assertion failures.
+        (case / "release").touch()
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+    print(f"Serialized competing installs: {case.name}")
+
+# Retargeting the parent symlink mid-install must not move the installation:
+# the destination is resolved once, so the running install keeps writing to the
+# directory whose lock it holds instead of following the alias to a new target.
+case = Path.cwd() / "retargeted-parent"
+first_target = case / "first-target"
+second_target = case / "second-target"
+first_target.mkdir(parents=True)
+second_target.mkdir(parents=True)
+alias = case / "alias"
+alias.symlink_to(first_target, target_is_directory=True)
+destination = alias / "destination"
+env = dict(os.environ, INSTALL_RACE_CASE=str(case), MISE_YES="0", MISE_DEBUG="1")
+processes = []
+try:
+    with (case / "first.log").open("w") as first_log, (case / "second.log").open("w") as second_log:
+        first = subprocess.Popen(
+            ["mise", "install-into", "asdf:install-into-race@1.0.0", str(destination)],
+            env=env, stdin=subprocess.DEVNULL, stdout=first_log, stderr=subprocess.STDOUT,
+        )
+        processes.append(first)
+        wait_until(lambda: (case / "entered-1.0.0").exists(), first, "first installer")
+        alias.unlink()
+        alias.symlink_to(second_target, target_is_directory=True)
+        # The alias now names a different directory, so this install owns a
+        # different destination and must not wait for the first one.
+        second = subprocess.Popen(
+            ["mise", "install-into", "asdf:install-into-race@2.0.0", str(destination)],
+            env=env, stdin=subprocess.DEVNULL, stdout=second_log, stderr=subprocess.STDOUT,
+        )
+        processes.append(second)
+        assert second.wait(timeout=20) == 0
+        assert (second_target / "destination" / "installed-version").read_text().strip() == "2.0.0"
+        (case / "release").touch()
+        assert first.wait(timeout=20) == 0
+        # The first install stayed on the directory it locked.
+        assert (first_target / "destination" / "installed-version").read_text().strip() == "1.0.0"
+        assert (second_target / "destination" / "installed-version").read_text().strip() == "2.0.0"
+except Exception:
+    for name in ("first.log", "second.log"):
+        log = case / name
+        if log.exists():
+            print(log.read_text())
+    raise
+finally:
+    (case / "release").touch()
+    for process in processes:
+        if process.poll() is None:
+            process.kill()
+        process.wait()
+print("Install stayed on the locked destination: retargeted-parent")
+PY

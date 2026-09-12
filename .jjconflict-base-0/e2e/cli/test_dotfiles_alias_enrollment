@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Enroll portable destinations explicitly, without following an alias parent.
+require_cmd git
+mkdir -p ~/native-real
+printf 'native config\n' >~/native-real/config
+ln -s native-real ~/native-link
+assert_fail 'mise bootstrap dotfiles track ~/native-link/config'
+assert_succeed 'mise bootstrap dotfiles track ~/native-link'
+assert_succeed 'mise bootstrap dotfiles track ~/native-real'
+repository="$MISE_STATE_DIR/history/repo.git"
+assert "git --git-dir='$repository' show main:home/native-link" 'native-real'
+assert "git --git-dir='$repository' show main:home/native-real/config" 'native config'
+assert_fail "git --git-dir='$repository' cat-file -e main:home/native-link/config"
+
+# Once the real target is explicitly enrolled, native edits and restoration
+# through the alias still resolve to that same tracked identity after deletion.
+rm ~/native-link/config
+assert_succeed 'mise bootstrap dotfiles rollback ~/native-link/config --yes'
+assert 'cat ~/native-real/config' 'native config'
+assert 'readlink ~/native-link' 'native-real'

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Test the table form of rename_exe: renaming multiple binaries from one archive.
+# Regression test for https://github.com/jdx/mise/discussions/8632
+# The ols zip ships two platform-suffixed binaries (ols-* and odinfmt-*) that both
+# need clean names. The string form of rename_exe can only rename one; the table
+# form renames both.
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "Skipping Linux-specific test on non-Linux OS"
+  exit 0
+fi
+
+export MISE_EXPERIMENTAL=1
+export MISE_GPG_VERIFY=false
+
+cat <<EOF >mise.toml
+[tools."github:DanielGavin/ols"]
+version = "dev-2026-05"
+asset_pattern = "ols-x86_64-unknown-linux-gnu.zip"
+rename_exe = { "ols-*" = "ols", "odinfmt-*" = "odinfmt" }
+EOF
+
+mise install
+
+install_path="$(mise where github:DanielGavin/ols)"
+
+# Both binaries should be renamed to their clean names...
+assert_directory_exists "$install_path"
+assert "test -x '$install_path/ols' && echo ok" "ok"
+assert "test -x '$install_path/odinfmt' && echo ok" "ok"
+
+# ...and the original platform-suffixed names should be gone.
+assert "test ! -e '$install_path/ols-x86_64-unknown-linux-gnu' && echo ok" "ok"
+assert "test ! -e '$install_path/odinfmt-x86_64-unknown-linux-gnu' && echo ok" "ok"
+
+# Both should be exposed on PATH.
+assert_contains "mise which ols" "/ols"
+assert_contains "mise which odinfmt" "/odinfmt"

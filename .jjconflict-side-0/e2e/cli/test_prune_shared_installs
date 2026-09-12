@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+export MISE_SYSTEM_DATA_DIR="$HOME/.local/share/mise-system"
+system_installs="$MISE_SYSTEM_DATA_DIR/installs"
+shared_installs="$HOME/.local/share/mise-shared"
+export MISE_SHARED_INSTALL_DIRS="$shared_installs"
+local_installs="$MISE_DATA_DIR/installs"
+
+create_python_install() {
+  local installs_dir="$1"
+  local version="$2"
+  local major_minor="${version%.*}"
+  local major="${version%%.*}"
+
+  mkdir -p "$installs_dir/python/$version/bin"
+  cat >"$installs_dir/.mise-installs.toml" <<'EOF'
+[python]
+short = "python"
+full = "core:python"
+explicit_backend = true
+EOF
+  ln -s "./$version" "$installs_dir/python/$major"
+  ln -s "./$version" "$installs_dir/python/$major_minor"
+  ln -s "./$version" "$installs_dir/python/latest"
+}
+
+# System and configured shared installs are read-only fallback locations. They
+# must not be reported as prunable when no primary install exists.
+create_python_install "$system_installs" 3.12.0
+create_python_install "$shared_installs" 3.11.0
+
+cd "$(mktemp -d)" || exit 1
+
+prunable="$(mise ls python --prunable --installed)"
+[[ -z $prunable ]] || fail "shared installs were reported as prunable: $prunable"
+assert_succeed "mise prune --dry-run-code --tools"
+
+# A primary install remains prunable while the system and shared versions stay
+# excluded from the same listing and dry-run plan.
+create_python_install "$local_installs" 3.10.0
+
+prunable="$(mise ls python --prunable --installed)"
+[[ $prunable == *"3.10.0"* ]] || fail "primary install was not reported as prunable: $prunable"
+[[ $prunable != *"3.11.0"* ]] || fail "shared install was reported as prunable: $prunable"
+[[ $prunable != *"3.12.0"* ]] || fail "system install was reported as prunable: $prunable"
+
+output="$(mise prune --dry-run --tools --raw 2>&1)"
+[[ $output == *"3.10.0"* ]] || fail "primary install was not in prune plan: $output"
+[[ $output != *"3.11.0"* ]] || fail "shared install was in prune plan: $output"
+[[ $output != *"3.12.0"* ]] || fail "system install was in prune plan: $output"
+
+# Simulate root-owned fallback directories. Pruning the local version must not
+# attempt to remove or modify either read-only location.
+chmod -R a-w "$system_installs" "$shared_installs"
+trap 'chmod -R u+w "$system_installs" "$shared_installs" 2>/dev/null || true' EXIT
+
+output="$(MISE_YES=1 mise prune --tools --raw 2>&1)" || fail "prune failed: $output"
+[[ $output != *"Permission denied"* ]] || fail "prune touched a read-only install: $output"
+
+assert_fail "test -d '$local_installs/python/3.10.0'"
+assert_directory_exists "$shared_installs/python/3.11.0"
+assert_directory_exists "$system_installs/python/3.12.0"
+assert_succeed "mise prune --dry-run-code --tools"

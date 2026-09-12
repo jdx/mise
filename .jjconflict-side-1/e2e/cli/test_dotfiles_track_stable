@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Native tracking and source-managed files work without experimental opt-in.
+export MISE_EXPERIMENTAL=0
+mkdir -p "$MISE_CONFIG_DIR/dotfiles"
+echo original >"$HOME/.native"
+echo copied >"$MISE_CONFIG_DIR/dotfiles/source"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[dotfiles]
+"~/.copied" = { mode = "copy", source = "dotfiles/source" }
+EOF
+assert_succeed "mise bootstrap dotfiles track ~/.native --no-autosave"
+assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles history"
+assert_succeed "mise bootstrap dotfiles paths"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "cat ~/.copied" copied
+assert "cat ~/.native" original
+assert_succeed "mise bootstrap dotfiles status"
+
+# Disabled history does not open an unavailable store merely to report status.
+touch "$PWD/not-a-state-directory"
+assert_contains "MISE_STATE_DIR=$PWD/not-a-state-directory MISE_HISTORY_ENABLED=0 mise bootstrap dotfiles status" "History: disabled"

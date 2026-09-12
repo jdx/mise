@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# Test that env module hooks see mise-computed [env] vars through os.getenv
+# even when the current shell has not been activated.
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/test-os-getenv"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'EOFMETA'
+PLUGIN = {}
+PLUGIN.name = "test-os-getenv"
+PLUGIN.version = "1.0.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "Test that os.getenv sees mise env"
+PLUGIN.minRuntimeVersion = "0.3.0"
+EOFMETA
+
+cat >"$PLUGIN_DIR/hooks/mise_env.lua" <<'EOFHOOK'
+function PLUGIN:MiseEnv(ctx)
+    return {
+        env = {
+            {key = "TEST_OS_GETENV_RESULT", value = os.getenv("MISE_TEST_ENV") or "nil"}
+        },
+        cacheable = false,
+        watch_files = {}
+    }
+end
+EOFHOOK
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[env]
+MISE_TEST_ENV = "example"
+_.test-os-getenv = {}
+EOF
+
+assert_contains "mise env -s bash" "TEST_OS_GETENV_RESULT=example"

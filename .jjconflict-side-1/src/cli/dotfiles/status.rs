@@ -1,0 +1,211 @@
+use eyre::Result;
+use serde_json::json;
+
+use crate::cli::args::TruncateOptions;
+use crate::config::Config;
+use crate::path::PathExt;
+use crate::system;
+use crate::system::files::FileState;
+use crate::ui::table::MiseTable;
+
+/// Show the status of dotfiles from `[dotfiles]`
+///
+/// Template entries are rendered to compare their output; trusted template
+/// functions may execute. JSON includes each entry's origin and uses the states
+/// `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
+///
+/// The management state of every declaration (applied, missing, differs,
+/// tracked) followed by the history state: what is tracked, the latest
+/// checkpoint, unfinished operations, and whether edits are saved
+/// automatically.
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    visible_alias = "ls",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status --json
+mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync"###
+    )
+)]
+pub(crate) struct DotfilesStatus {
+    #[usage(flatten)]
+    truncate: TruncateOptions,
+
+    /// Only show these targets
+    #[usage(value_name = "TARGET")]
+    targets: Vec<String>,
+
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if any configured dotfiles are not in their desired
+    /// state (missing, source missing, differs)
+    #[usage(long, verbatim_doc_comment)]
+    missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
+}
+
+impl DotfilesStatus {
+    pub(crate) async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let mut any_missing = false;
+
+        let all_files = system::files::files_from_config(&config)?;
+        system::files::validate_composed_file_footprints(&all_files)?;
+        let files = all_files
+            .iter()
+            .filter(|req| {
+                system::files::matches_target(&req.target, &req.target_raw, &self.targets)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut file_rows: Vec<Vec<String>> = vec![];
+        let mut json_files = vec![];
+        for req in &files {
+            let state = match system::files::check(&config, req, &secrets) {
+                Ok(state) => state,
+                Err(err) => FileState::Differs(format!("{err}")),
+            };
+            let state_str = match &state {
+                FileState::Applied => "applied".to_string(),
+                FileState::Missing => "missing".to_string(),
+                FileState::SourceMissing => "source missing".to_string(),
+                FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked => "tracked".to_string(),
+            };
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
+            if self.json {
+                json_files.push(json!({
+                    "target": req.target_raw,
+                    "source": (req.mode != system::files::FileMode::Content)
+                        .then(|| req.source.display_user()),
+                    "mode": req.mode.name(),
+                    "origin": &req.origin,
+                    "state": match &state {
+                        FileState::Applied => "applied",
+                        FileState::Missing => "missing",
+                        FileState::SourceMissing => "source_missing",
+                        FileState::Differs(_) => "differs",
+                        FileState::Tracked => "tracked",
+                    },
+                }));
+            } else {
+                file_rows.push(vec![
+                    req.target_raw.clone(),
+                    req.mode.name().to_string(),
+                    if req.mode == system::files::FileMode::Content {
+                        "inline".to_string()
+                    } else {
+                        req.source.display_user()
+                    },
+                    req.origin.config.display_user(),
+                    state_str,
+                ]);
+            }
+        }
+
+        let all_edits = system::edits::edits_from_config(&config)?;
+        let edits = all_edits
+            .iter()
+            .filter(|req| system::edits::matches_target(req, &self.targets))
+            .cloned()
+            .collect::<Vec<_>>();
+        if files.is_empty()
+            && edits.is_empty()
+            && !self.targets.is_empty()
+            && (!all_files.is_empty() || !all_edits.is_empty())
+        {
+            eyre::bail!(
+                "no dotfiles matched target filter: {}",
+                self.targets.join(", ")
+            );
+        }
+        let mut edit_rows: Vec<Vec<String>> = vec![];
+        let mut json_edits = vec![];
+        for req in &edits {
+            let state = match system::edits::check(&config, req) {
+                Ok(state) => state,
+                Err(err) => FileState::Differs(format!("{err}")),
+            };
+            let state_str = match &state {
+                FileState::Applied => "applied".to_string(),
+                FileState::Missing => "missing".to_string(),
+                FileState::SourceMissing => "source missing".to_string(),
+                FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked => "tracked".to_string(),
+            };
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
+            if self.json {
+                json_edits.push(json!({
+                    "path": req.path_raw,
+                    "edit": req.describe_op(),
+                    "origin": &req.origin,
+                    "state": match &state {
+                        FileState::Applied => "applied",
+                        FileState::Missing => "missing",
+                        FileState::SourceMissing => "source_missing",
+                        FileState::Differs(_) => "differs",
+                        FileState::Tracked => "tracked",
+                    },
+                }));
+            } else {
+                edit_rows.push(vec![
+                    req.path_raw.clone(),
+                    req.describe_op(),
+                    req.origin.config.display_user(),
+                    state_str,
+                ]);
+            }
+        }
+
+        // the hint goes to stderr, so an empty --json result explains itself
+        // too without anything landing in the parsed output
+        if files.is_empty() && edits.is_empty() {
+            super::warn_if_dotfiles_ignored();
+        }
+        let history = super::history_status::report().await?;
+        if self.json {
+            miseprintln!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "files": json_files,
+                    "edits": json_edits,
+                    "history": history,
+                }))?
+            );
+        } else {
+            if file_rows.is_empty() && edit_rows.is_empty() {
+                info!("nothing configured in [dotfiles]");
+            }
+            if !file_rows.is_empty() {
+                let mut table =
+                    MiseTable::new(false, &["Target", "Mode", "Source", "Config", "State"]);
+                table.truncate(self.truncate.truncate);
+                for row in file_rows {
+                    table.add_row(row);
+                }
+                table.print()?;
+            }
+            if !edit_rows.is_empty() {
+                let mut table = MiseTable::new(false, &["File", "Edit", "Config", "State"]);
+                table.truncate(self.truncate.truncate);
+                for row in edit_rows {
+                    table.add_row(row);
+                }
+                table.print()?;
+            }
+            super::history_status::print(&history)?;
+        }
+        if self.missing && any_missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}

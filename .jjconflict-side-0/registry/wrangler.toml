@@ -1,0 +1,12 @@
+description = "A command line tool for building Cloudflare Workers"
+test = { cmd = "wrangler --version", expected = "{{version}}", tools = [
+  "aube",
+] }
+version_order = "semver"
+
+bins = ["cf-wrangler", "wrangler", "wrangler2"]
+[[backends]]
+full = "npm:wrangler"
+
+[backends.options]
+allow_builds = ["esbuild", "sharp", "workerd"]

@@ -1,0 +1,186 @@
+use crate::cli::args::ToolArg;
+use crate::config::{Config, Settings};
+use crate::file::display_path;
+use crate::install_context::InstallContext;
+use crate::toolset::ToolsetBuilder;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::prompt;
+use console::style;
+use eyre::{Result, bail, eyre};
+use path_absolutize::Absolutize;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+use tokio::sync::OnceCell;
+
+/// Install a tool version to a specific path
+///
+/// Used for building a tool to a directory for use outside of mise
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
+v20.0.0"###,
+        help = r###"install node@20.0.0 into ./mynode"###
+    )
+)]
+pub(crate) struct InstallInto {
+    /// Tool to install
+    /// e.g.: node@20
+    #[usage(value_name = "TOOL@VERSION")]
+    tool: ToolArg,
+
+    /// Path to install the tool into
+    #[usage(value_hint = ValueHint::DirPath)]
+    path: PathBuf,
+}
+
+impl InstallInto {
+    pub(crate) async fn run(self) -> Result<()> {
+        let install_path = self.path.absolutize()?.into_owned();
+        let config = Config::get().await?;
+        let ts = Arc::new(
+            ToolsetBuilder::new()
+                .with_args(std::slice::from_ref(&self.tool))
+                .build(&config)
+                .await?,
+        );
+        let mut tv = ts
+            .versions
+            .get(self.tool.ba.as_ref())
+            .ok_or_else(|| eyre!("Tool not found"))?
+            .versions
+            .first()
+            .unwrap()
+            .clone();
+        let before_date = tv.before_date;
+        let backend = tv.backend()?;
+        let mpr = MultiProgressReport::get();
+        let install_ctx = InstallContext {
+            config: config.clone(),
+            ts: ts.clone(),
+            pr: mpr.add(&tv.style()).into(),
+            force: true,
+            dry_run: false,
+            locked: false, // install-into doesn't support locked mode
+            before_date,
+            dependency_context: OnceCell::new(),
+        };
+        // Refuse before anything is created, so a rejected destination leaves
+        // no directories behind inside the lock directory.
+        let lock_dir = crate::dirs::CACHE.join("lockfiles");
+        if crate::file::path_starts_with_resolved(&lock_dir, &install_path)
+            || crate::file::path_starts_with_resolved(&install_path, &lock_dir)
+        {
+            return Err(lock_dir_overlap(&install_path, &lock_dir));
+        }
+        // Resolve parent aliases once, then install into and lock that one
+        // path. Binding both to the same resolved destination keeps the lock
+        // key and the replaced directory identical even if a parent symlink is
+        // retargeted afterwards. Create the parent first: resolving a missing
+        // path can spell the same directory differently than canonicalizing it
+        // once it exists (an unresolved `..`, or a verbatim `\\?\` prefix on
+        // Windows), so two invocations straddling the parent's creation would
+        // otherwise take two different locks for one destination. The install
+        // creates this parent regardless. Do not resolve the final component:
+        // installation replaces that entry, even if it is a symlink.
+        // `dunce::simplified` drops the extended-length prefix `canonicalize`
+        // adds on Windows wherever the plain path names the same file. The
+        // destination reaches backends and plugins as `MISE_INSTALL_PATH`, and
+        // mise itself rejects `\\?\` paths as tool paths, so the resolved
+        // spelling has to stay one mise would accept back.
+        let install_path = match (install_path.parent(), install_path.file_name()) {
+            (Some(parent), Some(name)) => {
+                crate::file::create_dir_all(parent)?;
+                dunce::simplified(&crate::file::desymlink_path(parent).join(name)).to_path_buf()
+            }
+            _ => dunce::simplified(&crate::file::desymlink_path(&install_path)).to_path_buf(),
+        };
+        // The final component above is deliberately left unresolved, so a
+        // destination reached through an alias whose own last component is a
+        // symlink pointing out of the lock directory slips past the resolving
+        // check. Re-check what will actually be replaced.
+        let resolved_lock_dir =
+            dunce::simplified(&crate::file::desymlink_path(&lock_dir)).to_path_buf();
+        if install_path.starts_with(&resolved_lock_dir)
+            || resolved_lock_dir.starts_with(&install_path)
+        {
+            return Err(lock_dir_overlap(&install_path, &lock_dir));
+        }
+        tv.install_path = Some(install_path.clone());
+        tv.install_path_is_exact = true;
+        tv.install_path_is_explicit = true;
+        // Serialize every `install-into` writer targeting this destination,
+        // including different tools or versions whose ordinary tool-version
+        // locks would not overlap. Keep the lock through confirmation and the
+        // backend replacement so no cooperating writer can populate the path
+        // between the occupancy check and deletion.
+        let lock_path = install_path.clone();
+        let lock_display_path = install_path.clone();
+        let _destination_lock = tokio::task::spawn_blocking(move || {
+            crate::lock_file::LockFile::new(&lock_path)
+                .with_callback(move |_| {
+                    debug!(
+                        "waiting for install-into destination lock on {}",
+                        display_path(&lock_display_path)
+                    );
+                })
+                .lock()
+        })
+        .await??;
+        // install-into force-reinstalls, which uninstalls (rm -rf) whatever
+        // already exists at the install path. Check immediately before the
+        // install performs that deletion (rather than at the start of `run`) so
+        // a directory that became non-empty during tool resolution can't be
+        // clobbered without an explicit opt-in. Refuse to overwrite a non-empty
+        // directory (e.g. `.`) unless the user passes -y/--yes or confirms
+        // interactively; the prompt defaults to "no" since it is destructive.
+        // (#8115)
+        if path_has_contents(&install_path) {
+            let proceed = Settings::get().yes
+                || prompt::confirm_with_default(
+                    format!(
+                        "{} is not empty; install-into will delete its contents. Continue?",
+                        display_path(&install_path)
+                    ),
+                    false,
+                )?
+                .is_yes();
+            if !proceed {
+                bail!(
+                    "refusing to overwrite non-empty directory {}; pass {} or choose an empty/new path",
+                    display_path(&install_path),
+                    style("--yes").yellow().for_stderr()
+                );
+            }
+        }
+        backend.install_version(install_ctx, tv).await?;
+        Ok(())
+    }
+}
+
+/// Replacement deletes the destination, so one that overlaps the lock directory
+/// in either direction is refused: an ancestor would take the whole directory
+/// with it, and a descendant could unlink an active lock file, letting the next
+/// process create a replacement and install alongside the holder.
+fn lock_dir_overlap(destination: &Path, lock_dir: &Path) -> eyre::Report {
+    eyre!(
+        "install-into destination {} overlaps mise's lock directory {}; choose a different destination",
+        display_path(destination),
+        display_path(lock_dir)
+    )
+}
+
+/// True if `path` exists and is anything other than an empty directory
+/// (a non-empty directory, or a regular file). Empty/new paths return false.
+fn path_has_contents(path: &Path) -> bool {
+    match std::fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_some(), // non-empty dir
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false, // missing -> false
+        // A file (NotADirectory) or an unreadable dir (e.g. PermissionDenied):
+        // err toward "occupied" so we never silently clobber it.
+        Err(_) => path.exists(),
+    }
+}

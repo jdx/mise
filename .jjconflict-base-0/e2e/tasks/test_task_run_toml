@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+tasks.multi = ['echo a', 'echo b']
+[tasks.configtask]
+run = 'echo "configtask:"'
+[tasks.lint]
+run = 'echo "linting!"'
+[tasks.test]
+run = 'echo "testing!"'
+[tasks.test-with-args]
+run = 'echo "{{arg()}} {{flag(name="force")}} {{option(name="user")}}"'
+[tasks.test-with-defaults]
+run = 'echo {{arg(default="arg1")}} {{option(name="user", default="user1")}}'
+[tasks.test-with-template]
+run = 'echo {{1 + 1}}'
+[tasks.int]
+env = { DEBUG = 0 } # should be parsed as a string
+run = 'echo DEBUG=\$DEBUG'
+EOF
+
+assert "mise run multi c" "a
+b c"
+assert "mise run test arg1 arg2 arg3" "testing! arg1 arg2 arg3"
+assert "mise run test-with-args foo --force --user=user" "foo true user"
+assert "mise run test-with-defaults" "arg1 user1"
+assert "mise run test-with-defaults arg2 --user=user2" "arg2 user2"
+assert "mise run test-with-template" "2"
+assert "mise int" "DEBUG=0"
+
+cat <<EOF >mise.windows.toml
+tasks.configtask = "echo configtask:windows"
+EOF
+assert "mise run -E windows configtask" "configtask:windows"
+assert "mise run -P windows configtask" "configtask:windows"
+MISE_ENV=windows assert "mise run configtask" "configtask:windows"
+MISE_PROFILE=windows assert "mise run configtask" "configtask:windows"
+
+cat <<EOF >mise.toml
+[tasks.a]
+usage = '''
+arg "myarg" "myarg description" default="foo"
+'''
+run = 'echo {{arg(name="myarg")}}'
+EOF
+assert "mise run a" "foo"

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# A task with multiple static outputs must rerun when any declared output is
+# missing, even if another output is newer than every source.
+cat <<EOF >mise.toml
+[tasks.static]
+run = 'touch output output2 && echo built'
+sources = ['source']
+outputs = ['output', 'output2']
+EOF
+
+echo source >source
+
+assert "mise run -q static" "built"
+assert_empty "mise run -q static"
+
+rm output2
+assert "mise run -q static" "built"
+[ -f output2 ]
+assert_empty "mise run -q static"
+
+# Each positive glob must match at least one output. A separate static output
+# must not make the task fresh when the glob no longer matches anything.
+cat <<EOF >>mise.toml
+
+[tasks.glob]
+run = 'touch marker matched.generated && echo glob-built'
+sources = ['glob-source']
+outputs = ['marker', '*.generated']
+EOF
+
+echo source >glob-source
+
+assert "mise run -q glob" "glob-built"
+assert_empty "mise run -q glob"
+
+rm matched.generated
+assert "mise run -q glob" "glob-built"
+[ -f matched.generated ]
+assert_empty "mise run -q glob"

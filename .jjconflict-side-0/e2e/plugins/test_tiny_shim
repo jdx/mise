@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+mise use tiny@latest
+
+# The shim should output the passed arguments in the correct order
+assert "$HOME/.local/share/mise/shims/rtx-tiny --no-config --env foo --jobs 2 --raw --yes extra-arg" "rtx-tiny: v3.1.0 args: --no-config --env foo --jobs 2 --raw --yes extra-arg"

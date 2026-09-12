@@ -1,0 +1,66 @@
+#!/usr/bin/env zsh
+# shellcheck disable=SC1071
+set -eu
+
+# `run_test` sources assert.sh into zsh tests as well as bash ones, so the helpers have to
+# work in both. They used to declare `local status`, and `status` is read-only in zsh: the
+# assignment failed, nothing was captured, and `assert`/`assert_contains` reported the
+# output as empty — failing tests whose subject had actually passed.
+#
+# This test is the harness checking itself. It touches one call per site the fix changed,
+# and it deliberately calls no mise command, so a failure here means the helpers and
+# nothing else.
+
+# quiet_assert_succeed — reached through assert, assert_contains and assert_succeed
+assert "echo hi" "hi"
+assert_contains "echo hello" "ell"
+assert_succeed "true"
+
+# quiet_assert_fail — reached through assert_fail
+assert_fail "false"
+
+# The other direction, and the one that produced false greens rather than false reds: a
+# command that *succeeded* has to be rejected. Rejection happens by calling `fail`, which
+# exits, so this cannot be written as `if assert_fail ...` or `assert_fail ... || ...` —
+# `set -e` is suspended in those positions, the exit is swallowed, and the check would pass
+# against a broken helper. bash behaves the same way, so the child shell is not a zsh
+# workaround: it is the only place the call is a plain top-level statement.
+#
+# The markers keep this from passing for the wrong reason. A non-zero child exit on its own
+# proves nothing — an unset TEST_ROOT or a failed `source` produces one too — so READY has
+# to be there and RETURNED must not be.
+child_out=$(zsh -f -euo pipefail -c '
+  source "$TEST_ROOT/assert.sh"
+  echo READY
+  assert_fail "true"
+  echo RETURNED
+' 2>/dev/null) || true
+
+if [[ $child_out != *READY* ]]; then
+  echo "the child shell never got as far as assert_fail (setup failed): '$child_out'"
+  exit 1
+fi
+if [[ $child_out == *RETURNED* ]]; then
+  echo "assert_fail accepted a command that succeeded"
+  exit 1
+fi
+
+# run_with_timeout, in assert.sh. Both paths, because the rename touched the status it
+# returns and only the timeout path produces a value that is not 0.
+run_with_timeout 2 true
+timed_out=0
+run_with_timeout 1 sleep 5 || timed_out=$?
+if [ "$timed_out" -ne 124 ]; then
+  echo "run_with_timeout returned $timed_out on a timeout, expected 124"
+  exit 1
+fi
+
+# as_group, in style.sh, which assert.sh sources. Same reason: it has to hand a failing
+# child's status back out, and only the failing case shows that.
+as_group "assert helpers" true
+group_status=0
+as_group "deliberately failing" false || group_status=$?
+if [ "$group_status" -eq 0 ]; then
+  echo "as_group reported success for a command that failed"
+  exit 1
+fi

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+REV=1f8f13e3ab97e475193886b897b0af95c7b6ed6d
+TOOL=cargo:https://github.com/eza-community/eza
+
+cat >mise.toml <<EOF
+[tools]
+"$TOOL" = "rev:$REV"
+EOF
+
+output=$(mise lock --dry-run --platform linux-x64 2>&1)
+assert_contains_text "$output" "Processing 1 tool(s)"
+assert_contains_text "$output" "$TOOL@rev:$REV for linux-x64"
+assert_not_contains_text "$output" "$TOOL@ref:$REV"
+
+mise lock --platform linux-x64
+count=$(grep -c '^\[\[tools\.' mise.lock)
+assert "test $count -eq 1"
+assert_contains_text "$(cat mise.lock)" "version = \"rev:$REV\""
+assert_not_contains_text "$(cat mise.lock)" "version = \"ref:$REV\""
+
+cp mise.lock mise.lock.before
+mise lock --platform linux-x64
+assert "cmp mise.lock.before mise.lock"

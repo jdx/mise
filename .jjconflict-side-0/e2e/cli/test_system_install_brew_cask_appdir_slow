@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Verifies MISE_BREW_CASK_OPT_APPDIR relocates a cask's app artifact out of the
+# default /Applications and into an override directory. Needs a macOS CI runner
+# with network, and is kept out of local runs so it never touches a developer's
+# installed applications.
+if [[ "$(uname)" != "Darwin" ]] || [[ ${CI:-} != "true" ]]; then
+  exit 0
+fi
+
+# The hiddenbar cask hardcodes an absolute `/Applications/Hidden Bar.app`
+# target, which is the exact shape the override has to relocate.
+default_app="/Applications/Hidden Bar.app"
+caskroom="/opt/homebrew/Caskroom/hiddenbar"
+appdir="$PWD/Applications"
+override_app="$appdir/Hidden Bar.app"
+
+# Never run if it would disturb a real installation of this cask.
+if [[ -e $default_app ]] || [[ -e $caskroom ]]; then
+  exit 0
+fi
+
+cleanup() {
+  shopt -s nullglob
+  local app_work_paths=(
+    "$appdir"/Hidden\ Bar.mise-old-*
+    "$appdir"/Hidden\ Bar.mise-tmp-*
+  )
+  chmod -RN "$override_app" "${app_work_paths[@]}" 2>/dev/null || true
+  rm -rf "$override_app" "$caskroom" "$appdir" "${app_work_paths[@]}"
+}
+trap cleanup EXIT
+
+export MISE_BREW_CASK_OPT_APPDIR="$appdir"
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew-cask:hiddenbar" = "latest"
+EOF
+
+assert_contains "mise bootstrap packages status" "missing"
+mise bootstrap packages apply --yes
+
+# The app must land under the override directory, and must NOT be created in the
+# default /Applications location.
+assert_directory_exists "$override_app"
+assert_directory_exists "$caskroom"
+assert_fail "test -e '$default_app'"
+assert_contains "mise bootstrap packages status" "installed"

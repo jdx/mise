@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# Regression test for discussion #4306: a `registry.yaml` committed alongside the
+# project could not be referenced. A relative entry failed later as `relative URL
+# without a base`, so only an absolute -- and therefore uncommittable -- path
+# worked. Relative entries now resolve against the config root of the file that
+# declared them.
+
+touch registry.yaml
+cat <<EOF >mise.toml
+[settings]
+aqua.registries = ["registry.yaml"]
+EOF
+
+# Resolution happens while the config file is parsed, so the setting itself shows
+# the result -- no registry fetch, and no network.
+assert_contains "mise settings get aqua.registries 2>&1" "file://"
+assert_contains "mise settings get aqua.registries 2>&1" "registry.yaml"
+
+# Absolute URLs must pass through untouched.
+cat <<EOF >mise.toml
+[settings]
+aqua.registries = ["https://github.com/aquaproj/aqua-registry"]
+EOF
+
+assert_contains "mise settings get aqua.registries 2>&1" "https://github.com/aquaproj/aqua-registry"
+assert_not_contains "mise settings get aqua.registries 2>&1" "file://"

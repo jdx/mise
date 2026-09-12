@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+[bootstrap.macos.dock]
+apps = ["/Applications/Example.app"]
+EOF
+assert_contains 'mise bootstrap macos defaults status --json' '/Applications/Example.app'
+assert_succeed 'mise bootstrap macos defaults apply --dry-run --yes'
+
+# Raw values win in one file, including their exact-value interpretation.
+cat >>mise.toml <<'EOF'
+[bootstrap.macos.defaults."com.apple.dock"]
+persistent-apps = [{ "tile-type" = "spacer-tile" }]
+EOF
+assert_contains 'mise bootstrap macos defaults status --json' 'spacer-tile'
+
+# A local friendly setting wins over a global raw value.
+mkdir -p "$MISE_CONFIG_DIR"
+cp mise.toml "$MISE_CONFIG_DIR/config.toml"
+cat >mise.toml <<'EOF'
+[bootstrap.macos.dock]
+apps = ["/Applications/Local.app"]
+EOF
+assert_contains 'mise bootstrap macos defaults status --json' '/Applications/Local.app'
+assert_not_contains 'mise bootstrap macos defaults status --json' 'spacer-tile'
+
+# Explicit entries win over the friendly value in the same file.
+cat >>mise.toml <<'EOF'
+[[bootstrap.macos.defaults_entries]]
+domain = "com.apple.dock"
+key = "persistent-apps"
+value = []
+EOF
+assert_not_contains 'mise bootstrap macos defaults status --json' '/Applications/Local.app'
+
+if [[ $(uname) == Darwin ]]; then
+  # Validation is read-only and rejects the entire list.
+  cat >mise.toml <<'EOF'
+[bootstrap.macos.dock]
+apps = ["/Applications/Valid.app", "relative.app"]
+EOF
+  assert_fail 'mise bootstrap macos defaults status'
+  assert_fail 'mise bootstrap macos defaults apply --dry-run --yes'
+fi

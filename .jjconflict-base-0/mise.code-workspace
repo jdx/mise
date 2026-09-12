@@ -1,0 +1,25 @@
+{
+  "folders": [
+    {
+      "path": ".",
+    },
+  ],
+  "settings": {
+    "shellcheck.ignorePatterns": {
+      "completions/mise.bash": true,
+    },
+    "markdownlint.lintWorkspaceGlobs": [
+      "**/*.{md,mkd,mdwn,mdown,markdown,markdn,mdtxt,mdtext,workbook}",
+      "!**/*.code-search",
+      "!**/bower_components",
+      "!**/node_modules",
+      "!**/.git",
+      "!**/vendor",
+      "!**/CHANGELOG.md"
+    ],
+    "files.exclude": {
+      "vendor/aqua-registry/**": true
+    },
+    "markdown.validate.enabled": true,
+  },
+}

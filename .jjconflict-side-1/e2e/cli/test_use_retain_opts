@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+assert "mise use dummy[foo=bar]@1.0.0"
+assert "cat mise.toml" '[tools]
+dummy = { version = "1.0.0", foo = "bar" }'
+assert "mise use -g dummy@1.0.0"
+assert "cat ~/.config/mise/config.toml" '[tools]
+dummy = "1.0.0"'
