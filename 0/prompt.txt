@@ -1,5 +1,1 @@
-i also don't want to scare people away from responding with ai, so explain this is to prevent people spamming my discussions, not to prevent one-off responses
-
----
-
 fix the lint failure
