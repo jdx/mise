@@ -134,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn command_examples_reach_the_spec_and_renderers() {
+    fn command_examples_reach_cli_help_and_markdown() {
         let spec = super::spec();
         let markdown = usage::docs::markdown::MarkdownRenderer::new(spec.clone());
         for name in ["activate", "run", "install", "env", "use"] {
@@ -150,19 +150,42 @@ mod tests {
             for example in &cmd.examples {
                 assert!(!example.code.contains("<bold>"));
                 assert!(!example.code.contains('\u{1b}'));
+                for line in example.code.lines() {
+                    assert!(help.contains(line), "{name}: {line}");
+                }
                 assert!(page.contains(&example.code), "{name}: {}", example.code);
             }
         }
+    }
+
+    #[test]
+    fn command_examples_survive_spec_roundtrip() {
+        let spec = super::spec();
         let reparsed: usage::Spec = spec.to_string().parse().unwrap();
-        assert_eq!(
-            reparsed.cmd.subcommands["run"].examples.len(),
-            spec.cmd.subcommands["run"].examples.len()
-        );
-        assert!(
-            usage::docs::manpage::ManpageRenderer::new(spec)
-                .render()
-                .unwrap()
-                .contains("Examples")
-        );
+        for name in ["activate", "run", "install", "env", "use"] {
+            let expected = &spec.cmd.subcommands[name].examples;
+            let actual = &reparsed.cmd.subcommands[name].examples;
+            assert_eq!(actual.len(), expected.len(), "{name}");
+            for (actual, expected) in actual.iter().zip(expected) {
+                assert_eq!(actual.code, expected.code, "{name}");
+                assert_eq!(actual.header, expected.header, "{name}");
+                assert_eq!(actual.help, expected.help, "{name}");
+                assert_eq!(actual.lang, expected.lang, "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn command_examples_reach_manpage() {
+        let spec = super::spec();
+        let manpage = usage::docs::manpage::ManpageRenderer::new(spec.clone())
+            .render()
+            .unwrap();
+        for name in ["activate", "run", "install", "env", "use"] {
+            for example in &spec.cmd.subcommands[name].examples {
+                let escaped = example.code.replace('\\', "\\\\").replace('-', "\\-");
+                assert!(manpage.contains(&escaped), "{name}: {}", example.code);
+            }
+        }
     }
 }

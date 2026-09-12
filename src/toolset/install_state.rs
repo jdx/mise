@@ -737,7 +737,11 @@ pub(crate) fn get_tool_full(short: &str) -> Option<String> {
 }
 
 pub(crate) fn get_plugin_type(short: &str) -> Option<PluginType> {
-    list_plugins().get(short).cloned()
+    #[cfg(test)]
+    let plugins = try_list_plugins()?;
+    #[cfg(not(test))]
+    let plugins = list_plugins();
+    plugins.get(short).cloned()
 }
 
 /// Every installed tool. This enumerates the whole installs dir (a readdir per

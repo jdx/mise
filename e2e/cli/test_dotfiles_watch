@@ -137,15 +137,27 @@ assert_contains "cat ~/describe-input" "monitors.lua"
 assert_contains "cat ~/describe-input" "DP-4"
 assert_not_contains "cat ~/describe-input" "github_tokens"
 assert_not_contains "cat ~/describe-input" "s3cret"
+# a command whose descendant keeps stdout open is bounded and leaves the
+# checkpoint's computed description intact
+cat <<'EOF' >"$PWD/describe"
+#!/usr/bin/env bash
+sleep 30 &
+exit 0
+EOF
+echo 'monitor=DP-5' >~/.config/hypr/monitors.lua
+wait_until "grep -q 'kept its output open' watch.log"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
+assert "mise bootstrap dotfiles history --json | jq -r '.[0].description_source'" "computed"
 # a failing command keeps the computed description
 printf '#!/usr/bin/env bash\nexit 3\n' >"$PWD/describe"
-echo 'monitor=DP-5' >~/.config/hypr/monitors.lua
-wait_until "grep -q '\"event\":\"describe-error\"' watch.log"
+errors="$(grep -Fc '"event":"describe-error"' watch.log || true)"
+echo 'monitor=DP-6' >~/.config/hypr/monitors.lua
+wait_until "[[ \$(grep -Fc '\"event\":\"describe-error\"' watch.log) -gt $errors ]]"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description_source'" "computed"
 
 # stopping saves what is still pending
-echo 'monitor=DP-6' >~/.config/hypr/monitors.lua
+echo 'monitor=DP-7' >~/.config/hypr/monitors.lua
 sleep 0.3
 kill -TERM "$watcher"
 wait "$watcher" || true

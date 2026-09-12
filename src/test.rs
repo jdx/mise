@@ -19,6 +19,11 @@ use crate::{env, file};
 )]
 #[cfg_attr(not(target_vendor = "apple"), ctor::ctor(unsafe))]
 fn init() {
+    // Tests must start from the environment nextest gives their process, not
+    // from an activation diff inherited from the process that launched it.
+    // This has to happen before the first access to env::HOME initializes
+    // PRISTINE_ENV.
+    env::remove_var("__MISE_DIFF");
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "debug")
     }

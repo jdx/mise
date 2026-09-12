@@ -305,7 +305,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn command_lifecycle_bounds_inherited_output_and_keeps_history() -> Result<()> {
+    fn command_lifecycle_keeps_history() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let store = Store::open_in(temp.path())?;
         let outcome = store.attempt(
@@ -319,19 +319,9 @@ mod tests {
             run(&store, &entry, "echo named checkpoint")?.as_deref(),
             Some("named checkpoint")
         );
-        #[cfg(unix)]
-        let command = "sleep 30 & exit 0";
-        let started = Instant::now();
-        #[cfg(unix)]
-        {
-            let error = run(&store, &entry, command).unwrap_err();
-            assert!(
-                error.to_string().contains("kept its output open"),
-                "{error:#}"
-            );
-        }
         #[cfg(windows)]
         {
+            let started = Instant::now();
             let error = run_with_limits(
                 &store,
                 &entry,
@@ -344,8 +334,8 @@ mod tests {
                 error.to_string().contains("took longer than 1s"),
                 "{error:#}"
             );
+            assert!(started.elapsed() < Duration::from_secs(10));
         }
-        assert!(started.elapsed() < Duration::from_secs(10));
         assert!(RUNNING.lock().unwrap().is_none());
         #[cfg(unix)]
         {

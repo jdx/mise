@@ -152,6 +152,14 @@ description = "run unit tests"
 run = "cargo test --all-features"
 env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
 
+["test:unit-ci"]
+description = "run unit tests with CI time limits"
+run = [
+  "cargo nextest run --profile ci --all-features --ignore-rust-version --no-fail-fast",
+  "cargo nextest run --profile ci --workspace --exclude mise --ignore-rust-version --no-fail-fast",
+  "cargo test --doc --workspace --exclude mise --ignore-rust-version",
+]
+
 ["test:e2e"]
 description = "run end-to-end tests"
 depends = ["build"]

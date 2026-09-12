@@ -2073,7 +2073,12 @@ pub(crate) fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = Dur
     // would silently cap retries at its length. tokio_retry's ExponentialBackoff
     // ::from_millis is geometric in the base (base, base*base, …) so picking a
     // base that gives nice human-scale delays is awkward; explicit is clearer.
-    [200u64, 1_000, 4_000, 15_000]
+    #[cfg(not(test))]
+    let schedule = [200u64, 1_000, 4_000, 15_000];
+    // Retry tests assert attempts and outcomes, not wall-clock sleeping.
+    #[cfg(test)]
+    let schedule = [2u64, 10, 40, 150];
+    schedule
         .into_iter()
         .chain(std::iter::repeat(15_000))
         .map(Duration::from_millis)

@@ -582,7 +582,10 @@ mod tests {
                 .iter()
                 .any(|c| c["command"] == "bootstrap launchd apply")
         );
+    }
 
+    #[tokio::test]
+    async fn hidden_subtrees_are_included_when_requested() {
         let all = commands(true).await;
         assert!(all.iter().any(|c| c["command"] == "bootstrap launchd"));
         assert!(
