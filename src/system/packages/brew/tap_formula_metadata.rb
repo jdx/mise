@@ -101,7 +101,8 @@ end
 class Formula
   class << self
     attr_reader :source_url, :source_sha256, :explicit_version, :revision_value,
-                :runtime_dependencies, :build_dependencies, :keg_only_value
+                :runtime_dependencies, :build_dependencies, :keg_only_value,
+                :keg_only_reason_value
 
     def inherited(subclass)
       Formula.instance_variable_set(:@subclass, subclass)
@@ -109,6 +110,7 @@ class Formula
       subclass.instance_variable_set(:@build_dependencies, [])
       subclass.instance_variable_set(:@revision_value, 0)
       subclass.instance_variable_set(:@keg_only_value, false)
+      subclass.instance_variable_set(:@keg_only_reason_value, nil)
     end
 
     def url(value = nil, **) = (@source_url = value unless value.nil?)
@@ -119,7 +121,10 @@ class Formula
       @explicit_version
     end
     def revision(value = nil) = (@revision_value = value.to_i unless value.nil?)
-    def keg_only(*) = (@keg_only_value = true)
+    def keg_only(reason = nil, *)
+      @keg_only_value = true
+      @keg_only_reason_value = reason
+    end
 
     def depends_on(spec = nil, **options)
       spec = options if spec.nil? && options.keys.any? { |key| key.is_a?(String) }
@@ -205,6 +210,14 @@ class Formula
   end
 end
 
+# Match the formulae.brew.sh JSON: symbol reasons serialize as ":name",
+# string reasons as-is.
+def keg_only_reason_metadata(klass)
+  reason = klass.keg_only_reason_value
+  return nil if reason.nil?
+  { "reason" => reason.is_a?(Symbol) ? reason.inspect : reason.to_s }
+end
+
 def inferred_version(url)
   basename = File.basename(url.to_s).sub(/\.(tar\.(gz|xz|bz2|zst)|tgz|txz|zip|gz)\z/i, "")
   match = basename.match(/(?:^|[-_v])([0-9]+(?:\.[0-9A-Za-z]+)+(?:[-_.][0-9A-Za-z]+)*)/)
@@ -225,6 +238,7 @@ metadata = {
   "versions" => { "stable" => version },
   "revision" => klass.revision_value || 0,
   "keg_only" => klass.keg_only_value || false,
+  "keg_only_reason" => keg_only_reason_metadata(klass),
   "dependencies" => klass.runtime_dependencies || [],
   "build_dependencies" => klass.build_dependencies || [],
   "bottle" => {},

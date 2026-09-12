@@ -319,7 +319,7 @@ pub(super) async fn pour(
     crate::file::rename(&tmp, &keg)?;
     // never leave a half-installed keg: if linking fails (conflicts, IO),
     // remove the keg so the next install retries from scratch
-    if let Err(err) = link_keg(name, &pkg_version, rf.formula.keg_only) {
+    if let Err(err) = link_keg(name, &pkg_version, rf.formula.keg_only_for_target()) {
         if let Err(rm_err) = crate::file::remove_all(&keg) {
             // a keg left behind here is unlinked but looks installed, so
             // future installs would skip it — make that state visible
