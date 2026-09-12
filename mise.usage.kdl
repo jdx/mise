@@ -216,7 +216,7 @@ complete plugin run="mise plugins --core --user"
 complete prefix run="mise ls-remote {{words[PREV]}}"
 complete setting run="mise settings --complete" descriptions=#true
 complete task run="mise tasks ls --complete" descriptions=#true
-complete tool run="mise registry --complete" descriptions=#true
+complete tool run="mise search --complete" descriptions=#true
 complete env_var run="mise set --complete | awk '{print $1\"=\"}'"
 complete env_key run="mise set --complete"
 complete backend run="mise backends"
@@ -235,7 +235,7 @@ case $cur in
     done
     ;;
   *)
-    plugins=$(mise registry | awk '{print $1}')
+    plugins=$(mise search --complete-ids)
     for plugin in $plugins; do
       echo "$plugin@"
     done
@@ -4419,11 +4419,11 @@ Set `MISE_TASK_TIMINGS=1` to show it by default
     example "mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2" help="Run multiple tasks, each with its own arguments."
     complete cd type=dir
 }
-cmd search help="Search for tools in the registry" effect=read {
+cmd search help="Search for available tools" effect=read {
     long_help #"""
-Search for tools in the registry
+Search for available tools
 
-Searches the registry for tools matching NAME.
+Searches the registry and installed backend catalogs for tools matching NAME.
 
 By default, it will show all tools that fuzzy match the search term. For
 non-fuzzy matches, use the `--match-type` flag.
@@ -4443,6 +4443,8 @@ non-fuzzy matches, use the `--match-type` flag.
     flag --no-header help="Don't display headers" {
         alias "--no-headers" hide=#true
     }
+    flag --complete help="Print all tools with descriptions for shell completions" hide=#true
+    flag --complete-ids help="Print only tool identifiers for shell completions" hide=#true
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[NAME]" help="The tool to search for" required=#false
     example #"""

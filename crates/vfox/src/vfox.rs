@@ -13,6 +13,7 @@ use crate::error::Result;
 use crate::hooks::available::AvailableVersion;
 use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
+use crate::hooks::backend_list_tools::{BackendListToolsContext, BackendTool};
 use crate::hooks::backend_list_versions::BackendListVersionsContext;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
@@ -542,6 +543,15 @@ impl Vfox {
             options,
         };
         plugin.backend_list_versions(ctx).await.map(|r| r.versions)
+    }
+
+    pub async fn backend_list_tools(&self, sdk: &str) -> Result<Option<Vec<BackendTool>>> {
+        let plugin = self.get_sdk_with_env(sdk)?;
+        if !plugin.get_metadata()?.hooks.contains("backend_list_tools") {
+            return Ok(None);
+        }
+        let ctx = BackendListToolsContext {};
+        plugin.backend_list_tools(ctx).await.map(|r| Some(r.tools))
     }
 
     pub async fn backend_install(
@@ -1285,5 +1295,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(versions, vec!["fallback".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_backend_list_tools() {
+        let vfox = Vfox::test();
+        let tools = vfox
+            .backend_list_tools("dummy-backend")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            tools,
+            vec![
+                BackendTool {
+                    name: "demo".into(),
+                    description: Some("A tool exposed by a backend plugin".into()),
+                },
+                BackendTool {
+                    name: "other".into(),
+                    description: None,
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_backend_list_tools_is_optional() {
+        let vfox = Vfox::test();
+        assert_eq!(vfox.backend_list_tools("dummy").await.unwrap(), None);
     }
 }

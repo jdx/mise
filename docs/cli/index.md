@@ -78,7 +78,7 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise which`](/cli/which.html) — Show the path a tool's executable resolves to
 - [`mise bin-paths`](/cli/bin-paths.html) — List all the active runtime bin paths
 - [`mise registry`](/cli/registry.html) — List registry shorthand names and their backends
-- [`mise search`](/cli/search.html) — Search for tools in the registry
+- [`mise search`](/cli/search.html) — Search for available tools
 - [`mise backends`](/cli/backends.html) — Manage backends
 - [`mise link`](/cli/link.html) — Symlink a tool version into mise
 - [`mise sync`](/cli/sync.html) — Synchronize tools from other version managers with mise

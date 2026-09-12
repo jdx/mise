@@ -10,6 +10,7 @@ extern crate mlua;
 
 pub use error::Result as VfoxResult;
 pub use error::VfoxError;
+pub use hooks::backend_list_tools::BackendTool;
 pub use hooks::package::{
     PackageActionContext, PackageActionResponse, PackageInstalledContext, PackageInstalledResponse,
     PackageRequest, PackageUninstallContext,

@@ -13,7 +13,6 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
-use crate::registry::REGISTRY;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion,
     ToolVersionOptions, ToolsetBuilder,
@@ -242,7 +241,7 @@ impl Use {
             self.tools = vec![UseTool {
                 postinstall: None,
                 tool_option: Vec::new(),
-                tool: self.tool_selector()?,
+                tool: self.tool_selector().await?,
             }];
         }
         let tool_args = self
@@ -509,7 +508,7 @@ impl Use {
         Ok(())
     }
 
-    fn tool_selector(&self) -> Result<ToolArg> {
+    async fn tool_selector(&self) -> Result<ToolArg> {
         if !console::user_attended_stderr() {
             bail!("No tool specified and not running interactively");
         }
@@ -519,17 +518,18 @@ impl Use {
             .filtering(true)
             .filterable(true)
             .theme(&theme);
-        for rt in REGISTRY.values().unique_by(|r| r.short) {
-            if let Some(backend) = rt.backends().first() {
-                // TODO: populate registry with descriptions from aqua and other sources
-                // TODO: use the backend from the lockfile if available
-                let description = rt.description.unwrap_or(backend);
-                s = s.option(demand::DemandOption::new(rt).description(description));
-            }
+        for tool in crate::tool_catalog::list()
+            .await
+            .into_iter()
+            .unique_by(|tool| tool.canonical_id().to_string())
+        {
+            let id = tool.canonical_id().to_string();
+            let description = tool.selector_description().to_string();
+            s = s.option(demand::DemandOption::new(id).description(&description));
         }
         ctrlc::show_cursor_after_ctrl_c();
         match s.run() {
-            Ok(rt) => rt.short.parse(),
+            Ok(tool) => tool.parse(),
             Err(err) => {
                 Term::stderr().show_cursor()?;
                 Err(eyre!(err))

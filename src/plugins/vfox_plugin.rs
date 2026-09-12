@@ -162,6 +162,13 @@ impl VfoxPlugin {
         Ok((vfox, rx))
     }
 
+    pub(crate) async fn backend_list_tools(&self) -> Result<Option<Vec<vfox::BackendTool>>> {
+        let (vfox, _log_rx) = self.vfox()?;
+        vfox.backend_list_tools(&self.name)
+            .await
+            .map_err(Into::into)
+    }
+
     async fn install_from_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let temp_archive = temp_dir.path().join("archive.zip");

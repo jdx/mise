@@ -8,11 +8,8 @@ use xx::regex;
 
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 use crate::registry::RegistryTool;
-use crate::{
-    config::Settings,
-    registry::{REGISTRY, tool_enabled},
-    ui::table::MiseTable,
-};
+use crate::tool_catalog::{ToolCatalogEntry, ToolCatalogSource};
+use crate::{config::Settings, ui::table::MiseTable};
 
 #[derive(Debug, Clone, usage_rs::ValueEnum)]
 pub(crate) enum MatchType {
@@ -21,9 +18,9 @@ pub(crate) enum MatchType {
     Fuzzy,
 }
 
-/// Search for tools in the registry
+/// Search for available tools
 ///
-/// Searches the registry for tools matching NAME.
+/// Searches the registry and installed backend catalogs for tools matching NAME.
 ///
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.
@@ -65,33 +62,47 @@ pub(crate) struct Search {
     /// Don't display headers
     #[usage(long, alias = "no-headers")]
     no_header: bool,
+
+    /// Print all tools with descriptions for shell completions
+    #[usage(long, hide = true)]
+    complete: bool,
+
+    /// Print only tool identifiers for shell completions
+    #[usage(long, hide = true)]
+    complete_ids: bool,
 }
 
 impl Search {
     pub(crate) async fn run(self) -> Result<()> {
+        let tools = crate::tool_catalog::list().await;
+        if self.complete {
+            self.print_completions(&tools, true);
+            return Ok(());
+        }
+        if self.complete_ids {
+            self.print_completions(&tools, false);
+            return Ok(());
+        }
         if self.interactive {
-            self.interactive()?;
+            self.interactive(&tools)?;
         } else {
-            self.display_table()?;
+            self.display_table(&tools)?;
         }
         Ok(())
     }
 
-    fn interactive(&self) -> Result<()> {
-        let tools = self.get_tools();
+    fn interactive(&self, tools: &[ToolCatalogEntry]) -> Result<()> {
         let theme = crate::ui::theme::get_theme();
         let mut s = Select::new("Tool")
             .description("Search a tool")
             .filtering(true)
             .filterable(true)
             .theme(&theme);
-        for t in tools.iter() {
-            let short = t.0.as_str();
-            let description = get_description(t.1);
+        for tool in tools {
             s = s.option(
-                DemandOption::new(short)
-                    .label(short)
-                    .description(&description),
+                DemandOption::new(tool.id.as_str())
+                    .label(tool.id.as_str())
+                    .description(&search_description(tool)),
             );
         }
         match s.run() {
@@ -107,14 +118,17 @@ impl Search {
         }
     }
 
-    fn display_table(&self) -> Result<()> {
+    fn display_table(&self, catalog: &[ToolCatalogEntry]) -> Result<()> {
         let tools = self
-            .get_matches()
+            .get_matches(catalog)
             .into_iter()
             .map(|(short, description)| vec![short, description])
             .collect_vec();
         if tools.is_empty() {
-            bail!("tool {} not found in registry", self.name.as_ref().unwrap());
+            bail!(
+                "tool {} not found in registry or installed backend catalogs",
+                self.name.as_ref().unwrap()
+            );
         }
 
         let mut table = MiseTable::new(self.no_header, &["Tool", "Description"]);
@@ -124,39 +138,45 @@ impl Search {
         table.print()
     }
 
-    fn get_matches(&self) -> Vec<(String, String)> {
+    fn get_matches(&self, catalog: &[ToolCatalogEntry]) -> Vec<(String, String)> {
         let name = self.name.as_deref().unwrap_or("");
         let mut fuzzy_matcher = FuzzyMatcher::default();
         let fuzzy_pattern = FuzzyPattern::new(&name.to_lowercase());
-        let mut matches = self
-            .get_tools()
+        let mut matches = catalog
             .iter()
-            .filter_map(|(short, rt)| {
+            .filter_map(|tool| {
                 if name.is_empty() {
-                    Some((0, short, rt))
+                    Some((0, tool))
                 } else {
                     match self.match_type {
                         MatchType::Equal => {
-                            if *short == name {
-                                Some((0, short, rt))
+                            if tool.id == name || tool.name == name {
+                                Some((0, tool))
                             } else {
                                 None
                             }
                         }
                         MatchType::Contains => {
-                            if short.contains(name) {
-                                Some((0, short, rt))
+                            if tool.id.contains(name) || tool.name.contains(name) {
+                                Some((0, tool))
                             } else {
                                 None
                             }
                         }
-                        MatchType::Fuzzy => fuzzy_matcher
-                            .score_pattern(&short.to_lowercase(), &fuzzy_pattern)
-                            .map(|score| (score, short, rt)),
+                        MatchType::Fuzzy => {
+                            let candidate = if name.contains(':') {
+                                &tool.id
+                            } else {
+                                &tool.name
+                            };
+                            fuzzy_matcher
+                                .score_pattern(&candidate.to_lowercase(), &fuzzy_pattern)
+                                .map(|score| (score, tool))
+                        }
                     }
                 }
             })
-            .map(|(score, short, rt)| (score, short.to_string(), get_description(rt)))
+            .map(|(score, tool)| (score, tool.id.clone(), search_description(tool)))
             .collect_vec();
 
         if matches.is_empty() {
@@ -218,20 +238,28 @@ impl Search {
             .collect()
     }
 
-    fn get_tools(&self) -> Vec<(String, &'static RegistryTool)> {
-        REGISTRY
-            .iter()
-            .filter(|(short, _)| filter_enabled(short))
-            .map(|(short, rt)| (short.to_string(), rt))
-            .collect_vec()
+    fn print_completions(&self, tools: &[ToolCatalogEntry], descriptions: bool) {
+        for tool in tools {
+            if descriptions {
+                println!(
+                    "{}:{}",
+                    tool.id.replace(':', "\\:"),
+                    tool.selector_description().replace(':', "\\:")
+                );
+            } else {
+                println!("{}", tool.id);
+            }
+        }
     }
 }
 
-fn filter_enabled(short: &str) -> bool {
-    let settings = Settings::get();
-    let enable_tools = settings.enable_tools();
-    let disable_tools = settings.disable_tools();
-    tool_enabled(enable_tools.as_ref(), &disable_tools, &short.to_string())
+fn search_description(tool: &ToolCatalogEntry) -> String {
+    match &tool.source {
+        ToolCatalogSource::Registry(registry_tool) => get_description(registry_tool),
+        ToolCatalogSource::VfoxBackend => {
+            tool.description.clone().unwrap_or_else(|| tool.id.clone())
+        }
+    }
 }
 
 fn get_description(tool: &RegistryTool) -> String {

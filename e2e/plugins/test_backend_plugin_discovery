@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$PWD/catalog-plugin"
+MARKER="$PWD/catalog-calls"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {
+    name = "catalog",
+    version = "0.1.0",
+    description = "backend tool discovery test plugin",
+}
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_list_tools.lua" <<LUA
+function PLUGIN:BackendListTools(ctx)
+    local marker = io.open([[$MARKER]], "a")
+    marker:write("called\n")
+    marker:close()
+    return {
+        tools = {
+            {name = "formatter", description = "A formatter from a backend plugin"},
+            {name = "linter"},
+            {name = "other:backend", description = "invalid name"},
+        },
+    }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+    return {versions = {"1.0.0"}}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+    return {}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/backend_exec_env.lua" <<'LUA'
+function PLUGIN:BackendExecEnv(ctx)
+    return {env_vars = {}}
+end
+LUA
+
+mise plugins link catalog "$PLUGIN_DIR"
+
+assert_contains "mise search --match-type equal formatter" "catalog:formatter  A formatter from a backend plugin"
+assert_contains "mise search --match-type equal catalog:formatter" "catalog:formatter"
+assert_contains "mise search --match-type equal linter" "catalog:linter"
+assert_fail "mise search --match-type equal other:backend" "not found in registry or installed backend catalogs"
+assert_contains "mise search --complete-ids" "catalog:formatter"
+assert_contains "mise search --complete" 'catalog\:formatter:A formatter from a backend plugin'
+
+# Repeated discovery reads the cached catalog instead of executing the hook again.
+assert "wc -l < '$MARKER' | tr -d ' '" "1"

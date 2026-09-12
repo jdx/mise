@@ -107,6 +107,7 @@ pub(crate) mod tera;
 pub(crate) mod timeout;
 mod tokens;
 mod toml;
+mod tool_catalog;
 mod tool_purgatory;
 mod toolset;
 mod ui;
