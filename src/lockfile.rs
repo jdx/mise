@@ -3894,13 +3894,11 @@ fn matching_request_bindings<'a>(
 /// Newest-first ordering for the lockfile entries that all satisfy one
 /// `latest` request.
 ///
-/// The version string is a tie-break, not decoration. `versions` compares an
-/// alphanumeric chunk by its leading digits and stops there, so `3.7b` and
-/// `3.7c` both reduce to `7` and come back `Equal` (fosskers/rs-versions#39).
-/// Entries are written in lexicographic order of the version string
-/// (`merge_tool_entries`) and `sort_by` is stable, so with nothing to break the
-/// tie that file order survives and the *older* entry always wins.
-/// `install_state` breaks the same tie the same way.
+/// The version string is a tie-break, not decoration. It guarantees a
+/// deterministic order when a parser considers distinct opaque versions
+/// equivalent. This originally worked around `versions` v7 treating `3.7b`
+/// and `3.7c` as equal (fosskers/rs-versions#39); `install_state` breaks ties
+/// the same way.
 ///
 /// Two identical strings still compare `Equal`, which leaves the stable sort to
 /// keep duplicate entries in the order they were read.
