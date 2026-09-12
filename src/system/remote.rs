@@ -440,8 +440,10 @@ async fn run_inner(
     artifacts: &mut RemoteArtifactResolver,
     repository: Option<&super::remote_repository::Source>,
 ) -> Result<()> {
-    let ssh = crate::file::which("ssh").ok_or_else(|| eyre!("required command 'ssh' not found"))?;
-    let tar = crate::file::which("tar").ok_or_else(|| eyre!("required command 'tar' not found"))?;
+    let ssh = crate::file::which_spawnable("ssh")
+        .ok_or_else(|| eyre!("required command 'ssh' not found"))?;
+    let tar = crate::file::which_spawnable("tar")
+        .ok_or_else(|| eyre!("required command 'tar' not found"))?;
     let control_directory = if cfg!(unix) {
         Some(
             tempfile::Builder::new()
@@ -733,7 +735,7 @@ pub(crate) async fn ssh(
         .prefix("mise-ssh-")
         .tempdir_in("/tmp")?;
     let session = SshSession {
-        ssh: crate::file::which("ssh").ok_or_else(|| eyre!("ssh not found"))?,
+        ssh: crate::file::which_spawnable("ssh").ok_or_else(|| eyre!("ssh not found"))?,
         host,
         relay: true,
         connect_timeout: 10,
