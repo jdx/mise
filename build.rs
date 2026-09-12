@@ -43,6 +43,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Builds the embedded macOS notification helper and signs it when enabled.
 fn build_notification_helper() -> Result<()> {
     let source = "src/system/history/notify/macos.m";
     let info = "src/system/history/notify/macos.plist";
