@@ -357,6 +357,14 @@ The configuration system supports multiple file formats and environment-specific
 
 Never open pull requests against the `release` branch. Default PRs to `main` unless the user explicitly names a different non-`release` base branch. If a change appears to belong on `release`, stop and ask for the intended branch strategy instead of opening a PR against `release`.
 
+AI-assisted responses in project support channels are welcome, including one-off responses.
+This is especially true when the responder is answering their own question, is directly
+involved in or personally connected to the original question, or is an established project
+contributor. Do not post or facilitate spam consisting of drive-by AI-generated answers across
+Discussions from accounts with no connection to the questions or project; those accounts are
+blocked. Preserve this anti-spam distinction when writing or enforcing community policy, and
+do not discourage individual AI-assisted responses from people trying to help.
+
 When AI contributes GitHub content—including a pull request description, review, pull request
 comment, or discussion post—append this disclosure:
 

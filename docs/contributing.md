@@ -7,12 +7,15 @@ outline: [2, 3]
 
 ## Community Participation
 
-Do not post AI-generated or AI-assisted answers to other users' questions in GitHub
-Discussions or other project support channels. This includes raw, lightly edited, or
-disclosed model output. Accounts that post these replies will be blocked from the project.
+AI-assisted responses are welcome, including one-off responses from people trying to help.
+This is especially true when you are answering your own question, are directly involved in or
+personally connected to the original question, or are an established project contributor. In
+all cases, review and verify the response before posting it.
 
-AI assistance is allowed when working on a contribution you are submitting, but you are
-responsible for reviewing and verifying the result.
+Do not use AI to spam project support channels with drive-by answers across Discussions when
+you have no connection to the questions or the project. This includes raw, lightly edited, or
+disclosed model output. This policy is intended to prevent discussion spam, not discourage
+individual responses. Accounts that engage in this behavior will be blocked from the project.
 
 ## Contribution Expectations
 

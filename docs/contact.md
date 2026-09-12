@@ -9,8 +9,9 @@ This keeps answers searchable and lets other users help. The project uses Discus
 bug reports and feature requests as well as general questions.
 
 Before participating, read the [community participation policy](/contributing.html#community-participation).
-AI-generated or AI-assisted answers to other users' questions are prohibited, and accounts
-that post them will be blocked from the project.
+Reviewed AI-assisted responses, including one-off responses, are welcome. The policy targets
+accounts that spam Discussions with drive-by AI answers despite having no connection to the
+questions or project; those accounts will be blocked.
 
 - [Troubleshooting & Bug Reports](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports):
   include the command, relevant configuration, expected and actual behavior, and reviewed
