@@ -92,3 +92,92 @@ impl Usage {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn example_descriptions_are_not_shell_input() {
+        let spec = super::spec();
+        for name in ["prune", "set", "watch", "en", "registry", "reshim"] {
+            for example in &spec.cmd.subcommands[name].examples {
+                for line in example.code.lines() {
+                    assert!(
+                        !line.starts_with("rm -rf ")
+                            && !line.starts_with("Runs the ")
+                            && !line.starts_with("Skip loading ")
+                            && !line.starts_with("Enter value for ")
+                            && line != "v20.0.0"
+                            && line != "core:node"
+                            && !line.ends_with("Encryption:"),
+                        "{name}: {line}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn task_mounts_describe_arguments_without_discovery() {
+        let spec = super::spec();
+        for cmd in [
+            &spec.cmd.subcommands["run"],
+            &spec.cmd.subcommands["tasks"].subcommands["run"],
+        ] {
+            assert_eq!(cmd.mounts[0].synopsis.as_deref(), Some("[TASK] [ARGS]…"));
+            assert!(cmd.usage.ends_with("[TASK] [ARGS]…"), "{}", cmd.usage);
+            let page = usage::docs::markdown::MarkdownRenderer::new(spec.clone())
+                .with_link_extension(".html")
+                .render_cmd(cmd)
+                .unwrap();
+            assert!(page.contains("[TASK] [ARGS]…"), "{page}");
+        }
+    }
+
+    #[test]
+    fn command_examples_reach_the_spec_and_renderers() {
+        let spec = super::spec();
+        let markdown = usage::docs::markdown::MarkdownRenderer::new(spec.clone());
+        for name in ["activate", "run", "install", "env", "use"] {
+            let cmd = &spec.cmd.subcommands[name];
+            assert!(
+                !cmd.examples.is_empty(),
+                "{name} has no structured examples"
+            );
+            let help = usage::docs::cli::render_help(&spec, cmd, true);
+            assert_eq!(help.matches("Examples:").count(), 1, "{help}");
+            let page = markdown.render_cmd(cmd).unwrap();
+            assert_eq!(page.matches("## Examples").count(), 1, "{page}");
+            for example in &cmd.examples {
+                assert!(!example.code.contains("<bold>"));
+                assert!(!example.code.contains('\u{1b}'));
+                for line in example.code.lines() {
+                    assert!(help.contains(line), "{name}: {line}");
+                }
+                assert!(page.contains(&example.code), "{name}: {}", example.code);
+            }
+        }
+
+        let reparsed: usage::Spec = spec.to_string().parse().unwrap();
+        for name in ["activate", "run", "install", "env", "use"] {
+            let expected = &spec.cmd.subcommands[name].examples;
+            let actual = &reparsed.cmd.subcommands[name].examples;
+            assert_eq!(actual.len(), expected.len(), "{name}");
+            for (actual, expected) in actual.iter().zip(expected) {
+                assert_eq!(actual.code, expected.code, "{name}");
+                assert_eq!(actual.header, expected.header, "{name}");
+                assert_eq!(actual.help, expected.help, "{name}");
+                assert_eq!(actual.lang, expected.lang, "{name}");
+            }
+        }
+
+        let manpage = usage::docs::manpage::ManpageRenderer::new(spec.clone())
+            .render()
+            .unwrap();
+        for name in ["activate", "run", "install", "env", "use"] {
+            for example in &spec.cmd.subcommands[name].examples {
+                let escaped = example.code.replace('\\', "\\\\").replace('-', "\\-");
+                assert!(manpage.contains(&escaped), "{name}: {}", example.code);
+            }
+        }
+    }
+}

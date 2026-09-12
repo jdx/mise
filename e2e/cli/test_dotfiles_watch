@@ -150,9 +150,9 @@ assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edit
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description_source'" "computed"
 # a failing command keeps the computed description
 printf '#!/usr/bin/env bash\nexit 3\n' >"$PWD/describe"
-errors="$(grep -c '\"event\":\"describe-error\"' watch.log || true)"
+errors="$(grep -Fc '"event":"describe-error"' watch.log || true)"
 echo 'monitor=DP-6' >~/.config/hypr/monitors.lua
-wait_until "[[ \$(grep -c '\"event\":\"describe-error\"' watch.log) -gt $errors ]]"
+wait_until "[[ \$(grep -Fc '\"event\":\"describe-error\"' watch.log) -gt $errors ]]"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description_source'" "computed"
 

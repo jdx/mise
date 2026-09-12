@@ -7,3 +7,9 @@ retries = { backoff = "exponential", count = 4, delay = "1s", max-delay = "10s" 
 [profile.ci]
 inherits = "default"
 retries = 0
+
+# These tests construct and render the entire CLI command graph. Keep their
+# regression coverage in-process, but still enforce a strict per-test ceiling.
+[[profile.ci.overrides]]
+filter = 'test(/cli::usage::tests::/)'
+slow-timeout = { period = "500ms", terminate-after = 4 }
