@@ -486,6 +486,8 @@ mod tests {
 
     #[test]
     fn test_is_outdated_version() {
+        assert_eq!(is_outdated_version("3.7b", "3.7c"), true);
+        assert_eq!(is_outdated_version("3.7c", "3.7b"), false);
         assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);
         assert_eq!(is_outdated_version("1.12.0", "1.10.0"), false);
 
