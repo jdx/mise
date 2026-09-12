@@ -31,7 +31,7 @@ case "$1 $2" in
 		echo minimal
 		;;
 	"component list")
-		echo rustfmt
+		printf '%s\n' cargo rust-std rustc rustfmt
 		;;
 	"toolchain install")
 		mkdir -p "$RUSTUP_HOME/toolchains/$3"
