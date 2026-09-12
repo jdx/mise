@@ -5,8 +5,8 @@ version_order = "source"
 full = "github:minio/mc"
 
 [backends.options]
-bin = "mc"
 github_attestations = false
+rename_exe = "mc"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-mc"
