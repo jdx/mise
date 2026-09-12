@@ -145,6 +145,10 @@ jobs:
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features --ignore-rust-version
+      - name: cargo test (unsigned notifications)
+        env:
+          MISE_NOTIFICATION_SIGNING: disabled
+        run: mise x -- cargo test --all-features --ignore-rust-version system::history::notify
       # `cargo test` above resolves to the root package, so the workspace members are built as
       # dependencies but never tested. Run them separately rather than adding --workspace to the
       # line above, which would extend --all-features to members whose features are exclusive.

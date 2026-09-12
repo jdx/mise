@@ -43,6 +43,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Builds the embedded macOS notification helper and signs it when enabled.
 fn build_notification_helper() -> Result<()> {
     let source = "src/system/history/notify/macos.m";
     let info = "src/system/history/notify/macos.plist";
@@ -51,9 +52,11 @@ fn build_notification_helper() -> Result<()> {
     println!("cargo:rerun-if-changed={info}");
     println!("cargo:rerun-if-changed={icon}");
     println!("cargo:rerun-if-env-changed=MISE_NOTIFICATION_SIGN_IDENTITY");
+    println!("cargo:rerun-if-env-changed=MISE_NOTIFICATION_SIGNING");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return Ok(());
     }
+    println!("cargo:rustc-check-cfg=cfg(mise_notification_has_signature_resources)");
     let app = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("mise-notify.app");
     let contents = app.join("Contents");
     let output = contents.join("MacOS/mise-notify");
@@ -96,24 +99,33 @@ fn build_notification_helper() -> Result<()> {
     fs::write(contents.join("Resources/mise.icns"), icns)?;
 
     let identity = env::var("MISE_NOTIFICATION_SIGN_IDENTITY").unwrap_or_else(|_| "-".into());
+    let release_signed = identity != "-";
+    let signing_enabled = env::var("MISE_NOTIFICATION_SIGNING").as_deref() != Ok("disabled");
     println!(
         "cargo:rustc-env=MISE_NOTIFICATION_RELEASE_SIGNED={}",
-        if identity == "-" { "0" } else { "1" }
+        if signing_enabled && release_signed {
+            "1"
+        } else {
+            "0"
+        }
     );
-    let mut codesign = Command::new("/usr/bin/codesign");
-    codesign
-        .args(["--force", "--sign"])
-        .arg(&identity)
-        .args(["--identifier", "dev.jdx.mise.notifications"]);
-    if identity != "-" {
-        codesign.args(["--options", "runtime", "--timestamp"]);
-    }
-    let signed = codesign.arg(&app).output()?;
-    if !signed.status.success() {
-        return Err(eyre!(
-            "failed to sign the macOS notification helper: {}",
-            String::from_utf8_lossy(&signed.stderr).trim()
-        ));
+    if signing_enabled {
+        println!("cargo:rustc-cfg=mise_notification_has_signature_resources");
+        let mut codesign = Command::new("/usr/bin/codesign");
+        codesign
+            .args(["--force", "--sign"])
+            .arg(&identity)
+            .args(["--identifier", "dev.jdx.mise.notifications"]);
+        if identity != "-" {
+            codesign.args(["--options", "runtime", "--timestamp"]);
+        }
+        let signed = codesign.arg(&app).output()?;
+        if !signed.status.success() {
+            return Err(eyre!(
+                "failed to sign the macOS notification helper: {}",
+                String::from_utf8_lossy(&signed.stderr).trim()
+            ));
+        }
     }
     Ok(())
 }

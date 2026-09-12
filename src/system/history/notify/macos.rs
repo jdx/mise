@@ -19,6 +19,7 @@ const ICON: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/mise-notify.app/Contents/Resources/mise.icns"
 ));
+#[cfg(mise_notification_has_signature_resources)]
 const CODE_RESOURCES: &[u8] = include_bytes!(concat!(
     env!("OUT_DIR"),
     "/mise-notify.app/Contents/_CodeSignature/CodeResources"
@@ -28,22 +29,45 @@ pub(super) fn release_signed() -> bool {
     env!("MISE_NOTIFICATION_RELEASE_SIGNED") == "1"
 }
 
+/// Returns the versioned installation path for the embedded notification helper.
 fn app_path(root: &Path) -> PathBuf {
     // A versioned directory permits safe replacement without modifying a
     // running helper. The bundle identifier remains stable across versions.
-    let fingerprint = crate::hash::hash_to_str(&(HELPER, INFO, ICON, CODE_RESOURCES));
+    let fingerprint = bundle_fingerprint();
     root.join(fingerprint).join("mise.app")
+}
+
+/// Hashes the helper bundle inputs, including its signature resources.
+#[cfg(mise_notification_has_signature_resources)]
+fn bundle_fingerprint() -> String {
+    crate::hash::hash_to_str(&(HELPER, INFO, ICON, CODE_RESOURCES))
+}
+
+/// Hashes the helper bundle inputs for an unsigned build.
+#[cfg(not(mise_notification_has_signature_resources))]
+fn bundle_fingerprint() -> String {
+    crate::hash::hash_to_str(&(HELPER, INFO, ICON))
 }
 
 fn executable(app: &Path) -> PathBuf {
     app.join("Contents/MacOS/mise-notify")
 }
 
+/// Reports whether the signed helper bundle contains all required files.
+#[cfg(mise_notification_has_signature_resources)]
 fn complete(app: &Path) -> bool {
     executable(app).is_file()
         && app.join("Contents/Info.plist").is_file()
         && app.join("Contents/Resources/mise.icns").is_file()
         && app.join("Contents/_CodeSignature/CodeResources").is_file()
+}
+
+/// Reports whether the unsigned helper bundle contains all required files.
+#[cfg(not(mise_notification_has_signature_resources))]
+fn complete(app: &Path) -> bool {
+    executable(app).is_file()
+        && app.join("Contents/Info.plist").is_file()
+        && app.join("Contents/Resources/mise.icns").is_file()
 }
 
 pub(super) fn notification(title: &str, body: &str) -> Result<Command> {
@@ -60,6 +84,7 @@ fn notification_command(app: &Path, title: &str, body: &str) -> Command {
     command
 }
 
+/// Installs the embedded notification helper atomically under `root` if needed.
 fn ensure_app(root: &Path) -> Result<PathBuf> {
     let app = app_path(root);
     if complete(&app) {
@@ -78,11 +103,13 @@ fn ensure_app(root: &Path) -> Result<PathBuf> {
     let contents = staged.join("Contents");
     std::fs::create_dir_all(contents.join("MacOS"))?;
     std::fs::create_dir_all(contents.join("Resources"))?;
+    #[cfg(mise_notification_has_signature_resources)]
     std::fs::create_dir_all(contents.join("_CodeSignature"))?;
     std::fs::write(executable(&staged), HELPER)?;
     std::fs::set_permissions(executable(&staged), std::fs::Permissions::from_mode(0o755))?;
     std::fs::write(contents.join("Info.plist"), INFO)?;
     std::fs::write(contents.join("Resources/mise.icns"), ICON)?;
+    #[cfg(mise_notification_has_signature_resources)]
     std::fs::write(
         contents.join("_CodeSignature/CodeResources"),
         CODE_RESOURCES,
@@ -110,6 +137,7 @@ fn ensure_app(root: &Path) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    /// Verifies the helper identity and icon without sending a notification.
     #[test]
     fn notification_helper_has_its_own_identity_and_decodable_icon_without_notifying() {
         let temp = tempfile::tempdir().unwrap();
@@ -121,6 +149,7 @@ mod tests {
                 .unwrap()
                 .success()
         );
+        #[cfg(mise_notification_has_signature_resources)]
         assert!(
             Command::new("/usr/bin/codesign")
                 .args(["--verify", "--strict"])
