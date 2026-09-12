@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2B0CPZT55R05RKW72EPJQE4",
+  "session_id": "01a095ac-5a34-79f1-af7d-181c43a96d9c",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-12T14:29:55.660089Z",
+  "branch": "codex/vfox-backend-tool-discovery",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "6110a7e6fa36",
+  "checkpoint_transcript_start": 1673,
+  "transcript_lines_at_start": 1673,
+  "compact_transcript_start": 234,
+  "token_usage": {
+    "input_tokens": 145365,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4738432,
+    "output_tokens": 2182,
+    "api_call_count": 33
+  },
+  "session_metrics": {
+    "turn_count": 8
+  }
+}
