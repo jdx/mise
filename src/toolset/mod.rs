@@ -780,10 +780,14 @@ impl Toolset {
             .map(|tv| tv.style())
             .collect::<Vec<_>>()
             .join(" ");
-        warn!(
-            "missing: {}",
-            truncate_str(&versions, *TERM_WIDTH - 14, "…"),
-        );
+        if crate::env::should_truncate() {
+            warn!(
+                "missing: {}",
+                truncate_str(&versions, *TERM_WIDTH - 14, "…"),
+            );
+        } else {
+            warn!("missing: {versions}");
+        }
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {

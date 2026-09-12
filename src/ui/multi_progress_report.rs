@@ -81,7 +81,7 @@ impl MultiProgressReport {
         let force_progress = *env::MISE_FORCE_PROGRESS;
         // A terminal that records frames instead of redrawing them gets the
         // same append-only output as CI, for the same reason.
-        let ci = settings.ci || *env::FRAME_LOGGING_TERMINAL;
+        let ci = settings.ci || *env::AI_AGENT;
 
         progress_trace!(
             "MultiProgressReport::new: raw={}, quiet={}, verbose={}, has_stderr={}, force_progress={}, ci={}",

@@ -6,6 +6,22 @@ use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate, shims};
 use eyre::{Report, bail};
 use std::path::PathBuf;
+use usage_rs::config::{Layers, PropMeta, Registry as SettingsRegistry, Ty, Value};
+
+static CLI_SETTING_PROPS: &[PropMeta] = &[PropMeta {
+    cli: &["--truncate", "--no-truncate"],
+    ..PropMeta::new("truncate", Ty::Bool)
+}];
+const CLI_SETTINGS_REGISTRY: SettingsRegistry = SettingsRegistry::new(CLI_SETTING_PROPS);
+
+fn cli_truncate_setting(layer: &usage_rs::config::CliLayer) -> Result<Option<bool>> {
+    let resolved = usage_rs::config::resolve(CLI_SETTINGS_REGISTRY, Layers::new().then(layer))?;
+    Ok(match resolved.get_key("truncate") {
+        Some(Value::Bool(value)) => Some(*value),
+        None => None,
+        Some(value) => unreachable!("truncate resolved as {}", value.type_name()),
+    })
+}
 
 mod activate;
 pub(crate) mod args;
@@ -102,7 +118,7 @@ pub(crate) enum LevelFilter {
 
 #[derive(usage_rs::Cli)]
 #[usage(
-    name = "mise", about, long_about = LONG_ABOUT,
+    name = "mise", about, long_about = LONG_ABOUT, settings,
     example("mise install node@20.0.0", help = "Install a specific node version"),
     example("mise install node@20", help = "Install a version matching a prefix"),
     example("mise install node", help = "Install the node version defined in config"),
@@ -947,8 +963,9 @@ impl Cli {
 
         let parsed_argv: Vec<&std::ffi::OsStr> =
             processed_args.iter().map(std::ffi::OsStr::new).collect();
-        let mut cli = measure!("parse_args", {
-            Cli::parse_from_argv(&parsed_argv).map_err(|err| usage_error(&parsed_argv[1..], err))
+        let (mut cli, cli_settings) = measure!("parse_args", {
+            Cli::parse_from_argv_with_settings(&parsed_argv)
+                .map_err(|err| usage_error(&parsed_argv[1..], err))
         })?;
         if let Some(Commands::Bootstrap(bootstrap)) = &mut cli.command {
             bootstrap.inherit_root_flags(cli.dry_run, cli.yes);
@@ -961,7 +978,10 @@ impl Cli {
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
-        measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
+        let cli_truncate = cli_truncate_setting(&cli_settings)?;
+        measure!("add_cli_matches", {
+            Settings::add_cli_matches_with(&cli, cli_truncate)
+        });
         // Propagated, not discarded: this is where `--cd` is actually applied, and a directory
         // that passed the checks above can still refuse the `chdir` — no execute permission, or a
         // path past the length `SetCurrentDirectory` accepts. Dropping the error here does not
@@ -1512,6 +1532,51 @@ mod tests {
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
+    }
+
+    fn parse_truncate(args: &[&str]) -> Option<bool> {
+        let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
+        let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
+        cli_truncate_setting(&layer).unwrap()
+    }
+
+    #[test]
+    fn truncate_flags_are_command_local_negatable_settings() {
+        assert_eq!(parse_truncate(&["mise", "ls"]), None);
+        assert_eq!(
+            parse_truncate(&["mise", "config", "ls", "--no-truncate"]),
+            Some(false)
+        );
+        assert_eq!(
+            parse_truncate(&[
+                "mise",
+                "bootstrap",
+                "dotfiles",
+                "status",
+                "--truncate",
+                "--no-truncate",
+            ]),
+            Some(false)
+        );
+        assert_eq!(
+            parse_truncate(&[
+                "mise",
+                "bootstrap",
+                "dotfiles",
+                "status",
+                "--no-truncate",
+                "--truncate",
+            ]),
+            Some(true)
+        );
+
+        for args in [
+            &["mise", "registry", "--no-truncate"][..],
+            &["mise", "config", "get", "--no-truncate"],
+        ] {
+            let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+            assert!(Cli::parse_from_argv_with_settings(&argv).is_err());
+        }
     }
 
     #[test]

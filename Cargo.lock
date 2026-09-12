@@ -6558,6 +6558,7 @@ dependencies = [
  "md-5 0.11.0",
  "miette",
  "minisign-verify",
+ "mise-agent-env",
  "mise-cache-core",
  "mise-interactive-config",
  "mise-sigstore",
@@ -6641,6 +6642,10 @@ dependencies = [
  "zipsign-api",
  "zstd",
 ]
+
+[[package]]
+name = "mise-agent-env"
+version = "0.1.0"
 
 [[package]]
 name = "mise-cache-core"
@@ -11321,6 +11326,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "usage-config"
+version = "6.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e19abc7aba3ff3392f63704558fd25d86fb3dd193de4809bf4173a7dd67b4129"
+
+[[package]]
 name = "usage-derive"
 version = "6.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11360,6 +11371,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "894bcecc06869ce740fde1135ac8ee60d82bf33e88f34e4fee434a62e98e15e8"
 dependencies = [
  "usage-argv",
+ "usage-config",
  "usage-derive",
  "usage-test",
  "usage-validation",

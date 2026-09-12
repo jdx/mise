@@ -631,7 +631,7 @@ fn patch_to_status(patch: EnvDiffOperation) -> String {
 }
 
 fn format_status(status: &str) -> Cow<'_, str> {
-    if Settings::get().status.truncate {
+    if Settings::get().status.truncate && crate::env::should_truncate() {
         truncate_str(status, TERM_WIDTH.max(60) - 5, "…")
     } else {
         status.into()

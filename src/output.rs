@@ -126,8 +126,12 @@ macro_rules! info_trunc {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
         let msg = msg.lines().next().unwrap_or_default();
-        let msg = console::truncate_str(&msg, *$crate::env::TERM_WIDTH, "…");
-        info!("{msg}");
+        if $crate::env::should_truncate() {
+            let msg = console::truncate_str(&msg, *$crate::env::TERM_WIDTH, "…");
+            info!("{msg}");
+        } else {
+            info!("{msg}");
+        }
     }};
 }
 

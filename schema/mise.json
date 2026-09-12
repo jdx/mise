@@ -2255,6 +2255,11 @@
           "description": "Sets log level to trace",
           "type": "boolean"
         },
+        "truncate": {
+          "default": true,
+          "description": "Truncate long terminal output to fit the available width.",
+          "type": "boolean"
+        },
         "trusted_config_paths": {
           "default": [],
           "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable, `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).",

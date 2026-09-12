@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use versions::Versioning;
 
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, TruncateOptions};
 use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
@@ -55,6 +55,9 @@ use crate::ui::table::MiseTable;
     )
 )]
 pub(crate) struct Ls {
+    #[usage(flatten)]
+    truncate: TruncateOptions,
+
     /// Only show tool versions from [TOOL]
     #[usage(conflicts = "tool_flag")]
     installed_tool: Option<Vec<BackendArg>>,
@@ -282,6 +285,7 @@ impl Ls {
             });
         }
         let mut table = MiseTable::new(self.no_header, &["Tool", "Version", "Source", "Requested"]);
+        table.truncate(self.truncate.truncate);
         for r in rows {
             if self.all_sources && !r.sources.is_empty() {
                 for (idx, source_entry) in r.sources.iter().enumerate() {
@@ -311,7 +315,7 @@ impl Ls {
                 table.add_row(row);
             }
         }
-        table.truncate(true).print()
+        table.print()
     }
 
     /// Deliberately does *not* widen the tool filter the way the other listings do.

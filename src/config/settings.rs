@@ -1284,6 +1284,10 @@ impl Settings {
     }
 
     pub(crate) fn add_cli_matches(cli: &Cli) {
+        Self::add_cli_matches_with(cli, None);
+    }
+
+    pub(crate) fn add_cli_matches_with(cli: &Cli, truncate: Option<bool>) {
         let mut s = SettingsPartial::empty();
 
         // Don't process mise-specific flags when running as a shim
@@ -1294,6 +1298,9 @@ impl Settings {
 
         if cli.raw {
             s.raw = Some(true);
+        }
+        if let Some(truncate) = truncate {
+            s.truncate = Some(truncate);
         }
         if cli.locked {
             s.locked = Some(true);

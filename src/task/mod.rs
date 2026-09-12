@@ -1621,7 +1621,11 @@ impl Task {
         } else {
             self.display_name.clone()
         };
-        format!("[{}]", console::truncate_str(&inner, max_width, "…"))
+        if env::should_truncate() {
+            format!("[{}]", console::truncate_str(&inner, max_width, "…"))
+        } else {
+            format!("[{inner}]")
+        }
     }
 
     pub(crate) fn run(&self) -> &Vec<RunEntry> {
@@ -3344,8 +3348,12 @@ impl Display for Task {
             // Ensure we have at least 20 characters for the command, even with very long prefixes
             let available_width = (*env::TERM_WIDTH).saturating_sub(prefix_len + 4); // 4 chars buffer for spacing and ellipsis
             let max_width = available_width.max(20); // Always show at least 20 chars of command
-            let truncated_cmd = truncate_str(cmd, max_width, "…");
-            write!(f, "{} {}", prefix, truncated_cmd)
+            if env::should_truncate() {
+                let truncated_cmd = truncate_str(cmd, max_width, "…");
+                write!(f, "{} {}", prefix, truncated_cmd)
+            } else {
+                write!(f, "{} {}", prefix, cmd)
+            }
         } else {
             write!(f, "{}", self.prefix())
         }

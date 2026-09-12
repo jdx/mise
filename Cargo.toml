@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/mise-cache-core",
+  "crates/mise-agent-env",
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
@@ -103,6 +104,7 @@ chrono = { version = "0.4", default-features = false, features = [
 ci_info = "0.14"
 usage_rs = { package = "usage-rs", version = "6.8", features = [
   "completions",
+  "config",
   "diagnostics",
   "validation",
 ] }
@@ -131,6 +133,7 @@ flate2 = "1"
 futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
+mise-agent-env = { path = "crates/mise-agent-env", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",

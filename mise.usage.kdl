@@ -989,6 +989,7 @@ Show the status of dotfiles from `[dotfiles]`
 Template entries are rendered to compare their output; trusted template
 functions may execute. `--missing` changes the exit status, not the listing.
 """#
+            flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
             flag "-J --json" help="Output in JSON format"
             flag --missing help=#"""
 Exit with code 1 if any configured dotfiles are not in their desired
@@ -1982,6 +1983,7 @@ mise completion zsh --tool rg --install
 }
 cmd config help="Manage config files" effect=read {
     alias cfg toml
+    flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
     flag "-J --json" help="Output in JSON format"
     flag --no-header help="Do not print table header" {
         alias "--no-headers" hide=#true
@@ -2022,6 +2024,7 @@ mise config get tools.python
     }
     cmd ls help="List config files currently in use" effect=read {
         alias list
+        flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
         flag "-J --json" help="Output in JSON format"
         flag --no-header help="Do not print table header" {
             alias "--no-headers" hide=#true
@@ -2324,6 +2327,7 @@ tracked) followed by the history state: what is tracked, the latest
 checkpoint, unfinished operations, and whether edits are saved
 automatically.
 """#
+        flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
         flag "-J --json" help="Output in JSON format"
         flag --missing help=#"""
 Exit with code 1 if any configured dotfiles are not in their desired
@@ -3404,6 +3408,7 @@ List installed and active tool versions
 Lists the tools mise knows about: versions that are installed, and versions requested
 by a config file (active) whether or not they are installed.
 """#
+    flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml" conflicts=--local
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
