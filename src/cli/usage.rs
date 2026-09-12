@@ -134,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn command_examples_reach_the_spec_and_renderers() {
+    fn command_examples_reach_cli_help_and_markdown() {
         let spec = super::spec();
         let markdown = usage::docs::markdown::MarkdownRenderer::new(spec.clone());
         for name in ["activate", "run", "install", "env", "use"] {
@@ -156,7 +156,11 @@ mod tests {
                 assert!(page.contains(&example.code), "{name}: {}", example.code);
             }
         }
+    }
 
+    #[test]
+    fn command_examples_survive_spec_roundtrip() {
+        let spec = super::spec();
         let reparsed: usage::Spec = spec.to_string().parse().unwrap();
         for name in ["activate", "run", "install", "env", "use"] {
             let expected = &spec.cmd.subcommands[name].examples;
@@ -169,7 +173,11 @@ mod tests {
                 assert_eq!(actual.lang, expected.lang, "{name}");
             }
         }
+    }
 
+    #[test]
+    fn command_examples_reach_manpage() {
+        let spec = super::spec();
         let manpage = usage::docs::manpage::ManpageRenderer::new(spec.clone())
             .render()
             .unwrap();
