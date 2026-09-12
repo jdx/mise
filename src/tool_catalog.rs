@@ -146,7 +146,7 @@ fn backend_search_query<'a>(plugin_name: &str, query: &'a str) -> Option<&'a str
     if query.is_empty() {
         None
     } else if let Some((prefix, query)) = query.split_once(':') {
-        (prefix == plugin_name).then_some(query)
+        (prefix == plugin_name && !query.is_empty()).then_some(query)
     } else {
         Some(query)
     }
@@ -272,6 +272,7 @@ mod tests {
     fn test_backend_search_query() {
         assert_eq!(backend_search_query("npm", "react"), Some("react"));
         assert_eq!(backend_search_query("npm", "npm:react"), Some("react"));
+        assert_eq!(backend_search_query("npm", "npm:"), None);
         assert_eq!(backend_search_query("npm", "cargo:react"), None);
         assert_eq!(backend_search_query("npm", ""), None);
     }

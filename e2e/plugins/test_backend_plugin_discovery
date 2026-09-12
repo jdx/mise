@@ -66,6 +66,7 @@ assert_contains "mise search --match-type equal linter" "catalog_plugin:linter"
 assert_fail "mise search --match-type equal other:backend" "not found in registry or installed backend catalogs"
 assert_contains "mise search --complete-ids" "catalog_plugin:formatter"
 assert_contains "mise search --complete" 'catalog_plugin\:formatter:A formatter from a backend plugin'
+assert_contains "mise search --complete catalog_plugin:" 'catalog_plugin\:formatter:A formatter from a backend plugin'
 assert_contains "mise search --match-type equal dynamic" "catalog_plugin:dynamic  A dynamically discovered tool"
 assert_contains "mise search --match-type equal catalog_plugin:dynamic" "catalog_plugin:dynamic"
 assert_contains "mise search --complete catalog_plugin:dynamic" 'catalog_plugin\:dynamic:A dynamically discovered tool'
@@ -73,3 +74,4 @@ assert_contains "mise search --complete catalog_plugin:dynamic" 'catalog_plugin\
 # Repeated discovery reads the cached catalog instead of executing the hook again.
 assert "wc -l < '$MARKER' | tr -d ' '" "1"
 assert "grep -c '^dynamic$' '$SEARCH_MARKER'" "1"
+assert "awk 'NF == 0 { count++ } END { print count + 0 }' '$SEARCH_MARKER'" "0"
