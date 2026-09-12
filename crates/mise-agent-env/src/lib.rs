@@ -120,6 +120,7 @@ where
 {
     let value = |name| env(name).filter(|value| !value.is_empty());
     let present = |name| value(name).is_some();
+    let enabled = |name| value(name).is_some_and(|value| !is_false(&value));
     let equals = |name, expected| value(name).is_some_and(|value| value == OsStr::new(expected));
     let contains =
         |name, needle| value(name).is_some_and(|value| value.to_string_lossy().contains(needle));
@@ -192,7 +193,7 @@ where
         ("COPILOT_CLI", Agent::GitHubCopilot),
         ("COPILOT_AGENT_JOB_ID", Agent::GitHubCopilot),
     ];
-    if let Some(&(signal, agent)) = SIGNALS.iter().find(|(signal, _)| present(signal)) {
+    if let Some(&(signal, agent)) = SIGNALS.iter().find(|(signal, _)| enabled(signal)) {
         return Some(Detection { agent, signal });
     }
 
@@ -348,6 +349,14 @@ mod tests {
     fn false_generic_values_are_ignored() {
         for value in ["", "0", "false", "no", "off"] {
             assert_eq!(detect(&[("AI_AGENT", value)]), None);
+        }
+    }
+
+    #[test]
+    fn false_provider_values_are_ignored() {
+        for value in ["0", "false", "no", "off"] {
+            assert_eq!(detect(&[("CLAUDECODE", value)]), None);
+            assert_eq!(detect(&[("OPENCODE", value)]), None);
         }
     }
 
