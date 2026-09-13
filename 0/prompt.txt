@@ -1,0 +1,39 @@
+PLEASE IMPLEMENT THIS PLAN:
+# Python dependency locking and the `pypi:` backend name
+
+## Summary
+
+Create one ready-for-review PR against current `main` titled `feat(pypi): lock Python tool dependencies with uv`.
+
+Make `pypi:` the preferred name, retaining `pipx:` as a supported alias. Add portable dependency locking for PyPI CLI tools installed through uv, initially requiring published wheels.
+
+## Implementation
+
+- Canonicalize `pypi:` and `pipx:` to one backend identity. Preserve existing installations, aliases, registry mappings, and lockfile lookups without duplicate installs or filesystem migration. Use `pypi:` in new generated output, documentation, and diagnostics; keep the actual `pipx` executable/tool name unchanged.
+- Introduce `pypi` settings names with legacy `pipx` aliases. Reject contradictory values for the same setting. Preserve existing environment-variable compatibility. Keep the old documentation URL working. Do not deprecate or warn on `pipx:`.
+- Build on the merged npm graph implementation. Introduce lockfile revision 3 so older clients reject Python graphs instead of silently ignoring them. Preserve revisions 0–2 until explicit `mise lock --upgrade`.
+- Store a lossless native uv lock and its synthetic project inputs under each Python tool entry. Resolve the exact package plus requested extras in an isolated, non-package project. Derive the supported Python range from package metadata, bounded by uv’s supported interpreter range; retain universal platform and Python markers.
+- Use an installed uv executable, requiring uv 0.12.10 or newer initially. Generate locks without installing packages or executing source builds. Preserve index authentication and release-age policy without serializing credentials.
+- Replay through `uv sync --frozen` into a mise-owned environment, prohibiting source builds. Validate the root requirement, extras, interpreter compatibility, and hashed wheel artifacts before accepting the installation. Expose the requested tool’s console scripts through mise’s existing bin-path mechanism.
+- Include canonical graph contents, effective tool options, and interpreter compatibility identity in installation identity. Different graphs coexist; listings retain the ordinary package version.
+- Reuse graphs on ordinary locking; `mise lock --bump pypi:<tool>` refreshes dependencies even when the root version is unchanged. Apply release-age policy during resolution, without re-resolving committed dependencies during installation.
+- Fail clearly for missing or invalid revision-3 graphs, unavailable uv, incompatible interpreters, missing wheels, or attempts to consume a uv graph through standalone pipx. Retain legacy standalone-pipx and Git-source behavior outside graph locking. Reject nonempty free-form installer arguments for graph locking in this first version rather than silently ignoring their effects.
+
+## Validation
+
+- Test alias equivalence across parsing, settings, backend disabling, legacy lockfiles, existing installation discovery, and newly generated output.
+- Test graph serialization, deterministic identity, upgrade behavior, unchanged-lock reuse, dependency bumps, extras, and Python/platform marker selection.
+- Use controlled package fixtures to verify frozen installation despite newer upstream dependencies, checksum failures, missing wheels, unsupported options, and incompatible-installer errors.
+- Execute installed console scripts on Unix and Windows; verify graph-specific coexistence and interpreter compatibility handling.
+- Run focused Python and lockfile unit/e2e suites through the repository tasks, required lint fixes, and relevant documentation/schema generation and checks.
+
+## PR and follow-through
+
+- Document `pypi:` examples, the continuing `pipx:` alias, uv requirements, wheel-only coverage, and migration with `mise lock --upgrade`.
+- Review the complete diff, open a non-draft PR against `main`, and include the required AI disclosure and actual validation results.
+- Monitor current-head checks and reviews. Fix actionable feedback and failing checks, reply and resolve addressed threads, and repeat until checks pass and actionable feedback is settled.
+- Leave the PR unmerged. Report any external blocker requiring user action.
+
+---
+
+keep checking review feedback until it settles
