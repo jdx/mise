@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DJS0F06QZ36FCQ9B3X8PR7",
+  "session_id": "01a09b01-de4e-7303-9e8a-29f068a8507f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T14:29:41.289606Z",
+  "branch": "codex/dotfiles-conflict-inspection",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "mise.usage.kdl",
+    "src/assets/mise-extra.usage.kdl"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "e029e60ea787",
+  "checkpoint_transcript_start": 1320,
+  "transcript_lines_at_start": 1320,
+  "compact_transcript_start": 195,
+  "token_usage": {
+    "input_tokens": 12958,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1408384,
+    "output_tokens": 1386,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-13T14:29:41.141556Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 6,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 6,
+    "total_lines_changed": 8,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
