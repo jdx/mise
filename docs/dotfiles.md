@@ -301,8 +301,9 @@ the source file's permissions. A later apply also repairs changed permissions.
 executes any `exec()` calls in those templates, using your trusted config.
 Secret values are redacted from diffs and other command output.
 `mise oci build` rejects templates that call `secret()` and renders without
-the `env` context, `get_env()`, or `exec()`. Values exposed by those interfaces
-could otherwise remain recoverable from a persistent image layer.
+the `env` context, `get_env()`, `exec()`, or `read_file()`. Values exposed by
+those interfaces could otherwise remain recoverable from a persistent image
+layer.
 With `--dry-run`, mise skips rendering dotfile templates and labels them
 `(if changed)`. Other configuration expressions can still run during a dry
 run, so use it with trusted configuration.

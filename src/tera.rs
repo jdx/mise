@@ -1302,25 +1302,33 @@ pub(crate) fn get_tera(dir: Option<&Path>) -> TeraEngine {
 /// command execution. OCI dotfile templates use this to avoid persisting
 /// ambient credentials in publishable image layers.
 pub(crate) fn get_tera_for_oci(dir: Option<&Path>) -> TeraEngine {
-    const MESSAGE: &str = "environment access is disabled for OCI dotfile templates";
+    const ENV_MESSAGE: &str = "environment access is disabled for OCI dotfile templates";
+    const FILE_MESSAGE: &str = "host file access is disabled for OCI dotfile templates";
     if use_tera_v1() {
         let mut tera = get_tera_v1(dir);
         tera.register_function("get_env", move |_: &HashMap<String, JsonValue>| {
-            Err(tera1_err(MESSAGE))
+            Err(tera1_err(ENV_MESSAGE))
         });
         tera.register_function("exec", move |_: &HashMap<String, JsonValue>| {
-            Err(tera1_err(MESSAGE))
+            Err(tera1_err(ENV_MESSAGE))
+        });
+        tera.register_function("read_file", move |_: &HashMap<String, JsonValue>| {
+            Err(tera1_err(FILE_MESSAGE))
         });
         TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
         tera.register_function(
             "get_env",
-            move |_: Kwargs, _: &State| -> TeraResult<Value> { Err(tera_err(MESSAGE)) },
+            move |_: Kwargs, _: &State| -> TeraResult<Value> { Err(tera_err(ENV_MESSAGE)) },
         );
         tera.register_function("exec", move |_: Kwargs, _: &State| -> TeraResult<Value> {
-            Err(tera_err(MESSAGE))
+            Err(tera_err(ENV_MESSAGE))
         });
+        tera.register_function(
+            "read_file",
+            move |_: Kwargs, _: &State| -> TeraResult<Value> { Err(tera_err(FILE_MESSAGE)) },
+        );
         TeraEngine::V2(Box::new(tera))
     }
 }

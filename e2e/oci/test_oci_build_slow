@@ -152,6 +152,12 @@ EOF
 MISE_OCI_TEST_SECRET=do-not-embed \
   assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "failed to render template"
 
+echo "do-not-embed" >"$HOME/oci-host-secret"
+cat >secret.tmpl <<EOF
+token={{ read_file(path="$HOME/oci-host-secret") }}
+EOF
+assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "host file access is disabled for OCI dotfile templates"
+
 # --- 10. --copy and [[oci.copy]] each produce an annotated layer ---
 mkdir -p assets copy-subdir
 echo "from-cli" >copy-subdir/cli-copy.txt
