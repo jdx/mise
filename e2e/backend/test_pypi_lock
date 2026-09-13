@@ -87,3 +87,20 @@ assert 'mise settings get pypi.uvx' 'false'
 assert 'mise settings get --local pipx.uvx' 'false'
 mise settings unset --local pipx.uvx
 assert_fail 'mise settings get --local pypi.uvx'
+# Conflicting file aliases still permit targeted repair, including --cd.
+mkdir repair
+cat >repair/mise.toml <<'REPAIR_CONFIG'
+[settings]
+pypi.uvx = true
+pipx.uvx = false
+REPAIR_CONFIG
+assert_fail 'mise --cd repair settings get pypi.uvx'
+mise --cd repair settings set --local pipx.uvx true
+assert 'mise --cd repair settings get pypi.uvx' 'true'
+cat >repair/mise.toml <<'REPAIR_CONFIG'
+[settings]
+pypi.uvx = true
+pipx.uvx = false
+REPAIR_CONFIG
+mise --cd repair settings unset --local pipx.uvx
+assert_fail 'mise --cd repair settings get --local pypi.uvx'

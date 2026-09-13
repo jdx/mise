@@ -12,6 +12,7 @@ python = "3.12.11"
 uv = "0.12.10"
 '@ | Set-Content mise.toml
             mise trust
+            $LASTEXITCODE | Should -Be 0
             mise install
             $LASTEXITCODE | Should -Be 0
             $python = (mise which python | Out-String).Trim()

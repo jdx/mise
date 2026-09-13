@@ -370,7 +370,7 @@ impl PIPXBackend {
         let bin = tv.install_path().join("bin");
         crate::file::create_dir_all(&bin)?;
         for name in names {
-            if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+            if !crate::file::is_plain_file_name(&name) {
                 bail!("invalid Python entry point name");
             }
             let name = if cfg!(windows) {
@@ -387,7 +387,10 @@ impl PIPXBackend {
 fn uv_index_url(registry: &str) -> Result<String> {
     let base = registry.split("{}").next().unwrap_or(registry);
     let mut url = url::Url::parse(base)?;
-    if url.host_str() == Some("pypi.org") {
+    if url
+        .host_str()
+        .is_some_and(|host| host == "pypi.org" || host.ends_with(".pypi.org"))
+    {
         url.set_path("/simple/");
     } else {
         let path = url.path().trim_end_matches('/').trim_end_matches("/simple");
@@ -475,6 +478,14 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
     fn uv_indexes_preserve_private_registry_paths() {
         for (registry, index) in [
             ("https://pypi.org/pypi/{}/json", "https://pypi.org/simple/"),
+            (
+                "https://test.pypi.org/pypi/{}/json",
+                "https://test.pypi.org/simple/",
+            ),
+            (
+                "https://notpypi.org/pypi/{}/json",
+                "https://notpypi.org/pypi/simple/",
+            ),
             (
                 "https://packages.example.com/pypi/{}/json",
                 "https://packages.example.com/pypi/simple/",
