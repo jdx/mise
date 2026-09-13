@@ -1172,7 +1172,13 @@ impl Lock {
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
         }
-        if self.is_unfiltered_lock_run() {
+        if self.is_unfiltered_lock_run()
+            && lockfile
+                .tools()
+                .values()
+                .flatten()
+                .any(|entry| entry.uv.is_some() || entry.aube.is_some())
+        {
             let variants = tools
                 .iter()
                 .map(|(ba, tv)| {

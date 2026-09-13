@@ -279,6 +279,7 @@ impl PIPXBackend {
                     .extras()
                     .unwrap_or_default()
                     .split(',')
+                    .map(str::trim)
                     .filter(|s| !s.is_empty())
                     .map(Self::normalize_package_name)
                     .collect::<std::collections::BTreeSet<_>>();
@@ -288,7 +289,7 @@ impl PIPXBackend {
                     .into_iter()
                     .flatten()
                     .filter_map(toml::Value::as_str)
-                    .map(str::to_owned)
+                    .map(|extra| Self::normalize_package_name(extra.trim()))
                     .collect::<std::collections::BTreeSet<_>>();
                 if requirements.len() != 1
                     || requirement.get("name").and_then(toml::Value::as_str)
@@ -583,6 +584,45 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
                 graph_text: String::new(),
             },
         )
+    }
+
+    #[test]
+    fn extras_validation_trims_and_normalizes_names() {
+        let (backend, mut tv, mut lock) = fixture();
+        let mut options = tv.request.options();
+        options.opts.insert("extras".into(), "postgres, S_3".into());
+        tv.request.set_options(options);
+        lock.project
+            .get_mut("project")
+            .unwrap()
+            .as_table_mut()
+            .unwrap()
+            .insert(
+                "dependencies".into(),
+                vec![toml::Value::String(backend.lock_requirement(&tv).unwrap())].into(),
+            );
+        let packages = lock
+            .graph
+            .get_mut("package")
+            .unwrap()
+            .as_array_mut()
+            .unwrap();
+        let requirement = packages[1]
+            .get_mut("metadata")
+            .unwrap()
+            .get_mut("requires-dist")
+            .unwrap()
+            .as_array_mut()
+            .unwrap();
+        requirement[0].as_table_mut().unwrap().insert(
+            "extras".into(),
+            vec![
+                toml::Value::String("postgres".into()),
+                toml::Value::String("s-3".into()),
+            ]
+            .into(),
+        );
+        backend.validate_uv_lock(&tv, &lock).unwrap();
     }
 
     #[test]
