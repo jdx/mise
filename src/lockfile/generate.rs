@@ -612,7 +612,10 @@ pub(crate) async fn populate_aube_locks(
             && lockfile.tools.get(&ba.short).is_some_and(|entries| {
                 entries.iter().any(|entry| {
                     entry.version == tv.version
-                        && entry.backend.as_deref() == Some(backend_name.as_str())
+                        && entry
+                            .backend
+                            .as_deref()
+                            .is_none_or(|backend| backend == backend_name)
                         && entry.options == options
                         && entry.aube.is_some()
                 })

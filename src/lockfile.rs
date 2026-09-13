@@ -1682,11 +1682,21 @@ impl Lockfile {
             .tools
             .get_mut(short)
             .and_then(|entries| {
-                entries.iter_mut().find(|entry| {
-                    entry.version == version
-                        && entry.backend.as_deref() == Some(backend)
-                        && &entry.options == options
-                })
+                let index = entries
+                    .iter()
+                    .position(|entry| {
+                        entry.version == version
+                            && entry.backend.as_deref() == Some(backend)
+                            && &entry.options == options
+                    })
+                    .or_else(|| {
+                        entries.iter().position(|entry| {
+                            entry.version == version
+                                && entry.backend.is_none()
+                                && &entry.options == options
+                        })
+                    })?;
+                entries.get_mut(index)
             })
             .ok_or_else(|| eyre!("missing lockfile entry for {short}@{version}"))?;
         entry.aube = Some(lock);

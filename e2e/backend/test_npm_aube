@@ -68,7 +68,6 @@ lockfile_version = 1
 
 [[tools."npm:cowsay"]]
 version = "1.6.0"
-backend = "npm:cowsay"
 specifiers = ["1.6.0"]
 EOF
 MISE_LOCKFILE_MODE=generate mise -C upgrade-lock lock --upgrade
