@@ -89,12 +89,7 @@ impl PIPXBackend {
         project: &Path,
     ) -> Result<CmdLineRunner<'static>> {
         let registry = self.get_registry_url(config).await?;
-        let base = registry.split("{}").next().unwrap_or(&registry);
-        let base = base
-            .trim_end_matches('/')
-            .trim_end_matches("/pypi")
-            .trim_end_matches("/simple");
-        let index = format!("{base}/simple/");
+        let index = uv_index_url(&registry)?;
         Ok(CmdLineRunner::new(uv)
             .current_dir(project)
             .envs(config.env().await?)
@@ -133,15 +128,10 @@ impl PIPXBackend {
                 let Some(url) = href.captures(link.as_str()).and_then(|c| c.get(1)) else {
                     continue;
                 };
-                let filename = url
-                    .as_str()
-                    .split(['?', '#'])
-                    .next()
-                    .unwrap_or("")
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or("");
-                if Self::version_from_distribution_filename(&self.tool_name(), filename).as_deref()
+                let Some(filename) = Self::distribution_filename_from_url(url.as_str()) else {
+                    continue;
+                };
+                if Self::version_from_distribution_filename(&self.tool_name(), &filename).as_deref()
                     == Some(&tv.version)
                     && filename.ends_with(".whl")
                 {
@@ -394,6 +384,18 @@ impl PIPXBackend {
     }
 }
 
+fn uv_index_url(registry: &str) -> Result<String> {
+    let base = registry.split("{}").next().unwrap_or(registry);
+    let mut url = url::Url::parse(base)?;
+    if url.host_str() == Some("pypi.org") {
+        url.set_path("/simple/");
+    } else {
+        let path = url.path().trim_end_matches('/').trim_end_matches("/simple");
+        url.set_path(&format!("{path}/simple/"));
+    }
+    Ok(url.into())
+}
+
 fn validate_portable_urls(value: &toml::Value) -> Result<()> {
     match value {
         toml::Value::String(s) if s.contains("://") => {
@@ -467,6 +469,31 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
         .parse()
         .unwrap();
         (backend, tv, UvLock { project, graph })
+    }
+
+    #[test]
+    fn uv_indexes_preserve_private_registry_paths() {
+        for (registry, index) in [
+            ("https://pypi.org/pypi/{}/json", "https://pypi.org/simple/"),
+            (
+                "https://packages.example.com/pypi/{}/json",
+                "https://packages.example.com/pypi/simple/",
+            ),
+            (
+                "https://packages.example.com/pypi/simple/{}/",
+                "https://packages.example.com/pypi/simple/",
+            ),
+        ] {
+            assert_eq!(uv_index_url(registry).unwrap(), index);
+        }
+        let filename = PIPXBackend::distribution_filename_from_url(
+            "https://example.com/demo-1.0%2Blocal-py3-none-any.whl#sha256=abc",
+        )
+        .unwrap();
+        assert_eq!(
+            PIPXBackend::version_from_distribution_filename("demo", &filename).as_deref(),
+            Some("1.0+local")
+        );
     }
 
     #[test]

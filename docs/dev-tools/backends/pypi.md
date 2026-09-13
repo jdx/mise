@@ -143,7 +143,7 @@ Set these with `mise settings set [VARIABLE]=[VALUE]` or by setting the environm
 <script setup>
 import Settings from '/components/settings.vue';
 </script>
-<Settings child="pipx" :level="3" />
+<Settings child="pypi" :level="3" />
 
 ## Tool Options
 

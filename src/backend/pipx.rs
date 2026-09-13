@@ -643,14 +643,18 @@ impl PIPXBackend {
             .captures_iter(html)
             .filter_map(|cap| {
                 let href = cap.get(1)?.as_str();
-                let path = href.split(['?', '#']).next()?;
-                let filename = path.rsplit('/').next()?;
-                let filename = urlencoding::decode(filename).ok()?;
+                let filename = Self::distribution_filename_from_url(href)?;
 
                 Self::version_from_distribution_filename(package, &filename)
             })
             .unique()
             .collect()
+    }
+
+    fn distribution_filename_from_url(href: &str) -> Option<String> {
+        let path = href.split(['?', '#']).next()?;
+        let filename = path.rsplit('/').next()?;
+        Some(urlencoding::decode(filename).ok()?.into_owned())
     }
 
     fn version_from_distribution_filename(package: &str, filename: &str) -> Option<String> {
@@ -947,7 +951,7 @@ impl PIPXBackend {
                 .await
         else {
             warn!(
-                "minimum_release_age is set for pypi:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pipx.html",
+                "minimum_release_age is set for pypi:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
                 self.tool_name(),
             );
             return;
@@ -955,7 +959,7 @@ impl PIPXBackend {
 
         if semver_is_older_than(&version, UV_EXCLUDE_NEWER_VERSION).unwrap_or(false) {
             warn!(
-                "minimum_release_age is set for pypi:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pipx.html",
+                "minimum_release_age is set for pypi:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
                 self.tool_name(),
                 version,
                 UV_EXCLUDE_NEWER_VERSION,

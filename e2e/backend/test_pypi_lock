@@ -17,7 +17,7 @@ python = "3.12.11"
 "pipx:mise-lock-cli" = "1.0.0"
 [settings]
 minimum_release_age = "0"
-pypi.registry_url = "http://127.0.0.1:$port/simple/{}/"
+pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
 EOF_CONFIG
 mise trust
 cp mise.toml original.toml
@@ -81,7 +81,7 @@ assert_fail 'MISE_PYPI_UVX=false mise install --locked pypi:mise-lock-cli'
 # Settings aliases must never silently contradict one another.
 assert_fail 'MISE_PIPX_UVX=false MISE_PYPI_UVX=true mise settings'
 # Both settings spellings read the same value; writes use the preferred name.
-assert 'mise settings get pipx.registry_url' "http://127.0.0.1:$port/simple/{}/"
+assert 'mise settings get pipx.registry_url' "http://127.0.0.1:$port/pypi/{}/json"
 mise settings set --local pipx.uvx false
 assert 'mise settings get pypi.uvx' 'false'
 assert 'mise settings get --local pipx.uvx' 'false'

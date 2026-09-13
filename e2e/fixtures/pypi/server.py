@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import io
+import json
 import pathlib
 import sys
 import zipfile
@@ -54,7 +55,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split('?')[0]
-        if path.startswith('/simple/'):
+        if path.startswith('/pypi/') and path.endswith('/json'):
+            body = json.dumps({'info': {'requires_python': '>=3.10'}, 'releases': {'1.0.0': [{}]}}).encode()
+            content_type = 'application/json'
+        elif path.startswith(('/simple/', '/pypi/simple/')):
             package = path.strip('/').split('/')[-1].replace('-', '_')
             body = ''.join(
                 f'<a href="/files/{name}#sha256={hashlib.sha256(data).hexdigest()}" data-requires-python="&gt;=3.10">{name}</a>\n'
