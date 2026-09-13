@@ -340,7 +340,7 @@ impl Backend for PIPXBackend {
                 if let Some(version) = tv.uv_install_path_version().map(str::to_owned) {
                     tv.version = version;
                 }
-                tv.uv_lock = Some(self.resolve_uv_lock(&tv).await?);
+                tv.uv_lock = Some(self.resolve_uv_lock(&ctx.config, &tv).await?);
             }
         }
         if tv.uv_lock.is_some() {

@@ -10,8 +10,10 @@ and pip or uv for application libraries such as NumPy and requests.
 
 With dependency graphs, mise uses **`uv sync --frozen`**. Version-only installs
 use `uv tool install` when uv is available, otherwise `pipx install`. The `pypi:`
-prefix names the backend in all cases; `pipx:` remains a supported alias with
-the same installations and lock entries. Explicit `pipx:` names are preserved in
+prefix names the backend in all cases; `pipx:` remains a supported backend name.
+The spellings are distinct tool identities: `pypi:black` uses `pypi-black`
+directories, while `pipx:black` uses `pipx-black`. Switching spellings creates a
+new installation and lock entry. Explicit `pipx:` names are preserved in
 output and lockfiles, including older lockfile revisions. The legacy `uvx` option names do not
 mean that mise runs the `uvx` command.
 
@@ -246,7 +248,7 @@ selected; `pipx_args` applies only to the pipx installer.
 Native `pyproject.toml` and `uv.lock` files live in per-entry directories under
 [the dependency sidecar root](../mise-lock.md#native-dependency-sidecars). Commit
 that directory with `mise.lock`. For example, inspect or update a locked tool with
-`uv tree --project .mise/locks/pipx-black/24.10.0` or
-`uv lock --project .mise/locks/pipx-black/24.10.0 --upgrade-package click`.
+`uv tree --project .mise/locks/pypi-black/24.10.0` or
+`uv lock --project .mise/locks/pypi-black/24.10.0 --upgrade-package click`.
 Ordinary `mise install` validates and accepts edited graph bytes; `--locked` requires
 the recorded digest to match, so run `mise lock` first when accepting an edit.

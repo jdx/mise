@@ -3282,7 +3282,23 @@ pub(crate) trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let mut tv = self.prepare_install_version(&ctx, tv).await?;
+        let graph_install_is_current = !ctx.locked
+            && !ctx.force
+            && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
+            && self
+                .is_install_satisfied_or_false(&ctx.config, &tv, true)
+                .await;
+        let mut tv = if graph_install_is_current {
+            if let Some(graph) = &tv.uv_lock {
+                graph.warn_if_missing();
+            }
+            if let Some(graph) = &tv.aube_lock {
+                graph.warn_if_missing();
+            }
+            tv
+        } else {
+            self.prepare_install_version(&ctx, tv).await?
+        };
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
         tv.request.ensure_safe_install_options()?;
@@ -5548,13 +5564,10 @@ pub(crate) fn fuzzy_match_versions(
         .collect()
 }
 
-/// Keep the original Python backend directory namespace for both spellings.
+/// Derive the directory namespace from the configured tool spelling.
 pub(crate) fn tool_directory_name(short: &str) -> String {
     use heck::ToKebabCase;
-    match short.strip_prefix("pypi:") {
-        Some(name) => format!("pipx:{name}").to_kebab_case(),
-        None => short.to_kebab_case(),
-    }
+    short.to_kebab_case()
 }
 
 pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str> {
@@ -5565,9 +5578,6 @@ pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str>
 }
 
 pub(crate) fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
-    if let Some(package) = backend.strip_prefix("pipx:") {
-        return format!("pypi:{package}").into();
-    }
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
@@ -5579,6 +5589,8 @@ pub(crate) fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
 
 #[test]
 fn test_unalias_backend() {
+    assert_eq!(unalias_backend("pipx:black"), "pipx:black");
+    assert_eq!(unalias_backend("pypi:black"), "pypi:black");
     assert_eq!(unalias_backend("node"), "node");
     assert_eq!(unalias_backend("nodejs"), "node");
     assert_eq!(unalias_backend("core:node"), "node");

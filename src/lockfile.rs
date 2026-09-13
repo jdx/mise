@@ -1135,17 +1135,7 @@ impl Lockfile {
     }
 
     fn tool_key(&self, short: &str) -> Option<&String> {
-        self.tools
-            .get_key_value(short)
-            .map(|(key, _)| key)
-            .or_else(|| {
-                let alias = if let Some(name) = short.strip_prefix("pypi:") {
-                    format!("pipx:{name}")
-                } else {
-                    format!("pypi:{}", short.strip_prefix("pipx:")?)
-                };
-                self.tools.get_key_value(&alias).map(|(key, _)| key)
-            })
+        self.tools.get_key_value(short).map(|(key, _)| key)
     }
 
     fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
@@ -1693,6 +1683,9 @@ impl Lockfile {
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
     ) -> bool {
+        if short.starts_with("pypi:") || short.starts_with("pipx:") {
+            return keep_shorts.contains(short);
+        }
         keep_shorts.contains(short)
             || versions
                 .iter()
@@ -1946,7 +1939,7 @@ impl Lockfile {
 
 fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
     (
-        crate::backend::canonical_backend_full(short).into_owned(),
+        short.to_owned(),
         entry.version.clone(),
         entry.backend.clone(),
         entry.options.clone(),
@@ -2187,16 +2180,20 @@ fn migrate_monorepo_lockfiles_inner(
         }
         if generated_targets.is_some_and(|targets| targets.contains(target)) {
             fs::remove_file(source)?;
+            remove_migrated_sidecars(source, target)?;
             migrated += 1;
             continue;
         }
-        let _lock = acquire_target_locks
-            .then(|| {
-                crate::lock_file::LockFile::new(target)
-                    .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
-                    .lock()
-            })
-            .transpose()?;
+        let mut migration_locks = Vec::new();
+        if acquire_target_locks {
+            for path in BTreeSet::from([source, target]) {
+                migration_locks.push(
+                    crate::lock_file::LockFile::new(path)
+                        .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+                        .lock()?,
+                );
+            }
+        }
         let target_existed = target.exists();
         let mut root_lockfile =
             Lockfile::read(target).unwrap_or_else(|err| handle_lockfile_read_error(err, target));
@@ -2232,6 +2229,7 @@ fn migrate_monorepo_lockfiles_inner(
         {
             return Err(err.into());
         }
+        remove_migrated_sidecars(source, target)?;
         migrated += 1;
     }
 
@@ -2242,6 +2240,35 @@ fn migrate_monorepo_lockfiles_inner(
         );
     }
 
+    Ok(())
+}
+
+/// Remove legacy graphs only after publication, retaining any dangling pointers.
+fn remove_migrated_sidecars(source: &Path, target: &Path) -> Result<()> {
+    let root = graph::sidecar_root(source);
+    if root == graph::sidecar_root(target) {
+        return Ok(());
+    }
+    let published = Lockfile::read(target)?;
+    let still_referenced = published.tools.values().flatten().any(|entry| {
+        entry
+            .uv
+            .as_ref()
+            .and_then(GraphRef::dir)
+            .is_some_and(|dir| dir.starts_with(&root))
+            || entry
+                .aube
+                .as_ref()
+                .and_then(GraphRef::dir)
+                .is_some_and(|dir| dir.starts_with(&root))
+    });
+    if !still_referenced {
+        match fs::remove_dir_all(&root) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
     Ok(())
 }
 
@@ -2572,10 +2599,7 @@ pub(crate) fn update_lockfiles(
                 versions.push(new_version.clone());
             } else if let Some(key) = tool_versions_by_short
                 .keys()
-                .find(|short| {
-                    backend::canonical_backend_full(short)
-                        == backend::canonical_backend_full(new_version.short())
-                })
+                .find(|short| short.as_str() == new_version.short())
                 .cloned()
                 && let Some(versions) = tool_versions_by_short.get_mut(&key)
             {
@@ -2720,7 +2744,10 @@ pub(crate) fn update_lockfiles(
         existing_lockfile.cleanup_unreferenced_conda_packages();
         existing_lockfile.cleanup_unreferenced_pkgx_packages();
 
-        existing_lockfile.save(&lockfile_path)?;
+        // Merge-mode auto-lock publishes new sidecars but never deletes old ones.
+        if let Some(prepared) = existing_lockfile.prepare_write(&lockfile_path)? {
+            let _cleanup = prepared.publish_deferred()?;
+        }
     }
 
     // Return all provenance errors after all lockfiles have been saved
@@ -3440,7 +3467,10 @@ pub(crate) async fn auto_lock_new_versions(
             }
         }
 
-        lockfile.save(&lockfile_path)?;
+        // Merge-mode auto-lock must not garbage-collect sidecars.
+        if let Some(prepared) = lockfile.prepare_write(&lockfile_path)? {
+            let _cleanup = prepared.publish_deferred()?;
+        }
 
         all_provenance_errors.extend(provenance_errors);
     }
@@ -8066,7 +8096,7 @@ backend = "conda:jq"
         }
     }
     #[test]
-    fn pypi_legacy_lock_alias_preserves_revision_and_core_backends() {
+    fn python_lock_spelling_preserves_distinct_keys_and_revision() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
         file::write(
@@ -8086,13 +8116,14 @@ backend = "core:python"
         assert_eq!(lock.lockfile_version(), 1);
         assert!(lock.tools.contains_key("pipx:black"));
         assert_eq!(
-            lock.tools_for("pypi:black").unwrap()[0].backend.as_deref(),
+            lock.tools_for("pipx:black").unwrap()[0].backend.as_deref(),
             Some("pypi:black")
         );
         assert_eq!(
             lock.tools["python"][0].backend.as_deref(),
             Some("core:python")
         );
+        assert!(lock.tools_for("pypi:black").is_none());
         assert!(lock.needs_upgrade());
         lock.save(&path).unwrap();
         let saved = file::read_to_string(&path).unwrap();

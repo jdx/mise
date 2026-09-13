@@ -27,7 +27,7 @@ assert_contains "cat mise.lock" 'tools."pipx:mise-lock-cli"'
 assert_contains "cat mise.lock" 'path = ".mise/locks/pipx-mise-lock-cli/1.0.0"'
 assert_contains "cat .mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock" 'mise-lock-marker'
 assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
-first_path=$(mise where pypi:mise-lock-cli)
+first_path=$(mise where pipx:mise-lock-cli)
 assert "mise where pipx:mise-lock-cli" "$first_path"
 assert_contains_text "$first_path" 'pipx-mise-lock-cli/1.0.0~uv~'
 # The universal graph contains the older-Python branch but does not install it on 3.12.
@@ -41,27 +41,48 @@ touch index/publish
 mise lock
 assert_succeed 'cmp first.lock mise.lock'
 assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
-mise lock --bump pypi:mise-lock-cli
+mise lock --bump pipx:mise-lock-cli
 assert_contains "mise x --locked -- lock-cli" 'dependency=2.0.0'
-second_path=$(mise where pypi:mise-lock-cli)
+second_path=$(mise where pipx:mise-lock-cli)
 assert_succeed "test '$first_path' != '$second_path'"
 # External edits are rejected by locked installs, accepted by ordinary installs.
 cp mise.lock before-edit.lock
 printf '\n# external edit\n' >>.mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock
-assert_fail 'mise install --locked pypi:mise-lock-cli' 'accept the edited graph'
+assert_fail 'mise install --locked pipx:mise-lock-cli' 'accept the edited graph'
 assert_contains "mise x -- lock-cli" 'dependency=2.0.0'
-mise install pypi:mise-lock-cli
-edited_path=$(mise where pypi:mise-lock-cli)
+mise install pipx:mise-lock-cli
+assert "mise where pipx:mise-lock-cli" "$second_path"
+assert_succeed 'cmp before-edit.lock mise.lock'
+mise lock
+mise install pipx:mise-lock-cli
+edited_path=$(mise where pipx:mise-lock-cli)
 assert_succeed "test '$edited_path' != '$second_path'"
 assert_fail 'cmp before-edit.lock mise.lock'
 assert_contains "mise x --locked -- lock-cli" 'dependency=2.0.0'
+# Generate-mode hot installs use only the recorded graph identity without uv.
+cp mise.toml hot-config.toml
+python3 - <<'PY_HOT'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace('uv = "0.12.10"\n', ''))
+PY_HOT
+MISE_LOCKFILE_MODE=generate mise lock
+mise uninstall uv
+cp mise.lock hot.lock
+cp .mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock hot-uv.lock
+printf 'unreadable graph contents' >.mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock
+MISE_LOCKFILE_MODE=generate mise install
+assert_succeed 'cmp hot.lock mise.lock'
+cp hot-uv.lock .mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock
+cp hot-config.toml mise.toml
+mise install uv
 # Extras participate in resolution and installation identity.
 python3 - <<'PY_EXTRAS'
 from pathlib import Path
 p = Path('mise.toml')
-p.write_text(p.read_text().replace('"pipx:mise-lock-cli" = "1.0.0"', '"pypi:mise-lock-cli" = { version = "1.0.0", extras = "feature" }'))
+p.write_text(p.read_text().replace('"pipx:mise-lock-cli" = "1.0.0"', '"pipx:mise-lock-cli" = { version = "1.0.0", extras = "feature" }'))
 PY_EXTRAS
-mise lock --bump pypi:mise-lock-cli
+mise lock --bump pipx:mise-lock-cli
 assert_contains "mise x --locked -- lock-cli" 'extra=1.0.0'
 assert_succeed "find .mise/locks/pipx-mise-lock-cli -maxdepth 1 -name '1.0.0~*' | grep -q ."
 cp original.toml mise.toml
@@ -78,7 +99,7 @@ for name in ['uv.lock', 'pyproject.toml']:
     p.write_text(re.sub(r'(?m)^requires-python = .*$', 'requires-python = ">=3.99"', p.read_text()))
 PY_INCOMPATIBLE
 mise lock
-assert_fail 'mise install --locked pypi:mise-lock-cli'
+assert_fail 'mise install --locked pipx:mise-lock-cli'
 cp first.lock mise.lock
 cp first-sidecars/pipx-mise-lock-cli/1.0.0/* .mise/locks/pipx-mise-lock-cli/1.0.0/
 python3 - <<'PY_OPTIONS'
@@ -86,17 +107,17 @@ from pathlib import Path
 p = Path('mise.toml')
 p.write_text(p.read_text().replace('"pipx:mise-lock-cli" = "1.0.0"', '"pipx:mise-lock-cli" = { version = "1.0.0", uvx_args = "--prerelease allow" }'))
 PY_OPTIONS
-assert_fail 'mise lock --bump pypi:mise-lock-cli' 'dependency locking does not support'
+assert_fail 'mise lock --bump pipx:mise-lock-cli' 'dependency locking does not support'
 cp original.toml mise.toml
-mise uninstall --all pypi:mise-lock-cli
+mise uninstall --all pipx:mise-lock-cli
 export UV_CACHE_DIR="$PWD/corrupt-cache"
 touch index/corrupt
-if corrupt_output=$(mise install --locked pypi:mise-lock-cli 2>&1); then
+if corrupt_output=$(mise install --locked pipx:mise-lock-cli 2>&1); then
   fail 'corrupted wheels must fail installation'
 fi
 echo "$corrupt_output"
 assert_contains_text "$corrupt_output" 'Hash mismatch'
-assert_fail 'MISE_PYPI_UVX=false mise install --locked pypi:mise-lock-cli'
+assert_fail 'MISE_PYPI_UVX=false mise install --locked pipx:mise-lock-cli'
 # Settings aliases must never silently contradict one another.
 assert_fail 'MISE_PIPX_UVX=false MISE_PYPI_UVX=true mise settings'
 # Both settings spellings read the same value; writes use the preferred name.
@@ -138,6 +159,23 @@ assert 'MISE_PYPI_UVX=false mise --cd repair settings get pipx.uvx' 'false'
 assert 'MISE_PIPX_UVX=false mise settings get pypi.uvx' 'false'
 assert 'MISE_PYPI_UVX=false mise settings get pipx.uvx' 'false'
 
+# Backend spellings share settings but create distinct installs and lock entries.
+rm index/corrupt
+cp original.toml mise.toml
+python3 - <<'PY_SPELLING'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace('pipx:mise-lock-cli', 'pypi:mise-lock-cli'))
+PY_SPELLING
+mise lock
+mise install pypi:mise-lock-cli
+preferred_path=$(mise where pypi:mise-lock-cli)
+assert_contains_text "$preferred_path" 'pypi-mise-lock-cli/'
+assert_succeed "test '$preferred_path' != '$first_path'"
+assert_contains "cat mise.lock" 'tools."pypi:mise-lock-cli"'
+assert_not_contains "cat mise.lock" 'tools."pipx:mise-lock-cli"'
+assert_contains "cat mise.lock" '.mise/locks/pypi-mise-lock-cli/'
+
 # A version-only revision-2 entry cannot silently fall back under --locked.
 cp original.toml mise.toml
 python3 - <<'PY_NO_UV'
@@ -146,6 +184,12 @@ p = Path('mise.toml')
 p.write_text(p.read_text().replace('uv = "0.12.10"\n', ''))
 PY_NO_UV
 mise uninstall uv
+# A dangling pointer survives saves when uv is unavailable to repair it.
+cp first.lock mise.lock
+mkdir -p .mise/locks/pipx-mise-lock-cli/1.0.0
+printf 'invalid lock text' >.mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock
+mise lock
+assert_contains "cat mise.lock" 'uv ='
 cat >mise.lock <<'EOF_NO_GRAPH'
 lockfile_version = 2
 [[tools."pipx:mise-lock-cli"]]
@@ -153,4 +197,4 @@ version = "1.0.0"
 backend = "pipx:mise-lock-cli"
 specifiers = ["1.0.0"]
 EOF_NO_GRAPH
-assert_fail 'mise install --locked pypi:mise-lock-cli' 'has no uv dependency graph'
+assert_fail 'mise install --locked pipx:mise-lock-cli' 'has no uv dependency graph'

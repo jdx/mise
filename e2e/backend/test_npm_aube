@@ -95,7 +95,7 @@ mkdir package-manager-change
 cp mise.toml mise.lock package-manager-change/
 cp -R .mise package-manager-change/
 MISE_NPM_PACKAGE_MANAGER=npm mise -C package-manager-change lock
-assert_not_contains "cat package-manager-change/mise.lock" '.aube'
+assert_not_contains "cat package-manager-change/mise.lock" 'aube ='
 assert_fail 'test -d package-manager-change/.mise/locks/npm-cowsay/1.6.0'
 
 # Another npm installer must reject an embedded-aube graph instead of ignoring it.

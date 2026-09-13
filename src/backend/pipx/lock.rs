@@ -160,11 +160,14 @@ impl PIPXBackend {
             .env_remove("VIRTUAL_ENV"))
     }
 
-    pub(crate) async fn resolve_uv_lock(&self, tv: &ToolVersion) -> Result<GraphRef<UvLock>> {
+    pub(crate) async fn resolve_uv_lock(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<GraphRef<UvLock>> {
         self.validate_lock_options(tv)?;
-        let config = Config::get().await?;
-        let uv = self.lock_uv_program(&config).await?;
-        let registry = self.get_registry_url(&config).await?;
+        let uv = self.lock_uv_program(config).await?;
+        let registry = self.get_registry_url(config).await?;
         // JSON release metadata supplies the root's Python constraint without
         // running a build backend. Simple-only indexes expose it on wheel links.
         let requires_python = if registry.ends_with("/json") {
@@ -203,7 +206,7 @@ impl PIPXBackend {
             temp.path().join("pyproject.toml"),
             toml::to_string(&project)?,
         )?;
-        self.uv_lock_command(&config, tv, &uv, temp.path())
+        self.uv_lock_command(config, tv, &uv, temp.path())
             .await?
             .args(["lock", "--no-build", "--no-config", "--no-python-downloads"])
             .args(Self::uv_exclude_newer_args(tv.before_date))

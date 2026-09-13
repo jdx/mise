@@ -65,6 +65,21 @@ impl<T: NativeGraph> GraphRef<T> {
                 .clone(),
         }
     }
+    /// Check availability without opening or parsing the native graph.
+    pub(crate) fn warn_if_missing(&self) {
+        if let Some(dir) = self.dir() {
+            let path = dir.join(T::GRAPH_FILE);
+            if let Err(error) = std::fs::metadata(&path)
+                && error.kind() == std::io::ErrorKind::NotFound
+            {
+                warn!(
+                    "dependency sidecar {} is missing; commit sidecars alongside mise.lock",
+                    path.display()
+                );
+            }
+        }
+    }
+
     pub(crate) fn dir(&self) -> Option<&Path> {
         match self {
             Self::Inline { dir, .. } => dir.as_deref(),
@@ -344,7 +359,15 @@ impl SidecarWrites {
         {
             return Ok(graph.clone());
         }
-        for (name, contents) in graph.load()?.files()? {
+        let body = match graph.load() {
+            Ok(body) => body,
+            Err(error) if matches!(graph, GraphRef::Sidecar { .. }) => {
+                warn!("preserving unavailable dependency sidecar: {error:#}");
+                return Ok(graph.clone());
+            }
+            Err(error) => return Err(error),
+        };
+        for (name, contents) in body.files()? {
             let target = dir.join(name);
             if std::fs::read(&target).ok().as_deref() != Some(contents.as_bytes()) {
                 self.files.push((target, contents));
@@ -441,6 +464,38 @@ mod tests {
             aube: None,
         }
     }
+    #[test]
+    fn missing_sidecar_is_preserved_without_writes() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        let graph: GraphRef<UvLock> = GraphRef::Sidecar {
+            dir: sidecar_root(&path).join("pypi-fixture/1.0.0"),
+            digest: digest_bytes(b"missing"),
+            cell: OnceLock::new(),
+        };
+        let mut writes = SidecarWrites::new(&path);
+        let retained = writes
+            .prepare(
+                &graph,
+                "pypi:fixture",
+                "1.0.0",
+                Some("pypi:fixture"),
+                &BTreeMap::new(),
+            )
+            .unwrap();
+        assert_eq!(retained.dir(), graph.dir());
+        assert_eq!(retained.identity(), graph.identity());
+        assert!(writes.files.is_empty());
+        let mut lock = Lockfile::default();
+        let mut tool = entry("pypi:fixture");
+        tool.uv = Some(graph);
+        lock.tools.insert("pypi:fixture".into(), vec![tool]);
+        lock.save(&path).unwrap();
+        let saved = std::fs::read(&path).unwrap();
+        Lockfile::read(&path).unwrap().save(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+    }
+
     #[test]
     fn sidecar_layout_follows_config_and_lockfile_name() {
         for (path, expected) in [
@@ -575,7 +630,7 @@ mod tests {
         );
         assert!(
             sidecar_root(&local)
-                .join("pipx-fixture/1.0.0/uv.lock")
+                .join("pypi-fixture/1.0.0/uv.lock")
                 .exists()
         );
     }

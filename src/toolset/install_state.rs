@@ -376,7 +376,7 @@ fn merge_shared_tool(
 
     let full = full.map(|s| crate::backend::canonical_backend_full(&s).into_owned());
     let tool = tools
-        .entry(crate::backend::unalias_backend(&short).into_owned())
+        .entry(short.clone())
         .or_insert_with(|| InstallStateTool {
             short: short.clone(),
             full: full.clone(),
@@ -437,10 +437,7 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
                     .get_or_insert_with(|| manifest.as_ref().clone())
                     .insert(dir_name.clone(), mt);
             }
-            tools.insert(
-                crate::backend::unalias_backend(&tool.short).into_owned(),
-                tool,
-            );
+            tools.insert(tool.short.clone(), tool);
         }
 
         // Write updated manifest if we migrated any legacy entries
@@ -509,12 +506,7 @@ fn manifest_dir_for_short(short: &str) -> Option<String> {
             root_manifest()
                 .iter()
                 .filter(|(d, mt)| **d != crate::backend::tool_directory_name(&mt.short))
-                .map(|(d, mt)| {
-                    (
-                        crate::backend::unalias_backend(&mt.short).into_owned(),
-                        d.clone(),
-                    )
-                })
+                .map(|(d, mt)| (mt.short.clone(), d.clone()))
                 .collect(),
         )
     })
@@ -540,8 +532,6 @@ fn root_manifest() -> Arc<Manifest> {
 /// that requires enumeration, which mise itself never produces, and full-scan
 /// callers still see such dirs.
 pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
-    let short = crate::backend::unalias_backend(short);
-    let short = short.as_ref();
     // A completed full scan is authoritative (it includes plugin identities and
     // shared dirs), so serve from it when available.
     if let Some(tools) = INSTALL_STATE_TOOLS
@@ -621,10 +611,7 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
                 None
             })
             .map(|(tool, _migrate)| tool)
-            .filter(|tool| {
-                crate::backend::canonical_backend_full(&tool.short)
-                    == crate::backend::canonical_backend_full(short)
-            })
+            .filter(|tool| tool.short == short)
     };
     let mut tool = scan_named(&dir_name);
     if tool.is_none() {
@@ -641,7 +628,7 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
         // such dirs by enumeration, so the per-tool path has to probe them.
         let alt_dir = shared_manifest
             .iter()
-            .find(|(d, mt)| crate::backend::unalias_backend(&mt.short) == short && **d != dir_name)
+            .find(|(d, mt)| mt.short == short && **d != dir_name)
             .map(|(d, _)| d.clone());
         for dir_name in std::iter::once(dir_name.clone()).chain(alt_dir) {
             let dir = shared_dir.join(&dir_name);
@@ -650,9 +637,7 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
             }
             let mut tools: InstallStateTools = tool
                 .take()
-                .map(|t| {
-                    BTreeMap::from([(crate::backend::unalias_backend(&t.short).into_owned(), t)])
-                })
+                .map(|t| BTreeMap::from([(t.short.clone(), t)]))
                 .unwrap_or_default();
             merge_shared_tool(&mut tools, &dir, &dir_name, &shared_manifest);
             tool = tools.remove(short);
@@ -665,7 +650,7 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
     {
         let mut tools: InstallStateTools = tool
             .take()
-            .map(|t| BTreeMap::from([(crate::backend::unalias_backend(&t.short).into_owned(), t)]))
+            .map(|t| BTreeMap::from([(t.short.clone(), t)]))
             .unwrap_or_default();
         merge_plugin_tools(
             &mut tools,
@@ -1386,7 +1371,7 @@ explicit_backend = true
         assert!(mt.full.as_ref().unwrap().contains('['));
     }
     #[test]
-    fn pypi_discovers_legacy_pipx_manifest_without_moving_it() {
+    fn pipx_manifest_retains_its_configured_directory() {
         let temp = tempfile::tempdir().unwrap();
         let dir = temp.path().join("pipx-black");
         std::fs::create_dir_all(dir.join("24.10.0")).unwrap();

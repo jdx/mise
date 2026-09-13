@@ -161,7 +161,7 @@ pub(crate) fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Resu
     Ok(previous)
 }
 
-pub(crate) async fn prepare_install(config: &Config, tv: &ToolVersion) -> Result<()> {
+pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> Result<()> {
     let Some((path, _)) = lockfile_path_for_tool_source(config, tv.request.source()) else {
         return Ok(());
     };
@@ -182,7 +182,7 @@ pub(crate) async fn prepare_install(config: &Config, tv: &ToolVersion) -> Result
     platforms.retain(|platform| platform.to_key() != Platform::current().to_key());
     // Reserve at most one background worker, leaving the remaining workers for installs.
     let _permit = PREPARE_SLOTS.acquire().await?;
-    generate(
+    let mut candidate = generate(
         &previous,
         &[(tv.ba().clone(), tv.clone())],
         &platforms,
@@ -191,6 +191,13 @@ pub(crate) async fn prepare_install(config: &Config, tv: &ToolVersion) -> Result
         1,
         &[],
     )
+    .await?;
+    Box::pin(populate_uv_locks(
+        config,
+        &mut candidate,
+        &[(tv.ba().clone(), tv.clone())],
+        false,
+    ))
     .await?;
     Ok(())
 }
@@ -295,6 +302,19 @@ pub(crate) fn is_current(
                 } else {
                     entry.specifiers.is_empty()
                 };
+                // Native graphs are universal and have no per-platform artifact rows.
+                // Compare recorded identities only; hot auto-lock must stay lazy.
+                if entry.uv.is_some() || entry.aube.is_some() {
+                    if !bindings_current
+                        || !entry.platforms.is_empty()
+                        || entry.uv != tv.uv_lock
+                        || entry.aube != tv.aube_lock
+                    {
+                        return Ok(false);
+                    }
+                    covered.entry(index).or_default();
+                    continue;
+                }
                 let key = platform.to_key();
                 let Some(info) = entry.platforms.get(&key) else {
                     return Ok(false);
@@ -591,7 +611,6 @@ pub(crate) async fn generate(
                 .and_then(|old| old.uv.clone());
         }
     }
-    Box::pin(populate_uv_locks(&mut candidate, tools, false)).await?;
     Box::pin(populate_aube_locks(
         &mut candidate,
         tools,
@@ -669,6 +688,7 @@ pub(crate) async fn populate_aube_locks(
 }
 
 pub(crate) async fn populate_uv_locks(
+    config: &Arc<Config>,
     lockfile: &mut Lockfile,
     tools: &[Tool],
     force: bool,
@@ -676,7 +696,6 @@ pub(crate) async fn populate_uv_locks(
     if lockfile.lockfile_version() < 2 {
         return Ok(());
     }
-    let config = crate::config::Config::get().await?;
     for (ba, tv) in tools {
         if ba.backend_type() != BackendType::Pipx {
             continue;
@@ -720,7 +739,7 @@ pub(crate) async fn populate_uv_locks(
             }
         }
         if backend
-            .spawnable_dependency(&config, None, "uv")
+            .spawnable_dependency(config, None, "uv")
             .await
             .is_none()
         {
@@ -730,7 +749,7 @@ pub(crate) async fn populate_uv_locks(
             );
             continue;
         }
-        let graph = backend.resolve_uv_lock(tv).await?;
+        let graph = backend.resolve_uv_lock(config, tv).await?;
         lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
     Ok(())
@@ -1149,6 +1168,25 @@ mod tests {
         .await
         .unwrap_err();
         assert!(error.to_string().contains("unexpected provenance type"));
+    }
+
+    #[tokio::test]
+    async fn current_native_graph_does_not_read_sidecars() {
+        crate::backend::load_tools().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let graph = super::super::GraphRef::Sidecar {
+            dir: temp.path().join("missing"),
+            digest: "sha256:recorded".into(),
+            cell: std::sync::OnceLock::new(),
+        };
+        let mut old = previous();
+        let entry = &mut old.tools_for_mut("fixture").unwrap()[0];
+        entry.platforms.clear();
+        entry.uv = Some(graph.clone());
+        let (ba, mut tv) = tool();
+        tv.uv_lock = Some(graph);
+        assert!(is_current(&old, &[(ba, tv)], &[Platform::parse("linux-x64").unwrap()]).unwrap());
+        assert!(!temp.path().join("missing").exists());
     }
 
     #[tokio::test]

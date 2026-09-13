@@ -286,7 +286,7 @@ impl BackendArg {
     ) -> Self {
         let short = preserve_pipx_spelling(&short);
         let full = full.map(|full| backend::canonical_backend_full(&full).into_owned());
-        // Preserve the on-disk namespace used before pypi became the preferred name.
+        // Keep each explicitly configured spelling in its own directory namespace.
         let pathname = backend::tool_directory_name(&short);
         let opts_source = opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg);
         Self {
@@ -929,7 +929,7 @@ impl Debug for BackendArg {
 
 impl PartialEq for BackendArg {
     fn eq(&self, other: &Self) -> bool {
-        unalias_backend(&self.short) == unalias_backend(&other.short)
+        self.short == other.short
     }
 }
 
@@ -943,13 +943,13 @@ impl PartialOrd for BackendArg {
 
 impl Ord for BackendArg {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        unalias_backend(&self.short).cmp(&unalias_backend(&other.short))
+        self.short.cmp(&other.short)
     }
 }
 
 impl Hash for BackendArg {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        unalias_backend(&self.short).hash(state);
+        self.short.hash(state);
     }
 }
 
@@ -1258,15 +1258,15 @@ mod tests {
 }
 
 #[test]
-fn pypi_and_pipx_share_backend_and_install_paths() {
+fn pypi_and_pipx_use_distinct_tool_identities() {
     let preferred = BackendArg::from("pypi:black");
     let legacy = BackendArg::from("pipx:black");
-    assert_eq!(preferred, legacy);
+    assert_ne!(preferred, legacy);
     assert_eq!(preferred.short, "pypi:black");
     assert_eq!(legacy.short, "pipx:black");
     assert_eq!(preferred.full(), "pypi:black");
-    assert_eq!(preferred.installs_path, legacy.installs_path);
-    assert_eq!(preferred.tool_dir_name(), "pipx-black");
+    assert_ne!(preferred.installs_path, legacy.installs_path);
+    assert_eq!(preferred.tool_dir_name(), "pypi-black");
     assert_eq!(BackendType::guess("pipx:black"), BackendType::Pipx);
     assert_eq!(BackendType::guess("pypi:black"), BackendType::Pipx);
 }
