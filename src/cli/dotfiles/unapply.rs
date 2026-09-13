@@ -37,6 +37,10 @@ pub(crate) struct DotfilesUnapply {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesUnapply {
@@ -46,6 +50,7 @@ impl DotfilesUnapply {
 
     async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let all_files = system::files::files_from_config(&config)?;
         let files = all_files
             .iter()
@@ -107,7 +112,7 @@ impl DotfilesUnapply {
             info!("dotfiles: skipped");
             return Ok(());
         }
-        system::files::resolve_unapply(&config, &mut file_plan, &file_opts)?;
+        system::files::resolve_unapply(&config, &mut file_plan, &file_opts, &secrets)?;
         system::edits::validate_unapply(&edit_plan)?;
         // Confirmation covers the complete validated plan. Suppress the
         // per-domain prompts so declining cannot leave a partial unapply.

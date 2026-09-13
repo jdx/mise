@@ -26,6 +26,10 @@ template = true
 owner = "root"
 group = "root"
 mode = "0600"
+
+[dotfiles."~/.config/example/credentials"]
+source = "dotfiles/credentials.tmpl"
+mode = "template"
 ```
 
 The short declaration maps a logical name directly to an environment variable.
@@ -60,6 +64,7 @@ values. Prompted values remain in memory and are not exported:
 ```sh
 mise bootstrap --prompt-secrets --yes
 mise bootstrap files apply --prompt-secrets
+mise bootstrap dotfiles apply --prompt-secrets
 mise bootstrap plan --prompt-secrets
 ```
 

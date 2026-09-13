@@ -45,11 +45,16 @@ pub(crate) struct DotfilesStatus {
     /// state (missing, source missing, differs)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesStatus {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let mut any_missing = false;
 
         let all_files = system::files::files_from_config(&config)?;
@@ -64,7 +69,7 @@ impl DotfilesStatus {
         let mut file_rows: Vec<Vec<String>> = vec![];
         let mut json_files = vec![];
         for req in &files {
-            let state = match system::files::check(&config, req) {
+            let state = match system::files::check(&config, req, &secrets) {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };

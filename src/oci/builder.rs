@@ -981,6 +981,7 @@ fn build_dotfiles_layer(
     owner: LayerOwner,
 ) -> Result<LayerBlob> {
     let mut entries = DotfilesLayerEntries::default();
+    let secrets = crate::system::secrets::resolve(cfg, false)?;
 
     for req in requests {
         if !matches!(req.mode, FileMode::Content | FileMode::Track) && !req.source.exists() {
@@ -1027,7 +1028,7 @@ fn build_dotfiles_layer(
                 }
             }
             FileMode::Template => {
-                let rendered = crate::system::files::render_template(cfg, req)?;
+                let rendered = crate::system::files::render_template(cfg, req, &secrets)?;
                 entries.add_file(
                     oci_target_path(req)?,
                     rendered.into_bytes(),

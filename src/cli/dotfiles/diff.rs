@@ -16,11 +16,16 @@ pub(crate) struct DotfilesDiff {
     /// Only show these targets
     #[usage(value_name = "TARGET")]
     targets: Vec<String>,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesDiff {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = super::select_requests(&config, &self.targets)?;
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
@@ -29,7 +34,7 @@ impl DotfilesDiff {
         }
 
         if !files.is_empty() {
-            system::files::print_diffs(&config, &files)?;
+            system::files::print_diffs(&config, &files, &secrets)?;
         }
         if !edits.is_empty() {
             system::edits::print_diffs(&config, &edits)?;

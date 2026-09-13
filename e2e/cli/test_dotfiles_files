@@ -764,3 +764,47 @@ cat <<EOF >mise.toml
 EOF
 EDITOR="$PWD/editor-append" mise dotfiles edit ~/inline-edit
 assert_contains "cat mise.toml" "# edited config"
+
+# Dotfile templates consume the same declared bootstrap secrets as managed
+# system files. Missing inputs fail closed, while dry-runs stay inert.
+dotfile_secret_env="MISE_DOTFILES_TEST_SECRET"
+dotfile_secret_value="mise-dotfiles-secret-4d29c8"
+unset "$dotfile_secret_env"
+export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise/config.toml:$PWD/mise.toml"
+cat <<'EOF' >dotfiles/secret.tmpl
+token={{ secret(name="dotfile_token") }}
+EOF
+secret_config="$PWD/secret-mise.toml"
+cat <<EOF >"$secret_config"
+[bootstrap.secrets]
+dotfile_token = "$dotfile_secret_env"
+
+[dotfiles]
+"~/.secret-dotfile" = { source = "dotfiles/secret.tmpl", mode = "template" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$secret_config mise dotfiles apply --dry-run --prompt-secrets"
+assert_fail "MISE_CONFIG_FILE=$secret_config mise dotfiles apply --yes" "required bootstrap secrets are unavailable"
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes --prompt-secrets"
+assert "cat ~/.secret-dotfile" "token=$dotfile_secret_value"
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles status --missing --prompt-secrets"
+assert_contains "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise bootstrap status --prompt-secrets" "dotfile_token"
+
+# Diffs redact secrets from both the current and desired content.
+echo "token=stale-$dotfile_secret_value" >~/.secret-dotfile
+secret_diff="$(env MISE_CONFIG_FILE="$secret_config" "$dotfile_secret_env=$dotfile_secret_value" mise dotfiles diff --prompt-secrets)"
+assert_contains_text "$secret_diff" "[redacted]"
+assert_not_contains_text "$secret_diff" "$dotfile_secret_value"
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes"
+
+# Compatibility rendering and aggregate bootstrap share the same resolver.
+rm ~/.secret-dotfile
+assert_succeed "MISE_CONFIG_FILE=$secret_config MISE_TERA_V1=1 $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes"
+assert "cat ~/.secret-dotfile" "token=$dotfile_secret_value"
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles unapply --yes --prompt-secrets"
+assert_fail "test -e ~/.secret-dotfile"
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise bootstrap --only dotfiles --yes --prompt-secrets"
+assert "cat ~/.secret-dotfile" "token=$dotfile_secret_value"
+
+for command in add apply diff edit status unapply; do
+  assert_contains "mise dotfiles $command --help" "--prompt-secrets"
+done

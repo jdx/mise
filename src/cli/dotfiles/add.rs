@@ -80,6 +80,10 @@ pub(crate) struct DotfilesAdd {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     pub(super) yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    pub(super) prompt_secrets: bool,
 }
 
 impl DotfilesAdd {
@@ -112,6 +116,7 @@ impl DotfilesAdd {
 
     async fn run_inner(mut self, mode: FileMode) -> Result<()> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let managed = system::files::files_from_config(&config)?;
         if self.changed {
             for req in &managed {
@@ -120,7 +125,7 @@ impl DotfilesAdd {
                     && !req.target.is_symlink()
                     && !req.source.is_dir()
                     && matches!(
-                        system::files::check(&config, req)?,
+                        system::files::check(&config, req, &secrets)?,
                         system::files::FileState::Differs(_)
                     )
                 {
@@ -437,6 +442,7 @@ impl DotfilesAdd {
                     &apply_requests,
                     &active_after_add,
                     &apply_opts,
+                    &secrets,
                 )?)
             } else {
                 None
@@ -472,7 +478,7 @@ impl DotfilesAdd {
             }
             if let Some(plan) = apply_plan {
                 apply_started = true;
-                system::files::execute_apply(plan, &apply_opts)?;
+                system::files::execute_apply(&config, plan, &apply_opts)?;
             }
             Ok(())
         })();
