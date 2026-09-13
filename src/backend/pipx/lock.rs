@@ -120,41 +120,7 @@ impl PIPXBackend {
             let html = HTTP_FETCH
                 .get_html(registry.replace("{}", &self.tool_name()))
                 .await?;
-            let links = regex!(r#"(?is)<a\s+[^>]*>"#);
-            let href = regex!(r#"(?i)href\s*=\s*["']([^"']+)["']"#);
-            let python = regex!(r#"(?i)data-requires-python\s*=\s*["']([^"']*)["']"#);
-            let mut constraints = std::collections::BTreeSet::new();
-            for link in links.find_iter(&html) {
-                let Some(url) = href.captures(link.as_str()).and_then(|c| c.get(1)) else {
-                    continue;
-                };
-                let Some(filename) = Self::distribution_filename_from_url(url.as_str()) else {
-                    continue;
-                };
-                if Self::version_from_distribution_filename(&self.tool_name(), &filename).as_deref()
-                    == Some(&tv.version)
-                    && filename.ends_with(".whl")
-                {
-                    let value = python
-                        .captures(link.as_str())
-                        .and_then(|c| c.get(1))
-                        .map(|v| v.as_str())
-                        .unwrap_or("");
-                    constraints.insert(
-                        value
-                            .replace("&gt;", ">")
-                            .replace("&lt;", "<")
-                            .replace("&amp;", "&"),
-                    );
-                }
-            }
-            if constraints.len() != 1 {
-                bail!(
-                    "pypi:{} requires consistent Python metadata on published wheels to generate a portable lock",
-                    self.tool_name()
-                );
-            }
-            constraints.into_iter().next().unwrap()
+            simple_index_python_requirement(&self.tool_name(), &tv.version, &html)?
         };
         let requires_python = if requires_python.trim().is_empty() {
             ">=3.8".to_string()
@@ -384,6 +350,44 @@ impl PIPXBackend {
     }
 }
 
+fn simple_index_python_requirement(package: &str, version: &str, html: &str) -> Result<String> {
+    let links = regex!(r#"(?is)<a\s+(?:[^"'<>]|"[^"]*"|'[^']*')*>"#);
+    let href = regex!(r#"(?i)href\s*=\s*["']([^"']+)["']"#);
+    let python = regex!(r#"(?i)data-requires-python\s*=\s*["']([^"']*)["']"#);
+    let mut constraints = std::collections::BTreeSet::new();
+    for link in links.find_iter(html) {
+        let Some(url) = href.captures(link.as_str()).and_then(|c| c.get(1)) else {
+            continue;
+        };
+        let Some(filename) = PIPXBackend::distribution_filename_from_url(url.as_str()) else {
+            continue;
+        };
+        if PIPXBackend::version_from_distribution_filename(package, &filename).as_deref()
+            == Some(version)
+            && filename.ends_with(".whl")
+        {
+            let value = python
+                .captures(link.as_str())
+                .and_then(|c| c.get(1))
+                .map(|v| v.as_str())
+                .unwrap_or("");
+            constraints.insert(
+                value
+                    .replace("&gt;", ">")
+                    .replace("&lt;", "<")
+                    .replace("&amp;", "&"),
+            );
+        }
+    }
+    if constraints.len() != 1 {
+        bail!(
+            "pypi:{} requires consistent Python metadata on published wheels to generate a portable lock",
+            package
+        );
+    }
+    Ok(constraints.into_iter().next().unwrap())
+}
+
 fn uv_index_url(registry: &str) -> Result<String> {
     let base = registry.split("{}").next().unwrap_or(registry);
     let mut url = url::Url::parse(base)?;
@@ -472,6 +476,21 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
         .parse()
         .unwrap();
         (backend, tv, UvLock { project, graph })
+    }
+
+    #[test]
+    fn simple_index_python_requirement_preserves_quoted_angle_brackets() {
+        for requirement in [">=3.10", "&gt;=3.10"] {
+            for quote in ['"', '\''] {
+                let html = format!(
+                    "<a href=\"demo-1.0%2Blocal-py3-none-any.whl\" data-requires-python={quote}{requirement}{quote}>wheel</a>"
+                );
+                assert_eq!(
+                    simple_index_python_requirement("demo", "1.0+local", &html).unwrap(),
+                    ">=3.10"
+                );
+            }
+        }
     }
 
     #[test]
