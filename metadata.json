@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2DGXJ7A3QQJ80W0V0E30QV3",
   "strategy": "manual-commit",
   "branch": "codex/pypi-uv-lock",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "src/backend/pipx/lock.rs"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 18397,
+    "input_tokens": 107836,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 4771072,
-    "output_tokens": 6936,
-    "api_call_count": 30
+    "cache_read_tokens": 12861824,
+    "output_tokens": 23090,
+    "api_call_count": 83
   }
 }
