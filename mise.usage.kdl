@@ -43,6 +43,8 @@ source_code_link_template #"""
 {%- set path = "dotfiles/save.rs" -%}
 {%- elif path == "bootstrap/dotfiles/capture" -%}
 {%- set path = "dotfiles/capture.rs" -%}
+{%- elif path == "bootstrap/dotfiles/conflicts" -%}
+{%- set path = "dotfiles/conflicts.rs" -%}
 {%- elif path == "bootstrap/dotfiles/track" -%}
 {%- set path = "dotfiles/track.rs" -%}
 {%- elif path == "bootstrap/dotfiles/untrack" -%}
@@ -707,7 +709,7 @@ are not reversible. Concurrent editor changes are part of the same interval.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
         }
-        cmd conflicts help="Inspect the local and remote sides of sharing conflicts" {
+        cmd conflicts help="Inspect the local and remote sides of sharing conflicts" effect=read {
             long_help #"""
 Inspect the local and remote sides of sharing conflicts
 

@@ -6,7 +6,8 @@ description: "Inspect the local and remote sides of sharing conflicts"
 # `mise bootstrap dotfiles conflicts`
 
 - **Usage:** `mise bootstrap dotfiles conflicts [--difftool] [--tool <TOOL>] [PATH]…`
-- **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
+- **Effect:** read-only
+- **Source code:** [`src/cli/dotfiles/conflicts.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/conflicts.rs)
 
 Inspect the local and remote sides of sharing conflicts
 
