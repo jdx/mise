@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DK9HNEGJ48K9JGAFY7Y6XS",
+  "session_id": "01a09ab8-2da7-7001-9d6d-b5ec765cd7f5",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T14:38:44.810989Z",
+  "branch": "codex/dotfiles-conflict-inspection",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/.vitepress/cli_commands.ts",
+    "man/man1/mise.1"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "b1eabdfe166b",
+  "checkpoint_transcript_start": 2276,
+  "transcript_lines_at_start": 2276,
+  "compact_transcript_start": 321,
+  "token_usage": {
+    "input_tokens": 25729,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 723456,
+    "output_tokens": 1490,
+    "api_call_count": 7
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-13T14:38:44.641838Z",
+    "agent_lines": 50,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 50,
+    "total_lines_changed": 50,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
