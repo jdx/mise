@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2EJZN7B806AZNPQVP406WFD",
+  "strategy": "manual-commit",
+  "branch": "codex/brew-parallel-staging",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/system/packages/brew/fetch.rs",
+    "src/system/packages/brew/mod.rs",
+    "src/system/packages/brew/pour.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 13800,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 396672,
+    "output_tokens": 747,
+    "api_call_count": 6
+  }
+}
