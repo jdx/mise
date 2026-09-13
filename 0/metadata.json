@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2E99VPTTEMTB2FV6A10ZYHF",
+  "session_id": "01a09c85-47ee-7931-8201-e9d2b650db9c",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T21:03:21.866931Z",
+  "branch": "codex/clean-up-pypi-docs",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/dev-tools/backends/pypi.md",
+    "docs/dev-tools/mise-lock.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "9fc45dc02ddb",
+  "checkpoint_transcript_start": 294,
+  "transcript_lines_at_start": 294,
+  "compact_transcript_start": 40,
+  "token_usage": {
+    "input_tokens": 18207,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 650752,
+    "output_tokens": 1168,
+    "api_call_count": 6
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-13T21:03:21.766508Z",
+    "agent_lines": 18,
+    "agent_removed": 16,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 18,
+    "total_lines_changed": 34,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
