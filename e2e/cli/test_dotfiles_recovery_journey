@@ -41,6 +41,7 @@ printf 'laptop edit\n' >~/.config/journey/bindings
 assert_succeed 'mise bootstrap dotfiles save'
 mv "$origin" "$origin.offline"
 printf 'desktop edit\n' >"$B/.config/journey/bindings"
+chmod +x "$B/.config/journey/bindings"
 assert_succeed "$b bootstrap dotfiles save"
 assert_fail "$b bootstrap dotfiles sync"
 assert_contains "$b bootstrap dotfiles history diff latest --patch" '+desktop edit'
@@ -55,7 +56,7 @@ assert_contains "$b bootstrap dotfiles conflicts $B/.config/journey/bindings" '+
 HOME="$B" git config --global merge.tool mise-test
 HOME="$B" git config --global mergetool.mise-test.cmd \
   'grep -q "desktop edit" "$LOCAL" && grep -q "laptop edit" "$REMOTE" && touch "$HOME/difftool-ran"'
-assert_succeed "$b bootstrap dotfiles conflicts --difftool $B/.config/journey/bindings"
+assert_contains "$b bootstrap dotfiles conflicts --difftool $B/.config/journey/bindings" 'mode: 100755 -> 100644'
 assert_succeed "test -f $B/difftool-ran"
 assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/journey/bindings --yes"
 assert "cat $B/.config/journey/bindings" 'laptop edit'

@@ -143,6 +143,9 @@ fn run_difftool(
     if !matches!(status.code(), Some(0 | 1)) {
         bail!("Git difftool failed ({status})");
     }
+    if local.mode != remote.mode {
+        miseprintln!("mode: {} -> {}", local.mode, remote.mode);
+    }
     Ok(())
 }
 
