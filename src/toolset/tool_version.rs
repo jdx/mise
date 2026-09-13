@@ -213,6 +213,9 @@ impl ToolVersion {
     /// The logical tool version, excluding an internal embedded-aube graph
     /// identity suffix discovered while scanning install directories.
     pub(crate) fn display_version(&self) -> &str {
+        if !self.ba().full_without_opts().starts_with("npm:") {
+            return &self.version;
+        }
         let Some((version, identity)) = self.version.rsplit_once("-aube-") else {
             return &self.version;
         };
@@ -1103,6 +1106,24 @@ mod tests {
             let tv = ToolVersion::new(request, version.to_string());
             assert_eq!(tv.tv_pathname(), pathname);
         }
+    }
+
+    #[test]
+    fn display_version_only_hides_aube_identity_for_npm() {
+        let version = "release-aube-0123456789abcdef";
+        let github = Arc::new(BackendArg::from("github:owner/tool"));
+        let request = ToolRequest::new(github, version, ToolSource::Argument).unwrap();
+        assert_eq!(
+            ToolVersion::new(request, version.into()).display_version(),
+            version
+        );
+
+        let npm = Arc::new(BackendArg::from("npm:tool"));
+        let request = ToolRequest::new(npm, version, ToolSource::Argument).unwrap();
+        assert_eq!(
+            ToolVersion::new(request, version.into()).display_version(),
+            "release"
+        );
     }
 
     #[test]

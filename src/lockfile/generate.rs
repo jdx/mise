@@ -591,7 +591,13 @@ pub(crate) async fn populate_aube_locks(
     report: Option<&dyn crate::ui::progress_report::SingleReport>,
     force: bool,
 ) -> Result<()> {
-    if lockfile.lockfile_version() < 2 || !crate::backend::npm::NPMBackend::uses_embedded_aube() {
+    if lockfile.lockfile_version() < 2 {
+        return Ok(());
+    }
+    if !crate::backend::npm::NPMBackend::uses_embedded_aube() {
+        for entry in lockfile.tools.values_mut().flatten() {
+            entry.aube = None;
+        }
         return Ok(());
     }
     for (ba, tv) in tools {
@@ -601,10 +607,14 @@ pub(crate) async fn populate_aube_locks(
         }
         let options =
             backend.resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())?;
+        let backend_name = ba.stored_full();
         if !force
             && lockfile.tools.get(&ba.short).is_some_and(|entries| {
                 entries.iter().any(|entry| {
-                    entry.version == tv.version && entry.options == options && entry.aube.is_some()
+                    entry.version == tv.version
+                        && entry.backend.as_deref() == Some(backend_name.as_str())
+                        && entry.options == options
+                        && entry.aube.is_some()
                 })
             })
         {
@@ -615,7 +625,7 @@ pub(crate) async fn populate_aube_locks(
         }
         let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
         let graph = npm.resolve_aube_lock(tv).await?;
-        lockfile.set_aube_lock(&ba.short, &tv.version, &options, graph)?;
+        lockfile.set_aube_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
     Ok(())
 }

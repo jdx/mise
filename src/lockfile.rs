@@ -202,6 +202,9 @@ pub(crate) struct Lockfile {
     /// Shared pkgx packages: platform -> package@version -> PkgxPackageInfo
     #[serde(skip)]
     pkgx_packages: BTreeMap<String, BTreeMap<String, PkgxPackageInfo>>,
+    /// Revision of the source lockfile for each entry in a merged lookup.
+    #[serde(skip)]
+    entry_lockfile_versions: BTreeMap<LockfileEntryKey, u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -226,11 +229,13 @@ impl Default for Lockfile {
             tools: BTreeMap::new(),
             conda_packages: BTreeMap::new(),
             pkgx_packages: BTreeMap::new(),
+            entry_lockfile_versions: BTreeMap::new(),
         }
     }
 }
 
 type LockfileToolKey = (String, BTreeMap<String, String>);
+type LockfileEntryKey = (String, String, Option<String>, BTreeMap<String, String>);
 type MergeToolEntriesResult = (Vec<LockfileTool>, HashSet<LockfileToolKey>);
 
 /// Type of detected or verified provenance, ordered by priority (lowest to highest).
@@ -1669,6 +1674,7 @@ impl Lockfile {
         &mut self,
         short: &str,
         version: &str,
+        backend: &str,
         options: &BTreeMap<String, String>,
         lock: AubeLock,
     ) -> Result<()> {
@@ -1676,19 +1682,58 @@ impl Lockfile {
             .tools
             .get_mut(short)
             .and_then(|entries| {
-                entries
-                    .iter_mut()
-                    .find(|entry| entry.version == version && &entry.options == options)
+                entries.iter_mut().find(|entry| {
+                    entry.version == version
+                        && entry.backend.as_deref() == Some(backend)
+                        && &entry.options == options
+                })
             })
             .ok_or_else(|| eyre!("missing lockfile entry for {short}@{version}"))?;
         entry.aube = Some(lock);
         Ok(())
     }
 
+    fn record_entry_lockfile_versions(&mut self) {
+        for (short, entries) in &self.tools {
+            for entry in entries {
+                self.entry_lockfile_versions
+                    .entry(lockfile_entry_key(short, entry))
+                    .or_insert(self.lockfile_version);
+            }
+        }
+    }
+
+    fn entry_lockfile_version(&self, short: &str, entry: &LockfileTool) -> u32 {
+        self.entry_lockfile_versions
+            .get(&lockfile_entry_key(short, entry))
+            .copied()
+            .or_else(|| {
+                self.entry_lockfile_versions
+                    .iter()
+                    .find(|((key_short, version, backend, options), _)| {
+                        key_short == short
+                            && version == &entry.version
+                            && backend == &entry.backend
+                            && options.is_empty()
+                    })
+                    .map(|(_, version)| *version)
+            })
+            .unwrap_or(self.lockfile_version)
+    }
+
     /// Save the lockfile to disk (public for mise lock command)
     pub(crate) fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
     }
+}
+
+fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
+    (
+        short.to_string(),
+        entry.version.clone(),
+        entry.backend.clone(),
+        entry.options.clone(),
+    )
 }
 
 pub(crate) struct PreparedWrite {
@@ -2077,6 +2122,14 @@ fn merge_lockfile_for_lookup(root: &mut Lockfile, other: Lockfile) {
     // A mixed-format read must keep request bindings enabled. Version-0 entries
     // have no specifiers and remain available through the versioned lockfile's
     // unbound-entry fallback.
+    root.record_entry_lockfile_versions();
+    let mut other = other;
+    other.record_entry_lockfile_versions();
+    for (key, version) in &other.entry_lockfile_versions {
+        root.entry_lockfile_versions
+            .entry(key.clone())
+            .or_insert(*version);
+    }
     root.lockfile_version = root.lockfile_version.max(other.lockfile_version);
     merge_lockfile_preserving_root(root, other);
 }
@@ -4041,7 +4094,12 @@ pub(crate) fn version_for_request(config: &Config, request: &ToolRequest) -> Res
         }
         _ => read_all_lockfiles(config),
     };
-    Ok(Some(lockfile.lockfile_version()))
+    let Some(entry) = request.lockfile_resolve(config)? else {
+        return Ok(None);
+    };
+    Ok(Some(
+        lockfile.entry_lockfile_version(&request.ba().short, &entry),
+    ))
 }
 
 fn matching_request_bindings<'a>(
@@ -6187,7 +6245,7 @@ options = { exe = "rg" }
 
     #[test]
     fn test_merge_lockfile_for_lookup_keeps_request_bindings_enabled() {
-        for (root_version, other_version) in [(0, 1), (1, 0)] {
+        for (root_version, other_version) in [(0, 1), (1, 0), (1, 2), (2, 1)] {
             let mut root = Lockfile {
                 lockfile_version: root_version,
                 ..Default::default()
@@ -6213,11 +6271,39 @@ options = { exe = "rg" }
 
             merge_lockfile_for_lookup(&mut root, other);
 
-            assert_eq!(root.lockfile_version(), 1);
+            assert_eq!(root.lockfile_version(), root_version.max(other_version));
             assert!(root.uses_request_bindings());
             assert!(root.tools["node"][0].specifiers.contains("20"));
             assert!(root.tools["node"][1].specifiers.is_empty());
+            assert_eq!(
+                root.entry_lockfile_version("node", &root.tools["node"][0]),
+                root_version
+            );
+            assert_eq!(
+                root.entry_lockfile_version("node", &root.tools["node"][1]),
+                other_version
+            );
         }
+    }
+
+    #[test]
+    fn set_aube_lock_matches_backend() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "cli".to_string(),
+            vec![
+                basic_tool("1.0.0", "github:owner/cli"),
+                basic_tool("1.0.0", "npm:cli"),
+            ],
+        );
+        let graph = AubeLock::from_yaml("lockfileVersion: '9.0'\npackages: {}\n").unwrap();
+
+        lockfile
+            .set_aube_lock("cli", "1.0.0", "npm:cli", &BTreeMap::new(), graph)
+            .unwrap();
+
+        assert!(lockfile.tools["cli"][0].aube.is_none());
+        assert!(lockfile.tools["cli"][1].aube.is_some());
     }
 
     #[test]
