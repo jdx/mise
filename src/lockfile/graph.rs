@@ -497,6 +497,38 @@ mod tests {
     }
 
     #[test]
+    fn migration_cleanup_preserves_sibling_lockfile_graphs() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("apps/a/mise.lock");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        let target = temp.path().join("mise.lock");
+        let mut lock = Lockfile::default();
+        let mut tool = entry("pypi:fixture");
+        tool.uv = Some(uv().into());
+        lock.tools.insert("pypi:fixture".into(), vec![tool]);
+        lock.save(&source).unwrap();
+        let sibling = source.with_file_name("mise.local.lock");
+        lock.save(&sibling).unwrap();
+        let sibling_graph = sidecar_root(&sibling).join("pypi-fixture/1.0.0/uv.lock");
+        let bytes = std::fs::read(&sibling_graph).unwrap();
+        Lockfile::read(&source).unwrap().save(&target).unwrap();
+        crate::lockfile::remove_migrated_sidecars(&source, &target).unwrap();
+        assert!(!sidecar_root(&source).join("pypi-fixture/1.0.0").exists());
+        assert_eq!(std::fs::read(&sibling_graph).unwrap(), bytes);
+        let sibling_target = target.with_file_name("mise.local.lock");
+        Lockfile::read(&sibling)
+            .unwrap()
+            .save(&sibling_target)
+            .unwrap();
+        crate::lockfile::remove_migrated_sidecars(&sibling, &sibling_target).unwrap();
+        assert_eq!(
+            std::fs::read(sidecar_root(&sibling_target).join("pypi-fixture/1.0.0/uv.lock"))
+                .unwrap(),
+            bytes
+        );
+    }
+
+    #[test]
     fn sidecar_layout_follows_config_and_lockfile_name() {
         for (path, expected) in [
             ("project/mise.lock", "project/.mise/locks"),

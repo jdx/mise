@@ -2250,24 +2250,28 @@ fn remove_migrated_sidecars(source: &Path, target: &Path) -> Result<()> {
         return Ok(());
     }
     let published = Lockfile::read(target)?;
-    let still_referenced = published.tools.values().flatten().any(|entry| {
-        entry
-            .uv
-            .as_ref()
-            .and_then(GraphRef::dir)
-            .is_some_and(|dir| dir.starts_with(&root))
-            || entry
-                .aube
-                .as_ref()
-                .and_then(GraphRef::dir)
-                .is_some_and(|dir| dir.starts_with(&root))
-    });
-    if !still_referenced {
-        match fs::remove_dir_all(&root) {
-            Ok(()) => {}
-            Err(error) if error.kind() == ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
+    let mut cleanup = graph::SidecarWrites::new(source);
+    for entry in published.tools.values().flatten() {
+        if let Some(graph) = &entry.uv {
+            cleanup.reserve(graph);
         }
+        if let Some(graph) = &entry.aube {
+            cleanup.reserve(graph);
+        }
+    }
+    // Only this lockfile's tool/version directories belong to this migration.
+    // Local/environment roots are nested one level deeper and must survive.
+    cleanup.collect_garbage();
+    cleanup.prune()?;
+    // Remove an empty legacy root, but retain roots containing sibling lockfiles.
+    match fs::remove_dir(&root) {
+        Ok(()) => {}
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty
+            ) => {}
+        Err(error) => return Err(error.into()),
     }
     Ok(())
 }
