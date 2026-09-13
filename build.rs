@@ -14,6 +14,8 @@ use aqua_registry::types::{AquaPackage, AquaPackageType, RegistryPackageRow, Reg
 use eyre::{Result, eyre};
 use serde_yaml::Value;
 
+#[path = "build/helper_signing_mode.rs"]
+mod helper_signing_mode;
 #[path = "build/lockfile_rollout.rs"]
 mod lockfile_rollout;
 
@@ -100,17 +102,25 @@ fn build_notification_helper() -> Result<()> {
     fs::write(contents.join("Resources/mise.icns"), icns)?;
 
     let identity = env::var("MISE_NOTIFICATION_SIGN_IDENTITY").unwrap_or_else(|_| "-".into());
-    let release_signed = identity != "-";
-    let signing_enabled = env::var("MISE_NOTIFICATION_SIGNING").as_deref() != Ok("disabled");
+    let signing_mode = helper_signing_mode::select(
+        env::var("MISE_NOTIFICATION_SIGNING").ok().as_deref(),
+        &identity,
+    );
     println!(
         "cargo:rustc-env=MISE_NOTIFICATION_RELEASE_SIGNED={}",
-        if signing_enabled && release_signed {
+        if matches!(
+            signing_mode,
+            helper_signing_mode::HelperSigningMode::Release
+        ) {
             "1"
         } else {
             "0"
         }
     );
-    if signing_enabled {
+    if !matches!(
+        signing_mode,
+        helper_signing_mode::HelperSigningMode::Disabled
+    ) {
         println!("cargo:rustc-cfg=mise_notification_has_signature_resources");
         let mut codesign = Command::new("/usr/bin/codesign");
         codesign
