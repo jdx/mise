@@ -225,6 +225,24 @@ impl ToolVersion {
             .then_some(version)
     }
 
+    pub(crate) fn legacy_aube_install_path_version(&self) -> Option<&str> {
+        if !self.ba().full_without_opts().starts_with("npm:") {
+            return None;
+        }
+        let (version, identity) = self.version.rsplit_once("-aube-")?;
+        if identity.len() != 16 || !identity.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return None;
+        }
+        let contents =
+            crate::file::read_to_string(self.install_path().join("aube-lock.yaml")).ok()?;
+        let mut installed = self.clone();
+        installed.aube_lock = crate::lockfile::AubeLock::from_yaml(&contents).ok();
+        installed
+            .aube_install_identity()
+            .is_some_and(|actual| actual.starts_with(identity))
+            .then_some(version)
+    }
+
     pub(crate) fn install_path(&self) -> PathBuf {
         if let Some(p) = &self.install_path {
             return p.clone();

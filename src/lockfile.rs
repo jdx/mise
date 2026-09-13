@@ -99,7 +99,7 @@ impl AubeLock {
 fn hash_canonical_toml(hasher: &mut impl sha2::Digest, value: &toml::Value) {
     fn bytes(hasher: &mut impl sha2::Digest, tag: u8, value: &[u8]) {
         hasher.update([tag]);
-        hasher.update(value.len().to_be_bytes());
+        hasher.update((value.len() as u64).to_be_bytes());
         hasher.update(value);
     }
 
@@ -111,14 +111,14 @@ fn hash_canonical_toml(hasher: &mut impl sha2::Digest, value: &toml::Value) {
         toml::Value::Datetime(value) => bytes(hasher, b'd', value.to_string().as_bytes()),
         toml::Value::Array(values) => {
             hasher.update([b'a']);
-            hasher.update(values.len().to_be_bytes());
+            hasher.update((values.len() as u64).to_be_bytes());
             for value in values {
                 hash_canonical_toml(hasher, value);
             }
         }
         toml::Value::Table(values) => {
             hasher.update([b't']);
-            hasher.update(values.len().to_be_bytes());
+            hasher.update((values.len() as u64).to_be_bytes());
             for key in values.keys().sorted() {
                 bytes(hasher, b'k', key.as_bytes());
                 hash_canonical_toml(hasher, &values[key]);

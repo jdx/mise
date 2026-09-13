@@ -440,7 +440,10 @@ impl Backend for NPMBackend {
             .await;
         if package_manager == NpmPackageManager::Aube
             && tv.aube_lock.is_none()
-            && let Some(version) = tv.aube_install_path_version().map(str::to_string)
+            && let Some(version) = tv
+                .aube_install_path_version()
+                .or_else(|| tv.legacy_aube_install_path_version())
+                .map(str::to_string)
         {
             tv.version = version;
         }
