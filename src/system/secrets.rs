@@ -91,10 +91,12 @@ struct SecretUnavailable {
 
 pub(crate) fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration>> {
     let mut merged = IndexMap::new();
-    for cf in config.config_files.values() {
-        if let Some(bootstrap) = cf.bootstrap_config() {
-            for (name, declaration) in bootstrap.secrets {
-                merged.entry(name).or_insert(declaration);
+    for config_files in config.bootstrap_config_maps() {
+        for cf in config_files.values() {
+            if let Some(bootstrap) = cf.bootstrap_config() {
+                for (name, declaration) in bootstrap.secrets {
+                    merged.entry(name).or_insert(declaration);
+                }
             }
         }
     }
