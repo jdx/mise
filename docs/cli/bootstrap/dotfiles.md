@@ -19,6 +19,7 @@ Manage dotfiles from `[dotfiles]`
 - [`mise bootstrap dotfiles add [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/add.html)
 - [`mise bootstrap dotfiles apply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/apply.html)
 - [`mise bootstrap dotfiles capture [--label <LABEL>] <-- COMMAND>…`](/cli/bootstrap/dotfiles/capture.html)
+- [`mise bootstrap dotfiles conflicts [--difftool] [--tool <TOOL>] [PATH]…`](/cli/bootstrap/dotfiles/conflicts.html)
 - [`mise bootstrap dotfiles diff [--prompt-secrets] [TARGET]…`](/cli/bootstrap/dotfiles/diff.html)
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.html)
 - [`mise bootstrap dotfiles exclude <GLOB>`](/cli/bootstrap/dotfiles/exclude.html)

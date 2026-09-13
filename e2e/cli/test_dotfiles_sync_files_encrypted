@@ -102,6 +102,9 @@ assert_succeed "$b bootstrap dotfiles sync"
 conflict_head=$(git --git-dir="$origin" rev-parse main)
 assert_succeed "mise bootstrap dotfiles sync"
 assert_contains "mise bootstrap dotfiles status" 'sync paused'
+assert_contains "mise bootstrap dotfiles conflicts $HOME/.config/app/value" '-local-conflict'
+assert_contains "mise bootstrap dotfiles conflicts $HOME/.config/app/value" '+remote-conflict'
+assert_not_contains "mise bootstrap dotfiles conflicts $HOME/.config/app/value" 'mise-encrypted-file-v1'
 assert "git --git-dir=$origin rev-parse main" "$conflict_head"
 assert_succeed "mise bootstrap dotfiles pull --take-remote $HOME/.config/app/value --yes"
 assert "cat $HOME/.config/app/value" 'remote-conflict'

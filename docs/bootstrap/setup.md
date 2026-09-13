@@ -209,7 +209,13 @@ Inspect the conflict:
 
 ```sh
 mise bootstrap dotfiles status
+mise bootstrap dotfiles conflicts ~/.zshrc
 ```
+
+The second command shows the saved local version against the fetched
+repository version. Pass `--difftool` to use Git's configured diff tool, or its
+configured merge tool when no diff tool is set. Inspection does not change or
+resolve either side.
 
 Choose the repository's version of a file:
 

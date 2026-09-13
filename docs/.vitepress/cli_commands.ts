@@ -83,6 +83,9 @@ export const commands: { [key: string]: Command } = {
           capture: {
             hide: false,
           },
+          conflicts: {
+            hide: false,
+          },
           diff: {
             hide: false,
           },

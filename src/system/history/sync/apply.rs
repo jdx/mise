@@ -919,7 +919,9 @@ pub(crate) fn resolution_advice(path: &str, reason: &str) -> String {
     if reason == super::reconcile::ConflictKind::Repository.describe() {
         "inspect the validation error, reconcile the repository with Git, then run `mise bootstrap dotfiles sync`".into()
     } else {
-        format!("mise bootstrap dotfiles pull --take-remote|--keep-local {path}")
+        format!(
+            "inspect with `mise bootstrap dotfiles conflicts {path}`; resolve with `mise bootstrap dotfiles pull --take-remote|--keep-local {path}`"
+        )
     }
 }
 
