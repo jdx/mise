@@ -561,7 +561,9 @@ state, and run bootstrap explicitly to apply restored configuration.
 ### Descriptions from an agent
 
 `settings.history.describe_command` can run a command to describe each
-checkpoint saved by the watcher. For example, with Claude Code installed:
+checkpoint saved by the watcher. This setting is accepted only in system or
+global configuration, never in project configuration. For example, with
+Claude Code installed:
 
 ```toml
 [settings]

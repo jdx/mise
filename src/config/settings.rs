@@ -2467,6 +2467,24 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_settings_file_strips_local_history_describe_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings.history]
+            describe_command = "cat dotfiles"
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.history.describe_command, None);
+    }
+
+    #[test]
     fn test_parse_settings_file_strips_local_self_update_sources() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mise.toml");
@@ -2504,6 +2522,28 @@ mod tests {
         assert_eq!(
             partial.forgejo.credential_command.as_deref(),
             Some("echo forgejo-token")
+        );
+    }
+
+    #[test]
+    fn test_global_config_preserves_history_describe_command() {
+        let path = Path::new("/tmp/global-config.toml");
+        let mut settings = toml::from_str::<toml::Value>(
+            r#"
+            [history]
+            describe_command = "cat dotfiles"
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone();
+        strip_local_only_settings(&mut settings, path, true);
+        let partial = settings_partial_from_table(settings);
+
+        assert_eq!(
+            partial.history.describe_command.as_deref(),
+            Some("cat dotfiles")
         );
     }
 
