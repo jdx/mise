@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DG5PPWGEV91HB8A650NV5F",
+  "session_id": "01a09b01-de4e-7303-9e8a-29f068a8507f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T13:44:11.846456Z",
+  "branch": "codex/pypi-uv-lock",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e-win/pypi_lock.Tests.ps1",
+    "e2e/backend/test_pypi_lock",
+    "src/backend/pipx/lock.rs",
+    "src/cli/mod.rs",
+    "src/cli/settings/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "8722abfd55dd",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 75085,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 517888,
+    "output_tokens": 2333,
+    "api_call_count": 11
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-13T13:44:11.815216Z",
+    "agent_lines": 790,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 790,
+    "total_lines_changed": 792,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
