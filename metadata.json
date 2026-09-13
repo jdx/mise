@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2E52RA6AHZEFHKX13Y8RX9Z",
+  "strategy": "manual-commit",
+  "branch": "codex/tool-version-collections",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "src/backend/pipx.rs",
+    "src/backend/pipx/lock.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16072,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4442496,
+    "output_tokens": 4243,
+    "api_call_count": 23
+  }
+}
