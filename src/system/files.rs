@@ -1687,6 +1687,21 @@ pub(crate) fn render_template(
     Ok(rendered)
 }
 
+pub(crate) fn render_template_for_oci(config: &Config, req: &FileRequest) -> Result<String> {
+    let raw = file::read_to_string(&req.source)?;
+    let rendered =
+        SecretValues::render_dotfile_for_oci(config, &raw, &req.base, &req.origin.config).map_err(
+            |err| {
+                eyre::eyre!(
+                    "[dotfiles].\"{}\": failed to render template {}: {err}",
+                    req.target_raw,
+                    req.source.display_user()
+                )
+            },
+        )?;
+    Ok(rendered)
+}
+
 /// directories a symlink-each entry needs: the target itself plus every
 /// intermediate directory for nested source files
 fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {

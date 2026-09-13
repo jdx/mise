@@ -181,6 +181,29 @@ impl SecretValues {
         self.finish_render(Some(config), used, rendered)
     }
 
+    pub(crate) fn render_dotfile_for_oci(
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+    ) -> Result<String> {
+        const MESSAGE: &str = "bootstrap secrets cannot be embedded in persistent OCI image layers";
+        let mut tera = get_tera(Some(base));
+        match &mut tera {
+            TeraEngine::V2(tera) => tera
+                .register_function("secret", |_: Kwargs, _: &State| -> TeraResult<Value> {
+                    Err(tera::Error::message(MESSAGE))
+                }),
+            TeraEngine::V1(tera) => tera.register_function(
+                "secret",
+                |_: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+                    Err(tera1::Error::msg(MESSAGE))
+                },
+            ),
+        }
+        render_str(&mut tera, input, config.bootstrap_tera_ctx(config_path)).map_err(Into::into)
+    }
+
     fn render_inner(
         &self,
         config: Option<(&Config, &Path)>,

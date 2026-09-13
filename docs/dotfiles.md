@@ -300,6 +300,8 @@ the source file's permissions. A later apply also repairs changed permissions.
 `status`, `diff`, and `apply` render templates to check their output. This
 executes any `exec()` calls in those templates, using your trusted config.
 Secret values are redacted from diffs and other command output.
+`mise oci build` rejects templates that call `secret()` because the rendered
+value would otherwise remain recoverable from a persistent image layer.
 With `--dry-run`, mise skips rendering dotfile templates and labels them
 `(if changed)`. Other configuration expressions can still run during a dry
 run, so use it with trusted configuration.

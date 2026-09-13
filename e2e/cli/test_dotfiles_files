@@ -784,6 +784,7 @@ dotfile_token = "$dotfile_secret_env"
 EOF
 assert_succeed "MISE_CONFIG_FILE=$secret_config mise dotfiles apply --dry-run --prompt-secrets"
 assert_fail "MISE_CONFIG_FILE=$secret_config mise dotfiles apply --yes" "required bootstrap secrets are unavailable"
+assert_fail "MISE_CONFIG_FILE=$secret_config MISE_TERA_V1=1 mise dotfiles apply --yes" "required bootstrap secrets are unavailable"
 assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes --prompt-secrets"
 assert "cat ~/.secret-dotfile" "token=$dotfile_secret_value"
 assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles status --missing --prompt-secrets"
@@ -800,6 +801,13 @@ assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_sec
 rm ~/.secret-dotfile
 assert_succeed "MISE_CONFIG_FILE=$secret_config MISE_TERA_V1=1 $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes"
 assert "cat ~/.secret-dotfile" "token=$dotfile_secret_value"
+cat <<'EOF' >dotfiles/secret.tmpl
+token={{ secret(name="undeclared") }}
+EOF
+assert_fail "MISE_CONFIG_FILE=$secret_config MISE_TERA_V1=1 $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes" "Failed to render"
+cat <<'EOF' >dotfiles/secret.tmpl
+token={{ secret(name="dotfile_token") }}
+EOF
 assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles unapply --yes --prompt-secrets"
 assert_fail "test -e ~/.secret-dotfile"
 assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise bootstrap --only dotfiles --yes --prompt-secrets"
