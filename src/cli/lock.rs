@@ -1241,9 +1241,7 @@ impl Lock {
                     .filter(|(name, backend, version, _)| {
                         name == short
                             && version == &entry.version
-                            && entry.backend.as_deref().is_none_or(|b| {
-                                crate::backend::canonical_backend_full(b) == backend.as_str()
-                            })
+                            && entry.backend.as_deref().is_none_or(|b| b == backend)
                     })
                     .peekable();
                 // Keep backends unavailable on this host; only prune variants

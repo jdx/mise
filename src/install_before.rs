@@ -202,7 +202,8 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
                     .unwrap_or(&backend_arg.short);
                 crate::backend::canonical_backend_full(name).into_owned()
             } else {
-                backend_arg.full_without_opts()
+                crate::backend::canonical_backend_full(&backend_arg.full_without_opts())
+                    .into_owned()
             }
         });
         if exclude == full {

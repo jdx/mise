@@ -3247,10 +3247,9 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 
     for config_file in config_files.values() {
         for (plugin, plugin_aliases) in config_file.aliases()? {
-            let plugin = backend::canonical_backend_full(&plugin).into_owned();
             let alias = aliases.entry(plugin).or_default();
             if let Some(full) = plugin_aliases.backend {
-                alias.backend = Some(backend::canonical_backend_full(&full).into_owned());
+                alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
                 alias.versions.insert(from, to);
@@ -6904,6 +6903,60 @@ mod tests {
         let opts = config.get_tool_opts_with_overrides(&ba).await?;
 
         assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pipx_aliases_keep_their_tool_spelling() -> Result<()> {
+        crate::backend::load_tools().await?;
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("mise.toml");
+        fs::write(
+            &path,
+            r#"
+[alias."pipx:black"]
+versions = { stable = "24.10.0" }
+[alias.formatter]
+backend = "pipx:black"
+"#,
+        )?;
+        let mut files: ConfigMap = Default::default();
+        files.insert(
+            path.clone(),
+            Arc::new(config_file::mise_toml::MiseToml::from_file(&path)?),
+        );
+        let all_aliases = load_aliases(&files)?;
+        assert_eq!(
+            all_aliases["formatter"].backend.as_deref(),
+            Some("pipx:black")
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            bootstrap_config_maps: vec![],
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases,
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
+        };
+        let legacy = crate::backend::get(&BackendArg::from("pipx:black")).unwrap();
+        let preferred = crate::backend::get(&BackendArg::from("pypi:black")).unwrap();
+        assert_eq!(config.resolve_alias(&legacy, "stable").await?, "24.10.0");
+        assert_eq!(config.resolve_alias(&preferred, "stable").await?, "stable");
         Ok(())
     }
 

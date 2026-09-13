@@ -61,7 +61,7 @@ pub(crate) struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let short = preserve_pipx_spelling(s.as_ref());
+        let short = unalias_backend(s.as_ref()).into_owned();
         // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
         // If so, treat it as explicit since the user specified the backend
         let explicit = if let Some((prefix, _)) = short.split_once(':') {
@@ -180,19 +180,11 @@ fn plugin_overrides_registry(short: &str) -> bool {
     !backend::is_disabled_backend_type(&backend_type)
 }
 
-fn preserve_pipx_spelling(short: &str) -> String {
-    if short.starts_with("pipx:") {
-        short.to_owned()
-    } else {
-        unalias_backend(short).into_owned()
-    }
-}
-
 fn parse_backend_components(
     short: &str,
     full: Option<&String>,
 ) -> (String, String, Option<ToolVersionOptions>) {
-    let short = preserve_pipx_spelling(short);
+    let short = unalias_backend(short).into_owned();
     let source = full.unwrap_or(&short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
@@ -208,7 +200,7 @@ fn parse_backend_components_fallible(
     short: &str,
     full: Option<&String>,
 ) -> Result<(String, String, Option<ToolVersionOptions>)> {
-    let short = preserve_pipx_spelling(short);
+    let short = unalias_backend(short).into_owned();
     let source = full.unwrap_or(&short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (
@@ -284,8 +276,7 @@ impl BackendArg {
         opts: Option<ToolVersionOptions>,
         resolution: BackendResolution,
     ) -> Self {
-        let short = preserve_pipx_spelling(&short);
-        let full = full.map(|full| backend::canonical_backend_full(&full).into_owned());
+        let short = unalias_backend(&short).into_owned();
         // Keep each explicitly configured spelling in its own directory namespace.
         let pathname = backend::tool_directory_name(&short);
         let opts_source = opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg);
@@ -513,10 +504,6 @@ impl BackendArg {
     }
 
     pub(crate) fn full(&self) -> String {
-        backend::canonical_backend_full(&self.full_unaliased()).into_owned()
-    }
-
-    fn full_unaliased(&self) -> String {
         let short = unalias_backend(&self.short);
         let short = short.as_ref();
 
@@ -894,7 +881,7 @@ impl FromStr for BackendArg {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let short = preserve_pipx_spelling(s);
+        let short = unalias_backend(s).into_owned();
         let explicit = if let Some((prefix, _)) = short.split_once(':') {
             BackendType::guess(prefix) != BackendType::Unknown
         } else {
@@ -1265,6 +1252,7 @@ fn pypi_and_pipx_use_distinct_tool_identities() {
     assert_eq!(preferred.short, "pypi:black");
     assert_eq!(legacy.short, "pipx:black");
     assert_eq!(preferred.full(), "pypi:black");
+    assert_eq!(legacy.full(), "pipx:black");
     assert_ne!(preferred.installs_path, legacy.installs_path);
     assert_eq!(preferred.tool_dir_name(), "pypi-black");
     assert_eq!(BackendType::guess("pipx:black"), BackendType::Pipx);

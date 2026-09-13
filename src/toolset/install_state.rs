@@ -337,7 +337,7 @@ fn scan_tool_dir(
 
     let tool = InstallStateTool {
         short,
-        full: full.map(|s| crate::backend::canonical_backend_full(&s).into_owned()),
+        full,
         versions,
         explicit_backend,
         opts,
@@ -374,7 +374,6 @@ fn merge_shared_tool(
         (dir_name.to_string(), None, true, BTreeMap::new())
     };
 
-    let full = full.map(|s| crate::backend::canonical_backend_full(&s).into_owned());
     let tool = tools
         .entry(short.clone())
         .or_insert_with(|| InstallStateTool {
@@ -1388,7 +1387,7 @@ explicit_backend = true
             .unwrap()
             .unwrap();
         assert_eq!(tool.short, "pipx:black");
-        assert_eq!(tool.full.as_deref(), Some("pypi:black"));
+        assert_eq!(tool.full.as_deref(), Some("pipx:black"));
         assert_eq!(tool.installs_path, Some(dir.clone()));
         assert_eq!(tool.versions, ["24.10.0"]);
         assert!(dir.join("24.10.0").is_dir());

@@ -1217,9 +1217,6 @@ impl Lockfile {
             let versions = versions
                 .into_iter()
                 .map(|mut entry| -> Result<_> {
-                    entry.backend = entry.backend.map(|backend| {
-                        crate::backend::canonical_backend_full(&backend).into_owned()
-                    });
                     if let Some(graph) = &mut entry.uv {
                         graph.resolve_path(path)?;
                     }
@@ -1393,14 +1390,6 @@ impl Lockfile {
                         .as_ref()
                         .map(|g| g.pointer(path.parent().unwrap_or(Path::new("."))))
                         .transpose()?;
-                    if short.starts_with("pipx:") || self.lockfile_version < 2 {
-                        version.backend = version.backend.map(|backend| {
-                            backend
-                                .strip_prefix("pypi:")
-                                .map(|name| format!("pipx:{name}"))
-                                .unwrap_or(backend)
-                        });
-                    }
                     let mut value = version.into_toml_value(self.lockfile_version > 0);
                     if let Some(uv) = uv {
                         value.as_table_mut().unwrap().insert("uv".into(), uv);
@@ -8121,7 +8110,7 @@ backend = "core:python"
         assert!(lock.tools.contains_key("pipx:black"));
         assert_eq!(
             lock.tools_for("pipx:black").unwrap()[0].backend.as_deref(),
-            Some("pypi:black")
+            Some("pipx:black")
         );
         assert_eq!(
             lock.tools["python"][0].backend.as_deref(),
