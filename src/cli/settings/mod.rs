@@ -6,6 +6,28 @@ mod ls;
 mod set;
 mod unset;
 
+fn canonical_setting(key: &str) -> &str {
+    match key {
+        "pipx" => "pypi",
+        "pipx.uvx" => "pypi.uvx",
+        "pipx.registry_url" => "pypi.registry_url",
+        _ => key,
+    }
+}
+
+fn remove_legacy_pypi_setting(settings: &mut dyn toml_edit::TableLike, key: &str) -> bool {
+    let Some(leaf) = key.strip_prefix("pypi.") else {
+        return false;
+    };
+    if !matches!(leaf, "uvx" | "registry_url") {
+        return false;
+    }
+    settings
+        .get_mut("pipx")
+        .and_then(toml_edit::Item::as_table_like_mut)
+        .is_some_and(|legacy| legacy.remove(leaf).is_some())
+}
+
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     about = "Manage settings",
@@ -65,8 +87,14 @@ impl Commands {
     pub(crate) fn run(self) -> Result<()> {
         match self {
             Self::Add(cmd) => cmd.run(),
-            Self::Get(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(),
+            Self::Get(mut cmd) => {
+                cmd.setting = canonical_setting(&cmd.setting).to_owned();
+                cmd.run()
+            }
+            Self::Ls(mut cmd) => {
+                cmd.setting = cmd.setting.map(|key| canonical_setting(&key).to_owned());
+                cmd.run()
+            }
             Self::Set(cmd) => cmd.run(),
             Self::Unset(cmd) => cmd.run(),
         }

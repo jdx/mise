@@ -571,6 +571,22 @@ pub(crate) async fn generate(
             });
         }
     }
+    for (short, entries) in &mut candidate.tools {
+        for entry in entries.iter_mut().filter(|entry| entry.uv.is_none()) {
+            entry.uv = previous
+                .tools
+                .get(short)
+                .and_then(|entries| {
+                    entries.iter().find(|old| {
+                        old.version == entry.version
+                            && old.backend == entry.backend
+                            && old.options == entry.options
+                    })
+                })
+                .and_then(|old| old.uv.clone());
+        }
+    }
+    Box::pin(populate_uv_locks(&mut candidate, tools, false)).await?;
     Box::pin(populate_aube_locks(
         &mut candidate,
         tools,
@@ -629,6 +645,63 @@ pub(crate) async fn populate_aube_locks(
         let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
         let graph = npm.resolve_aube_lock(tv).await?;
         lockfile.set_aube_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn populate_uv_locks(
+    lockfile: &mut Lockfile,
+    tools: &[Tool],
+    force: bool,
+) -> Result<()> {
+    if lockfile.lockfile_version() < 3 {
+        return Ok(());
+    }
+    let config = crate::config::Config::get().await?;
+    for (ba, tv) in tools {
+        if ba.backend_type() != BackendType::Pipx {
+            continue;
+        }
+        let backend = crate::backend::pipx::PIPXBackend::from_arg(ba.clone());
+        let options =
+            backend.resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())?;
+        let backend_name = ba.stored_full();
+        if !backend.uv_lock_allowed(tv) {
+            if let Some(entries) = lockfile.tools.get_mut(&ba.short) {
+                for entry in entries
+                    .iter_mut()
+                    .filter(|entry| entry.version == tv.version && entry.options == options)
+                {
+                    entry.uv = None;
+                }
+            }
+            continue;
+        }
+        if let Some(lock) = lockfile
+            .tools
+            .get(&ba.short)
+            .and_then(|entries| {
+                entries.iter().find(|entry| {
+                    entry.version == tv.version
+                        && entry.backend.as_deref().is_none_or(|b| b == backend_name)
+                        && entry.options == options
+                })
+            })
+            .and_then(|entry| entry.uv.as_ref())
+            && !force
+        {
+            backend.validate_uv_lock(tv, lock)?;
+            continue;
+        }
+        if backend
+            .spawnable_dependency(&config, None, "uv")
+            .await
+            .is_none()
+        {
+            continue;
+        }
+        let graph = backend.resolve_uv_lock(tv).await?;
+        lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
     Ok(())
 }

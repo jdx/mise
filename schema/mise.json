@@ -745,7 +745,7 @@
         },
         "disable_backends": {
           "default": [],
-          "description": "Backends to exclude from tool resolution and new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled.",
+          "description": "Backends to exclude from tool resolution and new installs, such as `asdf`, `pypi`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1569,7 +1569,6 @@
           "unevaluatedProperties": false,
           "properties": {
             "registry_url": {
-              "default": "https://pypi.org/pypi/{}/json",
               "description": "URL to use for pipx registry.",
               "type": "string"
             },
@@ -1601,6 +1600,20 @@
           "default": true,
           "description": "Fail when provenance API checks cannot be completed.",
           "type": "boolean"
+        },
+        "pypi": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "registry_url": {
+              "description": "Package registry URL for Python tools (pipx.registry_url is a compatibility alias).",
+              "type": "string"
+            },
+            "uvx": {
+              "description": "Use uv for Python tools when available (pipx.uvx is a compatibility alias).",
+              "type": "boolean"
+            }
+          }
         },
         "python": {
           "type": "object",

@@ -656,6 +656,7 @@ impl Config {
             return None;
         }
         let short = backend::unalias_backend(&backend_arg.short);
+        let short = short.as_ref();
         self.all_aliases
             .get(short)
             .and_then(|alias| alias.backend.as_deref())
@@ -3246,9 +3247,10 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 
     for config_file in config_files.values() {
         for (plugin, plugin_aliases) in config_file.aliases()? {
-            let alias = aliases.entry(plugin.clone()).or_default();
+            let plugin = backend::canonical_backend_full(&plugin).into_owned();
+            let alias = aliases.entry(plugin).or_default();
             if let Some(full) = plugin_aliases.backend {
-                alias.backend = Some(full);
+                alias.backend = Some(backend::canonical_backend_full(&full).into_owned());
             }
             for (from, to) in plugin_aliases.versions {
                 alias.versions.insert(from, to);

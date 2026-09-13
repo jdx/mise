@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mise install uv@0.12.10 python@3.12.11
+python3 "$ROOT/e2e/fixtures/pypi/server.py" "$PWD/index" &
+server_pid=$!
+trap 'kill "$server_pid"' EXIT
+for _ in {1..100}; do
+  [[ -s index/port ]] && break
+  sleep 0.1
+done
+port=$(cat index/port)
+cat >mise.toml <<EOF_CONFIG
+[tools]
+uv = "0.12.10"
+python = "3.12.11"
+"pipx:mise-lock-cli" = "1.0.0"
+[settings]
+minimum_release_age = "0"
+pypi.registry_url = "http://127.0.0.1:$port/simple/{}/"
+EOF_CONFIG
+mise trust
+cp mise.toml original.toml
+mise lock
+assert_contains "cat mise.lock" 'lockfile_version = 3'
+assert_contains "cat mise.lock" 'tools."pypi:mise-lock-cli"'
+assert_contains "cat mise.lock" 'uv.graph'
+assert_contains "cat mise.lock" 'mise-lock-marker'
+assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
+first_path=$(mise where pypi:mise-lock-cli)
+assert "mise where pipx:mise-lock-cli" "$first_path"
+assert_contains_text "$first_path" 'pipx-mise-lock-cli/1.0.0~uv~'
+# The universal graph contains the older-Python branch but does not install it on 3.12.
+assert_fail "'$first_path/.mise-uv/.venv/bin/python' -I -c \"import importlib.metadata; importlib.metadata.version('mise-lock-marker')\""
+assert_fail 'MISE_DISABLE_BACKENDS=pipx mise install pypi:disabled-test@1.0.0' 'disabled by disable_backends'
+assert_fail 'MISE_DISABLE_BACKENDS=pypi mise install pipx:disabled-test@1.0.0' 'disabled by disable_backends'
+cp mise.lock first.lock
+# Newly published dependencies do not affect replay or ordinary locking.
+touch index/publish
+mise lock
+assert_succeed 'cmp first.lock mise.lock'
+assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
+mise lock --bump pypi:mise-lock-cli
+assert_contains "mise x --locked -- lock-cli" 'dependency=2.0.0'
+second_path=$(mise where pypi:mise-lock-cli)
+assert_succeed "test '$first_path' != '$second_path'"
+# Extras participate in resolution and installation identity.
+python3 - <<'PY_EXTRAS'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace('"pipx:mise-lock-cli" = "1.0.0"', '"pypi:mise-lock-cli" = { version = "1.0.0", extras = "feature" }'))
+PY_EXTRAS
+mise lock --bump pypi:mise-lock-cli
+assert_contains "mise x --locked -- lock-cli" 'extra=1.0.0'
+cp original.toml mise.toml
+# Return to the first graph and reinstall with an empty artifact cache.
+cp first.lock mise.lock
+python3 - <<'PY_INCOMPATIBLE'
+import re
+from pathlib import Path
+p = Path('mise.lock')
+p.write_text(re.sub(r'(?m)^requires-python = .*$', 'requires-python = ">=3.99"', p.read_text()))
+PY_INCOMPATIBLE
+assert_fail 'mise install --locked pypi:mise-lock-cli'
+cp first.lock mise.lock
+python3 - <<'PY_OPTIONS'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace('"pipx:mise-lock-cli" = "1.0.0"', '"pipx:mise-lock-cli" = { version = "1.0.0", uvx_args = "--prerelease allow" }'))
+PY_OPTIONS
+assert_fail 'mise lock --bump pypi:mise-lock-cli' 'dependency locking does not support'
+cp original.toml mise.toml
+mise uninstall --all pypi:mise-lock-cli
+touch index/corrupt
+if corrupt_output=$(mise install --locked pypi:mise-lock-cli 2>&1); then
+  fail 'corrupted wheels must fail installation'
+fi
+echo "$corrupt_output"
+assert_contains_text "$corrupt_output" 'Hash mismatch'
+assert_fail 'MISE_PYPI_UVX=false mise install --locked pypi:mise-lock-cli'
+# Settings aliases must never silently contradict one another.
+assert_fail 'MISE_PIPX_UVX=false MISE_PYPI_UVX=true mise settings'
+# Both settings spellings read the same value; writes use the preferred name.
+assert 'mise settings get pipx.registry_url' "http://127.0.0.1:$port/simple/{}/"
+mise settings set --local pipx.uvx false
+assert 'mise settings get pypi.uvx' 'false'
+assert 'mise settings get --local pipx.uvx' 'false'
+mise settings unset --local pipx.uvx
+assert_fail 'mise settings get --local pypi.uvx'

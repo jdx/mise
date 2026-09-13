@@ -40,6 +40,7 @@ impl SettingsSet {
 }
 
 pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
+    key = super::canonical_setting(key);
     let meta = match SETTINGS_META.get(key) {
         Some(meta) => meta,
         None => {
@@ -86,6 +87,7 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
         config["settings"] = toml_edit::Item::Table(settings);
     }
     if let Some(settings) = config["settings"].as_table_like_mut() {
+        super::remove_legacy_pypi_setting(settings, key);
         let settings: &mut dyn toml_edit::TableLike =
             if let Some((parent_key, child_key)) = key.split_once('.') {
                 key = child_key;

@@ -677,3 +677,16 @@ the tool's installer/compiler.
 - [Configuration Settings](/configuration/settings) - All available settings
 - [Tool Version Management](/dev-tools/) - How tool versions work
 - [Backends](/dev-tools/backends/) - Backend-specific checksum support
+
+## Python dependency graphs
+
+Lockfile revision 3 adds portable uv dependency graphs for `pypi:` tools (`pipx:`
+is a compatibility alias). New lockfiles use revision 3; existing revisions 0–2
+keep their format until `mise lock --upgrade`. Older mise versions reject revision
+3 instead of ignoring its Python dependency data.
+
+With uv >= 0.12.10 installed, `mise lock` records dependencies and wheel hashes;
+`mise install --locked` replays them without resolution or source builds. Use
+`mise lock --bump pypi:black` to refresh Black's dependencies independently of its
+top-level version. See [PyPI tools](./backends/pypi.md#dependency-locking) for
+interpreter selection, supported indexes, and compatibility limitations.

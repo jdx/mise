@@ -721,6 +721,12 @@ impl Lock {
                 self.bind_requests(&mut lockfile, &tools, &target_platforms);
             }
             if !generate || self.bump || format_changed {
+                Box::pin(lockfile::generate::populate_uv_locks(
+                    &mut lockfile,
+                    &tools,
+                    self.bump,
+                ))
+                .await?;
                 Box::pin(lockfile::generate::populate_aube_locks(
                     &mut lockfile,
                     &tools,

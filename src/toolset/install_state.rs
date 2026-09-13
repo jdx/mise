@@ -7,7 +7,6 @@ use crate::plugins::PluginType;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
 use eyre::{Ok, Result, WrapErr};
-use heck::ToKebabCase;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -85,7 +84,7 @@ fn manifest_path() -> PathBuf {
 
 fn tool_manifest_path(installs_dir: &Path, short: &str) -> PathBuf {
     installs_dir
-        .join(short.to_kebab_case())
+        .join(crate::backend::tool_directory_name(short))
         .join(".mise.backend.toml")
 }
 
@@ -168,7 +167,7 @@ fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool
 
     // Try .mise.backend (text format)
     let path = dirs::INSTALLS
-        .join(short.to_kebab_case())
+        .join(crate::backend::tool_directory_name(short))
         .join(".mise.backend");
     if !path.exists() {
         return None;
@@ -337,8 +336,8 @@ fn scan_tool_dir(
     };
 
     let tool = InstallStateTool {
-        short,
-        full,
+        short: crate::backend::unalias_backend(&short).into_owned(),
+        full: full.map(|s| crate::backend::canonical_backend_full(&s).into_owned()),
         versions,
         explicit_backend,
         opts,
@@ -375,6 +374,8 @@ fn merge_shared_tool(
         (dir_name.to_string(), None, true, BTreeMap::new())
     };
 
+    let short = crate::backend::unalias_backend(&short).into_owned();
+    let full = full.map(|s| crate::backend::canonical_backend_full(&s).into_owned());
     let tool = tools
         .entry(short.clone())
         .or_insert_with(|| InstallStateTool {
@@ -505,8 +506,13 @@ fn manifest_dir_for_short(short: &str) -> Option<String> {
         Arc::new(
             root_manifest()
                 .iter()
-                .filter(|(d, mt)| **d != mt.short.to_kebab_case())
-                .map(|(d, mt)| (mt.short.clone(), d.clone()))
+                .filter(|(d, mt)| **d != crate::backend::tool_directory_name(&mt.short))
+                .map(|(d, mt)| {
+                    (
+                        crate::backend::unalias_backend(&mt.short).into_owned(),
+                        d.clone(),
+                    )
+                })
                 .collect(),
         )
     })
@@ -532,6 +538,8 @@ fn root_manifest() -> Arc<Manifest> {
 /// that requires enumeration, which mise itself never produces, and full-scan
 /// callers still see such dirs.
 pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
+    let short = crate::backend::unalias_backend(short);
+    let short = short.as_ref();
     // A completed full scan is authoritative (it includes plugin identities and
     // shared dirs), so serve from it when available.
     if let Some(tools) = INSTALL_STATE_TOOLS
@@ -599,7 +607,7 @@ fn merge_scanned_into(recorded: &mut InstallStateTool, scanned: InstallStateTool
 
 fn load_tool(short: &str) -> Option<InstallStateTool> {
     let manifest = root_manifest();
-    let dir_name = short.to_kebab_case();
+    let dir_name = crate::backend::tool_directory_name(short);
     let scan_named = |dir_name: &str| {
         let dir = dirs::INSTALLS.join(dir_name);
         scan_tool_dir(dir_name, &dir, &manifest)
@@ -628,7 +636,7 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
         // such dirs by enumeration, so the per-tool path has to probe them.
         let alt_dir = shared_manifest
             .iter()
-            .find(|(d, mt)| mt.short == short && **d != dir_name)
+            .find(|(d, mt)| crate::backend::unalias_backend(&mt.short) == short && **d != dir_name)
             .map(|(d, _)| d.clone());
         for dir_name in std::iter::once(dir_name.clone()).chain(alt_dir) {
             let dir = shared_dir.join(&dir_name);
@@ -899,7 +907,10 @@ pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> 
         explicit_backend: explicit,
         opts: opts_map,
     };
-    manifest.insert(ba.short.to_kebab_case(), manifest_tool.clone());
+    manifest.insert(
+        crate::backend::tool_directory_name(&ba.short),
+        manifest_tool.clone(),
+    );
     write_manifest_to(path, &manifest)?;
     if let Some(installs_dir) = path.parent() {
         let tool_manifest = tool_manifest_path(installs_dir, &ba.short);
@@ -925,7 +936,7 @@ fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
 
 pub(crate) fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
     dirs::CACHE
-        .join(short.to_kebab_case())
+        .join(crate::backend::tool_directory_name(short))
         .join(v)
         .join("incomplete")
 }
@@ -1366,5 +1377,29 @@ explicit_backend = true
         // Old format should deserialize with opts empty and brackets in full
         assert!(mt.opts.is_empty());
         assert!(mt.full.as_ref().unwrap().contains('['));
+    }
+    #[test]
+    fn pypi_discovers_legacy_pipx_manifest_without_moving_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("pipx-black");
+        std::fs::create_dir_all(dir.join("24.10.0")).unwrap();
+        let manifest: super::Manifest = toml::from_str(
+            r#"
+["pipx-black"]
+short = "pipx:black"
+full = "pipx:black"
+explicit_backend = true
+"#,
+        )
+        .unwrap();
+        let (tool, _) = super::scan_tool_dir("pipx-black", &dir, &manifest)
+            .unwrap()
+            .unwrap();
+        assert_eq!(tool.short, "pypi:black");
+        assert_eq!(tool.full.as_deref(), Some("pypi:black"));
+        assert_eq!(tool.installs_path, Some(dir.clone()));
+        assert_eq!(tool.versions, ["24.10.0"]);
+        assert!(dir.join("24.10.0").is_dir());
+        assert!(!temp.path().join("pypi-black").exists());
     }
 }

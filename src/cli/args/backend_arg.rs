@@ -12,7 +12,7 @@ use crate::toolset::{
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
-use heck::{ToKebabCase, ToShoutySnakeCase};
+use heck::ToShoutySnakeCase;
 use std::collections::HashSet;
 use std::env;
 use std::fmt::{Debug, Display};
@@ -276,7 +276,10 @@ impl BackendArg {
         opts: Option<ToolVersionOptions>,
         resolution: BackendResolution,
     ) -> Self {
-        let pathname = short.to_kebab_case();
+        let short = unalias_backend(&short).into_owned();
+        let full = full.map(|full| backend::canonical_backend_full(&full).into_owned());
+        // Preserve the on-disk namespace used before pypi became the preferred name.
+        let pathname = backend::tool_directory_name(&short);
         let opts_source = opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg);
         Self {
             tool_name,
@@ -467,13 +470,14 @@ impl BackendArg {
         }
         let full = Config::get_()
             .all_aliases
-            .get(unalias_backend(&self.short))
+            .get(unalias_backend(&self.short).as_ref())
             .and_then(|a| a.backend.clone())?;
         let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
         if name.contains(':') {
             return None;
         }
         let name = unalias_backend(name);
+        let name = name.as_ref();
         REGISTRY.contains_key(name).then(|| name.to_string())
     }
 
@@ -501,7 +505,12 @@ impl BackendArg {
     }
 
     pub(crate) fn full(&self) -> String {
+        backend::canonical_backend_full(&self.full_unaliased()).into_owned()
+    }
+
+    fn full_unaliased(&self) -> String {
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
 
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
@@ -749,8 +758,17 @@ impl BackendArg {
 
     fn env_backend_override(&self) -> Option<String> {
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
         let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
-        env::var(&env_key).ok()
+        env::var(&env_key).ok().or_else(|| {
+            short.strip_prefix("pypi:").and_then(|name| {
+                env::var(format!(
+                    "MISE_BACKENDS_PIPX_{}",
+                    name.to_shouty_snake_case()
+                ))
+                .ok()
+            })
+        })
     }
 
     fn backend_alias_opts_from_loaded_config(&self) -> Option<ToolVersionOptions> {
@@ -758,6 +776,7 @@ impl BackendArg {
             return None;
         }
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
         Config::get_()
             .all_aliases
             .get(short)
@@ -804,6 +823,7 @@ impl BackendArg {
             full.clone()
         } else {
             let short = unalias_backend(&self.short);
+            let short = short.as_ref();
             if let Some(full) = install_state::get_tool_full(short) {
                 full
             } else if let Some(pt) = install_state::get_plugin_type(short) {
@@ -1227,4 +1247,17 @@ mod tests {
         assert_eq!(opts.get("bin"), Some("solc"));
         assert_eq!(opts.get("foo"), Some("resolved"));
     }
+}
+
+#[test]
+fn pypi_and_pipx_share_backend_and_install_paths() {
+    let preferred = BackendArg::from("pypi:black");
+    let legacy = BackendArg::from("pipx:black");
+    assert_eq!(preferred, legacy);
+    assert_eq!(preferred.short, "pypi:black");
+    assert_eq!(preferred.full(), "pypi:black");
+    assert_eq!(preferred.installs_path, legacy.installs_path);
+    assert_eq!(preferred.tool_dir_name(), "pipx-black");
+    assert_eq!(BackendType::guess("pipx:black"), BackendType::Pipx);
+    assert_eq!(BackendType::guess("pypi:black"), BackendType::Pipx);
 }
