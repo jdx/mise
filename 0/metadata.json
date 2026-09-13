@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DGXJ7A3QQJ80W0V0E30QV3",
+  "session_id": "01a09ab8-2da7-7001-9d6d-b5ec765cd7f5",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T13:57:13.704216Z",
+  "branch": "codex/pypi-uv-lock",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "src/backend/pipx/lock.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "53cc23f8e45e",
+  "checkpoint_transcript_start": 1559,
+  "transcript_lines_at_start": 1559,
+  "compact_transcript_start": 215,
+  "token_usage": {
+    "input_tokens": 18397,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4771072,
+    "output_tokens": 6936,
+    "api_call_count": 30
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-13T13:57:13.446172Z",
+    "agent_lines": 54,
+    "agent_removed": 35,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 54,
+    "total_lines_changed": 89,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
