@@ -1,0 +1,4 @@
+backends = ["cargo:rojo"]
+description = "A modern tool designed to enable Roblox developers to use professional-grade software engineering tools"
+test = { cmd = "rojo --version", expected = "Rojo {{version}}" }
+version_order = "semver"
