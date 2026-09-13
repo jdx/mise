@@ -1,0 +1,59 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DEBPGEMDCPHNZNQ480716N",
+  "strategy": "manual-commit",
+  "branch": "codex/pypi-uv-lock",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "build.rs",
+    "docs/.vitepress/sidebar.ts",
+    "docs/dev-tools/backends/pipx.md",
+    "docs/dev-tools/backends/pypi.md",
+    "docs/dev-tools/mise-lock.md",
+    "e2e-win/pypi_lock.Tests.ps1",
+    "e2e/backend/test_npm_aube",
+    "e2e/backend/test_pipx_missing_dependency",
+    "e2e/backend/test_pypi_lock",
+    "e2e/cli/test_settings_ls",
+    "e2e/fixtures/pypi/server.py",
+    "e2e/lockfile/test_lockfile_version",
+    "schema/mise.json",
+    "settings.toml",
+    "src/backend/backend_type.rs",
+    "src/backend/mod.rs",
+    "src/backend/pipx.rs",
+    "src/backend/pipx/lock.rs",
+    "src/cli/args/backend_arg.rs",
+    "src/cli/lock.rs",
+    "src/cli/plugins/install.rs",
+    "src/cli/plugins/link.rs",
+    "src/cli/plugins/uninstall.rs",
+    "src/cli/settings/mod.rs",
+    "src/cli/settings/set.rs",
+    "src/cli/settings/unset.rs",
+    "src/config/mod.rs",
+    "src/config/settings.rs",
+    "src/install_before.rs",
+    "src/lockfile.rs",
+    "src/lockfile/generate.rs",
+    "src/registry.rs",
+    "src/toolset/install_state.rs",
+    "src/toolset/tool_version.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 335591,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 20725504,
+    "output_tokens": 63515,
+    "api_call_count": 151
+  }
+}

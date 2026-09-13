@@ -1,0 +1,80 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DEBPGEMDCPHNZNQ480716N",
+  "session_id": "01a09ab8-2da7-7001-9d6d-b5ec765cd7f5",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T13:12:32.100184Z",
+  "branch": "codex/pypi-uv-lock",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "build.rs",
+    "docs/.vitepress/sidebar.ts",
+    "docs/dev-tools/backends/pipx.md",
+    "docs/dev-tools/backends/pypi.md",
+    "docs/dev-tools/mise-lock.md",
+    "e2e-win/pypi_lock.Tests.ps1",
+    "e2e/backend/test_npm_aube",
+    "e2e/backend/test_pipx_missing_dependency",
+    "e2e/backend/test_pypi_lock",
+    "e2e/cli/test_settings_ls",
+    "e2e/fixtures/pypi/server.py",
+    "e2e/lockfile/test_lockfile_version",
+    "schema/mise.json",
+    "settings.toml",
+    "src/backend/backend_type.rs",
+    "src/backend/mod.rs",
+    "src/backend/pipx.rs",
+    "src/backend/pipx/lock.rs",
+    "src/cli/args/backend_arg.rs",
+    "src/cli/lock.rs",
+    "src/cli/plugins/install.rs",
+    "src/cli/plugins/link.rs",
+    "src/cli/plugins/uninstall.rs",
+    "src/cli/settings/mod.rs",
+    "src/cli/settings/set.rs",
+    "src/cli/settings/unset.rs",
+    "src/config/mod.rs",
+    "src/config/settings.rs",
+    "src/install_before.rs",
+    "src/lockfile.rs",
+    "src/lockfile/generate.rs",
+    "src/registry.rs",
+    "src/toolset/install_state.rs",
+    "src/toolset/tool_version.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "0efacc92a75f",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 335591,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 20725504,
+    "output_tokens": 63515,
+    "api_call_count": 151
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-13T13:12:31.636257Z",
+    "agent_lines": 2481,
+    "agent_removed": 298,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2481,
+    "total_lines_changed": 2779,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
