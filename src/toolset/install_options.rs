@@ -33,7 +33,7 @@ pub(crate) struct InstallOptions {
     /// skip confirmation prompts (e.g. installing missing plugin system deps).
     /// Defaults to the global `yes` setting; `mise bootstrap --yes` also sets it.
     pub yes: bool,
-    /// The user explicitly passed `--yes` for this install operation.
+    /// The user explicitly passed `--yes` for this invocation or install operation.
     /// Unlike `yes`, this is not enabled implicitly by CI mode.
     pub explicit_yes: bool,
     /// Reload global configuration after installation.
@@ -62,7 +62,7 @@ impl Default for InstallOptions {
             install_dir: None,
             scoped_install_dirs: false,
             yes: Settings::get().yes,
-            explicit_yes: false,
+            explicit_yes: Settings::cli_yes(),
             reload_config: true,
         }
     }
