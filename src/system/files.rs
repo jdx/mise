@@ -1703,8 +1703,8 @@ pub(crate) fn render_template_for_oci(config: &Config, req: &FileRequest) -> Res
 }
 
 /// Render every configured dotfile template before a full bootstrap can
-/// mutate anything. Successful renders are cached by the secret resolver, so
-/// unchanged templates (including `exec()` calls) are not evaluated twice.
+/// mutate anything. Secret values are cached, but templates are rendered again
+/// when applied so hooks can update dynamic inputs such as files or commands.
 pub(crate) fn preflight_templates(
     config: &Config,
     requests: &[FileRequest],

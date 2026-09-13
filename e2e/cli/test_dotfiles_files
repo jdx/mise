@@ -815,8 +815,20 @@ token={{ secret(name="dotfile_token") }}
 EOF
 assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles unapply --yes --prompt-secrets"
 assert_fail "test -e ~/.secret-dotfile"
+cat <<'EOF' >dotfiles/dynamic-input
+preflight
+EOF
+cat <<'EOF' >dotfiles/secret.tmpl
+token={{ secret(name="dotfile_token") }}
+phase={{ read_file(path="dotfiles/dynamic-input") | trim }}
+EOF
+cat <<'EOF' >>"$secret_config"
+
+[bootstrap.hooks.pre-dotfiles]
+run = "printf apply-time > dotfiles/dynamic-input"
+EOF
 assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise bootstrap --only dotfiles --yes --prompt-secrets"
-assert "cat ~/.secret-dotfile" "token=$dotfile_secret_value"
+assert_contains "cat ~/.secret-dotfile" "phase=apply-time"
 
 for command in add apply diff edit status unapply; do
   assert_contains "mise dotfiles $command --help" "--prompt-secrets"

@@ -1298,6 +1298,33 @@ pub(crate) fn get_tera(dir: Option<&Path>) -> TeraEngine {
     }
 }
 
+/// Returns the normal mise renderer without access to the host environment or
+/// command execution. OCI dotfile templates use this to avoid persisting
+/// ambient credentials in publishable image layers.
+pub(crate) fn get_tera_for_oci(dir: Option<&Path>) -> TeraEngine {
+    const MESSAGE: &str = "environment access is disabled for OCI dotfile templates";
+    if use_tera_v1() {
+        let mut tera = get_tera_v1(dir);
+        tera.register_function("get_env", move |_: &HashMap<String, JsonValue>| {
+            Err(tera1_err(MESSAGE))
+        });
+        tera.register_function("exec", move |_: &HashMap<String, JsonValue>| {
+            Err(tera1_err(MESSAGE))
+        });
+        TeraEngine::V1(Box::new(tera))
+    } else {
+        let mut tera = get_tera_v2(dir);
+        tera.register_function(
+            "get_env",
+            move |_: Kwargs, _: &State| -> TeraResult<Value> { Err(tera_err(MESSAGE)) },
+        );
+        tera.register_function("exec", move |_: Kwargs, _: &State| -> TeraResult<Value> {
+            Err(tera_err(MESSAGE))
+        });
+        TeraEngine::V2(Box::new(tera))
+    }
+}
+
 /// Returns the normal mise renderer with command execution disabled.
 pub(crate) fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
     if use_tera_v1() {

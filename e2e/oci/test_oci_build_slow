@@ -105,7 +105,7 @@ cat >profile.sh <<EOF
 export PROJECT_READY=1
 EOF
 cat >app.tmpl <<EOF
-tool={{env.MISE_ENV | default(value="dev")}}
+tool={{"DEV" | lower}}
 EOF
 cat >mise.toml <<EOF
 [tools]
@@ -139,6 +139,18 @@ image_token = "MISE_OCI_TEST_SECRET"
 EOF
 MISE_OCI_TEST_SECRET=do-not-embed \
   assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "bootstrap secrets cannot be embedded in persistent OCI image layers"
+
+cat >secret.tmpl <<'EOF'
+token={{ get_env(name="MISE_OCI_TEST_SECRET") }}
+EOF
+MISE_OCI_TEST_SECRET=do-not-embed \
+  assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "environment access is disabled for OCI dotfile templates"
+
+cat >secret.tmpl <<'EOF'
+token={{ env.MISE_OCI_TEST_SECRET }}
+EOF
+MISE_OCI_TEST_SECRET=do-not-embed \
+  assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "failed to render template"
 
 # --- 10. --copy and [[oci.copy]] each produce an annotated layer ---
 mkdir -p assets copy-subdir

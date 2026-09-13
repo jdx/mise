@@ -1,5 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use demand::Input;
@@ -11,7 +11,9 @@ use tera::{Kwargs, State, TeraResult, Value};
 
 use crate::config::Config;
 use crate::env_diff::EnvMap;
-use crate::tera::{BASE_CONTEXT, TeraEngine, get_tera, get_tera_v2, render_str, render_str_v2};
+use crate::tera::{
+    BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -71,14 +73,6 @@ struct SecretResolution {
     values: IndexMap<String, String>,
     redaction_env: EnvMap,
     unavailable: IndexMap<String, String>,
-    dotfile_renders: HashMap<DotfileRenderKey, String>,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct DotfileRenderKey {
-    input: String,
-    base: PathBuf,
-    config_path: PathBuf,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -180,34 +174,13 @@ impl SecretValues {
         base: &Path,
         config_path: &Path,
     ) -> Result<String> {
-        let key = DotfileRenderKey {
-            input: input.to_string(),
-            base: base.to_path_buf(),
-            config_path: config_path.to_path_buf(),
-        };
-        if let Some(rendered) = self
-            .resolution
-            .lock()
-            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?
-            .dotfile_renders
-            .get(&key)
-            .cloned()
-        {
-            return Ok(rendered);
-        }
         let mut tera = get_tera(Some(base));
         let used = match &mut tera {
             TeraEngine::V2(tera) => self.register_v2(tera),
             TeraEngine::V1(tera) => self.register_v1(tera),
         };
         let rendered = render_str(&mut tera, input, config.bootstrap_tera_ctx(config_path));
-        let rendered = self.finish_render(Some(config), used, rendered)?;
-        self.resolution
-            .lock()
-            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?
-            .dotfile_renders
-            .insert(key, rendered.clone());
-        Ok(rendered)
+        self.finish_render(Some(config), used, rendered)
     }
 
     pub(crate) fn render_dotfile_for_oci(
@@ -217,7 +190,7 @@ impl SecretValues {
         config_path: &Path,
     ) -> Result<String> {
         const MESSAGE: &str = "bootstrap secrets cannot be embedded in persistent OCI image layers";
-        let mut tera = get_tera(Some(base));
+        let mut tera = get_tera_for_oci(Some(base));
         match &mut tera {
             TeraEngine::V2(tera) => tera
                 .register_function("secret", |_: Kwargs, _: &State| -> TeraResult<Value> {
@@ -230,7 +203,9 @@ impl SecretValues {
                 },
             ),
         }
-        render_str(&mut tera, input, config.bootstrap_tera_ctx(config_path)).map_err(Into::into)
+        let mut context = config.bootstrap_tera_ctx(config_path).clone();
+        context.remove("env");
+        render_str(&mut tera, input, &context).map_err(Into::into)
     }
 
     fn render_inner(
