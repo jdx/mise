@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DS6K9G0T96YMSSZ13FDZN4",
+  "strategy": "manual-commit",
+  "branch": "codex/pypi-uv-lock",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/dev-tools/backends/npm.md",
+    "docs/dev-tools/backends/pypi.md",
+    "docs/dev-tools/mise-lock.md",
+    "e2e-win/pypi_lock.Tests.ps1",
+    "e2e/backend/test_npm_aube",
+    "e2e/backend/test_pypi_lock",
+    "src/backend/npm.rs",
+    "src/backend/pipx.rs",
+    "src/backend/pipx/lock.rs",
+    "src/cli/install.rs",
+    "src/cli/lock.rs",
+    "src/config/settings.rs",
+    "src/lockfile.rs",
+    "src/lockfile/generate.rs",
+    "src/lockfile/graph.rs",
+    "src/toolset/install_state.rs",
+    "src/toolset/tool_request.rs",
+    "src/toolset/tool_version.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1890,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 387840,
+    "output_tokens": 650,
+    "api_call_count": 3
+  }
+}

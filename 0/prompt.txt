@@ -1,0 +1,15 @@
+address pr feedback
+
+---
+
+just posted a new plan, do this now, check for feedback after
+
+---
+
+<send_user_message_question_reply>
+[{"questionItemId":"[\"request_user_input_async\",\"call_WgaxaqslWBCNRvtDDu7YbuLU\",0]","question":"The plan specifies both a byte digest for lazy identity and a canonical parsed identity that ignores formatting. I recommend using the recorded byte digest for identity, so ordinary resolution never reads sidecars. Which should win?","answer":"Recorded byte digest; formatting changes identity"},{"questionItemId":"[\"request_user_input_async\",\"call_WgaxaqslWBCNRvtDDu7YbuLU\",1]","question":"For externally edited sidecars, I’ll make `mise install --locked` reject a digest mismatch, while ordinary `mise install` and `mise lock` validate and accept the edited graph. Does that match your intent?","answer":"Yes: strict locked installs, accept validated edits otherwise"}]
+</send_user_message_question_reply>
+
+---
+
+note i updated the comment
