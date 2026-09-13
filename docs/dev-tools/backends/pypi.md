@@ -82,7 +82,7 @@ through standalone pipx. Missing graphs in revision-2 locked uv installs are err
 
 The graph covers the package's supported Python range (Python 3.8 or newer).
 It retains all published wheel targets for portability, so large dependency graphs
-can substantially increase the lockfile size. Frozen installs reuse uv's artifact
+can substantially increase the sidecar size. Frozen installs reuse uv's artifact
 cache. Lock generation needs an installed interpreter discoverable by uv, although
 it need not be the Python version configured for the tool.
 
@@ -242,3 +242,11 @@ selected; `pipx_args` applies only to the pipx installer.
 [tools]
 "pypi:ansible-core" = { version = "latest", uvx_args = "--with ansible" }
 ```
+
+Native `pyproject.toml` and `uv.lock` files live in per-entry directories under
+[the dependency sidecar root](../mise-lock.md#native-dependency-sidecars). Commit
+that directory with `mise.lock`. For example, inspect or update a locked tool with
+`uv tree --project .mise/locks/pipx-black/24.10.0` or
+`uv lock --project .mise/locks/pipx-black/24.10.0 --upgrade-package click`.
+Ordinary `mise install` validates and accepts edited graph bytes; `--locked` requires
+the recorded digest to match, so run `mise lock` first when accepting an edit.

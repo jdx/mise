@@ -31,6 +31,8 @@ pypi.registry_url = "http://127.0.0.1:$port/simple/{}/"
 "@ | Add-Content mise.toml
             mise lock
             $LASTEXITCODE | Should -Be 0
+            (Get-Content mise.lock -Raw) | Should -Match 'path = "\.mise/locks/pipx-mise-lock-cli/1\.0\.0"'
+            Test-Path '.mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock' | Should -BeTrue
             mise x --locked -- lock-cli | Should -Be 'dependency=1.0.0'
             $LASTEXITCODE | Should -Be 0
             (mise where pypi:mise-lock-cli) | Should -Be (mise where pipx:mise-lock-cli)

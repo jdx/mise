@@ -267,6 +267,12 @@ pub(crate) fn is_current(
         let Some(entries) = previous.tools_for(&ba.short) else {
             return Ok(false);
         };
+        if entries.iter().any(|entry| {
+            matches!(entry.uv, Some(super::GraphRef::Inline { .. }))
+                || matches!(entry.aube, Some(super::GraphRef::Inline { .. }))
+        }) {
+            return Ok(false);
+        }
         let backend = tv.backend()?;
         let stored_backend = ba.stored_full();
         let specifier = tv.request.version();
@@ -623,25 +629,39 @@ pub(crate) async fn populate_aube_locks(
         let options =
             backend.resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())?;
         let backend_name = ba.stored_full();
+        let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
         if !force
-            && lockfile.tools_for(&ba.short).is_some_and(|entries| {
-                entries.iter().any(|entry| {
-                    entry.version == tv.version
-                        && entry
-                            .backend
-                            .as_deref()
-                            .is_none_or(|backend| backend == backend_name)
-                        && entry.options == options
-                        && entry.aube.is_some()
+            && let Some(old) = lockfile
+                .tools_for(&ba.short)
+                .and_then(|entries| {
+                    entries.iter().find(|entry| {
+                        entry.version == tv.version
+                            && entry.backend.as_deref().is_none_or(|b| b == backend_name)
+                            && entry.options == options
+                    })
                 })
-            })
+                .and_then(|entry| entry.aube.as_ref())
         {
-            continue;
+            let candidate = if old.load().is_ok() {
+                Some(old.clone())
+            } else {
+                old.refresh().ok()
+            };
+            if let Some(candidate) = candidate {
+                npm.validate_aube_lock(tv, candidate.load()?)?;
+                lockfile.set_aube_lock(
+                    &ba.short,
+                    &tv.version,
+                    &backend_name,
+                    &options,
+                    candidate,
+                )?;
+                continue;
+            }
         }
         if let Some(report) = report {
             report.set_message(format!("{}@{} dependencies", ba.short, tv.version));
         }
-        let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
         let graph = npm.resolve_aube_lock(tv).await?;
         lockfile.set_aube_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
@@ -688,8 +708,16 @@ pub(crate) async fn populate_uv_locks(
             .and_then(|entry| entry.uv.as_ref())
             && !force
         {
-            backend.validate_uv_lock(tv, lock)?;
-            continue;
+            let candidate = if lock.load().is_ok() {
+                Some(lock.clone())
+            } else {
+                lock.refresh().ok()
+            };
+            if let Some(candidate) = candidate {
+                backend.validate_uv_lock(tv, candidate.load()?)?;
+                lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, candidate)?;
+                continue;
+            }
         }
         if backend
             .spawnable_dependency(&config, None, "uv")

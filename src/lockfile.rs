@@ -1,4 +1,6 @@
 pub(crate) mod generate;
+mod graph;
+pub(crate) use graph::{GraphRef, NativeGraph};
 
 use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
@@ -67,11 +69,20 @@ pub(crate) fn invalidate_caches() {
 
 const CURRENT_LOCKFILE_VERSION: u32 = 2;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct AubeLock {
     pub graph: toml::Table,
+    #[serde(skip)]
+    pub graph_text: String,
+    #[serde(skip)]
+    pub project: Option<String>,
 }
 
+impl PartialEq for AubeLock {
+    fn eq(&self, other: &Self) -> bool {
+        self.graph == other.graph
+    }
+}
 impl Eq for AubeLock {}
 
 impl AubeLock {
@@ -80,15 +91,22 @@ impl AubeLock {
         let toml::Value::Table(graph) = yaml_to_toml(value)? else {
             bail!("aube lockfile must contain a mapping");
         };
-        Ok(Self { graph })
+        Ok(Self {
+            graph,
+            graph_text: contents.to_owned(),
+            project: None,
+        })
     }
 
     pub(crate) fn to_yaml(&self) -> Result<String> {
+        if !self.graph_text.is_empty() {
+            return Ok(self.graph_text.clone());
+        }
         let value = toml_to_yaml(toml::Value::Table(self.graph.clone()));
         Ok(serde_yaml::to_string(&value)?)
     }
 
-    pub(crate) fn identity(&self) -> Result<String> {
+    pub(crate) fn legacy_identity(&self) -> Result<String> {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hash_canonical_toml(&mut hasher, &toml::Value::Table(self.graph.clone()));
@@ -97,22 +115,20 @@ impl AubeLock {
 }
 
 /// Lossless native uv lock plus the synthetic project used to resolve it.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct UvLock {
     pub project: toml::Table,
     pub graph: toml::Table,
+    #[serde(skip)]
+    pub graph_text: String,
 }
-impl Eq for UvLock {}
-impl UvLock {
-    pub(crate) fn identity(&self) -> String {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hash_canonical_toml(&mut hasher, &toml::Value::Table(self.project.clone()));
-        hash_canonical_toml(&mut hasher, &toml::Value::Table(self.graph.clone()));
-        hex::encode(hasher.finalize())
+impl PartialEq for UvLock {
+    fn eq(&self, other: &Self) -> bool {
+        self.project == other.project && self.graph == other.graph
     }
 }
+impl Eq for UvLock {}
 
 fn hash_canonical_toml(hasher: &mut impl sha2::Digest, value: &toml::Value) {
     fn bytes(hasher: &mut impl sha2::Digest, tag: u8, value: &[u8]) {
@@ -236,9 +252,9 @@ pub(crate) struct LockfileTool {
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub platforms: BTreeMap<String, PlatformInfo>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub aube: Option<AubeLock>,
+    pub aube: Option<GraphRef<AubeLock>>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub uv: Option<UvLock>,
+    pub uv: Option<GraphRef<UvLock>>,
 }
 
 impl Default for Lockfile {
@@ -1208,12 +1224,21 @@ impl Lockfile {
                     "invalid lockfile format for tool {short}: expected array ([[tools.{short}]])"
                 ),
             };
-            let versions = versions.into_iter().map(|mut entry| {
-                entry.backend = entry
-                    .backend
-                    .map(|backend| crate::backend::canonical_backend_full(&backend).into_owned());
-                entry
-            });
+            let versions = versions
+                .into_iter()
+                .map(|mut entry| -> Result<_> {
+                    entry.backend = entry.backend.map(|backend| {
+                        crate::backend::canonical_backend_full(&backend).into_owned()
+                    });
+                    if let Some(graph) = &mut entry.uv {
+                        graph.resolve_path(path)?;
+                    }
+                    if let Some(graph) = &mut entry.aube {
+                        graph.resolve_path(path)?;
+                    }
+                    Ok(entry)
+                })
+                .collect::<Result<Vec<_>>>()?;
             lockfile.tools.entry(short).or_default().extend(versions);
         }
 
@@ -1335,12 +1360,49 @@ impl Lockfile {
 
         // Write tools section
         let mut tools = toml::Table::new();
+        let mut sidecars = graph::SidecarWrites::new(path);
+        for entry in self.tools.values().flatten() {
+            if let Some(graph) = &entry.uv {
+                sidecars.reserve(graph);
+            }
+            if let Some(graph) = &entry.aube {
+                sidecars.reserve(graph);
+            }
+        }
         for (short, versions) in &self.tools {
             // Always write Multi-Version format (array format) for consistency
             let value: toml::Value = versions
                 .iter()
                 .cloned()
-                .map(|mut version| {
+                .map(|mut version| -> Result<toml::Value> {
+                    if let Some(graph) = &version.uv {
+                        version.uv = Some(sidecars.prepare(
+                            graph,
+                            short,
+                            &version.version,
+                            version.backend.as_deref(),
+                            &version.options,
+                        )?);
+                    }
+                    if let Some(graph) = &version.aube {
+                        version.aube = Some(sidecars.prepare(
+                            graph,
+                            short,
+                            &version.version,
+                            version.backend.as_deref(),
+                            &version.options,
+                        )?);
+                    }
+                    let uv = version
+                        .uv
+                        .as_ref()
+                        .map(|g| g.pointer(path.parent().unwrap_or(Path::new("."))))
+                        .transpose()?;
+                    let aube = version
+                        .aube
+                        .as_ref()
+                        .map(|g| g.pointer(path.parent().unwrap_or(Path::new("."))))
+                        .transpose()?;
                     if short.starts_with("pipx:") || self.lockfile_version < 2 {
                         version.backend = version.backend.map(|backend| {
                             backend
@@ -1349,9 +1411,16 @@ impl Lockfile {
                                 .unwrap_or(backend)
                         });
                     }
-                    version.into_toml_value(self.lockfile_version > 0)
+                    let mut value = version.into_toml_value(self.lockfile_version > 0);
+                    if let Some(uv) = uv {
+                        value.as_table_mut().unwrap().insert("uv".into(), uv);
+                    }
+                    if let Some(aube) = aube {
+                        value.as_table_mut().unwrap().insert("aube".into(), aube);
+                    }
+                    Ok(value)
                 })
-                .collect::<Vec<toml::Value>>()
+                .collect::<Result<Vec<toml::Value>>>()?
                 .into();
             tools.insert(short.clone(), value);
         }
@@ -1365,8 +1434,16 @@ impl Lockfile {
             .or_else(|| existing_lockfile_doc_url_from_path(path))
             .unwrap_or_else(|| DEFAULT_LOCKFILE_DOC_URL.to_string());
         let content = format!("{LOCKFILE_HEADER_PREFIX}{doc_url}\n\n{content}");
+        sidecars.collect_garbage();
         if fs::read(path).ok().as_deref() == Some(content.as_bytes()) {
-            return Ok(None);
+            if !sidecars.has_changes() {
+                return Ok(None);
+            }
+            return Ok(Some(PreparedWrite {
+                tmp: None,
+                target: path.to_path_buf(),
+                sidecars,
+            }));
         }
 
         // Resolve the symlink target first, before writing the temp file
@@ -1416,7 +1493,11 @@ impl Lockfile {
         tmp.as_file_mut().write_all(content.as_bytes())?;
         apply_lockfile_permissions(&tmp, &target)?;
         tmp.as_file().sync_all()?;
-        Ok(Some(PreparedWrite { tmp, target }))
+        Ok(Some(PreparedWrite {
+            tmp: Some(tmp),
+            target,
+            sidecars,
+        }))
     }
 
     /// Add or update a conda package in the shared section
@@ -1529,6 +1610,16 @@ impl Lockfile {
             }
         }
         platforms
+    }
+
+    pub(crate) fn retain_graph_entries(
+        &mut self,
+        mut keep: impl FnMut(&str, &LockfileTool) -> bool,
+    ) {
+        for (short, entries) in &mut self.tools {
+            entries
+                .retain(|entry| (entry.uv.is_none() && entry.aube.is_none()) || keep(short, entry));
+        }
     }
 
     pub(crate) fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
@@ -1753,7 +1844,7 @@ impl Lockfile {
         version: &str,
         backend: &str,
         options: &BTreeMap<String, String>,
-        lock: AubeLock,
+        lock: GraphRef<AubeLock>,
     ) -> Result<()> {
         let entry = self
             .tools_for_mut(short)
@@ -1775,6 +1866,10 @@ impl Lockfile {
                 entries.get_mut(index)
             })
             .ok_or_else(|| eyre!("missing lockfile entry for {short}@{version}"))?;
+        let mut lock = lock;
+        if let Some(old) = &entry.aube {
+            lock.keep_path_from(old);
+        }
         entry.aube = Some(lock);
         Ok(())
     }
@@ -1785,7 +1880,7 @@ impl Lockfile {
         version: &str,
         backend: &str,
         options: &BTreeMap<String, String>,
-        lock: UvLock,
+        lock: GraphRef<UvLock>,
     ) -> Result<()> {
         let entry = self
             .tools_for_mut(short)
@@ -1807,6 +1902,10 @@ impl Lockfile {
                 entries.get_mut(index)
             })
             .ok_or_else(|| eyre!("missing lockfile entry for {short}@{version}"))?;
+        let mut lock = lock;
+        if let Some(old) = &entry.uv {
+            lock.keep_path_from(old);
+        }
         entry.uv = Some(lock);
         Ok(())
     }
@@ -1855,15 +1954,31 @@ fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
 }
 
 pub(crate) struct PreparedWrite {
-    tmp: tempfile::NamedTempFile,
+    tmp: Option<tempfile::NamedTempFile>,
     target: PathBuf,
+    sidecars: graph::SidecarWrites,
 }
 
+pub(crate) struct GraphCleanup(graph::SidecarWrites);
+impl GraphCleanup {
+    pub(crate) fn prune(self) -> Result<()> {
+        self.0.prune()
+    }
+}
 impl PreparedWrite {
-    pub(crate) fn publish(self) -> Result<()> {
-        persist_lockfile_tmp(self.tmp, &self.target)?;
+    pub(crate) fn mutation_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.sidecars.files.iter().map(|(path, _)| path)
+    }
+    pub(crate) fn publish_deferred(self) -> Result<GraphCleanup> {
+        self.sidecars.publish_files()?;
+        if let Some(tmp) = self.tmp {
+            persist_lockfile_tmp(tmp, &self.target)?;
+        }
         invalidate_caches();
-        Ok(())
+        Ok(GraphCleanup(self.sidecars))
+    }
+    pub(crate) fn publish(self) -> Result<()> {
+        self.publish_deferred()?.prune()
     }
 }
 
@@ -2455,7 +2570,15 @@ pub(crate) fn update_lockfiles(
                         || tv.request.source() != new_version.request.source()
                 });
                 versions.push(new_version.clone());
-            } else if let Some(versions) = tool_versions_by_short.get_mut(new_version.short()) {
+            } else if let Some(key) = tool_versions_by_short
+                .keys()
+                .find(|short| {
+                    backend::canonical_backend_full(short)
+                        == backend::canonical_backend_full(new_version.short())
+                })
+                .cloned()
+                && let Some(versions) = tool_versions_by_short.get_mut(&key)
+            {
                 if let Some((idx, request)) = versions
                     .iter()
                     .enumerate()
@@ -4475,20 +4598,8 @@ impl TryFrom<toml::Value> for LockfileTool {
                     .map(|value| value.try_into())
                     .transpose()?
                     .unwrap_or_default();
-                let aube = match t.remove("aube") {
-                    Some(toml::Value::Table(mut table)) => {
-                        let graph = table
-                            .remove("graph")
-                            .ok_or_else(|| eyre!("missing graph in aube lock data"))?;
-                        let toml::Value::Table(graph) = graph else {
-                            bail!("aube graph must be a table")
-                        };
-                        Some(AubeLock { graph })
-                    }
-                    Some(_) => bail!("aube lock data must be a table"),
-                    None => None,
-                };
-                let uv = t.remove("uv").map(|value| value.try_into()).transpose()?;
+                let aube = t.remove("aube").map(GraphRef::parse).transpose()?;
+                let uv = t.remove("uv").map(GraphRef::parse).transpose()?;
                 // Silently discard env field from old lockfiles for backwards compat
                 t.remove("env");
                 LockfileTool {
@@ -4546,9 +4657,10 @@ impl LockfileTool {
             );
         }
         if let Some(aube) = self.aube {
-            let mut aube_table = toml::Table::new();
-            aube_table.insert("graph".to_string(), toml::Value::Table(aube.graph));
-            table.insert("aube".to_string(), toml::Value::Table(aube_table));
+            table.insert(
+                "aube".to_string(),
+                toml::Value::try_from(aube).expect("aube graph serialization"),
+            );
         }
         table.into()
     }
@@ -4595,6 +4707,15 @@ fn format(mut doc: DocumentMut) -> String {
                         }
                         a.to_string().cmp(&b.to_string())
                     });
+                    for kind in ["uv", "aube"] {
+                        if let Some(toml_edit::Item::Table(pointer)) = t.get(kind)
+                            && pointer.contains_key("path")
+                        {
+                            let mut inline = pointer.clone().into_inline_table();
+                            inline.fmt();
+                            t.insert(kind, toml_edit::value(inline));
+                        }
+                    }
                     // TODO: use TOML 1.1 multiline inline tables once toml_edit supports
                     // InlineTable::set_multiline(). See https://github.com/toml-rs/toml/issues/1027
                     // Convert platforms to dotted-key subtables (multi-line)
@@ -4725,27 +4846,40 @@ lockfileVersion: '9.0'
         .unwrap();
         let reparsed = AubeLock::from_yaml(&graph.to_yaml().unwrap()).unwrap();
         assert_eq!(graph, reparsed);
-        assert_eq!(graph.identity().unwrap(), reparsed.identity().unwrap());
-        assert_eq!(graph.identity().unwrap(), reordered.identity().unwrap());
+        assert_eq!(
+            GraphRef::from(graph.clone()).identity(),
+            GraphRef::from(reparsed).identity()
+        );
+        assert_ne!(
+            GraphRef::from(graph.clone()).identity(),
+            GraphRef::from(reordered).identity()
+        );
 
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
         let mut lockfile = Lockfile::default();
         let mut tool = basic_tool("1.0.0", "npm:cli");
-        tool.aube = Some(graph.clone());
+        tool.aube = Some(graph.clone().into());
         lockfile.tools.insert("npm:cli".into(), vec![tool]);
         lockfile.save(&path).unwrap();
 
         let reloaded = Lockfile::read(path).unwrap();
-        assert_eq!(reloaded.tools["npm:cli"][0].aube.as_ref(), Some(&graph));
         assert_eq!(
             reloaded.tools["npm:cli"][0]
                 .aube
                 .as_ref()
                 .unwrap()
-                .identity()
+                .load()
                 .unwrap(),
-            graph.identity().unwrap()
+            &graph
+        );
+        assert_eq!(
+            reloaded.tools["npm:cli"][0]
+                .aube
+                .as_ref()
+                .unwrap()
+                .identity(),
+            GraphRef::from(graph).identity()
         );
     }
 
@@ -6425,7 +6559,7 @@ options = { exe = "rg" }
         ] {
             let mut primary = basic_tool("1.0.0", "pypi:black");
             primary.backend = primary_backend.map(str::to_owned);
-            primary.uv = primary_graph.then(UvLock::default);
+            primary.uv = primary_graph.then(|| UvLock::default().into());
             let original_graph = primary.uv.clone();
             let mut legacy = basic_tool("1.0.0", "pypi:black");
             legacy.backend = legacy_backend.map(str::to_owned);
@@ -6434,7 +6568,7 @@ options = { exe = "rg" }
                 graph: toml::toml! { revision = 3 },
                 ..Default::default()
             };
-            legacy.uv = Some(graph.clone());
+            legacy.uv = Some(graph.clone().into());
             let mut root = Lockfile::default();
             root.tools.insert("black".to_string(), vec![primary]);
             let mut other = Lockfile::default();
@@ -6447,7 +6581,11 @@ options = { exe = "rg" }
             assert!(merged.specifiers.contains("latest"));
             assert_eq!(
                 merged.uv,
-                if inherit { Some(graph) } else { original_graph }
+                if inherit {
+                    Some(graph.into())
+                } else {
+                    original_graph
+                }
             );
         }
     }
@@ -6509,7 +6647,7 @@ options = { exe = "rg" }
         let graph = AubeLock::from_yaml("lockfileVersion: '9.0'\npackages: {}\n").unwrap();
 
         lockfile
-            .set_aube_lock("cli", "1.0.0", "npm:cli", &BTreeMap::new(), graph)
+            .set_aube_lock("cli", "1.0.0", "npm:cli", &BTreeMap::new(), graph.into())
             .unwrap();
 
         assert!(lockfile.tools["cli"][0].aube.is_none());

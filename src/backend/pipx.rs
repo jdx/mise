@@ -308,7 +308,13 @@ impl Backend for PIPXBackend {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         if let Some(lock) = &tv.uv_lock {
-            self.validate_uv_lock(&tv, lock)?;
+            let lock = if !ctx.locked && lock.load().is_err() {
+                lock.refresh()?
+            } else {
+                lock.clone()
+            };
+            self.validate_uv_lock(&tv, lock.load()?)?;
+            tv.uv_lock = Some(lock);
         } else if self.uv_lock_allowed(&tv) {
             let revision = if tv.resolved_from_lockfile() {
                 crate::lockfile::version_for_request(&ctx.config, &tv.request)?
@@ -349,8 +355,7 @@ impl Backend for PIPXBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
-        if let Some(lock) = &tv.uv_lock {
-            self.validate_uv_lock(tv, lock)?;
+        if tv.uv_lock.is_some() {
             if tv.uv_python.is_none() {
                 return Ok(false);
             }
@@ -360,8 +365,13 @@ impl Backend for PIPXBackend {
             } else {
                 None
             };
-            if revision.is_some_and(|v| v >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled())
+            if (revision.is_some_and(|v| v >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled()))
+                && (Settings::get().locked
+                    || self
+                        .spawnable_dependency(config, None, "uv")
+                        .await
+                        .is_some())
             {
                 return Ok(false);
             }

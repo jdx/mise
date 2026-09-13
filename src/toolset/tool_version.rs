@@ -56,8 +56,8 @@ pub(crate) struct ToolVersion {
     /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
     pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
     /// Portable dependency graph used by embedded aube installs.
-    pub aube_lock: Option<AubeLock>,
-    pub uv_lock: Option<crate::lockfile::UvLock>,
+    pub aube_lock: Option<crate::lockfile::GraphRef<AubeLock>>,
+    pub uv_lock: Option<crate::lockfile::GraphRef<crate::lockfile::UvLock>>,
     pub uv_python: Option<(PathBuf, String)>,
     /// Install satisfaction computed during dry-run installs.
     pub install_satisfied: Option<bool>,
@@ -285,12 +285,23 @@ impl ToolVersion {
         }
         let contents =
             crate::file::read_to_string(self.install_path().join("aube-lock.yaml")).ok()?;
-        let mut installed = self.clone();
-        installed.aube_lock = crate::lockfile::AubeLock::from_yaml(&contents).ok();
-        installed
-            .aube_install_identity()
-            .is_some_and(|actual| actual.starts_with(identity))
-            .then_some(version)
+        use sha2::{Digest, Sha256};
+        let graph = crate::lockfile::AubeLock::from_yaml(&contents).ok()?;
+        let options: BTreeMap<_, _> = self
+            .request
+            .options()
+            .opts_as_strings()
+            .into_iter()
+            .collect();
+        let actual = hex::encode(Sha256::digest(
+            format!(
+                "{}\n{}",
+                graph.legacy_identity().ok()?,
+                toml::to_string(&options).ok()?
+            )
+            .as_bytes(),
+        ));
+        actual.starts_with(identity).then_some(version)
     }
 
     pub(crate) fn install_path(&self) -> PathBuf {
@@ -456,7 +467,7 @@ impl ToolVersion {
         use sha2::{Digest, Sha256};
 
         let lock = self.aube_lock.as_ref()?;
-        let graph_identity = lock.identity().ok()?;
+        let graph_identity = lock.identity();
         let options: BTreeMap<_, _> = self
             .request
             .options()

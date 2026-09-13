@@ -621,7 +621,10 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
                 None
             })
             .map(|(tool, _migrate)| tool)
-            .filter(|tool| tool.short == short)
+            .filter(|tool| {
+                crate::backend::canonical_backend_full(&tool.short)
+                    == crate::backend::canonical_backend_full(short)
+            })
     };
     let mut tool = scan_named(&dir_name);
     if tool.is_none() {

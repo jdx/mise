@@ -24,8 +24,8 @@ cp mise.toml original.toml
 mise lock
 assert_contains "cat mise.lock" 'lockfile_version = 2'
 assert_contains "cat mise.lock" 'tools."pipx:mise-lock-cli"'
-assert_contains "cat mise.lock" 'uv.graph'
-assert_contains "cat mise.lock" 'mise-lock-marker'
+assert_contains "cat mise.lock" 'path = ".mise/locks/pipx-mise-lock-cli/1.0.0"'
+assert_contains "cat .mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock" 'mise-lock-marker'
 assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
 first_path=$(mise where pypi:mise-lock-cli)
 assert "mise where pipx:mise-lock-cli" "$first_path"
@@ -35,6 +35,7 @@ assert_fail "'$first_path/.mise-uv/.venv/bin/python' -I -c \"import importlib.me
 assert_fail 'MISE_DISABLE_BACKENDS=pipx mise install pypi:disabled-test@1.0.0' 'disabled by disable_backends'
 assert_fail 'MISE_DISABLE_BACKENDS=pypi mise install pipx:disabled-test@1.0.0' 'disabled by disable_backends'
 cp mise.lock first.lock
+cp -R .mise/locks first-sidecars
 # Newly published dependencies do not affect replay or ordinary locking.
 touch index/publish
 mise lock
@@ -44,6 +45,16 @@ mise lock --bump pypi:mise-lock-cli
 assert_contains "mise x --locked -- lock-cli" 'dependency=2.0.0'
 second_path=$(mise where pypi:mise-lock-cli)
 assert_succeed "test '$first_path' != '$second_path'"
+# External edits are rejected by locked installs, accepted by ordinary installs.
+cp mise.lock before-edit.lock
+printf '\n# external edit\n' >>.mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock
+assert_fail 'mise install --locked pypi:mise-lock-cli' 'accept the edited graph'
+assert_contains "mise x -- lock-cli" 'dependency=2.0.0'
+mise install pypi:mise-lock-cli
+edited_path=$(mise where pypi:mise-lock-cli)
+assert_succeed "test '$edited_path' != '$second_path'"
+assert_fail 'cmp before-edit.lock mise.lock'
+assert_contains "mise x --locked -- lock-cli" 'dependency=2.0.0'
 # Extras participate in resolution and installation identity.
 python3 - <<'PY_EXTRAS'
 from pathlib import Path
@@ -52,17 +63,24 @@ p.write_text(p.read_text().replace('"pipx:mise-lock-cli" = "1.0.0"', '"pypi:mise
 PY_EXTRAS
 mise lock --bump pypi:mise-lock-cli
 assert_contains "mise x --locked -- lock-cli" 'extra=1.0.0'
+assert_succeed "find .mise/locks/pipx-mise-lock-cli -maxdepth 1 -name '1.0.0~*' | grep -q ."
 cp original.toml mise.toml
+mise lock
+assert_fail "find .mise/locks/pipx-mise-lock-cli -maxdepth 1 -name '1.0.0~*' | grep -q ."
 # Return to the first graph and reinstall with an empty artifact cache.
 cp first.lock mise.lock
+cp first-sidecars/pipx-mise-lock-cli/1.0.0/* .mise/locks/pipx-mise-lock-cli/1.0.0/
 python3 - <<'PY_INCOMPATIBLE'
 import re
 from pathlib import Path
-p = Path('mise.lock')
-p.write_text(re.sub(r'(?m)^requires-python = .*$', 'requires-python = ">=3.99"', p.read_text()))
+for name in ['uv.lock', 'pyproject.toml']:
+    p = Path('.mise/locks/pipx-mise-lock-cli/1.0.0') / name
+    p.write_text(re.sub(r'(?m)^requires-python = .*$', 'requires-python = ">=3.99"', p.read_text()))
 PY_INCOMPATIBLE
+mise lock
 assert_fail 'mise install --locked pypi:mise-lock-cli'
 cp first.lock mise.lock
+cp first-sidecars/pipx-mise-lock-cli/1.0.0/* .mise/locks/pipx-mise-lock-cli/1.0.0/
 python3 - <<'PY_OPTIONS'
 from pathlib import Path
 p = Path('mise.toml')

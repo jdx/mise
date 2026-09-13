@@ -991,26 +991,35 @@ impl Settings {
         if policy.trust == SettingsTrustPolicy::TrustedOnly && !is_loaded() {
             bail!("trusted settings resolution requires the base settings to be loaded");
         }
-        let mut env_aliases = Self::builder().env().load()?;
-        env_aliases.normalize_pypi_aliases()?;
-        let mut alias_layer = SettingsPartial::default();
-        // Normalize the environment as its own source before layering it over files.
-        if std::env::var_os("MISE_PYPI_UVX").is_some()
-            || std::env::var_os("MISE_PIPX_UVX").is_some()
+        let mut builder = Self::builder().preloaded(Self::cli_settings_layer());
+        if [
+            "MISE_PYPI_UVX",
+            "MISE_PIPX_UVX",
+            "MISE_PYPI_REGISTRY_URL",
+            "MISE_PIPX_REGISTRY_URL",
+        ]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
         {
-            alias_layer.pypi.uvx = env_aliases.pypi.uvx;
-            alias_layer.pipx.uvx = env_aliases.pypi.uvx;
+            let mut env_aliases = Self::builder().env().load()?;
+            env_aliases.normalize_pypi_aliases()?;
+            let mut alias_layer = SettingsPartial::default();
+            // Normalize the environment as its own source before layering it over files.
+            if std::env::var_os("MISE_PYPI_UVX").is_some()
+                || std::env::var_os("MISE_PIPX_UVX").is_some()
+            {
+                alias_layer.pypi.uvx = env_aliases.pypi.uvx;
+                alias_layer.pipx.uvx = env_aliases.pypi.uvx;
+            }
+            if std::env::var_os("MISE_PYPI_REGISTRY_URL").is_some()
+                || std::env::var_os("MISE_PIPX_REGISTRY_URL").is_some()
+            {
+                alias_layer.pypi.registry_url = env_aliases.pypi.registry_url.clone();
+                alias_layer.pipx.registry_url = env_aliases.pypi.registry_url;
+            }
+            builder = builder.preloaded(alias_layer);
         }
-        if std::env::var_os("MISE_PYPI_REGISTRY_URL").is_some()
-            || std::env::var_os("MISE_PIPX_REGISTRY_URL").is_some()
-        {
-            alias_layer.pypi.registry_url = env_aliases.pypi.registry_url.clone();
-            alias_layer.pipx.registry_url = env_aliases.pypi.registry_url;
-        }
-        let mut builder = Self::builder()
-            .preloaded(Self::cli_settings_layer())
-            .preloaded(alias_layer)
-            .env();
+        builder = builder.env();
         if policy.source == SettingsSourcePolicy::Hierarchy {
             for layer in Self::settings_layers_from(root, policy.trust) {
                 if matches!((&layer.pypi.uvx, &layer.pipx.uvx), (Some(a), Some(b)) if a != b)

@@ -1,7 +1,7 @@
 //! Portable, wheel-only Python tool environments. uv owns dependency resolution;
 //! mise owns lock persistence, interpreter selection, and executable exposure.
 use super::*;
-use crate::lockfile::UvLock;
+use crate::lockfile::{GraphRef, NativeGraph, UvLock};
 use std::path::PathBuf;
 
 const MIN_UV_VERSION: &str = "0.12.10";
@@ -77,10 +77,16 @@ impl PIPXBackend {
 
     fn restore_system_uv_python(tv: &mut ToolVersion) {
         // Installed environments remain usable without rediscovering a system Python.
-        let Ok(entries) = std::fs::read_dir(&tv.ba().installs_path) else {
-            return;
-        };
-        for entry in entries.flatten() {
+        let roots = std::iter::once(tv.ba().installs_path.clone()).chain(
+            crate::env::shared_install_dirs()
+                .into_iter()
+                .map(|root| root.join(tv.ba().tool_dir_name())),
+        );
+        for entry in roots
+            .filter_map(|root| std::fs::read_dir(root).ok())
+            .flatten()
+            .flatten()
+        {
             let path = entry.path();
             if !entry
                 .file_name()
@@ -154,7 +160,7 @@ impl PIPXBackend {
             .env_remove("VIRTUAL_ENV"))
     }
 
-    pub(crate) async fn resolve_uv_lock(&self, tv: &ToolVersion) -> Result<UvLock> {
+    pub(crate) async fn resolve_uv_lock(&self, tv: &ToolVersion) -> Result<GraphRef<UvLock>> {
         self.validate_lock_options(tv)?;
         let config = Config::get().await?;
         let uv = self.lock_uv_program(&config).await?;
@@ -202,8 +208,8 @@ impl PIPXBackend {
             .args(["lock", "--no-build", "--no-config", "--no-python-downloads"])
             .args(Self::uv_exclude_newer_args(tv.before_date))
             .execute()?;
-        let graph: toml::Table =
-            crate::file::read_to_string(temp.path().join("uv.lock"))?.parse()?;
+        let graph_text = crate::file::read_to_string(temp.path().join("uv.lock"))?;
+        let graph: toml::Table = graph_text.parse()?;
         if let Some(requires_python) = graph.get("requires-python") {
             project
                 .get_mut("project")
@@ -212,9 +218,13 @@ impl PIPXBackend {
                 .unwrap()
                 .insert("requires-python".into(), requires_python.clone());
         }
-        let lock = UvLock { project, graph };
+        let lock = UvLock {
+            project,
+            graph,
+            graph_text,
+        };
         self.validate_uv_lock(tv, &lock)?;
-        Ok(lock)
+        Ok(lock.into())
     }
 
     pub(crate) fn validate_uv_lock(&self, tv: &ToolVersion, lock: &UvLock) -> Result<()> {
@@ -339,7 +349,8 @@ impl PIPXBackend {
         let lock = tv
             .uv_lock
             .as_ref()
-            .ok_or_else(|| eyre!("missing uv lock"))?;
+            .ok_or_else(|| eyre!("missing uv lock"))?
+            .load()?;
         self.validate_uv_lock(tv, lock)?;
         let uv = self.lock_uv_program(&ctx.config).await?;
         let (python, _) = tv.uv_python.as_ref().ok_or_else(|| {
@@ -357,7 +368,7 @@ impl PIPXBackend {
             project.join("pyproject.toml"),
             toml::to_string(&lock.project)?,
         )?;
-        crate::file::write(project.join("uv.lock"), toml::to_string(&lock.graph)?)?;
+        crate::file::write(project.join("uv.lock"), lock.graph_text()?)?;
         ctx.pr
             .set_message("installing frozen Python dependencies".to_owned());
         self.uv_lock_command(&ctx.config, tv, &uv, &project)
@@ -500,7 +511,7 @@ mod tests {
         ba.installs_path = temp.path().to_path_buf();
         let request = ToolRequest::new(Arc::new(ba), "1.0.0", ToolSource::Argument).unwrap();
         let mut installed = ToolVersion::new(request, "1.0.0".into());
-        installed.uv_lock = Some(fixture().2);
+        installed.uv_lock = Some(fixture().2.into());
         installed.uv_python = Some((
             PathBuf::from("/missing/python"),
             "cpython-3.12-platform".into(),
@@ -518,12 +529,9 @@ mod tests {
         assert_eq!(resolved.uv_python, installed.uv_python);
         assert_eq!(resolved.install_path(), installed.install_path());
         resolved.uv_python = None;
-        resolved
-            .uv_lock
-            .as_mut()
-            .unwrap()
-            .graph
-            .insert("revision".into(), 99.into());
+        let mut changed = resolved.uv_lock.as_ref().unwrap().load().unwrap().clone();
+        changed.graph.insert("revision".into(), 99.into());
+        resolved.uv_lock = Some(changed.into());
         PIPXBackend::restore_system_uv_python(&mut resolved);
         assert!(resolved.uv_python.is_none());
     }
@@ -566,7 +574,15 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
         )
         .parse()
         .unwrap();
-        (backend, tv, UvLock { project, graph })
+        (
+            backend,
+            tv,
+            UvLock {
+                project,
+                graph,
+                graph_text: String::new(),
+            },
+        )
     }
 
     #[test]
@@ -655,13 +671,19 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
         let serialized = toml::to_string(&lock).unwrap();
         let reloaded: UvLock = toml::from_str(&serialized).unwrap();
         assert_eq!(lock, reloaded);
-        assert_eq!(lock.identity(), reloaded.identity());
+        assert_eq!(
+            GraphRef::from(lock.clone()).identity(),
+            GraphRef::from(reloaded).identity()
+        );
         let mut changed = lock.clone();
         changed.graph.insert(
             "resolution-markers".into(),
             vec!["python_full_version < '3.13'"].into(),
         );
-        assert_ne!(lock.identity(), changed.identity());
+        assert_ne!(
+            GraphRef::from(lock).identity(),
+            GraphRef::from(changed).identity()
+        );
     }
 
     #[test]

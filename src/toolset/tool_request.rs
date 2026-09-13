@@ -470,6 +470,10 @@ impl ToolRequest {
     pub(crate) async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
             match self.resolve(config, &Default::default()).await {
+                // Explicit installs must validate sidecars even when the recorded digest
+                // already has an installation. Ordinary resolution uses the backend's
+                // filesystem-only satisfaction check directly.
+                Ok(tv) if tv.uv_lock.is_some() || tv.aube_lock.is_some() => false,
                 Ok(tv) => match backend.is_install_satisfied(config, &tv, false).await {
                     Ok(satisfied) => satisfied,
                     Err(e) => {
