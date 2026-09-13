@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tera::{Kwargs, State, TeraResult, Value};
 
-use crate::config::Config;
+use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
+use crate::system::resources::ResourceOrigin;
 use crate::tera::{
     BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
 };
@@ -30,7 +31,7 @@ pub(crate) struct SecretOptionsTomlConfig {
     pub allow_empty: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SecretDeclaration {
     pub name: String,
     pub env: String,
@@ -90,20 +91,49 @@ struct SecretUnavailable {
 }
 
 pub(crate) fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration>> {
-    let mut merged = IndexMap::new();
+    let mut merged: IndexMap<String, (SecretDeclaration, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for cf in config_files.values() {
-            if let Some(bootstrap) = cf.bootstrap_config() {
-                for (name, declaration) in bootstrap.secrets {
-                    merged.entry(name).or_insert(declaration);
+        for (name, declaration) in secrets_from_config_files(config_files)? {
+            if let Some(existing) = merged.get(&name) {
+                if existing.0 == declaration.0 {
+                    continue;
                 }
+                bail!(
+                    "conflicting bootstrap secret declarations for {name}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    existing.1.conflict_description(),
+                    declaration.1.conflict_description(),
+                );
+            }
+            merged.insert(name, declaration);
+        }
+    }
+    Ok(merged
+        .into_values()
+        .map(|(declaration, _)| declaration)
+        .collect())
+}
+
+fn secrets_from_config_files(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<String, (SecretDeclaration, ResourceOrigin)>> {
+    let mut merged = IndexMap::new();
+    for (path, cf) in config_files {
+        if let Some(bootstrap) = cf.bootstrap_config() {
+            let origin = ResourceOrigin {
+                config: path.clone(),
+                config_root: cf.config_root(),
+                environment: crate::config::environments_for_config_path(path),
+                source: None,
+            };
+            for (name, declaration) in bootstrap.secrets {
+                let declaration = declaration_from_toml(name.clone(), declaration)?;
+                merged
+                    .entry(name)
+                    .or_insert_with(|| (declaration, origin.clone()));
             }
         }
     }
-    merged
-        .into_iter()
-        .map(|(name, declaration)| declaration_from_toml(name, declaration))
-        .collect()
+    Ok(merged)
 }
 
 pub(crate) fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
