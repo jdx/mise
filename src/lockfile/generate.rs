@@ -654,7 +654,7 @@ pub(crate) async fn populate_uv_locks(
     tools: &[Tool],
     force: bool,
 ) -> Result<()> {
-    if lockfile.lockfile_version() < 3 {
+    if lockfile.lockfile_version() < 2 {
         return Ok(());
     }
     let config = crate::config::Config::get().await?;

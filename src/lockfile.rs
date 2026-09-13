@@ -65,7 +65,7 @@ pub(crate) fn invalidate_caches() {
     }
 }
 
-const CURRENT_LOCKFILE_VERSION: u32 = 3;
+const CURRENT_LOCKFILE_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub(crate) struct AubeLock {
@@ -1195,7 +1195,7 @@ impl Lockfile {
             lockfile.tools.entry(short).or_default().extend(versions);
         }
 
-        if lockfile_version < 3
+        if lockfile_version < 2
             && lockfile
                 .tools
                 .values()
@@ -1203,7 +1203,7 @@ impl Lockfile {
                 .any(|tool| tool.uv.is_some())
         {
             bail!(
-                "Python dependency graphs require lockfile revision 3; run `mise lock --upgrade`"
+                "Python dependency graphs require lockfile revision 2; run `mise lock --upgrade`"
             );
         }
 
@@ -4629,11 +4629,11 @@ mod tests {
 
         lockfile.save(&path).unwrap();
         let contents = file::read_to_string(&path).unwrap();
-        assert!(contents.contains("lockfile_version = 3"));
+        assert!(contents.contains("lockfile_version = 2"));
         assert!(contents.contains("specifiers = [\"1\"]"));
 
         let reloaded = Lockfile::read(&path).unwrap();
-        assert_eq!(reloaded.lockfile_version(), 3);
+        assert_eq!(reloaded.lockfile_version(), 2);
         assert_eq!(
             reloaded.tools["dummy"][0].specifiers,
             BTreeSet::from(["1".to_string()])
@@ -4730,12 +4730,12 @@ lockfileVersion: '9.0'
     fn future_lockfile_versions_are_rejected() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
-        file::write(&path, "lockfile_version = 4\n[tools]\n").unwrap();
+        file::write(&path, "lockfile_version = 3\n[tools]\n").unwrap();
 
         let err = Lockfile::read(&path).unwrap_err();
         assert!(
             err.to_string()
-                .contains("unsupported lockfile version 4; this mise supports up to version 3")
+                .contains("unsupported lockfile version 3; this mise supports up to version 2")
         );
     }
 
@@ -6471,7 +6471,7 @@ options = { exe = "rg" }
         invalidate_caches();
 
         let mixed = read_lockfile_at(primary_path, Some(legacy_path));
-        assert_eq!(mixed.lockfile_version(), 3);
+        assert_eq!(mixed.lockfile_version(), 2);
         assert!(mixed.uses_request_bindings());
         assert!(
             mixed.tools["node"]
@@ -7854,7 +7854,7 @@ backend = "conda:jq"
         file::write(
             &path,
             r#"
-lockfile_version = 2
+lockfile_version = 1
 [[tools."pipx:black"]]
 version = "24.10.0"
 backend = "pipx:black"
@@ -7865,7 +7865,7 @@ backend = "core:python"
         )
         .unwrap();
         let lock = Lockfile::read(&path).unwrap();
-        assert_eq!(lock.lockfile_version(), 2);
+        assert_eq!(lock.lockfile_version(), 1);
         assert!(!lock.tools.contains_key("pipx:black"));
         assert_eq!(
             lock.tools["pypi:black"][0].backend.as_deref(),

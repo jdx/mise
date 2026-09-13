@@ -680,10 +680,10 @@ the tool's installer/compiler.
 
 ## Python dependency graphs
 
-Lockfile revision 3 adds portable uv dependency graphs for `pypi:` tools (`pipx:`
-is a compatibility alias). New lockfiles use revision 3; existing revisions 0–2
+Lockfile revision 2 supports portable uv dependency graphs for `pypi:` tools (`pipx:`
+is a compatibility alias). New lockfiles use revision 2; existing revisions 0–1
 keep their format until `mise lock --upgrade`. Older mise versions reject revision
-3 instead of ignoring its Python dependency data.
+2 instead of ignoring its dependency graphs.
 
 With uv >= 0.12.10 installed, `mise lock` records dependencies and wheel hashes;
 `mise install --locked` replays them without resolution or source builds. Use

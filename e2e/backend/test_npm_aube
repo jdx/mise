@@ -71,7 +71,7 @@ version = "1.6.0"
 specifiers = ["1.6.0"]
 EOF
 MISE_LOCKFILE_MODE=generate mise -C upgrade-lock lock --upgrade
-assert_contains "cat upgrade-lock/mise.lock" "lockfile_version = 3"
+assert_contains "cat upgrade-lock/mise.lock" "lockfile_version = 2"
 assert_contains "cat upgrade-lock/mise.lock" 'tools."npm:cowsay".aube.graph.packages'
 
 # Lock generation resolves aube's complete graph without creating an install.
@@ -81,7 +81,7 @@ node = "20.11.1"
 "npm:cowsay" = "1.6.0"
 EOF
 mise lock
-assert_contains "cat mise.lock" "lockfile_version = 3"
+assert_contains "cat mise.lock" "lockfile_version = 2"
 assert_contains "cat mise.lock" 'tools."npm:cowsay".aube.graph.packages'
 assert_fail "find '$MISE_DATA_DIR/installs/npm-cowsay' -maxdepth 1 -name '1.6.0~aube~*' | grep -q ."
 

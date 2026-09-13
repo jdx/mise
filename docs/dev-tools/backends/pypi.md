@@ -77,7 +77,7 @@ Graph-locked installations require published wheels for the current platform and
 Python version. They do not build source distributions. Git sources and standalone
 pipx installs retain version-only locking. Free-form `uvx_args` and `pipx_args`
 are unsupported with dependency graphs; an existing uv graph cannot be replayed
-through standalone pipx. Missing graphs in revision-3 locked uv installs are errors.
+through standalone pipx. Missing graphs in revision-2 locked uv installs are errors.
 
 The graph covers the package's supported Python range (Python 3.8 or newer).
 The selected mise Python interpreter determines which locked marker branches are

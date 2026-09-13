@@ -320,7 +320,7 @@ impl Backend for PIPXBackend {
             } else {
                 None
             };
-            if revision.is_some_and(|v| v >= 3)
+            if revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled())
             {
                 if ctx.locked {
@@ -370,7 +370,7 @@ impl Backend for PIPXBackend {
             } else {
                 None
             };
-            if revision.is_some_and(|v| v >= 3)
+            if revision.is_some_and(|v| v >= 2)
                 || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled())
             {
                 return Ok(false);
