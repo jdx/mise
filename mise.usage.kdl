@@ -660,6 +660,7 @@ source capture and config write without making those changes.
                 arg <PATH>
             }
             flag "-y --yes" help="Skip the confirmation prompt"
+            flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
             example #"""
@@ -681,6 +682,7 @@ mise doesn't otherwise own.
             flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
+            flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
             example #"""
@@ -706,6 +708,7 @@ are not reversible. Concurrent editor changes are part of the same interval.
             arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
         }
         cmd diff help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
+            flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
             example #"""
@@ -722,6 +725,7 @@ mise bootstrap dotfiles diff ~/.zshrc
                 arg <PATH>
             }
             flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
+            flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <TARGET> help="Target to edit"
             example #"""
@@ -995,6 +999,7 @@ functions may execute. `--missing` changes the exit status, not the listing.
 Exit with code 1 if any configured dotfiles are not in their desired
 state (missing, source missing, differs)
 """#
+            flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
             example #"""
@@ -1058,6 +1063,7 @@ Run this before deleting a declaration so mise can still identify its targets.
             flag "-f --force" help="Remove modified or otherwise ambiguous managed files and lines"
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
+            flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
             example #"""
@@ -2260,6 +2266,7 @@ source capture and config write without making those changes.
             arg <PATH>
         }
         flag "-y --yes" help="Skip the confirmation prompt"
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
         example #"""
@@ -2281,6 +2288,7 @@ mise doesn't otherwise own.
         flag "-f --force" help="Overwrite existing files that conflict with whole-file dotfile entries"
         flag "-n --dry-run" help="Print the actions that would run without writing anything"
         flag "-y --yes" help="Skip the confirmation prompt"
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
         example #"""
@@ -2290,6 +2298,7 @@ mise bootstrap dotfiles apply --force --yes
 """#
     }
     cmd diff hide=#true help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         example #"""
@@ -2306,6 +2315,7 @@ mise bootstrap dotfiles diff ~/.zshrc
             arg <PATH>
         }
         flag "-y --yes" help="Skip the confirmation prompt when adding an unmanaged target"
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TARGET> help="Target to edit"
         example #"""
@@ -2333,6 +2343,7 @@ automatically.
 Exit with code 1 if any configured dotfiles are not in their desired
 state (missing, source missing, differs)
 """#
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         example #"""
@@ -2354,6 +2365,7 @@ Run this before deleting a declaration so mise can still identify its targets.
         flag "-f --force" help="Remove modified or otherwise ambiguous managed files and lines"
         flag "-n --dry-run" help="Print the actions that would run without writing anything"
         flag "-y --yes" help="Skip the confirmation prompt"
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
         example #"""

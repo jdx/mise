@@ -23,6 +23,7 @@ Run this before deleting a declaration so mise can still identify its targets.
 - **`-f --force`** — Remove modified or otherwise ambiguous managed files and lines
 - **`-n --dry-run`** — Print the actions that would run without writing anything
 - **`-y --yes`** — Skip the confirmation prompt
+- **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
 
 ## Examples

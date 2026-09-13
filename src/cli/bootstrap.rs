@@ -1372,6 +1372,10 @@ impl Bootstrap {
                 .expect("enabled accounts were prepared")
         });
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        if !self.dry_run && !skip.contains(&BootstrapPart::Dotfiles) {
+            let files = system::files::files_from_config(&config)?;
+            system::files::preflight_templates(&config, &files, &secrets)?;
+        }
         let managed_system_files = if !files_enabled {
             None
         } else {
@@ -1672,7 +1676,7 @@ impl Bootstrap {
                     force_hint: "use --force-dotfiles or run `mise bootstrap dotfiles apply --force`",
                     yes: self.yes,
                 };
-                if !system::files::apply(&config, &files, &opts)? {
+                if !system::files::apply(&config, &files, &opts, &secrets)? {
                     return Ok(declined());
                 }
             }
@@ -3307,6 +3311,12 @@ impl BootstrapStatusReport {
         self.rows
             .push(vec![part.into(), item.into(), current.into(), state.into()]);
     }
+
+    fn append(&mut self, mut other: Self) {
+        self.any_missing |= other.any_missing;
+        self.rows.append(&mut other.rows);
+        self.json.append(&mut other.json);
+    }
 }
 
 impl BootstrapStatus {
@@ -3357,6 +3367,10 @@ impl BootstrapStatus {
         )?;
         let notified_services = system::managed_files::pending_notifications(&files, &directories)?;
         let compose_requests = system::compose::requests_from_config(config)?;
+        // Dotfile templates may consume bootstrap secrets. Inspect them before
+        // reporting used secrets, but append their rows in the usual order.
+        let mut dotfiles_report = BootstrapStatusReport::new();
+        self.collect_dotfiles(config, secrets, &mut dotfiles_report)?;
         self.collect_secrets(&secrets.used_statuses()?, &mut report);
         self.collect_packages(config, &mut report).await?;
         self.collect_accounts(&accounts, &mut report);
@@ -3366,7 +3380,7 @@ impl BootstrapStatus {
         self.collect_firewall(firewall_request.as_ref(), &mut report);
         self.collect_compose(&compose_requests, &mut report);
         self.collect_repos(config, &mut report).await?;
-        self.collect_dotfiles(config, &mut report)?;
+        report.append(dotfiles_report);
         self.collect_shell(config, &mut report)?;
         self.collect_defaults(config, &mut report).await?;
         self.collect_launchd(config, &mut report).await?;
@@ -3741,13 +3755,14 @@ impl BootstrapStatus {
     fn collect_dotfiles(
         &self,
         config: &Arc<Config>,
+        secrets: &system::secrets::SecretValues,
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
         let mut json_files = vec![];
         let files = system::files::files_from_config(config)?;
         system::files::validate_composed_file_footprints(&files)?;
         for req in files {
-            let state = match system::files::check(config, &req) {
+            let state = match system::files::check(config, &req, secrets) {
                 Ok(state) => state,
                 Err(err) => system::files::FileState::Differs(format!("{err}")),
             };

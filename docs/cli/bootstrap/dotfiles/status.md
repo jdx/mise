@@ -25,6 +25,7 @@ functions may execute. `--missing` changes the exit status, not the listing.
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured dotfiles are not in their desired
   state (missing, source missing, differs)
+- **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
 
 ## Examples

@@ -31,6 +31,7 @@ source capture and config write without making those changes.
 - **`-p --path <PATH>`** — Write to this config file or directory
 - **`-s --source <PATH>`** — Source path to use for a single target
 - **`-y --yes`** — Skip the confirmation prompt
+- **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
 
 ## Examples

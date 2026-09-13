@@ -39,6 +39,10 @@ pub(crate) struct DotfilesEdit {
     /// Skip the confirmation prompt when adding an unmanaged target
     #[usage(long, short)]
     yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesEdit {
@@ -61,7 +65,7 @@ impl DotfilesEdit {
             open_or_create(&path)?;
             crate::cli::editor::open_in_editor(&path)?;
             if self.apply {
-                apply_target(&self.target).await?;
+                apply_target(&self.target, self.prompt_secrets).await?;
             }
             return Ok(());
         }
@@ -88,6 +92,7 @@ impl DotfilesEdit {
             no_apply: true,
             force: false,
             yes: true,
+            prompt_secrets: self.prompt_secrets,
         }
         .run()
         .await?;
@@ -99,7 +104,7 @@ impl DotfilesEdit {
         open_or_create(&path)?;
         crate::cli::editor::open_in_editor(&path)?;
         if self.apply {
-            apply_target(&self.target).await?;
+            apply_target(&self.target, self.prompt_secrets).await?;
         }
         Ok(())
     }
@@ -160,8 +165,9 @@ fn open_or_create(path: &std::path::Path) -> Result<()> {
 }
 
 /// Apply a selected target after validating the complete composed footprint.
-async fn apply_target(target: &str) -> Result<()> {
+async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
     let config = Config::reset().await?;
+    let secrets = system::secrets::resolve(&config, prompt_secrets)?;
     let targets = vec![target.to_string()];
     let all_files = system::files::files_from_config(&config)?;
     system::files::validate_composed_file_footprints(&all_files)?;
@@ -181,7 +187,7 @@ async fn apply_target(target: &str) -> Result<()> {
             force_hint: "use `mise bootstrap dotfiles apply --force`",
             yes: true,
         };
-        system::files::apply(&config, &files, &opts)?;
+        system::files::apply(&config, &files, &opts, &secrets)?;
     }
     if !edits.is_empty() {
         let opts = system::edits::ApplyOpts {

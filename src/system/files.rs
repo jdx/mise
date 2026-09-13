@@ -37,6 +37,7 @@ use crate::hash::hash_to_str;
 use crate::path::PathExt;
 use crate::system::history::journal::{self, Capture};
 use crate::system::resources::ResourceOrigin;
+use crate::system::secrets::SecretValues;
 use crate::ui::prompt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1482,7 +1483,11 @@ where
 /// templates (which run on
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
-pub(crate) fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
+pub(crate) fn check(
+    config: &Config,
+    req: &FileRequest,
+    secrets: &SecretValues,
+) -> Result<FileState> {
     if req.mode == FileMode::Track {
         return Ok(FileState::Tracked);
     }
@@ -1491,7 +1496,7 @@ pub(crate) fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
     }
     // render at most once per call — templates may use exec()
     let rendered = match req.mode {
-        FileMode::Template => Some(render_template(config, req)?),
+        FileMode::Template => Some(render_template(config, req, secrets)?),
         _ => None,
     };
     check_rendered(req, rendered.as_deref())
@@ -1664,22 +1669,58 @@ fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
     }
 }
 
-pub(crate) fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
+pub(crate) fn render_template(
+    config: &Config,
+    req: &FileRequest,
+    secrets: &SecretValues,
+) -> Result<String> {
     let raw = file::read_to_string(&req.source)?;
-    let mut tera = crate::tera::get_tera(Some(&req.base));
-    let rendered = crate::tera::render_str(
-        &mut tera,
-        &raw,
-        config.bootstrap_tera_ctx(&req.origin.config),
-    )
-    .map_err(|err| {
-        eyre::eyre!(
-            "[dotfiles].\"{}\": failed to render template {}: {err}",
-            req.target_raw,
-            req.source.display_user()
-        )
-    })?;
+    let rendered = secrets
+        .render_dotfile(config, &raw, &req.base, &req.origin.config)
+        .map_err(|err| {
+            eyre::eyre!(
+                "[dotfiles].\"{}\": failed to render template {}: {err}",
+                req.target_raw,
+                req.source.display_user()
+            )
+        })?;
     Ok(rendered)
+}
+
+pub(crate) fn render_template_for_oci(config: &Config, req: &FileRequest) -> Result<String> {
+    let raw = file::read_to_string(&req.source)?;
+    let rendered =
+        SecretValues::render_dotfile_for_oci(config, &raw, &req.base, &req.origin.config).map_err(
+            |err| {
+                eyre::eyre!(
+                    "[dotfiles].\"{}\": failed to render template {}: {err}",
+                    req.target_raw,
+                    req.source.display_user()
+                )
+            },
+        )?;
+    Ok(rendered)
+}
+
+/// Render every configured dotfile template before a full bootstrap can
+/// mutate anything. Secret values are cached, but templates are rendered again
+/// when applied so hooks can update dynamic inputs such as files or commands.
+pub(crate) fn preflight_templates(
+    config: &Config,
+    requests: &[FileRequest],
+    secrets: &SecretValues,
+) -> Result<()> {
+    validate_composed_file_footprints(requests)?;
+    let broken = requests
+        .iter()
+        .filter(|req| req.mode == FileMode::Template)
+        .filter_map(|req| render_template(config, req, secrets).err())
+        .map(|err| format!("  {err}"))
+        .collect::<Vec<_>>();
+    if !broken.is_empty() {
+        bail!("files: entries with errors:\n{}", broken.join("\n"));
+    }
+    Ok(())
 }
 
 /// directories a symlink-each entry needs: the target itself plus every
@@ -2227,11 +2268,20 @@ pub(crate) struct ApplyPlan<'a> {
 /// should go) are an error unless `force` is set — content updates for
 /// copy/template entries are not conflicts, overwriting is their job. Returns
 /// `false` when the user declines the confirmation prompt.
-pub(crate) fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<bool> {
-    execute_apply(plan_apply(config, requests, opts)?, opts)
+pub(crate) fn apply(
+    config: &Config,
+    requests: &[FileRequest],
+    opts: &ApplyOpts,
+    secrets: &SecretValues,
+) -> Result<bool> {
+    execute_apply(config, plan_apply(config, requests, opts, secrets)?, opts)
 }
 
-pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
+pub(crate) fn execute_apply(
+    config: &Config,
+    plan: ApplyPlan<'_>,
+    opts: &ApplyOpts,
+) -> Result<bool> {
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
@@ -2259,7 +2309,7 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
             let suffix = if conditional { " (if changed)" } else { "" };
             miseprintln!("{}{suffix}", describe(req)?);
             if opts.verbose && !conditional {
-                print_diff(req, rendered.as_deref())?;
+                print_diff(config, req, rendered.as_deref())?;
             }
         }
         return Ok(true);
@@ -2349,9 +2399,10 @@ pub(crate) fn plan_apply<'a>(
     config: &Config,
     requests: &'a [FileRequest],
     opts: &ApplyOpts,
+    secrets: &SecretValues,
 ) -> Result<ApplyPlan<'a>> {
     let active_requests = files_from_config(config)?;
-    plan_apply_with_active(config, requests, &active_requests, opts)
+    plan_apply_with_active(config, requests, &active_requests, opts, secrets)
 }
 
 /// Plan an apply against the requests that will be active when it executes.
@@ -2362,6 +2413,7 @@ pub(crate) fn plan_apply_with_active<'a>(
     requests: &'a [FileRequest],
     active_requests: &[FileRequest],
     opts: &ApplyOpts,
+    secrets: &SecretValues,
 ) -> Result<ApplyPlan<'a>> {
     validate_composed_file_footprints(requests)?;
     // pre-rendered template output rides along so it's written as compared,
@@ -2394,7 +2446,7 @@ pub(crate) fn plan_apply_with_active<'a>(
             continue;
         }
         let rendered = match req.mode {
-            FileMode::Template => match render_template(config, req) {
+            FileMode::Template => match render_template(config, req, secrets) {
                 Ok(rendered) => Some(rendered),
                 // already carries the entry's context
                 Err(err) => {
@@ -2532,6 +2584,7 @@ pub(crate) fn resolve_unapply(
     config: &Config,
     plans: &mut Vec<UnapplyPlan<'_>>,
     opts: &UnapplyOpts,
+    secrets: &SecretValues,
 ) -> Result<()> {
     if opts.dry_run {
         return Ok(());
@@ -2541,7 +2594,7 @@ pub(crate) fn resolve_unapply(
         .iter()
         .map(|plan| {
             if plan.conditional {
-                match render_template(config, plan.req) {
+                match render_template(config, plan.req, secrets) {
                     Ok(rendered) => Some(rendered),
                     Err(err) => {
                         problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw));
@@ -3058,7 +3111,7 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
     })
 }
 
-fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+fn print_diff(config: &Config, req: &FileRequest, rendered: Option<&str>) -> Result<()> {
     match req.mode {
         FileMode::Track => {}
         FileMode::Symlink => {
@@ -3098,7 +3151,7 @@ fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
             if let Some(current) = current_regular_file_for_diff(req)?
                 && current != desired
             {
-                print_content_diff(req, &current, &desired)?;
+                print_content_diff(config, req, &current, &desired)?;
             }
             #[cfg(unix)]
             if req.mode == FileMode::Template && !req.target.is_symlink() && req.target.is_file() {
@@ -3126,7 +3179,7 @@ fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
             if let Some(current) = current_regular_file_for_diff(req)?
                 && current != desired
             {
-                print_content_diff(req, &current, desired)?;
+                print_content_diff(config, req, &current, desired)?;
             }
         }
     }
@@ -3159,7 +3212,12 @@ fn current_regular_file_for_diff(req: &FileRequest) -> Result<Option<Vec<u8>>> {
     Ok(Some(vec![]))
 }
 
-fn print_content_diff(req: &FileRequest, current: &[u8], desired: &[u8]) -> Result<()> {
+fn print_content_diff(
+    config: &Config,
+    req: &FileRequest,
+    current: &[u8],
+    desired: &[u8],
+) -> Result<()> {
     let source = match req.mode {
         FileMode::Content => "inline".to_string(),
         _ => req.source.display_user(),
@@ -3177,7 +3235,9 @@ fn print_content_diff(req: &FileRequest, current: &[u8], desired: &[u8]) -> Resu
         });
     match (str::from_utf8(current), str::from_utf8(desired)) {
         (Ok(current), Ok(desired)) => {
-            let patch = opts.create_patch(current, desired);
+            let current = config.redact(current);
+            let desired = config.redact(desired);
+            let patch = opts.create_patch(&current, &desired);
             miseprint!("{}", diffy::PatchFormatter::new().fmt_patch(&patch))?;
         }
         _ => miseprintln!("  binary content differs"),
@@ -3188,7 +3248,11 @@ fn print_content_diff(req: &FileRequest, current: &[u8], desired: &[u8]) -> Resu
 /// Print the changes required to converge whole-file dotfile entries.
 /// Templates are rendered because a meaningful diff requires their desired
 /// content, matching the trust and execution semantics of dotfiles status.
-pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<()> {
+pub(crate) fn print_diffs(
+    config: &Config,
+    requests: &[FileRequest],
+    secrets: &SecretValues,
+) -> Result<()> {
     let mut changed = false;
     let mut problems = vec![];
     for req in requests {
@@ -3201,7 +3265,7 @@ pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<(
             continue;
         }
         let rendered = match req.mode {
-            FileMode::Template => match render_template(config, req) {
+            FileMode::Template => match render_template(config, req, secrets) {
                 Ok(rendered) => Some(rendered),
                 Err(err) => {
                     problems.push(format!("  \"{}\": {err}", req.target_raw));
@@ -3220,7 +3284,7 @@ pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<(
         }
         changed = true;
         miseprintln!("dotfile differs: {}", req.target.display_user());
-        if let Err(err) = print_diff(req, rendered.as_deref()) {
+        if let Err(err) = print_diff(config, req, rendered.as_deref()) {
             problems.push(format!("  \"{}\": {err}", req.target_raw));
         }
     }

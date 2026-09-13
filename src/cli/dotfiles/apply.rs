@@ -35,6 +35,10 @@ pub(crate) struct DotfilesApply {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesApply {
@@ -61,6 +65,7 @@ impl DotfilesApply {
     /// opened one.
     pub(crate) async fn run_inner(self) -> Result<bool> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
@@ -75,7 +80,7 @@ impl DotfilesApply {
                 force_hint: "use --force",
                 yes: self.yes,
             };
-            if !system::files::apply(&config, &files, &opts)? {
+            if !system::files::apply(&config, &files, &opts, &secrets)? {
                 return Ok(false);
             }
         }

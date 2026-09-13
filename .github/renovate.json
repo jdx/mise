@@ -28,6 +28,22 @@
       "separateMajorMinor": false
     },
     {
+      "description": "aube crates and the standalone development tool must stay on the same release.",
+      "matchPackageNames": ["aube", "aube-registry"],
+      "matchManagers": ["cargo"],
+      "groupName": "aube",
+      "separateMajorMinor": false,
+      "postUpgradeTasks": {
+        "commands": ["mise lock --bump --minimum-release-age 0s aube"],
+        "executionMode": "branch",
+        "fileFilters": ["mise.lock"],
+        "installTools": {
+          "mise": {}
+        },
+        "workingDirTemplate": "{{{packageFileDir}}}"
+      }
+    },
+    {
       "description": "Sigstore crates are versioned together; bump together.",
       "matchPackageNames": ["/^sigstore-/"],
       "matchManagers": ["cargo"],

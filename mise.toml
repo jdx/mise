@@ -12,7 +12,7 @@ mr-boxington = "1.9.0"
 # deliberately, on a commit that does nothing else.
 "github:jdx/tak" = "0.0.9"
 age = "latest"
-aube = "latest"
+aube = { version = "latest", minimum_release_age = "0s" }
 bun = "latest"
 cargo-binstall = "latest"
 communique = "latest"

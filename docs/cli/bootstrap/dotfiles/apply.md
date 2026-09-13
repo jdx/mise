@@ -23,6 +23,7 @@ mise doesn't otherwise own.
 - **`-f --force`** — Overwrite existing files that conflict with whole-file dotfile entries
 - **`-n --dry-run`** — Print the actions that would run without writing anything
 - **`-y --yes`** — Skip the confirmation prompt
+- **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`-h --help`** — Print help
 
 ## Examples

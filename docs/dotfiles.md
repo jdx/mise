@@ -290,12 +290,20 @@ history streams at the same path and do not accept `target` overrides.
 ```
 
 Templates can use `env`, `vars`, `exec()`, and the rest of the
-[template context](/templates.html). Applying a template writes its rendered
-content and gives the target the source file's permissions. A later apply
-also repairs changed permissions.
+[template context](/templates.html). They can also consume a declared
+[bootstrap secret input](/bootstrap/secrets.html) with
+<span v-pre>`{{ secret(name="logical_name") }}`</span>. Use
+`--prompt-secrets` with a dotfiles command to securely prompt for missing
+values. Applying a template writes its rendered content and gives the target
+the source file's permissions. A later apply also repairs changed permissions.
 
 `status`, `diff`, and `apply` render templates to check their output. This
 executes any `exec()` calls in those templates, using your trusted config.
+Secret values are redacted from diffs and other command output.
+`mise oci build` rejects templates that call `secret()` and renders without
+the `env` context, `get_env()`, `exec()`, or `read_file()`. Values exposed by
+those interfaces could otherwise remain recoverable from a persistent image
+layer.
 With `--dry-run`, mise skips rendering dotfile templates and labels them
 `(if changed)`. Other configuration expressions can still run during a dry
 run, so use it with trusted configuration.
