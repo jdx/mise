@@ -1,5 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use demand::Input;
@@ -71,6 +71,14 @@ struct SecretResolution {
     values: IndexMap<String, String>,
     redaction_env: EnvMap,
     unavailable: IndexMap<String, String>,
+    dotfile_renders: HashMap<DotfileRenderKey, String>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct DotfileRenderKey {
+    input: String,
+    base: PathBuf,
+    config_path: PathBuf,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -172,13 +180,34 @@ impl SecretValues {
         base: &Path,
         config_path: &Path,
     ) -> Result<String> {
+        let key = DotfileRenderKey {
+            input: input.to_string(),
+            base: base.to_path_buf(),
+            config_path: config_path.to_path_buf(),
+        };
+        if let Some(rendered) = self
+            .resolution
+            .lock()
+            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?
+            .dotfile_renders
+            .get(&key)
+            .cloned()
+        {
+            return Ok(rendered);
+        }
         let mut tera = get_tera(Some(base));
         let used = match &mut tera {
             TeraEngine::V2(tera) => self.register_v2(tera),
             TeraEngine::V1(tera) => self.register_v1(tera),
         };
         let rendered = render_str(&mut tera, input, config.bootstrap_tera_ctx(config_path));
-        self.finish_render(Some(config), used, rendered)
+        let rendered = self.finish_render(Some(config), used, rendered)?;
+        self.resolution
+            .lock()
+            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?
+            .dotfile_renders
+            .insert(key, rendered.clone());
+        Ok(rendered)
     }
 
     pub(crate) fn render_dotfile_for_oci(

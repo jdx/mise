@@ -1372,6 +1372,10 @@ impl Bootstrap {
                 .expect("enabled accounts were prepared")
         });
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        if !self.dry_run && !skip.contains(&BootstrapPart::Dotfiles) {
+            let files = system::files::files_from_config(&config)?;
+            system::files::preflight_templates(&config, &files, &secrets)?;
+        }
         let managed_system_files = if !files_enabled {
             None
         } else {

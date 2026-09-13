@@ -1702,6 +1702,27 @@ pub(crate) fn render_template_for_oci(config: &Config, req: &FileRequest) -> Res
     Ok(rendered)
 }
 
+/// Render every configured dotfile template before a full bootstrap can
+/// mutate anything. Successful renders are cached by the secret resolver, so
+/// unchanged templates (including `exec()` calls) are not evaluated twice.
+pub(crate) fn preflight_templates(
+    config: &Config,
+    requests: &[FileRequest],
+    secrets: &SecretValues,
+) -> Result<()> {
+    validate_composed_file_footprints(requests)?;
+    let broken = requests
+        .iter()
+        .filter(|req| req.mode == FileMode::Template)
+        .filter_map(|req| render_template(config, req, secrets).err())
+        .map(|err| format!("  {err}"))
+        .collect::<Vec<_>>();
+    if !broken.is_empty() {
+        bail!("files: entries with errors:\n{}", broken.join("\n"));
+    }
+    Ok(())
+}
+
 /// directories a symlink-each entry needs: the target itself plus every
 /// intermediate directory for nested source files
 fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {

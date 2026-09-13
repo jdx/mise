@@ -779,10 +779,15 @@ cat <<EOF >"$secret_config"
 [bootstrap.secrets]
 dotfile_token = "$dotfile_secret_env"
 
+[bootstrap.hooks.pre-packages]
+run = "touch should-not-run-before-secret-preflight"
+
 [dotfiles]
 "~/.secret-dotfile" = { source = "dotfiles/secret.tmpl", mode = "template" }
 EOF
 assert_succeed "MISE_CONFIG_FILE=$secret_config mise dotfiles apply --dry-run --prompt-secrets"
+assert_fail "MISE_CONFIG_FILE=$secret_config mise bootstrap --yes" "required bootstrap secrets are unavailable"
+assert_fail "test -e should-not-run-before-secret-preflight"
 assert_fail "MISE_CONFIG_FILE=$secret_config mise dotfiles apply --yes" "required bootstrap secrets are unavailable"
 assert_fail "MISE_CONFIG_FILE=$secret_config MISE_TERA_V1=1 mise dotfiles apply --yes" "required bootstrap secrets are unavailable"
 assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes --prompt-secrets"
