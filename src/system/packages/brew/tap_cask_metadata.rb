@@ -111,6 +111,7 @@ class CaskFlightSteps
 
   def version = @cask.version
   def arch = @cask.arch
+  def appdir = @cask.appdir
 
   def run(command, base: nil, **options)
     path = { path: command.to_s }
@@ -161,6 +162,11 @@ class CaskMetadata
 
   def url(value = nil, **) = (@url = value.to_s unless value.nil?)
   def auto_updates(value = nil) = (@auto_updates = value unless value.nil?)
+
+  # Metadata extraction never knows the real install location, so answer
+  # Homebrew's default; interpolation only needs to not raise here. The
+  # install-time shim resolves `appdir` for real.
+  def appdir = "/Applications"
 
   def depends_on(values = nil, **kwargs)
     values = kwargs if values.nil?

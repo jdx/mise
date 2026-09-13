@@ -697,9 +697,9 @@ cask "widget" do
     url "https://example.com/also-wrong-platform.zip"
   end
   app "Widget.app"
-  binary "Widget.app/Contents/MacOS/widget", target: "widget"
+  binary "#{appdir}/Widget.app/Contents/MacOS/widget", target: "widget"
   preflight_steps do
-    run "Widget.app/Contents/MacOS/widget", base: :appdir, args: ["#{version}"]
+    run "#{appdir}/Widget.app/Contents/MacOS/widget", base: :appdir, args: ["#{version}"]
     run "bin/widget", base: :staged_path
   end
   postflight_steps do
@@ -732,10 +732,14 @@ end
         assert_eq!(metadata["sha256"], "no_check");
         assert_eq!(metadata["url"], "https://example.com/café/widget-1.2.3.zip");
         assert_eq!(metadata["depends_on"]["formula"][0], "libfoo");
+        assert_eq!(
+            metadata["artifacts"][1]["binary"][0],
+            "/Applications/Widget.app/Contents/MacOS/widget"
+        );
         assert_eq!(metadata["artifacts"].as_array().unwrap().len(), 4);
         assert_eq!(
             metadata["artifacts"][2]["preflight_steps"][0]["steps"][0],
-            serde_json::json!({"type": "run", "command": {"path": "Widget.app/Contents/MacOS/widget", "base": "appdir"}, "args": ["1.2.3"]})
+            serde_json::json!({"type": "run", "command": {"path": "/Applications/Widget.app/Contents/MacOS/widget", "base": "appdir"}, "args": ["1.2.3"]})
         );
         assert_eq!(
             metadata["artifacts"][2]["preflight_steps"][0]["steps"][1],
