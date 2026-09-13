@@ -145,7 +145,7 @@ impl BrewManager {
             // a malformed version is an error, not "already poured"
             let pkg_version = rf.formula.pkg_version()?;
             if !pour::keg_installed(&rf.formula.name, &pkg_version) {
-                to_pour.push(rf);
+                to_pour.push(rf.clone());
             }
         }
         if to_pour.is_empty() {
@@ -226,6 +226,7 @@ impl BrewManager {
                 source::has_bottle(&rf.formula)
                     .then(|| rf.formula.bottle_files().and_then(tag::select))
                     .flatten()
+                    .map(|(tag, bottle)| (tag.to_string(), bottle.clone()))
             })
             .collect::<Vec<_>>();
         let downloads = bottles
@@ -263,20 +264,63 @@ impl BrewManager {
                 return Err(err);
             }
         };
-        // Pour and build in dependency order. Only network transfers above
-        // are concurrent; extraction and prefix linking mutate shared state.
+        // Prepare bottles concurrently in formula-specific staging
+        // directories. After a failure, discard queued work and await active
+        // jobs so their staging guards clean up before this command returns.
+        let closure = Arc::new(closure);
+        let preparation_jobs = bottles
+            .iter()
+            .enumerate()
+            .filter_map(|(index, bottle)| {
+                let (tag, bottle) = bottle.as_ref()?.clone();
+                let rf = to_pour[index].clone();
+                let tarball = tarballs
+                    .remove(&index)
+                    .expect("every selected bottle was prefetched");
+                let closure = closure.clone();
+                let pr = reports[index].clone();
+                Some(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        pour::prepare_bottle(&rf, &tag, &bottle, &tarball, &closure, &*pr)
+                    })
+                    .await
+                    .wrap_err("brew bottle preparation task failed")
+                    .and_then(|result| result);
+                    (index, result)
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut preparation_results = HashMap::new();
+        let mut preparation_jobs = fetch::concurrent_jobs(
+            preparation_jobs,
+            crate::jobs::normalize(Settings::get().jobs),
+        );
+        let mut failed = false;
+        while let Some((index, result)) = preparation_jobs.next().await {
+            if result.is_err() && !failed {
+                failed = true;
+                preparation_jobs.cancel_pending();
+            }
+            preparation_results.insert(index, result);
+        }
+
+        // Commit prepared bottles and build source formulae in dependency
+        // order. Only this phase mutates shared prefix links.
         for (index, rf) in to_pour.iter().enumerate() {
             let pkg_version = &pkg_versions[index];
             let pr = &reports[index];
             let bottle = &bottles[index];
             let installed = match bottle {
-                Some((tag, bottle)) => {
-                    let tarball = tarballs
+                Some(_) => {
+                    match preparation_results
                         .remove(&index)
-                        .expect("every selected bottle was prefetched");
-                    pour::pour(rf, tag, bottle, &tarball, &closure, &**pr)
-                        .await
-                        .map(|()| pkg_version.clone())
+                        .expect("preparation cannot skip a bottle before the first failure")
+                    {
+                        Ok(bottle) => {
+                            pour::install_prepared(bottle, &**pr).map(|()| pkg_version.clone())
+                        }
+                        Err(err) => Err(err),
+                    }
                 }
                 None => source::build(rf, &closure, &**pr)
                     .await
