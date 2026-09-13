@@ -708,8 +708,7 @@ impl Lock {
                 continue;
             }
 
-            let format_changed =
-                self.upgrade && lockfile.lockfile_version() == 0 && resolution_succeeded;
+            let format_changed = self.upgrade && lockfile.needs_upgrade() && resolution_succeeded;
             if format_changed {
                 self.prepare_lockfile_format(&lockfile_path, &mut lockfile);
                 if !self.bind_requests(&mut lockfile, &tools, &target_platforms) {
@@ -720,6 +719,15 @@ impl Lock {
                 }
             } else {
                 self.bind_requests(&mut lockfile, &tools, &target_platforms);
+            }
+            if !generate || self.bump || format_changed {
+                Box::pin(lockfile::generate::populate_aube_locks(
+                    &mut lockfile,
+                    &tools,
+                    None,
+                    self.bump,
+                ))
+                .await?;
             }
 
             // Prune stale versions AFTER provenance checks complete
@@ -1037,7 +1045,7 @@ impl Lock {
         lockfile: &Lockfile,
         dry_run: bool,
     ) -> Result<()> {
-        if !path.exists() || lockfile.lockfile_version() != 0 || self.json {
+        if !path.exists() || !lockfile.needs_upgrade() || self.json {
             return Ok(());
         }
         if self.upgrade {
@@ -1047,21 +1055,23 @@ impl Lock {
                 "Upgrading"
             };
             miseprintln!(
-                "{} {prefix} {} from lockfile version 0 to 1",
+                "{} {prefix} {} from lockfile version {} to 2",
                 style("→").yellow(),
-                style(display_path(path)).cyan()
+                style(display_path(path)).cyan(),
+                lockfile.lockfile_version(),
             );
         } else {
             warn!(
-                "{} uses legacy lockfile format version 0; run `mise lock --upgrade` to enable request-specific version bindings",
-                display_path(path)
+                "{} uses lockfile format version {}; run `mise lock --upgrade` to enable the latest lockfile features",
+                display_path(path),
+                lockfile.lockfile_version(),
             );
         }
         Ok(())
     }
 
     fn prepare_lockfile_format(&self, path: &Path, lockfile: &mut Lockfile) -> bool {
-        if path.exists() && lockfile.lockfile_version() == 0 && self.upgrade {
+        if path.exists() && lockfile.needs_upgrade() && self.upgrade {
             lockfile.upgrade();
             true
         } else {
@@ -1074,7 +1084,7 @@ impl Lock {
             return Ok(());
         }
         miseprintln!(
-            "{} Upgrading {} from lockfile version 0 to 1",
+            "{} Upgraded {} to lockfile version 2",
             style("→").yellow(),
             style(display_path(path)).cyan()
         );

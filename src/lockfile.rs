@@ -65,7 +65,126 @@ pub(crate) fn invalidate_caches() {
     }
 }
 
-const CURRENT_LOCKFILE_VERSION: u32 = 1;
+const CURRENT_LOCKFILE_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub(crate) struct AubeLock {
+    pub graph: toml::Table,
+}
+
+impl Eq for AubeLock {}
+
+impl AubeLock {
+    pub(crate) fn from_yaml(contents: &str) -> Result<Self> {
+        let value: serde_yaml::Value = serde_yaml::from_str(contents)?;
+        let toml::Value::Table(graph) = yaml_to_toml(value)? else {
+            bail!("aube lockfile must contain a mapping");
+        };
+        Ok(Self { graph })
+    }
+
+    pub(crate) fn to_yaml(&self) -> Result<String> {
+        let value = toml_to_yaml(toml::Value::Table(self.graph.clone()));
+        Ok(serde_yaml::to_string(&value)?)
+    }
+
+    pub(crate) fn identity(&self) -> Result<String> {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hash_canonical_toml(&mut hasher, &toml::Value::Table(self.graph.clone()));
+        Ok(hex::encode(hasher.finalize()))
+    }
+}
+
+fn hash_canonical_toml(hasher: &mut impl sha2::Digest, value: &toml::Value) {
+    fn bytes(hasher: &mut impl sha2::Digest, tag: u8, value: &[u8]) {
+        hasher.update([tag]);
+        hasher.update((value.len() as u64).to_be_bytes());
+        hasher.update(value);
+    }
+
+    match value {
+        toml::Value::String(value) => bytes(hasher, b's', value.as_bytes()),
+        toml::Value::Integer(value) => bytes(hasher, b'i', &value.to_be_bytes()),
+        toml::Value::Float(value) => bytes(hasher, b'f', &value.to_bits().to_be_bytes()),
+        toml::Value::Boolean(value) => bytes(hasher, b'b', &[*value as u8]),
+        toml::Value::Datetime(value) => bytes(hasher, b'd', value.to_string().as_bytes()),
+        toml::Value::Array(values) => {
+            hasher.update([b'a']);
+            hasher.update((values.len() as u64).to_be_bytes());
+            for value in values {
+                hash_canonical_toml(hasher, value);
+            }
+        }
+        toml::Value::Table(values) => {
+            hasher.update([b't']);
+            hasher.update((values.len() as u64).to_be_bytes());
+            for key in values.keys().sorted() {
+                bytes(hasher, b'k', key.as_bytes());
+                hash_canonical_toml(hasher, &values[key]);
+            }
+        }
+    }
+}
+
+fn yaml_to_toml(value: serde_yaml::Value) -> Result<toml::Value> {
+    use serde_yaml::Value;
+    Ok(match value {
+        Value::Bool(value) => toml::Value::Boolean(value),
+        Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                toml::Value::Integer(value)
+            } else if let Some(value) = value.as_f64() {
+                if !value.is_finite() {
+                    bail!("non-finite numbers cannot be represented in mise.lock")
+                }
+                toml::Value::Float(value)
+            } else {
+                bail!("unsupported number in aube lockfile")
+            }
+        }
+        Value::String(value) => toml::Value::String(value),
+        Value::Sequence(values) => toml::Value::Array(
+            values
+                .into_iter()
+                .map(yaml_to_toml)
+                .collect::<Result<_>>()?,
+        ),
+        Value::Mapping(values) => {
+            let mut table = toml::Table::new();
+            for (key, value) in values {
+                let Value::String(key) = key else {
+                    bail!("aube lockfile mapping keys must be strings")
+                };
+                table.insert(key, yaml_to_toml(value)?);
+            }
+            toml::Value::Table(table)
+        }
+        Value::Null => bail!("null values cannot be represented in mise.lock"),
+        Value::Tagged(value) => yaml_to_toml(value.value)?,
+    })
+}
+
+fn toml_to_yaml(value: toml::Value) -> serde_yaml::Value {
+    use serde_yaml::{Mapping, Number, Value};
+    match value {
+        toml::Value::String(value) => Value::String(value),
+        toml::Value::Integer(value) => Value::Number(Number::from(value)),
+        toml::Value::Float(value) => Value::Number(Number::from(value)),
+        toml::Value::Boolean(value) => Value::Bool(value),
+        toml::Value::Datetime(value) => Value::String(value.to_string()),
+        toml::Value::Array(values) => {
+            Value::Sequence(values.into_iter().map(toml_to_yaml).collect())
+        }
+        toml::Value::Table(values) => {
+            let mut mapping = Mapping::new();
+            for (key, value) in values {
+                mapping.insert(Value::String(key), toml_to_yaml(value));
+            }
+            Value::Mapping(mapping)
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -83,6 +202,9 @@ pub(crate) struct Lockfile {
     /// Shared pkgx packages: platform -> package@version -> PkgxPackageInfo
     #[serde(skip)]
     pkgx_packages: BTreeMap<String, BTreeMap<String, PkgxPackageInfo>>,
+    /// Revision of the source lockfile for each entry in a merged lookup.
+    #[serde(skip)]
+    entry_lockfile_versions: BTreeMap<LockfileEntryKey, u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -95,6 +217,8 @@ pub(crate) struct LockfileTool {
     pub options: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub platforms: BTreeMap<String, PlatformInfo>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub aube: Option<AubeLock>,
 }
 
 impl Default for Lockfile {
@@ -105,11 +229,13 @@ impl Default for Lockfile {
             tools: BTreeMap::new(),
             conda_packages: BTreeMap::new(),
             pkgx_packages: BTreeMap::new(),
+            entry_lockfile_versions: BTreeMap::new(),
         }
     }
 }
 
 type LockfileToolKey = (String, BTreeMap<String, String>);
+type LockfileEntryKey = (String, String, Option<String>, BTreeMap<String, String>);
 type MergeToolEntriesResult = (Vec<LockfileTool>, HashSet<LockfileToolKey>);
 
 /// Type of detected or verified provenance, ordered by priority (lowest to highest).
@@ -964,6 +1090,10 @@ impl Lockfile {
         self.lockfile_version = CURRENT_LOCKFILE_VERSION;
     }
 
+    pub(crate) fn needs_upgrade(&self) -> bool {
+        self.lockfile_version < CURRENT_LOCKFILE_VERSION
+    }
+
     pub(crate) fn uses_request_bindings(&self) -> bool {
         self.lockfile_version > 0
     }
@@ -1529,6 +1659,7 @@ impl Lockfile {
                 specifiers: BTreeSet::new(),
                 options: options.clone(),
                 platforms,
+                aube: None,
             });
         }
 
@@ -1539,10 +1670,80 @@ impl Lockfile {
         // requests are available.
     }
 
+    pub(crate) fn set_aube_lock(
+        &mut self,
+        short: &str,
+        version: &str,
+        backend: &str,
+        options: &BTreeMap<String, String>,
+        lock: AubeLock,
+    ) -> Result<()> {
+        let entry = self
+            .tools
+            .get_mut(short)
+            .and_then(|entries| {
+                let index = entries
+                    .iter()
+                    .position(|entry| {
+                        entry.version == version
+                            && entry.backend.as_deref() == Some(backend)
+                            && &entry.options == options
+                    })
+                    .or_else(|| {
+                        entries.iter().position(|entry| {
+                            entry.version == version
+                                && entry.backend.is_none()
+                                && &entry.options == options
+                        })
+                    })?;
+                entries.get_mut(index)
+            })
+            .ok_or_else(|| eyre!("missing lockfile entry for {short}@{version}"))?;
+        entry.aube = Some(lock);
+        Ok(())
+    }
+
+    fn record_entry_lockfile_versions(&mut self) {
+        for (short, entries) in &self.tools {
+            for entry in entries {
+                self.entry_lockfile_versions
+                    .entry(lockfile_entry_key(short, entry))
+                    .or_insert(self.lockfile_version);
+            }
+        }
+    }
+
+    fn entry_lockfile_version(&self, short: &str, entry: &LockfileTool) -> u32 {
+        self.entry_lockfile_versions
+            .get(&lockfile_entry_key(short, entry))
+            .copied()
+            .or_else(|| {
+                self.entry_lockfile_versions
+                    .iter()
+                    .find(|((key_short, version, backend, options), _)| {
+                        key_short == short
+                            && version == &entry.version
+                            && backend == &entry.backend
+                            && options.is_empty()
+                    })
+                    .map(|(_, version)| *version)
+            })
+            .unwrap_or(self.lockfile_version)
+    }
+
     /// Save the lockfile to disk (public for mise lock command)
     pub(crate) fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
     }
+}
+
+fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
+    (
+        short.to_string(),
+        entry.version.clone(),
+        entry.backend.clone(),
+        entry.options.clone(),
+    )
 }
 
 pub(crate) struct PreparedWrite {
@@ -1931,6 +2132,14 @@ fn merge_lockfile_for_lookup(root: &mut Lockfile, other: Lockfile) {
     // A mixed-format read must keep request bindings enabled. Version-0 entries
     // have no specifiers and remain available through the versioned lockfile's
     // unbound-entry fallback.
+    root.record_entry_lockfile_versions();
+    let mut other = other;
+    other.record_entry_lockfile_versions();
+    for (key, version) in &other.entry_lockfile_versions {
+        root.entry_lockfile_versions
+            .entry(key.clone())
+            .or_insert(*version);
+    }
     root.lockfile_version = root.lockfile_version.max(other.lockfile_version);
     merge_lockfile_preserving_root(root, other);
 }
@@ -3359,6 +3568,9 @@ where
         let key = (tool.version.clone(), tool.options.clone());
         let entry = by_key.entry(key).or_insert_with(|| tool.clone());
         entry.specifiers.extend(tool.specifiers.clone());
+        if entry.aube.is_none() {
+            entry.aube = tool.aube.clone();
+        }
 
         // Merge platforms - properly combine platform info to preserve URLs and prefer sha256
         for (platform, info) in tool.platforms {
@@ -3378,6 +3590,9 @@ where
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
             if let Some(entry) = by_key.get_mut(&key) {
                 entry.specifiers.extend(existing_tool.specifiers.clone());
+                if entry.aube.is_none() {
+                    entry.aube = existing_tool.aube.clone();
+                }
             }
             if !existing_tool.options.is_empty() {
                 if let Some(entry) = by_key.get_mut(&key) {
@@ -3412,6 +3627,7 @@ where
                             specifiers: existing_tool.specifiers.clone(),
                             options: existing_tool.options.clone(),
                             platforms: BTreeMap::new(),
+                            aube: existing_tool.aube.clone(),
                         })
                         .platforms
                         .insert(platform_key.clone(), info.clone());
@@ -3425,6 +3641,7 @@ where
                     specifiers: existing_tool.specifiers.clone(),
                     options: resolved_options,
                     platforms: BTreeMap::new(),
+                    aube: existing_tool.aube.clone(),
                 });
                 target
                     .specifiers
@@ -3868,6 +4085,33 @@ pub(crate) fn get_locked_version(
     Ok(None)
 }
 
+/// Return the revision of the lockfile that applies to this request.
+///
+/// This mirrors the source selection in [`get_locked_version`] so installers
+/// can enforce revision-specific metadata requirements without changing the
+/// behavior of legacy lockfiles.
+pub(crate) fn version_for_request(config: &Config, request: &ToolRequest) -> Result<Option<u32>> {
+    if !Settings::get().lockfile_enabled() {
+        return Ok(None);
+    }
+    let Some(source) = request.lockfile_source() else {
+        return Ok(None);
+    };
+    let lockfile = match source {
+        ToolSource::MiseToml(path) => read_lockfile_for(config, path),
+        source if source.path().is_some() => {
+            Arc::new(read_lockfile_for_tool_source(config, source)?)
+        }
+        _ => read_all_lockfiles(config),
+    };
+    let Some(entry) = request.lockfile_resolve(config)? else {
+        return Ok(None);
+    };
+    Ok(Some(
+        lockfile.entry_lockfile_version(&request.ba().short, &entry),
+    ))
+}
+
 fn matching_request_bindings<'a>(
     lockfile: &'a Lockfile,
     short: &str,
@@ -3948,7 +4192,6 @@ fn lockfile_tool_with_request_options(
         .collect();
     found
 }
-
 fn lockfile_version_matches(prefix: &str, version: &str) -> bool {
     prefix == "latest" || strip_leading_v(version).starts_with(strip_leading_v(prefix))
 }
@@ -4072,6 +4315,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 specifiers: Default::default(),
                 options: Default::default(),
                 platforms: Default::default(),
+                aube: None,
             },
             toml::Value::Table(mut t) => {
                 let mut platforms = BTreeMap::new();
@@ -4108,6 +4352,19 @@ impl TryFrom<toml::Value> for LockfileTool {
                     .map(|value| value.try_into())
                     .transpose()?
                     .unwrap_or_default();
+                let aube = match t.remove("aube") {
+                    Some(toml::Value::Table(mut table)) => {
+                        let graph = table
+                            .remove("graph")
+                            .ok_or_else(|| eyre!("missing graph in aube lock data"))?;
+                        let toml::Value::Table(graph) = graph else {
+                            bail!("aube graph must be a table")
+                        };
+                        Some(AubeLock { graph })
+                    }
+                    Some(_) => bail!("aube lock data must be a table"),
+                    None => None,
+                };
                 // Silently discard env field from old lockfiles for backwards compat
                 t.remove("env");
                 LockfileTool {
@@ -4124,6 +4381,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                     specifiers,
                     options,
                     platforms,
+                    aube,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -4156,6 +4414,11 @@ impl LockfileTool {
         if !self.platforms.is_empty() {
             table.insert("platforms".to_string(), self.platforms.clone().into());
         }
+        if let Some(aube) = self.aube {
+            let mut aube_table = toml::Table::new();
+            aube_table.insert("graph".to_string(), toml::Value::Table(aube.graph));
+            table.insert("aube".to_string(), toml::Value::Table(aube_table));
+        }
         table.into()
     }
 }
@@ -4182,6 +4445,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
         specifiers: BTreeSet::from([tv.request.version()]),
         options,
         platforms,
+        aube: tv.aube_lock.clone(),
     })
 }
 
@@ -4249,6 +4513,7 @@ mod tests {
             specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms: BTreeMap::new(),
+            aube: None,
         }
     }
 
@@ -4265,19 +4530,88 @@ mod tests {
                 specifiers: BTreeSet::from(["1".to_string()]),
                 options: BTreeMap::new(),
                 platforms: BTreeMap::new(),
+                aube: None,
             }],
         );
 
         lockfile.save(&path).unwrap();
         let contents = file::read_to_string(&path).unwrap();
-        assert!(contents.contains("lockfile_version = 1"));
+        assert!(contents.contains("lockfile_version = 2"));
         assert!(contents.contains("specifiers = [\"1\"]"));
 
         let reloaded = Lockfile::read(&path).unwrap();
-        assert_eq!(reloaded.lockfile_version(), 1);
+        assert_eq!(reloaded.lockfile_version(), 2);
         assert_eq!(
             reloaded.tools["dummy"][0].specifiers,
             BTreeSet::from(["1".to_string()])
+        );
+    }
+
+    #[test]
+    fn aube_graph_round_trips_through_mise_lock() {
+        let yaml = r#"lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+importers:
+  .:
+    dependencies:
+      cli:
+        specifier: 1.0.0
+        version: 1.0.0(peer@2.0.0)
+packages:
+  cli@1.0.0(peer@2.0.0):
+    resolution: {integrity: sha512-root}
+    dependencies:
+      peer: 2.0.0
+  peer@2.0.0:
+    resolution: {integrity: sha512-peer}
+    os: [linux, darwin]
+"#;
+        let graph = AubeLock::from_yaml(yaml).unwrap();
+        let reordered = AubeLock::from_yaml(
+            r#"packages:
+  peer@2.0.0:
+    os: [linux, darwin]
+    resolution: {integrity: sha512-peer}
+  cli@1.0.0(peer@2.0.0):
+    dependencies:
+      peer: 2.0.0
+    resolution: {integrity: sha512-root}
+importers:
+  .:
+    dependencies:
+      cli:
+        version: 1.0.0(peer@2.0.0)
+        specifier: 1.0.0
+settings:
+  autoInstallPeers: true
+lockfileVersion: '9.0'
+"#,
+        )
+        .unwrap();
+        let reparsed = AubeLock::from_yaml(&graph.to_yaml().unwrap()).unwrap();
+        assert_eq!(graph, reparsed);
+        assert_eq!(graph.identity().unwrap(), reparsed.identity().unwrap());
+        assert_eq!(graph.identity().unwrap(), reordered.identity().unwrap());
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        let mut lockfile = Lockfile::default();
+        let mut tool = basic_tool("1.0.0", "npm:cli");
+        tool.aube = Some(graph.clone());
+        lockfile.tools.insert("npm:cli".into(), vec![tool]);
+        lockfile.save(&path).unwrap();
+
+        let reloaded = Lockfile::read(path).unwrap();
+        assert_eq!(reloaded.tools["npm:cli"][0].aube.as_ref(), Some(&graph));
+        assert_eq!(
+            reloaded.tools["npm:cli"][0]
+                .aube
+                .as_ref()
+                .unwrap()
+                .identity()
+                .unwrap(),
+            graph.identity().unwrap()
         );
     }
 
@@ -4303,12 +4637,12 @@ mod tests {
     fn future_lockfile_versions_are_rejected() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
-        file::write(&path, "lockfile_version = 2\n[tools]\n").unwrap();
+        file::write(&path, "lockfile_version = 3\n[tools]\n").unwrap();
 
         let err = Lockfile::read(&path).unwrap_err();
         assert!(
             err.to_string()
-                .contains("unsupported lockfile version 2; this mise supports up to version 1")
+                .contains("unsupported lockfile version 3; this mise supports up to version 2")
         );
     }
 
@@ -4324,6 +4658,7 @@ mod tests {
                     specifiers: BTreeSet::from(["1".to_string()]),
                     options: BTreeMap::new(),
                     platforms: BTreeMap::new(),
+                    aube: None,
                 },
                 basic_tool("1.1.0", "asdf:dummy"),
             ],
@@ -4349,6 +4684,7 @@ mod tests {
                 specifiers: BTreeSet::from(["1".to_string()]),
                 options: BTreeMap::new(),
                 platforms: BTreeMap::new(),
+                aube: None,
             }],
         );
 
@@ -4522,6 +4858,7 @@ mod tests {
             specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms,
+            aube: None,
         }
     }
 
@@ -4668,6 +5005,7 @@ backend = "core:python"
             specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms,
+            aube: None,
         };
 
         lockfile.tools.insert("node".to_string(), vec![tool]);
@@ -4807,6 +5145,7 @@ checksum = "blake3:abc123"
             specifiers: BTreeSet::new(),
             options: BTreeMap::new(), // Empty options
             platforms: BTreeMap::new(),
+            aube: None,
         };
         lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -4835,6 +5174,7 @@ checksum = "blake3:abc123"
             specifiers: BTreeSet::new(),
             options,
             platforms: BTreeMap::new(),
+            aube: None,
         };
         lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -5127,7 +5467,6 @@ options = { exe = "rg" }
         );
         tool
     }
-
     /// The versions of `tools` in lockfile order.
     fn lockfile_tool_versions(tools: &[LockfileTool]) -> Vec<&str> {
         tools.iter().map(|tool| tool.version.as_str()).collect()
@@ -5285,6 +5624,7 @@ options = { exe = "rg" }
             specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms,
+            aube: None,
         }];
         let mut options = BTreeMap::new();
         options.insert("shorthand_vendor".to_string(), "openjdk".to_string());
@@ -5302,6 +5642,7 @@ options = { exe = "rg" }
                 specifiers: BTreeSet::new(),
                 options: options.clone(),
                 platforms: fresh_platforms,
+                aube: None,
             }],
             Some(&existing),
             |_, _| Some(options.clone()),
@@ -5326,6 +5667,7 @@ options = { exe = "rg" }
             specifiers: BTreeSet::new(),
             options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
             platforms: BTreeMap::new(),
+            aube: None,
         });
         let mut merged = vec![basic_tool("22.0.0", "core:node")];
         preserve_absent_tool_entries(&mut merged, Some(&fragmented), &HashSet::new());
@@ -5365,6 +5707,7 @@ options = { exe = "rg" }
             specifiers: BTreeSet::from(["latest".to_string()]),
             options: BTreeMap::new(),
             platforms: existing_platforms,
+            aube: None,
         }];
 
         let mut new_options = BTreeMap::new();
@@ -5384,6 +5727,7 @@ options = { exe = "rg" }
             specifiers: BTreeSet::from(["26".to_string()]),
             options: new_options.clone(),
             platforms: fresh_platforms,
+            aube: None,
         }];
 
         let (merged, consumed) =
@@ -5428,6 +5772,7 @@ options = { exe = "rg" }
                         ..Default::default()
                     },
                 )]),
+                aube: None,
             },
             LockfileTool {
                 version: "3.4.2".to_string(),
@@ -5441,6 +5786,7 @@ options = { exe = "rg" }
                         ..Default::default()
                     },
                 )]),
+                aube: None,
             },
         ];
         let fresh = vec![
@@ -5456,6 +5802,7 @@ options = { exe = "rg" }
                         ..Default::default()
                     },
                 )]),
+                aube: None,
             },
             LockfileTool {
                 version: "3.4.2".to_string(),
@@ -5469,6 +5816,7 @@ options = { exe = "rg" }
                         ..Default::default()
                     },
                 )]),
+                aube: None,
             },
         ];
 
@@ -5528,6 +5876,7 @@ options = { exe = "rg" }
                     ..Default::default()
                 },
             )]),
+            aube: None,
         }];
         let fresh = vec![LockfileTool {
             version: "1.0.0".to_string(),
@@ -5541,6 +5890,7 @@ options = { exe = "rg" }
                     ..Default::default()
                 },
             )]),
+            aube: None,
         }];
 
         let (merged, consumed) =
@@ -5568,6 +5918,7 @@ options = { exe = "rg" }
                     ..Default::default()
                 },
             )]),
+            aube: None,
         }];
         let fresh = vec![LockfileTool {
             version: "26.0.1".to_string(),
@@ -5575,6 +5926,7 @@ options = { exe = "rg" }
             specifiers: BTreeSet::new(),
             options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
             platforms: BTreeMap::new(),
+            aube: None,
         }];
 
         let (merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
@@ -5627,6 +5979,7 @@ options = { exe = "rg" }
                         ..Default::default()
                     },
                 )]),
+                aube: None,
             },
             LockfileTool {
                 version: "3.4.2".to_string(),
@@ -5640,6 +5993,7 @@ options = { exe = "rg" }
                         ..Default::default()
                     },
                 )]),
+                aube: None,
             },
         ];
         let fresh = vec![LockfileTool {
@@ -5654,6 +6008,7 @@ options = { exe = "rg" }
                     ..Default::default()
                 },
             )]),
+            aube: None,
         }];
 
         let (merged, consumed) =
@@ -5677,6 +6032,7 @@ options = { exe = "rg" }
             specifiers: BTreeSet::new(),
             options: other_options.clone(),
             platforms: BTreeMap::new(),
+            aube: None,
         }];
         let fresh = vec![LockfileTool {
             version: "1.0.0".to_string(),
@@ -5684,6 +6040,7 @@ options = { exe = "rg" }
             specifiers: BTreeSet::new(),
             options: current_options,
             platforms: BTreeMap::new(),
+            aube: None,
         }];
         let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
 
@@ -5755,6 +6112,7 @@ options = { exe = "rg" }
                         ..Default::default()
                     },
                 )]),
+                aube: None,
             },
             LockfileTool {
                 version: "3.4.2".to_string(),
@@ -5769,6 +6127,7 @@ options = { exe = "rg" }
                         ..Default::default()
                     },
                 )]),
+                aube: None,
             },
         ];
 
@@ -5896,7 +6255,7 @@ options = { exe = "rg" }
 
     #[test]
     fn test_merge_lockfile_for_lookup_keeps_request_bindings_enabled() {
-        for (root_version, other_version) in [(0, 1), (1, 0)] {
+        for (root_version, other_version) in [(0, 1), (1, 0), (1, 2), (2, 1)] {
             let mut root = Lockfile {
                 lockfile_version: root_version,
                 ..Default::default()
@@ -5909,6 +6268,7 @@ options = { exe = "rg" }
                     specifiers: BTreeSet::from(["20".to_string()]),
                     options: BTreeMap::new(),
                     platforms: BTreeMap::new(),
+                    aube: None,
                 }],
             );
             let mut other = Lockfile {
@@ -5921,11 +6281,39 @@ options = { exe = "rg" }
 
             merge_lockfile_for_lookup(&mut root, other);
 
-            assert_eq!(root.lockfile_version(), 1);
+            assert_eq!(root.lockfile_version(), root_version.max(other_version));
             assert!(root.uses_request_bindings());
             assert!(root.tools["node"][0].specifiers.contains("20"));
             assert!(root.tools["node"][1].specifiers.is_empty());
+            assert_eq!(
+                root.entry_lockfile_version("node", &root.tools["node"][0]),
+                root_version
+            );
+            assert_eq!(
+                root.entry_lockfile_version("node", &root.tools["node"][1]),
+                other_version
+            );
         }
+    }
+
+    #[test]
+    fn set_aube_lock_matches_backend() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "cli".to_string(),
+            vec![
+                basic_tool("1.0.0", "github:owner/cli"),
+                basic_tool("1.0.0", "npm:cli"),
+            ],
+        );
+        let graph = AubeLock::from_yaml("lockfileVersion: '9.0'\npackages: {}\n").unwrap();
+
+        lockfile
+            .set_aube_lock("cli", "1.0.0", "npm:cli", &BTreeMap::new(), graph)
+            .unwrap();
+
+        assert!(lockfile.tools["cli"][0].aube.is_none());
+        assert!(lockfile.tools["cli"][1].aube.is_some());
     }
 
     #[test]
@@ -5955,13 +6343,14 @@ options = { exe = "rg" }
                 specifiers: BTreeSet::from(["latest".to_string()]),
                 options: BTreeMap::new(),
                 platforms: BTreeMap::new(),
+                aube: None,
             }],
         );
         primary.save(&primary_path).unwrap();
         invalidate_caches();
 
         let mixed = read_lockfile_at(primary_path, Some(legacy_path));
-        assert_eq!(mixed.lockfile_version(), 1);
+        assert_eq!(mixed.lockfile_version(), 2);
         assert!(mixed.uses_request_bindings());
         assert!(
             mixed.tools["node"]
@@ -6057,6 +6446,7 @@ backend = "conda:jq"
                 specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
                 platforms,
+                aube: None,
             }],
         );
 
@@ -6145,6 +6535,7 @@ backend = "conda:jq"
                 specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
                 platforms,
+                aube: None,
             }],
         );
 
@@ -6259,6 +6650,7 @@ backend = "conda:jq"
                 options: BTreeMap::new(),
 
                 platforms: BTreeMap::new(),
+                aube: None,
             }],
         );
 

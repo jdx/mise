@@ -45,10 +45,11 @@ mise install         # install the recorded versions
 mise lock --bump node # update Node's resolution within its configured request
 ```
 
-Review the lockfile diff before committing an update. Locking tool versions does
-not lock your application's packages, system libraries, or every dependency an
-external installer fetches. Keep ecosystem lockfiles such as `package-lock.json`
-and `uv.lock` as well.
+Review the lockfile diff before committing an update. Version 2 lockfiles also
+record the complete dependency graph for npm tools installed by mise's embedded
+aube package manager. Other external installers are limited to the metadata their
+backend exposes. Keep application lockfiles such as `package-lock.json` and
+`uv.lock` as well.
 
 Stored URLs reduce release-discovery API calls. Private downloads, uncached
 artifacts, and verification or policy checks can still require network access and
@@ -121,7 +122,7 @@ a version and how artifact metadata is stored for one platform. Generate the
 entries your project needs with `mise lock` rather than copying this excerpt.
 
 ```toml [mise.lock]
-lockfile_version = 1
+lockfile_version = 2
 
 [[tools.node]]
 version = "26.8.1"
@@ -133,11 +134,17 @@ checksum = "sha256:6e577fd0d9db776db82306629e441a9dace416702622aebdd171c9dfaa41f
 url = "https://nodejs.org/dist/v26.8.1/node-v26.8.1-darwin-arm64.tar.gz"
 ```
 
-New lockfiles use the current versioned format. Unversioned lockfiles are treated as
-version 0 and remain in that format during ordinary updates to avoid unexpected lockfile
-drift. Run `mise lock --upgrade` to deliberately upgrade legacy lockfiles. Version 1
-records each original tool request in the concrete entry it resolved to, so overlapping
-requests such as `"1"` and `"1.0.0"` can select different locked versions reliably.
+New lockfiles use the current versioned format. Older lockfiles retain their format
+during ordinary updates to avoid making them unreadable by collaborators using an
+older mise. Run `mise lock --upgrade` to upgrade explicitly. Version 1 records each
+original tool request in the concrete entry it resolved to. Version 2 adds embedded
+aube dependency graphs for npm tools. Older mise versions reject version 2 lockfiles.
+
+For an npm tool, `mise lock --bump <tool>` refreshes the transitive graph even when
+the top-level package version does not change. Frozen installs validate and replay
+that graph. Its canonical digest is part of the installation directory name, so two
+projects can use different transitive graphs for the same top-level version. This
+selection guarantee does not make lifecycle-script output reproducible.
 
 ### Platform Information
 
@@ -161,6 +168,7 @@ Each tool entry (`[[tools.name]]`) can contain:
 - **`specifiers`** (version 1): Original requests that resolve to this version and option variant
 - **`options`** (optional): Backend-specific options that identify the artifact (e.g., `{exe = "rg", matching = "musl"}`)
 - **`platforms`** (optional): Platform-specific metadata (checksums, URLs, sizes)
+- **`aube`** (version 2, npm only): Portable dependency graph used by embedded aube
 
 A tool can have several entries for the same version when its artifact identity
 depends on more than the platform key. Swift, for example, publishes a different
