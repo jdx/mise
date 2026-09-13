@@ -101,6 +101,8 @@ assert_contains_text "$wrong_manager_output" "is locked with an embedded-aube de
 MISE_LOCKFILE=1 mise install
 assert_succeed "find '$MISE_DATA_DIR/installs/npm-cowsay' -maxdepth 1 -name '1.6.0-aube-*' | grep -q ."
 assert_contains "MISE_LOCKFILE=1 mise exec -- cowsay locked" "locked"
+# An existing graph-specific install must not bypass package-manager validation.
+assert_fail "MISE_NPM_PACKAGE_MANAGER=npm MISE_LOCKFILE=1 mise install --locked"
 inactive_listing="$(mise -C "$HOME" ls npm:cowsay --json)"
 assert_contains_text "$inactive_listing" '"version": "1.6.0"'
 assert_not_contains_text "$inactive_listing" '"version": "1.6.0-aube-'

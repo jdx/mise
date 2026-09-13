@@ -477,6 +477,9 @@ impl Backend for NPMBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
+        if tv.aube_lock.is_some() && !Self::uses_embedded_aube() {
+            return Ok(false);
+        }
         if Self::uses_embedded_aube() && tv.aube_lock.is_none() {
             let source_lockfile_version = if tv.resolved_from_lockfile() {
                 crate::lockfile::version_for_request(config, &tv.request)?
