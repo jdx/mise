@@ -1,0 +1,63 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DZY4QCZFY249S63HZ32G92",
+  "session_id": "01a09ab8-2da7-7001-9d6d-b5ec765cd7f5",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T18:19:41.518545Z",
+  "branch": "codex/tool-version-collections",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "docs/dev-tools/backends/pypi.md",
+    "docs/dev-tools/mise-lock.md",
+    "e2e-win/pypi_lock.Tests.ps1",
+    "e2e/backend/test_npm_aube",
+    "e2e/backend/test_pypi_lock",
+    "src/backend/mod.rs",
+    "src/backend/pipx.rs",
+    "src/backend/pipx/lock.rs",
+    "src/cli/args/backend_arg.rs",
+    "src/cli/lock.rs",
+    "src/lockfile.rs",
+    "src/lockfile/generate.rs",
+    "src/lockfile/graph.rs",
+    "src/toolset/install_state.rs",
+    "src/toolset/tool_request.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "1e14e1df0fb1",
+  "checkpoint_transcript_start": 4356,
+  "transcript_lines_at_start": 4356,
+  "compact_transcript_start": 601,
+  "token_usage": {
+    "input_tokens": 252962,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 30661248,
+    "output_tokens": 47395,
+    "api_call_count": 220
+  },
+  "session_metrics": {
+    "turn_count": 16
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-13T18:19:41.145636Z",
+    "agent_lines": 461,
+    "agent_removed": 164,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 461,
+    "total_lines_changed": 625,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
