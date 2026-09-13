@@ -196,6 +196,9 @@ Apply dotfiles from `[dotfiles]`
 \fBbootstrap dotfiles capture\fR
 Record tracked files before and after an external command
 .TP
+\fBbootstrap dotfiles conflicts\fR
+Inspect the local and remote sides of sharing conflicts
+.TP
 \fBbootstrap dotfiles diff\fR
 Show the changes needed to apply dotfiles from `[dotfiles]`
 .TP
@@ -1532,6 +1535,32 @@ Print help
 .TP
 \fB<COMMAND>\fR
 Command and arguments to run, after \-\-
+.SH "MISE BOOTSTRAP DOTFILES CONFLICTS"
+Inspect the local and remote sides of sharing conflicts
+
+By default, prints a unified diff from this machine's saved version to the
+fetched repository version. `\-\-difftool` opens the comparison in Git's
+configured diff tool; when `diff.tool` is unset, Git falls back to
+`merge.tool`. This command does not change either side or resolve a conflict.
+.PP
+\fBUsage:\fR mise bootstrap dotfiles conflicts [OPTIONS] [<PATH>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-difftool\fR
+Open the comparison in Git's configured diff or merge tool
+.TP
+\fB\-\-tool\fR \fI<TOOL>\fR
+Use this Git diff tool instead of the configured default
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Only inspect these conflicted paths
 .SH "MISE BOOTSTRAP DOTFILES DIFF"
 Show the changes needed to apply dotfiles from `[dotfiles]`
 .PP
