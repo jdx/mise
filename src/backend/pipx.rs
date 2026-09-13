@@ -326,8 +326,8 @@ impl Backend for PIPXBackend {
             {
                 if ctx.locked {
                     bail!(
-                        "pypi:{} has no uv dependency graph; run `mise lock`",
-                        self.tool_name()
+                        "{} has no uv dependency graph; run `mise lock`",
+                        self.ba.short
                     );
                 }
                 if self
@@ -951,18 +951,16 @@ impl PIPXBackend {
                 .await
         else {
             warn!(
-                "minimum_release_age is set for pypi:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
-                self.tool_name(),
+                "minimum_release_age is set for {} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
+                self.ba.short,
             );
             return;
         };
 
         if semver_is_older_than(&version, UV_EXCLUDE_NEWER_VERSION).unwrap_or(false) {
             warn!(
-                "minimum_release_age is set for pypi:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
-                self.tool_name(),
-                version,
-                UV_EXCLUDE_NEWER_VERSION,
+                "minimum_release_age is set for {} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
+                self.ba.short, version, UV_EXCLUDE_NEWER_VERSION,
             );
         }
     }

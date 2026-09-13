@@ -2,6 +2,7 @@
 //! mise owns lock persistence, interpreter selection, and executable exposure.
 use super::*;
 use crate::lockfile::{GraphRef, NativeGraph, UvLock};
+use eyre::WrapErr;
 use std::path::PathBuf;
 
 const MIN_UV_VERSION: &str = "0.12.10";
@@ -26,14 +27,14 @@ impl PIPXBackend {
             .any(|s| !s.trim().is_empty())
         {
             bail!(
-                "pypi:{} dependency locking does not support uvx_args or pipx_args",
-                self.tool_name()
+                "{} dependency locking does not support uvx_args or pipx_args",
+                self.ba.short
             );
         }
         if !self.uv_lock_allowed(tv) {
             bail!(
-                "pypi:{} has a uv dependency graph; use uv with a PyPI package to replay it",
-                self.tool_name()
+                "{} has a uv dependency graph; use uv with a PyPI package to replay it",
+                self.ba.short
             );
         }
         Ok(())
@@ -182,7 +183,8 @@ impl PIPXBackend {
             let html = HTTP_FETCH
                 .get_html(registry.replace("{}", &self.tool_name()))
                 .await?;
-            simple_index_python_requirement(&self.tool_name(), &tv.version, &html)?
+            simple_index_python_requirement(&self.tool_name(), &tv.version, &html)
+                .wrap_err_with(|| format!("failed to lock {}", self.ba.short))?
         };
         let requires_python = if requires_python.trim().is_empty() {
             ">=3.8".to_string()
@@ -402,7 +404,7 @@ impl PIPXBackend {
         let names = CmdLineRunner::new(python).args(["-I", "-c", "import importlib.metadata, json, sys; print(json.dumps([e.name for e in importlib.metadata.distribution(sys.argv[1]).entry_points if e.group in ('console_scripts', 'gui_scripts')]))", &self.tool_name()]).read().await?;
         let names: Vec<String> = serde_json::from_str(names.trim())?;
         if names.is_empty() {
-            bail!("pypi:{} exposes no executable scripts", self.tool_name());
+            bail!("{} exposes no executable scripts", self.ba.short);
         }
         let bin = tv.install_path().join("bin");
         crate::file::create_dir_all(&bin)?;
@@ -452,7 +454,7 @@ fn simple_index_python_requirement(package: &str, version: &str, html: &str) -> 
     }
     if constraints.len() != 1 {
         bail!(
-            "pypi:{} requires consistent Python metadata on published wheels to generate a portable lock",
+            "package {} requires consistent Python metadata on published wheels to generate a portable lock",
             package
         );
     }
