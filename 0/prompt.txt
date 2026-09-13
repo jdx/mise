@@ -1,23 +1,3 @@
-look at recent prs, could we support mise.lock for other tools like npm? maybe python
-
----
-
-what other languages?
-
----
-
-ok make a pr for python
-
----
-
-address pr feedback and failing checsk until it settles once you make the pr
-
----
-
-as part of this can we alias pipx to pypi and make pypi the default name
-
----
-
 PLEASE IMPLEMENT THIS PLAN:
 # Python dependency locking and the `pypi:` backend name
 
