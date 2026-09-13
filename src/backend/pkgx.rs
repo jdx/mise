@@ -468,12 +468,10 @@ fn is_any_requirement(requirement: &str) -> bool {
 }
 
 fn parse_requirement_range(name: &str, requirement: &str) -> Result<Range> {
-    if let Ok(range) = Range::parse(requirement) {
-        return Ok(range);
-    }
-    if let Ok(range) = Range::parse(format!("{requirement}.x")) {
-        return Ok(range);
-    }
+    // Coercion first: a letter-suffixed bound like `<=1.1.1q` parses
+    // successfully as a prerelease range (`1.1.1-q`), which would wrongly
+    // reject the coerced release form. Prefer the coerced parse whenever
+    // coercion changes the input, falling back to the original below.
     let coerced = coerce_requirement_versions(requirement);
     if coerced != requirement {
         if let Ok(range) = Range::parse(&coerced) {
@@ -482,6 +480,12 @@ fn parse_requirement_range(name: &str, requirement: &str) -> Result<Range> {
         if let Ok(range) = Range::parse(format!("{coerced}.x")) {
             return Ok(range);
         }
+    }
+    if let Ok(range) = Range::parse(requirement) {
+        return Ok(range);
+    }
+    if let Ok(range) = Range::parse(format!("{requirement}.x")) {
+        return Ok(range);
     }
     Range::parse(requirement)
         .or_else(|_| Range::parse(format!("{requirement}.x")))
@@ -1325,6 +1329,16 @@ dependencies:
         assert_eq!(coerce_requirement_versions("^1.0.1"), "^1.0.1");
         assert_eq!(coerce_requirement_versions(">=3.12.0a1"), ">=3.12.0a1");
         parse_requirement_range("openssl.org", ">=1.1.1q").unwrap();
+    }
+
+    #[test]
+    fn coerced_letter_bound_accepts_coerced_version() {
+        // `<=1.1.1q` must not parse as a prerelease bound (which the
+        // coerced release `1.1.1` would exceed); coercion applies to bounds
+        // too. Same-base letters collapse, so `1.1.1s` also satisfies.
+        let range = parse_requirement_range("openssl.org", "<=1.1.1q").unwrap();
+        assert!(semver_satisfies("1.1.1q", &range));
+        assert!(semver_satisfies("1.1.1s", &range));
     }
 
     #[test]
