@@ -13,7 +13,7 @@ use crate::config::{Config, Settings};
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
-use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
+use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
@@ -55,6 +55,8 @@ pub(crate) struct ToolVersion {
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
     /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
     pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
+    /// Portable dependency graph used by embedded aube installs.
+    pub aube_lock: Option<AubeLock>,
     /// Install satisfaction computed during dry-run installs.
     pub install_satisfied: Option<bool>,
 }
@@ -90,6 +92,7 @@ impl ToolVersion {
             install_path_is_explicit: false,
             conda_packages: Default::default(),
             pkgx_packages: Default::default(),
+            aube_lock: None,
             install_satisfied: None,
         }
     }
@@ -187,6 +190,7 @@ impl ToolVersion {
         tv.locked = true;
         tv.resolved_from_lockfile = true;
         tv.lock_platforms = lt.platforms;
+        tv.aube_lock = lt.aube;
         tv
     }
 
@@ -204,6 +208,19 @@ impl ToolVersion {
 
     pub(crate) fn short(&self) -> &str {
         &self.ba().short
+    }
+
+    /// The logical tool version, excluding an internal embedded-aube graph
+    /// identity suffix discovered while scanning install directories.
+    pub(crate) fn display_version(&self) -> &str {
+        let Some((version, identity)) = self.version.rsplit_once("-aube-") else {
+            return &self.version;
+        };
+        if identity.len() == 16 && identity.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            version
+        } else {
+            &self.version
+        }
     }
 
     pub(crate) fn install_path(&self) -> PathBuf {
@@ -328,7 +345,7 @@ impl ToolVersion {
         )
     }
     pub(crate) fn tv_pathname(&self) -> String {
-        match &self.request {
+        let pathname = match &self.request {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
             ToolRequest::Sub { .. } => self.version.to_string(),
@@ -350,7 +367,28 @@ impl ToolVersion {
                 "system".to_string()
             }
         }
-        .replace([':', '/'], "-")
+        .replace([':', '/'], "-");
+        if let Some(identity) = self.aube_install_identity() {
+            return format!("{pathname}-aube-{}", &identity[..16]);
+        }
+        pathname
+    }
+
+    fn aube_install_identity(&self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+
+        let lock = self.aube_lock.as_ref()?;
+        let graph_identity = lock.identity().ok()?;
+        let options: BTreeMap<_, _> = self
+            .request
+            .options()
+            .opts_as_strings()
+            .into_iter()
+            .collect();
+        let options = toml::to_string(&options).ok()?;
+        Some(hex::encode(Sha256::digest(
+            format!("{graph_identity}\n{options}").as_bytes(),
+        )))
     }
     pub(crate) fn runtime_pathname(&self) -> Option<String> {
         let pathname = match &self.request {
@@ -812,13 +850,15 @@ pub(crate) async fn resolve_sub_base(
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", self.ba().full(), self.version)
+        write!(f, "{}@{}", self.ba().full(), self.display_version())
     }
 }
 
 impl PartialEq for ToolVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.ba() == other.ba() && self.version == other.version
+        self.ba() == other.ba()
+            && self.version == other.version
+            && self.aube_install_identity() == other.aube_install_identity()
     }
 }
 
@@ -833,7 +873,10 @@ impl PartialOrd for ToolVersion {
 impl Ord for ToolVersion {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.request.ba().as_ref().cmp(other.ba()) {
-            Ordering::Equal => self.version.cmp(&other.version),
+            Ordering::Equal => self
+                .version
+                .cmp(&other.version)
+                .then_with(|| self.tv_pathname().cmp(&other.tv_pathname())),
             o => o,
         }
     }
@@ -843,6 +886,9 @@ impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ba().hash(state);
         self.version.hash(state);
+        if let Some(identity) = self.aube_install_identity() {
+            identity.hash(state);
+        }
     }
 }
 
@@ -1090,6 +1136,7 @@ mod tests {
             specifiers: Default::default(),
             options: BTreeMap::from([("registry".to_string(), "lockfile-value".to_string())]),
             platforms: Default::default(),
+            aube: None,
         };
 
         let tv = ToolVersion::from_lockfile(request, lt);

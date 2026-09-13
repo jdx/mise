@@ -2638,6 +2638,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
         match tv.request {
             ToolRequest::System { .. } => true,
             _ => {
+                // Embedded-aube lock graphs are part of the physical install
+                // identity. A version-only request path must never satisfy a
+                // graph-locked request for the same top-level version.
+                if tv.aube_lock.is_some() {
+                    return check_path(&tv.install_path(), check_symlink);
+                }
                 if let Some(install_path) = tv.request.install_path(config)
                     && check_path(&install_path, true)
                 {

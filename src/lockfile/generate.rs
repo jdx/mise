@@ -557,11 +557,67 @@ pub(crate) async fn generate(
             candidate.set_pkgx_package(&platform.to_key(), &key, value);
         }
     }
+    for (short, entries) in &mut candidate.tools {
+        for entry in entries.iter_mut().filter(|entry| entry.aube.is_none()) {
+            entry.aube = previous.tools.get(short).and_then(|previous_entries| {
+                previous_entries
+                    .iter()
+                    .find(|previous| {
+                        previous.version == entry.version
+                            && previous.backend == entry.backend
+                            && previous.options == entry.options
+                    })
+                    .and_then(|previous| previous.aube.clone())
+            });
+        }
+    }
+    Box::pin(populate_aube_locks(
+        &mut candidate,
+        tools,
+        Some(report.as_ref()),
+        false,
+    ))
+    .await?;
     candidate.cleanup_unreferenced_conda_packages();
     candidate.cleanup_unreferenced_pkgx_packages();
     report.finish_with_message(format!("{completed} targets checked"));
     progress.finished = true;
     Ok(candidate)
+}
+
+pub(crate) async fn populate_aube_locks(
+    lockfile: &mut Lockfile,
+    tools: &[Tool],
+    report: Option<&dyn crate::ui::progress_report::SingleReport>,
+    force: bool,
+) -> Result<()> {
+    if lockfile.lockfile_version() < 2 || !crate::backend::npm::NPMBackend::uses_embedded_aube() {
+        return Ok(());
+    }
+    for (ba, tv) in tools {
+        let backend = tv.backend()?;
+        if backend.get_type() != BackendType::Npm {
+            continue;
+        }
+        let options =
+            backend.resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())?;
+        if !force
+            && lockfile.tools.get(&ba.short).is_some_and(|entries| {
+                entries.iter().any(|entry| {
+                    entry.version == tv.version && entry.options == options && entry.aube.is_some()
+                })
+            })
+        {
+            continue;
+        }
+        if let Some(report) = report {
+            report.set_message(format!("{}@{} dependencies", ba.short, tv.version));
+        }
+        let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
+        let graph = npm.resolve_aube_lock(tv).await?;
+        lockfile.set_aube_lock(&ba.short, &tv.version, &options, graph)?;
+    }
+    Ok(())
 }
 
 fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) -> Result<()> {

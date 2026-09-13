@@ -430,10 +430,44 @@ impl Backend for NPMBackend {
         Ok(versions::SemVer::new(version).map(|_| version.to_string()))
     }
 
-    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+    async fn install_version_(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
         let package_manager = self
             .package_manager_for_install(&ctx.config, Some(&ctx.ts))
             .await;
+        let source_lockfile_version = if tv.resolved_from_lockfile() {
+            crate::lockfile::version_for_request(&ctx.config, &tv.request)?
+        } else {
+            None
+        };
+        if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
+            eyre::bail!(
+                "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
+                self.tool_name(),
+                package_manager
+            );
+        }
+        if package_manager == NpmPackageManager::Aube
+            && tv.resolved_from_lockfile()
+            && tv.aube_lock.is_none()
+            && ctx.locked
+            && source_lockfile_version.is_some_and(|v| v >= 2)
+        {
+            eyre::bail!(
+                "npm:{} has no embedded-aube dependency graph in the revision 2 lockfile; run `mise lock` to repair it or disable locked mode",
+                self.tool_name()
+            );
+        }
+        if package_manager == NpmPackageManager::Aube
+            && tv.aube_lock.is_none()
+            && (source_lockfile_version.is_some_and(|v| v >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled()))
+        {
+            tv.aube_lock = Some(self.resolve_aube_lock(&tv).await?);
+        }
         self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
             .await;
         let request_options = tv.request.options();
@@ -616,6 +650,13 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    pub(crate) fn uses_embedded_aube() -> bool {
+        let settings = Settings::get();
+        matches!(settings.npm.package_manager, NpmPackageManager::Aube)
+            || (matches!(settings.npm.package_manager, NpmPackageManager::Auto)
+                && !settings.npm.shell_out)
+    }
+
     async fn package_install_spec(
         &self,
         ctx: &InstallContext,
@@ -1076,6 +1117,37 @@ impl NPMBackend {
             &allow_builds,
             tv.resolved_from_lockfile(),
         )?;
+        self.write_aube_root_dependency(&install_path, &self.tool_name(), &tv.version)?;
+
+        if let Some(lock) = &tv.aube_lock {
+            crate::file::write(install_path.join("aube-lock.yaml"), lock.to_yaml()?)?;
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut install_options = aube::embed::InstallOptions::new(&install_path);
+            install_options.frozen_mode = aube::embed::FrozenMode::Frozen;
+            install_options.strict_no_lockfile = true;
+            install_options.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
+            install_options.dangerously_allow_all_builds = matches!(allow_builds, AllowBuilds::All);
+            install_options.control =
+                aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
+                    .with_prompt_handler(Arc::new(AubePromptHandler));
+            install_options.runtime = self.aube_embed_runtime(ctx).await;
+            let install = aube::embed::install_with_overrides(
+                install_options,
+                Self::aube_embed_install_overrides(),
+            );
+            tokio::pin!(install);
+            let mut progress = AubeProgress::default();
+            let result = loop {
+                tokio::select! {
+                    res = &mut install => break res,
+                    Some(event) = rx.recv() => progress.apply(event, ctx.pr.as_ref()),
+                }
+            };
+            while let Ok(event) = rx.try_recv() {
+                progress.apply(event, ctx.pr.as_ref());
+            }
+            return result.map_err(|error| self.format_aube_install_error(error));
+        }
 
         if let Some(args) = options.aube_args() {
             warn!(
@@ -1277,6 +1349,47 @@ impl NPMBackend {
             format!("{}\n", toml::to_string_pretty(&aube_config)?),
         )?;
         Ok(())
+    }
+
+    fn write_aube_root_dependency(
+        &self,
+        install_path: &Path,
+        package: &str,
+        version: &str,
+    ) -> Result<()> {
+        let path = install_path.join("package.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+        manifest["dependencies"] = serde_json::json!({ package: version });
+        crate::file::write(
+            path,
+            format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        )?;
+        Ok(())
+    }
+
+    pub(crate) async fn resolve_aube_lock(
+        &self,
+        tv: &ToolVersion,
+    ) -> Result<crate::lockfile::AubeLock> {
+        crate::backend::aube_host::init();
+        let temp = tempfile::tempdir()?;
+        let request_options = tv.request.options();
+        let options = NpmOptions::new(&request_options);
+        let allow_builds = options.allow_builds()?;
+        self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;
+        self.write_aube_root_dependency(temp.path(), &self.tool_name(), &tv.version)?;
+        let mut install_options = aube::embed::InstallOptions::new(temp.path());
+        install_options.lockfile_only = true;
+        install_options.ignore_scripts = true;
+        install_options.run_root_lifecycle = false;
+        install_options.control =
+            aube::embed::InstallControl::silent().with_prompt_handler(Arc::new(AubePromptHandler));
+        aube::embed::install_with_overrides(install_options, Self::aube_embed_install_overrides())
+            .await
+            .map_err(|error| self.format_aube_install_error(error))?;
+        let contents = crate::file::read_to_string(temp.path().join("aube-lock.yaml"))?;
+        crate::lockfile::AubeLock::from_yaml(&contents)
     }
 
     /// Configure a standalone `aube add --global` invocation to install into

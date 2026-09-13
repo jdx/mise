@@ -662,7 +662,7 @@ async fn json_tool_version_from(
             None
         },
         install_path,
-        version: tv.version.clone(),
+        version: tv.display_version().to_string(),
         requested_version: if all_sources || source.is_unknown() {
             None
         } else {
@@ -760,12 +760,12 @@ async fn resolve_version_status(
     if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
         // `exists()` resolves the link, so this is asking whether it still leads anywhere.
         if install_path.exists() {
-            VersionStatus::Symlink(tv.version.clone(), active)
+            VersionStatus::Symlink(tv.display_version().to_string(), active)
         } else {
-            VersionStatus::BrokenSymlink(tv.version.clone())
+            VersionStatus::BrokenSymlink(tv.display_version().to_string())
         }
     } else if !p.is_version_installed(config, tv, true) {
-        VersionStatus::Missing(tv.version.clone())
+        VersionStatus::Missing(tv.display_version().to_string())
     } else {
         let category = env::install_path_category(&install_path);
         if category != env::InstallPathCategory::Local {
@@ -774,7 +774,7 @@ async fn resolve_version_status(
                 env::InstallPathCategory::Shared => "shared",
                 _ => unreachable!(),
             };
-            return VersionStatus::Shared(tv.version.clone(), active, label);
+            return VersionStatus::Shared(tv.display_version().to_string(), active, label);
         }
         if active {
             let outdated = if ls.outdated {
@@ -782,9 +782,9 @@ async fn resolve_version_status(
             } else {
                 false
             };
-            VersionStatus::Active(tv.version.clone(), outdated)
+            VersionStatus::Active(tv.display_version().to_string(), outdated)
         } else {
-            VersionStatus::Inactive(tv.version.clone())
+            VersionStatus::Inactive(tv.display_version().to_string())
         }
     }
 }
