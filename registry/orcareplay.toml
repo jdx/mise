@@ -1,0 +1,5 @@
+backends = ["npm:orcareplay"]
+bins = ["orca"]
+description = "Record an AI agent run at its model-provider boundary and replay it offline, with no provider call and no API key"
+test = { cmd = "orca --version", expected = "{{version}}" }
+version_order = "semver"
