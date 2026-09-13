@@ -734,12 +734,12 @@ end
         assert_eq!(metadata["depends_on"]["formula"][0], "libfoo");
         assert_eq!(
             metadata["artifacts"][1]["binary"][0],
-            "/Applications/Widget.app/Contents/MacOS/widget"
+            "$APPDIR/Widget.app/Contents/MacOS/widget"
         );
         assert_eq!(metadata["artifacts"].as_array().unwrap().len(), 4);
         assert_eq!(
             metadata["artifacts"][2]["preflight_steps"][0]["steps"][0],
-            serde_json::json!({"type": "run", "command": {"path": "/Applications/Widget.app/Contents/MacOS/widget", "base": "appdir"}, "args": ["1.2.3"]})
+            serde_json::json!({"type": "run", "command": {"path": "Widget.app/Contents/MacOS/widget", "base": "appdir"}, "args": ["1.2.3"]})
         );
         assert_eq!(
             metadata["artifacts"][2]["preflight_steps"][0]["steps"][1],
