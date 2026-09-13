@@ -307,12 +307,13 @@ mise bootstrap dotfiles pull --take-remote ~/.zshrc
 mise bootstrap dotfiles pull --keep-local ~/.zshrc
 ```
 
-To combine both sides, use the conflict diff to edit the live file, save the
-merged contents, then choose the saved local version:
+To combine both sides, use the conflict diff to edit the live file, explicitly
+save the merged path (also capturing files tracked with `--no-autosave`), then
+choose the saved local version:
 
 ```sh
 mise bootstrap dotfiles conflicts --difftool ~/.zshrc
-mise bootstrap dotfiles save
+mise bootstrap dotfiles save ~/.zshrc
 mise bootstrap dotfiles pull --keep-local ~/.zshrc
 ```
 
