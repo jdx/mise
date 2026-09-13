@@ -1,5 +1,1 @@
-investigate [https://github.com/jdx/mise/discussions/13135](https://github.com/jdx/mise/discussions/13135)
-
----
-
 make a pr, post a reply, address pr feedback and failing checsk until it settles
