@@ -1848,7 +1848,8 @@ Capability depends on what each backend can report or pass through:
 **Behavior**: For most backends, this filter only applies when resolving fuzzy version requests
 like `node@20` or `latest`. Explicitly pinned versions like `node@22.5.0` are not filtered,
 allowing you to selectively use newer versions for specific tools while keeping others behind the
-cutoff date.
+cutoff date. Versions selected from `mise.lock` are also not filtered because the lockfile records
+an already-reviewed selection that must remain reproducible.
 
 For `npm:` and `pipx:` package-manager support details, see the backend docs.
 

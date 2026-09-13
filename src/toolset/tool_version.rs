@@ -117,7 +117,10 @@ impl ToolVersion {
             && !has_linked_version(request.ba())
             && let Some(lt) = request.lockfile_resolve(config)?
         {
-            return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
+            // The release-age policy governs version selection. A committed
+            // lockfile has already made that selection and must remain
+            // reproducible even while the selected release is still cooling.
+            return Ok(Self::from_lockfile(request.clone(), lt));
         }
         let backend = request.ba().backend()?;
         if let Some(plugin) = backend.plugin()

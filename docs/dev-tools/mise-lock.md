@@ -650,7 +650,10 @@ In addition to lockfiles, mise uses the [`minimum_release_age`](/configuration/s
 minimum_release_age = "7d"  # override the default 24h delay
 ```
 
-This pairs well with lockfiles — use `minimum_release_age` to avoid picking up brand-new releases, and lockfiles to pin the exact versions you've vetted.
+This pairs well with lockfiles — use `minimum_release_age` to avoid picking up brand-new releases,
+and lockfiles to pin the exact versions you've vetted. Once a version is selected from `mise.lock`,
+installation does not reapply the age cutoff; the committed selection remains reproducible even
+while the release is still inside the cooling window.
 
 This setting filters top-level fuzzy version resolution for backends that provide release timestamps.
 Versions without timestamps are included by default.

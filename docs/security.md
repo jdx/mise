@@ -111,6 +111,8 @@ minimum_release_age = "7d"  # only install versions released more than 7 days ag
 The setting supports relative durations (`7d`, `6mo`, `1y`) and absolute dates (`2024-06-01`). For most
 backends, it only affects fuzzy version resolution, such as `node@24` or `latest`.
 Explicitly pinned versions like `node@24.0.0` bypass the filter.
+Versions selected from `mise.lock` also bypass it: the lockfile records an
+already-reviewed selection and must remain reproducible while that release is still cooling.
 During ordinary toolset resolution, already-installed fuzzy matches remain eligible:
 `minimum_release_age` limits remote version selection and does not make an installed version
 inactive. Lockfile generation may re-check fuzzy installed matches against release metadata.

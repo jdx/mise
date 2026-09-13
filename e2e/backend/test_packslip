@@ -88,6 +88,10 @@ EOF
 mise uninstall packslip:github.com/jdx/packslip@0.2.0
 mise install
 assert_contains "cat mise.lock" 'signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"'
+# A lockfile is an already-reviewed selection. A later release-age policy must
+# not make that committed install unreproducible.
+mise uninstall packslip:github.com/jdx/packslip@0.2.0
+MISE_MINIMUM_RELEASE_AGE=2100-01-01 mise install
 cd ..
 unset MISE_LOCKFILE
 
