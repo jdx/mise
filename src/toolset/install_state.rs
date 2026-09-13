@@ -336,7 +336,7 @@ fn scan_tool_dir(
     };
 
     let tool = InstallStateTool {
-        short: crate::backend::unalias_backend(&short).into_owned(),
+        short,
         full: full.map(|s| crate::backend::canonical_backend_full(&s).into_owned()),
         versions,
         explicit_backend,
@@ -374,10 +374,9 @@ fn merge_shared_tool(
         (dir_name.to_string(), None, true, BTreeMap::new())
     };
 
-    let short = crate::backend::unalias_backend(&short).into_owned();
     let full = full.map(|s| crate::backend::canonical_backend_full(&s).into_owned());
     let tool = tools
-        .entry(short.clone())
+        .entry(crate::backend::unalias_backend(&short).into_owned())
         .or_insert_with(|| InstallStateTool {
             short: short.clone(),
             full: full.clone(),
@@ -438,7 +437,10 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
                     .get_or_insert_with(|| manifest.as_ref().clone())
                     .insert(dir_name.clone(), mt);
             }
-            tools.insert(tool.short.clone(), tool);
+            tools.insert(
+                crate::backend::unalias_backend(&tool.short).into_owned(),
+                tool,
+            );
         }
 
         // Write updated manifest if we migrated any legacy entries
@@ -645,7 +647,9 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
             }
             let mut tools: InstallStateTools = tool
                 .take()
-                .map(|t| BTreeMap::from([(t.short.clone(), t)]))
+                .map(|t| {
+                    BTreeMap::from([(crate::backend::unalias_backend(&t.short).into_owned(), t)])
+                })
                 .unwrap_or_default();
             merge_shared_tool(&mut tools, &dir, &dir_name, &shared_manifest);
             tool = tools.remove(short);
@@ -658,7 +662,7 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
     {
         let mut tools: InstallStateTools = tool
             .take()
-            .map(|t| BTreeMap::from([(t.short.clone(), t)]))
+            .map(|t| BTreeMap::from([(crate::backend::unalias_backend(&t.short).into_owned(), t)]))
             .unwrap_or_default();
         merge_plugin_tools(
             &mut tools,
@@ -1395,7 +1399,7 @@ explicit_backend = true
         let (tool, _) = super::scan_tool_dir("pipx-black", &dir, &manifest)
             .unwrap()
             .unwrap();
-        assert_eq!(tool.short, "pypi:black");
+        assert_eq!(tool.short, "pipx:black");
         assert_eq!(tool.full.as_deref(), Some("pypi:black"));
         assert_eq!(tool.installs_path, Some(dir.clone()));
         assert_eq!(tool.versions, ["24.10.0"]);

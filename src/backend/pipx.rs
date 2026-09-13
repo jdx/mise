@@ -309,12 +309,7 @@ impl Backend for PIPXBackend {
     ) -> Result<ToolVersion> {
         if let Some(lock) = &tv.uv_lock {
             self.validate_uv_lock(&tv, lock)?;
-        } else if self.uv_lock_allowed(&tv)
-            && self
-                .spawnable_dependency(&ctx.config, Some(&ctx.ts), "uv")
-                .await
-                .is_some()
-        {
+        } else if self.uv_lock_allowed(&tv) {
             let revision = if tv.resolved_from_lockfile() {
                 crate::lockfile::version_for_request(&ctx.config, &tv.request)?
             } else {
@@ -328,6 +323,13 @@ impl Backend for PIPXBackend {
                         "pypi:{} has no uv dependency graph; run `mise lock`",
                         self.tool_name()
                     );
+                }
+                if self
+                    .spawnable_dependency(&ctx.config, Some(&ctx.ts), "uv")
+                    .await
+                    .is_none()
+                {
+                    return Ok(tv);
                 }
                 if let Some(version) = tv.uv_install_path_version().map(str::to_owned) {
                     tv.version = version;
@@ -352,19 +354,7 @@ impl Backend for PIPXBackend {
             if tv.uv_python.is_none() {
                 return Ok(false);
             }
-            if self
-                .spawnable_dependency(config, None, "uv")
-                .await
-                .is_none()
-            {
-                return Ok(false);
-            }
-        } else if self.uv_lock_allowed(tv)
-            && self
-                .spawnable_dependency(config, None, "uv")
-                .await
-                .is_some()
-        {
+        } else if self.uv_lock_allowed(tv) {
             let revision = if tv.resolved_from_lockfile() {
                 crate::lockfile::version_for_request(config, &tv.request)?
             } else {

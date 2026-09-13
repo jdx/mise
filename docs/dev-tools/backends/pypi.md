@@ -11,7 +11,8 @@ and pip or uv for application libraries such as NumPy and requests.
 With dependency graphs, mise uses **`uv sync --frozen`**. Version-only installs
 use `uv tool install` when uv is available, otherwise `pipx install`. The `pypi:`
 prefix names the backend in all cases; `pipx:` remains a supported alias with
-the same installations and lock entries. The legacy `uvx` option names do not
+the same installations and lock entries. Explicit `pipx:` names are preserved in
+output and lockfiles, including older lockfile revisions. The legacy `uvx` option names do not
 mean that mise runs the `uvx` command.
 
 The PyPI backend supports the following sources:
@@ -70,7 +71,7 @@ mise lock --bump pypi:black
 
 The last command refreshes transitive dependencies even when Black's version
 has not changed. Ordinary `mise lock` reuses the recorded graph. Different graphs
-and Python interpreter identities have separate installations; `mise ls` shows
+and configured Python interpreter identities have separate installations; `mise ls` shows
 the normal package version.
 
 Graph-locked installations require published wheels for the current platform and
@@ -80,6 +81,15 @@ are unsupported with dependency graphs; an existing uv graph cannot be replayed
 through standalone pipx. Missing graphs in revision-2 locked uv installs are errors.
 
 The graph covers the package's supported Python range (Python 3.8 or newer).
+It retains all published wheel targets for portability, so large dependency graphs
+can substantially increase the lockfile size. Frozen installs reuse uv's artifact
+cache. Lock generation needs an installed interpreter discoverable by uv, although
+it need not be the Python version configured for the tool.
+
+Ordinary resolution does not launch Python. Configured Python identities use the
+resolved mise version and installation path. For system Python, installation records
+its implementation, major/minor version, ABI and platform; later commands discover
+that environment without requiring system Python to remain on PATH.
 The selected mise Python interpreter determines which locked marker branches are
 installed. Configure Python under `[tools]`; graph installs do not silently download
 a replacement interpreter. Simple-only indexes must publish consistent
@@ -147,7 +157,7 @@ import Settings from '/components/settings.vue';
 
 ## Tool Options
 
-The following [tool-options](/dev-tools/#tool-options) are available for the `pipx` backend—these
+The following [tool-options](/dev-tools/#tool-options) are available for the `pypi` backend—these
 go in `[tools]` in `mise.toml`.
 
 ### `registry_url`

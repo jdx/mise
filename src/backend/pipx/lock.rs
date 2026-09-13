@@ -53,18 +53,71 @@ impl PIPXBackend {
         Ok(uv)
     }
 
+    async fn configured_python_identity(&self, config: &Arc<Config>) -> Option<String> {
+        let ts = self.dependency_toolset(config).await.ok()?;
+        let (_, python) = ts
+            .list_current_versions()
+            .into_iter()
+            .find(|(_, tv)| tv.ba().short == "python")?;
+        Some(format!(
+            "{}:{}:{}",
+            python.ba().full(),
+            python.version,
+            python.install_path().display()
+        ))
+    }
+
+    pub(crate) async fn restore_uv_python(&self, config: &Arc<Config>, tv: &mut ToolVersion) {
+        if let Some(identity) = self.configured_python_identity(config).await {
+            tv.uv_python = Some((PathBuf::new(), identity));
+            return;
+        }
+        Self::restore_system_uv_python(tv);
+    }
+
+    fn restore_system_uv_python(tv: &mut ToolVersion) {
+        // Installed environments remain usable without rediscovering a system Python.
+        let Ok(entries) = std::fs::read_dir(&tv.ba().installs_path) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(&format!("{}~uv~", tv.version))
+            {
+                continue;
+            }
+            let Ok(contents) = crate::file::read_to_string(path.join(".mise-uv/python.json"))
+            else {
+                continue;
+            };
+            let Ok(python) = serde_json::from_str::<(PathBuf, String)>(&contents) else {
+                continue;
+            };
+            let mut candidate = tv.clone();
+            candidate.uv_python = Some(python);
+            if candidate.install_path() == path {
+                tv.uv_python = candidate.uv_python;
+                return;
+            }
+        }
+    }
+
     pub(crate) async fn bind_uv_python(
         &self,
         config: &Arc<Config>,
         tv: &mut ToolVersion,
     ) -> Result<()> {
-        let Some(python) = self.spawnable_dependency(config, None, "python").await else {
-            // Resolve on a clean machine before the install graph installs Python.
-            tv.uv_python = None;
-            return Ok(());
+        let python = self.spawnable_dependency(config, None, "python").await
+            .ok_or_else(|| eyre!("Python graph installs require an installed interpreter; run `mise install python`"))?;
+        let identity = if let Some(identity) = self.configured_python_identity(config).await {
+            identity
+        } else {
+            CmdLineRunner::new(&python).args(["-I", "-c", "import sys, sysconfig; print((sys.implementation.name, sys.version_info[:2], sysconfig.get_config_var('SOABI'), sysconfig.get_platform()))"]).read().await?.trim().to_owned()
         };
-        let identity = CmdLineRunner::new(&python).args(["-I", "-c", "import sys, sysconfig; print((sys.implementation.name, sys.version_info[:3], sysconfig.get_config_var('SOABI'), sysconfig.get_platform(), sys.executable))"]).read().await?;
-        tv.uv_python = Some((python, identity.trim().to_owned()));
+        tv.uv_python = Some((python, identity));
         Ok(())
     }
 
@@ -297,6 +350,10 @@ impl PIPXBackend {
         let project = tv.install_path().join(".mise-uv");
         crate::file::create_dir_all(&project)?;
         crate::file::write(
+            project.join("python.json"),
+            serde_json::to_string(&tv.uv_python.as_ref().unwrap())?,
+        )?;
+        crate::file::write(
             project.join("pyproject.toml"),
             toml::to_string(&lock.project)?,
         )?;
@@ -309,7 +366,6 @@ impl PIPXBackend {
                 "sync",
                 "--frozen",
                 "--no-build",
-                "--no-cache",
                 "--no-config",
                 "--no-python-downloads",
                 "--no-install-project",
@@ -436,6 +492,41 @@ fn validate_portable_urls(value: &toml::Value) -> Result<()> {
 mod tests {
     use super::*;
     use crate::toolset::ToolSource;
+
+    #[test]
+    fn system_environment_discovery_needs_no_interpreter_and_matches_graph() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::from("pypi:demo");
+        ba.installs_path = temp.path().to_path_buf();
+        let request = ToolRequest::new(Arc::new(ba), "1.0.0", ToolSource::Argument).unwrap();
+        let mut installed = ToolVersion::new(request, "1.0.0".into());
+        installed.uv_lock = Some(fixture().2);
+        installed.uv_python = Some((
+            PathBuf::from("/missing/python"),
+            "cpython-3.12-platform".into(),
+        ));
+        let project = installed.install_path().join(".mise-uv");
+        crate::file::create_dir_all(&project).unwrap();
+        crate::file::write(
+            project.join("python.json"),
+            serde_json::to_string(installed.uv_python.as_ref().unwrap()).unwrap(),
+        )
+        .unwrap();
+        let mut resolved = installed.clone();
+        resolved.uv_python = None;
+        PIPXBackend::restore_system_uv_python(&mut resolved);
+        assert_eq!(resolved.uv_python, installed.uv_python);
+        assert_eq!(resolved.install_path(), installed.install_path());
+        resolved.uv_python = None;
+        resolved
+            .uv_lock
+            .as_mut()
+            .unwrap()
+            .graph
+            .insert("revision".into(), 99.into());
+        PIPXBackend::restore_system_uv_python(&mut resolved);
+        assert!(resolved.uv_python.is_none());
+    }
 
     fn fixture() -> (PIPXBackend, ToolVersion, UvLock) {
         let request = ToolRequest::new(

@@ -1118,6 +1118,29 @@ impl Lockfile {
         self.lockfile_version > 0
     }
 
+    fn tool_key(&self, short: &str) -> Option<&String> {
+        self.tools
+            .get_key_value(short)
+            .map(|(key, _)| key)
+            .or_else(|| {
+                let alias = if let Some(name) = short.strip_prefix("pypi:") {
+                    format!("pipx:{name}")
+                } else {
+                    format!("pypi:{}", short.strip_prefix("pipx:")?)
+                };
+                self.tools.get_key_value(&alias).map(|(key, _)| key)
+            })
+    }
+
+    fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
+        self.tool_key(short).and_then(|key| self.tools.get(key))
+    }
+
+    fn tools_for_mut(&mut self, short: &str) -> Option<&mut Vec<LockfileTool>> {
+        let key = self.tool_key(short)?.clone();
+        self.tools.get_mut(&key)
+    }
+
     pub(crate) fn bind_request(
         &mut self,
         short: &str,
@@ -1128,7 +1151,7 @@ impl Lockfile {
         if !self.uses_request_bindings() {
             return false;
         }
-        let Some(tools) = self.tools.get_mut(short) else {
+        let Some(tools) = self.tools_for_mut(short) else {
             return false;
         };
         let Some(target_idx) = tools
@@ -1185,7 +1208,6 @@ impl Lockfile {
                     "invalid lockfile format for tool {short}: expected array ([[tools.{short}]])"
                 ),
             };
-            let short = crate::backend::unalias_backend(&short).into_owned();
             let versions = versions.into_iter().map(|mut entry| {
                 entry.backend = entry
                     .backend
@@ -1318,7 +1340,17 @@ impl Lockfile {
             let value: toml::Value = versions
                 .iter()
                 .cloned()
-                .map(|version| version.into_toml_value(self.lockfile_version > 0))
+                .map(|mut version| {
+                    if short.starts_with("pipx:") || self.lockfile_version < 2 {
+                        version.backend = version.backend.map(|backend| {
+                            backend
+                                .strip_prefix("pypi:")
+                                .map(|name| format!("pipx:{name}"))
+                                .unwrap_or(backend)
+                        });
+                    }
+                    version.into_toml_value(self.lockfile_version > 0)
+                })
                 .collect::<Vec<toml::Value>>()
                 .into();
             tools.insert(short.clone(), value);
@@ -1520,10 +1552,12 @@ impl Lockfile {
     /// Remove entries for a tool whose version is not in the given set.
     /// Used to prune stale version entries during filtered `mise lock <tool>` runs.
     pub(crate) fn retain_tool_versions(&mut self, short: &str, keep_versions: &BTreeSet<String>) {
-        if let Some(tools) = self.tools.get_mut(short) {
+        if let Some(key) = self.tool_key(short).cloned()
+            && let Some(tools) = self.tools.get_mut(&key)
+        {
             tools.retain(|t| keep_versions.contains(&t.version));
             if tools.is_empty() {
-                self.tools.remove(short);
+                self.tools.remove(&key);
             }
         }
         self.cleanup_unreferenced_conda_packages();
@@ -1536,8 +1570,7 @@ impl Lockfile {
         short: &str,
         keep_versions: &BTreeSet<String>,
     ) -> Vec<String> {
-        self.tools
-            .get(short)
+        self.tools_for(short)
             .map(|tools| {
                 tools
                     .iter()
@@ -1587,7 +1620,11 @@ impl Lockfile {
         platform_key: &str,
         platform_info: PlatformInfo,
     ) {
-        let tools = self.tools.entry(short.to_string()).or_default();
+        let key = self
+            .tool_key(short)
+            .cloned()
+            .unwrap_or_else(|| short.to_owned());
+        let tools = self.tools.entry(key).or_default();
         // Platform option migration is handled while merging freshly resolved
         // entries. Writes here always target the exact resolved option variant.
         let idx = tools
@@ -1719,8 +1756,7 @@ impl Lockfile {
         lock: AubeLock,
     ) -> Result<()> {
         let entry = self
-            .tools
-            .get_mut(short)
+            .tools_for_mut(short)
             .and_then(|entries| {
                 let index = entries
                     .iter()
@@ -1752,8 +1788,7 @@ impl Lockfile {
         lock: UvLock,
     ) -> Result<()> {
         let entry = self
-            .tools
-            .get_mut(short)
+            .tools_for_mut(short)
             .and_then(|entries| {
                 let index = entries
                     .iter()
@@ -1812,7 +1847,7 @@ impl Lockfile {
 
 fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
     (
-        short.to_string(),
+        crate::backend::canonical_backend_full(short).into_owned(),
         entry.version.clone(),
         entry.backend.clone(),
         entry.options.clone(),
@@ -2219,7 +2254,8 @@ fn merge_lockfile_for_lookup(root: &mut Lockfile, other: Lockfile) {
 
 fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
     for (short, tools) in other.tools {
-        let root_tools = root.tools.entry(short).or_default();
+        let key = root.tool_key(&short).cloned().unwrap_or(short);
+        let root_tools = root.tools.entry(key).or_default();
         let mut keys: HashSet<(String, BTreeMap<String, String>)> = root_tools
             .iter()
             .map(|tool| (tool.version.clone(), tool.options.clone()))
@@ -2514,11 +2550,11 @@ pub(crate) fn update_lockfiles(
             let rekey_decisions = if is_monorepo_root_lockfile {
                 RekeyDecisions::new()
             } else {
-                build_rekey_decisions(versions, existing_lockfile.tools.get(&short))
+                build_rekey_decisions(versions, existing_lockfile.tools_for(&short))
             };
             let (mut merged_tools, consumed_keys) = merge_tool_entries(
                 entries,
-                existing_lockfile.tools.get(&short),
+                existing_lockfile.tools_for(&short),
                 |version, platform| {
                     rekey_decisions
                         .get(&(version.to_string(), platform.to_key()))
@@ -2529,7 +2565,7 @@ pub(crate) fn update_lockfiles(
             if is_monorepo_root_lockfile {
                 preserve_absent_tool_entries(
                     &mut merged_tools,
-                    existing_lockfile.tools.get(&short),
+                    existing_lockfile.tools_for(&short),
                     &consumed_keys,
                 );
             }
@@ -2788,7 +2824,7 @@ fn check_provenance_regression(
             let new_provenance = platform_info.and_then(|pi| pi.provenance.as_ref());
 
             let Some(baseline) = find_provenance_regression_baseline(
-                existing_lockfile.tools.get(short).map(Vec::as_slice),
+                existing_lockfile.tools_for(short).map(Vec::as_slice),
                 &new_entry.version,
                 backend,
                 &current_platform,
@@ -2866,7 +2902,7 @@ fn tool_version_matches_lockfile_target<F>(
 where
     F: Fn(&[LockfileTool], &str, &str, &BTreeMap<String, String>) -> bool,
 {
-    let Some(tools) = lockfile.tools.get(tv.short()) else {
+    let Some(tools) = lockfile.tools_for(tv.short()) else {
         return Ok(false);
     };
     // The toolset passed to auto-locking can still contain the version that was
@@ -3190,7 +3226,7 @@ pub(crate) async fn auto_lock_new_versions(
                     // means this target still needs authoritative verification.
                     if let Some(ref backend) = backend
                         && let Ok(options) = backend.resolve_lockfile_options(&tv.request, &target)
-                        && let Some(tools) = lockfile.tools.get(&ba.short)
+                        && let Some(tools) = lockfile.tools_for(&ba.short)
                         && !lockfile_target_needs_auto_lock(
                             tools,
                             &tv.version,
@@ -3232,7 +3268,7 @@ pub(crate) async fn auto_lock_new_versions(
                         // closed rather than silently locking the upgrade without
                         // provenance (#11225); it self-heals on a later successful run.
                         if let Some(err) = deferred_provenance_resolution_error(
-                            lockfile.tools.get(short).map(Vec::as_slice),
+                            lockfile.tools_for(short).map(Vec::as_slice),
                             short,
                             version,
                             backend,
@@ -3513,7 +3549,7 @@ pub(crate) fn apply_lock_result(
     let mut applied = false;
     if let Ok(ref info) = info {
         if let Some(err) = check_single_tool_provenance(
-            lockfile.tools.get(&short).map(Vec::as_slice),
+            lockfile.tools_for(&short).map(Vec::as_slice),
             &short,
             &version,
             &backend,
@@ -3523,7 +3559,7 @@ pub(crate) fn apply_lock_result(
             return Err(eyre!("{err}"));
         }
         if info.is_empty() {
-            let tool_exists = lockfile.tools.get(&short).is_some_and(|tools| {
+            let tool_exists = lockfile.tools_for(&short).is_some_and(|tools| {
                 tools
                     .iter()
                     .any(|tool| tool.version == version && tool.options == options)
@@ -4038,7 +4074,7 @@ pub(crate) fn get_locked_version(
         }
         Ok(Some((request_options.clone(), legacy_options_fallback)))
     };
-    if let Some(tools) = lockfile.tools.get(short) {
+    if let Some(tools) = lockfile.tools_for(short) {
         if lockfile.uses_request_bindings() {
             let (matching, binding_error) =
                 matching_request_bindings(lockfile.as_ref(), short, specifier, |tool| {
@@ -4207,7 +4243,7 @@ fn matching_request_bindings<'a>(
 ) -> (Vec<&'a LockfileTool>, Option<Report>) {
     let mut matching = Vec::new();
     let mut first_error = None;
-    for tool in lockfile.tools.get(short).into_iter().flatten() {
+    for tool in lockfile.tools_for(short).into_iter().flatten() {
         if !tool.specifiers.contains(specifier) {
             continue;
         }
@@ -4317,8 +4353,7 @@ pub(crate) fn get_locked_backend(config: &Config, short: &str) -> Option<String>
     let lockfile = read_all_lockfiles(config);
 
     lockfile
-        .tools
-        .get(short)
+        .tools_for(short)
         .and_then(|tools| tools.first())
         .and_then(|tool| tool.backend.clone())
 }
@@ -6371,7 +6406,7 @@ options = { exe = "rg" }
 
         merge_lockfile_preserving_root(&mut root, subproject);
 
-        let tools = root.tools.get("node").unwrap();
+        let tools = root.tools_for("node").unwrap();
         assert_eq!(tools.len(), 2);
         assert_eq!(tools[0].version, "20.0.0");
         assert_eq!(tools[0].backend.as_deref(), Some("core:node"));
@@ -7911,9 +7946,9 @@ backend = "core:python"
         .unwrap();
         let lock = Lockfile::read(&path).unwrap();
         assert_eq!(lock.lockfile_version(), 1);
-        assert!(!lock.tools.contains_key("pipx:black"));
+        assert!(lock.tools.contains_key("pipx:black"));
         assert_eq!(
-            lock.tools["pypi:black"][0].backend.as_deref(),
+            lock.tools_for("pypi:black").unwrap()[0].backend.as_deref(),
             Some("pypi:black")
         );
         assert_eq!(
@@ -7921,5 +7956,10 @@ backend = "core:python"
             Some("core:python")
         );
         assert!(lock.needs_upgrade());
+        lock.save(&path).unwrap();
+        let saved = file::read_to_string(&path).unwrap();
+        assert!(saved.contains("tools.\"pipx:black\""));
+        assert!(saved.contains("backend = \"pipx:black\""));
+        assert!(!saved.contains("pypi:black"));
     }
 }

@@ -23,7 +23,7 @@ mise trust
 cp mise.toml original.toml
 mise lock
 assert_contains "cat mise.lock" 'lockfile_version = 2'
-assert_contains "cat mise.lock" 'tools."pypi:mise-lock-cli"'
+assert_contains "cat mise.lock" 'tools."pipx:mise-lock-cli"'
 assert_contains "cat mise.lock" 'uv.graph'
 assert_contains "cat mise.lock" 'mise-lock-marker'
 assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
@@ -71,6 +71,7 @@ PY_OPTIONS
 assert_fail 'mise lock --bump pypi:mise-lock-cli' 'dependency locking does not support'
 cp original.toml mise.toml
 mise uninstall --all pypi:mise-lock-cli
+export UV_CACHE_DIR="$PWD/corrupt-cache"
 touch index/corrupt
 if corrupt_output=$(mise install --locked pypi:mise-lock-cli 2>&1); then
   fail 'corrupted wheels must fail installation'
@@ -104,3 +105,34 @@ pipx.uvx = false
 REPAIR_CONFIG
 mise --cd repair settings unset --local pipx.uvx
 assert_fail 'mise --cd repair settings get --local pypi.uvx'
+
+# Environment aliases override either spelling in a file; only same-source conflicts fail.
+cat >repair/mise.toml <<'EOF_PRECEDENCE'
+[settings]
+pypi.uvx = true
+EOF_PRECEDENCE
+assert 'MISE_PIPX_UVX=false mise --cd repair settings get pypi.uvx' 'false'
+cat >repair/mise.toml <<'EOF_PRECEDENCE'
+[settings]
+pipx.uvx = true
+EOF_PRECEDENCE
+assert 'MISE_PYPI_UVX=false mise --cd repair settings get pipx.uvx' 'false'
+assert 'MISE_PIPX_UVX=false mise settings get pypi.uvx' 'false'
+assert 'MISE_PYPI_UVX=false mise settings get pipx.uvx' 'false'
+
+# A version-only revision-2 entry cannot silently fall back under --locked.
+cp original.toml mise.toml
+python3 - <<'PY_NO_UV'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace('uv = "0.12.10"\n', ''))
+PY_NO_UV
+mise uninstall uv
+cat >mise.lock <<'EOF_NO_GRAPH'
+lockfile_version = 2
+[[tools."pipx:mise-lock-cli"]]
+version = "1.0.0"
+backend = "pipx:mise-lock-cli"
+specifiers = ["1.0.0"]
+EOF_NO_GRAPH
+assert_fail 'mise install --locked pypi:mise-lock-cli' 'has no uv dependency graph'

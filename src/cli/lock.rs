@@ -1464,7 +1464,7 @@ impl Lock {
                 && !self
                     .tool
                     .iter()
-                    .any(|requested| requested.ba.short == backend.ba().short)
+                    .any(|requested| requested.ba.as_ref() == backend.ba().as_ref())
             {
                 return false;
             }
@@ -1607,7 +1607,7 @@ impl Lock {
                                 }
                             }
                             let requested_tool = self.tool.is_empty()
-                                || self.tool.iter().any(|tool| tool.ba.short == ba.short);
+                                || self.tool.iter().any(|tool| tool.ba.as_ref() == ba.as_ref());
                             let active_unresolved = requested_tool
                                 && ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
                                     tvl.requests
@@ -1688,10 +1688,13 @@ impl Lock {
             Ok(all_tools)
         } else {
             // Build map of tool args with explicit versions
-            let specified_versions: std::collections::HashMap<String, Option<ToolRequest>> = self
+            let specified_versions: std::collections::HashMap<
+                Arc<crate::cli::args::BackendArg>,
+                Option<ToolRequest>,
+            > = self
                 .tool
                 .iter()
-                .map(|t| (t.ba.short.clone(), t.tvr.clone()))
+                .map(|t| (t.ba.clone(), t.tvr.clone()))
                 .collect();
             // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
             // installed concrete version and lock that. Writing the literal "latest"
@@ -1700,9 +1703,9 @@ impl Lock {
             let mut tools: Vec<LockTool> = Vec::new();
             for (ba, mut tv) in all_tools
                 .into_iter()
-                .filter(|(ba, _)| specified_versions.contains_key(&ba.short))
+                .filter(|(ba, _)| specified_versions.contains_key(ba))
             {
-                if let Some(Some(request)) = specified_versions.get(&ba.short) {
+                if let Some(Some(request)) = specified_versions.get(&ba) {
                     let version = request.version();
                     let backend = crate::backend::get(&ba);
                     let effective_version = match &backend {
@@ -1786,10 +1789,7 @@ impl Lock {
                 err.wrap_err(format!("failed to parse tools for task `{}`", task.name))
             })? {
                 if !self.tool.is_empty()
-                    && !self
-                        .tool
-                        .iter()
-                        .any(|requested| requested.ba.short == tool.ba.short)
+                    && !self.tool.iter().any(|requested| requested.ba == tool.ba)
                 {
                     continue;
                 }

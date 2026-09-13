@@ -192,14 +192,15 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
         if exclude.is_empty() {
             return false;
         }
-        if exclude == backend_arg.short {
+        if exclude == crate::backend::canonical_backend_full(&backend_arg.short) {
             return true;
         }
         let full = full.get_or_insert_with(|| {
             if backend_arg.short.contains(':') {
-                split_bracketed_opts(&backend_arg.short)
-                    .map(|(name, _)| name.to_string())
-                    .unwrap_or_else(|| backend_arg.short.clone())
+                let name = split_bracketed_opts(&backend_arg.short)
+                    .map(|(name, _)| name)
+                    .unwrap_or(&backend_arg.short);
+                crate::backend::canonical_backend_full(name).into_owned()
             } else {
                 backend_arg.full_without_opts()
             }

@@ -113,9 +113,9 @@ impl ToolVersion {
         if tv.uv_lock.is_some() {
             Box::pin(
                 crate::backend::pipx::PIPXBackend::from_arg(tv.ba().clone())
-                    .bind_uv_python(config, &mut tv),
+                    .restore_uv_python(config, &mut tv),
             )
-            .await?;
+            .await;
         }
         Ok(tv)
     }
