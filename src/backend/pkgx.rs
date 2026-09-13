@@ -467,11 +467,11 @@ fn is_any_requirement(requirement: &str) -> bool {
     requirement.is_empty() || requirement == "*" || requirement.eq_ignore_ascii_case("latest")
 }
 
+/// Parse a pkgx version requirement into a semver range, coercing
+/// letter-suffixed bounds first: `<=1.1.1q` parses as a prerelease range
+/// that would wrongly reject the coerced release form, so the coerced parse
+/// is preferred whenever coercion changes the input.
 fn parse_requirement_range(name: &str, requirement: &str) -> Result<Range> {
-    // Coercion first: a letter-suffixed bound like `<=1.1.1q` parses
-    // successfully as a prerelease range (`1.1.1-q`), which would wrongly
-    // reject the coerced release form. Prefer the coerced parse whenever
-    // coercion changes the input, falling back to the original below.
     let coerced = coerce_requirement_versions(requirement);
     if coerced != requirement {
         if let Ok(range) = Range::parse(&coerced) {
@@ -494,11 +494,10 @@ fn parse_requirement_range(name: &str, requirement: &str) -> Result<Range> {
         })
 }
 
+/// Check a pkgx version against a range, also trying the coerced
+/// (letter-stripped) form since trailing letters are patch-level releases,
+/// not prereleases, and otherwise never match a plain range like `^1.0.1`.
 fn semver_satisfies(version: &str, range: &Range) -> bool {
-    // Note: nodejs-semver parses "1.1.1w" as 1.1.1 with prerelease "w",
-    // which never satisfies a plain range like `^1.0.1`. OpenSSL-style
-    // trailing letters are patch-level releases, so also try the coerced
-    // (letter-stripped) form.
     if NodeVersion::parse(version).is_ok_and(|parsed| range.satisfies(&parsed)) {
         return true;
     }
