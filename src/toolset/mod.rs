@@ -484,10 +484,12 @@ impl Toolset {
                 let result = crate::ui::resolve_progress::scope(
                     reporter.as_ref().map(|p| p.reporter()),
                     async {
-                        let mut outdated = HashSet::new();
+                        let mut outdated = Vec::new();
                         match t.outdated_info(&config, &tv, bump, &opts).await {
                             Ok(Some(oi)) => {
-                                outdated.insert(oi);
+                                if !outdated.contains(&oi) {
+                                    outdated.push(oi);
+                                }
                             }
                             Ok(None) => {}
                             Err(e) => {
@@ -507,7 +509,9 @@ impl Toolset {
                         }
                         match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
                             Ok(Some(oi)) => {
-                                outdated.insert(oi);
+                                if !outdated.contains(&oi) {
+                                    outdated.push(oi);
+                                }
                             }
                             Ok(None) => {}
                             Err(e) => {
