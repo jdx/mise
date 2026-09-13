@@ -1,3 +1,0 @@
-backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
-description = "A tool to help creating Talos kubernetes cluster"
-version_order = "semver"

@@ -1,5 +1,0 @@
----
-source: src/direnv.rs
-expression: diff
----
-DirenvDiff { old: ["a=b"], new: ["c=d"] }

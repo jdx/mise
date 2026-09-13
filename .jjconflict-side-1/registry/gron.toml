@@ -1,4 +1,0 @@
-backends = ["aqua:tomnomnom/gron"]
-description = "Make JSON greppable"
-test = { cmd = "gron --version", expected = "gron version dev" }
-version_order = "source"

@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-
-assert_contains "mise x github:cli/cli@2.75.0 -- gh --version" "gh version 2.75.0"

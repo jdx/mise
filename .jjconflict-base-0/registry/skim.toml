@@ -1,4 +1,0 @@
-backends = ["aqua:skim-rs/skim", "github:skim-rs/skim", "cargo:skim"]
-description = "Fuzzy Finder in rust"
-test = { cmd = "sk --version", expected = "sk {{version}}" }
-version_order = "semver"

@@ -1,4 +1,0 @@
-backends = ["aqua:helmwave/helmwave"]
-description = "New  wave for @helm"
-test = { cmd = "helmwave version", expected = "{{version}}" }
-version_order = "semver"

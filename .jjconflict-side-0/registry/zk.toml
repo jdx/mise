@@ -1,8 +1,0 @@
-backends = ["aqua:zk-org/zk"]
-
-
-description = "A plain text note-taking assistant"
-
-test = { cmd = "zk --version", expected = "zk {{version}}" }
-
-version_order = "semver"

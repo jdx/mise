@@ -1,4 +1,0 @@
-backends = ["aqua:ko-build/ko", "asdf:zasdaym/asdf-ko"]
-description = "Build and deploy Go applications on Kubernetes"
-test = { cmd = "ko version", expected = "{{version}}" }
-version_order = "semver"

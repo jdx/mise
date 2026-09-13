@@ -1,6 +1,0 @@
----
-source: src/shell/bash.rs
-expression: "Bash::default().unset_env(\"FOO\")"
-snapshot_kind: text
----
-unset FOO

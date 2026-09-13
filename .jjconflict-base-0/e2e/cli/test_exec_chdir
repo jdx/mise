@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-
-mkdir direnv
-
-assert "mise x -C $PWD/direnv -- pwd" "$(pwd)/direnv"
-assert "mise x -C ./direnv -- pwd" "$(pwd)/direnv"
-assert "mise x -C direnv -- pwd" "$(pwd)/direnv"

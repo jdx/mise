@@ -1,4 +1,0 @@
-backends = ["aqua:watchexec/watchexec", "cargo:watchexec-cli"]
-description = "Executes commands in response to file modifications"
-test = { cmd = "watchexec --version", expected = "watchexec {{version}}" }
-version_order = "semver"

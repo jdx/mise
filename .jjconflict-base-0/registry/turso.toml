@@ -1,4 +1,0 @@
-backends = ["aqua:tursodatabase/turso-cli", "github:tursodatabase/turso-cli"]
-description = "Command line interface for Turso"
-test = { cmd = "turso --version", expected = "turso version v{{version}}" }
-version_order = "semver"

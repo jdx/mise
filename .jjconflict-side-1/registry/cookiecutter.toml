@@ -1,4 +1,0 @@
-backends = ["pipx:cookiecutter", "asdf:shawon-crosen/asdf-cookiecutter"]
-bins = ["cookiecutter"]
-description = "Create projects swiftly from cookiecutters (project templates) with this command-line utility. Ideal for generating Python package projects and more"
-version_order = "source"

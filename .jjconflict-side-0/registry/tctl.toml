@@ -1,4 +1,0 @@
-backends = ["aqua:temporalio/tctl", "asdf:eko/asdf-tctl"]
-bins = ["tctl", "tctl-authorization-plugin"]
-description = "Temporal CLI"
-version_order = "semver"

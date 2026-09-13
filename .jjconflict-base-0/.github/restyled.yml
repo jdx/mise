@@ -1,5 +1,0 @@
-enabled: true
-restylers:
-  - "!shellharden"
-  - "!prettier-markdown"
-  - "*"

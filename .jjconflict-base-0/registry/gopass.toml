@@ -1,3 +1,0 @@
-backends = ["aqua:gopasspw/gopass", "asdf:trallnag/asdf-gopass"]
-description = "The slightly more awesome standard unix password manager for teams"
-version_order = "semver"

@@ -1,4 +1,0 @@
-backends = ["aqua:restic/restic", "asdf:xataz/asdf-restic"]
-description = "Fast, secure, efficient backup program"
-test = { cmd = "restic version", expected = "restic {{version}}" }
-version_order = "semver"

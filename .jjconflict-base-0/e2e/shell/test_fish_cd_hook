@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-require_cmd fish
-exec fish --no-config "$TEST_DIR/fish_cd_hook.fish"
