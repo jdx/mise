@@ -64,7 +64,7 @@ impl InstallInto {
             pr: mpr.add(&tv.style()).into(),
             force: true,
             dry_run: false,
-            explicit_yes: false,
+            explicit_yes: Settings::cli_yes(),
             locked: false, // install-into doesn't support locked mode
             before_date,
             dependency_context: OnceCell::new(),
