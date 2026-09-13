@@ -9,6 +9,7 @@ use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
+use crate::config::Settings;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::file::display_path;
 
@@ -77,6 +78,45 @@ fn default_branch() -> String {
     "main".to_string()
 }
 
+/// The effective `settings.history.describe_command`: the environment wins,
+/// otherwise the last trusted system/global layer that declares it wins.
+/// Project settings are deliberately never considered: this command receives
+/// personal dotfile contents and must not be controlled by a repository.
+pub(crate) fn describe_command() -> Result<Option<String>> {
+    if let Some(command) = std::env::var_os("MISE_HISTORY_DESCRIBE_COMMAND") {
+        let command = command
+            .into_string()
+            .map_err(|_| eyre::eyre!("MISE_HISTORY_DESCRIBE_COMMAND contains invalid Unicode"))?;
+        return Ok(nonempty_command(command));
+    }
+
+    let mut found = None;
+    for path in config_files() {
+        let settings = Settings::parse_settings_file(&path).wrap_err_with(|| {
+            format!(
+                "cannot read history description command: {}",
+                display_path(&path)
+            )
+        })?;
+        if let Some(command) = settings.history.describe_command {
+            if !crate::config::config_file::is_trusted(&path) {
+                warn!(
+                    "history: ignoring settings.history.describe_command in untrusted {}",
+                    display_path(&path)
+                );
+                continue;
+            }
+            found = Some(command);
+        }
+    }
+    Ok(found.and_then(nonempty_command))
+}
+
+fn nonempty_command(command: String) -> Option<String> {
+    let command = command.trim().to_string();
+    (!command.is_empty()).then_some(command)
+}
+
 /// The effective `[history.origin]`: the last layer that declares one.
 pub(crate) fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
     let mut found = None;
@@ -93,17 +133,20 @@ pub(crate) fn origin() -> Result<Option<(PathBuf, OriginTomlConfig)>> {
 /// order, each with the file that declared it.
 pub(crate) fn layers() -> Result<Vec<(PathBuf, HistoryTomlConfig)>> {
     let mut layers = vec![];
-    let files = crate::config::system_config_files()
-        .into_iter()
-        .chain(crate::config::global_config_files())
-        .filter(|path| path.is_file())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "toml"));
-    for path in files {
+    for path in config_files() {
         if let Some(history) = read_layer(&path)? {
             layers.push((path, history));
         }
     }
     Ok(layers)
+}
+
+fn config_files() -> impl Iterator<Item = PathBuf> {
+    crate::config::system_config_files()
+        .into_iter()
+        .chain(crate::config::global_config_files())
+        .filter(|path| path.is_file())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
 }
 
 fn read_layer(path: &Path) -> Result<Option<HistoryTomlConfig>> {

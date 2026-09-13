@@ -1291,6 +1291,7 @@ watcher saved, never per filesystem event or retry, one at a time. Excluded file
 captured or named, and encrypted files never have their contents sent.
 """
 env = "MISE_HISTORY_DESCRIBE_COMMAND"
+global_only = true
 type = "String"
 
 [history.enabled]

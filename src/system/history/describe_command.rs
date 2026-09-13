@@ -94,12 +94,13 @@ pub(crate) fn abort_running() {
 
 /// The configured command, if any.
 pub(crate) fn configured() -> Option<String> {
-    let command = crate::config::Settings::get()
-        .history
-        .describe_command
-        .trim()
-        .to_string();
-    (!command.is_empty()).then_some(command)
+    match super::config::describe_command() {
+        Ok(command) => command,
+        Err(err) => {
+            warn!("history: cannot load history.describe_command: {err:#}");
+            None
+        }
+    }
 }
 
 /// Runs the command for `entry` and records what it printed. `Ok(None)`
