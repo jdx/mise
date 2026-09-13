@@ -1,0 +1,5 @@
+have we released lockfile v2? I think we can wait to do a release until this is out and not bump the rev
+
+---
+
+address pr feedback
