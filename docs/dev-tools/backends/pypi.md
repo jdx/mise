@@ -200,7 +200,7 @@ import Settings from '/components/settings.vue';
 The following [tool-options](/dev-tools/#tool-options) are available for the `pypi` backend—these
 go in `[tools]` in `mise.toml`.
 
-### `registry_url`
+### `registry_url` {#registry-url}
 
 Set the registry URL used to resolve versions for this tool. Include a `{}`
 placeholder for the package name. This overrides the `pypi.registry_url` setting
