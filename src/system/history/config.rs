@@ -92,12 +92,16 @@ pub(crate) fn describe_command() -> Result<Option<String>> {
 
     let mut found = None;
     for path in config_files() {
-        let settings = Settings::parse_settings_file(&path).wrap_err_with(|| {
-            format!(
-                "cannot read history description command: {}",
-                display_path(&path)
-            )
-        })?;
+        let settings = match Settings::parse_settings_file(&path) {
+            Ok(settings) => settings,
+            Err(err) => {
+                warn!(
+                    "history: cannot read description command from {}: {err}",
+                    display_path(&path)
+                );
+                continue;
+            }
+        };
         if let Some(command) = settings.history.describe_command {
             if !crate::config::config_file::is_trusted(&path) {
                 warn!(
