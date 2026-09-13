@@ -1,0 +1,9 @@
+could we instead use the 'parallel' feature to avoid just using more ci resources?
+
+---
+
+could we instead just add the unused check for all clippy runs?
+
+---
+
+could windows just enable warnings?
