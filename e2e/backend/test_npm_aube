@@ -45,6 +45,36 @@ deprecation_output="$(mise install npm:inflight@1.0.6 2>&1)"
 assert_contains_text "$deprecation_output" "deprecated inflight@1.0.6"
 assert_not_contains_text "$deprecation_output" "mise deprecations"
 
+# Automatic graph creation determines the physical path before installation
+# bookkeeping begins, even when a version-only install already exists.
+mkdir auto-lock
+cat >auto-lock/mise.toml <<'EOF'
+[tools]
+node = "20.11.1"
+"npm:inflight" = "1.0.6"
+EOF
+MISE_LOCKFILE=1 mise -C auto-lock install
+assert_succeed "find '$MISE_DATA_DIR/installs/npm-inflight' -maxdepth 1 -name '1.0.6-aube-*' | grep -q ."
+assert_succeed "test ! -e '$MISE_DATA_DIR/installs/npm-inflight/1.0.6/incomplete'"
+
+# Generate-mode upgrades fill graphs after changing the lockfile revision.
+mkdir upgrade-lock
+cat >upgrade-lock/mise.toml <<'EOF'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOF
+cat >upgrade-lock/mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools."npm:cowsay"]]
+version = "1.6.0"
+backend = "npm:cowsay"
+specifiers = ["1.6.0"]
+EOF
+MISE_LOCKFILE_MODE=generate mise -C upgrade-lock lock --upgrade
+assert_contains "cat upgrade-lock/mise.lock" "lockfile_version = 2"
+assert_contains "cat upgrade-lock/mise.lock" 'tools."npm:cowsay".aube.graph.packages'
+
 # Lock generation resolves aube's complete graph without creating an install.
 cat >mise.toml <<'EOF'
 [tools]

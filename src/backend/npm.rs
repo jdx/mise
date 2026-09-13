@@ -430,7 +430,7 @@ impl Backend for NPMBackend {
         Ok(versions::SemVer::new(version).map(|_| version.to_string()))
     }
 
-    async fn install_version_(
+    async fn prepare_install_version(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
@@ -468,6 +468,34 @@ impl Backend for NPMBackend {
         {
             tv.aube_lock = Some(self.resolve_aube_lock(&tv).await?);
         }
+        Ok(tv)
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if Self::uses_embedded_aube() && tv.aube_lock.is_none() {
+            let source_lockfile_version = if tv.resolved_from_lockfile() {
+                crate::lockfile::version_for_request(config, &tv.request)?
+            } else {
+                None
+            };
+            if source_lockfile_version.is_some_and(|version| version >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled())
+            {
+                return Ok(false);
+            }
+        }
+        Ok(self.is_version_installed(config, tv, check_symlink))
+    }
+
+    async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let package_manager = self
+            .package_manager_for_install(&ctx.config, Some(&ctx.ts))
+            .await;
         self.check_install_deps(&ctx.config, package_manager, Some(&ctx.ts))
             .await;
         let request_options = tv.request.options();

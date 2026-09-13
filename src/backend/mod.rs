@@ -3277,8 +3277,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
     async fn install_version(
         &self,
         ctx: InstallContext,
-        mut tv: ToolVersion,
+        tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        let mut tv = self.prepare_install_version(&ctx, tv).await?;
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
         tv.request.ensure_safe_install_options()?;
@@ -3628,6 +3629,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
         _tv: &ToolVersion,
     ) -> Result<()> {
         Ok(())
+    }
+
+    /// Finalize backend-specific install identity before the generic installer
+    /// acquires locks or creates paths derived from the tool version.
+    async fn prepare_install_version(
+        &self,
+        _ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        Ok(tv)
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;

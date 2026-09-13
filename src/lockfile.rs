@@ -90,8 +90,40 @@ impl AubeLock {
 
     pub(crate) fn identity(&self) -> Result<String> {
         use sha2::{Digest, Sha256};
-        let canonical = toml::to_string(&self.graph)?;
-        Ok(hex::encode(Sha256::digest(canonical.as_bytes())))
+        let mut hasher = Sha256::new();
+        hash_canonical_toml(&mut hasher, &toml::Value::Table(self.graph.clone()));
+        Ok(hex::encode(hasher.finalize()))
+    }
+}
+
+fn hash_canonical_toml(hasher: &mut impl sha2::Digest, value: &toml::Value) {
+    fn bytes(hasher: &mut impl sha2::Digest, tag: u8, value: &[u8]) {
+        hasher.update([tag]);
+        hasher.update(value.len().to_be_bytes());
+        hasher.update(value);
+    }
+
+    match value {
+        toml::Value::String(value) => bytes(hasher, b's', value.as_bytes()),
+        toml::Value::Integer(value) => bytes(hasher, b'i', &value.to_be_bytes()),
+        toml::Value::Float(value) => bytes(hasher, b'f', &value.to_bits().to_be_bytes()),
+        toml::Value::Boolean(value) => bytes(hasher, b'b', &[*value as u8]),
+        toml::Value::Datetime(value) => bytes(hasher, b'd', value.to_string().as_bytes()),
+        toml::Value::Array(values) => {
+            hasher.update([b'a']);
+            hasher.update(values.len().to_be_bytes());
+            for value in values {
+                hash_canonical_toml(hasher, value);
+            }
+        }
+        toml::Value::Table(values) => {
+            hasher.update([b't']);
+            hasher.update(values.len().to_be_bytes());
+            for key in values.keys().sorted() {
+                bytes(hasher, b'k', key.as_bytes());
+                hash_canonical_toml(hasher, &values[key]);
+            }
+        }
     }
 }
 
@@ -4468,9 +4500,31 @@ packages:
     os: [linux, darwin]
 "#;
         let graph = AubeLock::from_yaml(yaml).unwrap();
+        let reordered = AubeLock::from_yaml(
+            r#"packages:
+  peer@2.0.0:
+    os: [linux, darwin]
+    resolution: {integrity: sha512-peer}
+  cli@1.0.0(peer@2.0.0):
+    dependencies:
+      peer: 2.0.0
+    resolution: {integrity: sha512-root}
+importers:
+  .:
+    dependencies:
+      cli:
+        version: 1.0.0(peer@2.0.0)
+        specifier: 1.0.0
+settings:
+  autoInstallPeers: true
+lockfileVersion: '9.0'
+"#,
+        )
+        .unwrap();
         let reparsed = AubeLock::from_yaml(&graph.to_yaml().unwrap()).unwrap();
         assert_eq!(graph, reparsed);
         assert_eq!(graph.identity().unwrap(), reparsed.identity().unwrap());
+        assert_eq!(graph.identity().unwrap(), reordered.identity().unwrap());
 
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
@@ -4482,6 +4536,15 @@ packages:
 
         let reloaded = Lockfile::read(path).unwrap();
         assert_eq!(reloaded.tools["npm:cli"][0].aube.as_ref(), Some(&graph));
+        assert_eq!(
+            reloaded.tools["npm:cli"][0]
+                .aube
+                .as_ref()
+                .unwrap()
+                .identity()
+                .unwrap(),
+            graph.identity().unwrap()
+        );
     }
 
     #[test]

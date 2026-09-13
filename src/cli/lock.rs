@@ -720,7 +720,7 @@ impl Lock {
             } else {
                 self.bind_requests(&mut lockfile, &tools, &target_platforms);
             }
-            if !generate || self.bump {
+            if !generate || self.bump || format_changed {
                 Box::pin(lockfile::generate::populate_aube_locks(
                     &mut lockfile,
                     &tools,
