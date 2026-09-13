@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DJMMHT4N8YBB6YG2V0P8ZJ",
+  "session_id": "01a09b01-de4e-7303-9e8a-29f068a8507f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T14:27:18.657131Z",
+  "branch": "codex/pypi-uv-lock",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "e029e60ea787",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 402496,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 24801664,
+    "output_tokens": 42005,
+    "api_call_count": 192
+  },
+  "session_metrics": {
+    "turn_count": 2
+  }
+}
