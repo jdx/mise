@@ -1,7 +1,0 @@
-backends = [
-  "aqua:Orange-OpenSource/hurl",
-  "asdf:raimon49/asdf-hurl",
-  "cargo:hurl",
-]
-description = "Hurl, run and test HTTP requests with plain text"
-version_order = "semver"

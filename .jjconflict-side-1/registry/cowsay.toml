@@ -1,4 +1,0 @@
-backends = ["npm:cowsay"]
-bins = ["cowsay", "cowthink"]
-description = "cowsay is a configurable talking cow, originally written in Perl by Tony Monroe"
-version_order = "semver"

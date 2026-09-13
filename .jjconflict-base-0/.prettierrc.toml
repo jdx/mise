@@ -1,3 +1,0 @@
-[[overrides]]
-files = "xtasks/fig/**/*.ts"
-options = { trailingComma = "es5", printWidth = 80 }

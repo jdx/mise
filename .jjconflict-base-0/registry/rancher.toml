@@ -1,4 +1,0 @@
-backends = ["aqua:rancher/cli", "asdf:abinet/asdf-rancher"]
-description = "Rancher CLI"
-test = { cmd = "rancher --version", expected = "rancher version v{{version}}" }
-version_order = "semver"

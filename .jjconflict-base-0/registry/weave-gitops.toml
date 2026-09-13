@@ -1,8 +1,0 @@
-description = "Command line utility for managing Kubernetes applications via GitOps"
-version_order = "semver"
-
-[[backends]]
-full = "github:weaveworks/weave-gitops"
-
-[[backends]]
-full = "asdf:deas/asdf-weave-gitops"

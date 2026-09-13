@@ -1,3 +1,0 @@
-backends = ["aqua:helm/helm", "asdf:Antiarchitect/asdf-helm"]
-description = "The Kubernetes Package Manager"
-version_order = "semver"

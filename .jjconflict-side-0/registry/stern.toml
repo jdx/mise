@@ -1,3 +1,0 @@
-backends = ["aqua:stern/stern", "asdf:looztra/asdf-stern"]
-description = "⎈ Multi pod and container log tailing for Kubernetes -- Friendly fork of https://github.com/wercker/stern"
-version_order = "semver"

@@ -1,4 +1,0 @@
-aliases = ["tekton-cli"]
-backends = ["aqua:tektoncd/cli", "asdf:johnhamelink/asdf-tekton-cli"]
-description = "A CLI for interacting with Tekton"
-version_order = "semver"

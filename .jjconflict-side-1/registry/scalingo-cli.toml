@@ -1,3 +1,0 @@
-backends = ["aqua:Scalingo/cli", "asdf:brandon-welsch/asdf-scalingo-cli"]
-description = "Command Line client for Scalingo PaaS"
-version_order = "semver"

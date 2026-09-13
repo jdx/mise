@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-require_cmd zsh
-exec zsh "$TEST_DIR/zsh_script"

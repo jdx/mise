@@ -1,6 +1,0 @@
----
-source: src/shell/fish.rs
-expression: "Fish::default().unset_env(\"FOO\")"
-snapshot_kind: text
----
-set -e FOO

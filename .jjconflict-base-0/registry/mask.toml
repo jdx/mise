@@ -1,4 +1,0 @@
-backends = ["aqua:jacobdeichert/mask", "asdf:aaaaninja/asdf-mask"]
-description = "A CLI task runner defined by a simple markdown file"
-test = { cmd = "mask --version", expected = "mask {{version}}" }
-version_order = "semver"

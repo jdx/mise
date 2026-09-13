@@ -1,7 +1,0 @@
-data/
-!data/plugins
-cache/
-.cache/
-state/
-cwd/
-test-build-output.txt

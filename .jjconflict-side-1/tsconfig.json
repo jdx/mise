@@ -1,9 +1,0 @@
-{
-  "extends": "@tsconfig/node24/tsconfig.json",
-  "include": ["**/*"],
-  "exclude": ["node_modules"],
-  "compilerOptions": {
-    "outDir": "./build",
-    "types": ["bun"]
-  }
-}

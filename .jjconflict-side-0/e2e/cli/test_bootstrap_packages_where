@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-
-require_cmd python3
-python3 "$TEST_ROOT/fixtures/bootstrap_packages_where.py"

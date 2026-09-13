@@ -1,4 +1,0 @@
-backends = ["pipx:sshuttle", "asdf:mise-plugins/mise-sshuttle"]
-bins = ["sshuttle"]
-description = "sshuttle: where transparent proxy meets VPN meets ssh"
-version_order = "source"

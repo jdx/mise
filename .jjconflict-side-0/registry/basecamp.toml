@@ -1,5 +1,0 @@
-backends = ["github:basecamp/basecamp-cli"]
-bins = ["basecamp"]
-description = "Official command-line interface for Basecamp"
-test = { cmd = "basecamp --version", expected = "basecamp version {{version}}" }
-version_order = "semver"

@@ -1,5 +1,0 @@
-backends = ["npm:oxfmt"]
-bins = ["oxfmt"]
-description = "This is the formatter for oxc."
-test = { cmd = "oxfmt --version", expected = "Version: {{version}}" }
-version_order = "semver"
