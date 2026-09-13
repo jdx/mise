@@ -584,6 +584,9 @@ pub(crate) fn remove(short: &str) {
 }
 
 pub(crate) fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+    if *backend_type == BackendType::Pipx {
+        return is_disabled_backend_name("pypi") || is_disabled_backend_name("pipx");
+    }
     backend_type
         .disable_key()
         .is_some_and(is_disabled_backend_name)
@@ -2641,7 +2644,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 // Embedded-aube lock graphs are part of the physical install
                 // identity. A version-only request path must never satisfy a
                 // graph-locked request for the same top-level version.
-                if tv.aube_lock.is_some() {
+                if tv.aube_lock.is_some() || tv.uv_lock.is_some() {
                     return check_path(&tv.install_path(), check_symlink);
                 }
                 if let Some(install_path) = tv.request.install_path(config)
@@ -3279,7 +3282,23 @@ pub(crate) trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let mut tv = self.prepare_install_version(&ctx, tv).await?;
+        let graph_install_is_current = !ctx.locked
+            && !ctx.force
+            && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
+            && self
+                .is_install_satisfied_or_false(&ctx.config, &tv, true)
+                .await;
+        let mut tv = if graph_install_is_current {
+            if let Some(graph) = &tv.uv_lock {
+                graph.warn_if_missing();
+            }
+            if let Some(graph) = &tv.aube_lock {
+                graph.warn_if_missing();
+            }
+            tv
+        } else {
+            self.prepare_install_version(&ctx, tv).await?
+        };
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
         tv.request.ensure_safe_install_options()?;
@@ -5545,17 +5564,33 @@ pub(crate) fn fuzzy_match_versions(
         .collect()
 }
 
-pub(crate) fn unalias_backend(backend: &str) -> &str {
+/// Derive the directory namespace from the configured tool spelling.
+pub(crate) fn tool_directory_name(short: &str) -> String {
+    use heck::ToKebabCase;
+    short.to_kebab_case()
+}
+
+pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str> {
+    match backend.strip_prefix("pipx:") {
+        Some(name) => format!("pypi:{name}").into(),
+        None => backend.into(),
+    }
+}
+
+pub(crate) fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
         _ => backend.trim_start_matches("core:"),
     }
+    .into()
 }
 
 #[test]
 fn test_unalias_backend() {
+    assert_eq!(unalias_backend("pipx:black"), "pipx:black");
+    assert_eq!(unalias_backend("pypi:black"), "pypi:black");
     assert_eq!(unalias_backend("node"), "node");
     assert_eq!(unalias_backend("nodejs"), "node");
     assert_eq!(unalias_backend("core:node"), "node");

@@ -982,6 +982,21 @@ impl Cli {
         measure!("add_cli_matches", {
             Settings::add_cli_matches_with(&cli, cli_truncate)
         });
+        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
+            // These file-only edits must remain available when alias values conflict.
+            // Honor directory selection without loading the conflicting settings.
+            if let Some(cd) = cli
+                .cd
+                .clone()
+                .or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from))
+            {
+                crate::env::set_current_dir(cd)?;
+            }
+            let Some(Commands::Settings(cmd)) = cli.command.take() else {
+                unreachable!("settings repair command was checked");
+            };
+            return cmd.run().await;
+        }
         // Propagated, not discarded: this is where `--cd` is actually applied, and a directory
         // that passed the checks above can still refuse the `chdir` — no execute permission, or a
         // path past the length `SetCurrentDirectory` accepts. Dropping the error here does not

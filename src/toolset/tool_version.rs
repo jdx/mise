@@ -56,7 +56,9 @@ pub(crate) struct ToolVersion {
     /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
     pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
     /// Portable dependency graph used by embedded aube installs.
-    pub aube_lock: Option<AubeLock>,
+    pub aube_lock: Option<crate::lockfile::GraphRef<AubeLock>>,
+    pub uv_lock: Option<crate::lockfile::GraphRef<crate::lockfile::UvLock>>,
+    pub uv_python: Option<(PathBuf, String)>,
     /// Install satisfaction computed during dry-run installs.
     pub install_satisfied: Option<bool>,
 }
@@ -93,6 +95,8 @@ impl ToolVersion {
             conda_packages: Default::default(),
             pkgx_packages: Default::default(),
             aube_lock: None,
+            uv_lock: None,
+            uv_python: None,
             install_satisfied: None,
         }
     }
@@ -103,7 +107,17 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let install_env = request.options().core.install_env;
-        crate::env::with_install_env(install_env, Self::resolve_(config, request, opts)).await
+        let mut tv =
+            crate::env::with_install_env(install_env, Self::resolve_(config, request, opts))
+                .await?;
+        if tv.uv_lock.is_some() {
+            Box::pin(
+                crate::backend::pipx::PIPXBackend::from_arg(tv.ba().clone())
+                    .restore_uv_python(config, &mut tv),
+            )
+            .await;
+        }
+        Ok(tv)
     }
 
     async fn resolve_(
@@ -191,6 +205,7 @@ impl ToolVersion {
         tv.resolved_from_lockfile = true;
         tv.lock_platforms = lt.platforms;
         tv.aube_lock = lt.aube;
+        tv.uv_lock = lt.uv;
         tv
     }
 
@@ -213,7 +228,9 @@ impl ToolVersion {
     /// The logical tool version, excluding an internal embedded-aube graph
     /// identity suffix discovered while scanning install directories.
     pub(crate) fn display_version(&self) -> &str {
-        self.aube_install_path_version().unwrap_or(&self.version)
+        self.aube_install_path_version()
+            .or_else(|| self.uv_install_path_version())
+            .unwrap_or(&self.version)
     }
 
     pub(crate) fn aube_install_path_version(&self) -> Option<&str> {
@@ -223,6 +240,39 @@ impl ToolVersion {
         let (version, identity) = self.version.rsplit_once("~aube~")?;
         (identity.len() == 16 && identity.bytes().all(|byte| byte.is_ascii_hexdigit()))
             .then_some(version)
+    }
+
+    pub(crate) fn uv_install_path_version(&self) -> Option<&str> {
+        if self.ba().backend_type() != crate::backend::backend_type::BackendType::Pipx {
+            return None;
+        }
+        let (version, identity) = self.version.rsplit_once("~uv~")?;
+        (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
+    }
+
+    fn uv_install_identity(&self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+        let lock = self.uv_lock.as_ref()?;
+        let python = self
+            .uv_python
+            .as_ref()
+            .map(|(_, identity)| identity.as_str())
+            .unwrap_or("");
+        let options: BTreeMap<_, _> = self
+            .request
+            .options()
+            .opts_as_strings()
+            .into_iter()
+            .collect();
+        Some(hex::encode(Sha256::digest(
+            format!(
+                "{}\n{}\n{}",
+                lock.identity(),
+                python,
+                toml::to_string(&options).ok()?
+            )
+            .as_bytes(),
+        )))
     }
 
     pub(crate) fn legacy_aube_install_path_version(&self) -> Option<&str> {
@@ -235,12 +285,23 @@ impl ToolVersion {
         }
         let contents =
             crate::file::read_to_string(self.install_path().join("aube-lock.yaml")).ok()?;
-        let mut installed = self.clone();
-        installed.aube_lock = crate::lockfile::AubeLock::from_yaml(&contents).ok();
-        installed
-            .aube_install_identity()
-            .is_some_and(|actual| actual.starts_with(identity))
-            .then_some(version)
+        use sha2::{Digest, Sha256};
+        let graph = crate::lockfile::AubeLock::from_yaml(&contents).ok()?;
+        let options: BTreeMap<_, _> = self
+            .request
+            .options()
+            .opts_as_strings()
+            .into_iter()
+            .collect();
+        let actual = hex::encode(Sha256::digest(
+            format!(
+                "{}\n{}",
+                graph.legacy_identity().ok()?,
+                toml::to_string(&options).ok()?
+            )
+            .as_bytes(),
+        ));
+        actual.starts_with(identity).then_some(version)
     }
 
     pub(crate) fn install_path(&self) -> PathBuf {
@@ -390,6 +451,9 @@ impl ToolVersion {
             }
         }
         .replace([':', '/'], "-");
+        if let Some(identity) = self.uv_install_identity() {
+            return format!("{pathname}~uv~{}", &identity[..16]);
+        }
         if let Some(identity) = self.aube_install_identity() {
             // `~` is not valid in an npm package version, so install-state
             // discovery can distinguish this private identity from an opaque
@@ -403,7 +467,7 @@ impl ToolVersion {
         use sha2::{Digest, Sha256};
 
         let lock = self.aube_lock.as_ref()?;
-        let graph_identity = lock.identity().ok()?;
+        let graph_identity = lock.identity();
         let options: BTreeMap<_, _> = self
             .request
             .options()
@@ -884,6 +948,7 @@ impl PartialEq for ToolVersion {
         self.ba() == other.ba()
             && self.version == other.version
             && self.aube_install_identity() == other.aube_install_identity()
+            && self.uv_install_identity() == other.uv_install_identity()
     }
 }
 
@@ -911,6 +976,7 @@ impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ba().hash(state);
         self.version.hash(state);
+        self.uv_install_identity().hash(state);
         if let Some(identity) = self.aube_install_identity() {
             identity.hash(state);
         }
@@ -1180,6 +1246,7 @@ mod tests {
             options: BTreeMap::from([("registry".to_string(), "lockfile-value".to_string())]),
             platforms: Default::default(),
             aube: None,
+            uv: None,
         };
 
         let tv = ToolVersion::from_lockfile(request, lt);

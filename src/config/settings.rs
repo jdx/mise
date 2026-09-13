@@ -897,7 +897,7 @@ impl Settings {
             "2026.11.0",
             "2027.11.0",
             id,
-            "Default {package_type} files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every runtime version, or use package manager backends such as npm:, pipx:, gem:, or go: for CLI tools."
+            "Default {package_type} files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every runtime version, or use package manager backends such as npm:, pypi:, gem:, or go: for CLI tools."
         );
     }
 
@@ -991,14 +991,48 @@ impl Settings {
         if policy.trust == SettingsTrustPolicy::TrustedOnly && !is_loaded() {
             bail!("trusted settings resolution requires the base settings to be loaded");
         }
-        let mut builder = Self::builder().preloaded(Self::cli_settings_layer()).env();
+        let mut builder = Self::builder().preloaded(Self::cli_settings_layer());
+        if [
+            "MISE_PYPI_UVX",
+            "MISE_PIPX_UVX",
+            "MISE_PYPI_REGISTRY_URL",
+            "MISE_PIPX_REGISTRY_URL",
+        ]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+        {
+            let mut env_aliases = Self::builder().env().load()?;
+            env_aliases.normalize_pypi_aliases()?;
+            let mut alias_layer = SettingsPartial::default();
+            // Normalize the environment as its own source before layering it over files.
+            if std::env::var_os("MISE_PYPI_UVX").is_some()
+                || std::env::var_os("MISE_PIPX_UVX").is_some()
+            {
+                alias_layer.pypi.uvx = env_aliases.pypi.uvx;
+                alias_layer.pipx.uvx = env_aliases.pypi.uvx;
+            }
+            if std::env::var_os("MISE_PYPI_REGISTRY_URL").is_some()
+                || std::env::var_os("MISE_PIPX_REGISTRY_URL").is_some()
+            {
+                alias_layer.pypi.registry_url = env_aliases.pypi.registry_url.clone();
+                alias_layer.pipx.registry_url = env_aliases.pypi.registry_url;
+            }
+            builder = builder.preloaded(alias_layer);
+        }
+        builder = builder.env();
         if policy.source == SettingsSourcePolicy::Hierarchy {
             for layer in Self::settings_layers_from(root, policy.trust) {
+                if matches!((&layer.pypi.uvx, &layer.pipx.uvx), (Some(a), Some(b)) if a != b)
+                    || matches!((&layer.pypi.registry_url, &layer.pipx.registry_url), (Some(a), Some(b)) if a != b)
+                {
+                    bail!("conflicting pypi and pipx settings in the same file");
+                }
                 builder = builder.preloaded(layer);
             }
             builder = builder.preloaded(DEFAULT_SETTINGS.clone());
         }
         let mut settings = builder.load()?;
+        settings.normalize_pypi_aliases()?;
         normalize_storage_dirs(&mut settings)?;
         validate_settings_enum_values(&settings)?;
         settings.validate_lockfile_mode()?;
@@ -1194,6 +1228,36 @@ impl Settings {
         }
     }
 
+    fn normalize_pypi_aliases(&mut self) -> Result<()> {
+        fn merge<T: PartialEq>(
+            preferred: &mut Option<T>,
+            legacy: &mut Option<T>,
+            name: &str,
+        ) -> Result<()> {
+            if let (Some(a), Some(b)) = (preferred.as_ref(), legacy.as_ref())
+                && a != b
+            {
+                eyre::bail!("conflicting pypi.{name} and pipx.{name} settings");
+            }
+            if preferred.is_none() {
+                *preferred = legacy.take();
+            } else {
+                legacy.take();
+            }
+            Ok(())
+        }
+        merge(
+            &mut self.pypi.registry_url,
+            &mut self.pipx.registry_url,
+            "registry_url",
+        )?;
+        merge(&mut self.pypi.uvx, &mut self.pipx.uvx, "uvx")?;
+        self.pypi
+            .registry_url
+            .get_or_insert_with(|| "https://pypi.org/pypi/{}/json".to_owned());
+        Ok(())
+    }
+
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
         if let Some(v) = self.install_before.take() {
@@ -1356,6 +1420,30 @@ impl Settings {
             resolve_aqua_registry_paths(settings, path);
             resolve_age_paths(settings, path)?;
             resolve_task_disable_paths(settings, path);
+        }
+        if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
+            for leaf in ["uvx", "registry_url"] {
+                let legacy = settings
+                    .get("pipx")
+                    .and_then(|value| value.get(leaf))
+                    .cloned();
+                if let Some(legacy) = legacy {
+                    let preferred = settings
+                        .entry("pypi")
+                        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                    if let Some(preferred) = preferred.as_table_mut() {
+                        if preferred.get(leaf).is_some_and(|value| value != &legacy) {
+                            continue;
+                        }
+                        preferred.insert(leaf.to_owned(), legacy);
+                        if let Some(legacy) =
+                            settings.get_mut("pipx").and_then(toml::Value::as_table_mut)
+                        {
+                            legacy.remove(leaf);
+                        }
+                    }
+                }
+            }
         }
         let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
@@ -3484,5 +3572,15 @@ mod tests {
         );
         let result: BTreeSet<PathBuf> = list_by_os_path_separator(input).unwrap();
         assert_eq!(result, [a, b].into_iter().collect());
+    }
+    #[test]
+    fn pypi_settings_aliases_merge_and_reject_conflicts() {
+        let mut settings = Settings::default();
+        settings.pipx.uvx = Some(false);
+        settings.normalize_pypi_aliases().unwrap();
+        assert_eq!(settings.pypi.uvx, Some(false));
+        assert_eq!(settings.pipx.uvx, None);
+        settings.pipx.uvx = Some(true);
+        assert!(settings.normalize_pypi_aliases().is_err());
     }
 }

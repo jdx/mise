@@ -406,6 +406,26 @@ impl Lock {
             && self.platform.is_empty()
             && migration_inputs.is_empty()
             && distinct_lockfile_targets(lockfile_targets.keys());
+        // Hold lockfile locks from the initial read through publication and GC.
+        // Otherwise another process can publish a graph after our stale GC scan.
+        let generation_lock_paths: BTreeSet<PathBuf> = if atomic && !self.dry_run {
+            lockfile_targets
+                .keys()
+                .cloned()
+                .chain(config_snapshots.keys().cloned())
+                .chain(
+                    migration_inputs
+                        .iter()
+                        .flat_map(|(source, target)| [source.clone(), target.clone()]),
+                )
+                .collect()
+        } else {
+            BTreeSet::new()
+        };
+        let mut generation_locks = Vec::new();
+        for path in &generation_lock_paths {
+            generation_locks.push(crate::lock_file::LockFile::new(path).lock()?);
+        }
         let initial_lockfiles = lockfile_targets
             .keys()
             .chain(
@@ -530,9 +550,17 @@ impl Lock {
                         has_lock_targets = true;
                     }
                 } else {
-                    let _lock = crate::lock_file::LockFile::new(&lockfile_path)
-                        .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
-                        .lock()?;
+                    let _lock = if generation_lock_paths.contains(&lockfile_path) {
+                        None
+                    } else {
+                        Some(
+                            crate::lock_file::LockFile::new(&lockfile_path)
+                                .with_callback(|l| {
+                                    debug!("waiting for lock on {}", display_path(l))
+                                })
+                                .lock()?,
+                        )
+                    };
                     let original_content = read_optional_file(&lockfile_path)?;
                     let mut lockfile = if generate {
                         lockfile::generate::read_previous(&config, &lockfile_path, self.upgrade)?
@@ -640,9 +668,15 @@ impl Lock {
             }
 
             // Process tools and update lockfile
-            let _lock = crate::lock_file::LockFile::new(&lockfile_path)
-                .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
-                .lock()?;
+            let _lock = if generation_lock_paths.contains(&lockfile_path) {
+                None
+            } else {
+                Some(
+                    crate::lock_file::LockFile::new(&lockfile_path)
+                        .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+                        .lock()?,
+                )
+            };
             let original_content = read_optional_file(&lockfile_path)?;
             let mut lockfile = if generate {
                 lockfile::generate::read_previous(&config, &lockfile_path, self.upgrade)?
@@ -668,6 +702,8 @@ impl Lock {
             // compare against old version entries. Actual pruning happens after.
             let stale_versions = self.stale_versions_if_pruned(&lockfile, &tools);
 
+            // Short-circuit before graph population: unchanged generate-mode auto-lock
+            // must not open sidecars or require uv on a hot install.
             // No new installation result can override the cached artifacts here.
             // Keep unchanged files out of the mutation/rollback set, but leave them
             // in initial_lockfiles so publication still checks concurrent edits.
@@ -720,6 +756,13 @@ impl Lock {
             } else {
                 self.bind_requests(&mut lockfile, &tools, &target_platforms);
             }
+            Box::pin(lockfile::generate::populate_uv_locks(
+                &config,
+                &mut lockfile,
+                &tools,
+                self.bump,
+            ))
+            .await?;
             if !generate || self.bump || format_changed {
                 Box::pin(lockfile::generate::populate_aube_locks(
                     &mut lockfile,
@@ -732,7 +775,7 @@ impl Lock {
 
             // Prune stale versions AFTER provenance checks complete
             if !generate {
-                self.prune_stale_versions(&mut lockfile, &tools);
+                self.prune_stale_versions(&mut lockfile, &tools)?;
             }
             if !self.upgrade {
                 self.show_stale_version_prune_message(&lockfile_path, &stale_versions, false)?;
@@ -856,10 +899,28 @@ impl Lock {
                         .flat_map(|(source, target)| [source.clone(), target.clone()]),
                 )
                 .collect();
+            let prepared_writes = staged_upgrade_writes
+                .iter()
+                .map(|staged| staged.lockfile.prepare_write(&staged.path))
+                .collect::<Result<Vec<_>>>()?;
+            let mut mutation_paths = mutation_paths;
+            for prepared in prepared_writes.iter().flatten() {
+                mutation_paths.extend(prepared.mutation_paths().cloned());
+            }
+            // Read-only inputs need locks, but must never become rollback writes.
+            let snapshots = mutation_paths
+                .iter()
+                .map(|path| {
+                    Ok(LockfileSnapshot {
+                        path: path.clone(),
+                        content: read_optional_file(path)?,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
             let transaction_paths =
                 publication_lock_paths(&mutation_paths, &config_snapshots, &initial_lockfiles);
             let mut transaction_locks = Vec::with_capacity(transaction_paths.len());
-            for path in &transaction_paths {
+            for path in transaction_paths.difference(&generation_lock_paths) {
                 transaction_locks.push(
                     crate::lock_file::LockFile::new(path)
                         .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
@@ -879,30 +940,22 @@ impl Lock {
                 }
             }
 
-            // Read-only inputs need locks, but must never become rollback writes.
-            let snapshots = mutation_paths
-                .iter()
-                .map(|path| {
-                    Ok(LockfileSnapshot {
-                        path: path.clone(),
-                        content: read_optional_file(path)?,
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?;
+            verify_generation_snapshots(
+                snapshots
+                    .iter()
+                    .map(|snapshot| (&snapshot.path, &snapshot.content)),
+            )?;
             // Materialize and sync every rollback replacement before the first
             // mutation. Recovery then only needs same-directory renames, so a
             // later disk-full failure cannot prevent restoration by requiring
             // more file data to be written.
             let rollbacks = prepare_lockfile_rollback(&snapshots)?;
-            let prepared_writes = staged_upgrade_writes
-                .iter()
-                .map(|staged| staged.lockfile.prepare_write(&staged.path))
-                .collect::<Result<Vec<_>>>()?;
+            let mut graph_cleanups = Vec::new();
             verify_generation_snapshots(config_snapshots.iter().chain(initial_lockfiles.iter()))?;
             let commit_result = (|| -> Result<()> {
                 crate::toolset::outdated_info::apply_config_bumps(&config, &deferred_config_bumps)?;
                 for prepared in prepared_writes.into_iter().flatten() {
-                    prepared.publish()?;
+                    graph_cleanups.push(prepared.publish_deferred()?);
                 }
                 lockfile::migrate_monorepo_lockfiles_already_locked(
                     &config,
@@ -925,6 +978,10 @@ impl Lock {
                     )));
                 }
                 return Err(err);
+            }
+            drop(rollbacks);
+            for cleanup in graph_cleanups {
+                cleanup.prune()?;
             }
             drop(transaction_locks);
 
@@ -1152,11 +1209,48 @@ impl Lock {
     ///
     /// Note: This must be called AFTER process_tools() so that provenance checks
     /// can compare against the old version entries before they are removed.
-    fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) {
+    fn prune_stale_versions(&self, lockfile: &mut Lockfile, tools: &[LockTool]) -> Result<()> {
         let current_versions = self.current_tool_versions(tools);
         for (short, versions) in &current_versions {
             lockfile.retain_tool_versions(short, versions);
         }
+        if self.is_unfiltered_lock_run()
+            && lockfile
+                .tools()
+                .values()
+                .flatten()
+                .any(|entry| entry.uv.is_some() || entry.aube.is_some())
+        {
+            let variants = tools
+                .iter()
+                .map(|(ba, tv)| {
+                    Ok((
+                        ba.short.clone(),
+                        ba.stored_full(),
+                        tv.version.clone(),
+                        tv.backend()?.resolve_lockfile_options(
+                            &tv.request,
+                            &crate::backend::platform_target::PlatformTarget::from_current(),
+                        )?,
+                    ))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            lockfile.retain_graph_entries(|short, entry| {
+                let mut matching = variants
+                    .iter()
+                    .filter(|(name, backend, version, _)| {
+                        name == short
+                            && version == &entry.version
+                            && entry.backend.as_deref().is_none_or(|b| b == backend)
+                    })
+                    .peekable();
+                // Keep backends unavailable on this host; only prune variants
+                // for a backend and version resolved by this invocation.
+                matching.peek().is_none()
+                    || matching.any(|(_, _, _, options)| options == &entry.options)
+            });
+        }
+        Ok(())
     }
 
     fn stale_entries_if_pruned(
@@ -1458,7 +1552,7 @@ impl Lock {
                 && !self
                     .tool
                     .iter()
-                    .any(|requested| requested.ba.short == backend.ba().short)
+                    .any(|requested| requested.ba.as_ref() == backend.ba().as_ref())
             {
                 return false;
             }
@@ -1601,7 +1695,7 @@ impl Lock {
                                 }
                             }
                             let requested_tool = self.tool.is_empty()
-                                || self.tool.iter().any(|tool| tool.ba.short == ba.short);
+                                || self.tool.iter().any(|tool| tool.ba.as_ref() == ba.as_ref());
                             let active_unresolved = requested_tool
                                 && ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
                                     tvl.requests
@@ -1685,7 +1779,7 @@ impl Lock {
             let specified_versions: std::collections::HashMap<String, Option<ToolRequest>> = self
                 .tool
                 .iter()
-                .map(|t| (t.ba.short.clone(), t.tvr.clone()))
+                .map(|t| (t.ba.full(), t.tvr.clone()))
                 .collect();
             // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
             // installed concrete version and lock that. Writing the literal "latest"
@@ -1694,9 +1788,9 @@ impl Lock {
             let mut tools: Vec<LockTool> = Vec::new();
             for (ba, mut tv) in all_tools
                 .into_iter()
-                .filter(|(ba, _)| specified_versions.contains_key(&ba.short))
+                .filter(|(ba, _)| specified_versions.contains_key(&ba.full()))
             {
-                if let Some(Some(request)) = specified_versions.get(&ba.short) {
+                if let Some(Some(request)) = specified_versions.get(&ba.full()) {
                     let version = request.version();
                     let backend = crate::backend::get(&ba);
                     let effective_version = match &backend {
@@ -1780,10 +1874,7 @@ impl Lock {
                 err.wrap_err(format!("failed to parse tools for task `{}`", task.name))
             })? {
                 if !self.tool.is_empty()
-                    && !self
-                        .tool
-                        .iter()
-                        .any(|requested| requested.ba.short == tool.ba.short)
+                    && !self.tool.iter().any(|requested| requested.ba == tool.ba)
                 {
                     continue;
                 }
@@ -2060,7 +2151,7 @@ mod tests {
     #[test]
     fn snapshot_recheck_detects_config_and_migration_edits_after_initial_check() {
         let dir = tempfile::tempdir().unwrap();
-        for filename in ["mise.toml", "legacy.mise.lock"] {
+        for filename in ["mise.toml", "legacy.mise.lock", "uv.lock", "aube-lock.yaml"] {
             let path = dir.path().join(filename);
             fs::write(&path, "original").unwrap();
             let snapshots = BTreeMap::from([(path.clone(), Some(b"original".to_vec()))]);
@@ -2378,7 +2469,7 @@ mod tests {
         let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
         let tools = vec![configured_tool("dummy", "2.0.0")];
 
-        cmd.prune_stale_versions(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools).unwrap();
 
         // Old version entry should be removed
         assert!(lockfile.all_platform_keys().is_empty());
@@ -2391,7 +2482,7 @@ mod tests {
         let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
         let tools = vec![configured_tool("dummy", "1.0.0")];
 
-        cmd.prune_stale_versions(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools).unwrap();
 
         // Entry should still be there
         assert_eq!(
@@ -2419,7 +2510,7 @@ mod tests {
         // Resolve dummy to a new version; jq is not targeted
         let tools = vec![configured_tool("dummy", "2.0.0")];
 
-        cmd.prune_stale_versions(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools).unwrap();
 
         // dummy@1.0.0 (linux-x64) should be removed, jq@1.7.1 (macos-x64) should remain
         assert_eq!(
@@ -2435,7 +2526,7 @@ mod tests {
         let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
         let tools = vec![configured_tool("dummy", "2.0.0")];
 
-        cmd.prune_stale_versions(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools).unwrap();
 
         // Old version entry should be removed
         assert!(lockfile.all_platform_keys().is_empty());
@@ -2448,7 +2539,7 @@ mod tests {
         let mut lockfile = lockfile_with_dummy(); // has dummy@1.0.0
         let tools = vec![configured_tool("dummy", "1.0.0")];
 
-        cmd.prune_stale_versions(&mut lockfile, &tools);
+        cmd.prune_stale_versions(&mut lockfile, &tools).unwrap();
 
         // Entry should still be there
         assert_eq!(

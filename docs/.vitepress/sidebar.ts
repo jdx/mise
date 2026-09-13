@@ -103,7 +103,7 @@ export const sidebar: SidebarItem[] = [
           { text: "http", link: "/dev-tools/backends/http" },
           { text: "npm", link: "/dev-tools/backends/npm" },
           { text: "packslip", link: "/dev-tools/backends/packslip" },
-          { text: "pipx", link: "/dev-tools/backends/pipx" },
+          { text: "pypi", link: "/dev-tools/backends/pypi" },
           { text: "pkgx", link: "/dev-tools/backends/pkgx" },
           { text: "spm", link: "/dev-tools/backends/spm" },
           { text: "ubi", link: "/dev-tools/backends/ubi" },

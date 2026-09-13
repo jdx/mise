@@ -17,7 +17,7 @@ install_cmd() {
 # uvx disabled by the pipx.uvx setting: uv is not an alternative here
 out="$(quiet_assert_fail "$(install_cmd MISE_PIPX_UVX=0) pipx:cowsay@6.1")"
 assert_contains_text "$out" "mise use pipx@latest"
-assert_contains_text "$out" "pipx.uvx"
+assert_contains_text "$out" "pypi.uvx"
 assert_not_contains_text "$out" "mise use uv@latest"
 assert_not_contains_text "$out" "os error 2"
 

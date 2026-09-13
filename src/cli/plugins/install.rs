@@ -186,6 +186,7 @@ pub(crate) async fn install_plugin(
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     let name = unalias_backend(name);
+    let name = name.as_ref();
     if git_url.is_none()
         && let Some((kind, short)) = name.split_once(':')
         && matches!(kind, "vfox" | "vfox-backend" | "package" | "asdf")

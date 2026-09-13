@@ -46,8 +46,8 @@ mise lock --bump node # update Node's resolution within its configured request
 ```
 
 Review the lockfile diff before committing an update. Version 2 lockfiles also
-record the complete dependency graph for npm tools installed by mise's embedded
-aube package manager. Other external installers are limited to the metadata their
+reference native sidecar lockfiles for npm tools installed by mise's embedded
+aube package manager and Python tools installed through uv. Other external installers are limited to the metadata their
 backend exposes. Keep application lockfiles such as `package-lock.json` and
 `uv.lock` as well.
 
@@ -137,12 +137,12 @@ url = "https://nodejs.org/dist/v26.8.1/node-v26.8.1-darwin-arm64.tar.gz"
 New lockfiles use the current versioned format. Older lockfiles retain their format
 during ordinary updates to avoid making them unreadable by collaborators using an
 older mise. Run `mise lock --upgrade` to upgrade explicitly. Version 1 records each
-original tool request in the concrete entry it resolved to. Version 2 adds embedded
-aube dependency graphs for npm tools. Older mise versions reject version 2 lockfiles.
+original tool request in the concrete entry it resolved to. Version 2 references native
+aube and uv dependency graphs in sidecar directories. Older mise versions reject version 2 lockfiles.
 
 For an npm tool, `mise lock --bump <tool>` refreshes the transitive graph even when
 the top-level package version does not change. Frozen installs validate and replay
-that graph. Its canonical digest is part of the installation directory name, so two
+that graph. Its file-byte digest is part of the installation directory name, so two
 projects can use different transitive graphs for the same top-level version. This
 selection guarantee does not make lifecycle-script output reproducible.
 
@@ -168,7 +168,8 @@ Each tool entry (`[[tools.name]]`) can contain:
 - **`specifiers`** (version 1): Original requests that resolve to this version and option variant
 - **`options`** (optional): Backend-specific options that identify the artifact (e.g., `{exe = "rg", matching = "musl"}`)
 - **`platforms`** (optional): Platform-specific metadata (checksums, URLs, sizes)
-- **`aube`** (version 2, npm only): Portable dependency graph used by embedded aube
+- **`aube`** (version 2, npm only): `{ path, digest }` reference to an embedded-aube sidecar directory
+- **`uv`** (version 2, Python tools): `{ path, digest }` reference to a uv sidecar directory
 
 A tool can have several entries for the same version when its artifact identity
 depends on more than the platform key. Swift, for example, publishes a different
@@ -667,8 +668,10 @@ version, not unpinned transitive dependencies resolved during installation.
 This setting filters top-level fuzzy version resolution for backends that provide release timestamps.
 Versions without timestamps are included by default.
 
-Only `npm:` and `pipx:` currently forward the same cutoff into transitive dependency resolution during
-install, and that protection remains active when the top-level version comes from a lockfile. Other
+Only `npm:` and `pypi:` (also available as `pipx:`) currently forward the same cutoff into transitive
+dependency resolution during install, including when the top-level version comes from a lockfile.
+For frozen dependency graphs, the cutoff applies when resolving the graph; installation replays the
+committed dependencies without resolving them again. Other
 backends may select an older top-level tool version, but they do not constrain dependencies fetched by
 the tool's installer/compiler.
 
@@ -677,3 +680,72 @@ the tool's installer/compiler.
 - [Configuration Settings](/configuration/settings) - All available settings
 - [Tool Version Management](/dev-tools/) - How tool versions work
 - [Backends](/dev-tools/backends/) - Backend-specific checksum support
+
+## Python dependency graphs
+
+Lockfile revision 2 supports portable uv dependency graphs for `pypi:` tools (`pipx:`
+is a compatibility alias). New lockfiles use revision 2; existing revisions 0–1
+keep their format until `mise lock --upgrade`. Older mise versions reject revision
+2 instead of ignoring its dependency graphs.
+
+With uv >= 0.12.10 installed, `mise lock` records dependencies and wheel hashes;
+`mise install --locked` replays them without resolution or source builds. Use
+`mise lock --bump pypi:black` to refresh Black's dependencies independently of its
+top-level version. See [PyPI tools](./backends/pypi.md#dependency-locking) for
+interpreter selection, supported indexes, and compatibility limitations.
+
+## Native dependency sidecars
+
+Commit the sidecar directory alongside `mise.lock`. Each graph has its own directory:
+
+```text
+mise.lock
+.mise/locks/pypi-black/24.10.0/pyproject.toml
+.mise/locks/pypi-black/24.10.0/uv.lock
+.mise/locks/npm-prettier/3.3.3/package.json
+.mise/locks/npm-prettier/3.3.3/aube-lock.yaml
+```
+
+The corresponding entry contains a relative path and a SHA-256 digest of the native
+lockfile's exact bytes:
+
+```toml
+[[tools."pypi:black"]]
+version = "24.10.0"
+backend = "pypi:black"
+uv = { path = ".mise/locks/pypi-black/24.10.0", digest = "sha256:…" }
+```
+
+The directory follows your configuration layout: `.mise/mise.lock` uses
+`.mise/locks/`, and both `.config/mise/mise.lock` and `.config/mise.lock` use
+`.config/mise/locks/`. Option variants have a hash suffix. Once recorded, a path
+stays unchanged when other variants are added. Directory names follow the tool
+spelling: `pypi:black` uses `pypi-black`, while `pipx:black` uses `pipx-black`.
+Explicit `mise lock` and generate-mode auto-lock saves remove unreferenced sidecar
+directories. Merge-mode auto-lock saves write sidecars but never delete them.
+In a monorepo, sidecars follow the root lockfile layout; a subproject's configuration
+layout does not affect their location. Successful migration removes legacy sidecars.
+
+Non-default lockfile names have separate subdirectories. For example,
+`mise.local.lock` uses `.mise/locks/mise.local/` in a root configuration layout.
+If you ignore the local lockfile in Git, also ignore that matching sidecar directory.
+Cleanup never removes another lockfile's sidecars.
+
+Tools that recognize `pyproject.toml` and `uv.lock`, such as Renovate, can inspect
+these native Python projects. Configure their repository scope to include the
+sidecar directories. `aube-lock.yaml` is aube's native format; it is not an npm
+`package-lock.json` and scanners may not recognize its transitive dependencies.
+
+When an installation is needed, ordinary `mise install` validates external sidecar
+edits and installs under the identity of the actual bytes, then updates the recorded
+digest through auto-locking. If the recorded installation already exists, ordinary
+`mise install` skips graph validation and only warns if the graph file is missing. `mise lock` also accepts valid
+edits without resolving dependencies again. `mise install --locked` instead rejects
+an inconsistent digest and directs you to run `mise lock` to accept the edit.
+Formatting-only edits also change identity. Missing or unreadable sidecars are
+regenerated by `mise lock` when the tool is configured and its installer is available;
+locked installation fails clearly.
+
+Ordinary environment resolution uses the recorded digest without opening sidecars.
+The universal graph retains all wheel targets for portability; moving it out of
+`mise.lock` keeps the top-level pin diff small without dropping that coverage.

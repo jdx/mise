@@ -477,6 +477,15 @@ impl Backend for NPMBackend {
         {
             tv.aube_lock = Some(self.resolve_aube_lock(&tv).await?);
         }
+        if let Some(lock) = &tv.aube_lock {
+            let lock = if !ctx.locked && lock.load().is_err() {
+                lock.refresh()?
+            } else {
+                lock.clone()
+            };
+            self.validate_aube_lock(&tv, lock.load()?)?;
+            tv.aube_lock = Some(lock);
+        }
         Ok(tv)
     }
 
@@ -1160,7 +1169,7 @@ impl NPMBackend {
         self.write_aube_root_dependency(&install_path, &self.tool_name(), &tv.version)?;
 
         if let Some(lock) = &tv.aube_lock {
-            crate::file::write(install_path.join("aube-lock.yaml"), lock.to_yaml()?)?;
+            crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let mut install_options = aube::embed::InstallOptions::new(&install_path);
             install_options.frozen_mode = aube::embed::FrozenMode::Frozen;
@@ -1408,10 +1417,33 @@ impl NPMBackend {
         Ok(())
     }
 
+    pub(crate) fn validate_aube_lock(
+        &self,
+        tv: &ToolVersion,
+        lock: &crate::lockfile::AubeLock,
+    ) -> Result<()> {
+        let requirement = lock
+            .graph
+            .get("importers")
+            .and_then(|v| v.get("."))
+            .and_then(|v| v.get("dependencies"))
+            .and_then(|v| v.get(self.tool_name()))
+            .and_then(|v| v.get("specifier"))
+            .and_then(toml::Value::as_str);
+        if requirement != Some(tv.version.as_str()) {
+            eyre::bail!(
+                "npm:{} dependency graph does not match root version {}; run `mise lock`",
+                self.tool_name(),
+                tv.version
+            );
+        }
+        Ok(())
+    }
+
     pub(crate) async fn resolve_aube_lock(
         &self,
         tv: &ToolVersion,
-    ) -> Result<crate::lockfile::AubeLock> {
+    ) -> Result<crate::lockfile::GraphRef<crate::lockfile::AubeLock>> {
         crate::backend::aube_host::init();
         let temp = tempfile::tempdir()?;
         let request_options = tv.request.options();
@@ -1429,7 +1461,11 @@ impl NPMBackend {
             .await
             .map_err(|error| self.format_aube_install_error(error))?;
         let contents = crate::file::read_to_string(temp.path().join("aube-lock.yaml"))?;
-        crate::lockfile::AubeLock::from_yaml(&contents)
+        let mut graph = crate::lockfile::AubeLock::from_yaml(&contents)?;
+        graph.project = Some(crate::file::read_to_string(
+            temp.path().join("package.json"),
+        )?);
+        Ok(graph.into())
     }
 
     /// Configure a standalone `aube add --global` invocation to install into
