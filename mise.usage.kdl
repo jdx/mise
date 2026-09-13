@@ -707,6 +707,23 @@ are not reversible. Concurrent editor changes are part of the same interval.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
         }
+        cmd conflicts help="Inspect the local and remote sides of sharing conflicts" {
+            long_help #"""
+Inspect the local and remote sides of sharing conflicts
+
+By default, prints a unified diff from this machine's saved version to the
+fetched repository version. `--difftool` opens the comparison in Git's
+configured diff tool; when `diff.tool` is unset, Git falls back to
+`merge.tool`. This command does not change either side or resolve a conflict.
+"""#
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles conflicts\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles conflicts ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles conflicts --difftool ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles conflicts --difftool --tool meld ~/.zshrc\u{1b}[22m\n"
+            flag --difftool help="Open the comparison in Git's configured diff or merge tool"
+            flag --tool help="Use this Git diff tool instead of the configured default" requires=--difftool {
+                arg <TOOL>
+            }
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[PATH]…" help="Only inspect these conflicted paths" required=#false var=#true
+        }
         cmd diff help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
             flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
             flag "-h --help" help="Print help" action=help builtin=#true

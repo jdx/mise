@@ -287,16 +287,32 @@ show the last error.
 
 ### Resolve a conflict
 
-Inspect the reported files:
+Inspect the saved version on this machine against the fetched repository
+version:
 
 ```sh
 mise bootstrap dotfiles status
+mise bootstrap dotfiles conflicts ~/.zshrc
 ```
+
+`conflicts` prints a unified diff without changing either side. To open the
+comparison in Git's configured diff tool, or its configured merge tool when no
+diff tool is set, pass `--difftool`. An explicitly selected tool can be passed
+with `--difftool --tool <name>`.
 
 Choose the remote version of a file, or keep the local version:
 
 ```sh
 mise bootstrap dotfiles pull --take-remote ~/.zshrc
+mise bootstrap dotfiles pull --keep-local ~/.zshrc
+```
+
+To combine both sides, use the conflict diff to edit the live file, save the
+merged contents, then choose the saved local version:
+
+```sh
+mise bootstrap dotfiles conflicts --difftool ~/.zshrc
+mise bootstrap dotfiles save
 mise bootstrap dotfiles pull --keep-local ~/.zshrc
 ```
 

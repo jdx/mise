@@ -49,6 +49,14 @@ assert_succeed 'mise bootstrap dotfiles sync'
 assert_succeed "$b bootstrap dotfiles sync"
 assert_fail "$b bootstrap dotfiles pull --yes" 'sync paused'
 assert "cat $B/.config/journey/bindings" 'desktop edit'
+assert_contains "$b bootstrap dotfiles status" 'bootstrap dotfiles conflicts'
+assert_contains "$b bootstrap dotfiles conflicts $B/.config/journey/bindings" '-desktop edit'
+assert_contains "$b bootstrap dotfiles conflicts $B/.config/journey/bindings" '+laptop edit'
+HOME="$B" git config --global merge.tool mise-test
+HOME="$B" git config --global mergetool.mise-test.cmd \
+  'grep -q "desktop edit" "$LOCAL" && grep -q "laptop edit" "$REMOTE" && touch "$HOME/difftool-ran"'
+assert_succeed "$b bootstrap dotfiles conflicts --difftool $B/.config/journey/bindings"
+assert_succeed "test -f $B/difftool-ran"
 assert_succeed "$b bootstrap dotfiles pull --take-remote $B/.config/journey/bindings --yes"
 assert "cat $B/.config/journey/bindings" 'laptop edit'
 

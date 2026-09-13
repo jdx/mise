@@ -80,6 +80,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap systemd status", Read),
     ("bootstrap dotfiles add", Write),
     ("bootstrap dotfiles apply", Write),
+    ("bootstrap dotfiles conflicts", Read),
     ("bootstrap dotfiles diff", Read),
     ("bootstrap dotfiles edit", Write),
     ("bootstrap dotfiles exclude", Write),
