@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DNKY7524K62RBSVWSVF0GD",
+  "session_id": "01a09b01-de4e-7303-9e8a-29f068a8507f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T15:19:21.939847Z",
+  "branch": "codex/dotfiles-conflict-inspection",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_dotfiles_recovery_journey",
+    "src/cli/dotfiles/conflicts.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "e029e60ea787",
+  "checkpoint_transcript_start": 1936,
+  "transcript_lines_at_start": 1936,
+  "compact_transcript_start": 285,
+  "token_usage": {
+    "input_tokens": 90602,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 9003648,
+    "output_tokens": 5932,
+    "api_call_count": 60
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-13T15:19:21.62223Z",
+    "agent_lines": 5,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 5,
+    "total_lines_changed": 6,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
