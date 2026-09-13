@@ -1,0 +1,19 @@
+backends = ["conda:poppler"]
+bins = [
+  "pdfattach",
+  "pdfdetach",
+  "pdffonts",
+  "pdfimages",
+  "pdfinfo",
+  "pdfseparate",
+  "pdfsig",
+  "pdftocairo",
+  "pdftohtml",
+  "pdftoppm",
+  "pdftops",
+  "pdftotext",
+  "pdfunite",
+]
+description = "Poppler is a PDF rendering library based on the xpdf-3.0 code base"
+test = { cmd = "pdfinfo -v", expected = "pdfinfo version {{version}}" }
+version_order = "source"
