@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2EA1YPA83ZJTXH99X6JXQ2X",
   "strategy": "manual-commit",
   "branch": "codex/parallel-windows-unit",
-  "checkpoints_count": 1,
+  "checkpoints_count": 6,
   "files_touched": [
     "e2e-win/npm_backend.Tests.ps1"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 303673,
+    "input_tokens": 468858,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 20202496,
-    "output_tokens": 16212,
-    "api_call_count": 129
+    "cache_read_tokens": 26616320,
+    "output_tokens": 44604,
+    "api_call_count": 197
   }
 }
