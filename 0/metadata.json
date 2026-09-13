@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DM6G8XRFP4S06C06TVAWM0",
+  "session_id": "01a09b01-de4e-7303-9e8a-29f068a8507f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-13T14:54:33.002877Z",
+  "branch": "codex/dotfiles-conflict-inspection",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "e2e/cli/test_bootstrap_config_root_secrets",
+    "src/system/secrets.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "e029e60ea787",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 618536,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 35729408,
+    "output_tokens": 56673,
+    "api_call_count": 283
+  },
+  "session_metrics": {
+    "turn_count": 2
+  }
+}
