@@ -103,7 +103,7 @@ Run `mise lock` after editing a sidecar to accept its updated digest before usin
   version-only locking. pipx cannot replay a uv dependency graph.
 - **No free-form installer arguments:** `uvx_args` and `pipx_args` are unsupported
   with dependency graphs. Configure [Python](#choosing-python) and the
-  [registry URL](#registry_url) directly instead.
+  [registry URL](#registry-url) directly instead.
 - **Installed Python required:** lock generation needs an interpreter discoverable
   by uv, though it need not match the tool's configured Python version. Graph
   installs use the selected mise Python and do not download a replacement.
