@@ -1288,11 +1288,19 @@ impl PackslipBackend {
                 .map(|t| format!(", logged {t}"))
                 .unwrap_or_default()
         );
-        let before = crate::install_before::resolve_before_date_for_tool(
-            &self.ba,
-            tv.before_date.or(ctx.before_date),
-            raw_opts.minimum_release_age(),
-        )?;
+        // Release age governs selection, but a committed lockfile has already
+        // selected this exact signed release. Keep the cutoff in InstallContext
+        // for package-manager transitive dependencies while making the locked
+        // top-level Packslip artifact reproducible during its cooling window.
+        let before = if tv.resolved_from_lockfile() {
+            None
+        } else {
+            crate::install_before::resolve_before_date_for_tool(
+                &self.ba,
+                tv.before_date.or(ctx.before_date),
+                raw_opts.minimum_release_age(),
+            )?
+        };
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,

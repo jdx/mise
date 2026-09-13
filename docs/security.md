@@ -113,6 +113,8 @@ backends, it only affects fuzzy version resolution, such as `node@24` or `latest
 Explicitly pinned versions like `node@24.0.0` bypass the filter.
 Versions selected from `mise.lock` also bypass it: the lockfile records an
 already-reviewed selection and must remain reproducible while that release is still cooling.
+This exemption applies to the locked top-level version only. The `npm:` and `pipx:` backends
+continue to apply the cutoff to unpinned transitive dependencies they resolve during installation.
 During ordinary toolset resolution, already-installed fuzzy matches remain eligible:
 `minimum_release_age` limits remote version selection and does not make an installed version
 inactive. Lockfile generation may re-check fuzzy installed matches against release metadata.

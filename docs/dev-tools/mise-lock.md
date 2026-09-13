@@ -653,14 +653,16 @@ minimum_release_age = "7d"  # override the default 24h delay
 This pairs well with lockfiles — use `minimum_release_age` to avoid picking up brand-new releases,
 and lockfiles to pin the exact versions you've vetted. Once a version is selected from `mise.lock`,
 installation does not reapply the age cutoff; the committed selection remains reproducible even
-while the release is still inside the cooling window.
+while the release is still inside the cooling window. This exemption covers the locked top-level
+version, not unpinned transitive dependencies resolved during installation.
 
 This setting filters top-level fuzzy version resolution for backends that provide release timestamps.
 Versions without timestamps are included by default.
 
 Only `npm:` and `pipx:` currently forward the same cutoff into transitive dependency resolution during
-install. Other backends may select an older top-level tool version, but they do not constrain
-dependencies fetched by the tool's installer/compiler.
+install, and that protection remains active when the top-level version comes from a lockfile. Other
+backends may select an older top-level tool version, but they do not constrain dependencies fetched by
+the tool's installer/compiler.
 
 ## See Also
 
