@@ -264,9 +264,15 @@ pub(crate) fn is_current(
         if !shorts.insert(&ba.short) {
             return Ok(false);
         }
-        let Some(entries) = previous.tools.get(&ba.short) else {
+        let Some(entries) = previous.tools_for(&ba.short) else {
             return Ok(false);
         };
+        if entries.iter().any(|entry| {
+            matches!(entry.uv, Some(super::GraphRef::Inline { .. }))
+                || matches!(entry.aube, Some(super::GraphRef::Inline { .. }))
+        }) {
+            return Ok(false);
+        }
         let backend = tv.backend()?;
         let stored_backend = ba.stored_full();
         let specifier = tv.request.version();
@@ -420,7 +426,7 @@ pub(crate) async fn generate(
                     || info.conda_deps.is_some()
                     || info.pkgx_deps.is_some()
             });
-        let previous_info = previous.tools.get(&ba.short).and_then(|entries| {
+        let previous_info = previous.tools_for(&ba.short).and_then(|entries| {
             entries
                 .iter()
                 .find(|entry| {
@@ -515,7 +521,7 @@ pub(crate) async fn generate(
             continue;
         }
         let info = info.map_err(|error| eyre!(error))?;
-        if let Some(entries) = previous.tools.get(&short) {
+        if let Some(entries) = previous.tools_for(&short) {
             for old in entries
                 .iter()
                 .filter(|old| {
@@ -531,7 +537,7 @@ pub(crate) async fn generate(
             }
         }
         if let Some(error) = check_single_tool_provenance(
-            previous.tools.get(&short).map(Vec::as_slice),
+            previous.tools_for(&short).map(Vec::as_slice),
             &short,
             &version,
             &backend,
@@ -559,7 +565,7 @@ pub(crate) async fn generate(
     }
     for (short, entries) in &mut candidate.tools {
         for entry in entries.iter_mut().filter(|entry| entry.aube.is_none()) {
-            entry.aube = previous.tools.get(short).and_then(|previous_entries| {
+            entry.aube = previous.tools_for(short).and_then(|previous_entries| {
                 previous_entries
                     .iter()
                     .find(|previous| {
@@ -571,6 +577,21 @@ pub(crate) async fn generate(
             });
         }
     }
+    for (short, entries) in &mut candidate.tools {
+        for entry in entries.iter_mut().filter(|entry| entry.uv.is_none()) {
+            entry.uv = previous
+                .tools_for(short)
+                .and_then(|entries| {
+                    entries.iter().find(|old| {
+                        old.version == entry.version
+                            && old.backend == entry.backend
+                            && old.options == entry.options
+                    })
+                })
+                .and_then(|old| old.uv.clone());
+        }
+    }
+    Box::pin(populate_uv_locks(&mut candidate, tools, false)).await?;
     Box::pin(populate_aube_locks(
         &mut candidate,
         tools,
@@ -608,27 +629,109 @@ pub(crate) async fn populate_aube_locks(
         let options =
             backend.resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())?;
         let backend_name = ba.stored_full();
+        let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
         if !force
-            && lockfile.tools.get(&ba.short).is_some_and(|entries| {
-                entries.iter().any(|entry| {
-                    entry.version == tv.version
-                        && entry
-                            .backend
-                            .as_deref()
-                            .is_none_or(|backend| backend == backend_name)
-                        && entry.options == options
-                        && entry.aube.is_some()
+            && let Some(old) = lockfile
+                .tools_for(&ba.short)
+                .and_then(|entries| {
+                    entries.iter().find(|entry| {
+                        entry.version == tv.version
+                            && entry.backend.as_deref().is_none_or(|b| b == backend_name)
+                            && entry.options == options
+                    })
                 })
-            })
+                .and_then(|entry| entry.aube.as_ref())
         {
-            continue;
+            let candidate = if old.load().is_ok() {
+                Some(old.clone())
+            } else {
+                old.refresh().ok()
+            };
+            if let Some(candidate) = candidate {
+                npm.validate_aube_lock(tv, candidate.load()?)?;
+                lockfile.set_aube_lock(
+                    &ba.short,
+                    &tv.version,
+                    &backend_name,
+                    &options,
+                    candidate,
+                )?;
+                continue;
+            }
         }
         if let Some(report) = report {
             report.set_message(format!("{}@{} dependencies", ba.short, tv.version));
         }
-        let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
         let graph = npm.resolve_aube_lock(tv).await?;
         lockfile.set_aube_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn populate_uv_locks(
+    lockfile: &mut Lockfile,
+    tools: &[Tool],
+    force: bool,
+) -> Result<()> {
+    if lockfile.lockfile_version() < 2 {
+        return Ok(());
+    }
+    let config = crate::config::Config::get().await?;
+    for (ba, tv) in tools {
+        if ba.backend_type() != BackendType::Pipx {
+            continue;
+        }
+        let backend = crate::backend::pipx::PIPXBackend::from_arg(ba.clone());
+        let options =
+            backend.resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())?;
+        let backend_name = ba.stored_full();
+        if !backend.uv_lock_allowed(tv) {
+            if let Some(entries) = lockfile.tools_for_mut(&ba.short) {
+                for entry in entries
+                    .iter_mut()
+                    .filter(|entry| entry.version == tv.version && entry.options == options)
+                {
+                    entry.uv = None;
+                }
+            }
+            continue;
+        }
+        if let Some(lock) = lockfile
+            .tools_for(&ba.short)
+            .and_then(|entries| {
+                entries.iter().find(|entry| {
+                    entry.version == tv.version
+                        && entry.backend.as_deref().is_none_or(|b| b == backend_name)
+                        && entry.options == options
+                })
+            })
+            .and_then(|entry| entry.uv.as_ref())
+            && !force
+        {
+            let candidate = if lock.load().is_ok() {
+                Some(lock.clone())
+            } else {
+                lock.refresh().ok()
+            };
+            if let Some(candidate) = candidate {
+                backend.validate_uv_lock(tv, candidate.load()?)?;
+                lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, candidate)?;
+                continue;
+            }
+        }
+        if backend
+            .spawnable_dependency(&config, None, "uv")
+            .await
+            .is_none()
+        {
+            warn!(
+                "{} dependency graph skipped: uv >= 0.12.10 is unavailable; install uv and run `mise lock` again",
+                ba.short
+            );
+            continue;
+        }
+        let graph = backend.resolve_uv_lock(tv).await?;
+        lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
     Ok(())
 }
@@ -1020,8 +1123,8 @@ mod tests {
         let request = ToolRequest::new(Arc::new(ba.clone()), "1", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0".into());
         let mut old = previous();
-        old.tools.get_mut("fixture").unwrap()[0].backend = Some(ba.stored_full());
-        for info in old.tools.get_mut("fixture").unwrap()[0]
+        old.tools_for_mut("fixture").unwrap()[0].backend = Some(ba.stored_full());
+        for info in old.tools_for_mut("fixture").unwrap()[0]
             .platforms
             .values_mut()
         {
@@ -1060,7 +1163,7 @@ mod tests {
             let mut old = previous();
             old.lockfile_version = version;
             if version == 0 {
-                old.tools.get_mut("fixture").unwrap()[0].specifiers.clear();
+                old.tools_for_mut("fixture").unwrap()[0].specifiers.clear();
             }
             assert!(is_current(&old, &tools, &platforms).unwrap());
             let generated = generate(&old, &tools, &platforms, false, false, 2, &[])
@@ -1094,29 +1197,28 @@ mod tests {
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
         changed
-            .tools
-            .get_mut("fixture")
+            .tools_for_mut("fixture")
             .unwrap()
             .push(old.tools["fixture"][0].clone());
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0].version = "other-tag".into();
+        changed.tools_for_mut("fixture").unwrap()[0].version = "other-tag".into();
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0].backend = Some("http:other".into());
+        changed.tools_for_mut("fixture").unwrap()[0].backend = Some("http:other".into());
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0]
+        changed.tools_for_mut("fixture").unwrap()[0]
             .options
             .insert("format".into(), "tar.gz".into());
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0]
+        changed.tools_for_mut("fixture").unwrap()[0]
             .specifiers
             .clear();
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0]
+        changed.tools_for_mut("fixture").unwrap()[0]
             .specifiers
             .insert("obsolete".into());
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
@@ -1142,28 +1244,28 @@ mod tests {
         let tools = vec![tool()];
         let old = previous();
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0]
+        changed.tools_for_mut("fixture").unwrap()[0]
             .platforms
             .get_mut("linux-x64")
             .unwrap()
             .checksum = None;
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0]
+        changed.tools_for_mut("fixture").unwrap()[0]
             .platforms
             .get_mut("linux-x64")
             .unwrap()
             .url = None;
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0]
+        changed.tools_for_mut("fixture").unwrap()[0]
             .platforms
             .get_mut("linux-x64")
             .unwrap()
             .signer = Some("signer".into());
         assert!(!is_current(&changed, &tools, &platforms).unwrap());
         let mut changed = old.clone();
-        changed.tools.get_mut("fixture").unwrap()[0]
+        changed.tools_for_mut("fixture").unwrap()[0]
             .platforms
             .get_mut("linux-x64")
             .unwrap()
@@ -1177,7 +1279,7 @@ mod tests {
         let ba = BackendArg::new("fixture".into(), Some("github:example/fixture".into()));
         let request = ToolRequest::new(Arc::new(ba.clone()), "1", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0".into());
-        let entry = &mut changed.tools.get_mut("fixture").unwrap()[0];
+        let entry = &mut changed.tools_for_mut("fixture").unwrap()[0];
         entry.backend = Some(ba.stored_full());
         let artifact = &mut entry
             .platforms

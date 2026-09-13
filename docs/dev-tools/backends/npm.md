@@ -430,3 +430,12 @@ interoperability is not an upstream compatibility guarantee.
 - **A native dependency is missing:** inspect the selected installer's lifecycle-script policy and approve only the required builds using its supported option.
 - **Private package metadata works but installation fails:** check the installer you selected and whether both clients can read the registry and credentials.
 - **Aube trust or download-count policy blocks installation:** inspect the specific policy error and the relevant option above before changing installers.
+
+## Dependency sidecars
+
+Revision-2 lockfiles reference native `package.json` and `aube-lock.yaml` files in
+[per-entry sidecar directories](../mise-lock.md#native-dependency-sidecars), usually
+`.mise/locks/npm-<package>/<version>/`. Commit them alongside `mise.lock`.
+The embedded aube installer replays that graph in frozen mode. Its native YAML
+format is not `package-lock.json`; npm-only scanners may not recognize transitive
+dependencies. No-op locking preserves the native file bytes.

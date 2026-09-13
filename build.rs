@@ -281,6 +281,10 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
         for backend in info.get("backends").unwrap().as_array().unwrap() {
             match backend {
                 toml::Value::String(backend) => {
+                    let backend = backend
+                        .strip_prefix("pipx:")
+                        .map(|name| format!("pypi:{name}"))
+                        .unwrap_or_else(|| backend.clone());
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{backend}"#,
@@ -292,6 +296,10 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                 }
                 toml::Value::Table(backend) => {
                     let full = backend.get("full").unwrap().as_str().unwrap();
+                    let full = full
+                        .strip_prefix("pipx:")
+                        .map(|name| format!("pypi:{name}"))
+                        .unwrap_or_else(|| full.to_owned());
                     let platforms = backend
                         .get("platforms")
                         .map(|p| {

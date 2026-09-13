@@ -27,6 +27,7 @@ pub(crate) enum BackendType {
     Go,
     Npm,
     Packslip,
+    #[strum(to_string = "pypi", serialize = "pipx")]
     Pipx,
     Pkgx,
     Spm,
@@ -41,6 +42,7 @@ pub(crate) enum BackendType {
 impl Display for BackendType {
     fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
         match self {
+            BackendType::Pipx => write!(formatter, "pypi"),
             BackendType::VfoxBackend(plugin_name) => write!(formatter, "{plugin_name}"),
             _ => write!(formatter, "{}", format!("{self:?}").to_lowercase()),
         }
@@ -73,7 +75,7 @@ impl BackendType {
             "go" => BackendType::Go,
             "npm" => BackendType::Npm,
             "packslip" => BackendType::Packslip,
-            "pipx" => BackendType::Pipx,
+            "pypi" | "pipx" => BackendType::Pipx,
             "pkgx" => BackendType::Pkgx,
             "spm" => BackendType::Spm,
             "http" => BackendType::Http,

@@ -72,7 +72,8 @@ specifiers = ["1.6.0"]
 EOF
 MISE_LOCKFILE_MODE=generate mise -C upgrade-lock lock --upgrade
 assert_contains "cat upgrade-lock/mise.lock" "lockfile_version = 2"
-assert_contains "cat upgrade-lock/mise.lock" 'tools."npm:cowsay".aube.graph.packages'
+assert_contains "cat upgrade-lock/mise.lock" 'path = ".mise/locks/npm-cowsay/1.6.0"'
+assert_contains "cat upgrade-lock/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml" 'packages:'
 
 # Lock generation resolves aube's complete graph without creating an install.
 cat >mise.toml <<'EOF'
@@ -82,14 +83,20 @@ node = "20.11.1"
 EOF
 mise lock
 assert_contains "cat mise.lock" "lockfile_version = 2"
-assert_contains "cat mise.lock" 'tools."npm:cowsay".aube.graph.packages'
+assert_contains "cat mise.lock" 'path = ".mise/locks/npm-cowsay/1.6.0"'
+assert_contains "cat .mise/locks/npm-cowsay/1.6.0/aube-lock.yaml" 'packages:'
+cp .mise/locks/npm-cowsay/1.6.0/aube-lock.yaml first-aube-lock.yaml
+mise lock
+assert_succeed 'cmp first-aube-lock.yaml .mise/locks/npm-cowsay/1.6.0/aube-lock.yaml'
 assert_fail "find '$MISE_DATA_DIR/installs/npm-cowsay' -maxdepth 1 -name '1.6.0~aube~*' | grep -q ."
 
 # Changing package managers removes retained embedded-aube metadata.
 mkdir package-manager-change
 cp mise.toml mise.lock package-manager-change/
+cp -R .mise package-manager-change/
 MISE_NPM_PACKAGE_MANAGER=npm mise -C package-manager-change lock
-assert_not_contains "cat package-manager-change/mise.lock" '.aube.graph.'
+assert_not_contains "cat package-manager-change/mise.lock" '.aube'
+assert_fail 'test -d package-manager-change/.mise/locks/npm-cowsay/1.6.0'
 
 # Another npm installer must reject an embedded-aube graph instead of ignoring it.
 assert_fail "MISE_NPM_PACKAGE_MANAGER=npm MISE_LOCKFILE=1 mise install --locked"

@@ -584,6 +584,9 @@ pub(crate) fn remove(short: &str) {
 }
 
 pub(crate) fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+    if *backend_type == BackendType::Pipx {
+        return is_disabled_backend_name("pypi") || is_disabled_backend_name("pipx");
+    }
     backend_type
         .disable_key()
         .is_some_and(is_disabled_backend_name)
@@ -2641,7 +2644,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 // Embedded-aube lock graphs are part of the physical install
                 // identity. A version-only request path must never satisfy a
                 // graph-locked request for the same top-level version.
-                if tv.aube_lock.is_some() {
+                if tv.aube_lock.is_some() || tv.uv_lock.is_some() {
                     return check_path(&tv.install_path(), check_symlink);
                 }
                 if let Some(install_path) = tv.request.install_path(config)
@@ -5545,13 +5548,33 @@ pub(crate) fn fuzzy_match_versions(
         .collect()
 }
 
-pub(crate) fn unalias_backend(backend: &str) -> &str {
+/// Keep the original Python backend directory namespace for both spellings.
+pub(crate) fn tool_directory_name(short: &str) -> String {
+    use heck::ToKebabCase;
+    match short.strip_prefix("pypi:") {
+        Some(name) => format!("pipx:{name}").to_kebab_case(),
+        None => short.to_kebab_case(),
+    }
+}
+
+pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str> {
+    match backend.strip_prefix("pipx:") {
+        Some(name) => format!("pypi:{name}").into(),
+        None => backend.into(),
+    }
+}
+
+pub(crate) fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
+    if let Some(package) = backend.strip_prefix("pipx:") {
+        return format!("pypi:{package}").into();
+    }
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
         _ => backend.trim_start_matches("core:"),
     }
+    .into()
 }
 
 #[test]

@@ -399,8 +399,15 @@ impl Install {
                 rebuild_config.get_toolset().await?
             };
             let current_versions = ts.list_current_versions();
-            // ensure that only current versions are sent to lockfile rebuild
-            versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
+            // Match the configured package and options, not graph identity: accepting
+            // an edited sidecar deliberately changes the installed graph identity.
+            versions.retain(|tv| {
+                current_versions.iter().any(|(_, cv)| {
+                    tv.ba() == cv.ba()
+                        && tv.version == cv.version
+                        && tv.request.options() == cv.request.options()
+                })
+            });
 
             config::rebuild_shims_and_runtime_symlinks(
                 &rebuild_config,
@@ -680,7 +687,13 @@ impl Install {
                 let current_versions = ts.list_current_versions();
                 let versions = versions
                     .iter()
-                    .filter(|tv| current_versions.iter().any(|(_, current)| *tv == current))
+                    .filter(|tv| {
+                        current_versions.iter().any(|(_, current)| {
+                            tv.ba() == current.ba()
+                                && tv.version == current.version
+                                && tv.request.options() == current.request.options()
+                        })
+                    })
                     .cloned()
                     .collect::<Vec<_>>();
                 config::rebuild_shims_and_runtime_symlinks(

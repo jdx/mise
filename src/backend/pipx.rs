@@ -1,3 +1,5 @@
+mod lock;
+
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
@@ -300,7 +302,89 @@ impl Backend for PIPXBackend {
         Ok(versions::SemVer::new(version).map(|_| version.to_string()))
     }
 
+    async fn prepare_install_version(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        if let Some(lock) = &tv.uv_lock {
+            let lock = if !ctx.locked && lock.load().is_err() {
+                lock.refresh()?
+            } else {
+                lock.clone()
+            };
+            self.validate_uv_lock(&tv, lock.load()?)?;
+            tv.uv_lock = Some(lock);
+        } else if self.uv_lock_allowed(&tv) {
+            let revision = if tv.resolved_from_lockfile() {
+                crate::lockfile::version_for_request(&ctx.config, &tv.request)?
+            } else {
+                None
+            };
+            if revision.is_some_and(|v| v >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled())
+            {
+                if ctx.locked {
+                    bail!(
+                        "pypi:{} has no uv dependency graph; run `mise lock`",
+                        self.tool_name()
+                    );
+                }
+                if self
+                    .spawnable_dependency(&ctx.config, Some(&ctx.ts), "uv")
+                    .await
+                    .is_none()
+                {
+                    return Ok(tv);
+                }
+                if let Some(version) = tv.uv_install_path_version().map(str::to_owned) {
+                    tv.version = version;
+                }
+                tv.uv_lock = Some(self.resolve_uv_lock(&tv).await?);
+            }
+        }
+        if tv.uv_lock.is_some() {
+            self.bind_uv_python(&ctx.config, &mut tv).await?;
+        }
+        Ok(tv)
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if tv.uv_lock.is_some() {
+            if tv.uv_python.is_none() {
+                return Ok(false);
+            }
+        } else if self.uv_lock_allowed(tv) {
+            let revision = if tv.resolved_from_lockfile() {
+                crate::lockfile::version_for_request(config, &tv.request)?
+            } else {
+                None
+            };
+            if (revision.is_some_and(|v| v >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled()))
+                && (Settings::get().locked
+                    || self
+                        .spawnable_dependency(config, None, "uv")
+                        .await
+                        .is_some())
+            {
+                return Ok(false);
+            }
+        }
+        Ok(self.is_version_installed(config, tv, check_symlink))
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        if tv.uv_lock.is_some() {
+            self.install_uv_lock(ctx, &tv).await?;
+            return Ok(tv);
+        }
+
         let request_options = tv.request.options();
         let options = PipxOptions::new(&request_options);
 
@@ -312,7 +396,7 @@ impl Backend for PIPXBackend {
         // at process creation; treating it as absent falls through to pipx, which either
         // works or reports the install instructions below. The branch only changes in the
         // case where the branch it would have taken cannot run.
-        let uvx_allowed = Settings::get().pipx.uvx != Some(false) && !options.uvx_disabled();
+        let uvx_allowed = Settings::get().pypi.uvx != Some(false) && !options.uvx_disabled();
         let uv_program = if uvx_allowed {
             self.spawnable_dependency(&ctx.config, Some(&ctx.ts), "uv")
                 .await
@@ -341,7 +425,7 @@ impl Backend for PIPXBackend {
                 let reason = if options.uvx_disabled() {
                     "this package sets `uvx = false`"
                 } else {
-                    "uvx is disabled by the `pipx.uvx` setting"
+                    "uvx is disabled by the `pypi.uvx` setting"
                 };
                 format!(
                     "This package is installed with pipx because {reason}, so uv/uvx cannot be \
@@ -559,14 +643,18 @@ impl PIPXBackend {
             .captures_iter(html)
             .filter_map(|cap| {
                 let href = cap.get(1)?.as_str();
-                let path = href.split(['?', '#']).next()?;
-                let filename = path.rsplit('/').next()?;
-                let filename = urlencoding::decode(filename).ok()?;
+                let filename = Self::distribution_filename_from_url(href)?;
 
                 Self::version_from_distribution_filename(package, &filename)
             })
             .unique()
             .collect()
+    }
+
+    fn distribution_filename_from_url(href: &str) -> Option<String> {
+        let path = href.split(['?', '#']).next()?;
+        let filename = path.rsplit('/').next()?;
+        Some(urlencoding::decode(filename).ok()?.into_owned())
     }
 
     fn version_from_distribution_filename(package: &str, filename: &str) -> Option<String> {
@@ -707,7 +795,11 @@ impl PIPXBackend {
     }
 
     fn get_index_url() -> eyre::Result<String> {
-        let registry_url = Settings::get().pipx.registry_url.clone();
+        let registry_url = Settings::get()
+            .pypi
+            .registry_url
+            .clone()
+            .unwrap_or_else(|| "https://pypi.org/pypi/{}/json".to_string());
 
         // Remove {} placeholders and trailing slashes
         let mut url = registry_url
@@ -748,7 +840,13 @@ impl PIPXBackend {
         let registry_url = options
             .registry_url()
             .map(str::to_owned)
-            .unwrap_or_else(|| Settings::get().pipx.registry_url.clone());
+            .unwrap_or_else(|| {
+                Settings::get()
+                    .pypi
+                    .registry_url
+                    .clone()
+                    .unwrap_or_else(|| "https://pypi.org/pypi/{}/json".to_string())
+            });
 
         debug!("Pipx registry URL: {}", registry_url);
 
@@ -853,7 +951,7 @@ impl PIPXBackend {
                 .await
         else {
             warn!(
-                "minimum_release_age is set for pipx:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pipx.html",
+                "minimum_release_age is set for pypi:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
                 self.tool_name(),
             );
             return;
@@ -861,7 +959,7 @@ impl PIPXBackend {
 
         if semver_is_older_than(&version, UV_EXCLUDE_NEWER_VERSION).unwrap_or(false) {
             warn!(
-                "minimum_release_age is set for pipx:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pipx.html",
+                "minimum_release_age is set for pypi:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
                 self.tool_name(),
                 version,
                 UV_EXCLUDE_NEWER_VERSION,

@@ -187,18 +187,20 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
     let mut full = None;
     let mut backend_wildcard = None;
     excludes.iter().any(|exclude| {
-        let exclude = exclude.trim();
+        let exclude = crate::backend::canonical_backend_full(exclude.trim());
+        let exclude = exclude.as_ref();
         if exclude.is_empty() {
             return false;
         }
-        if exclude == backend_arg.short {
+        if exclude == crate::backend::canonical_backend_full(&backend_arg.short) {
             return true;
         }
         let full = full.get_or_insert_with(|| {
             if backend_arg.short.contains(':') {
-                split_bracketed_opts(&backend_arg.short)
-                    .map(|(name, _)| name.to_string())
-                    .unwrap_or_else(|| backend_arg.short.clone())
+                let name = split_bracketed_opts(&backend_arg.short)
+                    .map(|(name, _)| name)
+                    .unwrap_or(&backend_arg.short);
+                crate::backend::canonical_backend_full(name).into_owned()
             } else {
                 backend_arg.full_without_opts()
             }
@@ -311,6 +313,19 @@ mod tests {
         partial.minimum_release_age_excludes = Some(vec!["npm:prettier".to_string()]);
         Settings::reset(Some(partial));
         assert_eq!(resolved_tool_timestamp("npm:prettier", None, None), None);
+        Settings::reset(None);
+    }
+
+    #[test]
+    fn test_pypi_release_age_exclusions_accept_both_backend_names() {
+        for exclude in ["pipx:*", "pypi:*", "pipx:black", "pypi:black"] {
+            let mut partial = SettingsPartial::empty();
+            partial.minimum_release_age = Some("2024-01-03".to_string());
+            partial.minimum_release_age_excludes = Some(vec![exclude.to_owned()]);
+            Settings::reset(Some(partial));
+            assert_eq!(resolved_tool_timestamp("pypi:black", None, None), None);
+            assert_eq!(resolved_tool_timestamp("pipx:black", None, None), None);
+        }
         Settings::reset(None);
     }
 
