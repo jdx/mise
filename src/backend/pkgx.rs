@@ -468,6 +468,21 @@ fn is_any_requirement(requirement: &str) -> bool {
 }
 
 fn parse_requirement_range(name: &str, requirement: &str) -> Result<Range> {
+    if let Ok(range) = Range::parse(requirement) {
+        return Ok(range);
+    }
+    if let Ok(range) = Range::parse(format!("{requirement}.x")) {
+        return Ok(range);
+    }
+    let coerced = coerce_requirement_versions(requirement);
+    if coerced != requirement {
+        if let Ok(range) = Range::parse(&coerced) {
+            return Ok(range);
+        }
+        if let Ok(range) = Range::parse(format!("{coerced}.x")) {
+            return Ok(range);
+        }
+    }
     Range::parse(requirement)
         .or_else(|_| Range::parse(format!("{requirement}.x")))
         .wrap_err_with(|| {
@@ -476,9 +491,101 @@ fn parse_requirement_range(name: &str, requirement: &str) -> Result<Range> {
 }
 
 fn semver_satisfies(version: &str, range: &Range) -> bool {
-    NodeVersion::parse(version)
-        .or_else(|_| NodeVersion::parse(version.trim_start_matches(['v', 'V'])))
-        .is_ok_and(|version| range.satisfies(&version))
+    // Note: nodejs-semver parses "1.1.1w" as 1.1.1 with prerelease "w",
+    // which never satisfies a plain range like `^1.0.1`. OpenSSL-style
+    // trailing letters are patch-level releases, so also try the coerced
+    // (letter-stripped) form.
+    if NodeVersion::parse(version).is_ok_and(|parsed| range.satisfies(&parsed)) {
+        return true;
+    }
+    if NodeVersion::parse(version.trim_start_matches(['v', 'V']))
+        .is_ok_and(|parsed| range.satisfies(&parsed))
+    {
+        return true;
+    }
+    if let Some(coerced) = coerce_pkgx_version(version)
+        && NodeVersion::parse(&coerced).is_ok_and(|parsed| range.satisfies(&parsed))
+    {
+        return true;
+    }
+    false
+}
+
+/// Coerce pkgx versions with trailing-letter suffixes (e.g. openssl `1.1.1w`)
+/// into plain semver (`1.1.1`) for range comparison.
+///
+/// The original string is still used for bottle URLs; this is only for
+/// `Range::satisfies` checks, where the letter suffix would otherwise parse
+/// as a prerelease and never match a plain range like `^1.0.1`.
+fn coerce_pkgx_version(version: &str) -> Option<String> {
+    let v = version.trim().trim_start_matches(['v', 'V']);
+    let split = v.find(['-', '+']);
+    let (core, suffix) = match split {
+        Some(i) => (&v[..i], &v[i..]),
+        None => (v, ""),
+    };
+    let mut numeric_end = 0;
+    for (i, c) in core.char_indices() {
+        if c.is_ascii_digit() || c == '.' {
+            numeric_end = i + c.len_utf8();
+        } else {
+            break;
+        }
+    }
+    let (numeric, rest) = (&core[..numeric_end], &core[numeric_end..]);
+    if numeric.is_empty() || rest.is_empty() {
+        return None;
+    }
+    if !rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    if !numeric.ends_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    // OpenSSL-style suffixes are pure letters ("1.1.1w"). Leave prerelease
+    // style suffixes with digits ("3.12.0a1", "8p1") alone so prerelease
+    // semantics are preserved.
+    if !rest.chars().all(|c| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    Some(format!("{numeric}{suffix}"))
+}
+
+/// Strip trailing-letter suffixes from versions embedded in a requirement
+/// string so `Range::parse` can handle e.g. `>=1.1.1q`.
+fn coerce_requirement_versions(requirement: &str) -> String {
+    let bytes = requirement.as_bytes();
+    let mut out = String::with_capacity(requirement.len());
+    let mut i = 0;
+    while i < requirement.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < requirement.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                i += 1;
+            }
+            let rest_start = i;
+            while i < requirement.len() && bytes[i].is_ascii_alphabetic() {
+                i += 1;
+            }
+            // Only strip pure-letter suffixes ("1.1.1w"); if a digit follows
+            // the letters ("3.12.0a1") leave the token untouched so
+            // prerelease semantics are preserved.
+            if i > rest_start && (i >= requirement.len() || !bytes[i].is_ascii_digit()) {
+                out.push_str(&requirement[start..rest_start]);
+            } else {
+                // Emit the scanned token verbatim, including any trailing
+                // digits of suffixes like `a1`/`p1`.
+                while i < requirement.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+                out.push_str(&requirement[start..i]);
+            }
+        } else {
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    out
 }
 
 async fn list_pkg_versions(name: &str) -> Result<Vec<VersionInfo>> {
@@ -1188,5 +1295,51 @@ dependencies:
         );
         assert_eq!(cmd_escape_value("a|b<c>d"), "a^|b^<c^>d");
         assert_eq!(cmd_escape_value("a^b"), "a^^b");
+    }
+
+    #[test]
+    fn coerces_openssl_letter_suffixes() {
+        assert_eq!(coerce_pkgx_version("1.1.1w"), Some("1.1.1".to_string()));
+        assert_eq!(coerce_pkgx_version("1.1.1a"), Some("1.1.1".to_string()));
+        assert_eq!(coerce_pkgx_version("v1.1.1w"), Some("1.1.1".to_string()));
+        assert_eq!(coerce_pkgx_version("1.1.1"), None);
+        assert_eq!(coerce_pkgx_version("3.0.12"), None);
+        // Prerelease-style suffixes with digits keep prerelease semantics.
+        assert_eq!(coerce_pkgx_version("3.12.0a1"), None);
+    }
+
+    #[test]
+    fn openssl_letter_versions_satisfy_caret_range() {
+        let range = parse_requirement_range("openssl.org", "^1.0.1").unwrap();
+        assert!(semver_satisfies("1.1.1w", &range));
+        assert!(semver_satisfies("1.1.1a", &range));
+        assert!(semver_satisfies("1.1.1", &range));
+        assert!(semver_satisfies("v1.1.1w", &range));
+        assert!(!semver_satisfies("3.0.12", &range));
+        assert!(version_satisfies_requirement("1.1.1w", "^1.0.1").unwrap());
+    }
+
+    #[test]
+    fn coerces_letter_suffix_in_requirement() {
+        assert_eq!(coerce_requirement_versions(">=1.1.1q"), ">=1.1.1");
+        assert_eq!(coerce_requirement_versions("^1.0.1"), "^1.0.1");
+        assert_eq!(coerce_requirement_versions(">=3.12.0a1"), ">=3.12.0a1");
+        parse_requirement_range("openssl.org", ">=1.1.1q").unwrap();
+    }
+
+    #[test]
+    fn resolves_highest_letter_suffix_from_ordered_list() {
+        // `list_pkg_versions_for_target` returns versions in ascending order,
+        // so the last satisfying match is the highest: `^1.0.1` resolves to
+        // `1.1.1w`, the reported failure. This relies on that ordering.
+        let range = parse_requirement_range("openssl.org", "^1.0.1").unwrap();
+        let versions = ["1.1.1s", "1.1.1t", "1.1.1u", "1.1.1v", "1.1.1w", "3.0.0"];
+        assert_eq!(
+            versions
+                .iter()
+                .rev()
+                .find(|version| semver_satisfies(version, &range)),
+            Some(&"1.1.1w")
+        );
     }
 }
