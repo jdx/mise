@@ -108,72 +108,52 @@ url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/555805900"
 
 [[tools.aube]]
-version = "2.2.13"
-backend = "github:endevco/aube"
+version = "2.2.16"
+backend = "packslip:github.com/aubepkg/aube"
 
 [tools.aube."platforms.linux-arm64"]
-checksum = "sha256:561a16c933188ef14955989cf99bb368748df5a3903c4cf12d2b05c31d8f4ec8"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553098701"
-provenance = "github-attestations"
+checksum = "sha256:a3b3a44ebff731672741c41d65b806dc8e138252f81e50240e3f8a359deb065d"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [tools.aube."platforms.linux-arm64-musl"]
-checksum = "sha256:ad9fb86ad219ada9abc1c7907952505c540c41b5c8e0ffca828e8a2cd2017b11"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553072698"
-provenance = "github-attestations"
+checksum = "sha256:2ee2ada278809c180bae121863093158b7dc1f6983aa96db6cee1ce1a49a4a0f"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [tools.aube."platforms.linux-x64"]
-checksum = "sha256:0b0e734d5fe6e90a286229136d1e97e217b1836e297408cbf9d07cd020cfb4c2"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553074742"
-provenance = "github-attestations"
-provenance_verified = true
+checksum = "sha256:f459e96c1eba2068ea921875748fe1777e78b919886f2a83058b8c5c50e139ef"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [tools.aube."platforms.linux-x64-baseline"]
-checksum = "sha256:0b0e734d5fe6e90a286229136d1e97e217b1836e297408cbf9d07cd020cfb4c2"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553074742"
-provenance = "github-attestations"
+checksum = "sha256:f459e96c1eba2068ea921875748fe1777e78b919886f2a83058b8c5c50e139ef"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [tools.aube."platforms.linux-x64-musl"]
-checksum = "sha256:894bb4991b2cb8054b562dd85682d7e7f21e4479ace26c8f13d4aa362dec0b63"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553073513"
-provenance = "github-attestations"
+checksum = "sha256:61097c72679196bae2a0ae19dd6cc9113e6a950ae7c84753b4b66526509d230d"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [tools.aube."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:894bb4991b2cb8054b562dd85682d7e7f21e4479ace26c8f13d4aa362dec0b63"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553073513"
-provenance = "github-attestations"
+checksum = "sha256:61097c72679196bae2a0ae19dd6cc9113e6a950ae7c84753b4b66526509d230d"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [tools.aube."platforms.macos-arm64"]
-checksum = "sha256:f999226cddee14afc8d0d2d461191888b65064262e66e83ce1fc8e9069792c1e"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553104973"
-provenance = "github-attestations"
-provenance_verified = true
+checksum = "sha256:325b967ee1f554012e56db3b57473924352302468fc3dcbf37f0336efdc03597"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [tools.aube."platforms.windows-x64"]
-checksum = "sha256:84b052e0233b37b875af71487a342f6c170da7827ea57ab36ff29102801d56ac"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553097930"
-provenance = "github-attestations"
+checksum = "sha256:e7fba256b8f966e1063099644f765ad23ce713a4fc938ce0c41dcf76378a55d1"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [tools.aube."platforms.windows-x64-baseline"]
-checksum = "sha256:84b052e0233b37b875af71487a342f6c170da7827ea57ab36ff29102801d56ac"
-url = "https://github.com/aubepkg/aube/releases/download/v2.2.13/aube-v2.2.13-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/553097930"
-provenance = "github-attestations"
+checksum = "sha256:e7fba256b8f966e1063099644f765ad23ce713a4fc938ce0c41dcf76378a55d1"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.16/aube-v2.2.16-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release-plz.yml"
 
 [[tools.bun]]
