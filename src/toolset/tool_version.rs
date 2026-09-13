@@ -213,17 +213,16 @@ impl ToolVersion {
     /// The logical tool version, excluding an internal embedded-aube graph
     /// identity suffix discovered while scanning install directories.
     pub(crate) fn display_version(&self) -> &str {
+        self.aube_install_path_version().unwrap_or(&self.version)
+    }
+
+    pub(crate) fn aube_install_path_version(&self) -> Option<&str> {
         if !self.ba().full_without_opts().starts_with("npm:") {
-            return &self.version;
+            return None;
         }
-        let Some((version, identity)) = self.version.rsplit_once("-aube-") else {
-            return &self.version;
-        };
-        if identity.len() == 16 && identity.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            version
-        } else {
-            &self.version
-        }
+        let (version, identity) = self.version.rsplit_once("~aube~")?;
+        (identity.len() == 16 && identity.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .then_some(version)
     }
 
     pub(crate) fn install_path(&self) -> PathBuf {
@@ -372,7 +371,10 @@ impl ToolVersion {
         }
         .replace([':', '/'], "-");
         if let Some(identity) = self.aube_install_identity() {
-            return format!("{pathname}-aube-{}", &identity[..16]);
+            // `~` is not valid in an npm package version, so install-state
+            // discovery can distinguish this private identity from an opaque
+            // upstream version without guessing.
+            return format!("{pathname}~aube~{}", &identity[..16]);
         }
         pathname
     }
@@ -1110,7 +1112,7 @@ mod tests {
 
     #[test]
     fn display_version_only_hides_aube_identity_for_npm() {
-        let version = "release-aube-0123456789abcdef";
+        let version = "release~aube~0123456789abcdef";
         let github = Arc::new(BackendArg::from("github:owner/tool"));
         let request = ToolRequest::new(github, version, ToolSource::Argument).unwrap();
         assert_eq!(

@@ -438,6 +438,12 @@ impl Backend for NPMBackend {
         let package_manager = self
             .package_manager_for_install(&ctx.config, Some(&ctx.ts))
             .await;
+        if package_manager == NpmPackageManager::Aube
+            && tv.aube_lock.is_none()
+            && let Some(version) = tv.aube_install_path_version().map(str::to_string)
+        {
+            tv.version = version;
+        }
         let source_lockfile_version = if tv.resolved_from_lockfile() {
             crate::lockfile::version_for_request(&ctx.config, &tv.request)?
         } else {
