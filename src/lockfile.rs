@@ -2230,6 +2230,12 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
                 existing.version == tool.version && existing.options == tool.options
             }) {
                 existing.specifiers.extend(tool.specifiers);
+                if existing.uv.is_none()
+                    && existing.backend.is_some()
+                    && existing.backend == tool.backend
+                {
+                    existing.uv = tool.uv;
+                }
             } else if keys.insert(key) {
                 root_tools.push(tool);
             }
@@ -6370,6 +6376,45 @@ options = { exe = "rg" }
         assert_eq!(tools[0].version, "20.0.0");
         assert_eq!(tools[0].backend.as_deref(), Some("core:node"));
         assert_eq!(tools[1].version, "22.0.0");
+    }
+
+    #[test]
+    fn test_lookup_merge_preserves_uv_only_for_matching_backends() {
+        for (primary_backend, legacy_backend, primary_graph, inherit) in [
+            (Some("pypi:black"), Some("pypi:black"), false, true),
+            (Some("pypi:black"), Some("pypi:black"), true, false),
+            (Some("github:psf/black"), Some("pypi:black"), false, false),
+            (None, Some("pypi:black"), false, false),
+            (Some("pypi:black"), None, false, false),
+            (None, None, false, false),
+        ] {
+            let mut primary = basic_tool("1.0.0", "pypi:black");
+            primary.backend = primary_backend.map(str::to_owned);
+            primary.uv = primary_graph.then(UvLock::default);
+            let original_graph = primary.uv.clone();
+            let mut legacy = basic_tool("1.0.0", "pypi:black");
+            legacy.backend = legacy_backend.map(str::to_owned);
+            legacy.specifiers.insert("latest".to_string());
+            let graph = UvLock {
+                graph: toml::toml! { revision = 3 },
+                ..Default::default()
+            };
+            legacy.uv = Some(graph.clone());
+            let mut root = Lockfile::default();
+            root.tools.insert("black".to_string(), vec![primary]);
+            let mut other = Lockfile::default();
+            other.tools.insert("black".to_string(), vec![legacy]);
+
+            merge_lockfile_for_lookup(&mut root, other);
+
+            assert_eq!(root.tools["black"].len(), 1);
+            let merged = &root.tools["black"][0];
+            assert!(merged.specifiers.contains("latest"));
+            assert_eq!(
+                merged.uv,
+                if inherit { Some(graph) } else { original_graph }
+            );
+        }
     }
 
     #[test]
