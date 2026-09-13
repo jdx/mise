@@ -337,10 +337,12 @@ impl ToolVersion {
             } => format!("{ref_type}-{r}"),
             ToolRequest::Path { path: p, .. } => format!("path-{}", hash_to_str(p)),
             ToolRequest::System { .. } => {
-                // Only show deprecation warning if not from .tool-versions file
+                // Compatibility version files define `system` as a native value, so only
+                // warn when the request came from a mise-owned source.
                 if !matches!(
                     self.request.source(),
                     crate::toolset::ToolSource::ToolVersions(_)
+                        | crate::toolset::ToolSource::IdiomaticVersionFile(_)
                 ) {
                     deprecated!(
                         "system_tool_version",
