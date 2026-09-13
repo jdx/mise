@@ -1,0 +1,1 @@
+if this fails fix it [https://github.com/jdx/mise/pull/13014#issue-comment-box](https://github.com/jdx/mise/pull/13014#issue-comment-box)
