@@ -168,8 +168,10 @@ These commands update an existing lockfile. Automatic creation follows the
 
 Use `mise install --locked` in CI to catch missing lock entries instead of
 silently resolving them. For backends with URL-based locking, the entry must
-include a download URL for the current platform. Dependency graphs must also
-be present and match their recorded digest.
+include a download URL for the current platform. For entries that record
+dependency graphs, those graphs must be present and match their recorded digest.
+Version-only lockfiles remain supported; revision-2 embedded-aube and uv installs
+require dependency graphs as described below.
 
 Locked mode does not make installation offline, and its checks depend on the
 backend. See [backend support](#backend-support).

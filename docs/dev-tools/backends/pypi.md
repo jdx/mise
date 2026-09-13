@@ -40,22 +40,22 @@ See [Using pipx](#using-pipx) to select that installer explicitly.
 Use `pypi:black` for the PyPI distribution or `pypi:psf/black` for its GitHub
 source. Their releases and installation requirements can differ.
 
-| Source                   | Example                                                |
-| ------------------------ | ------------------------------------------------------ |
-| PyPI, latest version     | `pypi:black`                                           |
-| PyPI, specific version   | `pypi:black@24.3.0`                                    |
-| GitHub, latest release   | `pypi:psf/black`                                       |
-| GitHub, specific release | `pypi:psf/black@24.3.0`                                |
-| Git repository           | `pypi:git+https://github.com/psf/black.git`            |
-| Git branch               | `pypi:git+https://github.com/psf/black.git@main`       |
-| HTTPS archive            | `pypi:https://github.com/psf/black/archive/18.9b0.zip` |
+| Source                   | Example                                          |
+| ------------------------ | ------------------------------------------------ |
+| PyPI, latest version     | `pypi:black`                                     |
+| PyPI, specific version   | `pypi:black@24.3.0`                              |
+| GitHub, default branch   | `pypi:psf/black`                                 |
+| GitHub, specific release | `pypi:psf/black@24.3.0`                          |
+| Git repository           | `pypi:git+https://github.com/psf/black.git`      |
+| Git branch               | `pypi:git+https://github.com/psf/black.git@main` |
 
-For GitHub URLs, `latest` resolves to the latest published GitHub Release, falling
-back to default-branch HEAD when there are no releases. For other Git URLs,
-`latest` resolves default-branch HEAD to a concrete commit. Remote tags are also
-available for explicit version requests.
+For GitHub sources, `latest` installs from the unpinned default branch; it does
+not select the latest published release. Use an explicit version to select a
+release. For other Git URLs, `latest` resolves default-branch HEAD to a concrete
+commit. Remote tags are also available for explicit version requests.
 
-Other source syntax may work but is unsupported and untested.
+Direct HTTPS archive URLs are unsupported. Other source syntax may work but is
+unsupported and untested.
 
 ## Dependency locking
 
