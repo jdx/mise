@@ -1,5 +1,52 @@
 # Changelog
 
+## [2026.9.7](https://github.com/jdx/mise/compare/v2026.9.6..v2026.9.7) - 2026-09-13
+
+### 🚀 Features
+
+- **(bootstrap)** inspect dotfile sync conflicts by @jdx in [#13144](https://github.com/jdx/mise/pull/13144)
+- **(lock)** preserve aube dependency graphs by @jdx in [#13131](https://github.com/jdx/mise/pull/13131)
+- **(lock)** store Python and npm dependency graphs in native sidecars by @jdx in [#13146](https://github.com/jdx/mise/pull/13146)
+
+### 🐛 Bug Fixes
+
+- **(config)** accept system in idiomatic version files by @jdx in [#13132](https://github.com/jdx/mise/pull/13132)
+- **(dotfiles)** support bootstrap secrets in templates by @jdx in [#13140](https://github.com/jdx/mise/pull/13140)
+- **(lock)** ignore release age for locked versions by @jdx in [#13128](https://github.com/jdx/mise/pull/13128)
+- **(release)** publish mise-agent-env before mise by @jdx in [#13122](https://github.com/jdx/mise/pull/13122)
+
+### 📦️ Dependency Updates
+
+- bump aube to 2.2.16 by @jdx in [#13145](https://github.com/jdx/mise/pull/13145)
+
+### 📦 Registry
+
+- restore aqua backend for mc by @jdx in [#13124](https://github.com/jdx/mise/pull/13124)
+
+### Chore
+
+- **(ci)** use large runner for registry builds by @jdx in [#13142](https://github.com/jdx/mise/pull/13142)
+
+### Ci
+
+- enforce per-test unit timeouts on macOS by @jdx in [#13120](https://github.com/jdx/mise/pull/13120)
+
+### Security
+
+- **(history)** restrict describe commands to global config by @jdx in [#13134](https://github.com/jdx/mise/pull/13134)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`kjanat/actionlint`](https://github.com/kjanat/actionlint)
+- [`microsoft/tgrep`](https://github.com/microsoft/tgrep)
+- [`redhat-et/ripwire`](https://github.com/redhat-et/ripwire)
+
+#### Updated Packages (1)
+
+- [`minio/mc`](https://github.com/minio/mc)
+
 ## [2026.9.6](https://github.com/jdx/mise/compare/v2026.9.5..v2026.9.6) - 2026-09-12
 
 ### 🚀 Features
