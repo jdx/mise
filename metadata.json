@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2DHS8SVC9EPECHBZXWZG4Q2",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-conflict-inspection",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/bootstrap/setup.md",
+    "docs/history.md",
+    "e2e/cli/test_dotfiles_recovery_journey",
+    "e2e/cli/test_dotfiles_sync_files_encrypted",
+    "src/cli/bootstrap.rs",
+    "src/cli/command_effects.rs",
+    "src/cli/dotfiles/conflicts.rs",
+    "src/cli/dotfiles/mod.rs",
+    "src/system/history/sync/apply.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 116650,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10301696,
+    "output_tokens": 7645,
+    "api_call_count": 70
+  }
+}
