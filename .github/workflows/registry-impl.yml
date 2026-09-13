@@ -58,7 +58,7 @@ jobs:
 
   build:
     timeout-minutes: 20
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
     needs: check-changes
     if: needs.check-changes.outputs.registry-changed == 'true'
     env:
