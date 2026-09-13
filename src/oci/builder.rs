@@ -1027,7 +1027,7 @@ fn build_dotfiles_layer(
                 }
             }
             FileMode::Template => {
-                let rendered = crate::system::files::render_template(cfg, req)?;
+                let rendered = crate::system::files::render_template_for_oci(cfg, req)?;
                 entries.add_file(
                     oci_target_path(req)?,
                     rendered.into_bytes(),
