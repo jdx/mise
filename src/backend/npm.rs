@@ -473,7 +473,7 @@ impl Backend for NPMBackend {
         if package_manager == NpmPackageManager::Aube
             && tv.aube_lock.is_none()
             && (source_lockfile_version.is_some_and(|v| v >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled()))
+                || Self::aube_lock_creation_enabled(&tv))
         {
             tv.aube_lock = Some(self.resolve_aube_lock(&tv).await?);
         }
@@ -505,7 +505,7 @@ impl Backend for NPMBackend {
                 None
             };
             if source_lockfile_version.is_some_and(|version| version >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled())
+                || Self::aube_lock_creation_enabled(tv)
             {
                 return Ok(false);
             }
@@ -699,6 +699,19 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    /// Return whether automatic project-lockfile maintenance should create an
+    /// aube graph for this request. Settings are invocation-wide, but automatic
+    /// lockfile updates deliberately exclude tools owned by global configs.
+    fn aube_lock_creation_enabled(tv: &ToolVersion) -> bool {
+        !tv.resolved_from_lockfile()
+            && Settings::get().lockfile_creation_enabled()
+            && !tv
+                .request
+                .source()
+                .path()
+                .is_some_and(crate::config::is_global_config)
+    }
+
     pub(crate) fn uses_embedded_aube() -> bool {
         let settings = Settings::get();
         matches!(settings.npm.package_manager, NpmPackageManager::Aube)

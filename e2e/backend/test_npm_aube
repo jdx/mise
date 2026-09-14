@@ -130,3 +130,36 @@ EOF
 assert_fail "cd missing-graph && MISE_LOCKFILE=1 mise install --locked"
 missing_graph_output="$(cd missing-graph && MISE_LOCKFILE=1 mise install --locked 2>&1 || true)"
 assert_contains_text "$missing_graph_output" "has no embedded-aube dependency graph"
+
+# A project lockfile must not require dependency graphs for npm tools owned by
+# the global config, whose lockfile is only created explicitly with --global.
+global_only_npm="$HOME/global-only-npm"
+export MISE_DATA_DIR="$HOME/global-only-data"
+mkdir "$global_only_npm"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOF
+cat >"$global_only_npm/mise.toml" <<'EOF'
+[settings]
+lockfile = true
+EOF
+cat >"$global_only_npm/mise.lock" <<'EOF'
+lockfile_version = 0
+EOF
+MISE_LOCKFILE=0 mise -C "$global_only_npm" install
+global_dry_run="$(mise -C "$global_only_npm" install --dry-run 2>&1)"
+assert_contains_text "$global_dry_run" "all tools are installed"
+global_exec="$(mise -C "$global_only_npm" exec -- cowsay --version 2>&1)"
+assert_contains_text "$global_exec" "1.6.0"
+assert_not_contains_text "$global_exec" "missing: npm:cowsay@1.6.0"
+
+# An explicitly generated global lockfile still gives the global request a
+# graph-specific identity and replays that graph during installation.
+mise -C "$global_only_npm" lock --global
+assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" "lockfile_version = 2"
+assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" 'path = "locks/npm-cowsay/1.6.0"'
+assert_contains "cat '$MISE_CONFIG_DIR/locks/npm-cowsay/1.6.0/aube-lock.yaml'" "packages:"
+mise -C "$global_only_npm" install
+assert_succeed "find '$MISE_DATA_DIR/installs/npm-cowsay' -maxdepth 1 -name '1.6.0~aube~*' | grep -q ."
+assert_contains "mise -C '$global_only_npm' exec -- cowsay --version" "1.6.0"
