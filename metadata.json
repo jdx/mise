@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2EQGV70CEJXXHPGZFWP0F4G",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-dot-command",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dotfiles.md",
+    "e2e/cli/test_dotfiles_bootstrap_compatibility",
+    "src/cli/bootstrap.rs",
+    "src/cli/command_effects.rs",
+    "src/cli/dotfiles/apply.rs",
+    "src/cli/dotfiles/mod.rs",
+    "src/cli/editor.rs",
+    "src/cli/mod.rs",
+    "src/env.rs",
+    "src/system/user_services.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42657,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3436672,
+    "output_tokens": 3372,
+    "api_call_count": 22
+  }
+}

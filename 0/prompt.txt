@@ -1,0 +1,13 @@
+`mise bootstrap dotfiles track`. that's a mouthful, could we ship some alias commadns like `aubx/aubr` for aube, maybe `mdot`? do you have other ideas on how to solve this problem? other alias commands we could have?
+
+---
+
+i'm thinking `mise dotfiles|dot` maybe is what i want
+
+---
+
+make a pr
+
+---
+
+i think we should probably change docs and everything to use `mise dot` sort of like we promote `mise x` everywhere, i don't think that `mise bootstrap dotfiles` should be hidden though

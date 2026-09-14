@@ -1,0 +1,67 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2EQGV70CEJXXHPGZFWP0F4G",
+  "session_id": "01a09d5d-d005-7861-adee-1c47639ab811",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T01:11:50.918159Z",
+  "branch": "codex/dotfiles-dot-command",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dotfiles.md",
+    "e2e/cli/test_dotfiles_bootstrap_compatibility",
+    "src/cli/bootstrap.rs",
+    "src/cli/command_effects.rs",
+    "src/cli/dotfiles/apply.rs",
+    "src/cli/dotfiles/mod.rs",
+    "src/cli/editor.rs",
+    "src/cli/mod.rs",
+    "src/env.rs",
+    "src/system/user_services.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "fce785498fad",
+  "checkpoint_transcript_start": 403,
+  "transcript_lines_at_start": 403,
+  "compact_transcript_start": 58,
+  "token_usage": {
+    "input_tokens": 42657,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3436672,
+    "output_tokens": 3372,
+    "api_call_count": 22
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-14T01:11:50.841326Z",
+    "agent_lines": 0,
+    "agent_removed": 100,
+    "human_added": 2814,
+    "human_modified": 145,
+    "human_removed": 0,
+    "total_committed": 2936,
+    "total_lines_changed": 3439,
+    "agent_percentage": 2.9078220412910727,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 47,
+      "user_lines_removed": 145,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "src/cli/bootstrap.rs": 11,
+        "src/cli/dotfiles/mod.rs": 35,
+        "src/cli/mod.rs": 1
+      },
+      "user_removed_per_file": {
+        "src/cli/bootstrap.rs": 128,
+        "src/cli/dotfiles/mod.rs": 17
+      }
+    }
+  ]
+}
