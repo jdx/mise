@@ -18,14 +18,17 @@ impl PIPXBackend {
             )
     }
 
-    fn validate_lock_options(&self, tv: &ToolVersion) -> Result<()> {
+    pub(super) fn uv_lock_options_supported(&self, tv: &ToolVersion) -> bool {
         let raw = tv.request.options();
         let opts = PipxOptions::new(&raw);
-        if [opts.uvx_args(), opts.pipx_args()]
+        [opts.uvx_args(), opts.pipx_args()]
             .into_iter()
             .flatten()
-            .any(|s| !s.trim().is_empty())
-        {
+            .all(|s| s.trim().is_empty())
+    }
+
+    pub(super) fn validate_lock_options(&self, tv: &ToolVersion) -> Result<()> {
+        if !self.uv_lock_options_supported(tv) {
             bail!(
                 "{} dependency locking does not support uvx_args or pipx_args",
                 self.ba.short
