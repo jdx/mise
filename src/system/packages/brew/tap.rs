@@ -377,6 +377,7 @@ mod tests {
         super::super::source::installed_ruby_bin().await
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn ignores_mise_shim_when_selecting_system_ruby() -> Result<()> {
         const CHILD_ENV: &str = "MISE_TEST_TAP_RUBY_SELECTION_CHILD";
