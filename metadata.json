@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2ETSN6B4R8HRWZ6EJV190E4",
+  "strategy": "manual-commit",
+  "branch": "codex/extract-bootstrap-core",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e-win/npm_backend.Tests.ps1"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 523748,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 16394368,
+    "output_tokens": 16405,
+    "api_call_count": 145
+  }
+}
