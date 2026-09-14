@@ -130,3 +130,23 @@ EOF
 assert_fail "cd missing-graph && MISE_LOCKFILE=1 mise install --locked"
 missing_graph_output="$(cd missing-graph && MISE_LOCKFILE=1 mise install --locked 2>&1 || true)"
 assert_contains_text "$missing_graph_output" "has no embedded-aube dependency graph"
+
+# A project lockfile must not require dependency graphs for npm tools owned by
+# the global config, whose lockfile is only created explicitly with --global.
+mkdir global-only-npm
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOF
+cat >global-only-npm/mise.toml <<'EOF'
+[settings]
+lockfile = true
+EOF
+cat >global-only-npm/mise.lock <<'EOF'
+lockfile_version = 0
+EOF
+global_dry_run="$(mise -C global-only-npm install --dry-run 2>&1)"
+assert_contains_text "$global_dry_run" "all tools are installed"
+global_exec="$(mise -C global-only-npm exec -- cowsay --version 2>&1)"
+assert_contains_text "$global_exec" "1.6.0"
+assert_not_contains_text "$global_exec" "missing: npm:cowsay@1.6.0"
