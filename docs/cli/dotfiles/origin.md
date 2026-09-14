@@ -7,7 +7,7 @@ description: "Connect or disconnect the setup repository"
 
 - **Usage:** `mise dotfiles origin [--remove] [SUBCOMMAND]`
 - **Effect:** destructive — may delete or irreversibly overwrite
-- **Source code:** [`src/cli/dotfiles/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/mod.rs)
+- **Source code:** [`src/cli/dotfiles/origin.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/origin.rs)
 
 Connect or disconnect the setup repository
 

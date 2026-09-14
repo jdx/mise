@@ -7,7 +7,7 @@ description: "Browse the checkpoints of your dotfiles"
 
 - **Usage:** `mise dotfiles history [FLAGS] [SUBCOMMAND]`
 - **Effect:** read-only
-- **Source code:** [`src/cli/dotfiles/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/mod.rs)
+- **Source code:** [`src/cli/dotfiles/history/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/mod.rs)
 
 Browse the checkpoints of your dotfiles
 

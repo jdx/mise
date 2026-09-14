@@ -7,7 +7,7 @@ description: "Connect a setup repository"
 
 - **Usage:** `mise dotfiles origin set [FLAGS] <URL>`
 - **Effect:** modifies state
-- **Source code:** [`src/cli/dotfiles/origin/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/origin/set.rs)
+- **Source code:** [`src/cli/dotfiles/origin.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/origin.rs)
 
 Connect a setup repository
 

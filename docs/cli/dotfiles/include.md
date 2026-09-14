@@ -7,7 +7,7 @@ description: "Capture paths matching a glob again"
 
 - **Usage:** `mise dotfiles include <GLOB>`
 - **Effect:** modifies state
-- **Source code:** [`src/cli/dotfiles/include.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/include.rs)
+- **Source code:** [`src/cli/dotfiles/exclude.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/exclude.rs)
 
 Capture paths matching a glob again
 
