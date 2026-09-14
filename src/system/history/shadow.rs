@@ -174,12 +174,17 @@ impl ScratchIndex {
         owner.push(".owner");
         let owner = PathBuf::from(owner);
         let _ = std::fs::remove_file(&path);
-        // an unlockable owner file only costs this index the sweep's
-        // liveness signal, and the sweep keeps what it cannot judge
         let lock = crate::lock_file::LockFile::at(&owner)
             .try_lock()
             .ok()
             .flatten();
+        if lock.is_none() {
+            // never leave behind an owner file this composition does not
+            // hold: a sweep would lock it, read the composition as ended,
+            // and remove the index out from under it. Without one the
+            // index cannot be judged, so it is kept instead.
+            let _ = std::fs::remove_file(&owner);
+        }
         Self { path, owner, lock }
     }
 
@@ -211,9 +216,10 @@ impl Drop for ScratchIndex {
 /// when the process dies and keeps holding it while the process is merely
 /// stopped or its machine suspended. So a lock this process can take means
 /// the owner is gone, and an index whose owner cannot be judged -- no owner
-/// file at all, or one still locked -- is left alone. Guessing from age
-/// instead would eventually delete the index of a composition suspended
-/// midway and truncate the very snapshot this all exists to protect.
+/// file at all, one still locked, or no index written yet -- is left alone.
+/// Guessing from age instead would eventually delete the index of a
+/// composition suspended midway and truncate the very snapshot this all
+/// exists to protect.
 fn sweep_scratch_indexes(dir: &Path) {
     use std::sync::{LazyLock, Mutex};
 
@@ -244,8 +250,13 @@ fn sweep_scratch_indexes(dir: &Path) {
             if index.starts_with(&ours) {
                 return true;
             }
+            // A composition takes its owner file's lock before git writes
+            // the index. Until that index exists there is nothing left
+            // behind to remove, and an owner file on its own may belong to
+            // a composition still taking the lock.
             let owner = dir.join(format!("{index}.owner"));
-            owner.exists()
+            dir.join(&index).exists()
+                && owner.exists()
                 && crate::lock_file::LockFile::at(&owner)
                     .try_lock()
                     .ok()
@@ -2372,11 +2383,14 @@ mod tests {
         let live = format!("mise-index-{other}-compose-0");
         let dead = format!("mise-index-{other}-compose-1");
         let unowned = format!("mise-index-{other}-compose-2");
+        let starting = format!("mise-index-{other}-compose-3");
         let unrelated = "packed-refs".to_string();
-        let names = [&ours, &live, &dead, &unowned, &unrelated];
-        for name in names {
+        for name in [&ours, &live, &dead, &unowned, &unrelated] {
             std::fs::write(dir.path().join(name), b"index").unwrap();
         }
+        // a composition that has created its owner file but has not taken
+        // the lock yet, so git has not written the index either
+        std::fs::write(dir.path().join(format!("{starting}.owner")), b"").unwrap();
         // git's own lock, left when it was killed writing the dead index
         std::fs::write(dir.path().join(format!("{dead}.lock")), b"lock").unwrap();
         // a composition whose process is gone released its owner file; one
@@ -2402,6 +2416,10 @@ mod tests {
             "a running composition's owner file was swept"
         );
         assert!(!gone(&unowned), "an index with no owner file was swept");
+        assert!(
+            !gone(&format!("{starting}.owner")),
+            "the owner file of a composition still starting up was swept"
+        );
         assert!(!gone(&unrelated), "an unrelated file was swept");
     }
 
