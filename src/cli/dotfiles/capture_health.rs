@@ -56,28 +56,35 @@ pub(crate) async fn watcher() -> Result<Watcher> {
     // this store, which `mise bootstrap services apply` restarts. Telling
     // those two apart is what keeps the advice from repeating a step the
     // user already took.
-    if let Some(request) = declared_watcher(&config)
-        && user_services::is_process_running(&request)
-            .await
-            .unwrap_or(false)
-    {
-        return Ok(Watcher::ServiceNotWatching);
+    for request in declared_watchers(&config) {
+        match user_services::is_process_running(&request).await {
+            Ok(true) => return Ok(Watcher::ServiceNotWatching),
+            Ok(false) => {}
+            // A service manager that cannot be asked right now leaves the
+            // diagnosis where it was before the probe existed, rather than
+            // taking the whole report down with it.
+            Err(err) => debug!(
+                "history: could not ask the service manager about {}: {err:#}",
+                request.name
+            ),
+        }
     }
     Ok(Watcher::DeclaredNotRunning)
 }
 
-/// The declared built-in watcher as a service request, when one renders.
-/// Only the service-manager probe needs it; whether the watcher is declared
-/// at all is read from the declarations themselves, which say so even when
-/// no request can be built.
-fn declared_watcher(config: &Config) -> Option<UserServiceRequest> {
+/// Every declared watcher that should be watching this store but is not,
+/// as service requests. Only the service-manager probe needs these; whether
+/// a watcher is declared at all is read from the declarations themselves,
+/// which say so even when no request can be built. More than one service
+/// may name the builtin, and any of them running is a process that should
+/// be watching. The predicate is the one an apply restarts by, so this
+/// never reports a state the advice would not repair.
+fn declared_watchers(config: &Config) -> Vec<UserServiceRequest> {
     user_services::requests_from_config(config)
-        .ok()?
+        .unwrap_or_default()
         .into_iter()
-        .find(|request| {
-            request.builtin.as_deref() == Some("history-watch")
-                && request.state != ServiceState::Absent
-        })
+        .filter(user_services::stale_history_watcher)
+        .collect()
 }
 
 /// The next step for each state.

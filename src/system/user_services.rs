@@ -612,16 +612,18 @@ fn converge_action(desired: bool, missing: bool) -> ResourceAction {
     }
 }
 
-/// Whether a converged `history-watch` service is running a process that is
-/// not the watcher for this store: one from a mise whose history locks
-/// lived elsewhere (they moved into the state directory in 2026.9.5), or
-/// one started with a different `MISE_STATE_DIR`. Its definition matches,
-/// so nothing else would restart it, and until something does, no edit is
-/// saved automatically here.
-fn stale_history_watcher(request: &UserServiceRequest) -> bool {
+/// Whether this service should be watching this store but is not: a
+/// `history-watch` service declared running while nothing holds the store's
+/// watch lock. Its process is from a mise whose history locks lived
+/// elsewhere (they moved into the state directory in 2026.9.5), or runs
+/// with a different `MISE_STATE_DIR`. An apply restarts it; `mise doctor`
+/// and `mise dot status` report it with the same predicate, so they never
+/// advise an apply that would not act.
+pub(crate) fn stale_history_watcher(request: &UserServiceRequest) -> bool {
     request.builtin.as_deref() == Some("history-watch")
+        // `enabled` only decides whether it also starts at login; a service
+        // declared running is meant to be running now either way
         && request.state == ServiceState::Running
-        && request.enabled
         // a watcher stops on its own when history is switched off, and
         // restarting it would only stop it again
         && crate::config::Settings::get().history.enabled
@@ -656,7 +658,9 @@ pub(crate) async fn apply(
                         "user service {}: its process is not watching the history store; restarting it",
                         status.name
                     );
-                    targets.push(status.request.clone());
+                    // a converged definition is rewritten unchanged, so the
+                    // restart has to be asked for explicitly
+                    targets.push((status.request.clone(), Restart::Forced));
                 }
             }
             ResourceAction::Unknown => {
@@ -666,7 +670,7 @@ pub(crate) async fn apply(
                     status.name, status.current
                 );
             }
-            _ => targets.push(status.request.clone()),
+            _ => targets.push((status.request.clone(), Restart::Converge)),
         }
     }
     let applied = statuses.len() - targets.len() - skipped;
@@ -676,7 +680,10 @@ pub(crate) async fn apply(
     if targets.is_empty() {
         return Ok(None);
     }
-    let list = targets.iter().map(|r| r.name.clone()).collect::<Vec<_>>();
+    let list = targets
+        .iter()
+        .map(|(request, _)| request.name.clone())
+        .collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("user services: apply {}?", list.join(", "));
         if !crate::ui::prompt::confirm(msg)?.is_yes() {
@@ -684,8 +691,8 @@ pub(crate) async fn apply(
             return Ok(None);
         }
     }
-    for request in &targets {
-        apply_one(request, dry_run).await?;
+    for (request, restart) in &targets {
+        apply_one(request, *restart, dry_run).await?;
     }
     if !dry_run {
         info!("user services: applied {}", list.join(", "));
@@ -693,17 +700,33 @@ pub(crate) async fn apply(
     Ok(None)
 }
 
-async fn apply_one(request: &UserServiceRequest, dry_run: bool) -> Result<()> {
+/// Whether applying a service must restart its process even when nothing
+/// about its definition changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Restart {
+    /// Restart only as converging the definition requires.
+    Converge,
+    /// Restart regardless: the registered process is not the wanted one.
+    Forced,
+}
+
+async fn apply_one(request: &UserServiceRequest, restart: Restart, dry_run: bool) -> Result<()> {
     if request.state == ServiceState::Absent {
         remove_named(&request.name, dry_run).await?;
         return Ok(());
     }
     if cfg!(target_os = "linux") {
+        // `systemctl restart` restarts a running unit whatever changed
         systemd::apply(&[request.systemd_request()?], dry_run).await
     } else if cfg!(target_os = "macos") {
+        // an apply boots the agent out and back in, which restarts it
         launchd::apply(&[request.launchd_request()?], dry_run).await
     } else {
-        scheduled_tasks::apply(&[request.scheduled_task_request()], dry_run).await
+        // Task Scheduler keeps a running instance across an unchanged
+        // registration, so a forced restart has to end and run it
+        let mut task = request.scheduled_task_request();
+        task.restart = restart == Restart::Forced;
+        scheduled_tasks::apply(&[task], dry_run).await
     }
 }
 
@@ -815,12 +838,28 @@ mod tests {
             state: ServiceState::Stopped,
             ..Default::default()
         })));
-        assert!(!stale_history_watcher(&request(ServiceTomlConfig {
+        // `enabled = false` only keeps it from starting at login
+        assert!(stale_history_watcher(&request(ServiceTomlConfig {
             builtin: Some("history-watch".into()),
             enabled: false,
             ..Default::default()
         })));
         assert!(!stale_history_watcher(&request(user_config("agent"))));
+    }
+
+    /// Task Scheduler keeps a running instance across an unchanged
+    /// registration, so the forced restart has to reach its request: without
+    /// it an apply rewrites the same definition and leaves the old process.
+    #[test]
+    fn a_forced_restart_reaches_the_scheduled_task() {
+        let request = request(ServiceTomlConfig {
+            builtin: Some("history-watch".into()),
+            ..Default::default()
+        });
+        assert!(!request.scheduled_task_request().restart);
+        let mut forced = request.scheduled_task_request();
+        forced.restart = true;
+        assert!(forced.start);
     }
 
     #[test]

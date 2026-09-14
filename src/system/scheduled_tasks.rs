@@ -29,6 +29,9 @@ pub(crate) struct ScheduledTaskRequest {
     pub nice: Option<i8>,
     /// Whether the logon trigger is enabled.
     pub at_logon: bool,
+    /// End and start the task even when its definition is unchanged: the
+    /// registered process is not the one the caller wants running.
+    pub restart: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +75,7 @@ impl ScheduledTaskRequest {
             start: true,
             at_logon: true,
             nice: None,
+            restart: false,
         }
     }
 }
@@ -355,8 +359,8 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         let running = registered.as_ref().is_some_and(|query| query.running);
         let changed = registered.is_some()
             && std::fs::read(&path).ok().as_deref() != Some(rendered.as_slice());
-        let end_first = running && (!req.start || changed);
-        let start = req.start && (!running || changed);
+        let end_first = running && (!req.start || changed || req.restart);
+        let start = req.start && (!running || changed || req.restart);
         if dry_run {
             miseprintln!("write {}", shell_words::join([path.display().to_string()]));
             miseprintln!("schtasks {}", shell_words::join(&create));
