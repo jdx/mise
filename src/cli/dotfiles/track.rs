@@ -52,6 +52,7 @@ pub(crate) struct DotfilesTrack {
 }
 
 impl DotfilesTrack {
+    /// Write the requested declarations and capture their initial history baseline.
     pub(crate) async fn run(self) -> Result<()> {
         let _declarations = declaration_lock()?;
         let config = Config::get().await?;
@@ -440,6 +441,7 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
     .await?
 }
 
+/// Accept a baseline only when capture produced a content snapshot.
 fn finish_baseline(outcome: Outcome) -> Result<()> {
     match outcome {
         Outcome::Created(entry) if entry.checkpoint.tree.snapshot.is_some() => {
