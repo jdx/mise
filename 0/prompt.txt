@@ -1,0 +1,9 @@
+include [https://github.com/jdx/mise/pull/13181/commits/9fe9c9c998919597093669f05c4853a58fe8c127](https://github.com/jdx/mise/pull/13181/commits/9fe9c9c998919597093669f05c4853a58fe8c127) so ci doesn't fail
+
+---
+
+address pr feedback and failing checsk until it settles
+
+---
+
+hold up a bit here, "project lockfile = true"? is that a thing? there are past disucssions/docs/prs aboutt his
