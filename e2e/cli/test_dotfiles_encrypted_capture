@@ -8,12 +8,11 @@ mkdir -p "$MISE_CONFIG_DIR"
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [history.encryption]
 recipients = ["age1fuvsfq02qr5ju0nhh3rulrwracymjljlr5j49kres24ltd3fjq0s9z9d8l"]
-[dotfiles]
-"~/.private-config" = { mode = "track", encrypt = true }
 TOML
 echo first-private-value >~/.private-config
 first_plain=$(git hash-object ~/.private-config)
-assert_succeed "mise bootstrap dotfiles save"
+assert_succeed "mise bootstrap dotfiles track ~/.private-config --encrypt"
+assert_contains 'cat "$MISE_CONFIG_DIR/config.toml"' 'encrypt = true'
 baseline="$(mise bootstrap dotfiles history --json | jq -r '.[0].uuid')"
 repo="$MISE_STATE_DIR/history/repo.git"
 assert_contains "git --git-dir=$repo show HEAD:home/.private-config | head -1" 'mise-encrypted-file-v1'

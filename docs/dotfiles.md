@@ -614,6 +614,16 @@ The first command saves the initial version. Later edits wait for an
 explicit save. See [saving](/history.html#saving) for how commands that
 modify tracked files save their before and after versions.
 
+To encrypt a file from its first checkpoint:
+
+```sh
+mise dot track ~/.config/app/credentials --encrypt
+```
+
+Configure `[history.encryption].recipients` first. See
+[encrypted shared files](/history.html#encrypted-shared-files) for key setup
+and the limits of encrypting a file that already has plaintext history.
+
 Saving and sharing have separate settings. With manual synchronization,
 mise continues making local commits. Your next push sends all accumulated
 commits to the origin. Sharing applies to the entire history; to keep a

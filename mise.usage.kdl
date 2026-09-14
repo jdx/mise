@@ -1071,7 +1071,7 @@ saved automatically; without it, `mise dot save` saves them.
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
             flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
                 arg <OS>
             }
@@ -1079,6 +1079,7 @@ Linux box can share the same live path with different contents.
                 arg <PROFILE>
             }
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
+            flag --encrypt help="Encrypt contents before saving them to history"
             flag "-y --yes" help="Accept without prompting"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
@@ -2697,7 +2698,7 @@ saved automatically; without it, `mise dot save` saves them.
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
         flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
             arg <OS>
         }
@@ -2705,6 +2706,7 @@ Linux box can share the same live path with different contents.
             arg <PROFILE>
         }
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
+        flag --encrypt help="Encrypt contents before saving them to history"
         flag "-y --yes" help="Accept without prompting"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true

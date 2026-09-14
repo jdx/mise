@@ -42,6 +42,10 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     no_autosave: bool,
 
+    /// Encrypt contents before saving them to history
+    #[usage(long)]
+    encrypt: bool,
+
     /// Accept without prompting
     #[usage(long, short)]
     yes: bool,
@@ -175,6 +179,9 @@ impl DotfilesTrack {
             .unwrap_or_else(|| crate::system::files::FilePolicy::for_mode(FileMode::Track));
         if self.no_autosave {
             policy.autosave = false;
+        }
+        if self.encrypt {
+            policy.encrypt = true;
         }
         if policy.encrypt {
             table.insert("encrypt", Value::Boolean(toml_edit::Formatted::new(true)));
@@ -487,6 +494,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise dot track ~/.zshrc ~/.config/hypr</bold>
     $ <bold>mise dot track ~/.zshrc --os macos</bold>
+    $ <bold>mise dot track ~/.config/app/credentials --encrypt</bold>
     $ <bold>mise dot track ~/.config/app/state.json --no-autosave</bold>
 "#
 );
