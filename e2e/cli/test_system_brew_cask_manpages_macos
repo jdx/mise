@@ -6,21 +6,36 @@ fi
 
 HTTP_PORT_FILE="$TMPDIR/manpage_http_port"
 REQUESTS_FILE="$TMPDIR/manpage_requests"
-python3 -u - "$HTTP_PORT_FILE" "$REQUESTS_FILE" <<'PY' >/dev/null 2>&1 &
+VERSION_FILE="$TMPDIR/manpage_version"
+printf 1.0 >"$VERSION_FILE"
+python3 -u - "$HTTP_PORT_FILE" "$REQUESTS_FILE" "$VERSION_FILE" <<'PY' >/dev/null 2>&1 &
 import io
 import json
+import stat
 import sys
 import zipfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-port_file, requests_file = map(Path, sys.argv[1:])
+port_file, requests_file, version_file = map(Path, sys.argv[1:])
 archive = io.BytesIO()
 with zipfile.ZipFile(archive, "w") as zipped:
     zipped.writestr("docs/example.1", "offline manual\n")
+    zipped.writestr("bin/example", "synthetic binary\n")
+    zipped.writestr("share/man/man1/example.1", "payload manual\n")
+    zipped.writestr("share/resources/data", "payload resource\n")
+    link = zipfile.ZipInfo("bin/example-link")
+    link.create_system = 3
+    link.external_attr = (stat.S_IFLNK | 0o777) << 16
+    zipped.writestr(link, "../share/man/man1/example.1")
     zipped.writestr("docs/config.5", "offline configuration\n")
     zipped.writestr("other/Example.1", "must not replace the manual\n")
     zipped.writestr("nested/Example.app/Contents/Resources/man/app-example.1", "bundled manual\n")
+
+
+upgrade_archive = io.BytesIO()
+with zipfile.ZipFile(upgrade_archive, "w") as zipped:
+    zipped.writestr("docs/Example.1", "upgraded manual\n")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -32,7 +47,19 @@ class Handler(BaseHTTPRequestHandler):
             log.write(self.path + "\n")
         if self.path.startswith("/api/cask/"):
             token = self.path.rsplit("/", 1)[-1].removesuffix(".json")
+            version = version_file.read_text() if token == "manpage-upgrade" else "1.0"
             artifacts = [{"manpage_glob": "docs/*"}]
+            if token == "manpage-upgrade":
+                artifacts = [{"manpage": [
+                    "docs/example.1" if version == "1.0" else "docs/Example.1"
+                ]}]
+            if token == "manpage-payload":
+                artifacts = [{"binary": ["bin/example"]},
+                             {"manpage": ["share/man/man1/example.1"]}]
+            if token in ("manpage-source-collision", "manpage-source-symlink-collision"):
+                source = "bin/example-link" if "symlink" in token else "share/man/man1/example.1"
+                artifacts = [{"binary": [source, {"target": "example"}]},
+                             {"manpage": ["docs/example.1"]}]
             if token == "manpage-plan":
                 artifacts += [
                     {"app": ["nested/Example.app"]},
@@ -40,7 +67,10 @@ class Handler(BaseHTTPRequestHandler):
                         "type": "run", "command": {"path": "/usr/bin/false"}
                     }]}]},
                 ]
-            if token == "manpage-postflight":
+            if token in ("manpage-postflight", "manpage-postflight-payload"):
+                if token == "manpage-postflight-payload":
+                    artifacts = [{"binary": ["bin/example"]},
+                                 {"manpage": ["share/man/man1/example.1"]}]
                 artifacts += [{"postflight_steps": [{"steps": [{
                     "type": "copy",
                     "source": {"base": "homebrew_prefix", "path": "postflight-source.1"},
@@ -59,11 +89,14 @@ class Handler(BaseHTTPRequestHandler):
                     }]}
                 artifacts = [{"manpage": ["docs/example.1"]}, other,
                              {"app": ["nested/Example.app"]}]
+            archive_name = "upgrade.zip" if version == "2.0" else "archive.zip"
             body = json.dumps({
-                "token": token, "version": "1.0", "sha256": "no_check",
-                "url": f"http://127.0.0.1:{self.server.server_port}/archive.zip",
+                "token": token, "version": version, "sha256": "no_check",
+                "url": f"http://127.0.0.1:{self.server.server_port}/{archive_name}",
                 "artifacts": artifacts,
             }).encode()
+        elif self.path == "/upgrade.zip":
+            body = upgrade_archive.getvalue()
         elif self.path == "/archive.zip":
             body = archive.getvalue()
         else:
@@ -149,16 +182,19 @@ mise bootstrap packages prune --manager brew-cask --yes
 assert_fail "test -L '$man1'"
 assert_fail "test -L '$man5'"
 
-# A structured postflight copy must survive a later manpage staging conflict.
-cat >mise.toml <<'EOF'
+# A structured postflight copy must survive, even if its content and path
+# match a manpage in the binary payload's share subtree.
+for token in manpage-postflight manpage-postflight-payload; do
+  cat >mise.toml <<EOF
 [bootstrap.packages]
-"brew-cask:manpage-postflight" = "latest"
+"brew-cask:$token" = "latest"
 EOF
-printf 'postflight output' >"$MISE_SYSTEM_BREW_PREFIX/postflight-source.1"
-assert_fail_contains "mise bootstrap packages apply --yes 2>&1" "already exists"
-assert "cat '$MISE_SYSTEM_BREW_PREFIX'/Caskroom/manpage-postflight/.mise-tmp-*/share/man/man1/example.1" "postflight output"
-assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/share/man/man1/example.1'"
-assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/Caskroom/manpage-postflight/1.0'"
+  printf 'payload manual\n' >"$MISE_SYSTEM_BREW_PREFIX/postflight-source.1"
+  assert_fail_contains "mise bootstrap packages apply --yes 2>&1" "already exists"
+  assert "cat '$MISE_SYSTEM_BREW_PREFIX'/Caskroom/$token/.mise-tmp-*/share/man/man1/example.1" "payload manual"
+  assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/share/man/man1/example.1'"
+  assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/Caskroom/$token/1.0'"
+done
 
 # Install a synthetic text-only bundle and read its page after app installation.
 cat >mise.toml <<'EOF'
@@ -177,3 +213,71 @@ EOF
 mise bootstrap packages prune --manager brew-cask --yes
 assert_fail "test -L '$app_man'"
 assert_fail "test -e '$MISE_BREW_CASK_OPT_APPDIR/Renamed.app'"
+
+# A binary's durable payload can already contain the declared manpage target.
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"brew-cask:manpage-payload" = "latest"
+EOF
+mise bootstrap packages apply --yes
+assert "cat '$MISE_SYSTEM_BREW_PREFIX/bin/example'" "synthetic binary"
+assert "cat '$man1'" "payload manual"
+assert_succeed "test -L '$man1'"
+assert_fail "test -x '$man1'"
+assert "cat '$MISE_SYSTEM_BREW_PREFIX/Caskroom/manpage-payload/1.0/share/resources/data'" "payload resource"
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+EOF
+mise bootstrap packages prune --manager brew-cask --yes
+assert_fail "test -L '$man1'"
+
+# Cleanup of the old spelling must not unlink the newly activated directory entry.
+if [[ -e CASE-PROBE ]]; then
+  cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"brew-cask:manpage-upgrade" = "latest"
+EOF
+  mise bootstrap packages apply --yes
+  assert "cat '$man1'" "offline manual"
+  printf 2.0 >"$VERSION_FILE"
+  mise bootstrap packages upgrade --manager brew-cask --yes
+  upgraded_man="$MISE_SYSTEM_BREW_PREFIX/share/man/man1/Example.1"
+  assert "cat '$upgraded_man'" "upgraded manual"
+  assert_succeed "test -L '$upgraded_man'"
+  assert_contains "readlink '$upgraded_man'" "/manpage-upgrade/2.0/share/man/man1/Example.1"
+  assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/Caskroom/manpage-upgrade/1.0'"
+  cat >mise.toml <<'EOF'
+[bootstrap.packages]
+EOF
+  mise bootstrap packages prune --manager brew-cask --yes
+  assert_fail "test -L '$upgraded_man'"
+else
+  echo "case-sensitive volume: case-only upgrade check does not apply"
+fi
+
+# Manpage replacement must not overwrite/chmod a binary's durable source,
+# including a contained symlink referent, even when link destinations differ.
+accepted_sources=""
+collision_prefix="$MISE_SYSTEM_BREW_PREFIX/source-collisions"
+for token in manpage-source-collision manpage-source-symlink-collision; do
+  export MISE_SYSTEM_BREW_PREFIX="$collision_prefix/$token"
+  man1="$MISE_SYSTEM_BREW_PREFIX/share/man/man1/example.1"
+  cat >mise.toml <<EOF
+[bootstrap.packages]
+"brew-cask:$token" = "latest"
+EOF
+  if mise bootstrap packages apply --yes >"$token.log" 2>&1; then
+    accepted_sources="$accepted_sources $token"
+    cat "$token.log"
+    cat "$MISE_SYSTEM_BREW_PREFIX/bin/example"
+    ls -lL "$man1"
+  else
+    assert_contains "cat '$token.log'" "duplicate manpage target"
+    assert "cat '$MISE_SYSTEM_BREW_PREFIX'/Caskroom/$token/.mise-tmp-*/share/man/man1/example.1" "payload manual"
+    assert_fail "test -x '$MISE_SYSTEM_BREW_PREFIX'/Caskroom/$token/.mise-tmp-*/share/man/man1/example.1"
+    assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/Caskroom/$token/1.0'"
+    assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/bin/example'"
+    assert_fail "test -e '$man1'"
+  fi
+done
+assert_succeed "test -z '$accepted_sources'"

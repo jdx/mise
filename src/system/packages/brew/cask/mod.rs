@@ -778,12 +778,28 @@ impl BrewCaskManager {
         if has_lifecycle_hook(&cask, "postflight") {
             record_cask_action(&mut journal, "postflight_hook")?;
         }
-        if artifacts
+        let copied_payload_roots = if artifacts
             .binaries
             .iter()
             .any(|binary| payload_backed_binary(&stage, binary))
         {
-            durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
+            durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?
+        } else {
+            Vec::new()
+        };
+        // Only newly copied payload roots belong to this phase. Stage manpages
+        // immediately, before binaries/completions can mutate those roots; never
+        // treat an existing postflight subtree as payload owned by this copy.
+        validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages)?;
+        stage_manpages(
+            &stage,
+            &tmp_caskroom,
+            &appdir,
+            &manpages,
+            &copied_payload_roots,
+        )?;
+        if !manpages.is_empty() {
+            record_cask_action(&mut journal, "manpages")?;
         }
         for (index, binary) in artifacts.binaries.iter().enumerate() {
             stage_binary(&stage, &tmp_caskroom, &cask, &artifacts.apps, binary)?;
@@ -797,13 +813,9 @@ impl BrewCaskManager {
             stage_generated_completions(&stage, &tmp_caskroom, &cask, &artifacts.apps, generated)?;
             record_cask_action(&mut journal, &format!("generated_completion[{index}]"))?;
         }
-        // Hooks/payload staging may have changed directory aliases since the
-        // initial check. Revalidate before any manpage can replace staged data.
+        // Executable staging may have changed directory aliases. Keep the
+        // collision check before activation as well as before manpage staging.
         validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages)?;
-        stage_manpages(&stage, &tmp_caskroom, &appdir, &manpages)?;
-        if !manpages.is_empty() {
-            record_cask_action(&mut journal, "manpages")?;
-        }
         // Only reuse binary linking/receipts after executable staging is done.
         ensure_manpage_targets_replaceable(&cask, &manpages)?;
         artifacts
@@ -3201,7 +3213,12 @@ fn remove_obsolete_completions(
 /// deliberately keeps no caskroom copy of its app. Entries resolving outside the
 /// stage are skipped too — a preflight that installs under the prefix and leaves
 /// a link behind is already durable, and `stage_binary` links into it.
-fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact]) -> Result<()> {
+fn durabilize_stage_payload(
+    stage: &Path,
+    caskroom: &Path,
+    apps: &[AppArtifact],
+) -> Result<Vec<PathBuf>> {
+    let mut copied_roots = Vec::new();
     let app_sources: Vec<PathBuf> = apps
         .iter()
         .filter_map(|app| find_app(stage, &app.source))
@@ -3237,8 +3254,9 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
         } else {
             file::copy(&source, &target)?;
         }
+        copied_roots.push(target);
     }
-    Ok(())
+    Ok(copied_roots)
 }
 
 /// Whether a binary artifact takes its source from the extracted payload, and so

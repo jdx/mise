@@ -42,6 +42,10 @@ MISE_STAGED_PATH = "$MISE_STAGED_PATH".freeze
 # passed to manpage is supported; do not pretend to evaluate arbitrary Ruby
 # against files that have not been downloaded yet.
 class DeferredManpage < BasicObject
+  # BasicObject supplies these without method_missing; filtering cannot be
+  # evaluated until extraction and must not emit the unrestricted pattern.
+  undef_method :==, :!=
+
   def initialize(pattern)
     @pattern = pattern
     @consumed = false
@@ -54,6 +58,12 @@ class DeferredManpage < BasicObject
   end
 
   def consumed? = @consumed
+
+  # String-left comparisons probe to_str instead of calling this token's ==.
+  # Reject the probe rather than claiming that an unknown entry cannot match.
+  def respond_to_missing?(name, *)
+    method_missing(name)
+  end
 
   def method_missing(name, *)
     ::Kernel.raise "unsupported deferred manpage operation `#{name}`; pass the glob entry directly to manpage"

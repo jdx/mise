@@ -209,6 +209,8 @@ pub(super) fn remove_obsolete_binary_links(
     previous_targets: &[PathBuf],
     current_targets: &[PathBuf],
 ) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
     let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
     for target in previous_targets {
         if current_targets.contains(target) {
@@ -218,6 +220,16 @@ pub(super) fn remove_obsolete_binary_links(
             continue;
         };
         if !metadata.file_type().is_symlink() {
+            continue;
+        }
+        // A case-only upgrade may have just activated this same link entry
+        // under a different spelling. Compare lstat identity, not the referent:
+        // distinct symlinks to the same file still need obsolete-link cleanup.
+        if current_targets.iter().any(|current| {
+            current.symlink_metadata().is_ok_and(|current| {
+                current.dev() == metadata.dev() && current.ino() == metadata.ino()
+            })
+        }) {
             continue;
         }
         let Ok(link_target) = std::fs::read_link(target) else {

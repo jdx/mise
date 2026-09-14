@@ -857,6 +857,69 @@ end"#
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
+    async fn rejects_equality_filtered_deferred_manpage_metadata() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let mut accepted = Vec::new();
+        for filter in [
+            "",
+            r#" unless man == "excluded.1""#,
+            r#" if man != "excluded.1""#,
+            r#" unless "excluded.1" == man"#,
+            r#" if "excluded.1" != man"#,
+        ] {
+            let source = format!(
+                r##"cask "example" do
+  version "1.0"
+  url "https://example.invalid/example.zip"
+  Dir["#{{staged_path}}/docs/*"].each {{ |man| manpage man{filter} }}
+end"##
+            );
+            let stdout = std::sync::Mutex::new(String::new());
+            let stderr = std::sync::Mutex::new(String::new());
+            let mut runner = CmdLineRunner::new(&ruby)
+                .with_on_stdout(|line| stdout.lock().unwrap().push_str(&line))
+                .with_on_stderr(|line| stderr.lock().unwrap().push_str(&line))
+                .arg("--disable-gems")
+                .arg("-e")
+                .arg(CASK_METADATA_SHIM_RB)
+                .stdin_string(source)
+                .env("MISE_BREW_TOKEN", "example")
+                .env("MISE_BREW_SOURCE_PATH", "Casks/example.rb")
+                .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+                .env("MISE_BREW_TAP_COMMIT", "fixture")
+                .env("MISE_BREW_MACOS_VERSION", "26")
+                .env("MISE_BREW_OS", "macos")
+                .env("MISE_BREW_ARCH", "aarch64")
+                .with_sandbox(metadata_sandbox()?);
+            runner.apply_sandbox().await?;
+            let result = runner.execute_async().await;
+            let output = stdout.into_inner().unwrap();
+            if filter.is_empty() {
+                result.wrap_err_with(|| stderr.lock().unwrap().clone())?;
+                let metadata: serde_json::Value = serde_json::from_str(&output)?;
+                assert_eq!(
+                    metadata["artifacts"],
+                    serde_json::json!([{"manpage_glob": "docs/*"}])
+                );
+            } else if result.is_ok() {
+                accepted.push(format!("{filter}: {output}"));
+            } else {
+                assert!(output.is_empty(), "emitted metadata for {filter}: {output}");
+                let error = stderr.into_inner().unwrap();
+                assert!(
+                    error.contains("unsupported deferred manpage operation"),
+                    "unexpected error for {filter}: {error}"
+                );
+            }
+        }
+        assert!(accepted.is_empty(), "accepted filtered globs: {accepted:?}");
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
     async fn rejects_repeated_and_reentrant_deferred_manpage_iteration() -> Result<()> {
         let Some(ruby) = test_ruby().await? else {
             return Ok(());

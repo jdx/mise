@@ -7281,6 +7281,34 @@ fn remove_obsolete_binary_links_removes_only_caskroom_symlinks() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn remove_obsolete_binary_links_distinguishes_symlinks_with_same_referent() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let cask = test_cask("manpage-upgrade", "2.0");
+    let source = caskroom_version_dir(&cask.token, "2.0").join("share/man/man1/example.1");
+    file::create_dir_all(source.parent().unwrap())?;
+    file::write(&source, "current manual")?;
+    let previous = tmp.path().join("share/man/man1/old.1");
+    let current = tmp.path().join("share/man/man1/new.1");
+    file::create_dir_all(current.parent().unwrap())?;
+    file::make_symlink(&source, &previous)?;
+    file::make_symlink(&source, &current)?;
+
+    remove_obsolete_binary_links(
+        &cask,
+        std::slice::from_ref(&previous),
+        std::slice::from_ref(&current),
+    )?;
+
+    assert!(previous.symlink_metadata().is_err());
+    assert!(current.symlink_metadata()?.file_type().is_symlink());
+    assert_eq!(file::read_to_string(current)?, "current manual");
+    Ok(())
+}
+
 #[test]
 fn installed_cask_version_does_not_invent_pkg_ids_from_current_api() -> Result<()> {
     let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
@@ -8118,7 +8146,7 @@ fn manpage_staging_links_receipts_rollback_and_obsolete_removal() -> Result<()> 
     ensure_manpage_targets_replaceable(&cask, &manpages)?;
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
     let appdir = target_app_dir()?;
-    stage_manpages(&stage, &caskroom, &appdir, &manpages)?;
+    stage_manpages(&stage, &caskroom, &appdir, &manpages, &[])?;
     let targets = manpages
         .iter()
         .map(|m| m.binary.target_path(&appdir))
@@ -8218,7 +8246,8 @@ fn manpage_resolution_rejects_escapes_collisions_and_missing_exact_sources() -> 
             &stage,
             &tmp.path().join("caskroom"),
             &target_app_dir()?,
-            &manpages
+            &manpages,
+            &[],
         )
         .is_err()
     );
@@ -8267,7 +8296,7 @@ async fn pinned_aerospace_manpages_plan_and_stage_offline() -> Result<()> {
     let resolved = resolve_manpages(&stage, &cask, &artifacts)?;
     assert_eq!(resolved.len(), 2);
     let caskroom = tmp.path().join("caskroom");
-    stage_manpages(&stage, &caskroom, &target_app_dir()?, &resolved)?;
+    stage_manpages(&stage, &caskroom, &target_app_dir()?, &resolved, &[])?;
     assert_eq!(
         file::read_to_string(caskroom.join("share/man/man1/aerospace.1"))?,
         "offline manual"
@@ -8512,7 +8541,7 @@ fn manpage_staging_preserves_postflight_output() -> Result<()> {
         validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages)?;
         let target = caskroom.join("share/man/man1/example.1");
         let link = std::fs::read_link(&target).ok();
-        let result = stage_manpages(&stage, &caskroom, &target_app_dir()?, &manpages);
+        let result = stage_manpages(&stage, &caskroom, &target_app_dir()?, &manpages, &[]);
         assert!(result.is_err(), "accepted {kind}");
         assert!(result.unwrap_err().to_string().contains("already exists"));
         assert_eq!(std::fs::read_link(&target).ok(), link);
@@ -8525,6 +8554,77 @@ fn manpage_staging_preserves_postflight_output() -> Result<()> {
             assert_eq!(file::read_to_string(&target)?, "postflight output");
         }
         assert!(!caskroom.join("share/man/man1/first.1").exists());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn manpage_staging_rejects_non_file_and_symlinked_payload_targets() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    for kind in ["directory", "symlink", "parent symlink"] {
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(stage.join("docs"))?;
+        file::write(stage.join("docs/first.1"), "first manual")?;
+        file::write(stage.join("docs/example.1"), "manual")?;
+        let mut cask = test_cask("manpage-payload", "1.0");
+        cask.artifacts = vec![
+            serde_json::json!({"manpage": "docs/first.1"}),
+            serde_json::json!({"manpage": "docs/example.1"}),
+        ];
+        let artifacts = cask_artifacts(&cask)?;
+        let manpages = resolve_manpages(&stage, &cask, &artifacts)?;
+        let caskroom = caskroom_tmp_dir(&cask);
+        let postflight = caskroom.join("postflight");
+        file::create_dir_all(&postflight)?;
+        file::write(postflight.join("example.1"), "postflight output")?;
+        let staged_parent = stage.join("share/man/man1");
+        file::create_dir_all(staged_parent.parent().unwrap())?;
+        if kind == "parent symlink" {
+            file::make_symlink(&postflight, &staged_parent)?;
+        } else {
+            file::create_dir_all(&staged_parent)?;
+            file::write(staged_parent.join("first.1"), "original payload")?;
+            let target = staged_parent.join("example.1");
+            if kind == "directory" {
+                file::create_dir_all(&target)?;
+                file::write(target.join("keep"), "payload directory")?;
+            } else {
+                file::make_symlink(&postflight.join("example.1"), &target)?;
+            }
+        }
+        let copied_roots = durabilize_stage_payload(&stage, &caskroom, &[])?;
+        let target = caskroom.join("share/man/man1/example.1");
+        let link = std::fs::read_link(&target).ok();
+        let result = stage_manpages(
+            &stage,
+            &caskroom,
+            &target_app_dir()?,
+            &manpages,
+            &copied_roots,
+        );
+        assert!(result.is_err(), "accepted {kind}");
+        assert!(result.unwrap_err().to_string().contains("already exists"));
+        assert_eq!(std::fs::read_link(&target).ok(), link);
+        let first = caskroom.join("share/man/man1/first.1");
+        if kind == "parent symlink" {
+            assert!(!first.exists());
+        } else {
+            // A later conflict must not replace even an owned earlier copy.
+            assert_eq!(file::read_to_string(first)?, "original payload");
+        }
+        assert_eq!(
+            file::read_to_string(postflight.join("example.1"))?,
+            "postflight output"
+        );
+        if kind == "directory" {
+            assert_eq!(
+                file::read_to_string(target.join("keep"))?,
+                "payload directory"
+            );
+        }
     }
     Ok(())
 }
@@ -8597,7 +8697,7 @@ fn manpage_appdir_source_resolves_after_app_install() -> Result<()> {
             &appdir,
             "postflight_steps",
         )?;
-        stage_manpages(&stage, &caskroom, &appdir, &manpages)?;
+        stage_manpages(&stage, &caskroom, &appdir, &manpages, &[])?;
         assert_eq!(
             file::read_to_string(caskroom.join("share/man/man1/example.1"))?,
             "installed postflight manual"
@@ -8659,24 +8759,24 @@ fn manpage_appdir_sources_reject_unowned_and_escaping_paths() -> Result<()> {
     let outside = tmp.path().join("outside.1");
     file::write(&outside, "unowned")?;
     file::make_symlink(&outside, &bundle.join(relative))?;
-    assert!(stage_manpages(&stage, &caskroom, appdir, &manpages).is_err());
+    assert!(stage_manpages(&stage, &caskroom, appdir, &manpages, &[]).is_err());
     file::remove_file(bundle.join(relative))?;
     file::remove_all(bundle.join("Contents"))?;
     let other = tmp.path().join("Other.app");
     file::create_dir_all(other.join(relative).parent().unwrap())?;
     file::write(other.join(relative), "other app")?;
     file::make_symlink(&other.join("Contents"), &bundle.join("Contents"))?;
-    assert!(stage_manpages(&stage, &caskroom, appdir, &manpages).is_err());
+    assert!(stage_manpages(&stage, &caskroom, appdir, &manpages, &[]).is_err());
     file::remove_all(&bundle)?;
     file::make_symlink(&other, &bundle)?;
-    assert!(stage_manpages(&stage, &caskroom, appdir, &manpages).is_err());
+    assert!(stage_manpages(&stage, &caskroom, appdir, &manpages, &[]).is_err());
     file::remove_file(&bundle)?;
     file::remove_all(appdir)?;
     let elsewhere = tmp.path().join("elsewhere");
     file::create_dir_all(&elsewhere)?;
     file::rename(&other, elsewhere.join("Example.app"))?;
     file::make_symlink(&elsewhere, appdir)?;
-    assert!(stage_manpages(&stage, &caskroom, appdir, &manpages).is_err());
+    assert!(stage_manpages(&stage, &caskroom, appdir, &manpages, &[]).is_err());
     assert!(!caskroom.exists());
     cask.artifacts.push(serde_json::json!({"app": ["Example.app", {"target": "$HOMEBREW_PREFIX/Applications/Another.app"}]}));
     assert!(
@@ -8701,7 +8801,7 @@ fn manpage_appdir_sources_reject_unowned_and_escaping_paths() -> Result<()> {
         "contained manual",
     )?;
     file::make_symlink(Path::new("real.1"), &bundle.join(relative))?;
-    stage_manpages(&stage, &caskroom, appdir, &manpages)?;
+    stage_manpages(&stage, &caskroom, appdir, &manpages, &[])?;
     assert_eq!(
         file::read_to_string(caskroom.join("share/man/man1/example.1"))?,
         "contained manual"
@@ -8763,7 +8863,7 @@ fn manpage_staging_rejects_postflight_redirect_of_configured_appdir() -> Result<
     )?;
     assert_eq!(target_app_dir()?, unrelated);
     validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages)?;
-    let result = stage_manpages(&stage, &caskroom, &appdir, &manpages);
+    let result = stage_manpages(&stage, &caskroom, &appdir, &manpages, &[]);
     assert!(result.is_err(), "accepted redirected APPDIR: {result:?}");
     assert_eq!(
         result.unwrap_err().to_string(),

@@ -236,6 +236,7 @@ pub(super) fn stage_manpages(
     caskroom: &Path,
     appdir: &Path,
     manpages: &[ResolvedManpage],
+    copied_payload_roots: &[PathBuf],
 ) -> Result<()> {
     // Check the entire batch before copying: later lifecycle-created conflicts
     // must not leave earlier pages installed or destroy postflight output.
@@ -266,8 +267,16 @@ pub(super) fn stage_manpages(
             }
         };
         let target = caskroom_binary_path(caskroom, appdir, &manpage.binary)?;
-        match target.symlink_metadata() {
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        let replace_payload = match target.symlink_metadata() {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+            Ok(metadata)
+                if metadata.is_file()
+                    && copied_payload_roots
+                        .iter()
+                        .any(|root| newly_copied_manpage_target(&target, root)) =>
+            {
+                true
+            }
             Err(err) => {
                 return Err(err).wrap_err("brew-cask: cannot inspect manpage staging target");
             }
@@ -275,14 +284,17 @@ pub(super) fn stage_manpages(
                 "brew-cask: manpage staging target '{}' already exists",
                 target.display()
             ),
-        }
+        };
         manpage_target_ancestor(&target)?;
         if !path_starts_with_resolved_root(&target, caskroom) {
             bail!("brew-cask: manpage staging target escapes Caskroom");
         }
-        copies.push((source, target));
+        copies.push((source, target, replace_payload));
     }
-    for (source, target) in copies {
+    for (source, target, replace_payload) in copies {
+        if replace_payload {
+            std::fs::remove_file(&target)?;
+        }
         if let Some(parent) = target.parent() {
             file::create_dir_all(parent)?;
         }
@@ -300,6 +312,30 @@ pub(super) fn stage_manpages(
         }
     }
     Ok(())
+}
+
+// The caller supplies only roots just created by durabilize_stage_payload,
+// with no intervening artifact phase. Do not follow even an in-Caskroom parent
+// symlink: it could redirect a copied entry into preexisting postflight output.
+fn newly_copied_manpage_target(target: &Path, root: &Path) -> bool {
+    if !target.starts_with(root) {
+        return false;
+    }
+    if target == root {
+        return true;
+    }
+    for parent in target.parent().unwrap().ancestors() {
+        if !parent
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.is_dir())
+        {
+            return false;
+        }
+        if parent == root {
+            return true;
+        }
+    }
+    false
 }
 
 pub(super) fn ensure_manpage_targets_replaceable(
@@ -355,6 +391,15 @@ pub(super) fn validate_manpage_target_uniqueness(
         .iter()
         .map(|binary| caskroom_binary_path(&caskroom, &appdir, binary))
         .collect::<Result<Vec<_>>>()?;
+    // The post-copy check can now see the durable binary sources, which may
+    // differ from their link destinations. Protect both the source entry and
+    // its contained referent: stage_binary chmods through payload symlinks.
+    for binary in &artifacts.binaries {
+        if let Some(payload) = payload_binary_path(stage, &caskroom, binary) {
+            staged.push(payload.canonicalize()?);
+            staged.push(payload);
+        }
+    }
     staged.extend(
         artifacts
             .command_wrappers

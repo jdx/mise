@@ -290,8 +290,10 @@ the staging directory. mise rejects manpages whose installation paths conflict
 with another declared artifact, including names that the destination filesystem
 treats as equivalent, such as `Example.1` and `example.1` on a case-insensitive
 filesystem. These checks run during installation, not dry-run. Manpage staging
-also refuses any existing file, directory, or symlink at its Caskroom destination,
-preserving output created by postflight rather than overwriting it.
+also refuses existing files, directories, and symlinks at its Caskroom destination,
+preserving output created by postflight rather than overwriting it. Only regular
+files just copied by mise as part of the binary payload may be replaced by the
+non-executable manpage copy.
 
 The directory must be literal; only filename `*` and `?` wildcards are supported. Recursive globs, multiple
 patterns, glob options, `Dir.glob`, repeated iteration of one glob, and
