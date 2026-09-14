@@ -565,26 +565,38 @@ mod tests {
     /// Registering a task does not disturb a running instance, so what an
     /// apply ends and runs is decided here. A converged running task is left
     /// alone unless the caller says its process is the wrong one, which is
-    /// how a stale history watcher is replaced.
+    /// how a stale history watcher is replaced. All sixteen combinations are
+    /// written down: the decision has four inputs, so anything less leaves
+    /// room for a precedence change between `changed` and `restart` to pass.
     #[test]
     fn a_running_task_is_replaced_only_when_it_must_be() {
-        // (running, changed, start, restart) -> (end_first, start)
+        // (running, changed, start, restart) -> (end_first, run)
         let cases = [
-            // converged and running: nothing to do
-            ((true, false, true, false), (false, false)),
-            // the same task, with its process declared wrong: ended and run
-            ((true, false, true, true), (true, true)),
-            // a changed definition replaces the running process
-            ((true, true, true, false), (true, true)),
-            // stopping ends it and does not run it, restart or not
-            ((true, false, false, false), (true, false)),
-            ((true, false, false, true), (true, false)),
-            // not running: started, never ended
+            // Not registered as running. Nothing to end; it is run whenever
+            // it should be running, and `changed` and `restart` add nothing.
+            ((false, false, false, false), (false, false)),
+            ((false, false, false, true), (false, false)),
+            ((false, true, false, false), (false, false)),
+            ((false, true, false, true), (false, false)),
             ((false, false, true, false), (false, true)),
             ((false, false, true, true), (false, true)),
-            // not running and not wanted: untouched
-            ((false, false, false, false), (false, false)),
+            ((false, true, true, false), (false, true)),
+            ((false, true, true, true), (false, true)),
+            // Running and wanted stopped: ended, never run.
+            ((true, false, false, false), (true, false)),
+            ((true, false, false, true), (true, false)),
+            ((true, true, false, false), (true, false)),
+            ((true, true, false, true), (true, false)),
+            // Running, wanted running, and converged: left alone. This is
+            // the state a stale watcher sits in, and why an apply had to be
+            // told to replace it.
+            ((true, false, true, false), (false, false)),
+            // ... which either a changed definition or a forced restart does.
+            ((true, false, true, true), (true, true)),
+            ((true, true, true, false), (true, true)),
+            ((true, true, true, true), (true, true)),
         ];
+        assert_eq!(cases.len(), 16, "every combination is covered");
         for ((running, changed, start, restart), expected) in cases {
             assert_eq!(
                 transition(running, changed, start, restart),
