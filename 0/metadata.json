@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2EPKVC8HDSVM5KN9TC816GX",
+  "session_id": "01a09d00-07d0-7b20-a1a7-fc9b19004cab",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T00:56:01.430848Z",
+  "branch": "codex/brew-pipelined-pour",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/system/packages/brew/fetch.rs",
+    "src/system/packages/brew/mod.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "dab473a9b7f4",
+  "checkpoint_transcript_start": 1887,
+  "transcript_lines_at_start": 1887,
+  "compact_transcript_start": 271,
+  "token_usage": {
+    "input_tokens": 390923,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 12335872,
+    "output_tokens": 23483,
+    "api_call_count": 85
+  },
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-14T00:56:01.084183Z",
+    "agent_lines": 130,
+    "agent_removed": 126,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 130,
+    "total_lines_changed": 256,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
