@@ -327,6 +327,19 @@ pub(crate) async fn exists(name: &str) -> Result<bool> {
     Ok(query(&task_name(name)).await?.is_some())
 }
 
+/// Whether registering `req` must end the running instance first, and
+/// whether it must then run the task. A running instance survives an
+/// unchanged registration (`IgnoreNew`), so a task that must not keep its
+/// old process — it is being stopped, its definition changed, or its
+/// process is not the one the caller wants — has to be ended explicitly.
+fn transition(running: bool, changed: bool, start: bool, restart: bool) -> (bool, bool) {
+    let replace = changed || restart;
+    (
+        running && (!start || replace),
+        start && (!running || replace),
+    )
+}
+
 pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> Result<()> {
     let user_id = current_user_id();
     for req in requests {
@@ -359,8 +372,7 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         let running = registered.as_ref().is_some_and(|query| query.running);
         let changed = registered.is_some()
             && std::fs::read(&path).ok().as_deref() != Some(rendered.as_slice());
-        let end_first = running && (!req.start || changed || req.restart);
-        let start = req.start && (!running || changed || req.restart);
+        let (end_first, start) = transition(running, changed, req.start, req.restart);
         if dry_run {
             miseprintln!("write {}", shell_words::join([path.display().to_string()]));
             miseprintln!("schtasks {}", shell_words::join(&create));
@@ -548,6 +560,38 @@ mod tests {
         request.description = Some("My <agent>".to_string());
         request.restart_on_failure = true;
         request
+    }
+
+    /// Registering a task does not disturb a running instance, so what an
+    /// apply ends and runs is decided here. A converged running task is left
+    /// alone unless the caller says its process is the wrong one, which is
+    /// how a stale history watcher is replaced.
+    #[test]
+    fn a_running_task_is_replaced_only_when_it_must_be() {
+        // (running, changed, start, restart) -> (end_first, start)
+        let cases = [
+            // converged and running: nothing to do
+            ((true, false, true, false), (false, false)),
+            // the same task, with its process declared wrong: ended and run
+            ((true, false, true, true), (true, true)),
+            // a changed definition replaces the running process
+            ((true, true, true, false), (true, true)),
+            // stopping ends it and does not run it, restart or not
+            ((true, false, false, false), (true, false)),
+            ((true, false, false, true), (true, false)),
+            // not running: started, never ended
+            ((false, false, true, false), (false, true)),
+            ((false, false, true, true), (false, true)),
+            // not running and not wanted: untouched
+            ((false, false, false, false), (false, false)),
+        ];
+        for ((running, changed, start, restart), expected) in cases {
+            assert_eq!(
+                transition(running, changed, start, restart),
+                expected,
+                "running={running} changed={changed} start={start} restart={restart}"
+            );
+        }
     }
 
     #[test]
