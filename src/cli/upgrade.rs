@@ -16,8 +16,8 @@ use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
-    ConfigScope, InstallOptions, NeededVersions, ResolveOptions, ToolSource, ToolVersion,
-    ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
+    ConfigScope, InstallOptions, NeededVersions, ResolveOptions, ToolRequest, ToolSource,
+    ToolVersion, Toolset, ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
     get_versions_needed_by_tracked_stubs,
 };
 use crate::ui::install_progress::removal_progress;
@@ -31,6 +31,12 @@ use indexmap::IndexMap;
 use jiff::{Span, Timestamp, civil::date};
 
 const MAX_OUT_OF_RANGE_UPDATES: usize = 5;
+
+#[derive(Debug, Clone)]
+struct ExplicitConfigBump {
+    path: PathBuf,
+    request: ToolRequest,
+}
 
 /// Upgrade outdated tools
 ///
@@ -191,19 +197,43 @@ impl Upgrade {
             unimplemented!("mise upgrade --monorepo is not implemented yet");
         }
         let mut config = Config::get().await?;
-        if self.bump {
+        let mut explicit_config_bumps = Vec::new();
+        if self.bump && !self.tool.is_empty() {
             let scope = self.scope();
+            let effective = ToolsetBuilder::new()
+                .with_scope(scope)
+                .build(&config)
+                .await?;
             for tool in &mut self.tool {
-                if tool
-                    .tvr
-                    .as_ref()
-                    .is_some_and(|request| request.version() == "latest")
-                    && config_defines_tool(&config, scope, &tool.ba)
-                {
+                let Some(request) = tool.tvr.as_ref() else {
+                    continue;
+                };
+                let Some((configured_ba, configured_request)) =
+                    effective_persistable_request(&effective, &tool.ba)
+                else {
+                    continue;
+                };
+
+                if request.version() == "latest" {
                     // `--bump` already resolves the configured request to the latest release.
                     // Keeping an explicit `@latest` would replace its config source with
                     // ToolSource::Argument, preventing the resolved version from being saved.
                     tool.tvr = None;
+                    tool.ba = configured_ba.clone();
+                    tool.short.clone_from(&configured_ba.short);
+                } else {
+                    let path = configured_request
+                        .source()
+                        .path()
+                        .expect("persistable request must have a path")
+                        .to_path_buf();
+                    let request = ToolRequest::new_with_options(
+                        configured_ba.clone(),
+                        &request.version(),
+                        configured_request.options(),
+                        configured_request.source().clone(),
+                    )?;
+                    explicit_config_bumps.push(ExplicitConfigBump { path, request });
                 }
             }
         }
@@ -266,6 +296,13 @@ impl Upgrade {
             }
         }
         if outdated.is_empty() {
+            if !explicit_config_bumps.is_empty() {
+                if self.is_dry_run() {
+                    print_explicit_config_bumps(&explicit_config_bumps)?;
+                } else {
+                    apply_explicit_config_bumps(&explicit_config_bumps).await?;
+                }
+            }
             let bump_outdated = if self.bump {
                 Vec::new()
             } else {
@@ -302,7 +339,8 @@ impl Upgrade {
                 );
             }
         } else {
-            self.upgrade(&mut config, outdated, before_date).await?;
+            self.upgrade(&mut config, outdated, before_date, &explicit_config_bumps)
+                .await?;
         }
 
         Ok(())
@@ -313,6 +351,7 @@ impl Upgrade {
         config: &mut Arc<Config>,
         outdated: Vec<OutdatedInfo>,
         before_date: Option<Timestamp>,
+        explicit_config_bumps: &[ExplicitConfigBump],
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
         let prune_mode = self.prune_mode()?;
@@ -412,6 +451,7 @@ impl Upgrade {
                     display_path(cf.get_path())
                 );
             }
+            print_explicit_config_bumps(explicit_config_bumps)?;
             if !self.bump {
                 use crate::toolset::outdated_info::compute_config_bumps;
                 let tool_versions: Vec<(String, String)> = self
@@ -560,6 +600,19 @@ impl Upgrade {
                     ));
                 }
             }
+            let explicit_config_bumps = explicit_config_bumps
+                .iter()
+                .filter(|bump| {
+                    successful_versions
+                        .iter()
+                        .any(|version| backend_args_match(version.ba(), bump.request.ba()))
+                        || !outdated.iter().any(|outdated| {
+                            backend_args_match(outdated.tool_version.ba(), bump.request.ba())
+                        })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            apply_explicit_config_bumps(&explicit_config_bumps).await?;
             if config_file_errors.len() == 1 {
                 return Err(config_file_errors.pop().unwrap());
             }
@@ -1043,19 +1096,50 @@ fn backend_matches(backends: &HashSet<String>, ba: &BackendArg) -> bool {
         || backends.contains(&ba.full_without_opts())
 }
 
-fn config_defines_tool(config: &Config, scope: ConfigScope, ba: &BackendArg) -> bool {
-    config.config_files.iter().any(|(path, cf)| {
-        let is_global = config::is_global_config(path);
-        let in_scope = match scope {
-            ConfigScope::All => true,
-            ConfigScope::LocalOnly => !is_global,
-            ConfigScope::GlobalOnly => is_global,
-        };
-        in_scope
-            && cf
-                .to_tool_request_set()
-                .is_ok_and(|requests| requests.tools.contains_key(ba))
-    })
+fn backend_args_match(left: &BackendArg, right: &BackendArg) -> bool {
+    let left = left.all_fulls();
+    let right = right.all_fulls();
+    left.iter().any(|identity| right.contains(identity))
+}
+
+fn effective_persistable_request<'a>(
+    toolset: &'a Toolset,
+    requested: &BackendArg,
+) -> Option<(&'a Arc<BackendArg>, &'a ToolRequest)> {
+    let (ba, versions) = toolset
+        .versions
+        .iter()
+        .find(|(ba, _)| backend_args_match(ba, requested))?;
+    let mut supported = versions
+        .requests
+        .iter()
+        .filter(|request| request.is_os_supported());
+    let request = supported.next()?;
+    if supported.next().is_some() || request.source().path().is_none() {
+        return None;
+    }
+    Some((ba, request))
+}
+
+fn print_explicit_config_bumps(bumps: &[ExplicitConfigBump]) -> Result<()> {
+    for bump in bumps {
+        miseprintln!(
+            "Would bump {}@{} in {}",
+            bump.request.ba().short,
+            bump.request.version(),
+            display_path(&bump.path)
+        );
+    }
+    Ok(())
+}
+
+async fn apply_explicit_config_bumps(bumps: &[ExplicitConfigBump]) -> Result<()> {
+    for bump in bumps {
+        let cf = config_file::parse(&bump.path).await?;
+        cf.replace_versions(bump.request.ba(), vec![bump.request.clone()])?;
+        cf.save()?;
+    }
+    Ok(())
 }
 
 async fn warn_hidden_release_ignored_by_minimum_release_age(
@@ -1174,9 +1258,10 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 #[cfg(test)]
 mod tests {
     use super::{
-        current_version_satisfies_hidden_release, format_hidden_release_details,
-        release_is_eligible_at,
+        backend_args_match, current_version_satisfies_hidden_release,
+        format_hidden_release_details, release_is_eligible_at,
     };
+    use crate::cli::args::BackendArg;
     use jiff::tz::TimeZone;
 
     #[test]
@@ -1184,6 +1269,14 @@ mod tests {
         assert!(!current_version_satisfies_hidden_release("1.0.0", "1.1.0"));
         assert!(current_version_satisfies_hidden_release("1.1.0", "1.1.0"));
         assert!(current_version_satisfies_hidden_release("1.2.0", "1.1.0"));
+    }
+
+    #[test]
+    fn test_backend_args_match_registry_shorthand_and_explicit_backend() {
+        let shorthand = BackendArg::from("tflint");
+        let explicit = BackendArg::from("aqua:terraform-linters/tflint");
+
+        assert!(backend_args_match(&shorthand, &explicit));
     }
 
     #[test]

@@ -15,3 +15,32 @@ assert_contains "cat mise.toml" 'dummy = "1.0.0"'
 mise up --bump dummy@latest --prune
 assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  2.0.0"
 assert_contains "cat mise.toml" 'dummy = "2.0.0"'
+
+# Explicit selectors constrain resolution and are persisted verbatim.
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+mise install dummy@3.1.0
+
+output=$(mise up --bump dummy@3 --dry-run)
+assert_contains "echo '$output'" "Would bump dummy@3"
+assert_contains "cat mise.toml" 'dummy = "1.0.0"'
+
+mise up --bump dummy@3 --prune
+assert_contains "cat mise.toml" 'dummy = "3"'
+
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+mise up --bump dummy@3.1 --prune
+assert_contains "cat mise.toml" 'dummy = "3.1"'
+
+# A higher-precedence environment request is not a writable config source.
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+MISE_DUMMY_VERSION=1.0.0 mise up --bump dummy@latest --prune
+assert_contains "cat mise.toml" 'dummy = "1.0.0"'
