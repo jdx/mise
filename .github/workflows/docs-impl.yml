@@ -15,7 +15,7 @@ on:
         required: false
 
 concurrency:
-  group: docs-${{ github.head_ref }}
+  group: docs-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'deploy' || 'validation' }}-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'release' || github.head_ref || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -62,4 +62,4 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-          DRY_RUN: ${{ !inputs.trusted || github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+          DRY_RUN: ${{ !inputs.trusted || github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'v') || github.event.release.prerelease }}
