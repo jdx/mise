@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2G3FGJE5HPC9BQDDRP7C82F",
+  "session_id": "01a0a027-d161-77e3-b4f3-16da3b50912f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T14:00:04.474236Z",
+  "branch": "codex/dot-track-encrypt",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/cli/test_dotfiles_encrypted_capture",
+    "src/cli/dotfiles/track.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "ab9a465e882e",
+  "checkpoint_transcript_start": 354,
+  "transcript_lines_at_start": 354,
+  "compact_transcript_start": 51,
+  "token_usage": {
+    "input_tokens": 17478,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1131904,
+    "output_tokens": 497,
+    "api_call_count": 7
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-14T14:00:04.4097Z",
+    "agent_lines": 9,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 9,
+    "total_lines_changed": 9,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
