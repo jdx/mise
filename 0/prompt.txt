@@ -1,13 +1,1 @@
-investigate [https://github.com/jdx/mise/discussions/13184](https://github.com/jdx/mise/discussions/13184)
-
----
-
-make a pr, post a reply
-
----
-
-when you post the reply, offer a workaround if you can think of one until the fix is shipped
-
----
-
 include [https://github.com/jdx/mise/pull/13181/commits/9fe9c9c998919597093669f05c4853a58fe8c127](https://github.com/jdx/mise/pull/13181/commits/9fe9c9c998919597093669f05c4853a58fe8c127) so ci doesn't fail
