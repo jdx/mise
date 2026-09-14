@@ -18,7 +18,12 @@ packages = json.loads(sys.argv[1])
 scripts = Path(sys.argv[2]).resolve()
 names = set()
 for package in packages:
-    distribution = importlib.metadata.distribution(package)
+    try:
+        distribution = importlib.metadata.distribution(package)
+    except importlib.metadata.PackageNotFoundError:
+        # Requirements with inactive environment markers are part of the
+        # portable lock but are intentionally absent from this environment.
+        continue
     names.update(
         f"{entry.name}.exe" if os.name == "nt" else entry.name
         for entry in distribution.entry_points

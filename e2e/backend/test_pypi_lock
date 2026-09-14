@@ -94,7 +94,7 @@ from pathlib import Path
 p = Path('mise.toml')
 p.write_text(p.read_text().replace(
     '"pipx:mise-lock-cli" = "1.0.0"',
-    '"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], expose = ["mise-exposed==1.0.0"], dependency_prereleases = "allow" }'))
+    '''"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], expose = ["mise-exposed==1.0.0", "mise-inactive; python_version < '3'"], dependency_prereleases = "allow" }'''))
 PY_SEMANTIC_OPTIONS
 mise lock --bump pipx:mise-lock-cli
 assert_contains 'mise x --locked -- exposed-cli' 'exposed'
@@ -102,14 +102,14 @@ assert_contains "find .mise/locks/pipx-mise-lock-cli -name pyproject.toml -exec 
 assert_contains "find .mise/locks/pipx-mise-lock-cli -name pyproject.toml -exec cat {} +" 'mise-exposed==1.0.0'
 assert_contains 'cat mise.lock' 'dependency_prereleases = "allow"'
 assert_contains 'cat mise.lock' "with = '[\"mise-lock-extra==1.0.0\"]'"
-assert_contains 'cat mise.lock' "expose = '[\"mise-exposed==1.0.0\"]'"
+assert_contains 'cat mise.lock' "expose = \"\"\"[\"mise-exposed==1.0.0\",\"mise-inactive; python_version < '3'\"]\"\"\""
 # Wheel data scripts owned by the root distribution are exposed even when the
 # package does not declare a console_scripts entry point.
 python3 - <<'PY_DATA_SCRIPT'
 from pathlib import Path
 p = Path('mise.toml')
 p.write_text(p.read_text().replace(
-    '"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], expose = ["mise-exposed==1.0.0"], dependency_prereleases = "allow" }',
+    '''"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], expose = ["mise-exposed==1.0.0", "mise-inactive; python_version < '3'"], dependency_prereleases = "allow" }''',
     '"pipx:mise-data-cli" = "1.0.0"'))
 PY_DATA_SCRIPT
 mise lock --bump pipx:mise-data-cli

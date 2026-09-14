@@ -1143,7 +1143,11 @@ impl PIPXBackend {
             crate::backend::semver_version_from_toolsets_or_path(self, &ctx.config, &ctx.ts, "uv")
                 .await
         else {
-            return Ok(());
+            bail!(
+                "{} expose requires uv@{} or newer, but the installed uv version could not be determined",
+                self.ba.short,
+                UV_WITH_EXECUTABLES_FROM_VERSION
+            );
         };
         if semver_is_older_than(&version, UV_WITH_EXECUTABLES_FROM_VERSION).unwrap_or(false) {
             bail!(
