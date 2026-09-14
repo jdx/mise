@@ -1373,7 +1373,6 @@ pub(super) fn is_non_install_artifact(kind: &str) -> bool {
         "caveats"
             | "conflicts_with"
             | "depends_on"
-            | "manpage"
             | "postflight"
             | "preflight"
             | "uninstall_postflight_steps"

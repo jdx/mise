@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  exit 0
+fi
+
+HTTP_PORT_FILE="$TMPDIR/manpage_http_port"
+REQUESTS_FILE="$TMPDIR/manpage_requests"
+python3 -u - "$HTTP_PORT_FILE" "$REQUESTS_FILE" <<'PY' >/dev/null 2>&1 &
+import io
+import json
+import sys
+import zipfile
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+port_file, requests_file = map(Path, sys.argv[1:])
+archive = io.BytesIO()
+with zipfile.ZipFile(archive, "w") as zipped:
+    zipped.writestr("docs/example.1", "offline manual\n")
+    zipped.writestr("docs/config.5", "offline configuration\n")
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        with requests_file.open("a") as log:
+            log.write(self.path + "\n")
+        if self.path.startswith("/api/cask/"):
+            token = self.path.rsplit("/", 1)[-1].removesuffix(".json")
+            artifacts = [{"manpage_glob": "docs/*"}]
+            if token == "manpage-plan":
+                artifacts += [
+                    {"app": ["nested/Example.app"]},
+                    {"postflight_steps": [{"steps": [{
+                        "type": "run", "command": {"path": "/usr/bin/false"}
+                    }]}]},
+                ]
+            body = json.dumps({
+                "token": token, "version": "1.0", "sha256": "no_check",
+                "url": f"http://127.0.0.1:{self.server.server_port}/archive.zip",
+                "artifacts": artifacts,
+            }).encode()
+        elif self.path == "/archive.zip":
+            body = archive.getvalue()
+        else:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+server = HTTPServer(("127.0.0.1", 0), Handler)
+temporary = port_file.with_suffix(".tmp")
+temporary.write_text(str(server.server_port))
+temporary.replace(port_file)
+server.serve_forever()
+PY
+HTTP_SERVER_PID=$!
+trap 'kill "$HTTP_SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$HTTP_PORT_FILE" "manpage fixture server" 30 "$HTTP_SERVER_PID"
+HTTP_PORT="$(cat "$HTTP_PORT_FILE")"
+MISE_URL_REPLACEMENTS="$(printf '{"https://formulae.brew.sh":"http://127.0.0.1:%s"}' "$HTTP_PORT")"
+export MISE_URL_REPLACEMENTS
+export MISE_SYSTEM_BREW_PREFIX="$PWD/brew-prefix"
+export MISE_BREW_CASK_OPT_APPDIR="$PWD/Applications"
+
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"brew-cask:manpage-plan" = "latest"
+EOF
+mise bootstrap packages apply --dry-run >plan
+assert_contains "cat plan" "link app Example.app"
+assert_contains "cat plan" "install manpages matching docs/* (after extraction)"
+assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX'"
+assert_fail "test -e '$MISE_BREW_CASK_OPT_APPDIR'"
+assert_fail "grep /archive.zip '$REQUESTS_FILE'"
+
+# Install only locally generated text files, never an app or lifecycle hook.
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"brew-cask:manpage-files" = "latest"
+EOF
+mise bootstrap packages apply --yes
+man1="$MISE_SYSTEM_BREW_PREFIX/share/man/man1/example.1"
+man5="$MISE_SYSTEM_BREW_PREFIX/share/man/man5/config.5"
+assert "cat '$man1'" "offline manual"
+assert "cat '$man5'" "offline configuration"
+assert_succeed "test -L '$man1'"
+assert_fail "test -x '$man1'"
+assert_contains "cat '$MISE_SYSTEM_BREW_PREFIX/Caskroom/manpage-files/1.0/.mise-cask.toml'" "share/man/man1/example.1"
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+EOF
+mise bootstrap packages prune --manager brew-cask --yes
+assert_fail "test -L '$man1'"
+assert_fail "test -L '$man5'"

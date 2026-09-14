@@ -34,6 +34,78 @@ end
 
 CASK_FILE = ENV.fetch("MISE_BREW_SOURCE_PATH")
 
+# Keep target interpolation relocatable, including custom mise prefixes.
+HOMEBREW_PREFIX = "$HOMEBREW_PREFIX".freeze
+MISE_STAGED_PATH = "$MISE_STAGED_PATH".freeze
+
+# A glob is metadata, not an Array of host paths. Only an unmodified token
+# passed to manpage is supported; do not pretend to evaluate arbitrary Ruby
+# against files that have not been downloaded yet.
+class DeferredManpage < BasicObject
+  def initialize(pattern)
+    @pattern = pattern
+    @consumed = false
+  end
+
+  def consume
+    ::Kernel.raise "deferred manpage must be declared exactly once" if @consumed
+    @consumed = true
+    @pattern
+  end
+
+  def consumed? = @consumed
+
+  def method_missing(name, *)
+    ::Kernel.raise "unsupported deferred manpage operation `#{name}`; pass the glob entry directly to manpage"
+  end
+end
+
+class DeferredManpageGlob < BasicObject
+  def initialize(pattern)
+    @pattern = pattern
+    @declared = false
+  end
+
+  def declared? = @declared
+
+  def each
+    ::Kernel.raise "deferred staged_path glob requires each { |man| manpage man }" unless ::Kernel.block_given?
+    entry = ::DeferredManpage.new(@pattern)
+    yield entry
+    ::Kernel.raise "deferred staged_path glob entry must be passed to manpage" unless entry.consumed?
+    @declared = true
+    nil
+  end
+
+  def method_missing(name, *)
+    ::Kernel.raise "unsupported staged_path glob operation `#{name}`; use each { |man| manpage man }"
+  end
+end
+
+module MetadataDir
+  def [](*patterns, **options)
+    pattern = patterns.first
+    unless patterns.length == 1 && options.empty? && pattern.is_a?(String) && pattern.start_with?("#{MISE_STAGED_PATH}/")
+      raise "metadata Dir[] supports only one staged_path manpage glob without options"
+    end
+    relative = pattern.delete_prefix("#{MISE_STAGED_PATH}/")
+    parts = relative.split("/", -1)
+    if parts.any? { |part| part.empty? || part == "." || part == ".." } ||
+        relative.match?(/[\\\x00\[\]{}]/) || relative.include?("**") ||
+        parts[0...-1].any? { |part| part.match?(/[*?]/) }
+      raise "unsupported staged_path manpage glob; use a literal directory and filename * or ? wildcards"
+    end
+    glob = DeferredManpageGlob.new(relative)
+    ($mise_deferred_manpage_globs ||= []) << glob
+    glob
+  end
+
+  def glob(*)
+    raise "metadata Dir.glob is unsupported; use Dir[staged_path pattern].each { |man| manpage man }"
+  end
+end
+Dir.singleton_class.prepend(MetadataDir)
+
 module OS
   def self.mac? = ENV.fetch("MISE_BREW_OS") == "macos"
   def self.linux? = ENV.fetch("MISE_BREW_OS") == "linux"
@@ -179,7 +251,16 @@ class CaskMetadata
   def binary(source, target: nil) = add_artifact("binary", source, target)
   def pkg(source, **) = add_artifact("pkg", source, nil)
   def font(source, target: nil) = add_artifact("font", source, target)
-  def manpage(source, target: nil) = add_artifact("manpage", source, target)
+  def staged_path = MISE_STAGED_PATH
+
+  def manpage(source, target: nil)
+    if DeferredManpage === source
+      raise "deferred manpage targets are unsupported" unless target.nil?
+      @artifacts << { "manpage_glob" => source.consume }
+    else
+      add_artifact("manpage", source.to_s.delete_prefix("#{MISE_STAGED_PATH}/"), target)
+    end
+  end
   def bash_completion(source, target: nil) = add_artifact("bash_completion", source, target)
   def zsh_completion(source, target: nil) = add_artifact("zsh_completion", source, target)
   def fish_completion(source, target: nil) = add_artifact("fish_completion", source, target)
@@ -325,4 +406,7 @@ metadata = $mise_cask_metadata
 raise "no cask block found" if metadata.nil?
 expected = ENV.fetch("MISE_BREW_TOKEN")
 raise "expected cask #{expected}, got #{metadata.token}" if metadata.token != expected
+unless ($mise_deferred_manpage_globs || []).all?(&:declared?)
+  raise "deferred staged_path glob requires each { |man| manpage man }"
+end
 puts JSON.generate(metadata.to_h)

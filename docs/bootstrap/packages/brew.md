@@ -258,6 +258,35 @@ require custom installer choices, services, unsupported hook DSL, unsupported
 structured lifecycle steps, or other cask artifact types fail with a clear
 unsupported artifact error instead of delegating to Homebrew.
 
+### Tap cask completions and manpages
+
+Tap Ruby metadata can interpolate `HOMEBREW_PREFIX` in artifact targets. mise
+keeps this prefix relocatable: targets use `/opt/homebrew` on Apple Silicon,
+`/usr/local` on Intel, or the configured mise Homebrew prefix.
+
+On macOS, `manpage "docs/example.1"` installs a non-executable file in the
+Caskroom and links it under `<prefix>/share/man/man1/`. Sections `.1` through
+`.9`, optionally followed by `.gz`, are supported; an optional `target` must
+be a filename with a supported section. Manpages participate in mise's normal
+receipt, rollback, upgrade cleanup, and uninstall ownership checks.
+
+mise also supports the staged archive declaration used by AeroSpace:
+
+```ruby
+Dir["#{staged_path}/AeroSpace-v#{version}/manpage/*"].each { |man| manpage man }
+```
+
+Metadata extraction records this pattern without reading directories. Dry-run
+reports the deferred pattern without downloading or extracting the app or
+running lifecycle actions. Nested app sources such as `nested/Example.app`
+install as `Example.app` unless an explicit target is declared. A real install
+resolves manpage patterns against the extracted archive, rejecting missing
+matches, invalid sections, duplicate targets, and paths or symlinks escaping
+the staging directory. The directory must be literal;
+only filename `*` and `?` wildcards are supported. Recursive globs, multiple
+patterns, glob options, `Dir.glob`, and transformations/filtering of glob entries
+are unsupported and fail explicitly rather than silently omitting manpages.
+
 ### Ownership and installed state
 
 Direct cask pours remain mise-owned. Their completed state is recorded in

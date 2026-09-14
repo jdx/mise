@@ -209,7 +209,7 @@ fn write_test_app_receipt(cask: &Cask, app_name: &str) -> Result<PathBuf> {
         source: app_name.to_string(),
         target: Some(format!("$HOMEBREW_PREFIX/Applications/{app_name}")),
     };
-    let target = app_target_path(app.target_name())?;
+    let target = app_target_path(app.target_name()?)?;
     file::create_dir_all(&target)?;
     file::write(target.join("version"), "1.0.0")?;
     let version_dir = caskroom_version_dir(&cask.token, &cask.version);
@@ -622,7 +622,7 @@ fn completed_receipt_ignores_app_bundle_content_drift() -> Result<()> {
         apps: vec![app.clone()],
         ..Default::default()
     };
-    let app_target = app_target_path(app.target_name())?;
+    let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
     crate::file::write(app_target.join("Contents/app"), "original")?;
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
@@ -671,7 +671,7 @@ fn completed_receipt_missing_app_is_not_installed() -> Result<()> {
         apps: vec![app.clone()],
         ..Default::default()
     };
-    let app_target = app_target_path(app.target_name())?;
+    let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
     crate::file::write(app_target.join("Contents/app"), "original")?;
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
@@ -767,7 +767,7 @@ fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
         apps: vec![app.clone()],
         ..Default::default()
     };
-    let app_target = app_target_path(app.target_name())?;
+    let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
     crate::file::write(app_target.join("Contents/app"), "downloaded")?;
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
@@ -4315,7 +4315,7 @@ fn link_completion_adopts_homebrew_app_symlink() -> Result<()> {
     let target = tmp.path().join(relative);
     let caskroom_completion = caskroom.join(relative);
     let app_completion =
-        app_target_path(app.target_name())?.join("Contents/Resources/etc/docker.bash-completion");
+        app_target_path(app.target_name()?)?.join("Contents/Resources/etc/docker.bash-completion");
     file::create_dir_all(caskroom_completion.parent().unwrap())?;
     file::create_dir_all(app_completion.parent().unwrap())?;
     file::create_dir_all(target.parent().unwrap())?;
@@ -4352,7 +4352,7 @@ fn link_completion_rejects_other_file_in_declared_app() -> Result<()> {
         ..Default::default()
     };
     let target = completion.target_path()?;
-    let app_resources = app_target_path(app.target_name())?.join("Contents/Resources/etc");
+    let app_resources = app_target_path(app.target_name()?)?.join("Contents/Resources/etc");
     let expected = app_resources.join("expected.bash");
     let other = app_resources.join("other.bash");
     file::create_dir_all(&app_resources)?;
@@ -5330,7 +5330,7 @@ fn parses_font_cask_artifacts() -> Result<()> {
 }
 
 #[test]
-fn parses_completion_artifacts_and_skips_manpage_artifacts() -> Result<()> {
+fn parses_completion_and_manpage_artifacts() -> Result<()> {
     let mut cask = test_cask("ghostty", "1.2.0");
     cask.artifacts = vec![
         serde_json::json!({"app": "Ghostty.app"}),
@@ -5343,6 +5343,7 @@ fn parses_completion_artifacts_and_skips_manpage_artifacts() -> Result<()> {
     let artifacts = cask_artifacts(&cask)?;
     assert_eq!(artifacts.apps.len(), 1);
     assert_eq!(artifacts.completions.len(), 3);
+    assert_eq!(artifacts.manpages.len(), 1);
     assert_eq!(artifacts.fonts.len(), 0);
     Ok(())
 }
@@ -5690,13 +5691,13 @@ fn installed_cask_version_uses_only_recorded_legacy_targets() -> Result<()> {
     };
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
     file::create_dir_all(&caskroom)?;
-    file::create_dir_all(app_target_path(app.target_name())?)?;
+    file::create_dir_all(app_target_path(app.target_name()?)?)?;
     let receipt = CaskReceipt {
         schema_version: 0,
         version: cask.version.clone(),
         auto_updates: false,
         metadata_only_apps: Vec::new(),
-        apps: vec![app_target_path(app.target_name())?],
+        apps: vec![app_target_path(app.target_name()?)?],
         binaries: vec![],
         fonts: vec![],
         completions: vec![],
@@ -5763,7 +5764,7 @@ fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
         source: "Example.app".to_string(),
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
-    let target = app_target_path(app.target_name())?;
+    let target = app_target_path(app.target_name()?)?;
     file::create_dir_all(&target)?;
     file::write(target.join("version"), "1.0.0")?;
     let version_dir = caskroom_version_dir(&cask.token, &cask.version);
@@ -6145,7 +6146,7 @@ fn installed_cask_version_does_not_invent_wrapper_from_current_api() -> Result<(
     };
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
     file::create_dir_all(&caskroom)?;
-    let app_target = app_target_path(app.target_name())?;
+    let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(&app_target)?;
     let receipt = CaskReceipt {
         schema_version: 0,
@@ -7330,7 +7331,7 @@ fn installed_cask_version_rejects_app_state_without_receipt() -> Result<()> {
 
     assert_eq!(mise_installed_cask_version(&cask)?, None);
 
-    file::create_dir_all(app_target_path(app.target_name())?)?;
+    file::create_dir_all(app_target_path(app.target_name()?)?)?;
     assert_eq!(mise_installed_cask_version(&cask)?, None);
     Ok(())
 }
@@ -7368,7 +7369,7 @@ fn installed_cask_version_uses_metadata_token() -> Result<()> {
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
     file::create_dir_all(caskroom_version_dir("configured-name", &cask.version))?;
-    file::create_dir_all(app_target_path(app.target_name())?)?;
+    file::create_dir_all(app_target_path(app.target_name()?)?)?;
 
     assert_eq!(mise_installed_cask_version(&cask)?, None);
 
@@ -8019,5 +8020,296 @@ fn structured_run_respects_failure_policy() -> Result<()> {
     assert!(
         execute_flight_steps(&cask, &[step], tmp.path(), tmp.path(), "postflight_steps").is_err()
     );
+    Ok(())
+}
+
+#[test]
+fn manpage_artifacts_validate_before_staging() -> Result<()> {
+    for value in [
+        serde_json::json!({"manpage": "docs/example.1"}),
+        serde_json::json!({"manpage": ["docs/example.1.gz"]}),
+        serde_json::json!({"manpage": ["docs/example.1", {"target": "renamed.5"}]}),
+        serde_json::json!({"manpage_glob": "AeroSpace-v0.21.3-Beta/manpage/*"}),
+    ] {
+        let mut cask = test_cask("manpages", "1.0");
+        cask.artifacts = vec![value];
+        assert_eq!(cask_artifacts(&cask)?.manpages.len(), 1);
+    }
+    for value in [
+        serde_json::json!({"manpage": ["docs/example.1", {"target": "../example.1"}]}),
+        serde_json::json!({"manpage": ["docs/example.1", {"target": "/tmp/example.1"}]}),
+        serde_json::json!({"manpage": ["docs/example.1", {"target": false}]}),
+        serde_json::json!({"manpage": ["docs/example.1", {"unknown": true}]}),
+        serde_json::json!({"manpage": ["docs/example.1", {}, "extra"]}),
+        serde_json::json!({"manpage": "docs/example.txt"}),
+        serde_json::json!({"manpage": "docs/example.0"}),
+        serde_json::json!({"manpage": "docs/example.10"}),
+        serde_json::json!({"manpage_glob": false}),
+        serde_json::json!({"manpage_glob": "docs/*", "target": "example.1"}),
+    ] {
+        assert!(parse_manpage_artifact(&value).is_err(), "accepted {value}");
+    }
+    for source in [
+        "",
+        "/tmp/*",
+        "../*",
+        "docs/../*",
+        "docs/**",
+        "*/man/*",
+        "docs/[ab]",
+        "docs/{a,b}",
+        "docs\\*",
+        "docs/\0*",
+        "docs//x",
+        "./docs/*",
+    ] {
+        let value = serde_json::json!({"manpage_glob": source});
+        assert!(
+            parse_manpage_artifact(&value).is_err(),
+            "accepted {source:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn manpage_prefix_targets_relocate_for_both_architectures() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    for prefix in ["/opt/homebrew", "/usr/local"] {
+        let _guard = BrewPrefixGuard::set(Path::new(prefix));
+        let target = binary_target_path(
+            "$HOMEBREW_PREFIX/share/man/man1/aerospace.1",
+            Path::new("/Applications"),
+        )?;
+        assert_eq!(target, Path::new(prefix).join("share/man/man1/aerospace.1"));
+        let completion = binary_target_path(
+            "$HOMEBREW_PREFIX/share/zsh/site-functions/_aerospace",
+            Path::new("/Applications"),
+        )?;
+        assert_eq!(
+            completion,
+            Path::new(prefix).join("share/zsh/site-functions/_aerospace")
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn manpage_staging_links_receipts_rollback_and_obsolete_removal() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("docs"))?;
+    file::write(stage.join("docs/aerospace.1"), "manual")?;
+    file::write(stage.join("docs/config.5.gz"), "compressed fixture")?;
+    file::write(stage.join("docs/.hidden.1"), "hidden")?;
+    std::fs::set_permissions(
+        stage.join("docs/aerospace.1"),
+        std::fs::Permissions::from_mode(0o755),
+    )?;
+    let mut cask = test_cask("manpages", "1.0");
+    cask.artifacts = vec![serde_json::json!({"manpage_glob": "docs/*"})];
+    let mut artifacts = cask_artifacts(&cask)?;
+    let manpages = resolve_manpages(&stage, &cask, &artifacts)?;
+    assert_eq!(manpages.len(), 2);
+    ensure_manpage_targets_replaceable(&cask, &manpages)?;
+    let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+    let appdir = target_app_dir()?;
+    stage_manpages(&stage, &caskroom, &appdir, &manpages)?;
+    let targets = manpages
+        .iter()
+        .map(|m| m.target_path(&appdir))
+        .collect::<Result<Vec<_>>>()?;
+    let mut transaction = ArtifactLinkTransaction::begin(targets.clone())?;
+    for manpage in &manpages {
+        let staged = caskroom_binary_path(&caskroom, &appdir, manpage)?;
+        assert_eq!(staged.metadata()?.permissions().mode() & 0o777, 0o644);
+        link_binary(&caskroom, &appdir, manpage)?;
+    }
+    transaction.rollback()?;
+    assert!(
+        targets
+            .iter()
+            .all(|target| target.symlink_metadata().is_err())
+    );
+    for manpage in &manpages {
+        link_binary(&caskroom, &appdir, manpage)?;
+    }
+    assert_eq!(file::read_to_string(&targets[0])?, "manual");
+    ensure_manpage_targets_replaceable(&cask, &manpages)?;
+    artifacts.binaries.extend(manpages);
+    write_receipt_with_flight_targets(
+        &caskroom,
+        &cask,
+        &artifacts,
+        &[],
+        &BTreeMap::new(),
+        &[],
+        &[],
+    )?;
+    let receipt = read_receipt(&caskroom)?.unwrap();
+    assert_eq!(receipt.binaries, targets);
+    assert!(
+        receipt
+            .standard_targets()
+            .all(|target| targets.contains(target))
+    );
+    remove_obsolete_binary_links(&cask, &targets, &[])?;
+    assert!(
+        targets
+            .iter()
+            .all(|target| target.symlink_metadata().is_err())
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn manpage_resolution_rejects_escapes_collisions_and_missing_exact_sources() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("docs"))?;
+    file::create_dir_all(stage.join("nested/docs"))?;
+    file::write(stage.join("nested/docs/example.1"), "not exact")?;
+    file::write(tmp.path().join("outside.1"), "outside")?;
+    let mut cask = test_cask("manpages", "1.0");
+    cask.artifacts = vec![serde_json::json!({"manpage": "docs/example.1"})];
+    assert!(resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?).is_err());
+    cask.artifacts = vec![serde_json::json!({"manpage_glob": "docs/*"})];
+    assert!(resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?).is_err());
+    file::make_symlink(&tmp.path().join("outside.1"), &stage.join("docs/escape.1"))?;
+    assert!(resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?).is_err());
+    file::remove_file(stage.join("docs/escape.1"))?;
+    file::make_symlink(tmp.path(), &stage.join("escape"))?;
+    cask.artifacts = vec![serde_json::json!({"manpage_glob": "escape/*.1"})];
+    assert!(resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?).is_err());
+    file::write(stage.join("docs/example.1"), "exact")?;
+    cask.artifacts = vec![serde_json::json!({"manpage": "docs/example.1"})];
+    let manpages = resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?)?;
+    assert_eq!(manpages.len(), 1);
+    cask.artifacts.push(cask.artifacts[0].clone());
+    assert!(resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?).is_err());
+    cask.artifacts[1] = serde_json::json!({"binary": ["other", {"target": "$HOMEBREW_PREFIX/share/man/man1/example.1"}]});
+    assert!(resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?).is_err());
+    let target = manpages[0].target_path(&target_app_dir()?)?;
+    file::create_dir_all(target.parent().unwrap())?;
+    file::write(&target, "unowned")?;
+    assert!(ensure_manpage_targets_replaceable(&cask, &manpages).is_err());
+    assert_eq!(file::read_to_string(&target)?, "unowned");
+    file::remove_file(&target)?;
+    file::make_symlink(&tmp.path().join("outside.1"), &target)?;
+    assert!(ensure_manpage_targets_replaceable(&cask, &manpages).is_err());
+    file::remove_file(&target)?;
+    file::remove_all(target.parent().unwrap())?;
+    file::make_symlink(tmp.path().parent().unwrap(), target.parent().unwrap())?;
+    assert!(ensure_manpage_targets_replaceable(&cask, &manpages).is_err());
+    // Recheck containment when copying, even if resolution preceded a lifecycle step.
+    file::remove_file(stage.join("docs/example.1"))?;
+    file::make_symlink(&tmp.path().join("outside.1"), &stage.join("docs/example.1"))?;
+    assert!(
+        stage_manpages(
+            &stage,
+            &tmp.path().join("caskroom"),
+            &target_app_dir()?,
+            &manpages
+        )
+        .is_err()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn pinned_aerospace_manpages_plan_and_stage_offline() -> Result<()> {
+    // Evaluate only metadata: no archive fetch and no postflight xattr execution.
+    let Some(ruby) = file::which("ruby") else {
+        return Ok(());
+    };
+    let json = CmdLineRunner::new(ruby)
+        .arg("--disable-gems")
+        .arg("-e")
+        .arg(include_str!("../tap_cask_metadata.rb"))
+        .stdin_string(include_str!("../fixtures/aerospace.rb"))
+        .env("MISE_BREW_TOKEN", "aerospace")
+        .env("MISE_BREW_SOURCE_PATH", "Casks/aerospace.rb")
+        .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+        .env(
+            "MISE_BREW_TAP_COMMIT",
+            "9ac0bfc08904719c52a63101fa7e1e133a23bda2",
+        )
+        .env("MISE_BREW_MACOS_VERSION", "26")
+        .env("MISE_BREW_OS", "macos")
+        .env("MISE_BREW_ARCH", "aarch64")
+        .read()
+        .await?;
+    let cask: Cask = serde_json::from_str(&json)?;
+    let artifacts = cask_artifacts(&cask)?;
+    assert_eq!(artifacts.apps.len(), 1);
+    assert_eq!(artifacts.binaries.len(), 4);
+    assert_eq!(artifacts.postflight_steps.len(), 2);
+    assert_eq!(artifacts.manpages.len(), 1);
+    // Planning works even before the archive's directory exists.
+    artifacts.print_install_plan(&cask)?;
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let stage = tmp.path().join("stage");
+    let pages = stage.join("AeroSpace-v0.21.3-Beta/manpage");
+    file::create_dir_all(&pages)?;
+    file::write(pages.join("aerospace.1"), "offline manual")?;
+    file::write(pages.join("aerospace-config.5"), "offline configuration")?;
+    let resolved = resolve_manpages(&stage, &cask, &artifacts)?;
+    assert_eq!(resolved.len(), 2);
+    let caskroom = tmp.path().join("caskroom");
+    stage_manpages(&stage, &caskroom, &target_app_dir()?, &resolved)?;
+    assert_eq!(
+        file::read_to_string(caskroom.join("share/man/man1/aerospace.1"))?,
+        "offline manual"
+    );
+    assert_eq!(
+        file::read_to_string(caskroom.join("share/man/man5/aerospace-config.5"))?,
+        "offline configuration"
+    );
+    Ok(())
+}
+
+#[test]
+fn nested_app_source_defaults_to_validated_bundle_basename() -> Result<()> {
+    let app = AppArtifact {
+        source: "AeroSpace-v0.21.3-Beta/AeroSpace.app".into(),
+        target: None,
+    };
+    assert_eq!(app.target_name()?, "AeroSpace.app");
+    assert_eq!(
+        app_target_path(app.target_name()?)?,
+        target_app_dir()?.join("AeroSpace.app")
+    );
+    let renamed = AppArtifact {
+        target: Some("Renamed.app".into()),
+        ..app
+    };
+    assert_eq!(renamed.target_name()?, "Renamed.app");
+    for source in [
+        "",
+        ".",
+        "..",
+        "/tmp/App.app",
+        "../App.app",
+        "nested/../App.app",
+        "App.app/",
+        "nested/",
+        "App\0.app",
+        "nested\\App.app",
+        "__MACOSX/App.app",
+    ] {
+        let app = AppArtifact {
+            source: source.into(),
+            target: None,
+        };
+        assert!(app.target_name().is_err(), "accepted {source:?}");
+    }
     Ok(())
 }

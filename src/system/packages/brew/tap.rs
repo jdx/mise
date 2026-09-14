@@ -751,6 +751,110 @@ end
         Ok(())
     }
 
+    // Offline declaration pinned to nikitabobko/homebrew-tap at
+    // 9ac0bfc08904719c52a63101fa7e1e133a23bda2 (Casks/aerospace.rb).
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn extracts_pinned_aerospace_metadata_with_deferred_manpages() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        for arch in ["aarch64", "x86_64"] {
+            let mut runner = CmdLineRunner::new(&ruby)
+                .with_on_stderr(|line| eprintln!("{line}"))
+                .arg("--disable-gems")
+                .arg("-e")
+                .arg(CASK_METADATA_SHIM_RB)
+                .stdin_string(include_str!("fixtures/aerospace.rb"))
+                .env("MISE_BREW_TOKEN", "aerospace")
+                .env("MISE_BREW_SOURCE_PATH", "Casks/aerospace.rb")
+                .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+                .env(
+                    "MISE_BREW_TAP_COMMIT",
+                    "9ac0bfc08904719c52a63101fa7e1e133a23bda2",
+                )
+                .env("MISE_BREW_MACOS_VERSION", "26")
+                .env("MISE_BREW_OS", "macos")
+                .env("MISE_BREW_ARCH", arch)
+                .with_sandbox(metadata_sandbox()?);
+            runner.apply_sandbox().await?;
+            let metadata: serde_json::Value = serde_json::from_str(&runner.read().await?)?;
+            let artifacts = metadata["artifacts"].as_array().unwrap();
+            assert_eq!(artifacts.len(), 7);
+            assert_eq!(
+                artifacts[3]["binary"][1]["target"],
+                "$HOMEBREW_PREFIX/share/zsh/site-functions/_aerospace"
+            );
+            assert_eq!(
+                artifacts[4]["binary"][1]["target"],
+                "$HOMEBREW_PREFIX/etc/bash_completion.d/aerospace"
+            );
+            assert_eq!(
+                artifacts[5]["binary"][1]["target"],
+                "$HOMEBREW_PREFIX/share/fish/vendor_completions.d/aerospace.fish"
+            );
+            assert_eq!(
+                artifacts[6],
+                serde_json::json!({"manpage_glob": "AeroSpace-v0.21.3-Beta/manpage/*"})
+            );
+            assert_eq!(
+                artifacts[0]["postflight_steps"][0]["steps"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                2
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn rejects_unsupported_deferred_manpage_metadata() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        for declaration in [
+            r#"Dir["/tmp/*"].each { |man| manpage man }"#,
+            r##"Dir["#{staged_path}/../*"] .each { |man| manpage man }"##,
+            r##"Dir["#{staged_path}/**/*"].each { |man| manpage man }"##,
+            r##"Dir["#{staged_path}/docs/*", "#{staged_path}/other/*"].each { |man| manpage man }"##,
+            r##"Dir["#{staged_path}/docs/*", sort: false].each { |man| manpage man }"##,
+            r##"Dir.glob("#{staged_path}/docs/*").each { |man| manpage man }"##,
+            r##"Dir["#{staged_path}/docs/*"].map { |man| manpage man }"##,
+            r##"Dir["#{staged_path}/docs/*"].each { |man| manpage man.to_s }"##,
+            r##"Dir["#{staged_path}/docs/*"].each { |man| manpage man, target: "example.1" }"##,
+            r##"Dir["#{staged_path}/docs/*"].each { |man| }"##,
+            r##"Dir["#{staged_path}/docs/*"].each { |man| manpage man; manpage man }"##,
+            r##"Dir["#{staged_path}/docs/*"]"##,
+            "unknown_metadata_dsl",
+        ] {
+            let source = format!(
+                r#"cask "example" do
+  version "1.0"
+  url "https://example.invalid/example.zip"
+  {declaration}
+end"#
+            );
+            let mut runner = CmdLineRunner::new(&ruby)
+                .arg("--disable-gems")
+                .arg("-e")
+                .arg(CASK_METADATA_SHIM_RB)
+                .stdin_string(source)
+                .env("MISE_BREW_TOKEN", "example")
+                .env("MISE_BREW_SOURCE_PATH", "Casks/example.rb")
+                .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+                .env("MISE_BREW_TAP_COMMIT", "fixture")
+                .env("MISE_BREW_MACOS_VERSION", "26")
+                .env("MISE_BREW_OS", "macos")
+                .env("MISE_BREW_ARCH", "aarch64")
+                .with_sandbox(metadata_sandbox()?);
+            runner.apply_sandbox().await?;
+            assert!(runner.read().await.is_err(), "accepted {declaration}");
+        }
+        Ok(())
+    }
+
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn metadata_evaluation_is_fully_sandboxed() {

@@ -20,6 +20,10 @@ pub(super) fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifacts.apps.push(app);
             continue;
         }
+        if let Some(manpage) = parse_manpage_artifact(artifact)? {
+            artifacts.manpages.push(manpage);
+            continue;
+        }
         if let Some(binary) = parse_binary_artifact(artifact) {
             artifacts.binaries.push(binary);
             continue;
@@ -60,6 +64,7 @@ pub(super) fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
     }
     if artifacts.apps.is_empty()
         && artifacts.binaries.is_empty()
+        && artifacts.manpages.is_empty()
         && artifacts.command_wrappers.is_empty()
         && artifacts.pkgs.is_empty()
         && artifacts.installers.is_empty()
@@ -92,6 +97,7 @@ pub(super) fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) 
         let font_only = !artifacts.fonts.is_empty()
             && artifacts.apps.is_empty()
             && artifacts.binaries.is_empty()
+            && artifacts.manpages.is_empty()
             && artifacts.command_wrappers.is_empty()
             && artifacts.pkgs.is_empty()
             && artifacts.installers.is_empty()
