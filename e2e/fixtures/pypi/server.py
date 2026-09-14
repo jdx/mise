@@ -5,6 +5,7 @@ import io
 import json
 import pathlib
 import sys
+import tarfile
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -37,12 +38,50 @@ def wheel(name, version, requires=(), script=False):
     return filename, archive.getvalue()
 
 
+def sdist(name, version):
+    module = name.replace('-', '_')
+    root_name = f'{module}-{version}'
+    backend = f'''import pathlib
+import zipfile
+
+def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
+    filename = "{module}-{version}-py3-none-any.whl"
+    dist = "{module}-{version}.dist-info"
+    files = {{
+        "{module}.py": "def main():\\n    print('source-built')\\n",
+        f"{{dist}}/METADATA": "Metadata-Version: 2.1\\nName: {name}\\nVersion: {version}\\nRequires-Python: >=3.10\\n",
+        f"{{dist}}/WHEEL": "Wheel-Version: 1.0\\nGenerator: mise-test\\nRoot-Is-Purelib: true\\nTag: py3-none-any\\n",
+        f"{{dist}}/entry_points.txt": "[console_scripts]\\nsource-cli = {module}:main\\n",
+    }}
+    files[f"{{dist}}/RECORD"] = "".join(f"{{path}},,\\n" for path in files) + f"{{dist}}/RECORD,,\\n"
+    target = pathlib.Path(wheel_directory, filename)
+    with zipfile.ZipFile(target, "w") as archive:
+        for path, text in files.items():
+            archive.writestr(path, text)
+    return filename
+'''
+    files = {
+        'pyproject.toml': '[build-system]\nrequires = []\nbuild-backend = "backend"\nbackend-path = ["."]\n',
+        'backend.py': backend,
+        'PKG-INFO': f'Metadata-Version: 2.1\nName: {name}\nVersion: {version}\nRequires-Python: >=3.10\n',
+    }
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode='w:gz') as tar:
+        for path, text in files.items():
+            data = text.encode()
+            info = tarfile.TarInfo(f'{root_name}/{path}')
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return f'{root_name}.tar.gz', archive.getvalue()
+
+
 wheels = dict([
     wheel('mise-lock-cli', '1.0.0', ['mise-lock-dep>=1,<3', 'mise-lock-marker==1.0.0; python_version < \"3.12\"', 'mise-lock-extra==1.0.0; extra == \"feature\"'], script=True),
     wheel('mise-lock-dep', '1.0.0'),
     wheel('mise-lock-dep', '2.0.0'),
     wheel('mise-lock-marker', '1.0.0'),
     wheel('mise-lock-extra', '1.0.0'),
+    sdist('mise-source-cli', '1.0.0'),
 ])
 
 

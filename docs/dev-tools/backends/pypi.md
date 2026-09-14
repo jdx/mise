@@ -97,13 +97,17 @@ Run `mise lock` after editing a sidecar to accept its updated digest before usin
 
 ### Requirements and limitations
 
-- **Wheels only:** every dependency needs a published wheel for the target Python
-  version and platform. Locked installs do not build source distributions.
+- **Wheels only for dependency graphs:** every dependency needs a published wheel
+  for the target Python version and platform. Explicit `mise lock` and locked
+  installs do not build source distributions. An ordinary `mise install` falls
+  back to a version-only uv installation when it cannot produce a wheel-only graph.
 - **PyPI packages with uv:** Git sources and standalone pipx installs use
   version-only locking. pipx cannot replay a uv dependency graph.
-- **No free-form installer arguments:** `uvx_args` and `pipx_args` are unsupported
-  with dependency graphs. Configure [Python](#choosing-python) and the
-  [registry URL](#registry-url) directly instead.
+- **No free-form installer arguments in dependency graphs:** `uvx_args` and
+  `pipx_args` use version-only installation during ordinary installs. Explicit
+  dependency locking rejects them because mise cannot safely translate arbitrary
+  installer arguments into a reproducible graph. Configure [Python](#choosing-python)
+  and the [registry URL](#registry-url) directly when dependency locking is required.
 - **Installed Python required:** lock generation needs an interpreter discoverable
   by uv, though it need not match the tool's configured Python version. Graph
   installs use the selected mise Python and do not download a replacement.

@@ -321,9 +321,19 @@ impl Backend for PIPXBackend {
             } else {
                 None
             };
-            if revision.is_some_and(|v| v >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled())
-            {
+            let graph_required = revision.is_some_and(|v| v >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
+            if graph_required {
+                if !self.uv_lock_options_supported(&tv) {
+                    if ctx.locked {
+                        self.validate_lock_options(&tv)?;
+                    }
+                    warn!(
+                        "{} dependency graph skipped because uvx_args or pipx_args are configured; installing with version-only resolution",
+                        self.ba.short
+                    );
+                    return Ok(tv);
+                }
                 if ctx.locked {
                     bail!(
                         "{} has no uv dependency graph; run `mise lock`",
@@ -340,7 +350,16 @@ impl Backend for PIPXBackend {
                 if let Some(version) = tv.uv_install_path_version().map(str::to_owned) {
                     tv.version = version;
                 }
-                tv.uv_lock = Some(self.resolve_uv_lock(&ctx.config, &tv).await?);
+                match self.resolve_uv_lock(&ctx.config, &tv).await {
+                    Ok(lock) => tv.uv_lock = Some(lock),
+                    Err(error) => {
+                        warn!(
+                            "{} dependency graph unavailable; installing with version-only resolution: {error}",
+                            self.ba.short
+                        );
+                        return Ok(tv);
+                    }
+                }
             }
         }
         if tv.uv_lock.is_some() {
@@ -365,15 +384,23 @@ impl Backend for PIPXBackend {
             } else {
                 None
             };
-            if (revision.is_some_and(|v| v >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled()))
-                && (Settings::get().locked
-                    || self
-                        .spawnable_dependency(config, None, "uv")
-                        .await
-                        .is_some())
-            {
-                return Ok(false);
+            let graph_required = revision.is_some_and(|v| v >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
+            let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
+                || tv.request.tool_config_locked(config, true);
+            if graph_required {
+                if !locked && self.is_version_installed(config, tv, check_symlink) {
+                    return Ok(true);
+                }
+                if locked
+                    || (!self.uv_lock_options_supported(tv)
+                        || self
+                            .spawnable_dependency(config, None, "uv")
+                            .await
+                            .is_some())
+                {
+                    return Ok(false);
+                }
             }
         }
         Ok(self.is_version_installed(config, tv, check_symlink))
