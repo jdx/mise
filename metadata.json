@@ -3,8 +3,11 @@
   "checkpoint_id": "01M2FW792Z2WT6RZESJFEPEZNA",
   "strategy": "manual-commit",
   "branch": "codex/bump-usage-6-9-1",
-  "checkpoints_count": 1,
-  "files_touched": null,
+  "checkpoints_count": 2,
+  "files_touched": [
+    "mise.lock",
+    "mise.toml"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -12,13 +15,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 113089,
+    "input_tokens": 509660,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 3879808,
-    "output_tokens": 4181,
-    "api_call_count": 30
+    "cache_read_tokens": 14134016,
+    "output_tokens": 28966,
+    "api_call_count": 128
   }
 }

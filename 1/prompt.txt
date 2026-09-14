@@ -1,0 +1,13 @@
+why is ci failing [https://github.com/jdx/mise/pull/13150](https://github.com/jdx/mise/pull/13150)
+
+---
+
+will this help? [https://github.com/jdx/usage/pull/1426](https://github.com/jdx/usage/pull/1426)
+
+---
+
+ok wait for the usage release and bump usage in mise in a new pr
+
+---
+
+you need to update mise.lock too
