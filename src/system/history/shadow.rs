@@ -141,6 +141,72 @@ struct EncryptionCacheEntry {
     oid: String,
 }
 
+/// A scratch git index belonging to one call, removed when that call ends.
+///
+/// Compositions run concurrently inside a single process: the dotfiles
+/// watcher saves a checkpoint on its own thread while the synchronization
+/// it started plans on another. Naming the scratch index after the process
+/// alone let those share one file, and a composition that reset the index
+/// under another discarded every entry the other had inserted so far. The
+/// tree written from what was left dropped a sorted prefix of its paths,
+/// which a checkpoint then recorded as deliberate deletions and published
+/// to every other machine.
+struct ScratchIndex {
+    path: PathBuf,
+}
+
+impl ScratchIndex {
+    /// A scratch index in `dir`, distinct from every other live one.
+    fn new(dir: &Path, purpose: &str) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        sweep_scratch_indexes(dir);
+        let path = dir.join(format!(
+            "mise-index-{}-{purpose}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_file(&path);
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchIndex {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Removes scratch indexes an earlier process holding this process id left
+/// behind when it was killed. Runs once per directory, before that
+/// directory has handed out a scratch index of its own, so it can never
+/// remove one this process is still composing into. Indexes carrying
+/// another process id belong to a mise that may still be running: leave
+/// them, whoever owns them removes them.
+fn sweep_scratch_indexes(dir: &Path) {
+    use std::sync::{LazyLock, Mutex};
+
+    static SWEPT: LazyLock<Mutex<BTreeSet<PathBuf>>> =
+        LazyLock::new(|| Mutex::new(BTreeSet::new()));
+
+    let Ok(mut swept) = SWEPT.lock() else { return };
+    if !swept.insert(dir.to_path_buf()) {
+        return;
+    }
+    let prefix = format!("mise-index-{}-", std::process::id());
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry.file_name().to_string_lossy().starts_with(&prefix) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// Keep content fingerprints useful for cache lookup without publishing a
 /// dictionary-testable hash of a secret in the disposable cache.
 fn encryption_cache_key(dir: &Path) -> Result<[u8; 32]> {
@@ -482,27 +548,21 @@ impl HistoryRepo {
         if entries.is_empty() {
             return self.empty_object("tree");
         }
-        let index = self
-            .dir()
-            .join(format!("mise-index-{}-write-tree", std::process::id()));
-        let _ = std::fs::remove_file(&index);
+        let scratch = ScratchIndex::new(self.dir(), "write-tree");
+        let index = scratch.path();
         let mut info: Vec<u8> = vec![];
         for (mode, oid, path) in entries {
             info.extend_from_slice(format!("{mode} {oid}\t{path}").as_bytes());
             info.push(0);
         }
-        let result = (|| -> Result<String> {
-            // index-only operations; git still insists on a work tree
-            self.git.run(
-                PlumbingCall::new(["update-index", "-z", "--index-info"])
-                    .work_tree(self.dir())
-                    .index_file(&index)
-                    .stdin(&info),
-            )?;
-            self.output_str(PlumbingCall::new(["write-tree"]).index_file(&index))
-        })();
-        let _ = std::fs::remove_file(&index);
-        result
+        // index-only operations; git still insists on a work tree
+        self.git.run(
+            PlumbingCall::new(["update-index", "-z", "--index-info"])
+                .work_tree(self.dir())
+                .index_file(index)
+                .stdin(&info),
+        )?;
+        self.output_str(PlumbingCall::new(["write-tree"]).index_file(index))
     }
 
     /// Commit the tracked-file tree and minimal metadata to ordinary history.
@@ -1254,56 +1314,50 @@ impl HistoryRepo {
         if overlays.is_empty() {
             return Ok(base.to_string());
         }
-        let index = self
-            .dir()
-            .join(format!("mise-index-{}-compose", std::process::id()));
-        let _ = std::fs::remove_file(&index);
-        let result = (|| -> Result<String> {
-            self.git
-                .run(PlumbingCall::new(["read-tree", base]).index_file(&index))?;
-            for overlay in overlays {
-                let listed = self.git.output(
-                    PlumbingCall::new(["ls-files", "-z", "--", &overlay.path]).index_file(&index),
-                )?;
-                let mut removals: Vec<u8> = vec![];
-                for entry in listed.split(|byte| *byte == 0) {
-                    if entry.is_empty() {
-                        continue;
-                    }
-                    removals.extend_from_slice(entry);
-                    removals.push(0);
+        let scratch = ScratchIndex::new(self.dir(), "compose");
+        let index = scratch.path();
+        self.git
+            .run(PlumbingCall::new(["read-tree", base]).index_file(index))?;
+        for overlay in overlays {
+            let listed = self.git.output(
+                PlumbingCall::new(["ls-files", "-z", "--", &overlay.path]).index_file(index),
+            )?;
+            let mut removals: Vec<u8> = vec![];
+            for entry in listed.split(|byte| *byte == 0) {
+                if entry.is_empty() {
+                    continue;
                 }
-                // index-only operations; git still insists on a work tree
-                if !removals.is_empty() {
+                removals.extend_from_slice(entry);
+                removals.push(0);
+            }
+            // index-only operations; git still insists on a work tree
+            if !removals.is_empty() {
+                self.git.run(
+                    PlumbingCall::new(["update-index", "--force-remove", "-z", "--stdin"])
+                        .work_tree(self.dir())
+                        .index_file(index)
+                        .stdin(&removals),
+                )?;
+            }
+            if let Some((mode, oid)) = &overlay.object {
+                if mode == "040000" {
+                    let prefix = format!("--prefix={}/", overlay.path);
                     self.git.run(
-                        PlumbingCall::new(["update-index", "--force-remove", "-z", "--stdin"])
+                        PlumbingCall::new(["read-tree", &prefix, oid])
                             .work_tree(self.dir())
-                            .index_file(&index)
-                            .stdin(&removals),
+                            .index_file(index),
+                    )?;
+                } else {
+                    let info = format!("{mode},{oid},{}", overlay.path);
+                    self.git.run(
+                        PlumbingCall::new(["update-index", "--add", "--cacheinfo", &info])
+                            .work_tree(self.dir())
+                            .index_file(index),
                     )?;
                 }
-                if let Some((mode, oid)) = &overlay.object {
-                    if mode == "040000" {
-                        let prefix = format!("--prefix={}/", overlay.path);
-                        self.git.run(
-                            PlumbingCall::new(["read-tree", &prefix, oid])
-                                .work_tree(self.dir())
-                                .index_file(&index),
-                        )?;
-                    } else {
-                        let info = format!("{mode},{oid},{}", overlay.path);
-                        self.git.run(
-                            PlumbingCall::new(["update-index", "--add", "--cacheinfo", &info])
-                                .work_tree(self.dir())
-                                .index_file(&index),
-                        )?;
-                    }
-                }
             }
-            self.output_str(PlumbingCall::new(["write-tree"]).index_file(&index))
-        })();
-        let _ = std::fs::remove_file(&index);
-        result
+        }
+        self.output_str(PlumbingCall::new(["write-tree"]).index_file(index))
     }
 
     /// The commit a ref points at, if the ref exists.
@@ -2171,6 +2225,77 @@ mod tests {
                 .is_none()
         );
         assert!(repo.object_at(&without, "home/.zshrc").unwrap().is_some());
+    }
+
+    #[test]
+    fn concurrent_composition_keeps_every_overlay() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let empty = repo.empty_object("tree").unwrap();
+        // Each thread composes a snapshot of its own. A scratch index shared
+        // between them loses whatever one thread inserted before another
+        // reset it -- a sorted prefix of the paths, published as deletions.
+        let failures: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..4)
+                .map(|thread| {
+                    let repo = &repo;
+                    let empty = empty.as_str();
+                    scope.spawn(move || {
+                        let mut missing = vec![];
+                        for round in 0..6 {
+                            let overlays: Vec<Overlay> = (0..40)
+                                .map(|n| Overlay {
+                                    path: format!("home/{thread}/file-{n:03}"),
+                                    object: Some((
+                                        "100644".into(),
+                                        repo.hash_blob(
+                                            format!("{thread}:{round}:{n}\n").as_bytes(),
+                                        )
+                                        .unwrap(),
+                                    )),
+                                })
+                                .collect();
+                            let tree = match repo.compose(empty, &overlays) {
+                                Ok(tree) => tree,
+                                Err(err) => {
+                                    missing.push(format!("compose failed: {err:#}"));
+                                    continue;
+                                }
+                            };
+                            for overlay in &overlays {
+                                if repo.object_at(&tree, &overlay.path).unwrap().is_none() {
+                                    missing.push(format!("{} is missing", overlay.path));
+                                }
+                            }
+                        }
+                        missing
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|handle| handle.join().unwrap())
+                .collect()
+        });
+        assert!(
+            failures.is_empty(),
+            "{} composed paths were lost, first: {}",
+            failures.len(),
+            failures[0]
+        );
+        let left: Vec<_> = std::fs::read_dir(repo.dir())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("mise-index-"))
+            .collect();
+        assert!(
+            left.is_empty(),
+            "scratch indexes were left behind: {left:?}"
+        );
     }
 
     #[test]
