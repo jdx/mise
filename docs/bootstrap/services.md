@@ -128,6 +128,12 @@ systemctl --user start dev.mise.mise-history.service
 
 If you used another service name, replace `mise-history` in those commands.
 
+If `mise doctor` reports that the history service is running but is not
+watching your store, its process is watching something else: it was started
+by an older mise whose watch lock lived elsewhere, or it runs with a
+different `MISE_STATE_DIR` than your shell. `mise bootstrap services apply`
+restarts it even though its definition is unchanged.
+
 #### Install mise at a permanent path {#durable-executable}
 
 The watcher needs a mise executable that will still exist after setup ends.
