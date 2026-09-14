@@ -42,7 +42,7 @@ pub(crate) struct DotfilesTrack {
     #[usage(long)]
     no_autosave: bool,
 
-    /// Encrypt contents before saving them to history
+    /// Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
     #[usage(long)]
     encrypt: bool,
 

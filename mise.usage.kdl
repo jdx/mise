@@ -1079,7 +1079,7 @@ Linux box can share the same live path with different contents.
                 arg <PROFILE>
             }
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
-            flag --encrypt help="Encrypt contents before saving them to history"
+            flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
             flag "-y --yes" help="Accept without prompting"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
@@ -2706,7 +2706,7 @@ Linux box can share the same live path with different contents.
             arg <PROFILE>
         }
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
-        flag --encrypt help="Encrypt contents before saving them to history"
+        flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
         flag "-y --yes" help="Accept without prompting"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
