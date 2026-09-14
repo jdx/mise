@@ -423,6 +423,38 @@ impl UserServiceStatus {
     }
 }
 
+/// Whether the platform's user service manager reports this service's own
+/// process as running right now. A service whose installed definition
+/// differs from the declaration is not it: an apply rewrites and restarts
+/// that one anyway.
+pub(crate) async fn is_process_running(request: &UserServiceRequest) -> Result<bool> {
+    if !is_available() {
+        return Ok(false);
+    }
+    if cfg!(target_os = "linux") {
+        let unit = request.systemd_request()?;
+        let status = systemd::status(std::slice::from_ref(&unit))
+            .await?
+            .pop()
+            .expect("one status per request");
+        Ok(status.state == SystemdState::Active)
+    } else if cfg!(target_os = "macos") {
+        let agent = request.launchd_request()?;
+        let status = launchd::status(std::slice::from_ref(&agent))
+            .await?
+            .pop()
+            .expect("one status per request");
+        Ok(status.state == LaunchdState::Loaded && launchd::is_running(&agent.label).await?)
+    } else {
+        let task = request.scheduled_task_request();
+        let status = scheduled_tasks::status(std::slice::from_ref(&task))
+            .await?
+            .pop()
+            .expect("one status per request");
+        Ok(status.state == ScheduledTaskState::Running)
+    }
+}
+
 pub(crate) async fn status(requests: &[UserServiceRequest]) -> Result<Vec<UserServiceStatus>> {
     let mut out = vec![];
     for request in requests {
@@ -580,6 +612,24 @@ fn converge_action(desired: bool, missing: bool) -> ResourceAction {
     }
 }
 
+/// Whether a converged `history-watch` service is running a process that is
+/// not the watcher for this store: one from a mise whose history locks
+/// lived elsewhere (they moved into the state directory in 2026.9.5), or
+/// one started with a different `MISE_STATE_DIR`. Its definition matches,
+/// so nothing else would restart it, and until something does, no edit is
+/// saved automatically here.
+fn stale_history_watcher(request: &UserServiceRequest) -> bool {
+    request.builtin.as_deref() == Some("history-watch")
+        && request.state == ServiceState::Running
+        && request.enabled
+        // a watcher stops on its own when history is switched off, and
+        // restarting it would only stop it again
+        && crate::config::Settings::get().history.enabled
+        && !crate::system::history::watch::runtime::is_running(
+            &crate::system::history::store::state_dir(),
+        )
+}
+
 /// Converge the given user services. Returns a reason when the platform's
 /// user service manager is unavailable and nothing was applied.
 pub(crate) async fn apply(
@@ -600,7 +650,15 @@ pub(crate) async fn apply(
     let mut skipped = 0;
     for status in &statuses {
         match status.action {
-            ResourceAction::Noop => {}
+            ResourceAction::Noop => {
+                if stale_history_watcher(&status.request) {
+                    info!(
+                        "user service {}: its process is not watching the history store; restarting it",
+                        status.name
+                    );
+                    targets.push(status.request.clone());
+                }
+            }
             ResourceAction::Unknown => {
                 skipped += 1;
                 warn!(
@@ -738,6 +796,31 @@ mod tests {
             None,
             Some(PathBuf::from("/usr/bin/mise")),
         )
+    }
+
+    /// A converged watcher service whose process is not watching this store
+    /// is restarted by an apply; nothing else is. Without it an apply reports
+    /// the service as already applied while no edit is saved automatically.
+    #[test]
+    fn a_watcher_that_is_not_watching_this_store_is_restarted() {
+        assert!(!crate::system::history::watch::runtime::is_running(
+            &crate::system::history::store::state_dir()
+        ));
+        assert!(stale_history_watcher(&request(ServiceTomlConfig {
+            builtin: Some("history-watch".into()),
+            ..Default::default()
+        })));
+        assert!(!stale_history_watcher(&request(ServiceTomlConfig {
+            builtin: Some("history-watch".into()),
+            state: ServiceState::Stopped,
+            ..Default::default()
+        })));
+        assert!(!stale_history_watcher(&request(ServiceTomlConfig {
+            builtin: Some("history-watch".into()),
+            enabled: false,
+            ..Default::default()
+        })));
+        assert!(!stale_history_watcher(&request(user_config("agent"))));
     }
 
     #[test]

@@ -543,6 +543,11 @@ they change constantly. It includes the command to start a stopped watcher.
 stopped, or not declared; the latest save and full scan; the last failure;
 and each busy file's save interval, last save, and pending edits.
 
+Both also report a watcher service whose process is running but is not
+watching this store, which happens when that process comes from an older
+mise or uses a different `MISE_STATE_DIR`. `mise bootstrap services apply`
+restarts it.
+
 These commands read the watcher's saved health report without starting
 synchronization or changing files. The report lives in `health.json` in the
 history store. Old reports are marked stale after a few full-scan intervals.
