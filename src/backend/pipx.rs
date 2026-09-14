@@ -107,17 +107,21 @@ impl<'a> PipxOptions<'a> {
         self.expose()?
             .into_iter()
             .map(|requirement| {
-                let name = requirement
-                    .trim()
-                    .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
-                    .next()
-                    .unwrap_or_default();
-                if name.is_empty() {
+                let Some(name) = Self::requirement_package_name(&requirement) else {
                     bail!("expose must contain named Python package requirements");
-                }
+                };
                 Ok(name.to_string())
             })
             .collect()
+    }
+
+    fn requirement_package_name(requirement: &str) -> Option<&str> {
+        let name = requirement
+            .trim()
+            .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+            .next()
+            .unwrap_or_default();
+        (!name.is_empty()).then_some(name)
     }
 
     fn dependency_prereleases(&self) -> Result<Option<&'a str>> {

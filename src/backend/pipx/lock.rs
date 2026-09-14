@@ -424,9 +424,7 @@ impl PIPXBackend {
         } else {
             "python"
         });
-        let raw = tv.request.options();
-        let mut packages = vec![self.tool_name()];
-        packages.extend(PipxOptions::new(&raw).exposed_package_names()?);
+        let packages = self.locked_entry_point_packages(tv, lock)?;
         let packages = serde_json::to_string(&packages)?;
         let names = CmdLineRunner::new(python).args(["-I", "-c", "import importlib.metadata, json, sys; packages = json.loads(sys.argv[1]); print(json.dumps(sorted({e.name for package in packages for e in importlib.metadata.distribution(package).entry_points if e.group in ('console_scripts', 'gui_scripts')})))", &packages]).read().await?;
         let names: Vec<String> = serde_json::from_str(names.trim())?;
@@ -447,6 +445,24 @@ impl PIPXBackend {
             crate::file::make_symlink_or_copy(&scripts.join(&name), &bin.join(&name))?;
         }
         Ok(())
+    }
+
+    fn locked_entry_point_packages(&self, tv: &ToolVersion, lock: &UvLock) -> Result<Vec<String>> {
+        let root_requirement = lock
+            .project
+            .get("project")
+            .and_then(toml::Value::as_table)
+            .and_then(|project| project.get("dependencies"))
+            .and_then(toml::Value::as_array)
+            .and_then(|dependencies| dependencies.first())
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| eyre!("missing locked Python root requirement"))?;
+        let root = PipxOptions::requirement_package_name(root_requirement)
+            .ok_or_else(|| eyre!("invalid locked Python root requirement"))?;
+        let raw = tv.request.options();
+        let mut packages = vec![root.to_string()];
+        packages.extend(PipxOptions::new(&raw).exposed_package_names()?);
+        Ok(packages)
     }
 }
 
@@ -727,6 +743,17 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
             .unwrap()
             .remove("wheels");
         assert!(backend.validate_uv_lock(&tv, &source_only).is_err());
+    }
+
+    #[test]
+    fn locked_entry_points_use_the_distribution_name() {
+        let (backend, tv, mut lock) = fixture();
+        lock.project["project"]["dependencies"] =
+            toml::Value::Array(vec!["azure-cli==1.0.0".into()]);
+        assert_eq!(
+            backend.locked_entry_point_packages(&tv, &lock).unwrap(),
+            ["azure-cli"]
+        );
     }
 
     #[test]
