@@ -1,0 +1,21 @@
+investigate [https://github.com/jdx/mise/discussions/13168](https://github.com/jdx/mise/discussions/13168)
+
+---
+
+make a pr, post a reply
+
+---
+
+what will your fix be?
+
+---
+
+ok make a pr and discussion reply
+
+---
+
+address pr feedback and failing checsk until it settles
+
+---
+
+go ahead and merge it once it is green
