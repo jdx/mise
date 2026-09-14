@@ -103,6 +103,7 @@ impl Ssh {
                         branch,
                         yes: self.repository_yes,
                         dry_run: self.repository_dry_run,
+                        replace_history: false,
                     },
                 )
                 .await?;

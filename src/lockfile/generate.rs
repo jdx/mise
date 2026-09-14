@@ -197,6 +197,7 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
         &mut candidate,
         &[(tv.ba().clone(), tv.clone())],
         false,
+        true,
     ))
     .await?;
     Ok(())
@@ -692,6 +693,7 @@ pub(crate) async fn populate_uv_locks(
     lockfile: &mut Lockfile,
     tools: &[Tool],
     force: bool,
+    best_effort: bool,
 ) -> Result<()> {
     if lockfile.lockfile_version() < 2 {
         return Ok(());
@@ -749,7 +751,17 @@ pub(crate) async fn populate_uv_locks(
             );
             continue;
         }
-        let graph = backend.resolve_uv_lock(config, tv).await?;
+        let graph = match backend.resolve_uv_lock(config, tv).await {
+            Ok(graph) => graph,
+            Err(error) if best_effort => {
+                debug!(
+                    "{} dependency graph skipped during automatic locking: {error:#}",
+                    ba.short
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
     Ok(())

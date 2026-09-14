@@ -423,6 +423,38 @@ impl UserServiceStatus {
     }
 }
 
+/// Whether the platform's user service manager reports this service's own
+/// process as running right now. A service whose installed definition
+/// differs from the declaration is not it: an apply rewrites and restarts
+/// that one anyway.
+pub(crate) async fn is_process_running(request: &UserServiceRequest) -> Result<bool> {
+    if !is_available() {
+        return Ok(false);
+    }
+    if cfg!(target_os = "linux") {
+        let unit = request.systemd_request()?;
+        let status = systemd::status(std::slice::from_ref(&unit))
+            .await?
+            .pop()
+            .expect("one status per request");
+        Ok(status.state == SystemdState::Active)
+    } else if cfg!(target_os = "macos") {
+        let agent = request.launchd_request()?;
+        let status = launchd::status(std::slice::from_ref(&agent))
+            .await?
+            .pop()
+            .expect("one status per request");
+        Ok(status.state == LaunchdState::Loaded && launchd::is_running(&agent.label).await?)
+    } else {
+        let task = request.scheduled_task_request();
+        let status = scheduled_tasks::status(std::slice::from_ref(&task))
+            .await?
+            .pop()
+            .expect("one status per request");
+        Ok(status.state == ScheduledTaskState::Running)
+    }
+}
+
 pub(crate) async fn status(requests: &[UserServiceRequest]) -> Result<Vec<UserServiceStatus>> {
     let mut out = vec![];
     for request in requests {
@@ -580,6 +612,26 @@ fn converge_action(desired: bool, missing: bool) -> ResourceAction {
     }
 }
 
+/// Whether this service should be watching this store but is not: a
+/// `history-watch` service declared running while nothing holds the store's
+/// watch lock. Its process is from a mise whose history locks lived
+/// elsewhere (they moved into the state directory in 2026.9.5), or runs
+/// with a different `MISE_STATE_DIR`. An apply restarts it; `mise doctor`
+/// and `mise dot status` report it with the same predicate, so they never
+/// advise an apply that would not act.
+pub(crate) fn stale_history_watcher(request: &UserServiceRequest) -> bool {
+    request.builtin.as_deref() == Some("history-watch")
+        // `enabled` only decides whether it also starts at login; a service
+        // declared running is meant to be running now either way
+        && request.state == ServiceState::Running
+        // a watcher stops on its own when history is switched off, and
+        // restarting it would only stop it again
+        && crate::config::Settings::get().history.enabled
+        && !crate::system::history::watch::runtime::is_running(
+            &crate::system::history::store::state_dir(),
+        )
+}
+
 /// Converge the given user services. Returns a reason when the platform's
 /// user service manager is unavailable and nothing was applied.
 pub(crate) async fn apply(
@@ -600,7 +652,17 @@ pub(crate) async fn apply(
     let mut skipped = 0;
     for status in &statuses {
         match status.action {
-            ResourceAction::Noop => {}
+            ResourceAction::Noop => {
+                if stale_history_watcher(&status.request) {
+                    info!(
+                        "user service {}: its process is not watching the history store; restarting it",
+                        status.name
+                    );
+                    // a converged definition is rewritten unchanged, so the
+                    // restart has to be asked for explicitly
+                    targets.push((status.request.clone(), Restart::Forced));
+                }
+            }
             ResourceAction::Unknown => {
                 skipped += 1;
                 warn!(
@@ -608,7 +670,7 @@ pub(crate) async fn apply(
                     status.name, status.current
                 );
             }
-            _ => targets.push(status.request.clone()),
+            _ => targets.push((status.request.clone(), Restart::Converge)),
         }
     }
     let applied = statuses.len() - targets.len() - skipped;
@@ -618,7 +680,10 @@ pub(crate) async fn apply(
     if targets.is_empty() {
         return Ok(None);
     }
-    let list = targets.iter().map(|r| r.name.clone()).collect::<Vec<_>>();
+    let list = targets
+        .iter()
+        .map(|(request, _)| request.name.clone())
+        .collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("user services: apply {}?", list.join(", "));
         if !crate::ui::prompt::confirm(msg)?.is_yes() {
@@ -626,8 +691,8 @@ pub(crate) async fn apply(
             return Ok(None);
         }
     }
-    for request in &targets {
-        apply_one(request, dry_run).await?;
+    for (request, restart) in &targets {
+        apply_one(request, *restart, dry_run).await?;
     }
     if !dry_run {
         info!("user services: applied {}", list.join(", "));
@@ -635,17 +700,33 @@ pub(crate) async fn apply(
     Ok(None)
 }
 
-async fn apply_one(request: &UserServiceRequest, dry_run: bool) -> Result<()> {
+/// Whether applying a service must restart its process even when nothing
+/// about its definition changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Restart {
+    /// Restart only as converging the definition requires.
+    Converge,
+    /// Restart regardless: the registered process is not the wanted one.
+    Forced,
+}
+
+async fn apply_one(request: &UserServiceRequest, restart: Restart, dry_run: bool) -> Result<()> {
     if request.state == ServiceState::Absent {
         remove_named(&request.name, dry_run).await?;
         return Ok(());
     }
     if cfg!(target_os = "linux") {
+        // `systemctl restart` restarts a running unit whatever changed
         systemd::apply(&[request.systemd_request()?], dry_run).await
     } else if cfg!(target_os = "macos") {
+        // an apply boots the agent out and back in, which restarts it
         launchd::apply(&[request.launchd_request()?], dry_run).await
     } else {
-        scheduled_tasks::apply(&[request.scheduled_task_request()], dry_run).await
+        // Task Scheduler keeps a running instance across an unchanged
+        // registration, so a forced restart has to end and run it
+        let mut task = request.scheduled_task_request();
+        task.restart = restart == Restart::Forced;
+        scheduled_tasks::apply(&[task], dry_run).await
     }
 }
 
@@ -738,6 +819,47 @@ mod tests {
             None,
             Some(PathBuf::from("/usr/bin/mise")),
         )
+    }
+
+    /// A converged watcher service whose process is not watching this store
+    /// is restarted by an apply; nothing else is. Without it an apply reports
+    /// the service as already applied while no edit is saved automatically.
+    #[test]
+    fn a_watcher_that_is_not_watching_this_store_is_restarted() {
+        assert!(!crate::system::history::watch::runtime::is_running(
+            &crate::system::history::store::state_dir()
+        ));
+        assert!(stale_history_watcher(&request(ServiceTomlConfig {
+            builtin: Some("history-watch".into()),
+            ..Default::default()
+        })));
+        assert!(!stale_history_watcher(&request(ServiceTomlConfig {
+            builtin: Some("history-watch".into()),
+            state: ServiceState::Stopped,
+            ..Default::default()
+        })));
+        // `enabled = false` only keeps it from starting at login
+        assert!(stale_history_watcher(&request(ServiceTomlConfig {
+            builtin: Some("history-watch".into()),
+            enabled: false,
+            ..Default::default()
+        })));
+        assert!(!stale_history_watcher(&request(user_config("agent"))));
+    }
+
+    /// Task Scheduler keeps a running instance across an unchanged
+    /// registration, so the forced restart has to reach its request: without
+    /// it an apply rewrites the same definition and leaves the old process.
+    #[test]
+    fn a_forced_restart_reaches_the_scheduled_task() {
+        let request = request(ServiceTomlConfig {
+            builtin: Some("history-watch".into()),
+            ..Default::default()
+        });
+        assert!(!request.scheduled_task_request().restart);
+        let mut forced = request.scheduled_task_request();
+        forced.restart = true;
+        assert!(forced.start);
     }
 
     #[test]

@@ -1347,6 +1347,9 @@ Clone a git repository and bootstrap from its configuration
 \fB\-\-adopt\fR \fI<GIT_URL|OWNER/REPO>\fR
 Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
 .TP
+\fB\-\-replace\-history\fR
+Replace local dotfile history while adopting a setup repository
+.TP
 \fB\-\-from\-dir\fR \fI<DIR>\fR
 Directory used for the repository cloned by \-\-from
 .TP
@@ -1387,6 +1390,7 @@ Print help
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise \-E work bootstrap \-\-from git@github.com:example/dotfiles.git \-\-yes
 mise bootstrap \-\-adopt git@github.com:example/mise\-config.git \-\-yes
+mise bootstrap \-\-adopt git@github.com:example/mise\-config.git \-\-replace\-history \-\-yes
 mise bootstrap \-\-force\-dotfiles   # replace conflicting dotfile targets
 mise bootstrap \-\-skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap \-\-only tools       # run just tool installation
@@ -2187,6 +2191,9 @@ The history watcher does this on its own in `sync` and `fetch\-only` mode
 \fB\-\-fetch\-only\fR
 Fetch without publishing
 .TP
+\fB\-\-allow\-plaintext\-history\fR
+Allow publishing older unencrypted versions of encrypted files
+.TP
 \fB\-\-best\-effort\fR
 Warn instead of failing when the origin is unreachable
 .TP
@@ -2217,6 +2224,9 @@ Declare a variant for this mise environment
 .TP
 \fB\-\-no\-autosave\fR
 Save only on `mise dot save <path>`, never automatically
+.TP
+\fB\-\-encrypt\fR
+Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
 .TP
 \fB\-y, \-\-yes\fR
 Accept without prompting
@@ -4619,6 +4629,9 @@ The history watcher does this on its own in `sync` and `fetch\-only` mode
 \fB\-\-fetch\-only\fR
 Fetch without publishing
 .TP
+\fB\-\-allow\-plaintext\-history\fR
+Allow publishing older unencrypted versions of encrypted files
+.TP
 \fB\-\-best\-effort\fR
 Warn instead of failing when the origin is unreachable
 .TP
@@ -4649,6 +4662,9 @@ Declare a variant for this mise environment
 .TP
 \fB\-\-no\-autosave\fR
 Save only on `mise dot save <path>`, never automatically
+.TP
+\fB\-\-encrypt\fR
+Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
 .TP
 \fB\-y, \-\-yes\fR
 Accept without prompting

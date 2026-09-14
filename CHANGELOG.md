@@ -1,5 +1,47 @@
 # Changelog
 
+## [2026.9.8](https://github.com/jdx/mise/compare/v2026.9.7..v2026.9.8) - 2026-09-14
+
+### 🚀 Features
+
+- **(dotfiles)** add top-level dot command alias by @jdx in [#13158](https://github.com/jdx/mise/pull/13158)
+- **(dotfiles)** allow opting out of plaintext history checks by @jdx in [#13175](https://github.com/jdx/mise/pull/13175)
+
+### 🐛 Bug Fixes
+
+- **(backend)** ignore disabled backends from lockfile discovery by @jdx in [#13178](https://github.com/jdx/mise/pull/13178)
+- **(npm)** report aube safety checks and honor --yes by @jdx in [#13123](https://github.com/jdx/mise/pull/13123)
+- **(pypi)** fall back when dependency graphs are unsupported by @jdx in [#13170](https://github.com/jdx/mise/pull/13170)
+- suppress missing warnings for lazy tools by @jdx in [#13169](https://github.com/jdx/mise/pull/13169)
+
+### 📚 Documentation
+
+- clarify npm, pypi, and lockfile workflows by @jdx in [#13149](https://github.com/jdx/mise/pull/13149)
+
+### ⚡ Performance
+
+- **(bootstrap)** fetch brew metadata concurrently by @jdx in [#13151](https://github.com/jdx/mise/pull/13151)
+- **(bootstrap)** prepare brew bottles concurrently by @jdx in [#13152](https://github.com/jdx/mise/pull/13152)
+- **(bootstrap)** pipeline brew bottle installs by @jdx in [#13155](https://github.com/jdx/mise/pull/13155)
+- **(ci)** enforce warnings in Windows unit tests by @jdx in [#13148](https://github.com/jdx/mise/pull/13148)
+
+### 🧪 Testing
+
+- extend timeout for CLI graph tests by @jdx in [#13160](https://github.com/jdx/mise/pull/13160)
+
+### 📦️ Dependency Updates
+
+- update usage to 6.9.1 by @jdx in [#13172](https://github.com/jdx/mise/pull/13172)
+
+### 📦 Registry
+
+- add poppler (conda:poppler) by @i-api in [#13133](https://github.com/jdx/mise/pull/13133)
+
+### Ci
+
+- **(docs)** publish documentation only for releases by @jdx in [#13176](https://github.com/jdx/mise/pull/13176)
+- retry only failing e2e tests by @jdx in [#13177](https://github.com/jdx/mise/pull/13177)
+
 ## [2026.9.7](https://github.com/jdx/mise/compare/v2026.9.6..v2026.9.7) - 2026-09-13
 
 ### 🚀 Features

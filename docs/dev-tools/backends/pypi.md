@@ -97,13 +97,17 @@ Run `mise lock` after editing a sidecar to accept its updated digest before usin
 
 ### Requirements and limitations
 
-- **Wheels only:** every dependency needs a published wheel for the target Python
-  version and platform. Locked installs do not build source distributions.
+- **Wheels only for dependency graphs:** every dependency needs a published wheel
+  for the target Python version and platform. Explicit `mise lock` and locked
+  installs do not build source distributions. An ordinary `mise install` falls
+  back to a version-only uv installation when it cannot produce a wheel-only graph.
 - **PyPI packages with uv:** Git sources and standalone pipx installs use
   version-only locking. pipx cannot replay a uv dependency graph.
-- **No free-form installer arguments:** `uvx_args` and `pipx_args` are unsupported
-  with dependency graphs. Configure [Python](#choosing-python) and the
-  [registry URL](#registry-url) directly instead.
+- **No free-form installer arguments in dependency graphs:** `uvx_args` and
+  `pipx_args` use version-only installation during ordinary installs. Explicit
+  dependency locking rejects them because mise cannot safely translate arbitrary
+  installer arguments into a reproducible graph. Configure [Python](#choosing-python)
+  and the [registry URL](#registry-url) directly when dependency locking is required.
 - **Installed Python required:** lock generation needs an interpreter discoverable
   by uv, though it need not match the tool's configured Python version. Graph
   installs use the selected mise Python and do not download a replacement.
@@ -170,7 +174,7 @@ mise use python@3.14 pipx
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [], pipx_args = "--include-deps" }
 ```
 
 This uses version-only locking. An existing uv dependency graph cannot be
@@ -265,7 +269,38 @@ using pipx and are unsupported with dependency graphs.
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [], pipx_args = "--include-deps" }
+```
+
+### `with`
+
+Install additional Python requirements in the tool environment. This option
+requires uv and participates in dependency locking.
+
+```toml
+[tools]
+"pypi:azure-cli" = { version = "latest", with = ["pip"] }
+```
+
+### `expose`
+
+Install additional Python requirements and expose their executable entry points.
+This option requires uv 0.8.5 or newer and participates in dependency locking.
+
+```toml
+[tools]
+"pypi:ansible" = { version = "latest", expose = ["ansible-core"] }
+```
+
+### `dependency_prereleases`
+
+Set uv's prerelease policy for dependency resolution. Supported values are
+`disallow`, `allow`, `if-necessary`, and `explicit`. This option requires uv and
+is applied both when generating dependency graphs and during version-only installs.
+
+```toml
+[tools]
+"pypi:azure-cli" = { version = "latest", dependency_prereleases = "allow" }
 ```
 
 ### `uvx`
@@ -275,8 +310,11 @@ dependency graph locking and requires pipx to be installed.
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [] }
 ```
+
+The empty `expose` list clears Ansible's uv-backed registry default. Clear any
+other semantic defaults the same way when overriding a registry tool to use pipx.
 
 ### `uvx_args`
 
@@ -285,7 +323,12 @@ are unsupported with dependency graphs; `pipx_args` applies only to pipx.
 
 ```toml
 [tools]
-"pypi:ansible-core" = { version = "latest", uvx_args = "--with ansible" }
+"pypi:ansible-core" = { version = "latest", uvx_args = "--resolution lowest" }
 ```
+
+Prefer the semantic [`with`](#with), [`expose`](#expose), and
+[`dependency_prereleases`](#dependency_prereleases) options when they cover the
+desired behavior. Unlike arbitrary arguments, those options support dependency
+graphs.
 
 Implementation: [`src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).

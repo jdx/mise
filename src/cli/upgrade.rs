@@ -777,7 +777,11 @@ impl Upgrade {
         .await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
-            PIPXBackend::reinstall_all(config)
+            PIPXBackend::reinstall_all(
+                config,
+                opts.locked,
+                opts.resolve_options.use_locked_version,
+            )
                 .await
                 .unwrap_or_else(|err| {
                     warn!("failed to reinstall pipx tools: {err}");

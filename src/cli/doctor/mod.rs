@@ -761,11 +761,20 @@ impl Doctor {
                 "dotfiles: checkpoints cannot be saved ({reason}).\n     Edits are not being protected.\n     Inspect with: mise dot status"
             ));
         }
-        if watcher == crate::cli::dotfiles::capture_health::Watcher::DeclaredNotRunning {
-            self.warnings.push(
-                "dotfiles: the history watcher is declared but not running.\n     Edits are not saved automatically until it runs; explicit saves still work.\n     Run: mise bootstrap services apply"
-                    .to_string(),
-            );
+        match watcher {
+            crate::cli::dotfiles::capture_health::Watcher::DeclaredNotRunning => {
+                self.warnings.push(
+                    "dotfiles: the history watcher is declared but not running.\n     Edits are not saved automatically until it runs; explicit saves still work.\n     Run: mise bootstrap services apply"
+                        .to_string(),
+                );
+            }
+            crate::cli::dotfiles::capture_health::Watcher::ServiceNotWatching => {
+                self.warnings.push(
+                    "dotfiles: the history service is running but is not watching this store.\n     Its process predates this mise version, or uses a different MISE_STATE_DIR; edits are not saved automatically until it is restarted.\n     Run: mise bootstrap services apply"
+                        .to_string(),
+                );
+            }
+            _ => {}
         }
         if let Some(health) = &health {
             let w = &health.watcher;

@@ -345,15 +345,14 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
       - name: Run e2e tests
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        timeout-minutes: 30
         env:
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
           TEST_ALL: 1
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: ./e2e/run_all_tests
+          E2E_MAX_ATTEMPTS: 3
+          E2E_RETRY_WAIT_SECONDS: 30
+        run: ./e2e/run_all_tests
   rpm:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'

@@ -523,8 +523,125 @@ Adding encryption later leaves earlier plaintext versions in Git. Before a
 push, mise checks all reachable commits, including intermediate saves and
 merge parents, for violations of encrypted-path settings. An earlier
 plaintext version blocks the push even if the newest version is encrypted.
-You must explicitly rewrite or replace that history. This checks encryption
-settings; it does not scan arbitrary unencrypted files for secrets.
+To push, remove that history or explicitly allow it as shown below. This check
+uses encryption settings; it does not scan other files for secrets.
+
+### Allow plaintext history
+
+To publish the older unencrypted versions anyway, bypass the check for one sync:
+
+```sh
+mise dot sync --allow-plaintext-history
+```
+
+To allow this for all syncs and pulls, including the watcher, add to your
+global config:
+
+```toml
+[settings.history]
+allow_plaintext_history = true
+```
+
+Both options publish the old plaintext to the origin. New saves still use the
+file's encryption policy. The setting defaults to `false` and is ignored in
+project configs.
+
+### Remove plaintext from history
+
+If you saved credentials before enabling encryption, rotate them first.
+Encryption does not protect copies in older commits, even in a private repo.
+
+Stop the supervising history watcher service and back up the repository. Keep
+the backup secure: it contains the plaintext too. If the service uses the
+documented `mise-history` name, stop and remove its installed definition with:
+
+```sh
+mise bootstrap services remove mise-history
+```
+
+This uses the configured user service manager on Linux, macOS, and Windows and
+prevents it from restarting the watcher during the repair. If you used another
+service name, replace `mise-history` with that name.
+
+If the plaintext was never pushed, you can drop the affected checkpoints and
+save the current file again with encryption enabled. This drops **all
+checkpoints after the last safe commit**, including changes to other files.
+Find that commit with `mise dot history`, or inspect the bare repository with
+the `git log` command below.
+
+Replace `safe` and the credentials path below with your commit and tracked
+file. Make sure encryption is configured for that path before saving.
+History uses a bare Git repository, so use `git update-ref` to move the branch:
+
+```sh
+repo="${MISE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mise}/history/repo.git"
+git --git-dir="$repo" log --all -- home/.config/app/credentials
+old="$(git --git-dir="$repo" rev-parse refs/heads/main)"
+safe="<commit before plaintext was saved>"
+
+if git --git-dir="$repo" merge-base --is-ancestor "$safe" "$old"; then
+  git --git-dir="$repo" update-ref -m "remove plaintext history" \
+    refs/heads/main "$safe" "$old" &&
+    mise dot save ~/.config/app/credentials \
+      --description "save encrypted credentials" &&
+    mise dot sync
+fi
+```
+
+The ancestry check rejects commits outside the current history. Passing `old`
+to `update-ref` makes it fail if another process has moved the branch. The save
+records the live file with encryption and rebuilds mise's checkpoint index.
+Moving the branch makes the discarded commits unreachable but does not
+immediately erase their plaintext objects from the active repository. After
+verifying the repaired history and deciding that you no longer need those
+objects for recovery, remove them from the active repository with:
+
+```sh
+git --git-dir="$repo" reflog expire --expire=now --all
+git --git-dir="$repo" gc --prune=now
+```
+
+The secure backup still contains the discarded history. Delete it only when
+you no longer need it for recovery.
+
+To keep later checkpoints, use a tool such as
+[git-filter-repo](https://github.com/newren/git-filter-repo) on a separate,
+secure copy. Check that no reachable commit contains plaintext for the
+protected path before replacing the local `refs/heads/main`. Do not filter
+mise's active repository in place.
+
+If the plaintext was already pushed, pause history on every machine using the
+repo. Repair the history, then push the replacement branch with Git's
+`--force-with-lease`; mise does not force-push. On every other machine, move
+its existing history store to a secure backup and run
+`mise bootstrap --adopt <url>` to initialize a fresh store from the reviewed
+replacement. A fresh adoption compares any existing declared files with the
+incoming setup before creating local ancestry; identical files are accepted,
+while differences still wait for a decision.
+
+If the machine still has unrelated local history that you intentionally want
+to discard, replace it in one operation:
+
+```sh
+mise bootstrap --adopt <url> --replace-history --yes
+```
+
+This takes the history-operation and synchronization locks, so a running
+watcher cannot create another checkpoint during replacement. The remote must
+be a valid mise setup repository. Existing files that differ still stop the
+operation, and a failure restores the previous local branch and synchronization
+state. The option replaces history only for this adoption; there is no
+persistent setting that lets the watcher discard divergent history.
+
+Ordinary `mise dot sync` does not replace existing history. Do not restart any
+watcher until every machine uses the replacement, or an old store can bring the
+plaintext back. The Git host may still retain old objects or backups.
+
+Restart the declared watcher once the repair is complete:
+
+```sh
+mise bootstrap services apply
+```
 
 ## Checking watcher health {#health}
 
@@ -542,6 +659,11 @@ they change constantly. It includes the command to start a stopped watcher.
 `status` gives more detail: whether the watcher is running, declared but
 stopped, or not declared; the latest save and full scan; the last failure;
 and each busy file's save interval, last save, and pending edits.
+
+Both also report a watcher service whose process is running but is not
+watching this store, which happens when that process comes from an older
+mise or uses a different `MISE_STATE_DIR`. `mise bootstrap services apply`
+restarts it.
 
 These commands read the watcher's saved health report without starting
 synchronization or changing files. The report lives in `health.json` in the

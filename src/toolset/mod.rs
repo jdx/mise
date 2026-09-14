@@ -765,6 +765,10 @@ impl Toolset {
         }
         let mut missing = vec![];
         for tv in missing_versions.into_iter() {
+            // A missing lazy tool is the intended state until one of its commands is invoked.
+            if tv.request.options().lazy == Some(true) {
+                continue;
+            }
             if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always {
                 missing.push(tv);
                 continue;

@@ -14,6 +14,7 @@ pub(crate) fn build(
     upstream: Option<&str>,
     expected_local: Option<&str>,
     accepted: &BTreeSet<String>,
+    allow_plaintext_history: bool,
 ) -> Result<Option<String>> {
     let heads = Heads::read(repo)?;
     if heads.local.as_deref() != expected_local {
@@ -83,7 +84,9 @@ pub(crate) fn build(
     let Some(candidate) = heads.candidate(repo, &tree)? else {
         return Ok(None);
     };
-    super::files::audit_history(repo, &candidate.commit, &Default::default())?;
+    if !allow_plaintext_history {
+        super::files::audit_history(repo, &candidate.commit, &Default::default())?;
+    }
     candidate.adopt(repo)?;
     Ok(Some(candidate.commit))
 }
@@ -128,7 +131,7 @@ mod tests {
         let after = repo.commit_tree(&tree, vec![&before], "after").unwrap();
         repo.update_history_head(&after, None).unwrap();
         assert_eq!(
-            build(&repo, None, Some(&after), &Default::default()).unwrap(),
+            build(&repo, None, Some(&after), &Default::default(), false).unwrap(),
             Some(after.clone())
         );
         assert_eq!(
@@ -138,7 +141,14 @@ mod tests {
         assert!(repo.list_refs("refs/setup/").unwrap().is_empty());
         repo.update_ref(UPSTREAM_REF, &after, None).unwrap();
         assert_eq!(
-            build(&repo, Some(&after), Some(&after), &Default::default()).unwrap(),
+            build(
+                &repo,
+                Some(&after),
+                Some(&after),
+                &Default::default(),
+                false
+            )
+            .unwrap(),
             None
         );
     }
@@ -166,12 +176,20 @@ mod tests {
         let remote = repo.commit_tree(&incoming, vec![&base], "remote").unwrap();
         repo.update_history_head(&local, None).unwrap();
         repo.update_ref(UPSTREAM_REF, &remote, None).unwrap();
-        assert!(
-            build(&repo, Some(&remote), Some(&local), &Default::default())
+        for allow_plaintext_history in [false, true] {
+            assert!(
+                build(
+                    &repo,
+                    Some(&remote),
+                    Some(&local),
+                    &Default::default(),
+                    allow_plaintext_history,
+                )
                 .unwrap_err()
                 .to_string()
                 .contains("completely applied")
-        );
+            );
+        }
         assert_eq!(repo.ref_oid(HistoryRepo::HISTORY_REF).unwrap(), Some(local));
         assert_eq!(repo.ref_oid(UPSTREAM_REF).unwrap(), Some(remote));
     }

@@ -13,6 +13,22 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
 EOF
 
+# An uninstalled lazy declaration is intentional and must not be reported as
+# missing, even when ordinary missing-tool warnings are set to always show.
+assert_not_contains "MISE_STATUS_MESSAGE_MISSING_TOOLS=always mise hook-env --shell bash --force 2>&1" "missing: dummy@1.0.0"
+
+# Ordinary missing tools still use the configured warning policy.
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+tiny = "1.0.0"
+EOF
+missing_warning=$(MISE_STATUS_MESSAGE_MISSING_TOOLS=always mise hook-env --shell bash --force 2>&1)
+assert_contains_text "$missing_warning" "missing: tiny@1.0.0"
+assert_not_contains_text "$missing_warning" "dummy@1.0.0"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+
 mise reshim
 assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
