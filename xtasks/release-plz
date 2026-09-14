@@ -179,6 +179,9 @@ set_package_version() {
 	mise-agent-env)
 		set_path_dependency_version Cargo.toml mise-agent-env "$new_version"
 		;;
+	mise-bootstrap)
+		set_path_dependency_version Cargo.toml mise-bootstrap "$new_version"
+		;;
 	mise-cache-core)
 		set_path_dependency_version Cargo.toml mise-cache-core "$new_version"
 		;;
@@ -372,9 +375,13 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_SIGSTORE_VERSION=""
 	MISE_CACHE_CORE_VERSION=""
 	MISE_AGENT_ENV_VERSION=""
+	MISE_BOOTSTRAP_VERSION=""
 
 	bump_and_publish_subcrate "mise-agent-env" "crates/mise-agent-env" "MISE_AGENT_ENV_VERSION"
 	cargo add -p mise "mise-agent-env@$MISE_AGENT_ENV_VERSION"
+
+	bump_and_publish_subcrate "mise-bootstrap" "crates/mise-bootstrap" "MISE_BOOTSTRAP_VERSION"
+	cargo add -p mise "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
 
 	bump_and_publish_subcrate "mise-cache-core" "crates/mise-cache-core" "MISE_CACHE_CORE_VERSION"
 	cargo add -p mise "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
