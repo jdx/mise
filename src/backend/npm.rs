@@ -699,6 +699,9 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    /// Return whether automatic project-lockfile maintenance should create an
+    /// aube graph for this request. Settings are invocation-wide, but automatic
+    /// lockfile updates deliberately exclude tools owned by global configs.
     fn aube_lock_creation_enabled(tv: &ToolVersion) -> bool {
         !tv.resolved_from_lockfile()
             && Settings::get().lockfile_creation_enabled()
