@@ -191,6 +191,22 @@ impl Upgrade {
             unimplemented!("mise upgrade --monorepo is not implemented yet");
         }
         let mut config = Config::get().await?;
+        if self.bump {
+            let scope = self.scope();
+            for tool in &mut self.tool {
+                if tool
+                    .tvr
+                    .as_ref()
+                    .is_some_and(|request| request.version() == "latest")
+                    && config_defines_tool(&config, scope, &tool.ba)
+                {
+                    // `--bump` already resolves the configured request to the latest release.
+                    // Keeping an explicit `@latest` would replace its config source with
+                    // ToolSource::Argument, preventing the resolved version from being saved.
+                    tool.tvr = None;
+                }
+            }
+        }
         if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
@@ -1025,6 +1041,21 @@ fn backend_matches(backends: &HashSet<String>, ba: &BackendArg) -> bool {
         || backends.contains(&ba.tool_name)
         || backends.contains(&ba.full())
         || backends.contains(&ba.full_without_opts())
+}
+
+fn config_defines_tool(config: &Config, scope: ConfigScope, ba: &BackendArg) -> bool {
+    config.config_files.iter().any(|(path, cf)| {
+        let is_global = config::is_global_config(path);
+        let in_scope = match scope {
+            ConfigScope::All => true,
+            ConfigScope::LocalOnly => !is_global,
+            ConfigScope::GlobalOnly => is_global,
+        };
+        in_scope
+            && cf
+                .to_tool_request_set()
+                .is_ok_and(|requests| requests.tools.contains_key(ba))
+    })
 }
 
 async fn warn_hidden_release_ignored_by_minimum_release_age(

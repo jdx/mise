@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# An explicit fuzzy version must not prevent --bump from updating the config.
+cat <<'EOF' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF
+mise install dummy@1.0.0
+mise install dummy@2.0.0
+
+output=$(mise up --bump dummy@latest --dry-run)
+assert_contains "echo '$output'" "Would bump dummy@2.0.0"
+assert_contains "cat mise.toml" 'dummy = "1.0.0"'
+
+mise up --bump dummy@latest --prune
+assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  2.0.0"
+assert_contains "cat mise.toml" 'dummy = "2.0.0"'
