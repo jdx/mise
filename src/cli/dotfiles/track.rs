@@ -435,16 +435,29 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
     tokio::task::spawn_blocking(move || {
         // Lock waits and filesystem capture must not block a Tokio worker.
         let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
-        match store.attempt(&tracked, draft)? {
-            Outcome::Created(entry) => {
-                info!("history: saved baseline checkpoint {}", entry.id);
-                Ok(())
-            }
-            Outcome::Unchanged => Ok(()),
-            Outcome::Unavailable(reason) => bail!("dotfiles: cannot save the baseline: {reason}"),
-        }
+        finish_baseline(store.attempt(&tracked, draft)?)
     })
     .await?
+}
+
+fn finish_baseline(outcome: Outcome) -> Result<()> {
+    match outcome {
+        Outcome::Created(entry) if entry.checkpoint.tree.snapshot.is_some() => {
+            info!("history: saved baseline checkpoint {}", entry.id);
+            Ok(())
+        }
+        Outcome::Created(entry) => bail!(
+            "dotfiles: cannot save the baseline: {}",
+            entry
+                .checkpoint
+                .tree
+                .reason
+                .as_deref()
+                .unwrap_or("no content snapshot was created")
+        ),
+        Outcome::Unchanged => Ok(()),
+        Outcome::Unavailable(reason) => bail!("dotfiles: cannot save the baseline: {reason}"),
+    }
 }
 
 /// `config.toml`, or `config.local.toml` next to it for machine-only
@@ -543,6 +556,23 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
 #[cfg(test)]
 mod declaration_tests {
     use super::*;
+
+    #[test]
+    fn metadata_only_baseline_is_an_enrollment_failure() {
+        let mut checkpoint = crate::system::history::checkpoint::test_checkpoint("failed", None);
+        checkpoint.tree.reason = Some("encryption failed".into());
+        let outcome = Outcome::Created(Box::new(crate::system::history::store::Entry {
+            id: 1,
+            commit: "failed".into(),
+            checkpoint,
+        }));
+
+        let error = finish_baseline(outcome).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "dotfiles: cannot save the baseline: encryption failed"
+        );
+    }
 
     #[test]
     fn resolved_sources_use_tracking_path_representation() {
