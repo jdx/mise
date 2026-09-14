@@ -227,7 +227,7 @@ impl Backend for PIPXBackend {
 
     fn get_dependencies_for(&self, opts: &ToolVersionOptions) -> eyre::Result<Vec<&str>> {
         if PipxOptions::new(opts).has_uv_only_options()? {
-            Ok(vec!["uv"])
+            Ok(vec!["uv", "python"])
         } else {
             self.get_dependencies()
         }
@@ -1744,7 +1744,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 .into_iter()
                 .map(|ba| ba.short)
                 .collect::<Vec<_>>(),
-            vec!["uv"]
+            vec!["uv", "python"]
         );
     }
 

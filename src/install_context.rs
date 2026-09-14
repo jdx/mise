@@ -245,7 +245,7 @@ mod tests {
         let declarations =
             install_dependency_declarations(&request("pipx:black", r#"with=["click"]"#));
         declarations.validate().unwrap();
-        assert_eq!(names(&declarations), vec!["uv"]);
+        assert_eq!(names(&declarations), vec!["uv", "python"]);
     }
 
     #[tokio::test]
