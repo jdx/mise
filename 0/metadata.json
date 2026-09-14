@@ -3,39 +3,38 @@
   "checkpoint_id": "01M2EJZN7B806AZNPQVP406WFD",
   "session_id": "01a09d00-07d0-7b20-a1a7-fc9b19004cab",
   "strategy": "manual-commit",
-  "created_at": "2026-09-14T01:29:20.799634Z",
+  "created_at": "2026-09-14T01:41:06.627012Z",
   "branch": "codex/brew-parallel-staging",
   "checkpoints_count": 1,
   "files_touched": [
-    "src/system/packages/brew/pour.rs",
-    "src/system/packages/brew/source.rs"
+    "src/system/packages/brew/pour.rs"
   ],
   "agent": "Codex",
   "model": "gpt-5.6-sol",
   "turn_id": "dab473a9b7f4",
-  "checkpoint_transcript_start": 3311,
-  "transcript_lines_at_start": 3311,
-  "compact_transcript_start": 468,
+  "checkpoint_transcript_start": 3739,
+  "transcript_lines_at_start": 3739,
+  "compact_transcript_start": 531,
   "token_usage": {
-    "input_tokens": 142688,
+    "input_tokens": 63707,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 3590144,
-    "output_tokens": 4962,
-    "api_call_count": 36
+    "cache_read_tokens": 4409344,
+    "output_tokens": 4889,
+    "api_call_count": 28
   },
   "session_metrics": {
     "turn_count": 6
   },
   "initial_attribution": {
-    "calculated_at": "2026-09-14T01:29:20.341544Z",
-    "agent_lines": 209,
-    "agent_removed": 28,
-    "human_added": 91,
+    "calculated_at": "2026-09-14T01:41:06.123753Z",
+    "agent_lines": 5,
+    "agent_removed": 2,
+    "human_added": 107,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 300,
-    "total_lines_changed": 337,
-    "agent_percentage": 70.32640949554896,
+    "total_committed": 112,
+    "total_lines_changed": 126,
+    "agent_percentage": 5.555555555555555,
     "metric_version": 2
   }
 }
