@@ -106,6 +106,18 @@ if [[ ! $E2E_JOBS =~ ^[0-9]+$ || $E2E_JOBS -lt 1 ]]; then
   exit 1
 fi
 
+# CI opts into retries; local runs fail on the first attempt by default.
+E2E_MAX_ATTEMPTS="${E2E_MAX_ATTEMPTS:-1}"
+E2E_RETRY_WAIT_SECONDS="${E2E_RETRY_WAIT_SECONDS:-30}"
+if [[ ! $E2E_MAX_ATTEMPTS =~ ^[1-9][0-9]*$ ]]; then
+  err "E2E_MAX_ATTEMPTS must be a positive integer"
+  exit 1
+fi
+if [[ ! $E2E_RETRY_WAIT_SECONDS =~ ^(0|[1-9][0-9]*)$ ]]; then
+  err "E2E_RETRY_WAIT_SECONDS must be a non-negative integer"
+  exit 1
+fi
+
 PIDS=()
 LOG_FILES=()
 SUMMARY_FILES=()
@@ -157,11 +169,31 @@ start_test() {
     else
       unset GITHUB_STEP_SUMMARY
     fi
-    test_status=0
-    mise_wait_for_gh_rate_limit "$MISE_BIN" || test_status=$?
-    if [[ $test_status == 0 ]]; then
-      "$ROOT/e2e/run_test" "$test_name" || test_status=$?
-    fi
+    for ((attempt = 1; attempt <= E2E_MAX_ATTEMPTS; attempt++)); do
+      # The step summary reports the final attempt; logs retain every attempt.
+      if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+        : >"$GITHUB_STEP_SUMMARY"
+      fi
+      test_status=0
+      mise_wait_for_gh_rate_limit "$MISE_BIN" || test_status=$?
+      if [[ $test_status == 0 ]]; then
+        "$ROOT/e2e/run_test" "$test_name" || test_status=$?
+      fi
+      # Setup failures and Docker runs may not produce their own summary row.
+      if [[ -n ${GITHUB_STEP_SUMMARY:-} && ! -s $GITHUB_STEP_SUMMARY ]]; then
+        if [[ $test_status == 0 ]]; then
+          summary "$test_name" "-" ":white_check_mark:"
+        else
+          summary "$test_name" "-" ":x:"
+        fi
+      fi
+      if [[ $test_status == 0 || $attempt == "$E2E_MAX_ATTEMPTS" ]]; then
+        break
+      fi
+      echo "Retrying $test_name (attempt $((attempt + 1))/$E2E_MAX_ATTEMPTS) after ${E2E_RETRY_WAIT_SECONDS}s" >&2
+      touch "$LOG_DIR/$index.retried"
+      sleep "$E2E_RETRY_WAIT_SECONDS"
+    done
     echo "$test_status" >"$status_file.tmp" && mv "$status_file.tmp" "$status_file"
   ) >"$log_file" 2>&1 &
 
@@ -201,7 +233,7 @@ while [[ $completed -lt $total ]]; do
       status=1
       FAILED_TESTS+=("${RUN_FILES[$printed]}")
       cat "${LOG_FILES[$printed]}"
-    elif [[ $SHOW_PASSING_LOGS == 1 ]]; then
+    elif [[ $SHOW_PASSING_LOGS == 1 || -f $LOG_DIR/$printed.retried ]]; then
       cat "${LOG_FILES[$printed]}"
     else
       echo "PASS: ${RUN_FILES[$printed]}" >&2
