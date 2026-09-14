@@ -7,6 +7,31 @@ use std::path::PathBuf;
 
 const MIN_UV_VERSION: &str = "0.12.10";
 const PROJECT_NAME: &str = "mise-pypi-tool-environment";
+const DISCOVER_SCRIPTS: &str = r#"
+import importlib.metadata
+import json
+import os
+from pathlib import Path
+import sys
+
+packages = json.loads(sys.argv[1])
+scripts = Path(sys.argv[2]).resolve()
+names = set()
+for package in packages:
+    distribution = importlib.metadata.distribution(package)
+    names.update(
+        f"{entry.name}.exe" if os.name == "nt" else entry.name
+        for entry in distribution.entry_points
+        if entry.group in ("console_scripts", "gui_scripts")
+    )
+    names.update(
+        path.name
+        for file in distribution.files or []
+        if (path := Path(distribution.locate_file(file)).resolve()).parent == scripts
+        and path.is_file()
+    )
+print(json.dumps(sorted(names)))
+"#;
 
 impl PIPXBackend {
     pub(crate) fn uv_lock_allowed(&self, tv: &ToolVersion) -> bool {
@@ -426,7 +451,11 @@ impl PIPXBackend {
         });
         let packages = self.locked_entry_point_packages(tv, lock)?;
         let packages = serde_json::to_string(&packages)?;
-        let names = CmdLineRunner::new(python).args(["-I", "-c", "import importlib.metadata, json, sys; packages = json.loads(sys.argv[1]); print(json.dumps(sorted({e.name for package in packages for e in importlib.metadata.distribution(package).entry_points if e.group in ('console_scripts', 'gui_scripts')})))", &packages]).read().await?;
+        let names = CmdLineRunner::new(python)
+            .args(["-I", "-c", DISCOVER_SCRIPTS, &packages])
+            .arg(&scripts)
+            .read()
+            .await?;
         let names: Vec<String> = serde_json::from_str(names.trim())?;
         if names.is_empty() {
             bail!("{} exposes no executable scripts", self.ba.short);
@@ -437,11 +466,6 @@ impl PIPXBackend {
             if !crate::file::is_plain_file_name(&name) {
                 bail!("invalid Python entry point name");
             }
-            let name = if cfg!(windows) {
-                format!("{name}.exe")
-            } else {
-                name
-            };
             crate::file::make_symlink_or_copy(&scripts.join(&name), &bin.join(&name))?;
         }
         Ok(())

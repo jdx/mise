@@ -13,7 +13,7 @@ root = pathlib.Path(sys.argv[1])
 root.mkdir(exist_ok=True)
 
 
-def wheel(name, version, requires=(), script=False, command='lock-cli', output=None):
+def wheel(name, version, requires=(), script=False, data_script=False, command='lock-cli', output=None):
     module = name.replace('-', '_')
     dist = f'{module}-{version}.dist-info'
     files = {
@@ -25,6 +25,8 @@ def wheel(name, version, requires=(), script=False, command='lock-cli', output=N
     if script:
         files[f'{module}.py'] = (f"def main():\n    print({output!r})\n" if output else "import importlib.metadata\ndef main():\n    print('dependency=' + importlib.metadata.version('mise-lock-dep'))\n    try:\n        print('extra=' + importlib.metadata.version('mise-lock-extra'))\n    except importlib.metadata.PackageNotFoundError:\n        pass\n")
         files[f'{dist}/entry_points.txt'] = f'[console_scripts]\n{command} = {module}:main\n'
+    if data_script:
+        files[f'{module}-{version}.data/scripts/{command}'] = f'#!/bin/sh\necho {output}\n'
     record = ''.join(
         f'{path},sha256={base64.urlsafe_b64encode(hashlib.sha256(text.encode()).digest()).decode().rstrip("=")},{len(text.encode())}\n'
         for path, text in files.items()
@@ -33,7 +35,10 @@ def wheel(name, version, requires=(), script=False, command='lock-cli', output=N
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, 'w') as z:
         for path, text in files.items():
-            z.writestr(path, text)
+            info = zipfile.ZipInfo(path)
+            if '.data/scripts/' in path:
+                info.external_attr = 0o755 << 16
+            z.writestr(info, text)
     filename = f'{module}-{version}-py3-none-any.whl'
     return filename, archive.getvalue()
 
@@ -82,6 +87,7 @@ wheels = dict([
     wheel('mise-lock-marker', '1.0.0'),
     wheel('mise-lock-extra', '1.0.0'),
     wheel('mise-exposed', '1.0.0', script=True, command='exposed-cli', output='exposed'),
+    wheel('mise-data-cli', '1.0.0', data_script=True, command='data-cli', output='data-script'),
     sdist('mise-source-cli', '1.0.0'),
 ])
 
