@@ -677,6 +677,47 @@ pub(crate) async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -
     }
 }
 
+/// Split a `github.com/{owner}/{repo}/releases/download/{tag}/{asset}` browser
+/// URL into `(owner/repo, tag, asset name)`. `None` for any other URL.
+pub(crate) fn release_asset_from_url(url: &str) -> Option<(String, String, String)> {
+    let url = url::Url::parse(url).ok()?;
+    if url.host_str()? != "github.com" {
+        return None;
+    }
+    let segments = url.path_segments()?.collect::<Vec<_>>();
+    let [owner, repo, "releases", "download", tag, asset] = segments.as_slice() else {
+        return None;
+    };
+    let tag = urlencoding::decode(tag).ok()?.into_owned();
+    let asset = urlencoding::decode(asset).ok()?.into_owned();
+    Some((format!("{owner}/{repo}"), tag, asset))
+}
+
+/// The API endpoint that serves the release asset a browser-facing URL names.
+///
+/// A private repository answers `github.com/.../releases/download/...` with 404
+/// even for a caller holding a valid token, so the asset has to be fetched from
+/// `api.github.com/repos/{repo}/releases/assets/{id}` instead — and only the
+/// release metadata knows that id. `None` when the URL is not a GitHub release
+/// download, the release cannot be read, or it carries no asset by that name.
+pub(crate) async fn release_asset_api_url(browser_url: &str) -> Option<String> {
+    let (repo, tag, asset_name) = release_asset_from_url(browser_url)?;
+    let release = match get_release(&repo, &tag).await {
+        Ok(release) => release,
+        Err(err) => {
+            debug!("failed to resolve GitHub release asset {repo}@{tag}/{asset_name}: {err:#}");
+            return None;
+        }
+    };
+    match release.assets.iter().find(|asset| asset.name == asset_name) {
+        Some(asset) => Some(asset.url.clone()),
+        None => {
+            debug!("GitHub release {repo}@{tag} did not include asset {asset_name}");
+            None
+        }
+    }
+}
+
 /// Standard GitHub token env vars, in precedence order (applies to every host).
 const GITHUB_TOKEN_ENV_VARS: &[&str] = &["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"];
 
@@ -1112,6 +1153,52 @@ mod tests {
         assert_eq!(
             pick_reachable_asset_url(ASSET_API_URL, ASSET_API_URL).await,
             ASSET_API_URL
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_parses_browser_download_urls() {
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/owner/repo/releases/download/v1.2.3/tool-aarch64.tar.gz"
+            ),
+            Some((
+                "owner/repo".to_string(),
+                "v1.2.3".to_string(),
+                "tool-aarch64.tar.gz".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_decodes_tag_and_asset() {
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/owner/repo/releases/download/v1%2Bmeta/tool%20name.tar.gz"
+            ),
+            Some((
+                "owner/repo".to_string(),
+                "v1+meta".to_string(),
+                "tool name.tar.gz".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_ignores_non_release_urls() {
+        assert_eq!(
+            release_asset_from_url("https://example.com/owner/repo/releases/download/v1/tool"),
+            None
+        );
+        assert_eq!(
+            release_asset_from_url("https://github.com/owner/repo/archive/refs/tags/v1.tar.gz"),
+            None
+        );
+        // An API asset endpoint is already what the fallback resolves to, so it
+        // is not itself a browser URL to resolve.
+        assert_eq!(
+            release_asset_from_url("https://api.github.com/repos/owner/repo/releases/assets/1"),
+            None
         );
     }
 

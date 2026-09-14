@@ -162,6 +162,71 @@ fn headers_for(url: &str) -> Result<HeaderMap> {
     }
 }
 
+/// The authenticated endpoint to retry a failed GitHub download through.
+///
+/// A packslip carries the browser-facing URL of every file it signs, and GitHub
+/// answers those with 404 for a private repository no matter which token is
+/// sent, so the asset has to be fetched from its API endpoint instead — and only
+/// the release metadata knows that endpoint. The lookup runs after the signed
+/// URL has already failed, so a public install still makes the one request it
+/// makes today and a private one pays a single extra release read rather than
+/// being unusable. The fallback is not conditioned on the status code: the
+/// request has failed either way, and the private-repository 404 is
+/// indistinguishable from a real one without asking GitHub.
+///
+/// Authentication stays transport-only. Nothing here decides what gets
+/// installed: the signature, project identity, and digest checks all run
+/// afterwards over the bytes that arrive, so an asset that no longer matches
+/// what was signed is still refused.
+async fn retry_url(url: &str, err: &eyre::Report) -> Option<String> {
+    let api_url = github::release_asset_api_url(url).await?;
+    debug!("{url} could not be fetched ({err}), retrying at {api_url}");
+    Some(api_url)
+}
+
+/// Download a file a packslip names, falling back to the authenticated GitHub
+/// release-asset endpoint when its browser URL is unreachable. See [`retry_url`].
+pub(crate) async fn download_file(
+    url: &str,
+    dest: &Path,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    let err = match HTTP
+        .download_file_with_headers(url, dest, &headers_for(url)?, pr)
+        .await
+    {
+        Ok(()) => return Ok(()),
+        Err(err) => err,
+    };
+    let Some(api_url) = retry_url(url, &err).await else {
+        return Err(err);
+    };
+    HTTP.download_file_with_headers(&api_url, dest, &headers_for(&api_url)?, pr)
+        .await
+}
+
+/// Fetch a document a packslip names — a manifest or a signed release list —
+/// with the same fallback [`download_file`] uses.
+pub(crate) async fn fetch_text(url: &str) -> Result<String> {
+    let err = match HTTP_FETCH
+        .get_text_request(url)
+        .headers(&headers_for(url)?)
+        .send()
+        .await
+    {
+        Ok(text) => return Ok(text),
+        Err(err) => err,
+    };
+    let Some(api_url) = retry_url(url, &err).await else {
+        return Err(err);
+    };
+    HTTP_FETCH
+        .get_text_request(&api_url)
+        .headers(&headers_for(&api_url)?)
+        .send()
+        .await
+}
+
 /// Fetch the files the statement sources from separate release assets and
 /// from the source repository, so they are on disk before a shell asks for
 /// one. An asset must match the digest the statement signed; a repository
@@ -230,10 +295,7 @@ pub(crate) async fn fetch_files(
                     // The tool is installed by now and the asset is an extra:
                     // one that cannot be fetched is reported, not fatal. One
                     // that arrives with the wrong digest is another matter.
-                    if let Err(err) = HTTP
-                        .download_file_with_headers(url, &dest, &headers_for(url)?, Some(pr))
-                        .await
-                    {
+                    if let Err(err) = download_file(url, &dest, Some(pr)).await {
                         let _ = file::remove_all(&dest);
                         warn!("{}: could not fetch {name}: {err}", tv.style());
                         continue;
@@ -1544,6 +1606,59 @@ Register-ArgumentCompleter -Native -CommandName '{tool}' -ScriptBlock $function:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_text_returns_the_body_of_a_reachable_url() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/packslip.sigstore.json")
+            .with_status(200)
+            .with_body("{}")
+            .create_async()
+            .await;
+        let url = format!("{}/packslip.sigstore.json", server.url());
+        assert_eq!(fetch_text(&url).await.unwrap(), "{}");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_text_surfaces_the_failure_of_a_url_with_no_github_fallback() {
+        // Nothing but a github.com release download has an API asset endpoint to
+        // retry at, so the original error is what the caller sees.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/packslip.sigstore.json")
+            .with_status(404)
+            .create_async()
+            .await;
+        let url = format!("{}/packslip.sigstore.json", server.url());
+        let err = fetch_text(&url).await.unwrap_err();
+        assert!(
+            crate::http::error_code(&err) == Some(404),
+            "expected a 404, got {err:#}"
+        );
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_download_file_writes_a_reachable_url_to_disk() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/tool.tar.gz")
+            .with_status(200)
+            .with_body("payload")
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("tool.tar.gz");
+        let url = format!("{}/tool.tar.gz", server.url());
+        download_file(&url, &dest, None).await.unwrap();
+        assert_eq!(file::read_to_string(&dest).unwrap(), "payload");
+        mock.assert_async().await;
+    }
 
     fn statement_with(resources: &str) -> Statement {
         let json = format!(
