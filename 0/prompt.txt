@@ -1,0 +1,9 @@
+why did this fail? [https://github.com/jdx/mise/actions/runs/34867298080/job/104054550910?pr=13182](https://github.com/jdx/mise/actions/runs/34867298080/job/104054550910?pr=13182)
+
+---
+
+ok make a pr to do that
+
+---
+
+actually just push that fix direct to origin/main
