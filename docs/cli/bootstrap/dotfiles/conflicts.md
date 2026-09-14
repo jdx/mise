@@ -27,10 +27,10 @@ configured diff tool; when `diff.tool` is unset, Git falls back to
 Examples:
 
 ```
-mise bootstrap dotfiles conflicts
-mise bootstrap dotfiles conflicts ~/.zshrc
-mise bootstrap dotfiles conflicts --difftool ~/.zshrc
-mise bootstrap dotfiles conflicts --difftool --tool meld ~/.zshrc
+mise dot conflicts
+mise dot conflicts ~/.zshrc
+mise dot conflicts --difftool ~/.zshrc
+mise dot conflicts --difftool --tool meld ~/.zshrc
 ```
 
 <!-- generated reference navigation -->

@@ -26,7 +26,7 @@ use crate::system::history::tracked::TrackedSet;
 
 const PUSH_RETRIES: usize = 5;
 
-/// An incoming change waiting for `mise bootstrap dotfiles pull` (or automatic
+/// An incoming change waiting for `mise dot pull` (or automatic
 /// application in `sync` mode).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct PendingApplication {
@@ -221,9 +221,7 @@ pub(crate) fn origin() -> Result<OriginTomlConfig> {
     {
         return Ok(OriginTomlConfig::plain(url, branch));
     }
-    bail!(
-        "no setup repository is connected; `mise bootstrap dotfiles origin set <url>` connects one"
-    )
+    bail!("no setup repository is connected; `mise dot origin set <url>` connects one")
 }
 
 /// Runs one synchronization.
@@ -254,7 +252,7 @@ pub(crate) fn sync(
             let found = remote.fetch(&origin.branch)?;
             if !found && status.upstream_commit.is_some() {
                 bail!(
-                    "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise bootstrap dotfiles origin set {} --branch <name>` follows a renamed branch",
+                    "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise dot origin set {} --branch <name>` follows a renamed branch",
                     origin.branch,
                     origin.url,
                     origin.url
@@ -278,7 +276,7 @@ pub(crate) fn sync(
         repo_state.check()?;
         if repo_state == RepoState::Unmarked && !status.adopted {
             bail!(
-                "{} is an existing repository without the mise marker; `mise bootstrap dotfiles origin set {}` previews how it would be adopted",
+                "{} is an existing repository without the mise marker; `mise dot origin set {}` previews how it would be adopted",
                 origin.url,
                 origin.url
             );
@@ -552,7 +550,7 @@ fn notify_conflicts_with(status: &mut SyncStatus, enabled: bool, send: impl FnOn
         send(
             "mise: dotfile sync paused",
             &format!(
-                "Conflicting changes in {body}.\nLocal saves still work. For resolution steps, run:\nmise bootstrap dotfiles status"
+                "Conflicting changes in {body}.\nLocal saves still work. For resolution steps, run:\nmise dot status"
             ),
         );
     }
@@ -1244,7 +1242,7 @@ mod notification_tests {
         notify_conflicts_with(&mut status, true, |_, body| {
             assert!(body.contains("… and 1 other file"));
             assert!(body.contains("Local saves still work."));
-            assert!(body.ends_with("mise bootstrap dotfiles status"));
+            assert!(body.ends_with("mise dot status"));
             assert_eq!(body.lines().count(), 3);
             assert!(body.chars().count() < 250);
         });

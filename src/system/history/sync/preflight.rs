@@ -60,7 +60,7 @@ pub(super) fn prospective(
             .is_some_and(|history| history.origin.is_some())
         {
             bail!(
-                "incoming history.origin is machine-local configuration; remove it from the shared setup and use `mise bootstrap dotfiles origin set` on this machine ({})",
+                "incoming history.origin is machine-local configuration; remove it from the shared setup and use `mise dot origin set` on this machine ({})",
                 path.display()
             );
         }

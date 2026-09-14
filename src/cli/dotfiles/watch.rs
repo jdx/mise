@@ -59,8 +59,8 @@ impl DotfilesWatch {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles watch</bold>
-    $ <bold>mise bootstrap dotfiles watch --once</bold>      # one reconcile, for a timer
-    $ <bold>mise bootstrap dotfiles watch --json</bold>
+    $ <bold>mise dot watch</bold>
+    $ <bold>mise dot watch --once</bold>      # one reconcile, for a timer
+    $ <bold>mise dot watch --json</bold>
 "#
 );

@@ -268,7 +268,7 @@ impl Trigger {
     }
 
     /// A capture with no metadata of its own: recorded only when something
-    /// changed. A bare `mise bootstrap dotfiles save` counts; one with a description,
+    /// changed. A bare `mise dot save` counts; one with a description,
     /// a label, or a task always records.
     pub(crate) fn is_automatic(self) -> bool {
         matches!(self, Self::Edit | Self::Save)

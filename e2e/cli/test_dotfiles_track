@@ -79,7 +79,7 @@ assert_fail "git --git-dir=$repository cat-file -e HEAD:home/added-source"
 echo source >~/link-source
 ln -s link-source ~/tracked-link
 assert_contains 'mise bootstrap dotfiles track ~/tracked-link 2>&1' 'history saves and syncs the link, not its contents'
-assert_contains 'mise bootstrap dotfiles track ~/tracked-link 2>&1' 'mise bootstrap dotfiles track '
+assert_contains 'mise bootstrap dotfiles track ~/tracked-link 2>&1' 'mise dot track '
 assert_contains "git --git-dir=$repository ls-tree HEAD home/tracked-link" 120000
 assert_fail "git --git-dir=$repository cat-file -e HEAD:home/link-source"
 # Enrolling both in one command suppresses the warning regardless of order.

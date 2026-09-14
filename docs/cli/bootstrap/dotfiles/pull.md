@@ -11,12 +11,12 @@ description: "Pull incoming shared changes into the live files"
 
 Pull incoming shared changes into the live files
 
-Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
+Writes the changes the last `mise dot sync` recorded as pending
 (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
 what other machines shared),
 as one recoverable transaction: a protective checkpoint first, every
 file written and journaled one at a time, reload hooks only afterwards,
-and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
+and `mise dot undo` to reverse it. Configuration and the sources it
 references apply together; an incoming configuration file that does not
 parse, a path with unsaved local edits, staged git changes in your own
 checkout, or a genuine local edit pauses the complete application.
@@ -43,10 +43,10 @@ their shared versions follow in the same run.
 Examples:
 
 ```
-mise bootstrap dotfiles pull --dry-run
-mise bootstrap dotfiles pull --yes
-mise bootstrap dotfiles pull --take-remote ~/.zshrc
-mise bootstrap dotfiles pull --keep-local ~/.zshrc
+mise dot pull --dry-run
+mise dot pull --yes
+mise dot pull --take-remote ~/.zshrc
+mise dot pull --keep-local ~/.zshrc
 ```
 
 <!-- generated reference navigation -->

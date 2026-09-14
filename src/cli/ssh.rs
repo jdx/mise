@@ -123,7 +123,7 @@ impl Ssh {
                             .is_empty())
                 {
                     bail!(
-                        "setup has conflicts; nothing was bootstrapped; use `mise bootstrap dotfiles status` to resolve them"
+                        "setup has conflicts; nothing was bootstrapped; use `mise dot status` to resolve them"
                     );
                 }
                 return Ok(());

@@ -50,7 +50,7 @@ assert_succeed 'mise bootstrap dotfiles sync'
 assert_succeed "$b bootstrap dotfiles sync"
 assert_fail "$b bootstrap dotfiles pull --yes" 'sync paused'
 assert "cat $B/.config/journey/bindings" 'desktop edit'
-assert_contains "$b bootstrap dotfiles status" 'bootstrap dotfiles conflicts'
+assert_contains "$b bootstrap dotfiles status" 'mise dot conflicts'
 assert_contains "$b bootstrap dotfiles conflicts $B/.config/journey/bindings" '-desktop edit'
 assert_contains "$b bootstrap dotfiles conflicts $B/.config/journey/bindings" '+laptop edit'
 HOME="$B" git config --global merge.tool mise-test

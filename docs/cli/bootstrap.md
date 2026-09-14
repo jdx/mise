@@ -67,7 +67,7 @@ mise bootstrap status --missing
 mise bootstrap packages apply --yes
 mise bootstrap repos status
 mise bootstrap repos apply --dry-run
-mise bootstrap dotfiles status
+mise dot status
 mise bootstrap mise-shell-activate apply --dry-run
 mise bootstrap macos defaults status
 mise bootstrap macos launchd-agents apply --dry-run

@@ -6,12 +6,12 @@ use crate::system::history::sync::apply::{self, ApplyRequest};
 
 /// Pull incoming shared changes into the live files
 ///
-/// Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
+/// Writes the changes the last `mise dot sync` recorded as pending
 /// (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
 /// what other machines shared),
 /// as one recoverable transaction: a protective checkpoint first, every
 /// file written and journaled one at a time, reload hooks only afterwards,
-/// and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
+/// and `mise dot undo` to reverse it. Configuration and the sources it
 /// references apply together; an incoming configuration file that does not
 /// parse, a path with unsaved local edits, staged git changes in your own
 /// checkout, or a genuine local edit pauses the complete application.
@@ -78,9 +78,9 @@ impl DotfilesPull {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles pull --dry-run</bold>
-    $ <bold>mise bootstrap dotfiles pull --yes</bold>
-    $ <bold>mise bootstrap dotfiles pull --take-remote ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles pull --keep-local ~/.zshrc</bold>
+    $ <bold>mise dot pull --dry-run</bold>
+    $ <bold>mise dot pull --yes</bold>
+    $ <bold>mise dot pull --take-remote ~/.zshrc</bold>
+    $ <bold>mise dot pull --keep-local ~/.zshrc</bold>
 "#
 );

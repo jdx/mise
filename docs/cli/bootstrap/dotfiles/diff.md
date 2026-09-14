@@ -21,8 +21,8 @@ Show the changes needed to apply dotfiles from `[dotfiles]`
 ## Examples
 
 ```
-mise bootstrap dotfiles diff
-mise bootstrap dotfiles diff ~/.zshrc
+mise dot diff
+mise dot diff ~/.zshrc
 ```
 
 <!-- generated reference navigation -->

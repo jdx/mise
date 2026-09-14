@@ -50,7 +50,7 @@ pub(crate) fn send(title: &str, body: &str) {
 pub(crate) fn warn_if_release_signing_unavailable() {
     if crate::config::Settings::get().history.notify && !macos::release_signed() {
         warn!(
-            "macOS desktop notifications are unavailable in unofficial builds such as Homebrew; `mise bootstrap dotfiles status` and `mise doctor` still report setup conflicts"
+            "macOS desktop notifications are unavailable in unofficial builds such as Homebrew; `mise dot status` and `mise doctor` still report setup conflicts"
         );
     }
 }
@@ -69,7 +69,7 @@ fn dispatch(
     let worker = std::thread::Builder::new()
         .name("mise-notification".into())
         .spawn(move || {
-            // A short-lived `mise bootstrap dotfiles sync` may exit as soon as
+            // A short-lived `mise dot sync` may exit as soon as
             // dispatch returns. Confirm that the helper process exists first;
             // it can finish independently if this worker then goes away.
             let mut child = match command.spawn() {

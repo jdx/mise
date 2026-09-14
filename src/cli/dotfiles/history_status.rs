@@ -1,4 +1,4 @@
-//! The history half of `mise bootstrap dotfiles status`: what is tracked,
+//! The history half of `mise dot status`: what is tracked,
 //! the latest checkpoint, unfinished operations, and whether edits are
 //! being saved automatically.
 
@@ -161,13 +161,11 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             local_time(&latest.created_at),
             latest.description
         ),
-        None => miseprintln!(
-            "  no checkpoint recorded yet; `mise bootstrap dotfiles save` records one."
-        ),
+        None => miseprintln!("  no checkpoint recorded yet; `mise dot save` records one."),
     }
     if report.pending_operations > 0 {
         miseprintln!(
-            "  {} operation(s) did not finish; `mise bootstrap dotfiles history --pending` lists them; `mise bootstrap dotfiles recover` retries safe recovery.",
+            "  {} operation(s) did not finish; `mise dot history --pending` lists them; `mise dot recover` retries safe recovery.",
             report.pending_operations
         );
     }
@@ -178,7 +176,7 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     );
     match &report.sync {
         None => miseprintln!(
-            "Setup repository: none (`mise bootstrap dotfiles origin set <url>` synchronizes committed history)."
+            "Setup repository: none (`mise dot origin set <url>` synchronizes committed history)."
         ),
         Some(sync) => {
             miseprintln!(
@@ -200,7 +198,7 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             );
             if !sync.pending_applications.is_empty() {
                 miseprintln!(
-                    "  {} incoming change(s) pending: `mise bootstrap dotfiles pull` ({})",
+                    "  {} incoming change(s) pending: `mise dot pull` ({})",
                     sync.pending_applications.len(),
                     sync.pending_applications.join(", ")
                 );
@@ -270,7 +268,7 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
         }
         for throttled in &health.throttled {
             miseprintln!(
-                "  throttled: {} changes constantly; saved every {} ({} unsaved change(s), last saved {}). Not a failure: `mise bootstrap dotfiles exclude '{}'` if it is a log, cache, or database, or track it with --no-autosave and save explicitly.",
+                "  throttled: {} changes constantly; saved every {} ({} unsaved change(s), last saved {}). Not a failure: `mise dot exclude '{}'` if it is a log, cache, or database, or track it with --no-autosave and save explicitly.",
                 throttled.path,
                 humantime(std::time::Duration::from_secs(throttled.interval_secs)),
                 throttled.pending_changes,

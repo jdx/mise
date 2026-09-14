@@ -29,10 +29,10 @@ Run this before deleting a declaration so mise can still identify its targets.
 ## Examples
 
 ```
-mise bootstrap dotfiles unapply
-mise bootstrap dotfiles unapply ~/.zshrc
-mise bootstrap dotfiles unapply --dry-run
-mise bootstrap dotfiles unapply --force --yes
+mise dot unapply
+mise dot unapply ~/.zshrc
+mise dot unapply --dry-run
+mise dot unapply --force --yes
 ```
 
 <!-- generated reference navigation -->

@@ -305,26 +305,23 @@ export const sidebar: SidebarItem[] = [
   },
 ];
 
-function cliReference(commands: { [key: string]: Command }) {
+function cliReference(
+  commands: { [key: string]: Command },
+  parent: string[] = [],
+): SidebarItem[] {
   return Object.keys(commands)
     .map((name) => [name, commands[name]] as [string, Command])
     .filter(([_name, command]) => command.hide !== true)
     .map(([name, command]) => {
-      const x: any = {
-        text: `mise ${name}`,
-        link: `/cli/${name}`,
+      const path = [...parent, name];
+      const item: SidebarItem = {
+        text: `mise ${path.join(" ")}`,
+        link: `/cli/${path.join("/")}`,
       };
       if (command.subcommands) {
-        x.collapsed = true;
-        x.items = Object.keys(command.subcommands)
-          .filter(
-            (subcommand) => command.subcommands![subcommand].hide !== true,
-          )
-          .map((subcommand) => ({
-            text: `mise ${name} ${subcommand}`,
-            link: `/cli/${name}/${subcommand}`,
-          }));
+        item.collapsed = true;
+        item.items = cliReference(command.subcommands, path);
       }
-      return x;
+      return item;
     });
 }

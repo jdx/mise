@@ -7,6 +7,12 @@ source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
 {%- if path == "daemons" or path is starting_with(pat="daemons/") -%}
 {%- set path = "daemons.rs" -%}
+{%- elif path == "dotfiles/history" -%}
+{%- set path = "dotfiles/history/mod.rs" -%}
+{%- elif path == "dotfiles/include" -%}
+{%- set path = "dotfiles/exclude.rs" -%}
+{%- elif path == "dotfiles/origin" or path == "dotfiles/origin/set" -%}
+{%- set path = "dotfiles/origin.rs" -%}
 {%- elif path == "bootstrap/packages/apply" -%}
 {%- set path = "system/install.rs" -%}
 {%- elif path == "bootstrap/packages/import" -%}
@@ -666,10 +672,10 @@ source capture and config write without making those changes.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
             example #"""
-mise bootstrap dotfiles add ~/.zshrc
-mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
-mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
-mise bootstrap dotfiles add --changed
+mise dot add ~/.zshrc
+mise dot add --mode copy ~/.config/starship.toml
+mise dot add --source dotfiles/gitconfig ~/.gitconfig
+mise dot add --changed
 """#
         }
         cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
@@ -688,9 +694,9 @@ mise doesn't otherwise own.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
             example #"""
-mise bootstrap dotfiles apply
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --force --yes
+mise dot apply
+mise dot apply --dry-run
+mise dot apply --force --yes
 """#
         }
         cmd capture help="Record tracked files before and after an external command" {
@@ -718,7 +724,7 @@ fetched repository version. `--difftool` opens the comparison in Git's
 configured diff tool; when `diff.tool` is unset, Git falls back to
 `merge.tool`. This command does not change either side or resolve a conflict.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles conflicts\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles conflicts ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles conflicts --difftool ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles conflicts --difftool --tool meld ~/.zshrc\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot conflicts\u{1b}[22m\n    $ \u{1b}[1mmise dot conflicts ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot conflicts --difftool ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot conflicts --difftool --tool meld ~/.zshrc\u{1b}[22m\n"
             flag --difftool help="Open the comparison in Git's configured diff or merge tool"
             flag --tool help="Use this Git diff tool instead of the configured default" requires=--difftool {
                 arg <TOOL>
@@ -731,8 +737,8 @@ configured diff tool; when `diff.tool` is unset, Git falls back to
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
             example #"""
-mise bootstrap dotfiles diff
-mise bootstrap dotfiles diff ~/.zshrc
+mise dot diff
+mise dot diff ~/.zshrc
 """#
         }
         cmd edit help="Edit a managed dotfile source" effect=write {
@@ -748,8 +754,8 @@ mise bootstrap dotfiles diff ~/.zshrc
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <TARGET> help="Target to edit"
             example #"""
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles edit --apply ~/.config/starship.toml
+mise dot edit ~/.zshrc
+mise dot edit --apply ~/.config/starship.toml
 """#
         }
         cmd exclude help="Never capture paths matching a glob" effect=write {
@@ -774,7 +780,7 @@ Configuration and deployment sources are not implicitly enrolled. A checkpoint h
 never package or service state: restoring one restores files. Without a
 subcommand this lists them, newest first.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles history\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history show latest\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles history diff\u{1b}[22m          # the working tree against the latest checkpoint\n    $ \u{1b}[1mmise bootstrap dotfiles history diff 11 12 --patch\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles save --description \"before the theme change\"\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles undo\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot history\u{1b}[22m\n    $ \u{1b}[1mmise dot history --path ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise dot history show latest\u{1b}[22m\n    $ \u{1b}[1mmise dot history diff\u{1b}[22m          # the working tree against the latest checkpoint\n    $ \u{1b}[1mmise dot history diff 11 12 --patch\u{1b}[22m\n    $ \u{1b}[1mmise dot save --description \"before the theme change\"\u{1b}[22m\n    $ \u{1b}[1mmise dot rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise dot undo\u{1b}[22m\n"
             flag "-J --json" help="Output in JSON format"
             flag "-n --limit" help="Show at most this many checkpoints (0 for all)" default="20" {
                 arg <LIMIT>
@@ -868,7 +874,7 @@ every reachable commit; unrelated histories are never replaced.
 The connection is written to machine-local `[history.origin]` configuration;
 the mode is `settings.history.sync`.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin set git@github.com:you/setup.git --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise bootstrap dotfiles origin --remove\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise dot origin set git@github.com:you/setup.git --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise dot origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise dot origin --remove\u{1b}[22m\n"
             flag --remove help="Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)" effect=destructive
             flag "-h --help" help="Print help" action=help builtin=#true
             cmd set help="Connect a setup repository" effect=write {
@@ -913,12 +919,12 @@ enrollment is never mistaken for protection.
             long_help #"""
 Pull incoming shared changes into the live files
 
-Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
+Writes the changes the last `mise dot sync` recorded as pending
 (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
 what other machines shared),
 as one recoverable transaction: a protective checkpoint first, every
 file written and journaled one at a time, reload hooks only afterwards,
-and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
+and `mise dot undo` to reverse it. Configuration and the sources it
 references apply together; an incoming configuration file that does not
 parse, a path with unsaved local edits, staged git changes in your own
 checkout, or a genuine local edit pauses the complete application.
@@ -932,7 +938,7 @@ own; this command writes what is pending right now and decides
 conflicts. When an incoming configuration declares more tracked files,
 their shared versions follow in the same run.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles pull --keep-local ~/.zshrc\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n"
             flag "-n --dry-run" help="Show the plan without changing anything"
             flag "-y --yes" help="Pull without prompting"
             flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
@@ -966,9 +972,9 @@ Without `--to`, each path returns to its most recent saved version that
 differs from what is on disk; unrelated checkpoints never influence the
 choice. With `--to <ref>`, the named checkpoint is the source, and
 `--all` selects everything it covers. The current state is saved in a
-protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
+protective checkpoint first, so `mise dot undo` can reverse it.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback ~/.zshrc --to 42\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles rollback --to latest~3 --all --dry-run\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise dot rollback ~/.zshrc --to 42\u{1b}[22m\n    $ \u{1b}[1mmise dot rollback --to latest~3 --all --dry-run\u{1b}[22m\n"
             flag --to help="The checkpoint to roll back to: numeric ID, `latest`, `latest~N`, or `commit:<sha>`" {
                 arg <REF>
             }
@@ -1010,7 +1016,13 @@ warning for `set -e` update scripts.
 Show the status of dotfiles from `[dotfiles]`
 
 Template entries are rendered to compare their output; trusted template
-functions may execute. `--missing` changes the exit status, not the listing.
+functions may execute. JSON includes each entry's origin and uses the states
+`applied`, `missing`, `differs`, `source_missing`, and `tracked`.
+
+The management state of every declaration (applied, missing, differs,
+tracked) followed by the history state: what is tracked, the latest
+checkpoint, unfinished operations, and whether edits are saved
+automatically.
 """#
             flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
             flag "-J --json" help="Output in JSON format"
@@ -1022,10 +1034,10 @@ state (missing, source missing, differs)
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only show these targets" required=#false var=#true
             example #"""
-mise bootstrap dotfiles status
-mise bootstrap dotfiles status ~/.zshrc
-mise bootstrap dotfiles status --json
-mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
+mise dot status
+mise dot status ~/.zshrc
+mise dot status --json
+mise dot status --missing # exit 1 if anything is out of sync
 """#
         }
         cmd sync help="Publish, fetch, and record what is pending now" effect=write {
@@ -1035,7 +1047,7 @@ Publish, fetch, and record what is pending now
 Fetches the origin branch and publishes the ordinary local commit history.
 A rejected push fetches again and reconciles without rewriting history.
 Records incoming changes to apply and conflicts to decide.
-Live files are never changed here: `mise bootstrap dotfiles pull` does
+Live files are never changed here: `mise dot pull` does
 that. In `fetch-only` mode nothing is published.
 
 The history watcher does this on its own in `sync` and `fetch-only` mode
@@ -1052,20 +1064,20 @@ Track a file or directory in place
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it
 right away. With the history watcher service running, later edits are
-saved automatically; without it, `mise bootstrap dotfiles save` saves them.
+saved automatically; without it, `mise dot save` saves them.
 
 `--os` and `--profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
             flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
                 arg <OS>
             }
             flag --profile help="Declare a variant for this mise environment" {
                 arg <PROFILE>
             }
-            flag --no-autosave help="Save only on `mise bootstrap dotfiles save <path>`, never automatically"
+            flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
             flag "-y --yes" help="Accept without prompting"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
@@ -1086,10 +1098,10 @@ Run this before deleting a declaration so mise can still identify its targets.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
             example #"""
-mise bootstrap dotfiles unapply
-mise bootstrap dotfiles unapply ~/.zshrc
-mise bootstrap dotfiles unapply --dry-run
-mise bootstrap dotfiles unapply --force --yes
+mise dot unapply
+mise dot unapply ~/.zshrc
+mise dot unapply --dry-run
+mise dot unapply --force --yes
 """#
         }
         cmd undo help="Reverse the tracked-file changes from an operation" effect=destructive {
@@ -1115,7 +1127,7 @@ Removes the `[dotfiles]` track entry (or switches an inherited one off in
 config.local.toml) and stops future captures. The file itself and its
 existing checkpoints are left exactly as they are.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles untrack ~/.zshrc\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot untrack ~/.zshrc\u{1b}[22m\n"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to stop tracking" var=#true
         }
@@ -1150,7 +1162,7 @@ installed. A capture that fails is retried with backoff and never drops
 the pending changes; one that would overlap another history operation
 is deferred.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles watch\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles watch --once\u{1b}[22m      # one reconcile, for a timer\n    $ \u{1b}[1mmise bootstrap dotfiles watch --json\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot watch\u{1b}[22m\n    $ \u{1b}[1mmise dot watch --once\u{1b}[22m      # one reconcile, for a timer\n    $ \u{1b}[1mmise dot watch --json\u{1b}[22m\n"
             flag --once help="Reconcile and synchronize once and exit (for timers and cron)"
             flag "-J --json" help="One JSON object per line instead of log lines"
             flag "-h --help" help="Print help" action=help builtin=#true
@@ -1884,7 +1896,7 @@ mise bootstrap status --missing
 mise bootstrap packages apply --yes
 mise bootstrap repos status
 mise bootstrap repos apply --dry-run
-mise bootstrap dotfiles status
+mise dot status
 mise bootstrap mise-shell-activate apply --dry-run
 mise bootstrap macos defaults status
 mise bootstrap macos launchd-agents apply --dry-run
@@ -2247,14 +2259,10 @@ for direnv to consume.
         flag "-h --help" help="Print help" action=help builtin=#true
     }
 }
-cmd dotfiles hide=#true subcommand_required=#true help="Manage dotfiles from `[dotfiles]` (deprecated)" effect=read {
-    long_help #"""
-Manage dotfiles from `[dotfiles]` (deprecated)
-
-Use `mise bootstrap dotfiles` instead.
-"""#
+cmd dotfiles subcommand_required=#true help="Manage dotfiles from `[dotfiles]`" effect=read {
+    alias dot
     flag "-h --help" help="Print help" action=help builtin=#true
-    cmd add hide=#true help="Add or update dotfiles in `[dotfiles]`" effect=write {
+    cmd add help="Add or update dotfiles in `[dotfiles]`" effect=write {
         long_help #"""
 Add or update dotfiles in `[dotfiles]`
 
@@ -2289,13 +2297,13 @@ source capture and config write without making those changes.
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
         example #"""
-mise bootstrap dotfiles add ~/.zshrc
-mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
-mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
-mise bootstrap dotfiles add --changed
+mise dot add ~/.zshrc
+mise dot add --mode copy ~/.config/starship.toml
+mise dot add --source dotfiles/gitconfig ~/.gitconfig
+mise dot add --changed
 """#
     }
-    cmd apply hide=#true help="Apply dotfiles from `[dotfiles]`" effect=write {
+    cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
         long_help #"""
 Apply dotfiles from `[dotfiles]`
 
@@ -2311,21 +2319,54 @@ mise doesn't otherwise own.
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
         example #"""
-mise bootstrap dotfiles apply
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --force --yes
+mise dot apply
+mise dot apply --dry-run
+mise dot apply --force --yes
 """#
     }
-    cmd diff hide=#true help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
+    cmd capture help="Record tracked files before and after an external command" {
+        long_help #"""
+Record tracked files before and after an external command
+
+Runs the command directly, inheriting its terminal and environment. Keeps
+a linked checkpoint pair, including when the command fails or changes no
+files. Capture failures warn and never replace the command's exit status.
+Only tracked files are recorded: package, service, and other system effects
+are not reversible. Concurrent editor changes are part of the same interval.
+"""#
+        flag --label help="Describe this operation in history" {
+            arg <LABEL>
+        }
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "<-- COMMAND>…" help="Command and arguments to run, after --" var=#true
+    }
+    cmd conflicts help="Inspect the local and remote sides of sharing conflicts" effect=read {
+        long_help #"""
+Inspect the local and remote sides of sharing conflicts
+
+By default, prints a unified diff from this machine's saved version to the
+fetched repository version. `--difftool` opens the comparison in Git's
+configured diff tool; when `diff.tool` is unset, Git falls back to
+`merge.tool`. This command does not change either side or resolve a conflict.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot conflicts\u{1b}[22m\n    $ \u{1b}[1mmise dot conflicts ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot conflicts --difftool ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot conflicts --difftool --tool meld ~/.zshrc\u{1b}[22m\n"
+        flag --difftool help="Open the comparison in Git's configured diff or merge tool"
+        flag --tool help="Use this Git diff tool instead of the configured default" requires=--difftool {
+            arg <TOOL>
+        }
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[PATH]…" help="Only inspect these conflicted paths" required=#false var=#true
+    }
+    cmd diff help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
         flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         example #"""
-mise bootstrap dotfiles diff
-mise bootstrap dotfiles diff ~/.zshrc
+mise dot diff
+mise dot diff ~/.zshrc
 """#
     }
-    cmd edit hide=#true help="Edit a managed dotfile source" effect=write {
+    cmd edit help="Edit a managed dotfile source" effect=write {
         flag --apply help="Apply this target after the editor exits"
         flag "-m --mode" help="Dotfile mode to use if the target is not yet managed" {
             arg <MODE>
@@ -2338,11 +2379,263 @@ mise bootstrap dotfiles diff ~/.zshrc
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <TARGET> help="Target to edit"
         example #"""
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles edit --apply ~/.config/starship.toml
+mise dot edit ~/.zshrc
+mise dot edit --apply ~/.config/starship.toml
 """#
     }
-    cmd status hide=#true help="Show the status of dotfiles from `[dotfiles]`" effect=read {
+    cmd exclude help="Never capture paths matching a glob" effect=write {
+        long_help #"""
+Never capture paths matching a glob
+
+Adds the glob to `[history] exclude` in the global config. Use it for
+logs, caches, databases, and constantly rewritten application state; a
+file that genuinely holds configuration but changes constantly is
+better tracked with `--no-autosave` and saved explicitly.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <GLOB> help="A glob such as `~/.config/hypr/plugins/**`"
+    }
+    cmd history help="Browse the checkpoints of your dotfiles" effect=read {
+        long_help #"""
+Browse the checkpoints of your dotfiles
+
+Every save, every mutating bootstrap command, and the watcher record a
+checkpoint of explicitly enrolled `[dotfiles]` entries with `mode = "track"`.
+Configuration and deployment sources are not implicitly enrolled. A checkpoint holds files,
+never package or service state: restoring one restores files. Without a
+subcommand this lists them, newest first.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot history\u{1b}[22m\n    $ \u{1b}[1mmise dot history --path ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise dot history show latest\u{1b}[22m\n    $ \u{1b}[1mmise dot history diff\u{1b}[22m          # the working tree against the latest checkpoint\n    $ \u{1b}[1mmise dot history diff 11 12 --patch\u{1b}[22m\n    $ \u{1b}[1mmise dot save --description \"before the theme change\"\u{1b}[22m\n    $ \u{1b}[1mmise dot rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise dot undo\u{1b}[22m\n"
+        flag "-J --json" help="Output in JSON format"
+        flag "-n --limit" help="Show at most this many checkpoints (0 for all)" default="20" {
+            arg <LIMIT>
+        }
+        flag --path help="Only checkpoints where this path (or something under it) changed" {
+            arg <PATH>
+        }
+        flag --trigger help="Only checkpoints with this trigger (edit, save, bootstrap, …)" {
+            arg <TRIGGER>
+        }
+        flag --label help="Only checkpoints with this label" {
+            arg <LABEL>
+        }
+        flag --pending help="Only checkpoints recorded by operations that did not finish"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        cmd describe help="Set the description of a checkpoint" effect=write {
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <REF> help="Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`"
+            arg <TEXT> help="The new description"
+        }
+        cmd diff help="Compare checkpoints, or the working tree against one" effect=read {
+            long_help #"""
+Compare checkpoints, or the working tree against one
+
+Without arguments, shows what changed by hand since the latest
+checkpoint. With one reference, shows what that checkpoint changed
+against the one before it. With two, compares the two states.
+"""#
+            flag --operation help="Compare an operation with its recorded protective checkpoint" {
+                long_help #"""
+Compare an operation with its recorded protective checkpoint
+
+With no reference, use the newest operation, ignoring later saves. With one reference, use that operation. Fails if its before checkpoint is unavailable instead of comparing an unrelated preceding save.
+"""#
+            }
+            flag "-p --patch" help="Print the full patch instead of a per-file summary"
+            flag --path help="Restrict to one path (a file or a directory)" {
+                arg <PATH>
+            }
+            flag --exit-code help="Exit 1 when the two sides differ"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[A]" help="Numeric checkpoint ID, `latest`, `latest~N`, or `commit:<sha>`" required=#false
+            arg "[B]" help="Compare `A` with this checkpoint instead of its predecessor" required=#false
+        }
+        cmd ls help="List checkpoints, newest first" effect=read {
+            alias list
+            flag "-J --json" help="Output in JSON format"
+            flag "-n --limit" help="Show at most this many checkpoints (0 for all)" default="20" {
+                arg <LIMIT>
+            }
+            flag --path help="Only checkpoints where this path (or something under it) changed" {
+                arg <PATH>
+            }
+            flag --trigger help="Only checkpoints with this trigger (edit, save, bootstrap, …)" {
+                arg <TRIGGER>
+            }
+            flag --label help="Only checkpoints with this label" {
+                arg <LABEL>
+            }
+            flag --pending help="Only checkpoints recorded by operations that did not finish"
+            flag "-h --help" help="Print help" action=help builtin=#true
+        }
+        cmd show help="Show one checkpoint: what triggered it, what changed, and its journal" effect=read {
+            flag "-J --json" help="Output in JSON format"
+            flag --files help="List every file in the snapshot"
+            flag --path help="Resolve `latest~N` among the checkpoints where this path changed" {
+                arg <PATH>
+            }
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[REF]" help="Numeric checkpoint ID, `latest` (the default), `latest~N`, or `commit:<sha>`" required=#false
+        }
+    }
+    cmd include help="Capture paths matching a glob again" effect=write {
+        long_help #"""
+Capture paths matching a glob again
+
+Removes the glob from `[history] exclude` in the global config.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <GLOB> help="The glob as written by `exclude`"
+    }
+    cmd origin help="Connect or disconnect the setup repository" effect=destructive {
+        long_help #"""
+Connect or disconnect the setup repository
+
+`set <url>` connects the ordinary tracked-file repository to an origin.
+All committed history becomes eligible for synchronization, including
+intermediate commits made before connecting. Preview the sync mode and
+tracked paths before confirming. Encrypted-file policy is checked across
+every reachable commit; unrelated histories are never replaced.
+The connection is written to machine-local `[history.origin]` configuration;
+the mode is `settings.history.sync`.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot origin set https://github.com/you/setup.git\u{1b}[22m\n    $ \u{1b}[1mmise dot origin set git@github.com:you/setup.git --sync manual\u{1b}[22m\n    $ \u{1b}[1mmise dot origin\u{1b}[22m              # what is connected\n    $ \u{1b}[1mmise dot origin --remove\u{1b}[22m\n"
+        flag --remove help="Disconnect: remove `[history.origin]` (local checkpoints and fetched refs stay)" effect=destructive
+        flag "-h --help" help="Print help" action=help builtin=#true
+        cmd set help="Connect a setup repository" effect=write {
+            flag --branch help="The setup branch (default: the repository's own default branch)" {
+                long_help #"""
+The setup branch (default: the repository's own default branch)
+
+Reconnecting a repository this machine already follows keeps that connection's branch. A repository with no branches at all takes `main`, which the first publication creates.
+"""#
+                arg <BRANCH>
+            }
+            flag --sync help="How the repository is used: sync, fetch-only, or manual" {
+                long_help #"""
+How the repository is used: sync, fetch-only, or manual
+
+Prompts when omitted. With --yes, accepts the configured mode (default: sync), including automatic publication and incoming writes. Use --sync manual to keep automatic local history without automatic network activity.
+"""#
+                arg <MODE>
+            }
+            flag "-y --yes" help="Skip the confirmation prompt"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <URL> help="The repository url (any git url; a private repository is recommended)"
+        }
+    }
+    cmd paths help="Show what history tracks and under which policies" effect=read {
+        long_help #"""
+Show what history tracks and under which policies
+
+Every entry is listed with the file that declared it, its policies, and
+how many files it currently covers. Declarations that history could not
+honour are listed as invalid, omitted, or incomplete, so a failed
+enrollment is never mistaken for protection.
+"""#
+        flag "-J --json" help="Output in JSON format"
+        flag --preview help="Show what tracking this path would capture" {
+            arg <PATH>
+        }
+        flag --noisy help="List the paths the watcher found changing constantly"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
+    cmd pull help="Pull incoming shared changes into the live files" effect=destructive {
+        long_help #"""
+Pull incoming shared changes into the live files
+
+Writes the changes the last `mise dot sync` recorded as pending
+(`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
+what other machines shared),
+as one recoverable transaction: a protective checkpoint first, every
+file written and journaled one at a time, reload hooks only afterwards,
+and `mise dot undo` to reverse it. Configuration and the sources it
+references apply together; an incoming configuration file that does not
+parse, a path with unsaved local edits, staged git changes in your own
+checkout, or a genuine local edit pauses the complete application.
+Conflicts pause both publication and application for the whole setup;
+local history and fetching continue. Decisions are recorded per path
+with `--take-remote` or `--keep-local`; sharing resumes only after all
+conflicts are resolved and the plan has been recomputed.
+
+In `sync` mode the watcher pulls conflict-free setups on its
+own; this command writes what is pending right now and decides
+conflicts. When an incoming configuration declares more tracked files,
+their shared versions follow in the same run.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n"
+        flag "-n --dry-run" help="Show the plan without changing anything"
+        flag "-y --yes" help="Pull without prompting"
+        flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
+            arg <PATH>
+        }
+        flag --keep-local help="Resolve a conflict by keeping this machine's version (published next)" var=#true {
+            arg <PATH>
+        }
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[PATH]…" help="Partial pulls are unsupported; omit PATH and apply the complete setup" required=#false var=#true
+    }
+    cmd recover help="Recover an interrupted dotfile operation" effect=destructive {
+        long_help #"""
+Recover an interrupted dotfile operation
+
+Retries safe recovery without overwriting later edits. If recovery cannot
+determine what is safe, inspect the listed files first. `--keep-current`
+explicitly accepts their live contents and discards only the selected
+operation's temporary recovery copies; it does not erase Git history.
+"""#
+        flag --keep-current help="Accept live files instead of restoring temporary recovery copies"
+        flag "-y --yes" help="Confirm discarding the selected operation's temporary recovery copies"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[OPERATION]" help="Pending numeric ID or an unambiguous operation UUID prefix" required=#false
+    }
+    cmd rollback help="Return files to the version a checkpoint holds" effect=destructive {
+        long_help #"""
+Return files to the version a checkpoint holds
+
+Without `--to`, each path returns to its most recent saved version that
+differs from what is on disk; unrelated checkpoints never influence the
+choice. With `--to <ref>`, the named checkpoint is the source, and
+`--all` selects everything it covers. The current state is saved in a
+protective checkpoint first, so `mise dot undo` can reverse it.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot rollback ~/.config/hypr/bindings.lua\u{1b}[22m\n    $ \u{1b}[1mmise dot rollback ~/.zshrc --to 42\u{1b}[22m\n    $ \u{1b}[1mmise dot rollback --to latest~3 --all --dry-run\u{1b}[22m\n"
+        flag --to help="The checkpoint to roll back to: numeric ID, `latest`, `latest~N`, or `commit:<sha>`" {
+            arg <REF>
+        }
+        flag --all help="With --to: everything the checkpoint covers"
+        flag "-n --dry-run" help="Show the plan without changing anything"
+        flag "-y --yes" help="Apply without prompting"
+        flag --force help="Replace a path whose type changed (file, symlink, directory)"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[PATH]…" help="Paths to roll back (files or directories)" required=#false var=#true
+    }
+    cmd save help="Save a checkpoint of the tracked files now" effect=write {
+        long_help #"""
+Save a checkpoint of the tracked files now
+
+Fails when history cannot save or a requested path is not tracked, so a
+script or an agent gets a trustworthy result; a save that finds nothing
+changed succeeds as a no-op. `--best-effort` turns save errors into a
+warning for `set -e` update scripts.
+"""#
+        flag "-d --description" help="A description for the checkpoint" {
+            arg <TEXT>
+        }
+        flag --trigger help="What is saving: save (the default), agent, or update" default=save {
+            arg <TRIGGER>
+        }
+        flag --task help="The task an agent is working on" {
+            arg <ID>
+        }
+        flag --label help="A label to find the checkpoint by later" var=#true {
+            arg <LABEL>
+        }
+        flag --best-effort help="Warn instead of failing when history cannot save"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[PATH]…" help="Paths to save; every one must be tracked" required=#false var=#true
+    }
+    cmd status help="Show the status of dotfiles from `[dotfiles]`" effect=read {
         alias ls
         long_help #"""
 Show the status of dotfiles from `[dotfiles]`
@@ -2366,13 +2659,55 @@ state (missing, source missing, differs)
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         example #"""
-mise bootstrap dotfiles status
-mise bootstrap dotfiles status ~/.zshrc
-mise bootstrap dotfiles status --json
-mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
+mise dot status
+mise dot status ~/.zshrc
+mise dot status --json
+mise dot status --missing # exit 1 if anything is out of sync
 """#
     }
-    cmd unapply hide=#true help="Remove dotfiles applied from `[dotfiles]`" effect=destructive {
+    cmd sync help="Publish, fetch, and record what is pending now" effect=write {
+        long_help #"""
+Publish, fetch, and record what is pending now
+
+Fetches the origin branch and publishes the ordinary local commit history.
+A rejected push fetches again and reconciles without rewriting history.
+Records incoming changes to apply and conflicts to decide.
+Live files are never changed here: `mise dot pull` does
+that. In `fetch-only` mode nothing is published.
+
+The history watcher does this on its own in `sync` and `fetch-only` mode
+(`settings.history.sync`); this command is for right now.
+"""#
+        flag --fetch-only help="Fetch without publishing"
+        flag --best-effort help="Warn instead of failing when the origin is unreachable"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
+    cmd track help="Track a file or directory in place" effect=write {
+        long_help #"""
+Track a file or directory in place
+
+Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
+is, nothing is copied or linked, and history saves a checkpoint of it
+right away. With the history watcher service running, later edits are
+saved automatically; without it, `mise dot save` saves them.
+
+`--os` and `--profile` declare a variant: a separate shared stream for
+machines matching that platform or mise environment, so a Mac and a
+Linux box can share the same live path with different contents.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+        flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
+            arg <OS>
+        }
+        flag --profile help="Declare a variant for this mise environment" {
+            arg <PROFILE>
+        }
+        flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
+        flag "-y --yes" help="Accept without prompting"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
+    }
+    cmd unapply help="Remove dotfiles applied from `[dotfiles]`" effect=destructive {
         long_help #"""
 Remove dotfiles applied from `[dotfiles]`
 
@@ -2388,11 +2723,74 @@ Run this before deleting a declaration so mise can still identify its targets.
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only unapply these targets" required=#false var=#true
         example #"""
-mise bootstrap dotfiles unapply
-mise bootstrap dotfiles unapply ~/.zshrc
-mise bootstrap dotfiles unapply --dry-run
-mise bootstrap dotfiles unapply --force --yes
+mise dot unapply
+mise dot unapply ~/.zshrc
+mise dot unapply --dry-run
+mise dot unapply --force --yes
 """#
+    }
+    cmd undo help="Reverse the tracked-file changes from an operation" effect=destructive {
+        long_help #"""
+Reverse the tracked-file changes from an operation
+
+Restores exactly the paths that operation changed from the protective
+checkpoint it took, leaving everything else as it is now. Without a
+reference, the newest operation not yet undone is reversed.
+Bootstrap, captured commands, rollback, undo, and pull are supported.
+Package installations, service state, and untracked files are not reversed.
+"""#
+        flag "-n --dry-run" help="Show the plan without changing anything"
+        flag "-y --yes" help="Apply without prompting"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[REF]" help="The operation's checkpoint: numeric ID, `latest`, `latest~N`, or `commit:<sha>`" required=#false
+    }
+    cmd untrack help="Stop tracking a file or directory" effect=write {
+        long_help #"""
+Stop tracking a file or directory
+
+Removes the `[dotfiles]` track entry (or switches an inherited one off in
+config.local.toml) and stops future captures. The file itself and its
+existing checkpoints are left exactly as they are.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot untrack ~/.zshrc\u{1b}[22m\n"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <PATH>… help="Paths to stop tracking" var=#true
+    }
+    cmd watch help="Save tracked files as they change" effect=write {
+        long_help #"""
+Save tracked files as they change
+
+Runs in the foreground: installs filesystem watches for every autosaved
+tracked entry, saves a checkpoint once a changed file has been quiet for
+`history.watch.debounce` (a file that keeps changing never delays the
+others; `history.watch.max_interval` saves it regardless), and
+reconciles the whole set at startup, every `history.watch.reconcile`,
+and when the configuration changes. Manual-save entries are never
+watched.
+
+With a connected setup repository the watcher also synchronizes per
+`settings.history.sync`: in `sync` mode it publishes within
+`history.sync_interval` after a save, fetches every
+`history.fetch_interval`, and applies incoming changes once the complete setup is conflict-free;
+in `fetch-only` mode it only fetches; in `manual` mode it does nothing
+on the network. A failed sync backs off and is retried while saving
+continues. `--once` runs one reconcile and one such synchronization.
+
+The `history-watch` built-in service runs this for you:
+
+    [bootstrap.services.mise-history]
+    builtin = "history-watch"
+
+Exit codes: 0 when history is disabled or another watcher already runs;
+1 when git is unusable, the store cannot open, or no watch can be
+installed. A capture that fails is retried with backoff and never drops
+the pending changes; one that would overlap another history operation
+is deferred.
+"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot watch\u{1b}[22m\n    $ \u{1b}[1mmise dot watch --once\u{1b}[22m      # one reconcile, for a timer\n    $ \u{1b}[1mmise dot watch --json\u{1b}[22m\n"
+        flag --once help="Reconcile and synchronize once and exit (for timers and cron)"
+        flag "-J --json" help="One JSON object per line instead of log lines"
+        flag "-h --help" help="Print help" action=help builtin=#true
     }
 }
 cmd doctor help="Check mise installation for possible problems" effect=read {

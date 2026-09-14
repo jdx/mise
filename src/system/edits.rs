@@ -1,6 +1,6 @@
 //! `[dotfiles]` — declarative edits to files mise doesn't own,
-//! applied by `mise bootstrap dotfiles apply` or `mise bootstrap`, and
-//! removed by `mise bootstrap dotfiles unapply`.
+//! applied by `mise dot apply` or `mise bootstrap`, and
+//! removed by `mise dot unapply`.
 //!
 //! Where whole-file dotfile entries manage whole files, an edit owns one small piece
 //! of a file something else owns — the `mise activate` line in a shell rc,
@@ -501,7 +501,7 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
 ///
 /// Note: comparing a template block against existing markers requires
 /// rendering it, so this can run the template engine — including `exec()` —
-/// from `mise bootstrap dotfiles status`. That's the same trust model as `[env]`
+/// from `mise dot status`. That's the same trust model as `[env]`
 /// templates. Rendering only happens once every render-free outcome (symlink
 /// target, missing file, absent or corrupted markers) has been ruled out,
 /// and `--dry-run` skips template rendering entirely (see [`apply`]).

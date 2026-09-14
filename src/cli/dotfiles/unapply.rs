@@ -15,10 +15,10 @@ use crate::ui::prompt;
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap dotfiles unapply
-mise bootstrap dotfiles unapply ~/.zshrc
-mise bootstrap dotfiles unapply --dry-run
-mise bootstrap dotfiles unapply --force --yes"###
+        r###"mise dot unapply
+mise dot unapply ~/.zshrc
+mise dot unapply --dry-run
+mise dot unapply --force --yes"###
     )
 )]
 pub(crate) struct DotfilesUnapply {

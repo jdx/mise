@@ -4,7 +4,7 @@ use std::path::Path;
 
 /// Open `file` in the user's editor and wait for it to exit.
 ///
-/// The wait is part of the contract, not an accident of blocking IO: `mise dotfiles edit --apply`
+/// The wait is part of the contract, not an accident of blocking IO: `mise dot edit --apply`
 /// converges the target as soon as this returns, so an editor that detached would apply a file the
 /// user had not saved yet.
 pub(super) fn open_in_editor(file: &Path) -> Result<()> {

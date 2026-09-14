@@ -758,7 +758,7 @@ impl Doctor {
         };
         if let Some(reason) = unavailable {
             self.errors.push(format!(
-                "dotfiles: checkpoints cannot be saved ({reason}).\n     Edits are not being protected.\n     Inspect with: mise bootstrap dotfiles status"
+                "dotfiles: checkpoints cannot be saved ({reason}).\n     Edits are not being protected.\n     Inspect with: mise dot status"
             ));
         }
         if watcher == crate::cli::dotfiles::capture_health::Watcher::DeclaredNotRunning {
@@ -775,20 +775,20 @@ impl Doctor {
                 diagnosis.last_error = Some(error.clone());
                 if running {
                     self.errors.push(format!(
-                    "dotfiles: the watcher could not save a checkpoint ({error}; {} consecutive failure(s), last at {}).\n     Edits since then are not protected.\n     Inspect with: mise bootstrap dotfiles status",
+                    "dotfiles: the watcher could not save a checkpoint ({error}; {} consecutive failure(s), last at {}).\n     Edits since then are not protected.\n     Inspect with: mise dot status",
                     w.consecutive_failures,
                     w.last_error_at.as_deref().unwrap_or("unknown")
                 ));
                 } else {
                     self.warnings.push(format!(
-                        "dotfiles: the stopped watcher's last capture failed ({error}).\n     This is historical health, not a current capture attempt.\n     Check or save with: mise bootstrap dotfiles save"
+                        "dotfiles: the stopped watcher's last capture failed ({error}).\n     This is historical health, not a current capture attempt.\n     Check or save with: mise dot save"
                     ));
                 }
             }
             for degraded in w.degraded.iter().filter(|_| running) {
                 diagnosis.degraded.push(degraded.clone());
                 self.warnings.push(format!(
-                    "dotfiles: {degraded}.\n     Changes there are saved by reconciliation only.\n     Inspect with: mise bootstrap dotfiles status"
+                    "dotfiles: {degraded}.\n     Changes there are saved by reconciliation only.\n     Inspect with: mise dot status"
                 ));
             }
             diagnosis.throttled = health.throttled.clone();
@@ -836,7 +836,7 @@ impl Doctor {
                 if failing_for.is_some_and(|secs| secs > fetch_interval.saturating_mul(3)) {
                     diagnosis.sync_failing_for_secs = failing_for;
                     self.warnings.push(format!(
-                        "dotfiles: syncing with the setup repository keeps failing ({error}; {} attempt(s)).\n     Local checkpoints continue; nothing is published or pulled until it succeeds.\n     Inspect with: mise bootstrap dotfiles status",
+                        "dotfiles: syncing with the setup repository keeps failing ({error}; {} attempt(s)).\n     Local checkpoints continue; nothing is published or pulled until it succeeds.\n     Inspect with: mise dot status",
                         status.consecutive_failures
                     ));
                 }
@@ -872,7 +872,7 @@ impl Doctor {
         // compromise it
         for throttled in &diagnosis.throttled {
             lines.push(format!(
-                "{} changes constantly: saved every {} ({} unsaved change(s); last saved {}). Not a failure; `mise bootstrap dotfiles exclude` if it is a log, cache, or database",
+                "{} changes constantly: saved every {} ({} unsaved change(s); last saved {}). Not a failure; `mise dot exclude` if it is a log, cache, or database",
                 throttled.path,
                 crate::system::history::watch::runtime::humantime(std::time::Duration::from_secs(
                     throttled.interval_secs

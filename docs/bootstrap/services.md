@@ -26,7 +26,7 @@ Install the service and check it:
 
 ```sh
 mise bootstrap services apply
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 Once the watcher is running, keep editing your files normally. See
@@ -62,7 +62,7 @@ mise creates a service definition for your platform:
 - `command`: the command line to run. `~` and `~/` are expanded. Required
   unless `builtin` is set.
 - `builtin`: a service supplied by mise. `"history-watch"` runs
-  `mise bootstrap dotfiles watch` at low priority. It sets `scope = "user"`
+  `mise dot watch` at low priority. It sets `scope = "user"`
   and `restart = "on-failure"`. Use it without `command`.
 - `description`: shown by the service manager.
 - `restart`: `"on-failure"` (default), `"always"`, or `"never"`. Windows

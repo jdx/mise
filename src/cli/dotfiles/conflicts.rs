@@ -234,9 +234,9 @@ fn git_diff(
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles conflicts</bold>
-    $ <bold>mise bootstrap dotfiles conflicts ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles conflicts --difftool ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles conflicts --difftool --tool meld ~/.zshrc</bold>
+    $ <bold>mise dot conflicts</bold>
+    $ <bold>mise dot conflicts ~/.zshrc</bold>
+    $ <bold>mise dot conflicts --difftool ~/.zshrc</bold>
+    $ <bold>mise dot conflicts --difftool --tool meld ~/.zshrc</bold>
 "#
 );

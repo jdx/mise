@@ -132,7 +132,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     for path in &paths {
         if tracked.entry_for(path).is_none() {
             bail!(
-                "{} is not tracked; `mise bootstrap dotfiles paths` lists what is",
+                "{} is not tracked; `mise dot paths` lists what is",
                 display_path(path)
             );
         }
