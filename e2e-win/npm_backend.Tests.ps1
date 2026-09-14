@@ -1,6 +1,29 @@
 Describe 'npm_backend' {
     It 'installs npm:prettier 3.6.2 with aube' {
-        mise x node@24.4.1 aube@1.1.0 npm:prettier@3.6.2 -- prettier --version | Should -be "3.6.2"
+        # The workflow setup installs the repository's configured prettier version into the
+        # shared mise data directory. Keep this version-pinning test independent from that
+        # install so aube cannot reuse its package links for a different requested version.
+        $previousDataDir = [Environment]::GetEnvironmentVariable('MISE_DATA_DIR', 'Process')
+        $previousCacheDir = [Environment]::GetEnvironmentVariable('MISE_CACHE_DIR', 'Process')
+        $env:MISE_DATA_DIR = Join-Path $TestDrive 'data'
+        $env:MISE_CACHE_DIR = Join-Path $TestDrive 'cache'
+        try {
+            mise x node@24.4.1 aube@1.1.0 npm:prettier@3.6.2 -- prettier --version | Should -be "3.6.2"
+        }
+        finally {
+            if ($null -eq $previousDataDir) {
+                Remove-Item Env:\MISE_DATA_DIR -ErrorAction Ignore
+            }
+            else {
+                $env:MISE_DATA_DIR = $previousDataDir
+            }
+            if ($null -eq $previousCacheDir) {
+                Remove-Item Env:\MISE_CACHE_DIR -ErrorAction Ignore
+            }
+            else {
+                $env:MISE_CACHE_DIR = $previousCacheDir
+            }
+        }
     }
     It 'installs npm:cowsay 1.6.0 with bun' {
         $env:MISE_NPM_PACKAGE_MANAGER = "bun"
