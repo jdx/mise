@@ -5,7 +5,7 @@
   "branch": "codex/parallel-windows-unit",
   "checkpoints_count": 6,
   "files_touched": [
-    "e2e-win/npm_backend.Tests.ps1"
+    ".github/workflows/test-impl.yml"
   ],
   "sessions": [
     {
@@ -24,10 +24,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 140257,
+    "input_tokens": 116804,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 10382336,
-    "output_tokens": 21706,
-    "api_call_count": 107
+    "cache_read_tokens": 8474752,
+    "output_tokens": 19429,
+    "api_call_count": 65
   }
 }
