@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2GDFNZCTJYR90DWC5D2H3QF",
+  "session_id": "01a0a0b1-b599-79f0-ba6a-42a265fa86fb",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T16:54:56.129558Z",
+  "branch": "codex/npm-global-lockfile-scope",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/backend/test_npm_aube"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "fcb917ddfd34",
+  "checkpoint_transcript_start": 759,
+  "transcript_lines_at_start": 759,
+  "compact_transcript_start": 105,
+  "token_usage": {
+    "input_tokens": 28069,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2332928,
+    "output_tokens": 5644,
+    "api_call_count": 22
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-14T16:54:55.981654Z",
+    "agent_lines": 6,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 6,
+    "total_lines_changed": 11,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
