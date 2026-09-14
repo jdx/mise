@@ -2087,6 +2087,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
 
+    /// Install-time dependencies for a specific tool request.
+    ///
+    /// Most backends have fixed dependencies and inherit the default implementation.
+    /// Backends whose installer is selected by tool options can override this so the
+    /// dependency graph matches the installer that will actually run.
+    fn get_dependencies_for(&self, _opts: &ToolVersionOptions) -> Result<Vec<&str>> {
+        self.get_dependencies()
+    }
+
     /// Plugin-declared system prerequisites (build tools, libraries, ...) that
     /// must be present on the machine before this tool can install. Distinct
     /// from [`Backend::get_dependencies`], which returns other *mise tools*.
@@ -2140,13 +2149,20 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
     fn get_all_dependencies(&self, optional: bool) -> Result<IndexSet<BackendArg>> {
+        self.get_all_dependencies_for(&self.ba().opts(), optional)
+    }
+    fn get_all_dependencies_for(
+        &self,
+        opts: &ToolVersionOptions,
+        optional: bool,
+    ) -> Result<IndexSet<BackendArg>> {
         let all_fulls = self.ba().all_fulls();
         if all_fulls.is_empty() {
             // this can happen on windows where we won't be able to install this os/arch so
             // the fact there might be dependencies is meaningless
             return Ok(Default::default());
         }
-        let mut deps: Vec<&str> = self.get_dependencies()?;
+        let mut deps: Vec<&str> = self.get_dependencies_for(opts)?;
         if optional {
             deps.extend(self.get_optional_dependencies()?);
         }

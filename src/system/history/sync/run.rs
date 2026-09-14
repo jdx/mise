@@ -234,6 +234,15 @@ pub(crate) fn sync(
     request: &SyncRequest,
 ) -> Result<SyncOutcome> {
     let _sync_lock = lock(store)?;
+    sync_locked(store, tracked, request)
+}
+
+/// Runs one synchronization while the caller holds the sync lock.
+pub(crate) fn sync_locked(
+    store: &Store,
+    tracked: &TrackedSet,
+    request: &SyncRequest,
+) -> Result<SyncOutcome> {
     let origin = match &request.origin {
         Some(origin) => origin.clone(),
         None => origin()?,

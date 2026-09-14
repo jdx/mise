@@ -615,10 +615,27 @@ repo. Repair the history, then push the replacement branch with Git's
 `--force-with-lease`; mise does not force-push. On every other machine, move
 its existing history store to a secure backup and run
 `mise bootstrap --adopt <url>` to initialize a fresh store from the reviewed
-replacement. Ordinary `mise dot sync` does not replace existing history. Do
-not restart any watcher until every machine uses the replacement, or an old
-store can bring the plaintext back. The Git host may still retain old objects
-or backups.
+replacement. A fresh adoption compares any existing declared files with the
+incoming setup before creating local ancestry; identical files are accepted,
+while differences still wait for a decision.
+
+If the machine still has unrelated local history that you intentionally want
+to discard, replace it in one operation:
+
+```sh
+mise bootstrap --adopt <url> --replace-history --yes
+```
+
+This takes the history-operation and synchronization locks, so a running
+watcher cannot create another checkpoint during replacement. The remote must
+be a valid mise setup repository. Existing files that differ still stop the
+operation, and a failure restores the previous local branch and synchronization
+state. The option replaces history only for this adoption; there is no
+persistent setting that lets the watcher discard divergent history.
+
+Ordinary `mise dot sync` does not replace existing history. Do not restart any
+watcher until every machine uses the replacement, or an old store can bring the
+plaintext back. The Git host may still retain old objects or backups.
 
 Restart the declared watcher once the repair is complete:
 

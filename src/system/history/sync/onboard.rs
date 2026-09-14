@@ -33,6 +33,7 @@ pub(crate) struct Onboarding {
     pub branch: String,
     pub yes: bool,
     pub dry_run: bool,
+    pub replace_history: bool,
 }
 
 pub(crate) struct Outcome {
@@ -44,6 +45,12 @@ pub(crate) struct Outcome {
     pub durable_access: bool,
     /// Any unresolved setup path prevents running bootstrap declarations.
     pub setup_held: bool,
+}
+
+#[derive(Debug)]
+struct HistoryReplacement {
+    local: String,
+    remote: String,
 }
 
 /// Snapshot only the state needed for planning while its writers are locked.
@@ -136,7 +143,12 @@ fn preview_config_path(
 /// `mise bootstrap --adopt <url>`: `Some` when the repository is
 /// history-managed and this machine was set up from it (or would be, on a
 /// dry run); `None` leaves the ordinary clone to the caller.
-pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Option<Outcome>> {
+pub(crate) async fn from_git(
+    url: &str,
+    yes: bool,
+    dry_run: bool,
+    replace_history: bool,
+) -> Result<Option<Outcome>> {
     // Detect marked repositories without creating persistent tracking state
     // for users of the released, ordinary --adopt workflow.
     let probe_dir = tempfile::tempdir()?;
@@ -166,6 +178,7 @@ pub(crate) async fn from_git(url: &str, yes: bool, dry_run: bool) -> Result<Opti
             branch,
             yes,
             dry_run,
+            replace_history,
         },
     )
     .await?;
@@ -261,6 +274,19 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     // Preview in an isolated store, never in the live sync state.
     let (_preview_dir, planning_store) = preview_store(store)?;
     let tracked = TrackedSet::effective().await?;
+    let preview_replacement = if onboarding.replace_history {
+        probe(&planning_store, &onboarding.fetch_from, &onboarding.branch)?;
+        detach_local_history(&planning_store)?
+    } else {
+        None
+    };
+    if let Some(replacement) = &preview_replacement {
+        miseprintln!(
+            "Would replace local history {} with origin {}.",
+            short_oid(&replacement.local),
+            short_oid(&replacement.remote)
+        );
+    }
     let mut request = SyncRequest::new(true);
     request.origin = Some(OriginTomlConfig::plain(
         onboarding.fetch_from.clone(),
@@ -291,10 +317,73 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     // Recompute after confirmation against current local files and remote
     // refs; never apply a stale preview or restore over a watcher's new state.
     refuse_other_connection(store, &onboarding.origin, &onboarding.branch)?;
-    seed_confirmed_fetch(store, &planning_store)?;
-    request.capture = true;
-    request.dry_run = false;
-    run::sync(store, &tracked, &request)?;
+    let applied = if onboarding.replace_history {
+        let operation =
+            crate::system::history::scope::OperationScope::begin_replacement_apply().await?;
+        let _sync = run::lock(store)?;
+        let previous_status = run::read_status(state_dir)?;
+        let repo = store
+            .repo()
+            .ok_or_else(|| eyre::eyre!("setup requires git"))?;
+        let previous_upstream = repo.ref_oid(UPSTREAM_REF)?;
+        let previous_sync_state = super::state::load(repo)?;
+        seed_confirmed_fetch_locked(store, &planning_store)?;
+        let replacement = detach_local_history(store)?;
+        if let Some(replacement) = &replacement {
+            miseprintln!(
+                "Replacing local history {} with origin {}.",
+                short_oid(&replacement.local),
+                short_oid(&replacement.remote)
+            );
+        }
+        request.capture = false;
+        request.dry_run = false;
+        let result = async {
+            run::sync_locked(store, &tracked, &request)?;
+            let applied = apply::apply_locked_with_scope(
+                store,
+                &tracked,
+                &ApplyRequest::automatic(),
+                Some(operation),
+            )
+            .await?;
+            if applied.held > 0 {
+                bail!(
+                    "cannot replace local history while {} path(s) need a decision; move the conflicting files aside and retry",
+                    applied.held
+                );
+            }
+            Ok(applied)
+        }
+        .await;
+        match result {
+            Ok(applied) => applied,
+            Err(error) => {
+                restore_after_failed_replacement(
+                    store,
+                    replacement.as_ref(),
+                    previous_upstream.as_deref(),
+                    &previous_status,
+                    &previous_sync_state,
+                )?;
+                return Err(error);
+            }
+        }
+    } else {
+        seed_confirmed_fetch(store, &planning_store)?;
+        // A fresh adoption has no local ancestry yet. Its existing live files
+        // are checked by apply's complete preflight; capturing them here would
+        // manufacture an unrelated root before that comparison can happen.
+        let repo = store
+            .repo()
+            .ok_or_else(|| eyre::eyre!("setup requires git"))?;
+        request.capture = repo
+            .ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
+            .is_some();
+        request.dry_run = false;
+        run::sync(store, &tracked, &request)?;
+        apply::apply(store, &tracked, &ApplyRequest::automatic()).await?
+    };
 
     // the connection: declared machine-locally, recorded for the watcher
     run::update_status(state_dir, run::STATUS_LOCK_WAIT, |status| {
@@ -305,7 +394,6 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     super::origin::write_config(&onboarding.origin, &onboarding.branch, None)?;
     crate::system::history::notify::warn_if_release_signing_unavailable();
 
-    let applied = apply::apply(store, &tracked, &ApplyRequest::automatic()).await?;
     // a conflict (a file that exists here and differs) is not pending: it
     // waits for a decision, like a path held with its group
     let undecided = run::read_status(store.state_dir())?
@@ -349,6 +437,10 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
 /// discovers newer commits and recomputes against current local state.
 fn seed_confirmed_fetch(store: &Store, preview: &Store) -> Result<()> {
     let _sync = run::lock(store)?;
+    seed_confirmed_fetch_locked(store, preview)
+}
+
+fn seed_confirmed_fetch_locked(store: &Store, preview: &Store) -> Result<()> {
     let source = preview
         .repo()
         .ok_or_else(|| eyre::eyre!("preview requires git"))?;
@@ -363,6 +455,54 @@ fn seed_confirmed_fetch(store: &Store, preview: &Store) -> Result<()> {
         bail!("could not reuse the fetched setup preview");
     }
     Ok(())
+}
+
+fn detach_local_history(store: &Store) -> Result<Option<HistoryReplacement>> {
+    use crate::system::history::shadow::HistoryRepo;
+
+    let repo = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("setup requires git"))?;
+    let Some(local) = repo.ref_oid(HistoryRepo::HISTORY_REF)? else {
+        return Ok(None);
+    };
+    let remote = repo
+        .ref_oid(UPSTREAM_REF)?
+        .ok_or_else(|| eyre::eyre!("setup repository has no fetched branch"))?;
+    repo.delete_history_head(&local)?;
+    Ok(Some(HistoryReplacement { local, remote }))
+}
+
+fn restore_after_failed_replacement(
+    store: &Store,
+    replacement: Option<&HistoryReplacement>,
+    previous_upstream: Option<&str>,
+    previous_status: &run::SyncStatus,
+    previous_sync_state: &super::state::SyncState,
+) -> Result<()> {
+    use crate::system::history::shadow::HistoryRepo;
+
+    let repo = store
+        .repo()
+        .ok_or_else(|| eyre::eyre!("setup requires git"))?;
+    if let Some(replacement) = replacement {
+        let current = repo.ref_oid(HistoryRepo::HISTORY_REF)?;
+        repo.update_history_head(&replacement.local, current.as_deref())?;
+    }
+    let current_upstream = repo.ref_oid(UPSTREAM_REF)?;
+    match previous_upstream {
+        Some(previous) if current_upstream.as_deref() != Some(previous) => {
+            repo.update_ref(UPSTREAM_REF, previous, current_upstream.as_deref())?;
+        }
+        None if current_upstream.is_some() => repo.delete_ref(UPSTREAM_REF)?,
+        _ => {}
+    }
+    run::write_status(store.state_dir(), previous_status)?;
+    super::state::save(repo, previous_sync_state, "history replacement rolled back")
+}
+
+fn short_oid(oid: &str) -> &str {
+    &oid[..oid.len().min(12)]
 }
 
 /// Whether this host reaches the repository on its own: with the
