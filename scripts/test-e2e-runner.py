@@ -88,6 +88,9 @@ exit "$status"
         self.assertNotIn("executed test_pass", result.stdout)
         self.assertIn("E2E failures (1)::test_fail", result.stderr)
         self.assertIn("| test_flaky | attempt 2 | status 0 |", summary)
+        self.assertEqual(summary.count("| test_flaky |"), 1)
+        self.assertEqual(summary.count("| test_fail |"), 1)
+        self.assertIn("| test_fail | attempt 3 | status 1 |", summary)
 
     def test_local_default_does_not_retry(self):
         result, counts, _ = self.run_runner()

@@ -170,6 +170,10 @@ start_test() {
       unset GITHUB_STEP_SUMMARY
     fi
     for ((attempt = 1; attempt <= E2E_MAX_ATTEMPTS; attempt++)); do
+      # The step summary reports the final attempt; logs retain every attempt.
+      if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+        : >"$GITHUB_STEP_SUMMARY"
+      fi
       test_status=0
       mise_wait_for_gh_rate_limit "$MISE_BIN" || test_status=$?
       if [[ $test_status == 0 ]]; then

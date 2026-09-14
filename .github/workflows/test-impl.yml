@@ -260,6 +260,8 @@ jobs:
           - name: Pull e2e Docker image
             run: docker pull ghcr.io/jdx/mise:e2e
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - name: Test e2e runner
+        run: python3 scripts/test-e2e-runner.py
       # Tests run in ephemeral containers and do not need host mise tools.
       # Four branches on a large runner; each handles two token-isolated
       # tranches sequentially, capped at eight containers total.
