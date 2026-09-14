@@ -6,7 +6,8 @@
   "checkpoints_count": 2,
   "files_touched": [
     "src/system/packages/brew/fetch.rs",
-    "src/system/packages/brew/mod.rs"
+    "src/system/packages/brew/mod.rs",
+    "src/system/packages/brew/pour.rs"
   ],
   "sessions": [
     {
@@ -25,10 +26,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 222450,
+    "input_tokens": 2218903,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 8454784,
-    "output_tokens": 11825,
-    "api_call_count": 66
+    "cache_read_tokens": 89620864,
+    "output_tokens": 162694,
+    "api_call_count": 674
   }
 }
