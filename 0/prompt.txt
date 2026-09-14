@@ -1,5 +1,1 @@
-ok make a pr, i don't think we should offer a rewrite command, post a reply
-
----
-
 address pr feedback and failing checsk until it settles
