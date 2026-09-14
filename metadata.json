@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2G4NZ6GCT2HTVEDAFXYEGW7",
   "strategy": "manual-commit",
   "branch": "codex/pypi-semantic-uv-options",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "src/backend/mod.rs",
     "src/backend/pipx.rs",
@@ -16,13 +16,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 192725,
+    "input_tokens": 236719,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 13319424,
-    "output_tokens": 14411,
-    "api_call_count": 126
+    "cache_read_tokens": 17523840,
+    "output_tokens": 16304,
+    "api_call_count": 149
   }
 }
