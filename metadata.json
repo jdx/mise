@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2EPKVC8HDSVM5KN9TC816GX",
   "strategy": "manual-commit",
   "branch": "codex/brew-pipelined-pour",
-  "checkpoints_count": 3,
+  "checkpoints_count": 2,
   "files_touched": [
     "src/system/packages/brew/mod.rs"
   ],
@@ -24,10 +24,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 406577,
+    "input_tokens": 241110,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 6229248,
-    "output_tokens": 17024,
-    "api_call_count": 61
+    "cache_read_tokens": 5730816,
+    "output_tokens": 8181,
+    "api_call_count": 34
   }
 }
