@@ -326,6 +326,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
             .repo()
             .ok_or_else(|| eyre::eyre!("setup requires git"))?;
         let previous_upstream = repo.ref_oid(UPSTREAM_REF)?;
+        let previous_sync_state = super::state::load(repo)?;
         seed_confirmed_fetch_locked(store, &planning_store)?;
         let replacement = detach_local_history(store)?;
         if let Some(replacement) = &replacement {
@@ -363,6 +364,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
                     replacement.as_ref(),
                     previous_upstream.as_deref(),
                     &previous_status,
+                    &previous_sync_state,
                 )?;
                 return Err(error);
             }
@@ -467,9 +469,6 @@ fn detach_local_history(store: &Store) -> Result<Option<HistoryReplacement>> {
     let remote = repo
         .ref_oid(UPSTREAM_REF)?
         .ok_or_else(|| eyre::eyre!("setup repository has no fetched branch"))?;
-    if local == remote {
-        return Ok(None);
-    }
     repo.delete_history_head(&local)?;
     Ok(Some(HistoryReplacement { local, remote }))
 }
@@ -479,6 +478,7 @@ fn restore_after_failed_replacement(
     replacement: Option<&HistoryReplacement>,
     previous_upstream: Option<&str>,
     previous_status: &run::SyncStatus,
+    previous_sync_state: &super::state::SyncState,
 ) -> Result<()> {
     use crate::system::history::shadow::HistoryRepo;
 
@@ -497,7 +497,8 @@ fn restore_after_failed_replacement(
         None if current_upstream.is_some() => repo.delete_ref(UPSTREAM_REF)?,
         _ => {}
     }
-    run::write_status(store.state_dir(), previous_status)
+    run::write_status(store.state_dir(), previous_status)?;
+    super::state::save(repo, previous_sync_state, "history replacement rolled back")
 }
 
 fn short_oid(oid: &str) -> &str {

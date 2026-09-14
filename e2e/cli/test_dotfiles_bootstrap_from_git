@@ -42,6 +42,17 @@ EOF2
   chmod +x "$script"
 }
 
+# ---- machine Q already has the exact origin commit as its local head.
+# Replacement still succeeds instead of validating a retained head against a
+# fresh-adoption operation.
+Q="$(dirname "$HOME")/equal-history-home"
+wrapper "$Q" "$PWD/equal-history"
+q="$PWD/equal-history"
+mkdir -p "$Q/.local/state/mise/history"
+git clone -q --bare "$origin" "$Q/.local/state/mise/history/repo.git"
+assert "git --git-dir=$Q/.local/state/mise/history/repo.git rev-parse refs/heads/main" "$(git --git-dir="$origin" rev-parse main)"
+assert_succeed "$q bootstrap --adopt file://$origin --replace-history --yes --only dotfiles"
+
 # ---- machine C: a fresh HOME, one command
 preview_home="$(dirname "$HOME")/conflict-preview-home"
 wrapper "$preview_home" "$PWD/conflict-preview"
@@ -122,9 +133,11 @@ mkdir -p "$S/.local/state/mise/history" "$S/.config/mise"
 git clone -q --bare "$origin" "$S/.local/state/mise/history/repo.git"
 conflict_old="$(echo 'unrelated conflicting checkpoint' | git --git-dir="$S/.local/state/mise/history/repo.git" commit-tree "$tree")"
 git --git-dir="$S/.local/state/mise/history/repo.git" update-ref refs/heads/main "$conflict_old"
+printf '{"sentinel":{}}\n' >"$S/.local/state/mise/history/repo.git/mise-sync-state.json"
 printf '[env]\nLOCAL_ONLY = "1"\n' >"$S/.config/mise/config.toml"
 assert_fail "$s bootstrap --adopt file://$origin --replace-history --yes --only dotfiles 2>&1" "cannot replace local history"
 assert "git --git-dir=$S/.local/state/mise/history/repo.git rev-parse refs/heads/main" "$conflict_old"
+assert "jq -c . $S/.local/state/mise/history/repo.git/mise-sync-state.json" '{"sentinel":{}}'
 assert "cat $S/.config/mise/config.toml" $'[env]\nLOCAL_ONLY = "1"'
 
 # C's edits reach A through the usual sync
