@@ -269,6 +269,10 @@ Caskroom and links it under `<prefix>/share/man/man1/`. Sections `.1` through
 `.9`, optionally followed by `.gz`, are supported; an optional `target` must
 be a filename with a supported section. Manpages participate in mise's normal
 receipt, rollback, upgrade cleanup, and uninstall ownership checks.
+`manpage "$APPDIR/Example.app/Contents/Resources/man/example.1"` reads from
+its declared app's installed target after app installation and postflight,
+including renamed, adopted, and self-updating apps. The source must remain
+inside that bundle; unrelated host apps and escaping symlinks are rejected.
 
 mise also supports the staged archive declaration used by AeroSpace:
 
@@ -290,11 +294,13 @@ retain distinct names. Overlaps with other declared artifact destinations are
 also rejected. The check repeats after lifecycle and payload staging, before
 copying manpages, to catch changed directory aliases. Actual target paths are
 not created by this check, and an unwritable probe location fails explicitly.
-Metadata extraction and dry-run do not perform these probes.
+Metadata extraction and dry-run do not perform these probes. Manpage staging
+also refuses any existing file, directory, or symlink at its Caskroom destination,
+preserving output created by postflight rather than overwriting it.
 
 The directory must be literal; only filename `*` and `?` wildcards are supported. Recursive globs, multiple
-patterns, glob options, `Dir.glob`, and transformations/filtering of glob entries
-are unsupported and fail explicitly rather than silently omitting manpages.
+patterns, glob options, `Dir.glob`, repeated iteration of one glob, and
+transformations/filtering of glob entries are unsupported and fail explicitly rather than silently omitting manpages.
 
 ### Ownership and installed state
 

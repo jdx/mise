@@ -856,6 +856,52 @@ end"#
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn rejects_repeated_and_reentrant_deferred_manpage_iteration() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let mut accepted = Vec::new();
+        for declaration in [
+            "entries.each { |man| manpage man }; entries.each { |man| manpage man }",
+            "entries.each { |man| entries.each { |inner| manpage inner }; manpage man }",
+            "begin; entries.each { raise 'aborted' }; rescue; end; entries.each { |man| manpage man }",
+            "begin; entries.each { raise 'aborted' }; rescue; end",
+        ] {
+            let source = format!(
+                r##"cask "example" do
+  version "1.0"
+  url "https://example.invalid/example.zip"
+  entries = Dir["#{{staged_path}}/docs/*"]
+  {declaration}
+end"##
+            );
+            let mut runner = CmdLineRunner::new(&ruby)
+                .arg("--disable-gems")
+                .arg("-e")
+                .arg(CASK_METADATA_SHIM_RB)
+                .stdin_string(source)
+                .env("MISE_BREW_TOKEN", "example")
+                .env("MISE_BREW_SOURCE_PATH", "Casks/example.rb")
+                .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+                .env("MISE_BREW_TAP_COMMIT", "fixture")
+                .env("MISE_BREW_MACOS_VERSION", "26")
+                .env("MISE_BREW_OS", "macos")
+                .env("MISE_BREW_ARCH", "aarch64")
+                .with_sandbox(metadata_sandbox()?);
+            runner.apply_sandbox().await?;
+            if runner.read().await.is_ok() {
+                accepted.push(declaration);
+            }
+        }
+        assert!(
+            accepted.is_empty(),
+            "accepted unsupported iterations: {accepted:?}"
+        );
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn metadata_evaluation_is_fully_sandboxed() {
         let config = metadata_sandbox().unwrap();

@@ -800,7 +800,7 @@ impl BrewCaskManager {
         // Hooks/payload staging may have changed directory aliases since the
         // initial check. Revalidate before any manpage can replace staged data.
         validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages)?;
-        stage_manpages(&stage, &tmp_caskroom, &appdir, &manpages)?;
+        stage_manpages(&stage, &tmp_caskroom, &appdir, &artifacts.apps, &manpages)?;
         if !manpages.is_empty() {
             record_cask_action(&mut journal, "manpages")?;
         }
@@ -2882,13 +2882,28 @@ fn find_generated_completion_executable(
 }
 
 fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<PathBuf>> {
+    let mut matches = appdir_artifact_candidates(source, apps)?
+        .into_iter()
+        .map(|(_, path)| path)
+        .filter(|path| path.is_file())
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches.dedup();
+    single_match(&matches, "APPDIR artifact", source)
+}
+
+/// Declared app target and its source path, without requiring installation yet.
+fn appdir_artifact_candidates(
+    source: &str,
+    apps: &[AppArtifact],
+) -> Result<Vec<(PathBuf, PathBuf)>> {
     let Some(relative) = source.strip_prefix("$APPDIR/") else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let relative = Path::new(relative);
     reject_appdir_escape(relative, "APPDIR artifact", source)?;
     let Some(Component::Normal(bundle)) = relative.components().next() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let suffix = relative.components().skip(1).collect::<PathBuf>();
     let mut matches = Vec::new();
@@ -2901,13 +2916,11 @@ fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<P
             continue;
         }
         let path = target.join(&suffix);
-        if path.is_file() {
-            matches.push(path);
-        }
+        matches.push((target, path));
     }
     matches.sort();
     matches.dedup();
-    single_match(&matches, "APPDIR artifact", source)
+    Ok(matches)
 }
 
 /// `kind` and `name` build the ambiguity error, e.g. "brew-cask: APPDIR

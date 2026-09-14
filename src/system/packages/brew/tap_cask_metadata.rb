@@ -63,6 +63,7 @@ end
 class DeferredManpageGlob < BasicObject
   def initialize(pattern)
     @pattern = pattern
+    @iterated = false
     @declared = false
   end
 
@@ -70,6 +71,9 @@ class DeferredManpageGlob < BasicObject
 
   def each
     ::Kernel.raise "deferred staged_path glob requires each { |man| manpage man }" unless ::Kernel.block_given?
+    ::Kernel.raise "deferred staged_path glob must be iterated exactly once" if @iterated
+    # Claim iteration before yielding, but only declare after successful consumption.
+    @iterated = true
     entry = ::DeferredManpage.new(@pattern)
     yield entry
     ::Kernel.raise "deferred staged_path glob entry must be passed to manpage" unless entry.consumed?

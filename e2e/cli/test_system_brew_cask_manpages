@@ -20,6 +20,7 @@ with zipfile.ZipFile(archive, "w") as zipped:
     zipped.writestr("docs/example.1", "offline manual\n")
     zipped.writestr("docs/config.5", "offline configuration\n")
     zipped.writestr("other/Example.1", "must not replace the manual\n")
+    zipped.writestr("nested/Example.app/Contents/Resources/man/app-example.1", "bundled manual\n")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -38,6 +39,17 @@ class Handler(BaseHTTPRequestHandler):
                     {"postflight_steps": [{"steps": [{
                         "type": "run", "command": {"path": "/usr/bin/false"}
                     }]}]},
+                ]
+            if token == "manpage-postflight":
+                artifacts += [{"postflight_steps": [{"steps": [{
+                    "type": "copy",
+                    "source": {"base": "homebrew_prefix", "path": "postflight-source.1"},
+                    "target": {"base": "staged_path", "path": "share/man/man1/example.1"},
+                }]}]}]
+            if token in ("manpage-app", "manpage-app-plan"):
+                artifacts = [
+                    {"app": ["nested/Example.app", {"target": "Renamed.app"}]},
+                    {"manpage": "$APPDIR/Example.app/Contents/Resources/man/app-example.1"},
                 ]
             if token in ("manpage-collision", "manpage-cross-collision"):
                 other = {"manpage": ["other/Example.1"]}
@@ -89,6 +101,17 @@ assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX'"
 assert_fail "test -e '$MISE_BREW_CASK_OPT_APPDIR'"
 assert_fail "grep /archive.zip '$REQUESTS_FILE'"
 
+# APPDIR planning likewise does not inspect/download/install the declared app.
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"brew-cask:manpage-app-plan" = "latest"
+EOF
+mise bootstrap packages apply --dry-run >app-plan
+assert_contains "cat app-plan" "APPDIR/Example.app/Contents/Resources/man/app-example.1"
+assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX'"
+assert_fail "test -e '$MISE_BREW_CASK_OPT_APPDIR'"
+assert_fail "grep /archive.zip '$REQUESTS_FILE'"
+
 # Confirm native volume behavior before the filesystem-dependent collision checks.
 printf probe >case-probe
 if [[ -e CASE-PROBE ]]; then
@@ -125,3 +148,32 @@ EOF
 mise bootstrap packages prune --manager brew-cask --yes
 assert_fail "test -L '$man1'"
 assert_fail "test -L '$man5'"
+
+# A structured postflight copy must survive a later manpage staging conflict.
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"brew-cask:manpage-postflight" = "latest"
+EOF
+printf 'postflight output' >"$MISE_SYSTEM_BREW_PREFIX/postflight-source.1"
+assert_fail_contains "mise bootstrap packages apply --yes 2>&1" "already exists"
+assert "cat '$MISE_SYSTEM_BREW_PREFIX'/Caskroom/manpage-postflight/.mise-tmp-*/share/man/man1/example.1" "postflight output"
+assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/share/man/man1/example.1'"
+assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/Caskroom/manpage-postflight/1.0'"
+
+# Install a synthetic text-only bundle and read its page after app installation.
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"brew-cask:manpage-app" = "latest"
+EOF
+mise bootstrap packages apply --yes
+app_man="$MISE_SYSTEM_BREW_PREFIX/share/man/man1/app-example.1"
+assert "cat '$app_man'" "bundled manual"
+assert_succeed "test -L '$app_man'"
+assert_fail "test -x '$app_man'"
+assert_contains "cat '$MISE_SYSTEM_BREW_PREFIX/Caskroom/manpage-app/1.0/.mise-cask.toml'" "share/man/man1/app-example.1"
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+EOF
+mise bootstrap packages prune --manager brew-cask --yes
+assert_fail "test -L '$app_man'"
+assert_fail "test -e '$MISE_BREW_CASK_OPT_APPDIR/Renamed.app'"

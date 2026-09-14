@@ -59,7 +59,8 @@ pub(super) fn parse_manpage_artifact(value: &Value) -> Result<Option<ManpageArti
 
 fn validate_manpage_source(source: &str, glob: bool) -> Result<()> {
     let parts = source.split('/').collect::<Vec<_>>();
-    if source.contains(['\0', '\\', '[', ']', '{', '}'])
+    if (glob && source.starts_with("$APPDIR/"))
+        || source.contains(['\0', '\\', '[', ']', '{', '}'])
         || parts.iter().any(|part| matches!(*part, "" | "." | ".."))
         || source.contains("**")
         || parts
@@ -104,8 +105,8 @@ impl ManpageArtifact {
     }
 }
 
-/// Resolve before lifecycle or app installation, without suffix-search fallbacks.
-/// Both the directory and every selected file must remain inside the stage.
+/// Resolve staged sources before lifecycle or app installation, without suffix
+/// searches. APPDIR declarations are mapped now, but read only after app install.
 pub(super) fn resolve_manpages(
     stage: &Path,
     cask: &Cask,
@@ -117,6 +118,16 @@ pub(super) fn resolve_manpages(
     let root = stage.canonicalize()?;
     let mut resolved = Vec::new();
     for artifact in &artifacts.manpages {
+        if artifact.source.starts_with("$APPDIR/") {
+            declared_manpage_app_source(&artifact.source, &artifacts.apps)?;
+            resolved.push(BinaryArtifact {
+                source: artifact.source.clone(),
+                target: Some(manpage_target(artifact.target.as_deref().unwrap_or(
+                    file_name_str(Path::new(&artifact.source), "manpage source")?,
+                ))?),
+            });
+            continue;
+        }
         let source = Path::new(&artifact.source);
         let sources = if artifact.glob {
             let directory = root.join(source.parent().unwrap_or(Path::new("")));
@@ -167,18 +178,19 @@ pub(super) fn resolve_manpages(
     Ok(resolved)
 }
 
-fn ensure_manpage_contained(path: &Path, stage: &Path) -> Result<()> {
-    if !path.canonicalize()?.starts_with(stage.canonicalize()?) {
+fn ensure_manpage_contained(path: &Path, root: &Path) -> Result<()> {
+    if !path.canonicalize()?.starts_with(root.canonicalize()?) {
         bail!(
-            "brew-cask: manpage source '{}' escapes staged_path",
-            path.display()
+            "brew-cask: manpage source '{}' escapes source root '{}'",
+            path.display(),
+            root.display()
         );
     }
     Ok(())
 }
 
-fn ensure_manpage_file(path: &Path, stage: &Path) -> Result<()> {
-    ensure_manpage_contained(path, stage)?;
+fn ensure_manpage_file(path: &Path, root: &Path) -> Result<()> {
+    ensure_manpage_contained(path, root)?;
     if !path.is_file() {
         bail!(
             "brew-cask: manpage source '{}' is not a file",
@@ -188,31 +200,83 @@ fn ensure_manpage_file(path: &Path, stage: &Path) -> Result<()> {
     Ok(())
 }
 
+fn declared_manpage_app_source(source: &str, apps: &[AppArtifact]) -> Result<(PathBuf, PathBuf)> {
+    let candidates = appdir_artifact_candidates(source, apps)?;
+    match candidates.as_slice() {
+        [candidate] => Ok(candidate.clone()),
+        [] => bail!("brew-cask: manpage source '{source}' must refer to a declared app"),
+        _ => bail!("brew-cask: manpage source '{source}' is ambiguous"),
+    }
+}
+
 /// Manpages share binary link ownership and receipts, but must not pass through
 /// stage_binary: that makes executables and performs a suffix-based source search.
 pub(super) fn stage_manpages(
     stage: &Path,
     caskroom: &Path,
     appdir: &Path,
+    apps: &[AppArtifact],
     manpages: &[BinaryArtifact],
 ) -> Result<()> {
+    // Check the entire batch before copying: later lifecycle-created conflicts
+    // must not leave earlier pages installed or destroy postflight output.
+    let mut copies = Vec::new();
     for manpage in manpages {
-        let source = stage.join(&manpage.source);
-        ensure_manpage_file(&source, stage)?;
+        let source = if manpage.source.starts_with("$APPDIR/") {
+            let (bundle, source) = declared_manpage_app_source(&manpage.source, apps)?;
+            // Apply the app installer's parent trust contract without creating
+            // missing directories, including for metadata-only/adopted apps.
+            #[cfg(unix)]
+            let _parent = open_trusted_directory(
+                Path::new("/"),
+                bundle.parent().unwrap().strip_prefix("/")?,
+                true,
+                false,
+            )?;
+            // The installed/adopted bundle is owned by the app artifact. Do not
+            // accept a replacement bundle symlink or a resource escaping it.
+            if !bundle.symlink_metadata()?.is_dir() {
+                bail!("brew-cask: manpage app source is not a real bundle directory");
+            }
+            ensure_manpage_file(&source, &bundle)?;
+            source
+        } else {
+            let source = stage.join(&manpage.source);
+            ensure_manpage_file(&source, stage)?;
+            source
+        };
         let target = caskroom_binary_path(caskroom, appdir, manpage)?;
+        match target.symlink_metadata() {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err).wrap_err("brew-cask: cannot inspect manpage staging target");
+            }
+            Ok(_) => bail!(
+                "brew-cask: manpage staging target '{}' already exists",
+                target.display()
+            ),
+        }
+        manpage_target_ancestor(&target)?;
         if !path_starts_with_resolved_root(&target, caskroom) {
             bail!("brew-cask: manpage staging target escapes Caskroom");
         }
+        copies.push((source, target));
+    }
+    for (source, target) in copies {
         if let Some(parent) = target.parent() {
             file::create_dir_all(parent)?;
         }
-        // Never follow a payload symlink at the destination when copying.
-        file::remove_all(&target)?;
-        file::copy(&source, &target)?;
+        // create_new also refuses a destination symlink introduced since the
+        // precheck. Never remove or truncate another artifact's staged output.
+        let mut output = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)?;
+        std::io::copy(&mut std::fs::File::open(&source)?, &mut output)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644))?;
+            output.set_permissions(std::fs::Permissions::from_mode(0o644))?;
         }
     }
     Ok(())

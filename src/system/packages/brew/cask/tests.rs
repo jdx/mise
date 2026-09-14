@@ -8062,6 +8062,7 @@ fn manpage_artifacts_validate_before_staging() -> Result<()> {
         "docs/\0*",
         "docs//x",
         "./docs/*",
+        "$APPDIR/Example.app/docs/*",
     ] {
         let value = serde_json::json!({"manpage_glob": source});
         assert!(
@@ -8117,7 +8118,7 @@ fn manpage_staging_links_receipts_rollback_and_obsolete_removal() -> Result<()> 
     ensure_manpage_targets_replaceable(&cask, &manpages)?;
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
     let appdir = target_app_dir()?;
-    stage_manpages(&stage, &caskroom, &appdir, &manpages)?;
+    stage_manpages(&stage, &caskroom, &appdir, &artifacts.apps, &manpages)?;
     let targets = manpages
         .iter()
         .map(|m| m.target_path(&appdir))
@@ -8215,6 +8216,7 @@ fn manpage_resolution_rejects_escapes_collisions_and_missing_exact_sources() -> 
             &stage,
             &tmp.path().join("caskroom"),
             &target_app_dir()?,
+            &[],
             &manpages
         )
         .is_err()
@@ -8264,7 +8266,13 @@ async fn pinned_aerospace_manpages_plan_and_stage_offline() -> Result<()> {
     let resolved = resolve_manpages(&stage, &cask, &artifacts)?;
     assert_eq!(resolved.len(), 2);
     let caskroom = tmp.path().join("caskroom");
-    stage_manpages(&stage, &caskroom, &target_app_dir()?, &resolved)?;
+    stage_manpages(
+        &stage,
+        &caskroom,
+        &target_app_dir()?,
+        &artifacts.apps,
+        &resolved,
+    )?;
     assert_eq!(
         file::read_to_string(caskroom.join("share/man/man1/aerospace.1"))?,
         "offline manual"
@@ -8459,5 +8467,254 @@ fn manpage_revalidation_rejects_changed_and_dangling_staging_aliases() -> Result
         file::read_to_string(caskroom.join("other/example.1"))?,
         "staged binary"
     );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn manpage_staging_preserves_postflight_output() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    for kind in ["file", "directory", "symlink", "dangling symlink"] {
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(stage.join("docs"))?;
+        file::write(stage.join("docs/first.1"), "first manual")?;
+        file::write(stage.join("docs/example.1"), "manual")?;
+        let mut step = serde_json::json!({
+            "type": "copy", "recursive": true,
+            "source": {"base": "staged_path", "path": "generated.1"},
+            "target": {"base": "staged_path", "path": "share/man/man1/example.1"}
+        });
+        if kind.contains("symlink") {
+            step["type"] = "symlink".into();
+            step.as_object_mut().unwrap().remove("recursive");
+        }
+        let mut cask = test_cask("manpage-postflight", "1.0");
+        cask.artifacts = vec![
+            serde_json::json!({"manpage": "docs/first.1"}),
+            serde_json::json!({"manpage": "docs/example.1"}),
+            serde_json::json!({"postflight_steps": [{"steps": [step]}]}),
+        ];
+        let artifacts = cask_artifacts(&cask)?;
+        let manpages = resolve_manpages(&stage, &cask, &artifacts)?;
+        let caskroom = caskroom_tmp_dir(&cask);
+        file::create_dir_all(&caskroom)?;
+        let generated = caskroom.join("generated.1");
+        if kind == "directory" {
+            file::create_dir_all(&generated)?;
+            file::write(generated.join("keep"), "postflight output")?;
+        } else if kind != "dangling symlink" {
+            file::write(&generated, "postflight output")?;
+        }
+        execute_flight_steps(
+            &cask,
+            &artifacts.postflight_steps,
+            &caskroom,
+            &target_app_dir()?,
+            "postflight_steps",
+        )?;
+        validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages)?;
+        let target = caskroom.join("share/man/man1/example.1");
+        let link = std::fs::read_link(&target).ok();
+        let result = stage_manpages(
+            &stage,
+            &caskroom,
+            &target_app_dir()?,
+            &artifacts.apps,
+            &manpages,
+        );
+        assert!(result.is_err(), "accepted {kind}");
+        assert!(result.unwrap_err().to_string().contains("already exists"));
+        assert_eq!(std::fs::read_link(&target).ok(), link);
+        if kind == "directory" {
+            assert_eq!(
+                file::read_to_string(target.join("keep"))?,
+                "postflight output"
+            );
+        } else if kind != "dangling symlink" {
+            assert_eq!(file::read_to_string(&target)?, "postflight output");
+        }
+        assert!(!caskroom.join("share/man/man1/first.1").exists());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn manpage_appdir_source_resolves_after_app_install() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    // Regular, self-updating, and adopted metadata-only apps all supply pages
+    // from the actual installed bundle, not an absent or stale Caskroom copy.
+    for (auto_updates, adopt) in [(false, false), (true, false), (true, true), (false, true)] {
+        let tmp = trusted_tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let relative = "Contents/Resources/man/example.1";
+        file::create_dir_all(stage.join("Example.app").join(relative).parent().unwrap())?;
+        file::write(stage.join("Example.app").join(relative), "bundled manual")?;
+        let mut cask = test_cask("manpage-appdir", "1.0");
+        cask.auto_updates = auto_updates;
+        cask.artifacts = vec![
+            serde_json::json!({"app": ["Example.app", {"target": "$HOMEBREW_PREFIX/Applications/Renamed.app"}]}),
+            serde_json::json!({"manpage": "$APPDIR/example.app/Contents/Resources/man/example.1"}),
+            serde_json::json!({"postflight_steps": [{"steps": [{
+                "type": "copy", "overwrite": true,
+                "source": {"base": "appdir", "path": "Renamed.app/Contents/Resources/man/postflight.1"},
+                "target": {"base": "appdir", "path": "Renamed.app/Contents/Resources/man/example.1"}
+            }]}]}),
+        ];
+        let mut artifacts = cask_artifacts(&cask)?;
+        let manpages = resolve_manpages(&stage, &cask, &artifacts)?;
+        let caskroom = caskroom_tmp_dir(&cask);
+        let bundle = app_target_path(artifacts.apps[0].target_name()?)?;
+        if adopt {
+            file::create_dir_all(bundle.join(relative).parent().unwrap())?;
+            file::write(bundle.join(relative), "bundled manual")?;
+        }
+        assert_eq!(
+            install_app(
+                &stage,
+                &caskroom,
+                &artifacts.apps[0],
+                !auto_updates,
+                adopt,
+                !auto_updates,
+                false
+            )?,
+            AppInstall::Installed {
+                metadata_only: auto_updates || adopt
+            }
+        );
+        assert_eq!(caskroom.join("Renamed.app").exists(), !adopt);
+        if !adopt {
+            assert!(
+                caskroom
+                    .join("Renamed.app")
+                    .symlink_metadata()?
+                    .file_type()
+                    .is_symlink()
+            );
+        }
+        file::write(
+            bundle.join("Contents/Resources/man/postflight.1"),
+            "installed postflight manual",
+        )?;
+        let appdir = cask_appdir(&artifacts.apps)?;
+        execute_flight_steps(
+            &cask,
+            &artifacts.postflight_steps,
+            &caskroom,
+            &appdir,
+            "postflight_steps",
+        )?;
+        stage_manpages(&stage, &caskroom, &appdir, &artifacts.apps, &manpages)?;
+        assert_eq!(
+            file::read_to_string(caskroom.join("share/man/man1/example.1"))?,
+            "installed postflight manual"
+        );
+        let target = manpages[0].target_path(&appdir)?;
+        let mut transaction = ArtifactLinkTransaction::begin(vec![target.clone()])?;
+        link_binary(&caskroom, &appdir, &manpages[0])?;
+        assert_eq!(
+            file::read_to_string(&target)?,
+            "installed postflight manual"
+        );
+        artifacts.binaries.extend(manpages);
+        let metadata_only_apps = if auto_updates || adopt {
+            vec![bundle]
+        } else {
+            Vec::new()
+        };
+        write_receipt_with_flight_targets(
+            &caskroom,
+            &cask,
+            &artifacts,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &metadata_only_apps,
+        )?;
+        assert_eq!(
+            read_receipt(&caskroom)?.unwrap().binaries,
+            vec![target.clone()]
+        );
+        transaction.rollback()?;
+        assert!(target.symlink_metadata().is_err());
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn manpage_appdir_sources_reject_unowned_and_escaping_paths() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(&stage)?;
+    let mut cask = test_cask("manpage-appdir", "1.0");
+    let relative = "Contents/Resources/man/example.1";
+    cask.artifacts = vec![
+        serde_json::json!({"app": ["Example.app", {"target": "$HOMEBREW_PREFIX/Applications/Example.app"}]}),
+        serde_json::json!({"manpage": format!("$APPDIR/Example.app/{relative}")}),
+    ];
+    let artifacts = cask_artifacts(&cask)?;
+    let manpages = resolve_manpages(&stage, &cask, &artifacts)?;
+    let caskroom = caskroom_tmp_dir(&cask);
+    let bundle = app_target_path(artifacts.apps[0].target_name()?)?;
+    let appdir = bundle.parent().unwrap();
+    file::create_dir_all(bundle.join(relative).parent().unwrap())?;
+    let outside = tmp.path().join("outside.1");
+    file::write(&outside, "unowned")?;
+    file::make_symlink(&outside, &bundle.join(relative))?;
+    assert!(stage_manpages(&stage, &caskroom, appdir, &artifacts.apps, &manpages).is_err());
+    file::remove_file(bundle.join(relative))?;
+    file::remove_all(bundle.join("Contents"))?;
+    let other = tmp.path().join("Other.app");
+    file::create_dir_all(other.join(relative).parent().unwrap())?;
+    file::write(other.join(relative), "other app")?;
+    file::make_symlink(&other.join("Contents"), &bundle.join("Contents"))?;
+    assert!(stage_manpages(&stage, &caskroom, appdir, &artifacts.apps, &manpages).is_err());
+    file::remove_all(&bundle)?;
+    file::make_symlink(&other, &bundle)?;
+    assert!(stage_manpages(&stage, &caskroom, appdir, &artifacts.apps, &manpages).is_err());
+    file::remove_file(&bundle)?;
+    file::remove_all(appdir)?;
+    let elsewhere = tmp.path().join("elsewhere");
+    file::create_dir_all(&elsewhere)?;
+    file::rename(&other, elsewhere.join("Example.app"))?;
+    file::make_symlink(&elsewhere, appdir)?;
+    assert!(stage_manpages(&stage, &caskroom, appdir, &artifacts.apps, &manpages).is_err());
+    assert!(!caskroom.exists());
+    cask.artifacts.push(serde_json::json!({"app": ["Example.app", {"target": "$HOMEBREW_PREFIX/Applications/Another.app"}]}));
+    assert!(
+        resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?)
+            .unwrap_err()
+            .to_string()
+            .contains("ambiguous")
+    );
+    cask.artifacts.pop();
+    cask.artifacts.remove(0);
+    assert!(
+        resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?)
+            .unwrap_err()
+            .to_string()
+            .contains("declared app")
+    );
+    // A relative symlink to another resource inside the declared bundle is safe.
+    file::remove_file(appdir)?;
+    file::create_dir_all(bundle.join(relative).parent().unwrap())?;
+    file::write(
+        bundle.join("Contents/Resources/man/real.1"),
+        "contained manual",
+    )?;
+    file::make_symlink(Path::new("real.1"), &bundle.join(relative))?;
+    stage_manpages(&stage, &caskroom, appdir, &artifacts.apps, &manpages)?;
+    assert_eq!(
+        file::read_to_string(caskroom.join("share/man/man1/example.1"))?,
+        "contained manual"
+    );
+    assert_eq!(file::read_to_string(&outside)?, "unowned");
     Ok(())
 }
