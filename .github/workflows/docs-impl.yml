@@ -15,7 +15,7 @@ on:
         required: false
 
 concurrency:
-  group: docs-${{ github.event_name == 'release' && 'release' || github.head_ref || github.ref }}
+  group: docs-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'deploy' || 'validation' }}-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'release' || github.head_ref || github.ref }}
   cancel-in-progress: true
 
 env:
