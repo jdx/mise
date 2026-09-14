@@ -800,13 +800,15 @@ impl BrewCaskManager {
         // Hooks/payload staging may have changed directory aliases since the
         // initial check. Revalidate before any manpage can replace staged data.
         validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages)?;
-        stage_manpages(&stage, &tmp_caskroom, &appdir, &artifacts.apps, &manpages)?;
+        stage_manpages(&stage, &tmp_caskroom, &appdir, &manpages)?;
         if !manpages.is_empty() {
             record_cask_action(&mut journal, "manpages")?;
         }
         // Only reuse binary linking/receipts after executable staging is done.
         ensure_manpage_targets_replaceable(&cask, &manpages)?;
-        artifacts.binaries.extend(manpages);
+        artifacts
+            .binaries
+            .extend(manpages.into_iter().map(|manpage| manpage.binary));
         let current_binaries = artifacts.binary_targets()?;
         let current_fonts = artifacts.font_target_paths()?;
         let mut current_targets = current_binaries.clone();

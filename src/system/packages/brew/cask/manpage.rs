@@ -7,6 +7,20 @@ pub(super) struct ManpageArtifact {
     glob: bool,
 }
 
+#[derive(Debug)]
+pub(super) struct ResolvedManpage {
+    source: ManpageSource,
+    pub(super) binary: BinaryArtifact,
+}
+
+#[derive(Debug)]
+enum ManpageSource {
+    Staged(PathBuf),
+    // Keep the effective app target selected before hooks. Resolving APPDIR
+    // again after postflight could silently switch to an unrelated app.
+    App { bundle: PathBuf, path: PathBuf },
+}
+
 pub(super) fn parse_manpage_artifact(value: &Value) -> Result<Option<ManpageArtifact>> {
     let Some(object) = value.as_object() else {
         return Ok(None);
@@ -111,7 +125,7 @@ pub(super) fn resolve_manpages(
     stage: &Path,
     cask: &Cask,
     artifacts: &CaskArtifacts,
-) -> Result<Vec<BinaryArtifact>> {
+) -> Result<Vec<ResolvedManpage>> {
     if artifacts.manpages.is_empty() {
         return Ok(Vec::new());
     }
@@ -119,12 +133,15 @@ pub(super) fn resolve_manpages(
     let mut resolved = Vec::new();
     for artifact in &artifacts.manpages {
         if artifact.source.starts_with("$APPDIR/") {
-            declared_manpage_app_source(&artifact.source, &artifacts.apps)?;
-            resolved.push(BinaryArtifact {
-                source: artifact.source.clone(),
-                target: Some(manpage_target(artifact.target.as_deref().unwrap_or(
-                    file_name_str(Path::new(&artifact.source), "manpage source")?,
-                ))?),
+            let (bundle, path) = declared_manpage_app_source(&artifact.source, &artifacts.apps)?;
+            resolved.push(ResolvedManpage {
+                source: ManpageSource::App { bundle, path },
+                binary: BinaryArtifact {
+                    source: artifact.source.clone(),
+                    target: Some(manpage_target(artifact.target.as_deref().unwrap_or(
+                        file_name_str(Path::new(&artifact.source), "manpage source")?,
+                    ))?),
+                },
             });
             continue;
         }
@@ -171,7 +188,10 @@ pub(super) fn resolve_manpages(
                 source: source.strip_prefix(&root)?.to_string_lossy().into_owned(),
                 target: Some(target),
             };
-            resolved.push(binary);
+            resolved.push(ResolvedManpage {
+                source: ManpageSource::Staged(source),
+                binary,
+            });
         }
     }
     validate_manpage_target_uniqueness(stage, cask, artifacts, &resolved)?;
@@ -215,37 +235,37 @@ pub(super) fn stage_manpages(
     stage: &Path,
     caskroom: &Path,
     appdir: &Path,
-    apps: &[AppArtifact],
-    manpages: &[BinaryArtifact],
+    manpages: &[ResolvedManpage],
 ) -> Result<()> {
     // Check the entire batch before copying: later lifecycle-created conflicts
     // must not leave earlier pages installed or destroy postflight output.
     let mut copies = Vec::new();
     for manpage in manpages {
-        let source = if manpage.source.starts_with("$APPDIR/") {
-            let (bundle, source) = declared_manpage_app_source(&manpage.source, apps)?;
-            // Apply the app installer's parent trust contract without creating
-            // missing directories, including for metadata-only/adopted apps.
-            #[cfg(unix)]
-            let _parent = open_trusted_directory(
-                Path::new("/"),
-                bundle.parent().unwrap().strip_prefix("/")?,
-                true,
-                false,
-            )?;
-            // The installed/adopted bundle is owned by the app artifact. Do not
-            // accept a replacement bundle symlink or a resource escaping it.
-            if !bundle.symlink_metadata()?.is_dir() {
-                bail!("brew-cask: manpage app source is not a real bundle directory");
+        let source = match &manpage.source {
+            ManpageSource::App { bundle, path } => {
+                // Validate the original effective parent, without resolving the
+                // configured APPDIR again or creating missing directories.
+                #[cfg(unix)]
+                let _parent = open_trusted_directory(
+                    Path::new("/"),
+                    bundle.parent().unwrap().strip_prefix("/")?,
+                    true,
+                    false,
+                )?;
+                // The installed/adopted bundle is owned by the app artifact. Do
+                // not accept a replacement bundle symlink or escaping resource.
+                if !bundle.symlink_metadata()?.is_dir() {
+                    bail!("brew-cask: manpage app source is not a real bundle directory");
+                }
+                ensure_manpage_file(path, bundle)?;
+                path
             }
-            ensure_manpage_file(&source, &bundle)?;
-            source
-        } else {
-            let source = stage.join(&manpage.source);
-            ensure_manpage_file(&source, stage)?;
-            source
+            ManpageSource::Staged(path) => {
+                ensure_manpage_file(path, stage)?;
+                path
+            }
         };
-        let target = caskroom_binary_path(caskroom, appdir, manpage)?;
+        let target = caskroom_binary_path(caskroom, appdir, &manpage.binary)?;
         match target.symlink_metadata() {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
             Err(err) => {
@@ -272,7 +292,7 @@ pub(super) fn stage_manpages(
             .write(true)
             .create_new(true)
             .open(&target)?;
-        std::io::copy(&mut std::fs::File::open(&source)?, &mut output)?;
+        std::io::copy(&mut std::fs::File::open(source)?, &mut output)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -284,10 +304,10 @@ pub(super) fn stage_manpages(
 
 pub(super) fn ensure_manpage_targets_replaceable(
     cask: &Cask,
-    manpages: &[BinaryArtifact],
+    manpages: &[ResolvedManpage],
 ) -> Result<()> {
     for manpage in manpages {
-        let target = manpage.target_path(&target_app_dir()?)?;
+        let target = manpage.binary.target_path(&target_app_dir()?)?;
         if !path_starts_with_resolved_root(target.parent().unwrap(), &prefix::prefix()) {
             bail!("brew-cask: manpage target parent escapes Homebrew prefix");
         }
@@ -317,7 +337,7 @@ pub(super) fn validate_manpage_target_uniqueness(
     stage: &Path,
     cask: &Cask,
     artifacts: &CaskArtifacts,
-    manpages: &[BinaryArtifact],
+    manpages: &[ResolvedManpage],
 ) -> Result<()> {
     if manpages.is_empty() {
         return Ok(());
@@ -359,9 +379,9 @@ pub(super) fn validate_manpage_target_uniqueness(
     }
     for manpage in manpages {
         for (target, previous) in [
-            (manpage.target_path(&appdir)?, &mut targets),
+            (manpage.binary.target_path(&appdir)?, &mut targets),
             (
-                caskroom_binary_path(&caskroom, &appdir, manpage)?,
+                caskroom_binary_path(&caskroom, &appdir, &manpage.binary)?,
                 &mut staged,
             ),
         ] {
