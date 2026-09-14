@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2FTNDNPA32MQXC5ZS82F64Y",
+  "strategy": "manual-commit",
+  "branch": "codex/pypi-lock-fallback",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/backends/pypi.md",
+    "e2e/backend/test_pypi_lock",
+    "e2e/fixtures/pypi/server.py",
+    "src/backend/pipx.rs",
+    "src/backend/pipx/lock.rs",
+    "src/cli/lock.rs",
+    "src/lockfile/generate.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 271905,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10498944,
+    "output_tokens": 30792,
+    "api_call_count": 84
+  }
+}

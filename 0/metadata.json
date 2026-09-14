@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2FTNDNPA32MQXC5ZS82F64Y",
+  "session_id": "01a09f92-69ab-7041-bcee-10642fb1dde3",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T11:26:01.162422Z",
+  "branch": "codex/pypi-lock-fallback",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/dev-tools/backends/pypi.md",
+    "e2e/backend/test_pypi_lock",
+    "e2e/fixtures/pypi/server.py",
+    "src/backend/pipx.rs",
+    "src/backend/pipx/lock.rs",
+    "src/cli/lock.rs",
+    "src/lockfile/generate.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "2bc4ea59ed09",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 271905,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 10498944,
+    "output_tokens": 30792,
+    "api_call_count": 84
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-14T11:26:01.035522Z",
+    "agent_lines": 148,
+    "agent_removed": 24,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 148,
+    "total_lines_changed": 172,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
