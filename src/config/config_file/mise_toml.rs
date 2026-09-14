@@ -4841,7 +4841,7 @@ run = "cargo build"
     #[tokio::test]
     async fn test_table_syntax_preserves_registry_defaults() {
         // Test for #8039: table syntax like `ansible = { version = "latest" }`
-        // should preserve registry defaults (e.g. uvx=false, pipx_args=--include-deps)
+        // should preserve registry defaults (e.g. expose=["ansible-core"]).
         let _config = Config::get().await.unwrap();
         let cf = parse(formatdoc! {r#"
             [tools]
@@ -4857,20 +4857,15 @@ run = "cargo build"
             .expect("ansible should be in tool request set");
         let opts = ansible_requests[0].options();
         assert_eq!(
-            opts.get_string("uvx").as_deref(),
-            Some("false"),
-            "registry default uvx=false should be preserved with table syntax"
-        );
-        assert_eq!(
-            opts.get("pipx_args"),
-            Some("--include-deps"),
-            "registry default pipx_args=--include-deps should be preserved with table syntax"
+            opts.opts.get("expose").and_then(toml::Value::as_array),
+            Some(&vec![toml::Value::String("ansible-core".to_string())]),
+            "registry default expose should be preserved with table syntax"
         );
 
         // Also verify that user-provided options override registry defaults
         let cf2 = parse(formatdoc! {r#"
             [tools]
-            ansible = {{ version = "latest", uvx = "true" }}
+            ansible = {{ version = "latest", expose = ["custom-core"] }}
         "#});
         let trs2 = cf2.to_tool_request_set().unwrap();
         let ansible2 = trs2
@@ -4881,14 +4876,27 @@ run = "cargo build"
             .expect("ansible should be in tool request set");
         let opts2 = ansible2[0].options();
         assert_eq!(
-            opts2.get_string("uvx").as_deref(),
-            Some("true"),
-            "user-provided uvx=true should override registry default uvx=false"
+            opts2.opts.get("expose").and_then(toml::Value::as_array),
+            Some(&vec![toml::Value::String("custom-core".to_string())]),
+            "user-provided expose should override the registry default"
         );
+
+        let cf3 = parse(formatdoc! {r#"
+            [tools]
+            ansible = {{ version = "latest", uvx = false, expose = [] }}
+        "#});
+        let trs3 = cf3.to_tool_request_set().unwrap();
+        let ansible3 = trs3
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "ansible")
+            .map(|(_, reqs)| reqs)
+            .expect("ansible should be in tool request set");
+        let opts3 = ansible3[0].options();
         assert_eq!(
-            opts2.get("pipx_args"),
-            Some("--include-deps"),
-            "non-overridden registry default pipx_args should still be preserved"
+            opts3.opts.get("expose").and_then(toml::Value::as_array),
+            Some(&vec![]),
+            "an empty user-provided expose should clear the registry default"
         );
     }
 
