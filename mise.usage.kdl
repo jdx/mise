@@ -1054,6 +1054,7 @@ The history watcher does this on its own in `sync` and `fetch-only` mode
 (`settings.history.sync`); this command is for right now.
 """#
             flag --fetch-only help="Fetch without publishing"
+            flag --allow-plaintext-history help="Allow publishing older unencrypted versions of encrypted files"
             flag --best-effort help="Warn instead of failing when the origin is unreachable"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
@@ -2679,6 +2680,7 @@ The history watcher does this on its own in `sync` and `fetch-only` mode
 (`settings.history.sync`); this command is for right now.
 """#
         flag --fetch-only help="Fetch without publishing"
+        flag --allow-plaintext-history help="Allow publishing older unencrypted versions of encrypted files"
         flag --best-effort help="Warn instead of failing when the origin is unreachable"
         flag "-h --help" help="Print help" action=help builtin=#true
     }

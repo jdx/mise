@@ -523,61 +523,77 @@ Adding encryption later leaves earlier plaintext versions in Git. Before a
 push, mise checks all reachable commits, including intermediate saves and
 merge parents, for violations of encrypted-path settings. An earlier
 plaintext version blocks the push even if the newest version is encrypted.
-You must explicitly rewrite or replace that history. This checks encryption
-settings; it does not scan arbitrary unencrypted files for secrets.
+To push, remove that history or explicitly allow it as shown below. This check
+uses encryption settings; it does not scan other files for secrets.
 
-### Repair plaintext history
+### Allow plaintext history
 
-If a file was saved before you marked it for encryption, rotate any exposed
-credential first. A private repository limits who can retrieve the old commit,
-but does not make that credential secret again.
+To publish the older unencrypted versions anyway, bypass the check for one sync:
 
-Stop the history watcher while repairing the repository so it cannot save a
-new checkpoint concurrently. Make a secure backup before continuing; that
-backup contains the plaintext you are removing. History is a bare repository,
-so move its branch with `git update-ref` rather than `git reset --hard`.
+```sh
+mise dot sync --allow-plaintext-history
+```
 
-If the plaintext commit has not reached the origin and you can discard it and
-every checkpoint after it, find the last safe commit with `mise dot history`
-or `git log`, then run:
+To allow this for all syncs, including the watcher, add to your global config:
+
+```toml
+[settings.history]
+allow_plaintext_history = true
+```
+
+Both options publish the old plaintext to the origin. New saves still use the
+file's encryption policy. The setting defaults to `false` and is ignored in
+project configs.
+
+### Remove plaintext from history
+
+If you saved credentials before enabling encryption, rotate them first.
+Encryption does not protect copies in older commits, even in a private repo.
+
+Stop the history watcher and back up the repository. Keep the backup secure:
+it contains the plaintext too.
+
+If the plaintext was never pushed, you can drop the affected checkpoints and
+save the current file again with encryption enabled. This drops **all
+checkpoints after the last safe commit**, including changes to other files.
+Find that commit with `mise dot history` or `git log`.
+
+Replace `safe` and the credentials path below with your commit and tracked
+file. Make sure encryption is configured for that path before saving.
+History uses a bare Git repository, so use `git update-ref` to move the branch:
 
 ```sh
 repo="${MISE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mise}/history/repo.git"
 old="$(git --git-dir="$repo" rev-parse refs/heads/main)"
 safe="<commit before plaintext was saved>"
 
-git --git-dir="$repo" merge-base --is-ancestor "$safe" "$old"
-git --git-dir="$repo" update-ref -m "remove plaintext history" \
-  refs/heads/main "$safe" "$old"
-mise dot save ~/.config/app/credentials \
-  --description "save encrypted credentials"
-mise dot sync
+if git --git-dir="$repo" merge-base --is-ancestor "$safe" "$old"; then
+  git --git-dir="$repo" update-ref -m "remove plaintext history" \
+    refs/heads/main "$safe" "$old" &&
+    mise dot save ~/.config/app/credentials \
+      --description "save encrypted credentials" &&
+    mise dot sync
+fi
 ```
 
-Replace the example path with the tracked file or directory. The
-`merge-base` check verifies that the selected commit belongs to the current
-history. Supplying `old` to `update-ref` prevents the repair from overwriting a
-checkpoint created after you inspected the branch. The next explicit save
-rebuilds mise's derived checkpoint index and records the current live file
-using its encryption policy. The removed commits remain in the secure backup;
-keep it only as long as recovery requires.
+The ancestry check rejects commits outside the current history. Passing `old`
+to `update-ref` makes it fail if another process has moved the branch. The save
+records the live file with encryption and rebuilds mise's checkpoint index.
+Delete the backup when you no longer need it for recovery.
 
-This procedure intentionally discards the checkpoint history after `safe`.
-If you need to preserve unrelated commits from that period, rewrite a separate
-secure copy with a history-filtering tool such as
-[git-filter-repo](https://github.com/newren/git-filter-repo) instead, verify
-that every reachable version of the protected path is absent or encrypted,
-and replace the local `refs/heads/main` only after reviewing the result. Do not
-run an in-place filter against mise's active store.
+To keep later checkpoints, use a tool such as
+[git-filter-repo](https://github.com/newren/git-filter-repo) on a separate,
+secure copy. Check that no reachable commit contains plaintext for the
+protected path before replacing the local `refs/heads/main`. Do not filter
+mise's active repository in place.
 
-If the plaintext commit was already published, rewriting only the local branch
-is insufficient. Pause every machine that uses the repository, replace the
-origin branch with the reviewed history using a direct Git force-with-lease
-push, then make the other machines adopt that exact replacement. mise never
-force-pushes an origin. An old clone can reintroduce the removed commit, and
-the origin host may retain unreachable objects or backups according to its own
-retention policy. Restart the history watcher after the local and origin
-histories have been verified.
+If the plaintext was already pushed, pause history on every machine using the
+repo. Repair the history, then push the replacement branch with Git's
+`--force-with-lease`; mise does not force-push. Update every machine to use the
+replacement history before restarting watchers, or an old clone can bring the
+plaintext back. The Git host may still retain old objects or backups.
+
+Restart the watcher once the repair is complete.
 
 ## Checking watcher health {#health}
 

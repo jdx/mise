@@ -33,7 +33,7 @@ Manage dotfiles from `[dotfiles]`
 - [`mise dotfiles rollback [FLAGS] [PATH]…`](/cli/dotfiles/rollback.html)
 - [`mise dotfiles save [FLAGS] [PATH]…`](/cli/dotfiles/save.html)
 - [`mise dotfiles status [FLAGS] [TARGET]…`](/cli/dotfiles/status.html)
-- [`mise dotfiles sync [--fetch-only] [--best-effort]`](/cli/dotfiles/sync.html)
+- [`mise dotfiles sync [FLAGS]`](/cli/dotfiles/sync.html)
 - [`mise dotfiles track [FLAGS] <PATH>…`](/cli/dotfiles/track.html)
 - [`mise dotfiles unapply [FLAGS] [TARGET]…`](/cli/dotfiles/unapply.html)
 - [`mise dotfiles undo [-n --dry-run] [-y --yes] [REF]`](/cli/dotfiles/undo.html)

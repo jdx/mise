@@ -19,6 +19,10 @@ pub(crate) struct DotfilesSync {
     #[usage(long)]
     fetch_only: bool,
 
+    /// Allow publishing older unencrypted versions of encrypted files
+    #[usage(long)]
+    allow_plaintext_history: bool,
+
     /// Warn instead of failing when the origin is unreachable
     #[usage(long)]
     best_effort: bool,
@@ -44,7 +48,9 @@ impl DotfilesSync {
         if let Some(reason) = store.unavailable() {
             bail!("cannot synchronize: {reason}");
         }
-        let outcome = run::sync(&store, &tracked, &SyncRequest::new(self.fetch_only))?;
+        let mut request = SyncRequest::new(self.fetch_only);
+        request.allow_plaintext_history = self.allow_plaintext_history;
+        let outcome = run::sync(&store, &tracked, &request)?;
         crate::system::history::sync::origin::report(&outcome);
         Ok(())
     }
