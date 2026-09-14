@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2EWTJHDVB0BF5B8BWB6R8C9",
+  "strategy": "manual-commit",
+  "branch": "codex/dotfiles-dot-command",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/.vitepress/sidebar.ts",
+    "src/assets/mise-extra.usage.kdl"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 83810,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1982208,
+    "output_tokens": 5518,
+    "api_call_count": 23
+  }
+}
