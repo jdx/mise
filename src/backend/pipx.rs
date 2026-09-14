@@ -888,7 +888,11 @@ impl PIPXBackend {
         Ok(registry_url)
     }
 
-    pub(crate) async fn reinstall_all(config: &Arc<Config>) -> Result<()> {
+    pub(crate) async fn reinstall_all(
+        config: &Arc<Config>,
+        invocation_locked: bool,
+        use_locked_version: bool,
+    ) -> Result<()> {
         let ts = Arc::new(ToolsetBuilder::new().build(config).await?);
         let pipx_tools = ts
             .list_installed_versions(config)
@@ -897,8 +901,8 @@ impl PIPXBackend {
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
             .collect_vec();
         for (b, tv) in pipx_tools {
-            let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
-                || tv.request.tool_config_locked(config, true);
+            let locked = config.invocation_locked_for(tv.request.source(), invocation_locked)
+                || tv.request.tool_config_locked(config, use_locked_version);
             let ctx = InstallContext {
                 config: config.clone(),
                 ts: ts.clone(),
