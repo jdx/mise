@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+export MISE_EXPERIMENTAL=1
+
+detect_platform
+
+cat >mise.toml <<'EOF'
+[tools]
+yarn = "4.16.0"
+EOF
+cat >mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools.yarn]]
+version = "4.16.0"
+backend = "asdf:yarn"
+specifiers = ["4.16.0"]
+EOF
+
+mkdir child
+cd child
+cat >mise.toml <<'EOF'
+[tools]
+yarn = "4.16.0"
+EOF
+
+# Parent pins still participate in discovery when their backend is enabled.
+assert "mise tool yarn --backend" "asdf:yarn"
+
+# No installed tools, plugins, or child lockfile are needed to trigger this bug.
+export MISE_DISABLE_BACKENDS=asdf,vfox,ubi
+assert "mise tool yarn --backend" "aqua:yarnpkg/berry"
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'backend = "aqua:yarnpkg/berry"'
+assert_not_contains "cat mise.lock" 'asdf:'
+assert_contains "cat ../mise.lock" 'backend = "asdf:yarn"'
+
+# Explicit requests must still fail instead of silently choosing another backend.
+assert_fail "mise install asdf:yarn@4.16.0" "backend asdf is disabled by disable_backends"
