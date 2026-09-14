@@ -1,0 +1,1 @@
+hold up a bit here, "project lockfile = true"? is that a thing? there are past disucssions/docs/prs aboutt his
