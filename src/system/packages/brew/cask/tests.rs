@@ -8313,3 +8313,151 @@ fn nested_app_source_defaults_to_validated_bundle_basename() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn manpage_resolution_rejects_filesystem_equivalent_targets() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let stage = tmp.path().join("stage");
+    for directory in ["docs", "other"] {
+        file::create_dir_all(stage.join(directory))?;
+    }
+    for (first, second) in [("example.1", "Example.1"), ("caf\u{e9}.1", "cafe\u{301}.1")] {
+        // Ask the volume itself; Unicode equivalence is not ASCII case folding.
+        let probe = tempfile::tempdir_in(tmp.path())?;
+        file::write(probe.path().join(first), "probe")?;
+        let equivalent =
+            match same_file::is_same_file(probe.path().join(first), probe.path().join(second)) {
+                Ok(equivalent) => equivalent,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+                Err(err) => return Err(err.into()),
+            };
+        file::write(stage.join("docs").join(first), "first")?;
+        file::write(stage.join("other").join(second), "second")?;
+        let mut cask = test_cask("manpage-collision", "1.0");
+        cask.artifacts = vec![
+            serde_json::json!({"manpage": format!("docs/{first}")}),
+            serde_json::json!({"manpage": format!("other/{second}")}),
+        ];
+        let result = resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?);
+        assert_eq!(
+            result.is_err(),
+            equivalent,
+            "filesystem equivalence for {first:?}/{second:?}: {result:?}"
+        );
+        assert!(!tmp.path().join("share").exists());
+        assert!(!tmp.path().join("Caskroom").exists());
+        assert!(!std::fs::read_dir(tmp.path())?.any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".mise-manpage-targets-")
+        }));
+        assert_eq!(
+            file::read_to_string(stage.join("docs").join(first))?,
+            "first"
+        );
+        assert_eq!(
+            file::read_to_string(stage.join("other").join(second))?,
+            "second"
+        );
+        if first == "example.1" {
+            cask.artifacts[1] = serde_json::json!({"binary": ["other", {"target": "$HOMEBREW_PREFIX/SHARE/MAN/man1/Example.1"}]});
+            let result = resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?);
+            assert_eq!(
+                result.is_err(),
+                equivalent,
+                "parent-directory case equivalence: {result:?}"
+            );
+        }
+        for artifact in [
+            serde_json::json!({"binary": ["other", {"target": format!("$HOMEBREW_PREFIX/share/man/man1/{second}")}]}),
+            serde_json::json!({"artifact": ["other", {"target": format!("$HOMEBREW_PREFIX/share/man/man1/{second}")}]}),
+            serde_json::json!({"zsh_completion": ["other", {"target": format!("$HOMEBREW_PREFIX/share/man/man1/{second}")}]}),
+        ] {
+            cask.artifacts[1] = artifact;
+            let result = resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?);
+            assert_eq!(
+                result.is_err(),
+                equivalent,
+                "cross-artifact equivalence for {first:?}/{second:?}: {result:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn manpage_resolution_checks_relocated_caskroom_destinations() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("docs"))?;
+    file::write(stage.join("docs/example.1"), "manual")?;
+    let mut cask = test_cask("manpage-collision", "1.0");
+    cask.artifacts = vec![
+        serde_json::json!({"manpage": "docs/example.1"}),
+        // Different external destination, identical path inside the Caskroom.
+        serde_json::json!({"binary": ["other", {"target": "/usr/local/share/man/man1/example.1"}]}),
+    ];
+    assert!(resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?).is_err());
+    // An unrelated generic destination can likewise retain its source in the
+    // Caskroom where the manpage would otherwise replace it.
+    file::create_dir_all(stage.join("share/man/man1"))?;
+    file::write(stage.join("share/man/man1/example.1"), "generic payload")?;
+    cask.artifacts[1] = serde_json::json!({"artifact": ["share/man/man1/example.1", {"target": "$HOMEBREW_PREFIX/unrelated"}]});
+    assert!(resolve_manpages(&stage, &cask, &cask_artifacts(&cask)?).is_err());
+    assert_eq!(
+        file::read_to_string(stage.join("share/man/man1/example.1"))?,
+        "generic payload"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn manpage_revalidation_rejects_changed_and_dangling_staging_aliases() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("docs"))?;
+    file::write(stage.join("docs/example.1"), "manual")?;
+    let mut cask = test_cask("manpage-alias", "1.0");
+    cask.artifacts = vec![
+        serde_json::json!({"manpage": "docs/example.1"}),
+        serde_json::json!({"binary": ["binary", {"target": "$HOMEBREW_PREFIX/other/example.1"}]}),
+    ];
+    let artifacts = cask_artifacts(&cask)?;
+    let manpages = resolve_manpages(&stage, &cask, &artifacts)?;
+    let caskroom = caskroom_tmp_dir(&cask);
+    file::create_dir_all(caskroom.join("other"))?;
+    file::write(caskroom.join("other/example.1"), "staged binary")?;
+    file::create_dir_all(caskroom.join("share/man"))?;
+    let alias = caskroom.join("share/man/man1");
+    file::make_symlink(&caskroom.join("other"), &alias)?;
+    assert!(validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages).is_err());
+    assert_eq!(
+        file::read_to_string(caskroom.join("other/example.1"))?,
+        "staged binary"
+    );
+    file::remove_file(&alias)?;
+    file::make_symlink(&caskroom.join("not-created"), &alias)?;
+    let error =
+        validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("cannot resolve manpage target ancestor"),
+        "{error:#}"
+    );
+    assert!(!caskroom.join("not-created").exists());
+    assert_eq!(
+        file::read_to_string(caskroom.join("other/example.1"))?,
+        "staged binary"
+    );
+    Ok(())
+}

@@ -282,8 +282,17 @@ running lifecycle actions. Nested app sources such as `nested/Example.app`
 install as `Example.app` unless an explicit target is declared. A real install
 resolves manpage patterns against the extracted archive, rejecting missing
 matches, invalid sections, duplicate targets, and paths or symlinks escaping
-the staging directory. The directory must be literal;
-only filename `*` and `?` wildcards are supported. Recursive globs, multiple
+the staging directory. Before staging, a real install checks destination-name
+uniqueness using temporary scratch directories on the destination filesystems,
+including the Caskroom. This catches case and Unicode aliases according to the
+filesystem rather than assuming ASCII case folding; case-sensitive filesystems
+retain distinct names. Overlaps with other declared artifact destinations are
+also rejected. The check repeats after lifecycle and payload staging, before
+copying manpages, to catch changed directory aliases. Actual target paths are
+not created by this check, and an unwritable probe location fails explicitly.
+Metadata extraction and dry-run do not perform these probes.
+
+The directory must be literal; only filename `*` and `?` wildcards are supported. Recursive globs, multiple
 patterns, glob options, `Dir.glob`, and transformations/filtering of glob entries
 are unsupported and fail explicitly rather than silently omitting manpages.
 

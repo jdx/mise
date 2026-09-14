@@ -797,6 +797,9 @@ impl BrewCaskManager {
             stage_generated_completions(&stage, &tmp_caskroom, &cask, &artifacts.apps, generated)?;
             record_cask_action(&mut journal, &format!("generated_completion[{index}]"))?;
         }
+        // Hooks/payload staging may have changed directory aliases since the
+        // initial check. Revalidate before any manpage can replace staged data.
+        validate_manpage_target_uniqueness(&stage, &cask, &artifacts, &manpages)?;
         stage_manpages(&stage, &tmp_caskroom, &appdir, &manpages)?;
         if !manpages.is_empty() {
             record_cask_action(&mut journal, "manpages")?;

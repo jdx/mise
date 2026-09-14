@@ -19,6 +19,7 @@ archive = io.BytesIO()
 with zipfile.ZipFile(archive, "w") as zipped:
     zipped.writestr("docs/example.1", "offline manual\n")
     zipped.writestr("docs/config.5", "offline configuration\n")
+    zipped.writestr("other/Example.1", "must not replace the manual\n")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -38,6 +39,14 @@ class Handler(BaseHTTPRequestHandler):
                         "type": "run", "command": {"path": "/usr/bin/false"}
                     }]}]},
                 ]
+            if token in ("manpage-collision", "manpage-cross-collision"):
+                other = {"manpage": ["other/Example.1"]}
+                if token == "manpage-cross-collision":
+                    other = {"binary": ["other/Example.1", {
+                        "target": "$HOMEBREW_PREFIX/SHARE/MAN/man1/Example.1"
+                    }]}
+                artifacts = [{"manpage": ["docs/example.1"]}, other,
+                             {"app": ["nested/Example.app"]}]
             body = json.dumps({
                 "token": token, "version": "1.0", "sha256": "no_check",
                 "url": f"http://127.0.0.1:{self.server.server_port}/archive.zip",
@@ -79,6 +88,23 @@ assert_contains "cat plan" "install manpages matching docs/* (after extraction)"
 assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX'"
 assert_fail "test -e '$MISE_BREW_CASK_OPT_APPDIR'"
 assert_fail "grep /archive.zip '$REQUESTS_FILE'"
+
+# Confirm native volume behavior before the filesystem-dependent collision checks.
+printf probe >case-probe
+if [[ -e CASE-PROBE ]]; then
+  for token in manpage-collision manpage-cross-collision; do
+    cat >mise.toml <<EOF
+[bootstrap.packages]
+"brew-cask:$token" = "latest"
+EOF
+    assert_fail_contains "mise bootstrap packages apply --yes 2>&1" "duplicate manpage target"
+    assert_fail "test -e '$MISE_BREW_CASK_OPT_APPDIR'"
+    assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/share/man/man1/example.1'"
+    assert_fail "test -e '$MISE_SYSTEM_BREW_PREFIX/Caskroom/$token/1.0'"
+  done
+else
+  echo "case-sensitive volume: case-alias rejection checks do not apply"
+fi
 
 # Install only locally generated text files, never an app or lifecycle hook.
 cat >mise.toml <<'EOF'

@@ -115,13 +115,6 @@ pub(super) fn resolve_manpages(
         return Ok(Vec::new());
     }
     let root = stage.canonicalize()?;
-    let mut targets = artifacts
-        .binary_targets()?
-        .into_iter()
-        .collect::<BTreeSet<_>>();
-    targets.extend(artifacts.generic_artifact_targets()?);
-    targets.extend(artifacts.completion_target_paths(cask)?);
-    let appdir = cask_appdir(&artifacts.apps)?;
     let mut resolved = Vec::new();
     for artifact in &artifacts.manpages {
         let source = Path::new(&artifact.source);
@@ -167,13 +160,10 @@ pub(super) fn resolve_manpages(
                 source: source.strip_prefix(&root)?.to_string_lossy().into_owned(),
                 target: Some(target),
             };
-            let target = binary.target_path(&appdir)?;
-            if !targets.insert(target.clone()) {
-                bail!("brew-cask: duplicate manpage target '{}'", target.display());
-            }
             resolved.push(binary);
         }
     }
+    validate_manpage_target_uniqueness(stage, cask, artifacts, &resolved)?;
     Ok(resolved)
 }
 
@@ -255,4 +245,213 @@ pub(super) fn ensure_manpage_targets_replaceable(
         );
     }
     Ok(())
+}
+
+/// Check both external destinations and the relocated Caskroom destinations:
+/// e.g. /usr/local and the configured prefix may share a Caskroom-relative path.
+pub(super) fn validate_manpage_target_uniqueness(
+    stage: &Path,
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    manpages: &[BinaryArtifact],
+) -> Result<()> {
+    if manpages.is_empty() {
+        return Ok(());
+    }
+    let appdir = cask_appdir(&artifacts.apps)?;
+    let caskroom = caskroom_tmp_dir(cask);
+    let completions = artifacts.completion_target_paths(cask)?;
+    let mut targets = artifacts.binary_targets()?;
+    targets.extend(artifacts.generic_artifact_targets()?);
+    targets.extend(artifacts.app_target_paths()?);
+    targets.extend(artifacts.font_target_paths()?);
+    targets.extend(completions.iter().cloned());
+    let mut staged = artifacts
+        .binaries
+        .iter()
+        .map(|binary| caskroom_binary_path(&caskroom, &appdir, binary))
+        .collect::<Result<Vec<_>>>()?;
+    staged.extend(
+        artifacts
+            .command_wrappers
+            .iter()
+            .map(|wrapper| wrapper.caskroom_path(&caskroom)),
+    );
+    for completion in completions {
+        staged.push(caskroom_completion_path(&caskroom, &completion)?);
+    }
+    for font in &artifacts.fonts {
+        staged.push(caskroom_font_path(&caskroom, font)?);
+    }
+    for app in &artifacts.apps {
+        staged.push(caskroom.join(app_bundle_name(app.target_name()?)?));
+    }
+    for artifact in &artifacts.generic {
+        if let Some(source) = find_artifact_matching(stage, &artifact.source, |_| true)
+            && let Some(relative) = staged_relative_path(stage, &source)
+        {
+            staged.push(caskroom.join(relative));
+        }
+    }
+    for manpage in manpages {
+        for (target, previous) in [
+            (manpage.target_path(&appdir)?, &mut targets),
+            (
+                caskroom_binary_path(&caskroom, &appdir, manpage)?,
+                &mut staged,
+            ),
+        ] {
+            for other in previous.iter() {
+                if manpage_targets_overlap(&target, other)? {
+                    bail!(
+                        "brew-cask: duplicate manpage target '{}' overlaps '{}'",
+                        target.display(),
+                        other.display()
+                    );
+                }
+            }
+            previous.push(target);
+        }
+    }
+    Ok(())
+}
+
+/// Install-only name comparison on the destination filesystem. Scratch
+/// directories model only the not-yet-existing suffix; actual targets are never
+/// created or truncated. Let the filesystem decide case/Unicode equivalence.
+fn manpage_targets_overlap(left: &Path, right: &Path) -> Result<bool> {
+    if left.starts_with(right) || right.starts_with(left) {
+        return Ok(true);
+    }
+    let (left_parent, left_suffix) = manpage_target_ancestor(left)?;
+    let (right_parent, right_suffix) = manpage_target_ancestor(right)?;
+    if !same_file::is_same_file(&left_parent, &right_parent)? {
+        // A directory artifact may already exist and contain the other target's
+        // parent (including through a symlink/mount). These have different probe
+        // roots, but still overlap. Otherwise distinct existing parents cannot
+        // name the same new directory entry.
+        return Ok(manpage_directory_contains(left, &right_parent)?
+            || manpage_directory_contains(right, &left_parent)?);
+    }
+    let probe = tempfile::Builder::new()
+        .prefix(".mise-manpage-targets-")
+        .tempdir_in(&left_parent)
+        .wrap_err("brew-cask: cannot check manpage target uniqueness on destination filesystem")?;
+    let result =
+        (|| {
+            let left = probe.path().join(left_suffix);
+            let right = probe.path().join(right_suffix);
+            std::fs::create_dir_all(&left)?;
+            std::fs::create_dir_all(&right)?;
+            Ok(manpage_directory_contains(&left, &right)?
+                || manpage_directory_contains(&right, &left)?)
+        })();
+    probe
+        .close()
+        .wrap_err("brew-cask: failed to clean up manpage target probe")?;
+    result
+}
+
+fn manpage_directory_contains(directory: &Path, path: &Path) -> Result<bool> {
+    match std::fs::metadata(directory) {
+        Ok(metadata) if !metadata.is_dir() => return Ok(false),
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(err).wrap_err("brew-cask: cannot inspect manpage target directory"),
+    }
+    for ancestor in path.ancestors() {
+        if same_file::is_same_file(directory, ancestor)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn manpage_target_ancestor(target: &Path) -> Result<(PathBuf, PathBuf)> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: invalid manpage target"))?;
+    for ancestor in parent.ancestors() {
+        match ancestor.canonicalize() {
+            Ok(resolved) => {
+                if !resolved.is_dir() {
+                    bail!("brew-cask: manpage target ancestor is not a directory");
+                }
+                let suffix = target.strip_prefix(ancestor)?;
+                if suffix
+                    .components()
+                    .any(|part| !matches!(part, Component::Normal(_)))
+                {
+                    bail!("brew-cask: invalid manpage target suffix");
+                }
+                return Ok((resolved, suffix.to_path_buf()));
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                match ancestor.symlink_metadata() {
+                    Ok(_) => bail!("brew-cask: cannot resolve manpage target ancestor"),
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => {
+                        return Err(err)
+                            .wrap_err("brew-cask: cannot inspect manpage target ancestor");
+                    }
+                }
+            }
+            Err(err) => {
+                return Err(err).wrap_err("brew-cask: cannot inspect manpage target ancestor");
+            }
+        }
+    }
+    bail!("brew-cask: manpage target has no existing directory ancestor")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manpage_target_uniqueness_distinguishes_siblings_and_ancestors() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let left = root.path().join("not-created/man1/example.1");
+        let right = root.path().join("not-created/man1/different.1");
+        assert!(manpage_targets_overlap(&left, &left)?);
+        assert!(manpage_targets_overlap(&left, left.parent().unwrap())?);
+        assert!(!manpage_targets_overlap(&left, &right)?);
+        // No target directories or scratch directories survive validation.
+        assert_eq!(std::fs::read_dir(root.path())?.count(), 0);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn manpage_target_probe_cleans_up_after_error() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let invalid = root.path().join("x".repeat(1024));
+        assert!(manpage_targets_overlap(&root.path().join("valid"), &invalid).is_err());
+        assert_eq!(std::fs::read_dir(root.path())?.count(), 0);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn manpage_target_uniqueness_resolves_existing_parent_aliases() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let real = root.path().join("real");
+        file::create_dir_all(&real)?;
+        let alias = root.path().join("alias");
+        file::make_symlink(&real, &alias)?;
+        assert!(manpage_targets_overlap(
+            &real.join("new/example.1"),
+            &alias.join("new/example.1")
+        )?);
+        assert!(manpage_targets_overlap(
+            &alias,
+            &real.join("new/example.1")
+        )?);
+        assert!(!manpage_targets_overlap(
+            &real.join("new/example.1"),
+            &alias.join("new/different.1")
+        )?);
+        assert_eq!(std::fs::read_dir(&real)?.count(), 0);
+        Ok(())
+    }
 }
