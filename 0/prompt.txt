@@ -1,0 +1,1 @@
+could we have a --encrypt flag on `mise dot track` or something like that?

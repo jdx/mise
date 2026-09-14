@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2G3289R1WWRT4M77PTVXKAT",
+  "strategy": "manual-commit",
+  "branch": "codex/dot-track-encrypt",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/cli/bootstrap/dotfiles/track.md",
+    "docs/cli/dotfiles/track.md",
+    "docs/dotfiles.md",
+    "e2e/cli/test_dotfiles_encrypted_capture",
+    "mise.usage.kdl",
+    "src/cli/dotfiles/track.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 144000,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2674432,
+    "output_tokens": 5681,
+    "api_call_count": 31
+  }
+}
