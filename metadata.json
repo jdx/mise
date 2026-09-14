@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2G3BS3C0CX0HADZ26Z9JY0Q",
   "strategy": "manual-commit",
   "branch": "codex/pypi-semantic-uv-options",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "docs/dev-tools/backends/pypi.md",
     "e2e/backend/test_pipx_uvx",
@@ -22,13 +22,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 383352,
+    "input_tokens": 403813,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 14180608,
-    "output_tokens": 30221,
-    "api_call_count": 115
+    "cache_read_tokens": 16635776,
+    "output_tokens": 33047,
+    "api_call_count": 132
   }
 }
