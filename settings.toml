@@ -1285,9 +1285,10 @@ type = "Bool"
 default = false
 description = "Allow publishing history that contains unencrypted versions of files now marked for encryption."
 docs = """
-Skips the plaintext history check for manual syncs and the history watcher. Older unencrypted
-contents will be published to the origin. New saves still follow each file's encryption policy.
-Set this in global settings, or use `mise dot sync --allow-plaintext-history` for one sync.
+Skips the plaintext history check when manual commands or the history watcher publish or apply
+setup history. Older unencrypted contents can reach this machine or be published to the origin.
+New saves still follow each file's encryption policy. Set this in global settings, or use
+`mise dot sync --allow-plaintext-history` for one publication.
 """
 env = "MISE_HISTORY_ALLOW_PLAINTEXT_HISTORY"
 global_only = true
