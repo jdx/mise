@@ -5,7 +5,6 @@
   "branch": "codex/brew-pipelined-pour",
   "checkpoints_count": 3,
   "files_touched": [
-    "src/system/packages/brew/fetch.rs",
     "src/system/packages/brew/mod.rs"
   ],
   "sessions": [
@@ -14,7 +13,7 @@
       "transcript": "/0/full.jsonl",
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
-      "prompt": "/0/prompt.txt"
+      "prompt": ""
     },
     {
       "metadata": "/1/metadata.json",
@@ -25,10 +24,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 605481,
+    "input_tokens": 350358,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 15525504,
-    "output_tokens": 34620,
-    "api_call_count": 125
+    "cache_read_tokens": 5117696,
+    "output_tokens": 14413,
+    "api_call_count": 60
   }
 }
