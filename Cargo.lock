@@ -5279,7 +5279,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -11344,9 +11344,9 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "6.9.0"
+version = "6.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e43bb49b5137afda895cbeb0a6bbb21ff355723208e47269c14fe8b18374655c"
+checksum = "d72e621718d806fa3dfb7eb6105803e21af92e9a748aea61f9fc9f1e8bf3f90a"
 dependencies = [
  "indexmap 2.14.2",
  "itertools 0.15.0",
@@ -11388,9 +11388,9 @@ dependencies = [
 
 [[package]]
 name = "usage-validation"
-version = "6.9.0"
+version = "6.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "678d31041680866221e1eb8cb5e954600974a958ff6ded28693477c13fc884cb"
+checksum = "962b61eb8617b745fd7e925af368eb227435d0b98152f3146f135e23b4b53dee"
 dependencies = [
  "expr-lang",
 ]
