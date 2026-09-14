@@ -153,6 +153,11 @@ struct EncryptionCacheEntry {
 /// to every other machine.
 struct ScratchIndex {
     path: PathBuf,
+    owner: PathBuf,
+    /// Held for as long as this composition runs, so another process can
+    /// tell it apart from one whose process is gone. Taken before the
+    /// index is used and released in [`Drop`].
+    lock: Option<fslock::LockFile>,
 }
 
 impl ScratchIndex {
@@ -165,8 +170,17 @@ impl ScratchIndex {
             std::process::id(),
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
+        let mut owner = path.clone().into_os_string();
+        owner.push(".owner");
+        let owner = PathBuf::from(owner);
         let _ = std::fs::remove_file(&path);
-        Self { path }
+        // an unlockable owner file only costs this index the sweep's
+        // liveness signal, and the sweep keeps what it cannot judge
+        let lock = crate::lock_file::LockFile::at(&owner)
+            .try_lock()
+            .ok()
+            .flatten();
+        Self { path, owner, lock }
     }
 
     fn path(&self) -> &Path {
@@ -177,24 +191,29 @@ impl ScratchIndex {
 impl Drop for ScratchIndex {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
+        // release before removing: Windows refuses to remove a file whose
+        // lock handle is still open
+        drop(self.lock.take());
+        let _ = std::fs::remove_file(&self.owner);
     }
 }
 
-/// How long a scratch index must have gone untouched before it is taken
-/// for abandoned. No composition runs anywhere near this long, and the
-/// margin covers a laptop suspended midway through one.
-const SCRATCH_INDEX_ABANDONED: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
-
-/// Removes scratch indexes, and the `.lock` files git writes beside them,
-/// that were left behind by a process killed mid-composition.
+/// Removes scratch indexes, and the `.owner` and git `.lock` files beside
+/// them, that were left behind by a process killed mid-composition.
 ///
 /// Runs once per directory, before that directory has handed out a scratch
 /// index of its own, so it can never remove one this process is composing
 /// into. Anything carrying this process id belonged to an earlier process
-/// holding the id and goes. Another process id may be a mise that is still
-/// running, so those go only once untouched for [`SCRATCH_INDEX_ABANDONED`]:
-/// a live composition writes to its index continuously and never looks that
-/// old.
+/// holding the id and goes.
+///
+/// For any other process id, the owner file decides. A composition holds
+/// that file locked for as long as it runs; the kernel releases the lock
+/// when the process dies and keeps holding it while the process is merely
+/// stopped or its machine suspended. So a lock this process can take means
+/// the owner is gone, and an index whose owner cannot be judged -- no owner
+/// file at all, or one still locked -- is left alone. Guessing from age
+/// instead would eventually delete the index of a composition suspended
+/// midway and truncate the very snapshot this all exists to protect.
 fn sweep_scratch_indexes(dir: &Path) {
     use std::sync::{LazyLock, Mutex};
 
@@ -209,21 +228,31 @@ fn sweep_scratch_indexes(dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
+    let mut abandoned: BTreeMap<String, bool> = BTreeMap::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         if !name.starts_with("mise-index-") {
             continue;
         }
-        // an unreadable or future-dated timestamp says nothing: leave it
-        let abandoned = || {
-            entry
-                .metadata()
-                .and_then(|meta| meta.modified())
-                .ok()
-                .and_then(|modified| modified.elapsed().ok())
-                .is_some_and(|age| age >= SCRATCH_INDEX_ABANDONED)
-        };
-        if name.starts_with(&ours) || abandoned() {
+        // an index and its adjuncts share one verdict
+        let index = name
+            .strip_suffix(".owner")
+            .or_else(|| name.strip_suffix(".lock"))
+            .unwrap_or(&name)
+            .to_string();
+        let gone = *abandoned.entry(index.clone()).or_insert_with(|| {
+            if index.starts_with(&ours) {
+                return true;
+            }
+            let owner = dir.join(format!("{index}.owner"));
+            owner.exists()
+                && crate::lock_file::LockFile::at(&owner)
+                    .try_lock()
+                    .ok()
+                    .flatten()
+                    .is_some()
+        });
+        if gone {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -2338,36 +2367,42 @@ mod tests {
     #[test]
     fn abandoned_scratch_indexes_are_swept_and_live_ones_are_kept() {
         let dir = tempfile::tempdir().unwrap();
+        let other = std::process::id().wrapping_add(1);
         let ours = format!("mise-index-{}-compose-0", std::process::id());
-        let foreign_pid = std::process::id().wrapping_add(1);
-        let fresh = format!("mise-index-{foreign_pid}-compose-0");
-        let stale = format!("mise-index-{foreign_pid}-compose-1");
-        let stale_lock = format!("{stale}.lock");
-        let keep = "packed-refs";
-        for name in [&ours, &fresh, &stale, &stale_lock, &keep.to_string()] {
+        let live = format!("mise-index-{other}-compose-0");
+        let dead = format!("mise-index-{other}-compose-1");
+        let unowned = format!("mise-index-{other}-compose-2");
+        let unrelated = "packed-refs".to_string();
+        let names = [&ours, &live, &dead, &unowned, &unrelated];
+        for name in names {
             std::fs::write(dir.path().join(name), b"index").unwrap();
         }
-        let old = filetime::FileTime::from_system_time(
-            std::time::SystemTime::now()
-                - SCRATCH_INDEX_ABANDONED
-                - std::time::Duration::from_secs(60),
-        );
-        for name in [&stale, &stale_lock] {
-            filetime::set_file_mtime(dir.path().join(name), old).unwrap();
+        // git's own lock, left when it was killed writing the dead index
+        std::fs::write(dir.path().join(format!("{dead}.lock")), b"lock").unwrap();
+        // a composition whose process is gone released its owner file; one
+        // that is still running -- or suspended -- has not
+        for name in [&live, &dead] {
+            std::fs::write(dir.path().join(format!("{name}.owner")), b"").unwrap();
         }
+        let _held = crate::lock_file::LockFile::at(&dir.path().join(format!("{live}.owner")))
+            .try_lock()
+            .unwrap()
+            .expect("the owner file starts unlocked");
 
         sweep_scratch_indexes(dir.path());
 
-        // ours belonged to an earlier process holding this id; the untouched
-        // pair was abandoned. The fresh one may be a running mise.
-        assert!(!dir.path().join(&ours).exists(), "{ours} was kept");
-        assert!(!dir.path().join(&stale).exists(), "{stale} was kept");
+        let gone = |name: &str| !dir.path().join(name).exists();
+        assert!(gone(&ours), "an earlier process with our id was kept");
+        assert!(gone(&dead), "an abandoned index was kept");
+        assert!(gone(&format!("{dead}.owner")), "its owner file was kept");
+        assert!(gone(&format!("{dead}.lock")), "its git lock was kept");
+        assert!(!gone(&live), "a running composition's index was swept");
         assert!(
-            !dir.path().join(&stale_lock).exists(),
-            "{stale_lock} was kept"
+            !gone(&format!("{live}.owner")),
+            "a running composition's owner file was swept"
         );
-        assert!(dir.path().join(&fresh).exists(), "{fresh} was swept");
-        assert!(dir.path().join(keep).exists(), "{keep} was swept");
+        assert!(!gone(&unowned), "an index with no owner file was swept");
+        assert!(!gone(&unrelated), "an unrelated file was swept");
     }
 
     #[test]
