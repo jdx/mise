@@ -971,6 +971,9 @@ impl Cli {
         if let Some(Commands::Bootstrap(bootstrap)) = &mut cli.command {
             bootstrap.inherit_root_flags(cli.dry_run, cli.yes);
         }
+        if let Some(Commands::Install(install)) = &mut cli.command {
+            install.inherit_root_yes(cli.yes);
+        }
         config_file::set_implicitly_trust_active_config(
             cli.command
                 .as_ref()

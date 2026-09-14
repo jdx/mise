@@ -875,6 +875,17 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
 }
 
 impl Settings {
+    /// Reads explicit confirmation only from the CLI settings layer.
+    fn cli_yes_from(settings: Option<&SettingsPartial>) -> bool {
+        settings.and_then(|settings| settings.yes).unwrap_or(false)
+    }
+
+    /// Returns true only when `--yes` was explicitly supplied on this command
+    /// line, excluding implicit confirmation from CI mode or configuration.
+    pub(crate) fn cli_yes() -> bool {
+        Self::cli_yes_from(CLI_SETTINGS.lock().unwrap().as_ref())
+    }
+
     const UNIX_DEFAULT_FILE_SHELL_ARGS: &'static str = "sh";
     const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -o errexit -c";
     const WINDOWS_DEFAULT_FILE_SHELL_ARGS: &'static str = "cmd /c";
@@ -2146,6 +2157,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cli_yes_only_reads_the_cli_layer() {
+        let mut cli = SettingsPartial::empty();
+        assert!(!Settings::cli_yes_from(Some(&cli)));
+        cli.yes = Some(true);
+        assert!(Settings::cli_yes_from(Some(&cli)));
+        assert!(!Settings::cli_yes_from(None));
+    }
 
     #[test]
     fn lockfile_mode_defaults_and_explicit_choices() {

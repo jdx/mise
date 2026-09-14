@@ -804,6 +804,7 @@ impl Toolset {
             }),
             force: opts.force,
             dry_run: opts.dry_run,
+            explicit_yes: opts.explicit_yes,
             locked: config.invocation_locked_for(tr.source(), opts.locked)
                 || tr.tool_config_locked(config, resolve_options.use_locked_version),
             before_date,

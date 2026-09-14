@@ -187,6 +187,8 @@ pub(crate) struct InstallContext {
     pub pr: Arc<dyn SingleReport>,
     pub force: bool,
     pub dry_run: bool,
+    /// The user explicitly approved install-time prompts for this invocation.
+    pub explicit_yes: bool,
     /// require lockfile URLs to be present; fail if not
     pub locked: bool,
     pub before_date: Option<Timestamp>,
