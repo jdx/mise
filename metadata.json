@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2GBHF7CA7JMM32WVDT9PAC6",
   "strategy": "manual-commit",
   "branch": "codex/dot-track-encrypt",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "Cargo.lock"
   ],
@@ -14,13 +14,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
-    "input_tokens": 773349,
+    "input_tokens": 897907,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 70198016,
-    "output_tokens": 70541,
-    "api_call_count": 484
+    "cache_read_tokens": 72617600,
+    "output_tokens": 83506,
+    "api_call_count": 517
   }
 }
