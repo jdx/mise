@@ -1,0 +1,76 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2G7VNMEBHAEZRTDVJ6M75X8",
+  "session_id": "01a0a054-5fcd-7380-8c4d-9b03d0de1c6d",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T15:16:37.553421Z",
+  "branch": "codex/dotfiles-replace-history",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/history.md",
+    "e2e/cli/test_dotfiles_bootstrap_from_git",
+    "src/cli/bootstrap.rs",
+    "src/cli/ssh.rs",
+    "src/system/history/scope.rs",
+    "src/system/history/shadow.rs",
+    "src/system/history/sync/apply.rs",
+    "src/system/history/sync/onboard.rs",
+    "src/system/history/sync/run.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "56761f5c08ad",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 366199,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 18869248,
+    "output_tokens": 42350,
+    "api_call_count": 144
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-14T15:16:37.402423Z",
+    "agent_lines": 6,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 21,
+    "total_committed": 6,
+    "total_lines_changed": 27,
+    "agent_percentage": 22.22222222222222,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 283,
+      "user_lines_removed": 21,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "docs/cli/bootstrap.md": 2,
+        "docs/history.md": 17,
+        "e2e/cli/test_dotfiles_bootstrap_from_git": 33,
+        "man/man1/mise.1": 4,
+        "mise.usage.kdl": 2,
+        "src/cli/bootstrap.rs": 14,
+        "src/cli/ssh.rs": 1,
+        "src/system/history/scope.rs": 32,
+        "src/system/history/shadow.rs": 10,
+        "src/system/history/sync/apply.rs": 22,
+        "src/system/history/sync/onboard.rs": 137,
+        "src/system/history/sync/run.rs": 9
+      },
+      "user_removed_per_file": {
+        "docs/history.md": 4,
+        "src/cli/bootstrap.rs": 2,
+        "src/system/history/scope.rs": 7,
+        "src/system/history/sync/apply.rs": 2,
+        "src/system/history/sync/onboard.rs": 6
+      }
+    }
+  ]
+}

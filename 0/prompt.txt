@@ -1,0 +1,36 @@
+[https://github.com/jdx/mise/discussions/13171#discussioncomment-18434735](https://github.com/jdx/mise/discussions/13171#discussioncomment-18434735)
+
+---
+
+note i have some open prs to help with some of this
+
+---
+
+post it
+
+---
+
+could we have some sort of force setting or command to fix this?
+
+---
+
+make a pr
+
+---
+
+mention this in the discussion too
+
+---
+
+hey another agent said this, what do you think?
+
+[https://github.com/jdx/mise/discussions/13171#discussioncomment-18435696](https://github.com/jdx/mise/discussions/13171#discussioncomment-18435696)
+9:58 AM
+Worked for 10m
+They’re right: the watcher isn’t involved.
+The actual bug is that `--adopt` itself captures files declared by the existing `config.toml`, creating a new local root commit even after the history directory was removed. It then correctly rejects that root as unrelated to the recreated origin. `--force-dotfiles` runs later and cannot affect this ancestry check.
+This needs a code fix: fresh adoption should compare live files with the incoming tree without first creating local ancestry. I haven’t posted or changed code because the link alone didn’t explicitly authorize either. Do you want me to reply in the discussion and open a fix PR?
+
+---
+
+the destructive fix may also be good though!
