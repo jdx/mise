@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2EPNSVAEK6V8M79Q3QGMM3S",
   "strategy": "manual-commit",
   "branch": "codex/windows-npm-e2e-isolation",
-  "checkpoints_count": 3,
+  "checkpoints_count": 2,
   "files_touched": [
     "e2e-win/npm_backend.Tests.ps1"
   ],
@@ -24,10 +24,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 88345,
+    "input_tokens": 107776,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 3808128,
-    "output_tokens": 4042,
-    "api_call_count": 20
+    "cache_read_tokens": 3948544,
+    "output_tokens": 4349,
+    "api_call_count": 24
   }
 }
