@@ -5,8 +5,7 @@
   "branch": "codex/brew-pipelined-pour",
   "checkpoints_count": 2,
   "files_touched": [
-    "src/system/packages/brew/fetch.rs",
-    "src/system/packages/brew/mod.rs"
+    "e2e-win/npm_backend.Tests.ps1"
   ],
   "sessions": [
     {
@@ -25,10 +24,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 150152,
+    "input_tokens": 250196,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 5445504,
-    "output_tokens": 8697,
-    "api_call_count": 41
+    "cache_read_tokens": 10199680,
+    "output_tokens": 7610,
+    "api_call_count": 57
   }
 }
