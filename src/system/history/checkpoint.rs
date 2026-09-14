@@ -1242,7 +1242,7 @@ mod tests {
     #[test]
     fn failed_baseline_does_not_commit_metadata() -> Result<()> {
         let state = tempfile::tempdir()?;
-        let live = tempfile::tempdir_in(&*crate::dirs::HOME)?;
+        let live = tempfile::tempdir_in(*crate::dirs::HOME)?;
         let path = live.path().join("secret");
         std::fs::write(&path, "private")?;
         let mut policy =
