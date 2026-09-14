@@ -38,3 +38,10 @@ assert_contains "mise x -- mkdocs --version" "/mise/installs/pipx-mkdocs/1.6.0/"
 assert_succeed "mise up --bump python"
 assert_succeed "'$MISE_DATA_DIR/installs/pipx-mkdocs/1.6.0/mkdocs/bin/python' -c 'import rich'"
 assert_contains "mise x -- mkdocs --version" "mkdocs, version 1.6.0"
+
+cat >.mise.toml <<EOF
+[tools]
+uv = "0.5.5"
+"pipx:mkdocs" = { version = "1.6.0", expose = ["rich"] }
+EOF
+assert_fail "mise install --force pipx:mkdocs" "expose requires uv@0.8.5 or newer"

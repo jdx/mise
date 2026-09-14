@@ -4880,6 +4880,24 @@ run = "cargo build"
             Some(&vec![toml::Value::String("custom-core".to_string())]),
             "user-provided expose should override the registry default"
         );
+
+        let cf3 = parse(formatdoc! {r#"
+            [tools]
+            ansible = {{ version = "latest", uvx = false, expose = [] }}
+        "#});
+        let trs3 = cf3.to_tool_request_set().unwrap();
+        let ansible3 = trs3
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "ansible")
+            .map(|(_, reqs)| reqs)
+            .expect("ansible should be in tool request set");
+        let opts3 = ansible3[0].options();
+        assert_eq!(
+            opts3.opts.get("expose").and_then(toml::Value::as_array),
+            Some(&vec![]),
+            "an empty user-provided expose should clear the registry default"
+        );
     }
 
     #[tokio::test]

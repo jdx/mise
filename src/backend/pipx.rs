@@ -42,6 +42,7 @@ use versions::Versioning;
 use xx::regex;
 
 const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
+const UV_WITH_EXECUTABLES_FROM_VERSION: &str = "0.8.5";
 
 #[derive(Debug)]
 pub(crate) struct PIPXBackend {
@@ -133,17 +134,17 @@ impl<'a> PipxOptions<'a> {
         Ok(value)
     }
 
-    fn has_uv_only_options(&self) -> bool {
-        ["with", "expose", "dependency_prereleases"]
-            .iter()
-            .any(|key| self.values.raw().opts.contains_key(*key))
+    fn has_uv_only_options(&self) -> Result<bool> {
+        Ok(!self.with()?.is_empty()
+            || !self.expose()?.is_empty()
+            || self.dependency_prereleases()?.is_some())
     }
 
     fn validate_semantic(&self) -> Result<()> {
         self.with()?;
         self.exposed_package_names()?;
         self.dependency_prereleases()?;
-        if self.has_uv_only_options() && self.uvx_disabled() {
+        if self.has_uv_only_options()? && self.uvx_disabled() {
             bail!("with, expose, and dependency_prereleases cannot be combined with uvx = false");
         }
         Ok(())
@@ -225,7 +226,7 @@ impl Backend for PIPXBackend {
     }
 
     fn get_dependencies_for(&self, opts: &ToolVersionOptions) -> eyre::Result<Vec<&str>> {
-        if PipxOptions::new(opts).has_uv_only_options() {
+        if PipxOptions::new(opts).has_uv_only_options()? {
             Ok(vec!["uv"])
         } else {
             self.get_dependencies()
@@ -546,7 +547,7 @@ impl Backend for PIPXBackend {
         } else {
             None
         };
-        if options.has_uv_only_options() && uv_program.is_none() {
+        if options.has_uv_only_options()? && uv_program.is_none() {
             bail!(
                 "{} semantic options (`with`, `expose`, and `dependency_prereleases`) require uv; install uv and ensure uvx is enabled",
                 self.ba.short
@@ -618,6 +619,7 @@ impl Backend for PIPXBackend {
 
         if let Some(uv_program) = uv_program {
             let package_request = request.uvx_request(&tv.version, &options);
+            self.ensure_uv_supports_expose(ctx, &options).await?;
             self.warn_if_uv_may_not_support_exclude_newer(ctx).await;
             ctx.pr
                 .set_message(format!("uv tool install {package_request}"));
@@ -1123,6 +1125,31 @@ impl PIPXBackend {
                 self.ba.short, version, UV_EXCLUDE_NEWER_VERSION,
             );
         }
+    }
+
+    async fn ensure_uv_supports_expose(
+        &self,
+        ctx: &InstallContext,
+        options: &PipxOptions<'_>,
+    ) -> Result<()> {
+        if options.expose()?.is_empty() {
+            return Ok(());
+        }
+        let Some(version) =
+            crate::backend::semver_version_from_toolsets_or_path(self, &ctx.config, &ctx.ts, "uv")
+                .await
+        else {
+            return Ok(());
+        };
+        if semver_is_older_than(&version, UV_WITH_EXECUTABLES_FROM_VERSION).unwrap_or(false) {
+            bail!(
+                "{} expose requires uv@{} or newer, but uv@{} is installed",
+                self.ba.short,
+                UV_WITH_EXECUTABLES_FROM_VERSION,
+                version
+            );
+        }
+        Ok(())
     }
 }
 
@@ -1824,6 +1851,21 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             toml::Value::Array(vec![toml::Value::Integer(1)]),
         );
         assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+    }
+
+    #[test]
+    fn empty_semantic_uv_options_allow_pipx() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("with".to_string(), toml::Value::Array(vec![]));
+        opts.opts
+            .insert("expose".to_string(), toml::Value::Array(vec![]));
+        opts.opts
+            .insert("uvx".to_string(), toml::Value::Boolean(false));
+
+        let opts = PipxOptions::new(&opts);
+        assert!(!opts.has_uv_only_options().unwrap());
+        opts.validate_semantic().unwrap();
     }
 
     #[test]

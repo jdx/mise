@@ -174,7 +174,7 @@ mise use python@3.14 pipx
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [], pipx_args = "--include-deps" }
 ```
 
 This uses version-only locking. An existing uv dependency graph cannot be
@@ -269,7 +269,7 @@ using pipx and are unsupported with dependency graphs.
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [], pipx_args = "--include-deps" }
 ```
 
 ### `with`
@@ -285,7 +285,7 @@ requires uv and participates in dependency locking.
 ### `expose`
 
 Install additional Python requirements and expose their executable entry points.
-This option requires uv and participates in dependency locking.
+This option requires uv 0.8.5 or newer and participates in dependency locking.
 
 ```toml
 [tools]
@@ -310,8 +310,11 @@ dependency graph locking and requires pipx to be installed.
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [] }
 ```
+
+The empty `expose` list clears Ansible's uv-backed registry default. Clear any
+other semantic defaults the same way when overriding a registry tool to use pipx.
 
 ### `uvx_args`
 
