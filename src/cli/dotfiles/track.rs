@@ -55,6 +55,9 @@ impl DotfilesTrack {
     pub(crate) async fn run(self) -> Result<()> {
         let _declarations = declaration_lock()?;
         let config = Config::get().await?;
+        if self.encrypt && !Settings::get().history.enabled {
+            bail!("dotfiles: cannot enroll encrypted paths while history is disabled");
+        }
         let managed = crate::system::files::composed_files_from_config(&config)?;
         let global = declaration_file(false)?;
         let mut edits: BTreeMap<PathBuf, DeclarationEdit> = BTreeMap::new();
