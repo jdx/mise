@@ -1,0 +1,13 @@
+i wonder if there is opportunity for a more long-term fix here: [https://github.com/jdx/mise/pull/13170](https://github.com/jdx/mise/pull/13170) perhaps some of the things that pipx\_args, uv\_args are used for could become more semantic tool options?
+
+---
+
+i would be fine with this being uv-only btw
+
+---
+
+make a pr
+
+---
+
+address pr feedback and failing checsk until it settles
