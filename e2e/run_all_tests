@@ -179,6 +179,14 @@ start_test() {
       if [[ $test_status == 0 ]]; then
         "$ROOT/e2e/run_test" "$test_name" || test_status=$?
       fi
+      # Setup failures and Docker runs may not produce their own summary row.
+      if [[ -n ${GITHUB_STEP_SUMMARY:-} && ! -s $GITHUB_STEP_SUMMARY ]]; then
+        if [[ $test_status == 0 ]]; then
+          summary "$test_name" "-" ":white_check_mark:"
+        else
+          summary "$test_name" "-" ":x:"
+        fi
+      fi
       if [[ $test_status == 0 || $attempt == "$E2E_MAX_ATTEMPTS" ]]; then
         break
       fi

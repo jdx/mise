@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class E2ERunnerTests(unittest.TestCase):
-    def run_runner(self, attempts=None, tranche=None):
+    def run_runner(self, attempts=None, tranche=None, fail_rate_limit=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             e2e = root / "e2e"
@@ -61,6 +61,21 @@ exit "$status"
                 GITHUB_ACTIONS="true",
                 GITHUB_STEP_SUMMARY=str(summary),
             )
+            if fail_rate_limit:
+                mise = root / "mise"
+                mise.write_text(
+                    """#!/usr/bin/env bash
+set -euo pipefail
+if [[ $1 == which ]]; then exit 0; fi
+if [[ -f "$COUNTS/../rate-limit-called" ]]; then exit 1; fi
+touch "$COUNTS/../rate-limit-called"
+"""
+                )
+                mise.chmod(0o755)
+                env.update(
+                    MISE_E2E_BIN=str(mise),
+                    E2E_WAIT_FOR_GH_RATE_LIMIT="1",
+                )
             if attempts is not None:
                 env["E2E_MAX_ATTEMPTS"] = str(attempts)
             if tranche is not None:
@@ -102,6 +117,16 @@ exit "$status"
         self.assertEqual(result.returncode, 0)
         self.assertEqual(counts, {"test_flaky": 2})
         self.assertNotIn("E2E failures", result.stderr)
+
+    def test_rate_limit_failure_keeps_final_summary(self):
+        result, counts, summary = self.run_runner(
+            attempts=2, tranche=1, fail_rate_limit=True
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(counts, {"test_flaky": 1})
+        self.assertEqual(summary.count("| test_flaky |"), 1)
+        self.assertIn("| test_flaky | - | :x: |", summary)
+        self.assertIn("E2E failures (1)::test_flaky", result.stderr)
 
     def test_invalid_attempt_limit(self):
         for attempts in ("0", "-1", "abc", "08"):
