@@ -251,7 +251,7 @@ impl OperationScope {
         let mut writer = lock_unpoisoned(shared);
         // held across the reservation, the capture, and the removal: the
         // capture writes the index and a checkpoint ref, which a concurrent
-        // `mise bootstrap dotfiles save` must not interleave with
+        // `mise dot save` must not interleave with
         let _store_lock = writer.store.lock()?;
         let previous = writer.before.take();
         let id = writer.store.reserve_id()?;

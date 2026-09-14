@@ -202,7 +202,7 @@ fn refuse_other_connection(store: &Store, origin: &str, branch: &str) -> Result<
         && (url != origin || status.origin_branch.as_deref() != Some(branch))
     {
         bail!(
-            "this machine is connected to {url}; `mise bootstrap dotfiles origin --remove` disconnects it, or `mise bootstrap dotfiles origin set {origin}` moves it"
+            "this machine is connected to {url}; `mise dot origin --remove` disconnects it, or `mise dot origin set {origin}` moves it"
         );
     }
     Ok(())
@@ -325,7 +325,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         onboarding.origin,
         if undecided > 0 {
             format!(
-                "; {undecided} path(s) need a decision (`mise bootstrap dotfiles status` lists them, `mise bootstrap dotfiles pull --take-remote|--keep-local <path>` decides)"
+                "; {undecided} path(s) need a decision (`mise dot status` lists them, `mise dot pull --take-remote|--keep-local <path>` decides)"
             )
         } else {
             String::new()
@@ -334,7 +334,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
     let durable_access = durable_access(&onboarding.origin, &onboarding.branch).await;
     if !durable_access {
         warn!(
-            "setup complete, but ongoing synchronization needs credentials on this host: the borrowed GitHub access ends with this session. Run `mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` here, or connect an SSH url with `mise bootstrap dotfiles origin set <url>`"
+            "setup complete, but ongoing synchronization needs credentials on this host: the borrowed GitHub access ends with this session. Run `mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` here, or connect an SSH url with `mise dot origin set <url>`"
         );
     }
     Ok(Outcome {

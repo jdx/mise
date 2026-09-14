@@ -52,7 +52,7 @@ Choose the command that matches what your repository contains:
 | ------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------- |
 | A bootstrap project with `mise.toml` and source files                    | `mise bootstrap --from <url>`  | A separate checkout, then targets defined by the project |
 | Global mise configuration such as `config.toml`, `conf.d/`, and `tasks/` | `mise bootstrap --adopt <url>` | Your global mise configuration directory                 |
-| Tracked dotfiles shared through `mise bootstrap dotfiles origin set`     | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
+| Tracked dotfiles shared through `mise dot origin set`                    | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
 
 For a walkthrough of sharing tracked dotfiles, see
 [Set up a machine](/bootstrap/setup.html).
@@ -99,7 +99,7 @@ must be a Git checkout with the requested URL as its `origin`. Pass
 ### Shared dotfile history
 
 A **setup repository** holds the dotfile history you share through
-`mise bootstrap dotfiles origin set`. On another machine, run:
+`mise dot origin set`. On another machine, run:
 
 ```sh
 mise bootstrap --adopt you/setup
@@ -156,7 +156,7 @@ preflight prevents a missing input from leaving a partially provisioned host.
    [`[bootstrap.compose]`](/bootstrap/compose.html) projects.
 8. `mise bootstrap repos apply` clones or updates
    [`[bootstrap.repos]`](/bootstrap/repos.html).
-9. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
+9. `mise dot apply` applies [`[dotfiles]`](/dotfiles.html).
 10. `mise bootstrap mise-shell-activate apply` configures shell activation from
     [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
 11. `mise bootstrap macos defaults apply` writes
@@ -271,9 +271,9 @@ mise bootstrap status --json
 mise bootstrap status --missing
 mise bootstrap packages status
 mise bootstrap repos status
-mise bootstrap dotfiles status
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --dry-run --verbose
+mise dot status
+mise dot apply --dry-run
+mise dot apply --dry-run --verbose
 mise bootstrap mise-shell-activate status
 mise bootstrap macos defaults status
 mise bootstrap macos launchd-agents status
@@ -282,18 +282,18 @@ mise bootstrap firewall status
 mise bootstrap user status
 ```
 
-Use `mise bootstrap dotfiles history` to see the checkpoints bootstrap has recorded — a pair per
+Use `mise dot history` to see the checkpoints bootstrap has recorded — a pair per
 mutating run, with the tracked files before and after. See [History](/history.html).
 
 ```sh
-mise bootstrap dotfiles history
-mise bootstrap dotfiles history show latest
-mise bootstrap dotfiles history diff 11 12
+mise dot history
+mise dot history show latest
+mise dot history diff 11 12
 ```
 
 `mise bootstrap status --missing` checks the whole declarative bootstrap
 surface in one command. The narrower `mise bootstrap packages status --missing`
-and `mise bootstrap dotfiles status --missing` commands are useful when you only
+and `mise dot status --missing` commands are useful when you only
 want to check one part without installing anything.
 
 ## What goes where
@@ -358,7 +358,7 @@ post-defaults = "killall Dock || true"
 Hooks merge across the config hierarchy from global to local, so shared config
 can define broad machine setup while a project adds its own phase commands.
 The `pre-dotfiles` and `post-dotfiles` phases also wrap
-`mise bootstrap dotfiles apply`.
+`mise dot apply`.
 
 ## Common workflows
 
@@ -386,7 +386,7 @@ For a file you already manage in `copy` mode, save edits back to its source:
 
 ```sh
 $EDITOR ~/.zshrc
-mise bootstrap dotfiles add ~/.zshrc
+mise dot add ~/.zshrc
 ```
 
 `add` updates the managed source. For a file mise does not yet manage, it
@@ -394,14 +394,14 @@ creates a source under `dotfiles.root`, writes a configuration entry, and
 applies it. See [capturing changes](/dotfiles.html#capturing-changes).
 
 For a file you edit in place and want to save in history, use
-`mise bootstrap dotfiles track ~/.zshrc`, then set up
+`mise dot track ~/.zshrc`, then set up
 [automatic saves](/history.html#automatic-saves).
 
 ### Edit a managed dotfile
 
 ```sh
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles apply ~/.zshrc
+mise dot edit ~/.zshrc
+mise dot apply ~/.zshrc
 ```
 
 For symlinked dotfiles, `edit` opens the managed source, so it works with the

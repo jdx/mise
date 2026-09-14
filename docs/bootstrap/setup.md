@@ -22,7 +22,7 @@ export PATH="$HOME/.local/bin:$PATH"
 On macOS with zsh:
 
 ```sh
-mise bootstrap dotfiles track ~/.zshrc
+mise dot track ~/.zshrc
 ```
 
 On Omarchy with Bash, use `~/.bashrc` instead. Choose a file that already exists;
@@ -50,7 +50,7 @@ Install the service and check that it is running:
 
 ```sh
 mise bootstrap services apply
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 The watcher saves edits to local Git history. It runs as a systemd user
@@ -58,7 +58,7 @@ service on Linux, a LaunchAgent on macOS, or a Scheduled Task on Windows.
 The history repository is stored separately from the files you edit.
 
 If you prefer to save manually, skip the service and run
-`mise bootstrap dotfiles save` after editing.
+`mise dot save` after editing.
 
 ## Inspect and restore a change
 
@@ -66,20 +66,20 @@ Edit your tracked file, then save a checkpoint now so you can inspect it
 without waiting for the watcher:
 
 ```sh
-mise bootstrap dotfiles save ~/.zshrc
-mise bootstrap dotfiles history --path ~/.zshrc
+mise dot save ~/.zshrc
+mise dot history --path ~/.zshrc
 ```
 
 To see a checkpoint's changes, replace `CHECKPOINT_ID` with an ID from that list:
 
 ```sh
-mise bootstrap dotfiles history diff CHECKPOINT_ID --path ~/.zshrc --patch
+mise dot history diff CHECKPOINT_ID --path ~/.zshrc --patch
 ```
 
 To restore the previous version:
 
 ```sh
-mise bootstrap dotfiles rollback ~/.zshrc
+mise dot rollback ~/.zshrc
 ```
 
 Rollback selects the latest saved version that differs from the current
@@ -87,7 +87,7 @@ file. Review the proposed changes before confirming. It saves the current
 contents first, so you can reverse the rollback:
 
 ```sh
-mise bootstrap dotfiles undo
+mise dot undo
 ```
 
 A rollback creates a new commit, preserving the versions you left behind.
@@ -100,7 +100,7 @@ an **origin**. First, track your mise configuration so the next machine can
 also install your tools and start the watcher:
 
 ```sh
-mise bootstrap dotfiles track ~/.config/mise/config.toml
+mise dot track ~/.config/mise/config.toml
 ```
 
 Create an empty private GitHub repository, then authenticate on this machine:
@@ -125,7 +125,7 @@ Replace `you/setup` with your repository. This example enables automatic
 sharing:
 
 ```sh
-mise bootstrap dotfiles origin set https://github.com/you/setup.git --sync sync
+mise dot origin set https://github.com/you/setup.git --sync sync
 ```
 
 Review the connection preview before confirming. With the watcher running,
@@ -149,9 +149,9 @@ In manual mode, mise keeps saving locally. Run these commands to save your
 latest edits, push all accumulated commits, fetch remote changes, and apply them:
 
 ```sh
-mise bootstrap dotfiles save
-mise bootstrap dotfiles sync
-mise bootstrap dotfiles pull
+mise dot save
+mise dot sync
+mise dot pull
 ```
 
 These commands also work in automatic mode when you want to sync immediately.
@@ -182,7 +182,7 @@ setup can continue. Enable automatic sharing on this machine and check its state
 
 ```sh
 mise settings set history.sync sync
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 Choose `manual` or `fetch-only` here if you want a different mode on this machine.
@@ -208,8 +208,8 @@ also report the pause, including on Windows or headless machines.
 Inspect the conflict:
 
 ```sh
-mise bootstrap dotfiles status
-mise bootstrap dotfiles conflicts ~/.zshrc
+mise dot status
+mise dot conflicts ~/.zshrc
 ```
 
 The second command shows the saved local version against the fetched
@@ -220,17 +220,17 @@ resolve either side.
 Choose the repository's version of a file:
 
 ```sh
-mise bootstrap dotfiles pull --take-remote ~/.zshrc
+mise dot pull --take-remote ~/.zshrc
 ```
 
 Or keep this machine's version:
 
 ```sh
-mise bootstrap dotfiles pull --keep-local ~/.zshrc
+mise dot pull --keep-local ~/.zshrc
 ```
 
 Resolve every reported conflict before sharing can resume. In manual mode, run
-`mise bootstrap dotfiles sync` to publish your resolution.
+`mise dot sync` to publish your resolution.
 
 ## Use a template (optional)
 
@@ -273,7 +273,7 @@ records the commit it points to; keep that repository backed up separately.
 Before an update, save the current tracked files:
 
 ```sh
-mise bootstrap dotfiles save --best-effort
+mise dot save --best-effort
 ```
 
 This saves your tracked dotfiles. Use your operating system's backup tools
@@ -282,13 +282,13 @@ for packages and other system state.
 On macOS, you can keep a tracked file separate from its Linux counterpart:
 
 ```sh
-mise bootstrap dotfiles track ~/.zshrc --os macos
+mise dot track ~/.zshrc --os macos
 ```
 
 On either platform, check tracking and watcher status with:
 
 ```sh
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 For directory exclusions and save options, see [dotfiles](/dotfiles.html).

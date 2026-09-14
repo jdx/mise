@@ -19,13 +19,13 @@ A **checkpoint** is a saved version of your tracked files, stored as a Git
 commit. To save the current contents of one file:
 
 ```sh
-mise bootstrap dotfiles save ~/.zshrc
+mise dot save ~/.zshrc
 ```
 
 To save all tracked files with a description:
 
 ```sh
-mise bootstrap dotfiles save --description "before changing my theme"
+mise dot save --description "before changing my theme"
 ```
 
 An ordinary save with no changes creates no commit. Supplying
@@ -33,7 +33,7 @@ An ordinary save with no changes creates no commit. Supplying
 files have not changed.
 
 For a file tracked with `autosave = false`, save its edits by naming it:
-`mise bootstrap dotfiles save <path>`. Automatic checkpoints keep that
+`mise dot save <path>`. Automatic checkpoints keep that
 file's last saved version. Commands that explicitly modify or capture it
 can also save it; see [operation checkpoints](#operation-checkpoints).
 
@@ -56,7 +56,7 @@ Install it and check that it is running:
 
 ```sh
 mise bootstrap services apply
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 mise uses a systemd user service on Linux, a LaunchAgent on macOS, or a
@@ -73,15 +73,15 @@ can have unsaved edits while other files have already been saved. Explicit
 To see files being saved less often:
 
 ```sh
-mise bootstrap dotfiles paths --noisy
+mise dot paths --noisy
 ```
 
 Logs, caches, databases, and session state usually belong outside your
 tracked files. For a configuration file you want to save only on request:
 
 ```sh
-mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
-mise bootstrap dotfiles save ~/.config/app/state.json
+mise dot track ~/.config/app/state.json --no-autosave
+mise dot save ~/.config/app/state.json
 ```
 
 Tracking saves the first version immediately. Later edits wait for an
@@ -92,15 +92,15 @@ explicit save. Check [watcher health](#health) if expected saves are missing.
 List the checkpoints where a file changed, newest first:
 
 ```sh
-mise bootstrap dotfiles history --path ~/.zshrc
+mise dot history --path ~/.zshrc
 ```
 
-Run `mise bootstrap dotfiles history` without `--path` to see all checkpoints.
+Run `mise dot history` without `--path` to see all checkpoints.
 Use an ID from the list to inspect one. The examples below use checkpoint 12:
 
 ```sh
-mise bootstrap dotfiles history show 12
-mise bootstrap dotfiles history diff 12 --patch --path ~/.zshrc
+mise dot history show 12
+mise dot history diff 12 --patch --path ~/.zshrc
 ```
 
 `history show` displays checkpoint details, including what triggered it and
@@ -109,13 +109,13 @@ structured output. `history diff 12` shows what changed in that checkpoint.
 To compare two checkpoints, supply both IDs:
 
 ```sh
-mise bootstrap dotfiles history diff 11 12 --patch --path ~/.zshrc
+mise dot history diff 11 12 --patch --path ~/.zshrc
 ```
 
 To compare your current file with its latest saved version:
 
 ```sh
-mise bootstrap dotfiles history diff --path ~/.zshrc
+mise dot history diff --path ~/.zshrc
 ```
 
 This also shows unsaved edits in files with `autosave = false`. Add
@@ -137,7 +137,7 @@ With `--path`, `latest~N` counts only checkpoints where that path changed.
 For example:
 
 ```sh
-mise bootstrap dotfiles history show latest~1 --path ~/.zshrc
+mise dot history show latest~1 --path ~/.zshrc
 ```
 
 This selects the checkpoint before the file's most recent change, even if
@@ -154,15 +154,15 @@ To restore a file to its most recent saved version that differs from its
 current contents, preview the change and then apply it:
 
 ```sh
-mise bootstrap dotfiles rollback ~/.zshrc --dry-run
-mise bootstrap dotfiles rollback ~/.zshrc
+mise dot rollback ~/.zshrc --dry-run
+mise dot rollback ~/.zshrc
 ```
 
 mise saves the current contents before replacing them. To reverse that
 rollback, run:
 
 ```sh
-mise bootstrap dotfiles undo
+mise dot undo
 ```
 
 `undo` restores the tracked files changed by the operation. Other files
@@ -174,8 +174,8 @@ To choose a checkpoint, use an ID from `history` or a
 [checkpoint reference](#referring-to-checkpoints):
 
 ```sh
-mise bootstrap dotfiles rollback ~/.zshrc --to 42
-mise bootstrap dotfiles rollback --to latest~3 --all --dry-run
+mise dot rollback ~/.zshrc --to 42
+mise dot rollback --to latest~3 --all --dry-run
 ```
 
 `--all` selects everything covered by the chosen checkpoint. If that
@@ -228,8 +228,8 @@ before first saving a file that needs it.
 Create an empty private repository and replace `you/setup` with its name:
 
 ```sh
-mise bootstrap dotfiles origin set https://github.com/you/setup.git --sync sync
-mise bootstrap dotfiles status
+mise dot origin set https://github.com/you/setup.git --sync sync
+mise dot status
 ```
 
 Review the connection preview before confirming. With `--sync sync`, the
@@ -259,8 +259,8 @@ which defaults to `sync`; specify `--sync` in scripts to choose explicitly.
 These commands work in every mode:
 
 ```sh
-mise bootstrap dotfiles sync
-mise bootstrap dotfiles pull
+mise dot sync
+mise dot pull
 ```
 
 `sync` pushes saved commits and fetches remote changes. `pull` applies
@@ -275,7 +275,7 @@ save contribute their last saved contents.
 its shared sources together; partial pulls are not supported. It does not
 install tools or services, or render templates. When those declarations or
 their sources change, run `mise bootstrap` to deploy them. If only dotfile
-deployment is needed, use `mise bootstrap dotfiles apply` to create files
+deployment is needed, use `mise dot apply` to create files
 from the sources, templates, and edits in `[dotfiles]`. A separate `apply`
 is not needed merely to restore shared tracked-file contents.
 
@@ -291,8 +291,8 @@ Inspect the saved version on this machine against the fetched repository
 version:
 
 ```sh
-mise bootstrap dotfiles status
-mise bootstrap dotfiles conflicts ~/.zshrc
+mise dot status
+mise dot conflicts ~/.zshrc
 ```
 
 `conflicts` prints a unified diff without changing either side. To open the
@@ -303,8 +303,8 @@ with `--difftool --tool <name>`.
 Choose the remote version of a file, or keep the local version:
 
 ```sh
-mise bootstrap dotfiles pull --take-remote ~/.zshrc
-mise bootstrap dotfiles pull --keep-local ~/.zshrc
+mise dot pull --take-remote ~/.zshrc
+mise dot pull --keep-local ~/.zshrc
 ```
 
 To combine both sides, use the conflict diff to edit the live file, explicitly
@@ -312,9 +312,9 @@ save the merged path (also capturing files tracked with `--no-autosave`), then
 choose the saved local version:
 
 ```sh
-mise bootstrap dotfiles conflicts --difftool ~/.zshrc
-mise bootstrap dotfiles save ~/.zshrc
-mise bootstrap dotfiles pull --keep-local ~/.zshrc
+mise dot conflicts --difftool ~/.zshrc
+mise dot save ~/.zshrc
+mise dot pull --keep-local ~/.zshrc
 ```
 
 Run the command for the choice you want. mise records each decision and
@@ -329,14 +329,14 @@ settings, inactive platform variants, or multiple Git merge bases, follow
 the reported Git-level repair instructions in a separate checkout.
 
 Pull saves a checkpoint first, records each file it writes, and runs reload
-hooks afterwards. You can reverse it with `mise bootstrap dotfiles undo`.
+hooks afterwards. You can reverse it with `mise dot undo`.
 Writes happen one file at a time; interrupted work uses the
 [recovery process](#recovery-details).
 
 ### Conflict notifications
 
 Desktop notifications are enabled by default for sharing conflicts. They
-point to `mise bootstrap dotfiles status` for resolution steps. A pause
+point to `mise dot status` for resolution steps. A pause
 produces one notification; further retries during the same pause stay quiet.
 A new pause after recovery can notify again.
 
@@ -402,9 +402,9 @@ To inspect what an update changed in your tracked dotfiles, wrap it with
 `capture`. For example, on Omarchy:
 
 ```sh
-mise bootstrap dotfiles capture --label "omarchy update" -- omarchy-update
-mise bootstrap dotfiles history --label "omarchy update"
-mise bootstrap dotfiles history diff --operation --patch
+mise dot capture --label "omarchy update" -- omarchy-update
+mise dot history --label "omarchy update"
+mise dot history diff --operation --patch
 ```
 
 `capture` saves tracked files before and after the command, including files
@@ -413,7 +413,7 @@ succeeded. The diff compares those two checkpoints, even if other saves
 happened later. To inspect an older operation, supply its checkpoint ID:
 
 ```sh
-mise bootstrap dotfiles history diff 42 --operation --patch
+mise dot history diff 42 --operation --patch
 ```
 
 The command runs directly with inherited input, output, and environment.
@@ -459,9 +459,9 @@ Bootstrap reports required files missing from history.
 Use glob patterns to exclude files from history:
 
 ```sh
-mise bootstrap dotfiles exclude '~/.config/hypr/plugins/**'
-mise bootstrap dotfiles include '~/.config/hypr/plugins/**'
-mise bootstrap dotfiles paths
+mise dot exclude '~/.config/hypr/plugins/**'
+mise dot include '~/.config/hypr/plugins/**'
+mise dot paths
 ```
 
 Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
@@ -477,7 +477,7 @@ to save manually. An excluded file is left out of future saves entirely.
 To stop tracking a file:
 
 ```sh
-mise bootstrap dotfiles untrack ~/.zshrc
+mise dot untrack ~/.zshrc
 ```
 
 The file stays in place, while future checkpoints leave it out. Earlier
@@ -532,7 +532,7 @@ If files are not being saved or shared, start with:
 
 ```sh
 mise doctor
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 `doctor` summarizes a watcher that is declared but stopped, repeated save
@@ -615,11 +615,11 @@ that invalidates the plan stops the operation.
 
 Files are written one at a time, with a journal recording each affected
 path. An interruption can leave some writes completed. Use
-`mise bootstrap dotfiles recover` to retry unfinished writes. If later edits
+`mise dot recover` to retry unfinished writes. If later edits
 prevent recovery, inspect the reported paths. To accept the current files:
 
 ```sh
-mise bootstrap dotfiles recover <operation> --keep-current
+mise dot recover <operation> --keep-current
 ```
 
 After confirmation, this discards that operation's temporary recovery
@@ -702,7 +702,7 @@ default). Set that interval to `0` to disable periodic scans.
 Edits to global TOML configuration or `conf.d/` reload the tracked paths
 and update their watches. Setting `history.enabled = false` stops the watcher.
 To run one scan from a timer or cron job, use
-`mise bootstrap dotfiles watch --once`.
+`mise dot watch --once`.
 
 Failed saves remain pending and are retried with increasing delays from
 one second to five minutes. A save that overlaps bootstrap, rollback, or
@@ -724,8 +724,8 @@ commits, and encrypting its latest version does not erase earlier plaintext.
 ## Requirements and settings
 
 History needs a `git` binary (on macOS, the Xcode Command Line Tools). Without
-one, `mise bootstrap dotfiles save` fails and bootstrap commands still run, recording
-their journals without content; `mise bootstrap dotfiles status` says so.
+one, `mise dot save` fails and bootstrap commands still run, recording
+their journals without content; `mise dot status` says so.
 
 `settings.history.enabled` defaults to `true`. Disabling it stops automatic
 capture; it does not delete committed history.

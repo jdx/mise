@@ -72,7 +72,7 @@ impl DotfilesOrigin {
                         );
                     }
                     None => miseprintln!(
-                        "no setup repository is connected; `mise bootstrap dotfiles origin set <url>` connects one"
+                        "no setup repository is connected; `mise dot origin set <url>` connects one"
                     ),
                 }
                 Ok(())
@@ -123,9 +123,9 @@ impl DotfilesOriginSet {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles origin set https://github.com/you/setup.git</bold>
-    $ <bold>mise bootstrap dotfiles origin set git@github.com:you/setup.git --sync manual</bold>
-    $ <bold>mise bootstrap dotfiles origin</bold>              # what is connected
-    $ <bold>mise bootstrap dotfiles origin --remove</bold>
+    $ <bold>mise dot origin set https://github.com/you/setup.git</bold>
+    $ <bold>mise dot origin set git@github.com:you/setup.git --sync manual</bold>
+    $ <bold>mise dot origin</bold>              # what is connected
+    $ <bold>mise dot origin --remove</bold>
 "#
 );

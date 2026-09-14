@@ -3,8 +3,9 @@
 printf '[dotfiles]\n"~/.large-config" = { mode = "copy", source = "replacement" }\n' >mise.toml
 printf 'replacement\n' >replacement
 dd if=/dev/zero of=~/.large-config bs=1048576 count=9 2>/dev/null
-assert_succeed 'mise bootstrap dotfiles apply --yes'
+assert_succeed 'mise dot apply --yes'
 assert_succeed 'cmp replacement ~/.large-config'
+assert_succeed 'mise dotfiles status'
 
 # The setup-repository path must retain the existing checkout-origin guard,
 # before probing or connecting a different repository.

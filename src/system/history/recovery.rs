@@ -54,7 +54,7 @@ fn recover_entries(
     }
     if !failures.is_empty() {
         bail!(
-            "interrupted file recovery needs attention; temporary recovery data was retained. {}. Run `mise bootstrap dotfiles recover` to retry, or inspect the files and use `recover <operation> --keep-current` to explicitly accept their current contents",
+            "interrupted file recovery needs attention; temporary recovery data was retained. {}. Run `mise dot recover` to retry, or inspect the files and use `recover <operation> --keep-current` to explicitly accept their current contents",
             failures.join("; ")
         );
     }

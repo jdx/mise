@@ -13,7 +13,13 @@ description: "Show the status of dotfiles from `[dotfiles]`"
 Show the status of dotfiles from `[dotfiles]`
 
 Template entries are rendered to compare their output; trusted template
-functions may execute. `--missing` changes the exit status, not the listing.
+functions may execute. JSON includes each entry's origin and uses the states
+`applied`, `missing`, `differs`, `source_missing`, and `tracked`.
+
+The management state of every declaration (applied, missing, differs,
+tracked) followed by the history state: what is tracked, the latest
+checkpoint, unfinished operations, and whether edits are saved
+automatically.
 
 ## Arguments
 - **`[TARGET]…`** — Only show these targets
@@ -31,10 +37,10 @@ functions may execute. `--missing` changes the exit status, not the listing.
 ## Examples
 
 ```
-mise bootstrap dotfiles status
-mise bootstrap dotfiles status ~/.zshrc
-mise bootstrap dotfiles status --json
-mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
+mise dot status
+mise dot status ~/.zshrc
+mise dot status --json
+mise dot status --missing # exit 1 if anything is out of sync
 ```
 
 <!-- generated reference navigation -->

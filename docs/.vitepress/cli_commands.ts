@@ -491,25 +491,92 @@ export const commands: { [key: string]: Command } = {
     },
   },
   dotfiles: {
-    hide: true,
+    hide: false,
     subcommands: {
       add: {
-        hide: true,
+        hide: false,
       },
       apply: {
-        hide: true,
+        hide: false,
+      },
+      capture: {
+        hide: false,
+      },
+      conflicts: {
+        hide: false,
       },
       diff: {
-        hide: true,
+        hide: false,
       },
       edit: {
-        hide: true,
+        hide: false,
+      },
+      exclude: {
+        hide: false,
+      },
+      history: {
+        hide: false,
+        subcommands: {
+          describe: {
+            hide: false,
+          },
+          diff: {
+            hide: false,
+          },
+          ls: {
+            hide: false,
+          },
+          show: {
+            hide: false,
+          },
+        },
+      },
+      include: {
+        hide: false,
+      },
+      origin: {
+        hide: false,
+        subcommands: {
+          set: {
+            hide: false,
+          },
+        },
+      },
+      paths: {
+        hide: false,
+      },
+      pull: {
+        hide: false,
+      },
+      recover: {
+        hide: false,
+      },
+      rollback: {
+        hide: false,
+      },
+      save: {
+        hide: false,
       },
       status: {
-        hide: true,
+        hide: false,
+      },
+      sync: {
+        hide: false,
+      },
+      track: {
+        hide: false,
       },
       unapply: {
-        hide: true,
+        hide: false,
+      },
+      undo: {
+        hide: false,
+      },
+      untrack: {
+        hide: false,
+      },
+      watch: {
+        hide: false,
       },
     },
   },

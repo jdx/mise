@@ -218,6 +218,29 @@
 - [mise doctor](https://mise.jdx.dev/cli/doctor.html): Check mise installation for possible problems
 - [mise doctor path](https://mise.jdx.dev/cli/doctor/path.html): Print the current PATH entries mise is providing
 - [mise doctor project](https://mise.jdx.dev/cli/doctor/project.html): Run the project's diagnostic checks
+- [mise dotfiles](https://mise.jdx.dev/cli/dotfiles.html): Manage dotfiles from [dotfiles]
+- [mise dotfiles add](https://mise.jdx.dev/cli/dotfiles/add.html): Add or update dotfiles in [dotfiles]
+- [mise dotfiles apply](https://mise.jdx.dev/cli/dotfiles/apply.html): Apply dotfiles from [dotfiles]
+- [mise dotfiles capture](https://mise.jdx.dev/cli/dotfiles/capture.html): Record tracked files before and after an external command
+- [mise dotfiles conflicts](https://mise.jdx.dev/cli/dotfiles/conflicts.html): Inspect the local and remote sides of sharing conflicts
+- [mise dotfiles diff](https://mise.jdx.dev/cli/dotfiles/diff.html): Show the changes needed to apply dotfiles from [dotfiles]
+- [mise dotfiles edit](https://mise.jdx.dev/cli/dotfiles/edit.html): Edit a managed dotfile source
+- [mise dotfiles exclude](https://mise.jdx.dev/cli/dotfiles/exclude.html): Never capture paths matching a glob
+- [mise dotfiles history](https://mise.jdx.dev/cli/dotfiles/history.html): Browse the checkpoints of your dotfiles
+- [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Capture paths matching a glob again
+- [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Connect or disconnect the setup repository
+- [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): Show what history tracks and under which policies
+- [mise dotfiles pull](https://mise.jdx.dev/cli/dotfiles/pull.html): Pull incoming shared changes into the live files
+- [mise dotfiles recover](https://mise.jdx.dev/cli/dotfiles/recover.html): Recover an interrupted dotfile operation
+- [mise dotfiles rollback](https://mise.jdx.dev/cli/dotfiles/rollback.html): Return files to the version a checkpoint holds
+- [mise dotfiles save](https://mise.jdx.dev/cli/dotfiles/save.html): Save a checkpoint of the tracked files now
+- [mise dotfiles status](https://mise.jdx.dev/cli/dotfiles/status.html): Show the status of dotfiles from [dotfiles]
+- [mise dotfiles sync](https://mise.jdx.dev/cli/dotfiles/sync.html): Publish, fetch, and record what is pending now
+- [mise dotfiles track](https://mise.jdx.dev/cli/dotfiles/track.html): Track a file or directory in place
+- [mise dotfiles unapply](https://mise.jdx.dev/cli/dotfiles/unapply.html): Remove dotfiles applied from [dotfiles]
+- [mise dotfiles undo](https://mise.jdx.dev/cli/dotfiles/undo.html): Reverse the tracked-file changes from an operation
+- [mise dotfiles untrack](https://mise.jdx.dev/cli/dotfiles/untrack.html): Stop tracking a file or directory
+- [mise dotfiles watch](https://mise.jdx.dev/cli/dotfiles/watch.html): Save tracked files as they change
 - [mise edit](https://mise.jdx.dev/cli/edit.html): Edit mise.toml interactively
 - [mise en](https://mise.jdx.dev/cli/en.html): Start a new shell with the mise environment built from the current configuration
 - [mise env](https://mise.jdx.dev/cli/env.html): Print the environment for the current configuration

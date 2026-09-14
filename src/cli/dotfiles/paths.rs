@@ -167,7 +167,7 @@ impl DotfilesPaths {
         }
         table.print()?;
         miseprintln!(
-            "These paths keep changing, so the watcher saves them ever more rarely (never excluded or switched to manual saving on its own). Exclude a log, cache, or database with `mise bootstrap dotfiles exclude '<glob>'`; track configuration that changes constantly with `--no-autosave` and save it explicitly."
+            "These paths keep changing, so the watcher saves them ever more rarely (never excluded or switched to manual saving on its own). Exclude a log, cache, or database with `mise dot exclude '<glob>'`; track configuration that changes constantly with `--no-autosave` and save it explicitly."
         );
         Ok(())
     }

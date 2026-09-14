@@ -7,7 +7,7 @@ use crate::system::history::sync::run::{self, SyncRequest};
 /// Fetches the origin branch and publishes the ordinary local commit history.
 /// A rejected push fetches again and reconciles without rewriting history.
 /// Records incoming changes to apply and conflicts to decide.
-/// Live files are never changed here: `mise bootstrap dotfiles pull` does
+/// Live files are never changed here: `mise dot pull` does
 /// that. In `fetch-only` mode nothing is published.
 ///
 /// The history watcher does this on its own in `sync` and `fetch-only` mode

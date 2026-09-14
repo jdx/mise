@@ -170,7 +170,7 @@ async fn set_inner(
             }
         }
         miseprintln!(
-            "Against the repository: {present} identical, {} differing (decided with `mise bootstrap dotfiles pull --take-remote|--keep-local`), {incoming} incoming to apply.",
+            "Against the repository: {present} identical, {} differing (decided with `mise dot pull --take-remote|--keep-local`), {incoming} incoming to apply.",
             differing.len()
         );
         for path in differing.iter().take(10) {
@@ -293,13 +293,13 @@ pub(crate) fn report(outcome: &run::SyncOutcome) {
     }
     if outcome.pending > 0 {
         info!(
-            "history: {} incoming change(s) pending; `mise bootstrap dotfiles pull` applies them",
+            "history: {} incoming change(s) pending; `mise dot pull` applies them",
             outcome.pending
         );
     }
     if outcome.conflicts > 0 {
         warn!(
-            "history: {} conflict(s) need a decision; `mise bootstrap dotfiles status` lists them",
+            "history: {} conflict(s) need a decision; `mise dot status` lists them",
             outcome.conflicts
         );
     }
@@ -404,7 +404,7 @@ async fn setup_requirements(tracked: &TrackedSet) -> Result<()> {
             let display = display_path(&path);
             if roots.branch_path(&path, None).is_some() {
                 miseprintln!(
-                    "Not enrolled for recreating this setup: {display}. To include it explicitly: mise bootstrap dotfiles track {}",
+                    "Not enrolled for recreating this setup: {display}. To include it explicitly: mise dot track {}",
                     shell_escape::escape(display.as_str().into())
                 );
             } else {

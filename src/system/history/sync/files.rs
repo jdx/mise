@@ -260,8 +260,11 @@ pub(crate) fn decrypt(
     if let Some(decrypted) = repo.decrypted_object(&object.1) {
         return Ok(decrypted);
     }
-    let bytes = agecrypt::decrypt_sync(&outer.ciphertext.0, interactive)
-        .wrap_err_with(|| format!("cannot unlock {path}; run mise bootstrap dotfiles pull interactively with a matching age identity"))?;
+    let bytes = agecrypt::decrypt_sync(&outer.ciphertext.0, interactive).wrap_err_with(|| {
+        format!(
+            "cannot unlock {path}; run mise dot pull interactively with a matching age identity"
+        )
+    })?;
     let inner: Plaintext =
         rmp_serde::from_slice(&bytes).wrap_err("invalid encrypted file payload")?;
     validate(path, &outer, &inner)?;

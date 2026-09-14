@@ -1,4 +1,4 @@
-//! All-or-nothing application of incoming changes: `mise bootstrap dotfiles pull`.
+//! All-or-nothing application of incoming changes: `mise dot pull`.
 //! The complete setup is preflighted; an incoming configuration file is validated
 //! before it is written; a path with unsaved local edits, staged git
 //! changes, or a genuine local edit is held for a decision. Application
@@ -516,7 +516,7 @@ pub(crate) async fn apply(
                 || live_permissions(&step.path)? != step.before_mode
             {
                 bail!(
-                    "{} changed while the changes were being applied; nothing more was written. Run `mise bootstrap dotfiles pull` again",
+                    "{} changed while the changes were being applied; nothing more was written. Run `mise dot pull` again",
                     display_path(&step.path)
                 );
             }
@@ -587,7 +587,7 @@ pub(crate) async fn apply(
             }
         }
         status.application_failure = Some(format!(
-            "application failed ({:#}); {}. Sharing is paused. Inspect `mise bootstrap dotfiles history` and retry `mise bootstrap dotfiles pull`",
+            "application failed ({:#}); {}. Sharing is paused. Inspect `mise dot history` and retry `mise dot pull`",
             error,
             if recovery_errors.is_empty() {
                 "previous files restored".into()
@@ -899,7 +899,7 @@ pub(super) fn has_staged_changes(staged: &BTreeSet<PathBuf>, path: &Path) -> boo
         .is_some_and(|entry| entry.starts_with(path))
 }
 
-/// The conflicts as rows for `mise bootstrap dotfiles status`.
+/// The conflicts as rows for `mise dot status`.
 pub(crate) fn describe_conflicts(conflicts: &[Conflict]) -> Vec<(String, String)> {
     let roots = Roots::current();
     conflicts
@@ -917,10 +917,11 @@ pub(crate) fn describe_conflicts(conflicts: &[Conflict]) -> Vec<(String, String)
 
 pub(crate) fn resolution_advice(path: &str, reason: &str) -> String {
     if reason == super::reconcile::ConflictKind::Repository.describe() {
-        "inspect the validation error, reconcile the repository with Git, then run `mise bootstrap dotfiles sync`".into()
+        "inspect the validation error, reconcile the repository with Git, then run `mise dot sync`"
+            .into()
     } else {
         format!(
-            "inspect with `mise bootstrap dotfiles conflicts {path}`; resolve with `mise bootstrap dotfiles pull --take-remote|--keep-local {path}`"
+            "inspect with `mise dot conflicts {path}`; resolve with `mise dot pull --take-remote|--keep-local {path}`"
         )
     }
 }

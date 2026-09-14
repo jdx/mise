@@ -9,7 +9,7 @@
 //! `[bootstrap.directories]` — privileged filesystem resources —
 //! `[bootstrap.repos]` — declarative git checkouts — `[dotfiles]` —
 //! declarative config files applied by
-//! `mise bootstrap dotfiles apply` — `[bootstrap.mise_shell_activate]`
+//! `mise dot apply` — `[bootstrap.mise_shell_activate]`
 //! shell activation setup — `[bootstrap.macos.defaults]` — declarative macOS
 //! user defaults — `[bootstrap.macos.launchd.agents]` — declarative macOS
 //! LaunchAgents — `[bootstrap.linux.systemd.units]` — declarative Linux
