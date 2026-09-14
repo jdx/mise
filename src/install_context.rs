@@ -84,7 +84,7 @@ pub(crate) fn install_dependency_declarations(
     let mut declarations = InstallDependencyDeclarations::default();
     match request
         .backend()
-        .and_then(|backend| backend.get_all_dependencies(true))
+        .and_then(|backend| backend.get_all_dependencies_for(&request.options(), true))
     {
         Ok(dependencies) => {
             for dependency in dependencies {
@@ -237,6 +237,15 @@ mod tests {
         assert!(names.contains(&"rust".to_string()));
         assert!(names.contains(&"cargo-binstall".to_string()));
         assert!(names.contains(&"sccache".to_string()));
+    }
+
+    #[tokio::test]
+    async fn pipx_semantic_uv_options_select_uv_dependency() {
+        let _config = Config::get().await.unwrap();
+        let declarations =
+            install_dependency_declarations(&request("pipx:black", r#"with=["click"]"#));
+        declarations.validate().unwrap();
+        assert_eq!(names(&declarations), vec!["uv"]);
     }
 
     #[tokio::test]

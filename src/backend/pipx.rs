@@ -224,6 +224,14 @@ impl Backend for PIPXBackend {
         Ok(vec!["pipx", "python"])
     }
 
+    fn get_dependencies_for(&self, opts: &ToolVersionOptions) -> eyre::Result<Vec<&str>> {
+        if PipxOptions::new(opts).has_uv_only_options() {
+            Ok(vec!["uv"])
+        } else {
+            self.get_dependencies()
+        }
+    }
+
     fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
         Ok(vec!["uv"])
     }
@@ -1401,6 +1409,7 @@ mod tests {
     use super::{
         PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, UV_EXCLUDE_NEWER_VERSION,
     };
+    use crate::backend::Backend;
     use crate::github::GithubRelease;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
@@ -1694,6 +1703,21 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         assert_eq!(
             PipxRequest::github_repo("ssh://git@github.com/psf/black"),
             Some("psf/black".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn semantic_uv_options_make_uv_the_required_backend_dependency() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg("pipx:black[with=['click']]".into());
+        assert_eq!(
+            backend
+                .get_all_dependencies(false)
+                .unwrap()
+                .into_iter()
+                .map(|ba| ba.short)
+                .collect::<Vec<_>>(),
+            vec!["uv"]
         );
     }
 
