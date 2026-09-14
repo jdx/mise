@@ -180,12 +180,21 @@ impl Drop for ScratchIndex {
     }
 }
 
-/// Removes scratch indexes an earlier process holding this process id left
-/// behind when it was killed. Runs once per directory, before that
-/// directory has handed out a scratch index of its own, so it can never
-/// remove one this process is still composing into. Indexes carrying
-/// another process id belong to a mise that may still be running: leave
-/// them, whoever owns them removes them.
+/// How long a scratch index must have gone untouched before it is taken
+/// for abandoned. No composition runs anywhere near this long, and the
+/// margin covers a laptop suspended midway through one.
+const SCRATCH_INDEX_ABANDONED: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// Removes scratch indexes, and the `.lock` files git writes beside them,
+/// that were left behind by a process killed mid-composition.
+///
+/// Runs once per directory, before that directory has handed out a scratch
+/// index of its own, so it can never remove one this process is composing
+/// into. Anything carrying this process id belonged to an earlier process
+/// holding the id and goes. Another process id may be a mise that is still
+/// running, so those go only once untouched for [`SCRATCH_INDEX_ABANDONED`]:
+/// a live composition writes to its index continuously and never looks that
+/// old.
 fn sweep_scratch_indexes(dir: &Path) {
     use std::sync::{LazyLock, Mutex};
 
@@ -196,12 +205,25 @@ fn sweep_scratch_indexes(dir: &Path) {
     if !swept.insert(dir.to_path_buf()) {
         return;
     }
-    let prefix = format!("mise-index-{}-", std::process::id());
+    let ours = format!("mise-index-{}-", std::process::id());
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
-        if entry.file_name().to_string_lossy().starts_with(&prefix) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("mise-index-") {
+            continue;
+        }
+        // an unreadable or future-dated timestamp says nothing: leave it
+        let abandoned = || {
+            entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age >= SCRATCH_INDEX_ABANDONED)
+        };
+        if name.starts_with(&ours) || abandoned() {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -2240,10 +2262,15 @@ mod tests {
         // between them loses whatever one thread inserted before another
         // reset it -- a sorted prefix of the paths, which a checkpoint then
         // records as deliberate deletions and publishes to every machine.
+        const THREADS: usize = 3;
+        // every round starts composing at once, so the calls really do
+        // overlap instead of happening to be scheduled one after another
+        let start = std::sync::Barrier::new(THREADS);
         let lost: Vec<String> = std::thread::scope(|scope| {
-            let handles: Vec<_> = (0..3)
+            let handles: Vec<_> = (0..THREADS)
                 .map(|thread| {
                     let (repo, empty, blob) = (&repo, empty.as_str(), blob.as_str());
+                    let start = &start;
                     scope.spawn(move || {
                         let overlays: Vec<Overlay> = (0..8)
                             .map(|n| Overlay {
@@ -2253,6 +2280,7 @@ mod tests {
                             .collect();
                         let mut lost = vec![];
                         for _ in 0..3 {
+                            start.wait();
                             let tree = match repo.compose(empty, &overlays) {
                                 Ok(tree) => tree,
                                 Err(err) => {
@@ -2260,12 +2288,18 @@ mod tests {
                                     continue;
                                 }
                             };
-                            let present: BTreeSet<String> = repo
-                                .ls_tree(&tree)
-                                .unwrap()
-                                .into_iter()
-                                .map(|entry| entry.path)
-                                .collect();
+                            // never panic past the barrier: the other
+                            // threads would block on it and the failure
+                            // would surface as a hang instead
+                            let present: BTreeSet<String> = match repo.ls_tree(&tree) {
+                                Ok(entries) => {
+                                    entries.into_iter().map(|entry| entry.path).collect()
+                                }
+                                Err(err) => {
+                                    lost.push(format!("listing the tree failed: {err:#}"));
+                                    continue;
+                                }
+                            };
                             lost.extend(
                                 overlays
                                     .iter()
@@ -2299,6 +2333,41 @@ mod tests {
             left.is_empty(),
             "scratch indexes were left behind: {left:?}"
         );
+    }
+
+    #[test]
+    fn abandoned_scratch_indexes_are_swept_and_live_ones_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let ours = format!("mise-index-{}-compose-0", std::process::id());
+        let foreign_pid = std::process::id().wrapping_add(1);
+        let fresh = format!("mise-index-{foreign_pid}-compose-0");
+        let stale = format!("mise-index-{foreign_pid}-compose-1");
+        let stale_lock = format!("{stale}.lock");
+        let keep = "packed-refs";
+        for name in [&ours, &fresh, &stale, &stale_lock, &keep.to_string()] {
+            std::fs::write(dir.path().join(name), b"index").unwrap();
+        }
+        let old = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now()
+                - SCRATCH_INDEX_ABANDONED
+                - std::time::Duration::from_secs(60),
+        );
+        for name in [&stale, &stale_lock] {
+            filetime::set_file_mtime(dir.path().join(name), old).unwrap();
+        }
+
+        sweep_scratch_indexes(dir.path());
+
+        // ours belonged to an earlier process holding this id; the untouched
+        // pair was abandoned. The fresh one may be a running mise.
+        assert!(!dir.path().join(&ours).exists(), "{ours} was kept");
+        assert!(!dir.path().join(&stale).exists(), "{stale} was kept");
+        assert!(
+            !dir.path().join(&stale_lock).exists(),
+            "{stale_lock} was kept"
+        );
+        assert!(dir.path().join(&fresh).exists(), "{fresh} was swept");
+        assert!(dir.path().join(keep).exists(), "{keep} was swept");
     }
 
     #[test]

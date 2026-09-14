@@ -19,3 +19,12 @@ slow-timeout = { period = "500ms", terminate-after = 4 }
 [[profile.ci.overrides]]
 filter = 'test(mise_binary_services_aube_node_gyp_bootstrap_trampoline)'
 slow-timeout = { period = "5s", terminate-after = 6 }
+
+# This test composes trees from several threads at once, so its cost is a few
+# hundred git subprocesses rather than anything this process computes. It takes
+# well under the default period here, but subprocess spawning is far slower on
+# some CI hosts, so give it a ceiling that reflects that without letting a
+# genuine hang through.
+[[profile.ci.overrides]]
+filter = 'test(system::history::shadow::tests::concurrent_composition_keeps_every_overlay)'
+slow-timeout = { period = "2s", terminate-after = 4 }
