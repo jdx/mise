@@ -1,0 +1,5 @@
+i think we should probably change docs and everything to use `mise dot` sort of like we promote `mise x` everywhere, i don't think that `mise bootstrap dotfiles` should be hidden though
+
+---
+
+address pr feedback and failing checsk until it settles
