@@ -95,8 +95,12 @@ impl DotfilesOriginSet {
             )? {
                 crate::ui::prompt::Confirmation::Yes => SyncMode::Sync,
                 crate::ui::prompt::Confirmation::No => SyncMode::Manual,
-                crate::ui::prompt::Confirmation::Unanswered
-                | crate::ui::prompt::Confirmation::Unavailable => {
+                crate::ui::prompt::Confirmation::Unanswered => {
+                    bail!(
+                        "not connected: stdin ended before an answer; choose --sync manual, --sync sync, or --sync fetch-only"
+                    );
+                }
+                crate::ui::prompt::Confirmation::Unavailable => {
                     bail!(
                         "not connected: choose --sync manual, --sync sync, or --sync fetch-only to connect without a mode prompt"
                     );
