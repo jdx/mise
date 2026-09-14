@@ -718,7 +718,9 @@ async fn native_binstall_files_available(urls: &[String]) -> bool {
 }
 
 async fn resolve_native_binstall_download_url(url: &str) -> String {
-    match crate::github::release_asset_api_url(url).await {
+    // The versions host stays in play here: a cargo package's release is public
+    // by definition, so the cached copy is both usable and cheaper.
+    match crate::github::release_asset_api_url(url, true).await {
         Some(api_url) => crate::github::pick_reachable_asset_url(url, &api_url).await,
         None => url.to_string(),
     }

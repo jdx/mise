@@ -532,7 +532,13 @@ async fn get_release_with_options(
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
-        format!("{api_url}/repos/{repo}/releases/tags/{tag}")
+        // As one path segment: a tag may hold `#` or `/`, which would
+        // otherwise start a fragment or reach a different path. GitHub accepts
+        // the encoded form, and `versions_host` already sends it that way.
+        format!(
+            "{api_url}/repos/{repo}/releases/tags/{}",
+            urlencoding::encode(tag)
+        )
     };
     let headers = get_headers(&url)?;
     crate::http::HTTP_FETCH
@@ -714,9 +720,16 @@ pub(crate) fn release_asset_from_url(url: &str) -> Option<(String, String, Strin
 /// `api.github.com/repos/{repo}/releases/assets/{id}` instead — and only the
 /// release metadata knows that id. `None` when the URL is not a GitHub release
 /// download, the release cannot be read, or it carries no asset by that name.
-pub(crate) async fn release_asset_api_url(browser_url: &str) -> Option<String> {
+///
+/// Pass `use_versions_host: false` when the browser URL has already failed: the
+/// repository is most likely private, so mise-versions cannot hold the release
+/// and asking would only tell a public host the owner, repository, and tag.
+pub(crate) async fn release_asset_api_url(
+    browser_url: &str,
+    use_versions_host: bool,
+) -> Option<String> {
     let (repo, tag, asset_name) = release_asset_from_url(browser_url)?;
-    let release = match get_release(&repo, &tag).await {
+    let release = match get_release_with_versions_host(&repo, &tag, use_versions_host).await {
         Ok(release) => release,
         Err(err) => {
             debug!("failed to resolve GitHub release asset {repo}@{tag}/{asset_name}: {err:#}");
@@ -1676,6 +1689,34 @@ something_else = "value"
             url: format!("https://api.github.com/repos/owner/repo/releases/assets/{name}"),
             digest: None,
         }
+    }
+
+    #[tokio::test]
+    async fn test_release_lookup_encodes_the_tag_as_one_path_segment() {
+        // A tag may hold `#` or `/`. Interpolated raw, the first would start a
+        // fragment and the second would reach a different path, so neither
+        // release could be looked up.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/tag-encoding-test";
+        let tag = "release/2026#1";
+        let mock = server
+            .mock(
+                "GET",
+                format!("/repos/{repo}/releases/tags/release%2F2026%231").as_str(),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&make_release(tag)).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, false)
+            .await
+            .unwrap();
+        assert_eq!(release.tag_name, tag);
+        mock.assert_async().await;
     }
 
     #[tokio::test]

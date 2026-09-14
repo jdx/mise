@@ -200,7 +200,7 @@ impl Unreachable {
 /// afterwards over the bytes that arrive, so an asset that no longer matches
 /// what was signed is still refused.
 async fn retry_url(url: &str, reason: &Unreachable) -> Option<String> {
-    let api_url = github::release_asset_api_url(url).await?;
+    let api_url = github::release_asset_api_url(url, false).await?;
     match reason {
         Unreachable::Failed(err) => {
             debug!("{url} could not be fetched ({err}), retrying at {api_url}")
