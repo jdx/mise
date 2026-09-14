@@ -2318,7 +2318,7 @@ mise dot apply --dry-run
 mise dot apply --force --yes
 """#
     }
-    cmd capture help="Record tracked files before and after an external command" effect=write {
+    cmd capture help="Record tracked files before and after an external command" {
         long_help #"""
 Record tracked files before and after an external command
 

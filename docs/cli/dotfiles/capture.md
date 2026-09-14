@@ -6,7 +6,6 @@ description: "Record tracked files before and after an external command"
 # `mise dotfiles capture`
 
 - **Usage:** `mise dotfiles capture [--label <LABEL>] <-- COMMAND>…`
-- **Effect:** modifies state
 - **Source code:** [`src/cli/dotfiles/capture.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/capture.rs)
 
 Record tracked files before and after an external command

@@ -34,7 +34,7 @@ const BUILTIN_NAMES: &[&str] = &["history-watch"];
 fn builtin(name: &str) -> Option<Builtin> {
     match name {
         "history-watch" => Some(Builtin {
-            args: &["bootstrap", "dotfiles", "watch"],
+            args: &["dot", "watch"],
             description: "mise dot history: save tracked files as they change",
             restart: ServiceRestart::OnFailure,
             nice: Some(10),
