@@ -162,26 +162,88 @@ fn headers_for(url: &str) -> Result<HeaderMap> {
     }
 }
 
-/// The authenticated endpoint to retry a failed GitHub download through.
+/// Why a file a packslip names could not be fetched where it says it is.
+enum Unreachable {
+    /// The request failed outright — for a private repository, the 404 GitHub
+    /// answers a browser-facing release URL with.
+    Failed(eyre::Report),
+    /// The request succeeded and GitHub returned its sign-in page instead of
+    /// the file, which is the other way it refuses a private release.
+    SignIn,
+}
+
+impl Unreachable {
+    fn into_error(self, url: &str) -> eyre::Report {
+        match self {
+            Self::Failed(err) => err,
+            Self::SignIn => eyre!(
+                "GitHub answered {url} with its sign-in page instead of the file, so the token mise is using cannot read that repository"
+            ),
+        }
+    }
+}
+
+/// The authenticated endpoint to retry an unreachable GitHub download through.
 ///
 /// A packslip carries the browser-facing URL of every file it signs, and GitHub
-/// answers those with 404 for a private repository no matter which token is
-/// sent, so the asset has to be fetched from its API endpoint instead — and only
-/// the release metadata knows that endpoint. The lookup runs after the signed
-/// URL has already failed, so a public install still makes the one request it
-/// makes today and a private one pays a single extra release read rather than
-/// being unusable. The fallback is not conditioned on the status code: the
-/// request has failed either way, and the private-repository 404 is
-/// indistinguishable from a real one without asking GitHub.
+/// refuses those for a private repository no matter which token is sent, so the
+/// asset has to be fetched from its API endpoint instead — and only the release
+/// metadata knows that endpoint. The lookup runs after the browser URL has
+/// already failed, so a public install still makes the one request it makes
+/// today and a private one pays a single extra release read rather than being
+/// unusable. It is not conditioned on the status code: the fetch did not
+/// produce the file either way, and a private repository's refusal is
+/// indistinguishable from a real 404 without asking GitHub.
 ///
 /// Authentication stays transport-only. Nothing here decides what gets
 /// installed: the signature, project identity, and digest checks all run
 /// afterwards over the bytes that arrive, so an asset that no longer matches
 /// what was signed is still refused.
-async fn retry_url(url: &str, err: &eyre::Report) -> Option<String> {
+async fn retry_url(url: &str, reason: &Unreachable) -> Option<String> {
     let api_url = github::release_asset_api_url(url).await?;
-    debug!("{url} could not be fetched ({err}), retrying at {api_url}");
+    match reason {
+        Unreachable::Failed(err) => {
+            debug!("{url} could not be fetched ({err}), retrying at {api_url}")
+        }
+        Unreachable::SignIn => debug!("{url} served a sign-in page, retrying at {api_url}"),
+    }
     Some(api_url)
+}
+
+/// Whether GitHub served its sign-in page at a release URL rather than the file.
+///
+/// A private repository usually answers a browser-facing release URL with 404,
+/// but it can also return the sign-in page with a 200. A packslip names sigstore
+/// documents and binary artifacts, never an HTML document, so a page arriving
+/// from a release URL is always the refusal and never the file.
+fn is_sign_in_page(url: &str, body: &[u8]) -> bool {
+    if github::release_asset_from_url(url).is_none() {
+        return false;
+    }
+    let head = &body[..body.len().min(512)];
+    let head = String::from_utf8_lossy(head);
+    let head = head
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .to_ascii_lowercase();
+    head.starts_with("<!doctype html") || head.starts_with("<html")
+}
+
+/// The same check against a file that has just been downloaded. A file mise
+/// cannot read back is left to the digest check that follows.
+fn downloaded_sign_in_page(url: &str, dest: &Path) -> bool {
+    use std::io::Read;
+    if github::release_asset_from_url(url).is_none() {
+        return false;
+    }
+    let mut head = [0u8; 512];
+    let Ok(mut file) = std::fs::File::open(dest) else {
+        return false;
+    };
+    let Ok(read) = file.read(&mut head) else {
+        return false;
+    };
+    is_sign_in_page(url, &head[..read])
 }
 
 /// Download a file a packslip names, falling back to the authenticated GitHub
@@ -191,15 +253,16 @@ pub(crate) async fn download_file(
     dest: &Path,
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
-    let err = match HTTP
+    let reason = match HTTP
         .download_file_with_headers(url, dest, &headers_for(url)?, pr)
         .await
     {
-        Ok(()) => return Ok(()),
-        Err(err) => err,
+        Ok(()) if !downloaded_sign_in_page(url, dest) => return Ok(()),
+        Ok(()) => Unreachable::SignIn,
+        Err(err) => Unreachable::Failed(err),
     };
-    let Some(api_url) = retry_url(url, &err).await else {
-        return Err(err);
+    let Some(api_url) = retry_url(url, &reason).await else {
+        return Err(reason.into_error(url));
     };
     HTTP.download_file_with_headers(&api_url, dest, &headers_for(&api_url)?, pr)
         .await
@@ -208,17 +271,18 @@ pub(crate) async fn download_file(
 /// Fetch a document a packslip names — a manifest or a signed release list —
 /// with the same fallback [`download_file`] uses.
 pub(crate) async fn fetch_text(url: &str) -> Result<String> {
-    let err = match HTTP_FETCH
+    let reason = match HTTP_FETCH
         .get_text_request(url)
         .headers(&headers_for(url)?)
         .send()
         .await
     {
-        Ok(text) => return Ok(text),
-        Err(err) => err,
+        Ok(text) if !is_sign_in_page(url, text.as_bytes()) => return Ok(text),
+        Ok(_) => Unreachable::SignIn,
+        Err(err) => Unreachable::Failed(err),
     };
-    let Some(api_url) = retry_url(url, &err).await else {
-        return Err(err);
+    let Some(api_url) = retry_url(url, &reason).await else {
+        return Err(reason.into_error(url));
     };
     HTTP_FETCH
         .get_text_request(&api_url)
@@ -1640,6 +1704,27 @@ mod tests {
             "expected a 404, got {err:#}"
         );
         mock.assert_async().await;
+    }
+
+    #[test]
+    fn test_sign_in_page_is_recognized_only_at_a_github_release_url() {
+        const RELEASE: &str = "https://github.com/o/r/releases/download/v1/t.tar.gz";
+        const PAGE: &[u8] = b"<!DOCTYPE html>\n<html lang=\"en\">";
+        assert!(is_sign_in_page(RELEASE, PAGE));
+        assert!(is_sign_in_page(RELEASE, b"  \n<html>"));
+        // A signed manifest is JSON and an artifact is an archive; neither is
+        // a page, so neither is mistaken for one.
+        assert!(!is_sign_in_page(
+            RELEASE,
+            br#"{"payloadType":"application"}"#
+        ));
+        assert!(!is_sign_in_page(RELEASE, &[0x1f, 0x8b, 0x08, 0x00]));
+        // Elsewhere there is no API endpoint to retry at, and a publisher is
+        // free to serve whatever it signed.
+        assert!(!is_sign_in_page(
+            "https://tool.example.com/packslip.json",
+            PAGE
+        ));
     }
 
     #[tokio::test]

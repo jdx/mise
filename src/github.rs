@@ -679,16 +679,30 @@ pub(crate) async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -
 
 /// Split a `github.com/{owner}/{repo}/releases/download/{tag}/{asset}` browser
 /// URL into `(owner/repo, tag, asset name)`. `None` for any other URL.
+///
+/// A tag may contain `/`, and GitHub leaves those literal in the download URL
+/// (`.../download/@biomejs/biome@2.5.2/biome-linux-x64`) while percent-encoding
+/// the rest. An asset name never contains one, so the last segment is the asset
+/// and everything before it is the tag.
 pub(crate) fn release_asset_from_url(url: &str) -> Option<(String, String, String)> {
     let url = url::Url::parse(url).ok()?;
     if url.host_str()? != "github.com" {
         return None;
     }
     let segments = url.path_segments()?.collect::<Vec<_>>();
-    let [owner, repo, "releases", "download", tag, asset] = segments.as_slice() else {
+    let [owner, repo, "releases", "download", tail @ ..] = segments.as_slice() else {
         return None;
     };
-    let tag = urlencoding::decode(tag).ok()?.into_owned();
+    let (asset, tag) = tail.split_last()?;
+    if tag.is_empty() || asset.is_empty() {
+        return None;
+    }
+    let tag = tag
+        .iter()
+        .map(|segment| urlencoding::decode(segment).map(|s| s.into_owned()))
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?
+        .join("/");
     let asset = urlencoding::decode(asset).ok()?.into_owned();
     Some((format!("{owner}/{repo}"), tag, asset))
 }
@@ -1185,6 +1199,22 @@ mod tests {
     }
 
     #[test]
+    fn test_release_asset_from_url_keeps_a_tag_that_spans_segments() {
+        // GitHub percent-encodes `@` but leaves a tag's `/` as a path
+        // separator, so the asset is the last segment and the tag is the rest.
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.2/biome-linux-x64"
+            ),
+            Some((
+                "biomejs/biome".to_string(),
+                "@biomejs/biome@2.5.2".to_string(),
+                "biome-linux-x64".to_string()
+            ))
+        );
+    }
+
+    #[test]
     fn test_release_asset_from_url_ignores_non_release_urls() {
         assert_eq!(
             release_asset_from_url("https://example.com/owner/repo/releases/download/v1/tool"),
@@ -1198,6 +1228,11 @@ mod tests {
         // is not itself a browser URL to resolve.
         assert_eq!(
             release_asset_from_url("https://api.github.com/repos/owner/repo/releases/assets/1"),
+            None
+        );
+        // A tag with no asset after it names no file.
+        assert_eq!(
+            release_asset_from_url("https://github.com/owner/repo/releases/download/v1"),
             None
         );
     }
