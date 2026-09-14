@@ -1,5 +1,1 @@
-should `mise bootstrap` have been its own cli? how much does it use from the rest of mise?
-
----
-
 ok make a pr for that split
