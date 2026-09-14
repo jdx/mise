@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2EJZN7B806AZNPQVP406WFD",
   "strategy": "manual-commit",
   "branch": "codex/brew-parallel-staging",
-  "checkpoints_count": 5,
+  "checkpoints_count": 1,
   "files_touched": [
     "src/system/packages/brew/pour.rs"
   ],
@@ -13,14 +13,14 @@
       "transcript": "/0/full.jsonl",
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
-      "prompt": ""
+      "prompt": "/0/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 43930,
+    "input_tokens": 58593,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 4294784,
-    "output_tokens": 7036,
-    "api_call_count": 33
+    "cache_read_tokens": 4717056,
+    "output_tokens": 6402,
+    "api_call_count": 24
   }
 }
