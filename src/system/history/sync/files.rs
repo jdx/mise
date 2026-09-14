@@ -129,7 +129,7 @@ fn audit_history_cached(
                 });
             if !valid {
                 bail!(
-                    "cannot publish: encrypted path {} has an unencrypted or invalid version in commit {commit}; encrypting the latest version does not erase earlier plaintext. Review and explicitly rewrite or replace that history before connecting it to origin; mise will not rewrite it automatically",
+                    "cannot publish: encrypted path {} has an unencrypted or invalid version in commit {commit}; encrypting the latest version does not erase earlier plaintext. Remove that history before pushing, or use `mise dot sync --allow-plaintext-history` to publish it anyway",
                     entry.path
                 );
             }

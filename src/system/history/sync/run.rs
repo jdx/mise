@@ -180,6 +180,8 @@ pub(crate) struct SyncOutcome {
 
 pub(crate) struct SyncRequest {
     pub fetch_only: bool,
+    /// Skip the plaintext ancestry audit for this sync.
+    pub allow_plaintext_history: bool,
     /// Save the tracked set first, so what is published is what is on
     /// disk. The watcher passes `false`: it saves on its own schedule, and a
     /// throttled file's held version or a manual-save entry's unsaved edits
@@ -200,6 +202,7 @@ impl SyncRequest {
     pub(crate) fn new(fetch_only: bool) -> Self {
         Self {
             fetch_only,
+            allow_plaintext_history: false,
             capture: true,
             origin: None,
             offline: false,
@@ -239,6 +242,10 @@ pub(crate) fn sync(
         .repo()
         .ok_or_else(|| eyre::eyre!("synchronizing requires git"))?;
     let mode = SyncMode::current()?;
+    let allow_plaintext_history = request.allow_plaintext_history
+        || crate::config::Settings::get()
+            .history
+            .allow_plaintext_history;
     let state_dir = store.state_dir();
     let mut status = read_status(state_dir)?;
     let remote = Remote::new(repo, &origin.url);
@@ -296,6 +303,7 @@ pub(crate) fn sync(
         let unsaved = unsaved_paths(repo, tracked, &shared)?;
         let publish = mode.publishes() && !request.fetch_only && !request.offline;
         if publish
+            && !allow_plaintext_history
             && let Some(head) =
                 repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
         {
@@ -352,6 +360,7 @@ pub(crate) fn sync(
                 upstream_commit.as_deref(),
                 shared.checkpoint.as_deref(),
                 &accepted,
+                allow_plaintext_history,
             )?
             else {
                 break;

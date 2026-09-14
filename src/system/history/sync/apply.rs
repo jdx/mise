@@ -488,7 +488,7 @@ pub(crate) async fn apply(
             let candidate = heads
                 .candidate(repo, tree)?
                 .ok_or_else(|| eyre::eyre!("setup branch disappeared"))?;
-            super::files::audit_history(repo, &candidate.commit, &Default::default())?;
+            audit_incoming_history(repo, &candidate.commit)?;
         }
         // Validate the complete batch again after acquiring the operation
         // lock, before the first write.
@@ -559,7 +559,7 @@ pub(crate) async fn apply(
                 bail!("setup history changed during adoption; retry pull");
             }
             let remote = heads.remote.as_deref().unwrap();
-            super::files::audit_history(repo, remote, &Default::default())?;
+            audit_incoming_history(repo, remote)?;
             let tree = inventory_tree
                 .clone()
                 .unwrap_or(repo.output_tree_of(remote)?);
@@ -655,6 +655,19 @@ pub(crate) async fn apply(
         configuration,
     };
     Ok(outcome)
+}
+
+fn audit_incoming_history(
+    repo: &crate::system::history::shadow::HistoryRepo,
+    head: &str,
+) -> Result<()> {
+    if crate::config::Settings::get()
+        .history
+        .allow_plaintext_history
+    {
+        return Ok(());
+    }
+    super::files::audit_history(repo, head, &Default::default())
 }
 
 fn recover_step(repo: &crate::system::history::shadow::HistoryRepo, step: &Step) -> Result<()> {

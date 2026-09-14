@@ -1131,6 +1131,11 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "allow_plaintext_history": {
+              "default": false,
+              "description": "Allow publishing history that contains unencrypted versions of files now marked for encryption.",
+              "type": "boolean"
+            },
             "describe_command": {
               "default": "",
               "description": "A command that names commits the watcher saves (an agent, say): it gets one JSON object on stdin (uuid, trigger, the computed description, changed tracked paths, and a unified diff of changed unencrypted files, at most 64 KiB) and prints one line of at most 200 characters, which becomes the description. Empty: computed descriptions only.",
