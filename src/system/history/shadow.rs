@@ -260,13 +260,17 @@ fn sweep_scratch_indexes(dir: &Path) {
         if !path.exists() || !owner.exists() {
             continue;
         }
-        let Ok(Some(_reclaimed)) = crate::lock_file::LockFile::at(&owner).try_lock() else {
+        let Ok(Some(reclaimed)) = crate::lock_file::LockFile::at(&owner).try_lock() else {
             continue;
         };
-        // removed while the owner file stays locked, so a composition
-        // cannot take this name back in between and lose its own index
+        // removed while the owner file stays locked, so nothing can take
+        // this index back in between and lose the composition its own
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(dir.join(format!("{index}.lock")));
+        // released first: Windows refuses to remove a file whose lock
+        // handle is still open, and an owner file left with no index
+        // beside it is one no later sweep looks at again
+        drop(reclaimed);
         let _ = std::fs::remove_file(&owner);
     }
 }
