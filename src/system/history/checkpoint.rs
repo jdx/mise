@@ -432,6 +432,14 @@ impl Store {
                 reason.unwrap_or_else(shadow::unavailable_reason),
             ));
         }
+        // Enrollment is transactional with its initial content baseline. Do
+        // not commit even a labeled Baseline record when capture failed: the
+        // caller will restore the declaration after receiving Unavailable.
+        if draft.trigger() == Trigger::Baseline && snapshot.is_none() {
+            return Ok(Outcome::Unavailable(
+                reason.unwrap_or_else(shadow::unavailable_reason),
+            ));
+        }
         let mut changes = match (&self.repo, &snapshot) {
             (Some(repo), Some(tree)) => {
                 let since = previous_tree
@@ -1228,6 +1236,38 @@ mod tests {
             Outcome::Unavailable(_)
         ));
         assert!(store::load_index_in(temp.path())?.entries.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn failed_baseline_does_not_commit_metadata() -> Result<()> {
+        let state = tempfile::tempdir()?;
+        let live = tempfile::tempdir_in(&*crate::dirs::HOME)?;
+        let path = live.path().join("secret");
+        std::fs::write(&path, "private")?;
+        let mut policy =
+            crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track);
+        policy.encrypt = true;
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(path.clone(), "track", policy));
+        tracked.manifest.recipients = vec!["invalid-recipient".into()];
+        let mut draft = Draft::new(Trigger::Baseline);
+        draft.description = Some("tracked encrypted file".into());
+        draft.explicit_paths = vec![path];
+        let store = Store::open_in(state.path())?;
+
+        assert!(matches!(
+            store.attempt(&tracked, draft)?,
+            Outcome::Unavailable(_)
+        ));
+        assert!(store::load_index_in(state.path())?.entries.is_empty());
+        assert!(
+            store
+                .repo()
+                .unwrap()
+                .ref_oid(HistoryRepo::HISTORY_REF)?
+                .is_none()
+        );
         Ok(())
     }
 

@@ -15,6 +15,10 @@ echo disabled-history-secret >~/.disabled-history-secret
 assert_fail "MISE_HISTORY_ENABLED=false mise bootstrap dotfiles track ~/.disabled-history-secret --encrypt" 'history is disabled'
 assert_not_contains 'cat "$MISE_CONFIG_DIR/config.toml"' '.disabled-history-secret'
 
+echo nested-capture-secret >~/.nested-capture-secret
+assert_fail "MISE_STATE_DIR=$TMPDIR/nested-capture-state mise bootstrap dotfiles capture -- mise bootstrap dotfiles track ~/.nested-capture-secret --encrypt" 'inside an active history capture'
+assert_not_contains 'cat "$MISE_CONFIG_DIR/config.toml"' '.nested-capture-secret'
+
 echo first-private-value >~/.private-config
 first_plain=$(git hash-object ~/.private-config)
 assert_succeed "mise bootstrap dotfiles track ~/.private-config --encrypt"

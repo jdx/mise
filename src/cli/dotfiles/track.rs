@@ -59,6 +59,11 @@ impl DotfilesTrack {
         if self.encrypt && !Settings::get().history.enabled {
             bail!("dotfiles: cannot enroll encrypted paths while history is disabled");
         }
+        if self.encrypt && inside_capture()? {
+            bail!(
+                "dotfiles: cannot enroll encrypted paths inside an active history capture; run `mise dot track --encrypt` separately so its baseline can be verified"
+            );
+        }
         let managed = crate::system::files::composed_files_from_config(&config)?;
         let global = declaration_file(false)?;
         let mut edits: BTreeMap<PathBuf, DeclarationEdit> = BTreeMap::new();
@@ -408,14 +413,7 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
     // A capture wrapper owns the operation lock until this child exits. It
     // reloads enrollment and explicitly saves all current tracked files in
     // its outcome (including manual entries), or during interruption recovery.
-    if let Some(parent) = std::env::var_os(crate::system::history::scope::ENV_VAR)
-        && crate::system::history::store::read_marker_in(&crate::dirs::STATE)?.is_some_and(
-            |marker| {
-                marker.kind == crate::system::history::store::OperationKind::Capture
-                    && parent == std::ffi::OsStr::new(&marker.uuid)
-            },
-        )
-    {
+    if inside_capture()? {
         info!(
             "dotfiles: enrolled; the enclosing capture will save the baseline when the command finishes"
         );
@@ -436,30 +434,29 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
     tokio::task::spawn_blocking(move || {
         // Lock waits and filesystem capture must not block a Tokio worker.
         let _operation = crate::system::history::scope::take_operation_lock(&store, &tracked)?;
-        finish_baseline(store.attempt(&tracked, draft)?)
+        match store.attempt(&tracked, draft)? {
+            Outcome::Created(entry) => {
+                info!("history: saved baseline checkpoint {}", entry.id);
+                Ok(())
+            }
+            Outcome::Unchanged => Ok(()),
+            Outcome::Unavailable(reason) => bail!("dotfiles: cannot save the baseline: {reason}"),
+        }
     })
     .await?
 }
 
-/// Accept a baseline only when capture produced a content snapshot.
-fn finish_baseline(outcome: Outcome) -> Result<()> {
-    match outcome {
-        Outcome::Created(entry) if entry.checkpoint.tree.snapshot.is_some() => {
-            info!("history: saved baseline checkpoint {}", entry.id);
-            Ok(())
-        }
-        Outcome::Created(entry) => bail!(
-            "dotfiles: cannot save the baseline: {}",
-            entry
-                .checkpoint
-                .tree
-                .reason
-                .as_deref()
-                .unwrap_or("no content snapshot was created")
-        ),
-        Outcome::Unchanged => Ok(()),
-        Outcome::Unavailable(reason) => bail!("dotfiles: cannot save the baseline: {reason}"),
-    }
+/// Whether this process is the command running inside a live capture wrapper.
+fn inside_capture() -> Result<bool> {
+    let Some(parent) = std::env::var_os(crate::system::history::scope::ENV_VAR) else {
+        return Ok(false);
+    };
+    Ok(
+        crate::system::history::store::read_marker_in(&crate::dirs::STATE)?.is_some_and(|marker| {
+            marker.kind == crate::system::history::store::OperationKind::Capture
+                && parent == std::ffi::OsStr::new(&marker.uuid)
+        }),
+    )
 }
 
 /// `config.toml`, or `config.local.toml` next to it for machine-only
@@ -558,23 +555,6 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
 #[cfg(test)]
 mod declaration_tests {
     use super::*;
-
-    #[test]
-    fn metadata_only_baseline_is_an_enrollment_failure() {
-        let mut checkpoint = crate::system::history::checkpoint::test_checkpoint("failed", None);
-        checkpoint.tree.reason = Some("encryption failed".into());
-        let outcome = Outcome::Created(Box::new(crate::system::history::store::Entry {
-            id: 1,
-            commit: "failed".into(),
-            checkpoint,
-        }));
-
-        let error = finish_baseline(outcome).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "dotfiles: cannot save the baseline: encryption failed"
-        );
-    }
 
     #[test]
     fn resolved_sources_use_tracking_path_representation() {
