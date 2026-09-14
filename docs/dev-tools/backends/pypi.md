@@ -272,6 +272,37 @@ using pipx and are unsupported with dependency graphs.
 "pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
 ```
 
+### `with`
+
+Install additional Python requirements in the tool environment. This option
+requires uv and participates in dependency locking.
+
+```toml
+[tools]
+"pypi:azure-cli" = { version = "latest", with = ["pip"] }
+```
+
+### `expose`
+
+Install additional Python requirements and expose their executable entry points.
+This option requires uv and participates in dependency locking.
+
+```toml
+[tools]
+"pypi:ansible" = { version = "latest", expose = ["ansible-core"] }
+```
+
+### `dependency_prereleases`
+
+Set uv's prerelease policy for dependency resolution. Supported values are
+`disallow`, `allow`, `if-necessary`, and `explicit`. This option requires uv and
+is applied both when generating dependency graphs and during version-only installs.
+
+```toml
+[tools]
+"pypi:azure-cli" = { version = "latest", dependency_prereleases = "allow" }
+```
+
 ### `uvx`
 
 Set to `false` to use pipx instead of uv for this tool. This also disables
@@ -279,7 +310,7 @@ dependency graph locking and requires pipx to be installed.
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false }
 ```
 
 ### `uvx_args`
@@ -289,7 +320,12 @@ are unsupported with dependency graphs; `pipx_args` applies only to pipx.
 
 ```toml
 [tools]
-"pypi:ansible-core" = { version = "latest", uvx_args = "--with ansible" }
+"pypi:ansible-core" = { version = "latest", uvx_args = "--resolution lowest" }
 ```
+
+Prefer the semantic [`with`](#with), [`expose`](#expose), and
+[`dependency_prereleases`](#dependency_prereleases) options when they cover the
+desired behavior. Unlike arbitrary arguments, those options support dependency
+graphs.
 
 Implementation: [`src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).

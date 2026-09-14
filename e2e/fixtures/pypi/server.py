@@ -13,7 +13,7 @@ root = pathlib.Path(sys.argv[1])
 root.mkdir(exist_ok=True)
 
 
-def wheel(name, version, requires=(), script=False):
+def wheel(name, version, requires=(), script=False, command='lock-cli', output=None):
     module = name.replace('-', '_')
     dist = f'{module}-{version}.dist-info'
     files = {
@@ -23,8 +23,8 @@ def wheel(name, version, requires=(), script=False):
         f'{dist}/WHEEL': 'Wheel-Version: 1.0\nGenerator: mise-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
     }
     if script:
-        files[f'{module}.py'] = "import importlib.metadata\ndef main():\n    print('dependency=' + importlib.metadata.version('mise-lock-dep'))\n    try:\n        print('extra=' + importlib.metadata.version('mise-lock-extra'))\n    except importlib.metadata.PackageNotFoundError:\n        pass\n"
-        files[f'{dist}/entry_points.txt'] = f'[console_scripts]\nlock-cli = {module}:main\n'
+        files[f'{module}.py'] = (f"def main():\n    print({output!r})\n" if output else "import importlib.metadata\ndef main():\n    print('dependency=' + importlib.metadata.version('mise-lock-dep'))\n    try:\n        print('extra=' + importlib.metadata.version('mise-lock-extra'))\n    except importlib.metadata.PackageNotFoundError:\n        pass\n")
+        files[f'{dist}/entry_points.txt'] = f'[console_scripts]\n{command} = {module}:main\n'
     record = ''.join(
         f'{path},sha256={base64.urlsafe_b64encode(hashlib.sha256(text.encode()).digest()).decode().rstrip("=")},{len(text.encode())}\n'
         for path, text in files.items()
@@ -81,6 +81,7 @@ wheels = dict([
     wheel('mise-lock-dep', '2.0.0'),
     wheel('mise-lock-marker', '1.0.0'),
     wheel('mise-lock-extra', '1.0.0'),
+    wheel('mise-exposed', '1.0.0', script=True, command='exposed-cli', output='exposed'),
     sdist('mise-source-cli', '1.0.0'),
 ])
 

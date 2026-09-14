@@ -24,11 +24,12 @@ cat >.mise.toml <<EOF
 python = "3.12.3"
 pipx = "1.5.0"
 uv = "0.5.5"
-"pipx:mkdocs" = { version = "1.6.0", uvx_args = "--with rich" }
+"pipx:mkdocs" = { version = "1.6.0", with = ["rich"] }
 EOF
 
 # Install the tools
 mise install
+assert_fail 'MISE_PIPX_UVX=0 mise install --force pipx:mkdocs' 'require uv'
 
 # Assert that mkdocs 1.6.0 has been installed with pipx
 # (mkdocs conveniently returns its installation path in with --version)

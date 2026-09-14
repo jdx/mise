@@ -64,6 +64,105 @@ impl<'a> PipxOptions<'a> {
         self.values.comma_joined("extras")
     }
 
+    fn string_list(&self, key: &str) -> Result<Vec<String>> {
+        let Some(value) = self.values.raw().opts.get(key) else {
+            return Ok(Vec::new());
+        };
+        let values = match value {
+            toml::Value::String(value) => {
+                if value.trim_start().starts_with('[') {
+                    serde_json::from_str(value)
+                        .map_err(|_| eyre!("{key} must be a string or array of strings"))?
+                } else {
+                    vec![value.clone()]
+                }
+            }
+            toml::Value::Array(values) => values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| eyre!("{key} must be a string or array of strings"))
+                })
+                .collect::<Result<Vec<_>>>()?,
+            _ => bail!("{key} must be a string or array of strings"),
+        };
+        if values.iter().any(|value| value.trim().is_empty()) {
+            bail!("{key} cannot contain empty values");
+        }
+        Ok(values)
+    }
+
+    fn with(&self) -> Result<Vec<String>> {
+        self.string_list("with")
+    }
+
+    fn expose(&self) -> Result<Vec<String>> {
+        self.string_list("expose")
+    }
+
+    fn exposed_package_names(&self) -> Result<Vec<String>> {
+        self.expose()?
+            .into_iter()
+            .map(|requirement| {
+                let name = requirement
+                    .trim()
+                    .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+                    .next()
+                    .unwrap_or_default();
+                if name.is_empty() {
+                    bail!("expose must contain named Python package requirements");
+                }
+                Ok(name.to_string())
+            })
+            .collect()
+    }
+
+    fn dependency_prereleases(&self) -> Result<Option<&'a str>> {
+        let value = match self.values.raw().opts.get("dependency_prereleases") {
+            Some(toml::Value::String(value)) => Some(value.as_str()),
+            Some(_) => bail!("dependency_prereleases must be a string"),
+            None => None,
+        };
+        if value.is_some_and(|value| {
+            !matches!(value, "disallow" | "allow" | "if-necessary" | "explicit")
+        }) {
+            bail!("dependency_prereleases must be disallow, allow, if-necessary, or explicit");
+        }
+        Ok(value)
+    }
+
+    fn has_uv_only_options(&self) -> bool {
+        ["with", "expose", "dependency_prereleases"]
+            .iter()
+            .any(|key| self.values.raw().opts.contains_key(*key))
+    }
+
+    fn validate_semantic(&self) -> Result<()> {
+        self.with()?;
+        self.exposed_package_names()?;
+        self.dependency_prereleases()?;
+        if self.has_uv_only_options() && self.uvx_disabled() {
+            bail!("with, expose, and dependency_prereleases cannot be combined with uvx = false");
+        }
+        Ok(())
+    }
+
+    fn uv_install_args(&self) -> Result<Vec<String>> {
+        let mut args = Vec::new();
+        for requirement in self.with()? {
+            args.extend(["--with".to_string(), requirement]);
+        }
+        for package in self.expose()? {
+            args.extend(["--with-executables-from".to_string(), package]);
+        }
+        if let Some(value) = self.dependency_prereleases()? {
+            args.extend(["--prerelease".to_string(), value.to_string()]);
+        }
+        Ok(args)
+    }
+
     fn package_name(&self) -> Option<&'a str> {
         self.values.str("package_name")
     }
@@ -84,20 +183,27 @@ impl<'a> PipxOptions<'a> {
         self.values.raw().get_string("uvx").as_deref() == Some("false")
     }
 
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
+    fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
         let mut result = BTreeMap::new();
         if let Some(value) = self.extras() {
             result.insert("extras".to_string(), value);
         }
+        for key in ["with", "expose"] {
+            let values = self.string_list(key)?;
+            if !values.is_empty() {
+                result.insert(key.to_string(), serde_json::to_string(&values)?);
+            }
+        }
         for key in install_time_option_keys() {
-            if key == "extras" {
+            if matches!(key.as_str(), "extras" | "with" | "expose") {
                 continue;
             }
             if let Some(value) = self.values.raw().get_string(&key) {
                 result.insert(key, value);
             }
         }
-        result
+        self.validate_semantic()?;
+        Ok(result)
     }
 }
 
@@ -307,6 +413,8 @@ impl Backend for PIPXBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        let request_options = tv.request.options();
+        PipxOptions::new(&request_options).validate_semantic()?;
         if let Some(lock) = &tv.uv_lock {
             let lock = if !ctx.locked && lock.load().is_err() {
                 lock.refresh()?
@@ -430,6 +538,12 @@ impl Backend for PIPXBackend {
         } else {
             None
         };
+        if options.has_uv_only_options() && uv_program.is_none() {
+            bail!(
+                "{} semantic options (`with`, `expose`, and `dependency_prereleases`) require uv; install uv and ensure uvx is enabled",
+                self.ba.short
+            );
+        }
         let pipx_available = if uv_program.is_none() {
             self.spawnable_dependency(&ctx.config, Some(&ctx.ts), "pipx")
                 .await
@@ -510,6 +624,7 @@ impl Backend for PIPXBackend {
             )
             .await?;
             cmd = cmd.args(Self::uv_exclude_newer_args(ctx.before_date));
+            cmd = cmd.args(options.uv_install_args()?);
             if let Some(args) = options.uvx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -587,7 +702,7 @@ impl Backend for PIPXBackend {
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
         let opts = request.options();
-        Ok(PipxOptions::new(&opts).lockfile_options())
+        PipxOptions::new(&opts).lockfile_options()
     }
 }
 
@@ -595,6 +710,9 @@ impl Backend for PIPXBackend {
 pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "extras".into(),
+        "with".into(),
+        "expose".into(),
+        "dependency_prereleases".into(),
         "package_name".into(),
         "pipx_args".into(),
         "uvx_args".into(),
@@ -1593,6 +1711,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         assert_eq!(
             PipxOptions::new(&string_opts)
                 .lockfile_options()
+                .unwrap()
                 .get("extras"),
             Some(&"postgres,s3".to_string())
         );
@@ -1618,9 +1737,69 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         assert_eq!(
             PipxOptions::new(&array_opts)
                 .lockfile_options()
+                .unwrap()
                 .get("extras"),
             Some(&"postgres,s3".to_string())
         );
+    }
+
+    #[test]
+    fn test_semantic_uv_options_accept_arrays_and_build_args() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "with".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("pip".to_string()),
+                toml::Value::String("plugin>=1,<2".to_string()),
+            ]),
+        );
+        opts.opts.insert(
+            "expose".to_string(),
+            toml::Value::Array(vec![toml::Value::String("plugin>=1".to_string())]),
+        );
+        opts.opts.insert(
+            "dependency_prereleases".to_string(),
+            toml::Value::String("allow".to_string()),
+        );
+        let opts = PipxOptions::new(&opts);
+
+        assert_eq!(
+            opts.uv_install_args().unwrap(),
+            [
+                "--with",
+                "pip",
+                "--with",
+                "plugin>=1,<2",
+                "--with-executables-from",
+                "plugin>=1",
+                "--prerelease",
+                "allow",
+            ]
+        );
+        let locked = opts.lockfile_options().unwrap();
+        assert_eq!(locked.get("with").unwrap(), r#"["pip","plugin>=1,<2"]"#);
+        assert_eq!(locked.get("expose").unwrap(), r#"["plugin>=1"]"#);
+        assert_eq!(locked.get("dependency_prereleases").unwrap(), "allow");
+    }
+
+    #[test]
+    fn test_semantic_uv_options_reject_invalid_values() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "dependency_prereleases".to_string(),
+            toml::Value::String("sometimes".to_string()),
+        );
+        assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+
+        opts.opts.insert(
+            "dependency_prereleases".to_string(),
+            toml::Value::String("allow".to_string()),
+        );
+        opts.opts.insert(
+            "with".to_string(),
+            toml::Value::Array(vec![toml::Value::Integer(1)]),
+        );
+        assert!(PipxOptions::new(&opts).validate_semantic().is_err());
     }
 
     #[test]
@@ -1670,7 +1849,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             "git+https://github.com/psf/black-repository.git@24.3.0#egg=black[jupyter]"
         );
         assert_eq!(
-            named_opts.lockfile_options().get("package_name"),
+            named_opts.lockfile_options().unwrap().get("package_name"),
             Some(&"black".to_string())
         );
     }

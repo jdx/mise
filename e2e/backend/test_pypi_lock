@@ -88,6 +88,23 @@ assert_succeed "find .mise/locks/pipx-mise-lock-cli -maxdepth 1 -name '1.0.0~*' 
 cp original.toml mise.toml
 mise lock
 assert_fail "find .mise/locks/pipx-mise-lock-cli -maxdepth 1 -name '1.0.0~*' | grep -q ."
+# Semantic uv options participate in dependency locking and executable exposure.
+python3 - <<'PY_SEMANTIC_OPTIONS'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace(
+    '"pipx:mise-lock-cli" = "1.0.0"',
+    '"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], expose = ["mise-exposed==1.0.0"], dependency_prereleases = "allow" }'))
+PY_SEMANTIC_OPTIONS
+mise lock --bump pipx:mise-lock-cli
+assert_contains 'mise x --locked -- exposed-cli' 'exposed'
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name pyproject.toml -exec cat {} +" 'mise-lock-extra==1.0.0'
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name pyproject.toml -exec cat {} +" 'mise-exposed==1.0.0'
+assert_contains 'cat mise.lock' 'dependency_prereleases = "allow"'
+assert_contains 'cat mise.lock' "with = '[\"mise-lock-extra==1.0.0\"]'"
+assert_contains 'cat mise.lock' "expose = '[\"mise-exposed==1.0.0\"]'"
+cp original.toml mise.toml
+mise lock
 # Return to the first graph and reinstall with an empty artifact cache.
 cp first.lock mise.lock
 cp first-sidecars/pipx-mise-lock-cli/1.0.0/* .mise/locks/pipx-mise-lock-cli/1.0.0/

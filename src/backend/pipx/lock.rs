@@ -144,6 +144,15 @@ impl PIPXBackend {
         ))
     }
 
+    fn lock_requirements(&self, tv: &ToolVersion) -> Result<Vec<String>> {
+        let raw = tv.request.options();
+        let opts = PipxOptions::new(&raw);
+        let mut requirements = vec![self.lock_requirement(tv)?];
+        requirements.extend(opts.with()?);
+        requirements.extend(opts.expose()?);
+        Ok(requirements)
+    }
+
     async fn uv_lock_command(
         &self,
         config: &Arc<Config>,
@@ -194,7 +203,7 @@ impl PIPXBackend {
         } else {
             format!(">=3.8,{requires_python}")
         };
-        let requirement = self.lock_requirement(tv)?;
+        let requirements = self.lock_requirements(tv)?;
         let mut project = toml::Table::new();
         project.insert(
             "project".into(),
@@ -202,7 +211,7 @@ impl PIPXBackend {
                 name = PROJECT_NAME
                 version = "0.0.0"
                 requires-python = requires_python
-                dependencies = [requirement]
+                dependencies = requirements
             }
             .into(),
         );
@@ -211,11 +220,16 @@ impl PIPXBackend {
             temp.path().join("pyproject.toml"),
             toml::to_string(&project)?,
         )?;
-        self.uv_lock_command(config, tv, &uv, temp.path())
+        let mut cmd = self
+            .uv_lock_command(config, tv, &uv, temp.path())
             .await?
             .args(["lock", "--no-build", "--no-config", "--no-python-downloads"])
-            .args(Self::uv_exclude_newer_args(tv.before_date))
-            .execute()?;
+            .args(Self::uv_exclude_newer_args(tv.before_date));
+        let raw = tv.request.options();
+        if let Some(value) = PipxOptions::new(&raw).dependency_prereleases()? {
+            cmd = cmd.args(["--prerelease", value]);
+        }
+        cmd.execute()?;
         let graph_text = crate::file::read_to_string(temp.path().join("uv.lock"))?;
         let graph: toml::Table = graph_text.parse()?;
         if let Some(requires_python) = graph.get("requires-python") {
@@ -242,7 +256,11 @@ impl PIPXBackend {
             .get("project")
             .and_then(toml::Value::as_table)
             .ok_or_else(|| eyre!("missing uv project"))?;
-        let expected = vec![toml::Value::String(self.lock_requirement(tv)?)];
+        let expected = self
+            .lock_requirements(tv)?
+            .into_iter()
+            .map(toml::Value::String)
+            .collect::<Vec<_>>();
         if project.get("dependencies").and_then(toml::Value::as_array) != Some(&expected)
             || project.get("name").and_then(toml::Value::as_str) != Some(PROJECT_NAME)
             || project.get("requires-python") != lock.graph.get("requires-python")
@@ -279,9 +297,6 @@ impl PIPXBackend {
                     .and_then(|m| m.get("requires-dist"))
                     .and_then(toml::Value::as_array)
                     .ok_or_else(|| eyre!("missing uv root requirements"))?;
-                let requirement = requirements
-                    .first()
-                    .ok_or_else(|| eyre!("empty uv root requirements"))?;
                 let raw = tv.request.options();
                 let extras = PipxOptions::new(&raw)
                     .extras()
@@ -291,19 +306,24 @@ impl PIPXBackend {
                     .filter(|s| !s.is_empty())
                     .map(Self::normalize_package_name)
                     .collect::<std::collections::BTreeSet<_>>();
-                let locked_extras = requirement
-                    .get("extras")
+                let root_name = Self::normalize_package_name(&self.tool_name());
+                let root_specifier = format!("=={}", tv.version);
+                let root_requirement = requirements.iter().find(|requirement| {
+                    requirement.get("name").and_then(toml::Value::as_str)
+                        == Some(root_name.as_str())
+                        && requirement.get("specifier").and_then(toml::Value::as_str)
+                            == Some(root_specifier.as_str())
+                });
+                let locked_extras = root_requirement
+                    .and_then(|requirement| requirement.get("extras"))
                     .and_then(toml::Value::as_array)
                     .into_iter()
                     .flatten()
                     .filter_map(toml::Value::as_str)
                     .map(|extra| Self::normalize_package_name(extra.trim()))
                     .collect::<std::collections::BTreeSet<_>>();
-                if requirements.len() != 1
-                    || requirement.get("name").and_then(toml::Value::as_str)
-                        != Some(Self::normalize_package_name(&self.tool_name()).as_str())
-                    || requirement.get("specifier").and_then(toml::Value::as_str)
-                        != Some(format!("=={}", tv.version).as_str())
+                if requirements.len() != expected.len()
+                    || root_requirement.is_none()
                     || extras != locked_extras
                 {
                     bail!(
@@ -404,7 +424,11 @@ impl PIPXBackend {
         } else {
             "python"
         });
-        let names = CmdLineRunner::new(python).args(["-I", "-c", "import importlib.metadata, json, sys; print(json.dumps([e.name for e in importlib.metadata.distribution(sys.argv[1]).entry_points if e.group in ('console_scripts', 'gui_scripts')]))", &self.tool_name()]).read().await?;
+        let raw = tv.request.options();
+        let mut packages = vec![self.tool_name()];
+        packages.extend(PipxOptions::new(&raw).exposed_package_names()?);
+        let packages = serde_json::to_string(&packages)?;
+        let names = CmdLineRunner::new(python).args(["-I", "-c", "import importlib.metadata, json, sys; packages = json.loads(sys.argv[1]); print(json.dumps(sorted({e.name for package in packages for e in importlib.metadata.distribution(package).entry_points if e.group in ('console_scripts', 'gui_scripts')})))", &packages]).read().await?;
         let names: Vec<String> = serde_json::from_str(names.trim())?;
         if names.is_empty() {
             bail!("{} exposes no executable scripts", self.ba.short);
