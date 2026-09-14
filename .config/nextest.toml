@@ -13,3 +13,9 @@ retries = 0
 [[profile.ci.overrides]]
 filter = 'test(/cli::(command_effects|mcp|usage)::tests::/)'
 slow-timeout = { period = "500ms", terminate-after = 4 }
+
+# This binary-level integration test performs a network-backed, first-run
+# node-gyp bootstrap, so keep a bounded but realistic cold-cache ceiling.
+[[profile.ci.overrides]]
+filter = 'test(mise_binary_services_aube_node_gyp_bootstrap_trampoline)'
+slow-timeout = { period = "5s", terminate-after = 6 }
