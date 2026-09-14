@@ -4500,14 +4500,16 @@ pub(crate) fn get_locked_backend(config: &Config, short: &str) -> Option<String>
 
     lockfile
         .tools_for(short)
-        .and_then(|tools| tools.first())
-        .and_then(|tool| tool.backend.clone())
-        .filter(|full| {
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| tool.backend.as_ref())
+        .find(|&full| {
             // Discovery includes parent lockfiles and runs before registry fallback.
             // A recorded backend must not revive a disabled backend for a shorthand.
             let ba = BackendArg::new(full.clone(), Some(full.clone()));
             !backend::is_disabled_backend_type(&ba.backend_type())
         })
+        .cloned()
 }
 
 fn handle_lockfile_read_error(err: Report, lockfile_path: &Path) -> Lockfile {
