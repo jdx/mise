@@ -92,10 +92,28 @@ pub(crate) async fn apply(
     tracked: &TrackedSet,
     req: &ApplyRequest,
 ) -> Result<ApplyOutcome> {
+    let _sync_lock = run::lock(store)?;
+    apply_locked(store, tracked, req).await
+}
+
+/// Applies a prepared synchronization while the caller holds the sync lock.
+pub(crate) async fn apply_locked(
+    store: &Store,
+    tracked: &TrackedSet,
+    req: &ApplyRequest,
+) -> Result<ApplyOutcome> {
+    apply_locked_with_scope(store, tracked, req, None).await
+}
+
+pub(crate) async fn apply_locked_with_scope(
+    store: &Store,
+    tracked: &TrackedSet,
+    req: &ApplyRequest,
+    mut operation_scope: Option<OperationScope>,
+) -> Result<ApplyOutcome> {
     if !req.paths.is_empty() {
         bail!("partial pulls are not supported: apply the complete setup without PATH arguments");
     }
-    let _sync_lock = run::lock(store)?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("applying requires git"))?;
@@ -437,7 +455,9 @@ pub(crate) async fn apply(
 
     // the transaction
     let reload = crate::system::history::config::reload_commands()?;
-    let scope = if req.automatic {
+    let scope = if let Some(scope) = operation_scope.take() {
+        scope
+    } else if req.automatic {
         OperationScope::begin_automatic_apply().await?
     } else {
         OperationScope::begin_kind(OperationKind::Apply, "dotfiles pull", false).await?
