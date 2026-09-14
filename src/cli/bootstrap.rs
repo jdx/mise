@@ -5,7 +5,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use eyre::{Result, bail};
-use heck::ToKebabCase;
+use mise_bootstrap::{Phase, Selection};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -121,7 +121,7 @@ pub(crate) struct Bootstrap {
     /// Can be passed multiple times or as a comma-separated list.
     /// Cannot be used with `--skip`.
     #[usage(long, value_enum, delimiter = ',', conflicts = "skip")]
-    only: Vec<BootstrapPart>,
+    only: Vec<Phase>,
 
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
@@ -131,60 +131,11 @@ pub(crate) struct Bootstrap {
     ///
     /// Can be passed multiple times or as a comma-separated list.
     #[usage(long, value_enum, delimiter = ',')]
-    skip: Vec<BootstrapPart>,
+    skip: Vec<Phase>,
 
     /// Refresh package manager metadata and update configured repos
     #[usage(long)]
     update: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, usage_rs::ValueEnum)]
-enum BootstrapPart {
-    Plugins,
-    Packages,
-    Accounts,
-    Files,
-    Services,
-    Firewall,
-    Compose,
-    Repos,
-    Dotfiles,
-    #[usage(name = "mise-shell-activate", visible_alias = "shell")]
-    Shell,
-    #[usage(name = "macos-defaults", visible_alias = "defaults")]
-    Defaults,
-    #[usage(name = "macos-launchd-agents", visible_alias = "launchd")]
-    Launchd,
-    #[usage(name = "linux-systemd-units", visible_alias = "systemd")]
-    Systemd,
-    User,
-    Tools,
-    Task,
-    FinalHook,
-}
-
-impl BootstrapPart {
-    // Keep this in sync with every enum variant. `--only` computes a
-    // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 17] = [
-        Self::Plugins,
-        Self::Packages,
-        Self::Accounts,
-        Self::Files,
-        Self::Services,
-        Self::Firewall,
-        Self::Compose,
-        Self::Repos,
-        Self::Dotfiles,
-        Self::Shell,
-        Self::Defaults,
-        Self::Launchd,
-        Self::Systemd,
-        Self::User,
-        Self::Tools,
-        Self::Task,
-        Self::FinalHook,
-    ];
 }
 
 type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<ResourceId>)>;
@@ -224,22 +175,14 @@ fn validate_bootstrap_checkout(checkout: &Path, url: &str) -> Result<()> {
     Ok(())
 }
 
-fn bootstrap_resource_is_skipped(resource: &ResourceId, skip: &HashSet<BootstrapPart>) -> bool {
-    let part = match resource.kind.as_str() {
-        "package" => BootstrapPart::Packages,
-        "file" | "directory" => BootstrapPart::Files,
-        "service" => BootstrapPart::Services,
-        "firewall" | "firewall-rule" => BootstrapPart::Firewall,
-        "user" | "group" => BootstrapPart::Accounts,
-        _ => return false,
-    };
-    skip.contains(&part)
+fn bootstrap_resource_is_skipped(resource: &ResourceId, selection: &Selection) -> bool {
+    Phase::for_resource_kind(resource.kind.as_str()).is_some_and(|phase| selection.skips(phase))
 }
 
 fn bootstrap_prediction_has_skipped_change(
     resource: &ResourceId,
     resources: &BootstrapPredictionGraph,
-    skip: &HashSet<BootstrapPart>,
+    selection: &Selection,
     visited: &mut HashSet<ResourceId>,
 ) -> bool {
     if !visited.insert(resource.clone()) {
@@ -255,8 +198,8 @@ fn bootstrap_prediction_has_skipped_change(
                 ResourceAction::Create | ResourceAction::Update | ResourceAction::Remove
             )
         });
-        (dependency_changes && bootstrap_resource_is_skipped(dependency, skip))
-            || bootstrap_prediction_has_skipped_change(dependency, resources, skip, visited)
+        (dependency_changes && bootstrap_resource_is_skipped(dependency, selection))
+            || bootstrap_prediction_has_skipped_change(dependency, resources, selection, visited)
     })
 }
 
@@ -766,7 +709,7 @@ struct BootstrapRemote {
 
     /// Run only one or more remote bootstrap parts
     #[usage(long, value_enum, delimiter = ',', conflicts = "skip")]
-    only: Vec<BootstrapPart>,
+    only: Vec<Phase>,
 
     /// SSH port override
     #[usage(long)]
@@ -790,7 +733,7 @@ struct BootstrapRemote {
 
     /// Skip one or more remote bootstrap parts
     #[usage(long, value_enum, delimiter = ',')]
-    skip: Vec<BootstrapPart>,
+    skip: Vec<Phase>,
 
     /// Local directory archived and sent to each target
     #[usage(long, value_hint = usage_rs::ValueHint::DirPath)]
@@ -1357,10 +1300,10 @@ impl Bootstrap {
     async fn run_phases(&self) -> Result<Summary> {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
-        let skip = self.skip_parts();
+        let selection = self.selection();
         let summary = Summary { message: None };
-        let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
-        let files_enabled = !skip.contains(&BootstrapPart::Files);
+        let accounts_enabled = !selection.skips(Phase::Accounts);
+        let files_enabled = !selection.skips(Phase::Files);
         let configured_accounts =
             if accounts_enabled || (cfg!(target_os = "linux") && files_enabled) {
                 Some(system::accounts::prepare_requests_from_config(&config)?)
@@ -1373,7 +1316,7 @@ impl Bootstrap {
                 .expect("enabled accounts were prepared")
         });
         let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
-        if !self.dry_run && !skip.contains(&BootstrapPart::Dotfiles) {
+        if !self.dry_run && !selection.skips(Phase::Dotfiles) {
             let files = system::files::files_from_config(&config)?;
             system::files::preflight_templates(&config, &files, &secrets)?;
         }
@@ -1392,7 +1335,7 @@ impl Bootstrap {
                 accounts_enabled,
             )?;
         }
-        let services_enabled = !skip.contains(&BootstrapPart::Services);
+        let services_enabled = !selection.skips(Phase::Services);
         let notifications_configured =
             managed_system_files
                 .as_ref()
@@ -1424,12 +1367,12 @@ impl Bootstrap {
         } else {
             vec![]
         };
-        let mut managed_firewall = if skip.contains(&BootstrapPart::Firewall) {
+        let mut managed_firewall = if selection.skips(Phase::Firewall) {
             None
         } else {
             system::firewall::prepare_request_from_config(&config)?
         };
-        let mut managed_compose = if skip.contains(&BootstrapPart::Compose) {
+        let mut managed_compose = if selection.skips(Phase::Compose) {
             None
         } else {
             Some(system::compose::prepare_requests_from_config(&config)?)
@@ -1459,7 +1402,7 @@ impl Bootstrap {
                     !bootstrap_prediction_has_skipped_change(
                         &resource.id,
                         &resources,
-                        &skip,
+                        &selection,
                         &mut HashSet::new(),
                     )
                 })
@@ -1486,7 +1429,7 @@ impl Bootstrap {
             false
         };
 
-        if skip.contains(&BootstrapPart::Plugins) {
+        if selection.skips(Phase::Plugins) {
             debug!("bootstrap: package plugins skipped");
         } else {
             apply_bootstrap_plugins(&config, self.dry_run).await?;
@@ -1520,7 +1463,7 @@ impl Bootstrap {
             }
         }
 
-        if skip.contains(&BootstrapPart::Packages) {
+        if selection.skips(Phase::Packages) {
             debug!("bootstrap: system packages skipped");
         } else {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PrePackages)
@@ -1557,7 +1500,7 @@ impl Bootstrap {
             }
         }
 
-        if skip.contains(&BootstrapPart::Files) {
+        if selection.skips(Phase::Files) {
             debug!("bootstrap: system files skipped");
         } else {
             let (mut files, mut directories) = managed_system_files
@@ -1609,7 +1552,7 @@ impl Bootstrap {
             debug!("bootstrap: services skipped");
         }
 
-        if skip.contains(&BootstrapPart::Firewall) {
+        if selection.skips(Phase::Firewall) {
             debug!("bootstrap: firewall skipped");
         } else if let Some(firewall) = &mut managed_firewall {
             system::firewall::inspect_request(firewall)?;
@@ -1636,7 +1579,7 @@ impl Bootstrap {
             debug!("bootstrap: compose projects skipped");
         }
 
-        if skip.contains(&BootstrapPart::Repos) {
+        if selection.skips(Phase::Repos) {
             debug!("bootstrap: repos skipped");
         } else {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PreRepos)
@@ -1656,7 +1599,7 @@ impl Bootstrap {
                 .await?;
         }
 
-        if skip.contains(&BootstrapPart::Dotfiles) {
+        if selection.skips(Phase::Dotfiles) {
             debug!("bootstrap: dotfiles skipped");
             if !self.dry_run {
                 config = Config::reset().await?;
@@ -1710,7 +1653,7 @@ impl Bootstrap {
                 .await?;
         }
 
-        if skip.contains(&BootstrapPart::Shell) {
+        if selection.skips(Phase::Shell) {
             debug!("bootstrap: shell activation skipped");
         } else {
             let activations = dry_run_config_files
@@ -1725,7 +1668,7 @@ impl Bootstrap {
             }
         }
 
-        if skip.contains(&BootstrapPart::Defaults) {
+        if selection.skips(Phase::Defaults) {
             debug!("bootstrap: system defaults skipped");
         } else {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PreDefaults)
@@ -1752,7 +1695,7 @@ impl Bootstrap {
                 .await?;
         }
 
-        if skip.contains(&BootstrapPart::Launchd) {
+        if selection.skips(Phase::Launchd) {
             debug!("bootstrap: launchd agents skipped");
         } else {
             let agents = system::launchd_from_config(&config);
@@ -1770,7 +1713,7 @@ impl Bootstrap {
             }
         }
 
-        if skip.contains(&BootstrapPart::Systemd) {
+        if selection.skips(Phase::Systemd) {
             debug!("bootstrap: systemd user services skipped");
         } else {
             let units = system::systemd_from_config(&config);
@@ -1788,7 +1731,7 @@ impl Bootstrap {
             }
         }
 
-        if skip.contains(&BootstrapPart::User) {
+        if selection.skips(Phase::User) {
             debug!("bootstrap: login shell skipped");
         } else {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PreUser)
@@ -1820,7 +1763,7 @@ impl Bootstrap {
                 .await?;
         }
 
-        if skip.contains(&BootstrapPart::Tools) {
+        if selection.skips(Phase::Tools) {
             debug!("bootstrap: tools skipped");
         } else {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PreTools)
@@ -1835,7 +1778,7 @@ impl Bootstrap {
                 .await?;
         }
 
-        if !skip.contains(&BootstrapPart::Packages) {
+        if !selection.skips(Phase::Packages) {
             let mgrs = system::packages_from_config(&config)
                 .into_iter()
                 .filter(|mp| mp.manager.is_plugin())
@@ -1884,25 +1827,25 @@ impl Bootstrap {
             vec![]
         };
         if !late.is_empty() {
-            if skip.contains(&BootstrapPart::Tools) {
+            if selection.skips(Phase::Tools) {
                 info!("bootstrap: tools skipped; user services with requires_tools still converge");
             }
             apply_user_services(&late, self.dry_run, self.yes, Some(&mut follow_up)).await?;
         }
 
-        if skip.contains(&BootstrapPart::Task) {
+        if selection.skips(Phase::Task) {
             debug!("bootstrap: `bootstrap` task skipped");
         } else {
             let tasks = config.tasks().await?;
             if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
                 info!("bootstrap: running `bootstrap` task");
-                self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
+                self.run_task("bootstrap", selection.skips(Phase::Tools))
                     .await?;
             } else {
                 debug!("bootstrap: no `bootstrap` task defined, skipping");
             }
         }
-        if skip.contains(&BootstrapPart::FinalHook) {
+        if selection.skips(Phase::FinalHook) {
             debug!("bootstrap: final hook skipped");
         } else {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::Final)
@@ -2075,16 +2018,8 @@ impl Bootstrap {
         run_bootstrap_hooks(config, hooks, phase, self.dry_run).await
     }
 
-    fn skip_parts(&self) -> HashSet<BootstrapPart> {
-        if self.only.is_empty() {
-            self.skip.iter().copied().collect()
-        } else {
-            let only = self.only.iter().copied().collect::<HashSet<_>>();
-            BootstrapPart::ALL
-                .into_iter()
-                .filter(|part| !only.contains(part))
-                .collect()
-        }
+    fn selection(&self) -> Selection {
+        Selection::from_filters(&self.only, &self.skip)
     }
 
     async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {
@@ -3150,8 +3085,8 @@ impl BootstrapRemote {
             update: self.update,
             prompt_secrets: self.prompt_secrets,
             force_dotfiles: self.force_dotfiles,
-            skip: self.skip.iter().map(bootstrap_part_name).collect(),
-            only: self.only.iter().map(bootstrap_part_name).collect(),
+            skip: self.skip.iter().map(bootstrap_phase_name).collect(),
+            only: self.only.iter().map(bootstrap_phase_name).collect(),
             keep_staging: self.keep_staging,
             connect_timeout: self.connect_timeout,
         };
@@ -3250,14 +3185,8 @@ fn select_remote_inventory(
     Ok(selected)
 }
 
-fn bootstrap_part_name(part: &BootstrapPart) -> String {
-    match part {
-        BootstrapPart::Shell => "mise-shell-activate".to_string(),
-        BootstrapPart::Defaults => "macos-defaults".to_string(),
-        BootstrapPart::Launchd => "macos-launchd-agents".to_string(),
-        BootstrapPart::Systemd => "linux-systemd-units".to_string(),
-        part => format!("{part:?}").to_kebab_case(),
-    }
+fn bootstrap_phase_name(part: &Phase) -> String {
+    part.name().to_string()
 }
 
 impl BootstrapSecretsStatus {

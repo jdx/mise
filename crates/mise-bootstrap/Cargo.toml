@@ -1,0 +1,17 @@
+[package]
+name = "mise-bootstrap"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Bootstrap workflow model for mise"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+
+[lib]
+name = "mise_bootstrap"
+path = "src/lib.rs"
+
+[dependencies]
+usage_rs = { package = "usage-rs", version = "6.8", default-features = false, features = [
+  "spec",
+] }

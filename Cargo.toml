@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/mise-bootstrap",
   "crates/mise-cache-core",
   "crates/mise-agent-env",
   "crates/vfox",
@@ -134,6 +135,7 @@ futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-agent-env = { path = "crates/mise-agent-env", version = "0.1" }
+mise-bootstrap = { path = "crates/mise-bootstrap", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",
