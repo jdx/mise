@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2GBT0457R1R4PSQ5MPT0XYH",
+  "session_id": "01a0a0b1-b599-79f0-ba6a-42a265fa86fb",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T16:25:43.099487Z",
+  "branch": "codex/pypi-semantic-uv-options",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "74c02bb9fc2a",
+  "checkpoint_transcript_start": 269,
+  "transcript_lines_at_start": 269,
+  "compact_transcript_start": 37,
+  "token_usage": {
+    "input_tokens": 26423,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1137920,
+    "output_tokens": 1248,
+    "api_call_count": 9
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 34,
+      "user_lines_removed": 2,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "e2e/backend/test_npm_aube": 20,
+        "src/backend/npm.rs": 14
+      },
+      "user_removed_per_file": {
+        "src/backend/npm.rs": 2
+      }
+    }
+  ]
+}
