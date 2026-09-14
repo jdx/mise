@@ -897,6 +897,8 @@ impl PIPXBackend {
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
             .collect_vec();
         for (b, tv) in pipx_tools {
+            let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
+                || tv.request.tool_config_locked(config, true);
             let ctx = InstallContext {
                 config: config.clone(),
                 ts: ts.clone(),
@@ -906,7 +908,7 @@ impl PIPXBackend {
                 force: true,
                 dry_run: false,
                 explicit_yes: false,
-                locked: false,
+                locked,
                 before_date: None,
                 dependency_context: Default::default(),
             };
