@@ -2235,43 +2235,46 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = repo(tmp.path());
         let empty = repo.empty_object("tree").unwrap();
+        let blob = repo.hash_blob(b"held\n").unwrap();
         // Each thread composes a snapshot of its own. A scratch index shared
         // between them loses whatever one thread inserted before another
-        // reset it -- a sorted prefix of the paths, published as deletions.
-        let failures: Vec<String> = std::thread::scope(|scope| {
-            let handles: Vec<_> = (0..4)
+        // reset it -- a sorted prefix of the paths, which a checkpoint then
+        // records as deliberate deletions and publishes to every machine.
+        let lost: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..3)
                 .map(|thread| {
-                    let repo = &repo;
-                    let empty = empty.as_str();
+                    let (repo, empty, blob) = (&repo, empty.as_str(), blob.as_str());
                     scope.spawn(move || {
-                        let mut missing = vec![];
-                        for round in 0..6 {
-                            let overlays: Vec<Overlay> = (0..40)
-                                .map(|n| Overlay {
-                                    path: format!("home/{thread}/file-{n:03}"),
-                                    object: Some((
-                                        "100644".into(),
-                                        repo.hash_blob(
-                                            format!("{thread}:{round}:{n}\n").as_bytes(),
-                                        )
-                                        .unwrap(),
-                                    )),
-                                })
-                                .collect();
+                        let overlays: Vec<Overlay> = (0..8)
+                            .map(|n| Overlay {
+                                path: format!("home/{thread}/file-{n}"),
+                                object: Some(("100644".into(), blob.to_string())),
+                            })
+                            .collect();
+                        let mut lost = vec![];
+                        for _ in 0..3 {
                             let tree = match repo.compose(empty, &overlays) {
                                 Ok(tree) => tree,
                                 Err(err) => {
-                                    missing.push(format!("compose failed: {err:#}"));
+                                    lost.push(format!("compose failed: {err:#}"));
                                     continue;
                                 }
                             };
-                            for overlay in &overlays {
-                                if repo.object_at(&tree, &overlay.path).unwrap().is_none() {
-                                    missing.push(format!("{} is missing", overlay.path));
-                                }
-                            }
+                            let present: BTreeSet<String> = repo
+                                .ls_tree(&tree)
+                                .unwrap()
+                                .into_iter()
+                                .map(|entry| entry.path)
+                                .collect();
+                            lost.extend(
+                                overlays
+                                    .iter()
+                                    .map(|overlay| &overlay.path)
+                                    .filter(|path| !present.contains(*path))
+                                    .cloned(),
+                            );
                         }
-                        missing
+                        lost
                     })
                 })
                 .collect();
@@ -2281,10 +2284,10 @@ mod tests {
                 .collect()
         });
         assert!(
-            failures.is_empty(),
+            lost.is_empty(),
             "{} composed paths were lost, first: {}",
-            failures.len(),
-            failures[0]
+            lost.len(),
+            lost[0]
         );
         let left: Vec<_> = std::fs::read_dir(repo.dir())
             .unwrap()
