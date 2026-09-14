@@ -558,6 +558,16 @@ impl HistoryRepo {
         ]))
     }
 
+    /// Removes the history branch only when it still points at `expected`.
+    pub(crate) fn delete_history_head(&self, expected: &str) -> Result<()> {
+        self.git.run(PlumbingCall::new([
+            "update-ref",
+            "-d",
+            Self::HISTORY_REF,
+            expected,
+        ]))
+    }
+
     /// Ordinary ancestry is the source of truth, not per-checkpoint refs.
     #[cfg(test)]
     pub(crate) fn checkpoint_refs(&self) -> Result<Vec<(String, String)>> {

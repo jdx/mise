@@ -42,6 +42,17 @@ EOF2
   chmod +x "$script"
 }
 
+# ---- machine Q already has the exact origin commit as its local head.
+# Replacement still succeeds instead of validating a retained head against a
+# fresh-adoption operation.
+Q="$(dirname "$HOME")/equal-history-home"
+wrapper "$Q" "$PWD/equal-history"
+q="$PWD/equal-history"
+mkdir -p "$Q/.local/state/mise/history"
+git clone -q --bare "$origin" "$Q/.local/state/mise/history/repo.git"
+assert "git --git-dir=$Q/.local/state/mise/history/repo.git rev-parse refs/heads/main" "$(git --git-dir="$origin" rev-parse main)"
+assert_succeed "$q bootstrap --adopt file://$origin --replace-history --yes --only dotfiles"
+
 # ---- machine C: a fresh HOME, one command
 preview_home="$(dirname "$HOME")/conflict-preview-home"
 wrapper "$preview_home" "$PWD/conflict-preview"
@@ -79,6 +90,56 @@ assert_contains "$c bootstrap dotfiles status" "mode sync"
 assert "$c bootstrap dotfiles history --json | jq -r '[.[].trigger] | index(\"apply\") != null'" "true"
 # running it again is a sync, not a second setup
 assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles"
+
+# ---- machine B already has the same declared files but no history store.
+# Fresh adoption compares those files directly instead of first capturing an
+# unrelated local root.
+B="$(dirname "$HOME")/existing-files-home"
+wrapper "$B" "$PWD/existing-files"
+b="$PWD/existing-files"
+mkdir -p "$B/.config/hypr" "$B/.config/mise/templates"
+cp ~/.config/hypr/bindings.lua "$B/.config/hypr/bindings.lua"
+cp "$MISE_CONFIG_DIR/config.toml" "$B/.config/mise/config.toml"
+cp "$MISE_CONFIG_DIR/templates/gitconfig.tera" "$B/.config/mise/templates/gitconfig.tera"
+assert_directory_not_exists "$B/.local/state/mise/history"
+assert_succeed "$b bootstrap --adopt file://$origin --yes --only dotfiles"
+origin_root="$(git --git-dir="$origin" rev-list --max-parents=0 main)"
+assert "git --git-dir=$B/.local/state/mise/history/repo.git rev-list --max-parents=0 refs/heads/main" "$origin_root"
+
+# ---- machine R has a genuinely unrelated local root.
+# Explicit replacement previews without mutation, then adopts the origin while
+# making the old root unreachable.
+R="$(dirname "$HOME")/replacement-home"
+wrapper "$R" "$PWD/replacement"
+r="$PWD/replacement"
+mkdir -p "$R/.local/state/mise/history"
+git clone -q --bare "$origin" "$R/.local/state/mise/history/repo.git"
+tree="$(git --git-dir="$origin" rev-parse 'main^{tree}')"
+old="$(echo 'unrelated local checkpoint' | git --git-dir="$R/.local/state/mise/history/repo.git" commit-tree "$tree")"
+git --git-dir="$R/.local/state/mise/history/repo.git" update-ref refs/heads/main "$old"
+assert_fail "$r bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" "histories are unrelated"
+assert_contains "$r bootstrap --adopt file://$origin --replace-history --dry-run --only dotfiles 2>&1" "Would replace local history"
+assert "git --git-dir=$R/.local/state/mise/history/repo.git rev-parse refs/heads/main" "$old"
+assert_succeed "$r bootstrap --adopt file://$origin --replace-history --yes --only dotfiles"
+assert_succeed "git --git-dir=$R/.local/state/mise/history/repo.git merge-base --is-ancestor $(git --git-dir="$origin" rev-parse main) refs/heads/main"
+assert_fail "git --git-dir=$R/.local/state/mise/history/repo.git merge-base --is-ancestor $old refs/heads/main"
+assert_fail "git --git-dir=$R/.local/state/mise/history/repo.git rev-list --all | grep -q $old"
+
+# A live-file conflict aborts replacement and restores the previous local head.
+S="$(dirname "$HOME")/replacement-conflict-home"
+wrapper "$S" "$PWD/replacement-conflict"
+s="$PWD/replacement-conflict"
+mkdir -p "$S/.local/state/mise/history" "$S/.config/mise"
+git clone -q --bare "$origin" "$S/.local/state/mise/history/repo.git"
+conflict_old="$(echo 'unrelated conflicting checkpoint' | git --git-dir="$S/.local/state/mise/history/repo.git" commit-tree "$tree")"
+git --git-dir="$S/.local/state/mise/history/repo.git" update-ref refs/heads/main "$conflict_old"
+printf '{"sentinel":{}}\n' >"$S/.local/state/mise/history/repo.git/mise-sync-state.json"
+printf '[env]\nLOCAL_ONLY = "1"\n' >"$S/.config/mise/config.toml"
+assert_fail "$s bootstrap --adopt file://$origin --replace-history --yes --only dotfiles 2>&1" "cannot replace local history"
+assert "git --git-dir=$S/.local/state/mise/history/repo.git rev-parse refs/heads/main" "$conflict_old"
+assert "jq -c . $S/.local/state/mise/history/repo.git/mise-sync-state.json" '{"sentinel":{}}'
+assert "cat $S/.config/mise/config.toml" $'[env]\nLOCAL_ONLY = "1"'
+
 # C's edits reach A through the usual sync
 echo 'bind = SUPER, Q, exec, foot' >"$C/.config/hypr/bindings.lua"
 assert_contains "$c bootstrap dotfiles sync 2>&1" "published"

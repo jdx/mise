@@ -483,6 +483,7 @@ repeated or comma-separated parts and cannot be combined.
     flag --adopt help="Adopt global configuration or shared dotfile history from a Git repository, then bootstrap" conflicts=--from {
         arg "<GIT_URL|OWNER/REPO>"
     }
+    flag --replace-history help="Replace local dotfile history while adopting a setup repository" requires=--adopt
     flag --from-git help="Deprecated alias for --adopt" hide=#true {
         conflicts "--from" "--adopt"
         arg <GIT_URL>
@@ -1891,6 +1892,7 @@ shell affects future sessions, not the shell running this command.
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
 mise bootstrap --adopt git@github.com:example/mise-config.git --yes
+mise bootstrap --adopt git@github.com:example/mise-config.git --replace-history --yes
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
