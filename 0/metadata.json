@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2FX42BNH6QKASCPDY18YDNV",
+  "session_id": "01a09fc5-3a1c-7131-bd22-6278b63a965f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-14T12:08:58.116148Z",
+  "branch": "codex/docs-repair-plaintext-history",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/history.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "5ef69f93f9f9",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 134343,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3898496,
+    "output_tokens": 14599,
+    "api_call_count": 40
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-14T12:08:58.061114Z",
+    "agent_lines": 53,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 53,
+    "total_lines_changed": 53,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}

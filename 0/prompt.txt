@@ -1,0 +1,5 @@
+investigate [https://github.com/jdx/mise/discussions/13171](https://github.com/jdx/mise/discussions/13171)
+
+---
+
+ok make a pr, i don't think we should offer a rewrite command, post a reply
