@@ -1930,6 +1930,11 @@ impl TaskExecutor {
             match crate::ui::prompt::confirm_with_default(&message, default_yes) {
                 Ok(Confirmation::Yes) => {}
                 Ok(Confirmation::No) => return Err(eyre!("aborted by user")),
+                Ok(Confirmation::Unanswered) => {
+                    return Err(eyre!(
+                        "task requires confirmation but stdin ended before an answer; pass --yes to accept"
+                    ));
+                }
                 Ok(Confirmation::Unavailable) => {
                     return Err(eyre!(
                         "task requires confirmation but there was nobody to ask; pass --yes to accept"

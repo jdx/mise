@@ -145,6 +145,10 @@ impl Install {
         }
     }
 
+    pub(crate) fn inherit_root_yes(&mut self, yes: bool) {
+        self.yes |= yes;
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
@@ -477,6 +481,7 @@ impl Install {
             locked: Settings::get().locked,
             install_dir,
             yes: self.yes || Settings::get().yes,
+            explicit_yes: self.yes,
             ..Default::default()
         })
     }
@@ -794,6 +799,16 @@ mod tests {
             source,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn root_yes_is_explicit_install_consent() {
+        let mut install = Install::default();
+        install.inherit_root_yes(true);
+
+        let options = install.install_opts().unwrap();
+        assert!(options.yes);
+        assert!(options.explicit_yes);
     }
 
     #[test]

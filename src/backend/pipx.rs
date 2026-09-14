@@ -878,6 +878,7 @@ impl PIPXBackend {
                     .into(),
                 force: true,
                 dry_run: false,
+                explicit_yes: false,
                 locked: false,
                 before_date: None,
                 dependency_context: Default::default(),
