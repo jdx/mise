@@ -232,6 +232,15 @@ mise dot origin set https://github.com/you/setup.git --sync sync
 mise dot status
 ```
 
+Any Git URL works, including a self-hosted host:
+
+```sh
+mise dot origin set git@gitea.example.com:you/setup.git --sync sync
+```
+
+The URL must not contain credentials, a query string, or a fragment.
+Authenticate with an SSH agent, or with a Git credential helper for HTTPS.
+
 Review the connection preview before confirming. With `--sync sync`, the
 watcher pushes saved changes and periodically fetches and applies changes
 from other machines. To bring another machine into this workflow, follow
@@ -499,9 +508,114 @@ recipients = ["<age-or-plugin-public-recipient>", "<recovery-public-recipient>"]
 
 Replace the placeholders with public recipients for your machines and an
 independent recovery key. Keep private decryption keys outside tracking.
-Configure local identities with `settings.age.identity_files`,
-`settings.age.key_file`, or the supported SSH identity settings. Public
-recipients travel with the repository.
+Public recipients travel with the repository.
+
+### Choose recipients
+
+A recipient is a **public** key. mise encrypts each saved version to every
+recipient in the list, so every machine that must read the history needs its
+own recipient entry. These forms are accepted:
+
+| Recipient      | Example                    | Notes                                       |
+| -------------- | -------------------------- | ------------------------------------------- |
+| age x25519     | `age1qyqszq...`            | From `age-keygen`. Works unattended.        |
+| SSH public key | `ssh-ed25519 AAAAC3Nza...` | Your existing key, if it has no passphrase. |
+| Tagged age     | `age1tag1...`              | Works unattended.                           |
+| age plugin     | `age1yubikey1...`          | Interactive only; see the warning below.    |
+
+The matching **private** key is the identity mise decrypts with. It finds
+identities automatically at `~/.config/mise/age.txt` and at `~/.ssh/id_ed25519`
+or `~/.ssh/id_rsa`. Point it elsewhere with `settings.age.key_file`,
+`settings.age.identity_files`, or `settings.age.ssh_identity_files`.
+
+#### Use an existing SSH key
+
+If your SSH private key has no passphrase, its public key works as a recipient
+and needs no new tooling. Add the contents of the `.pub` file:
+
+```sh
+cat ~/.ssh/id_ed25519.pub
+```
+
+```toml
+[history.encryption]
+recipients = ["ssh-ed25519 AAAAC3Nza... you@desktop"]
+```
+
+mise then decrypts with `~/.ssh/id_ed25519` automatically.
+
+::: warning
+mise does not prompt for SSH key passphrases. A passphrase-protected private
+key cannot decrypt history at all; the failure names the file and the reason
+when mise first needs it. Generate a dedicated age key instead. This is
+separate from Git authentication, where a passphrase-protected key in an SSH
+agent is the recommended choice — an agent does not help age decryption.
+:::
+
+#### Generate a dedicated age key
+
+Install the age CLI and create an identity:
+
+```sh
+mise use -g age
+mkdir -p ~/.config/mise
+mise exec -- age-keygen -o ~/.config/mise/age.txt
+# Public key: age1qyqszq...
+```
+
+`age.txt` holds the private identity; mise reads it from that default path. The
+printed `age1...` line is the recipient. Keep the file out of tracking, and
+restrict it with `chmod 600 ~/.config/mise/age.txt`.
+
+Repeat this on each machine and add every public key to `recipients`. A machine
+whose recipient is missing can still push and pull, but cannot read the
+encrypted files.
+
+#### Add a recovery recipient
+
+If you lose the only machine holding an identity, the encrypted history becomes
+unreadable — re-encrypting requires decrypting first. Generate a second
+identity that lives nowhere on your machines:
+
+```sh
+(umask 077 && mise exec -- age-keygen -o ~/recovery-key.txt)
+cat ~/recovery-key.txt
+```
+
+Add its public key to `recipients`, store the file's contents in a password
+manager or another offline location, then remove the local copy:
+
+```sh
+rm ~/recovery-key.txt
+```
+
+Treat it like a backup code: it decrypts everything encrypted after you add it.
+Do not leave it in a tracked path, and do not write it somewhere the watcher
+saves.
+
+A complete configuration for one machine plus recovery:
+
+```toml
+[history.encryption]
+recipients = [
+  "age1qyqszq...",  # desktop
+  "age1ljx8w2...",  # laptop
+  "age1v9zm4f...",  # recovery, stored in the password manager
+]
+```
+
+Changing the list re-encrypts each file the next time it is saved. Commits
+already in history keep the recipients they were written with, so a machine
+added later reads versions saved after the change, not the ones before it. Add
+every machine's recipient before saving private contents you expect all of them
+to read.
+
+::: warning
+Plugin recipients such as `age1yubikey1...` require an interactive terminal.
+The history watcher runs in the background, so a plugin-only recipient list
+stops automatic saving with `plugin-dependent age recipients require
+interactive synchronization`. Include at least one age or SSH recipient.
+:::
 
 mise encrypts contents before storing them in Git. Filenames and public
 metadata remain visible. The files you edit or restore stay unencrypted.
