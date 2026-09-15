@@ -104,6 +104,10 @@ alias = "b" # run with `mise run b`
 run = "cargo build"
 ```
 
+If another task is actually named `b`, that task wins—a task's own name always
+takes precedence over an alias, including over an alias defined in a parent
+directory's config.
+
 ### `depends`
 
 - **Type**: `string | (string | string[] | { task: string, args?: string[], env?: { [key]: string }, optional?: bool })[]`
