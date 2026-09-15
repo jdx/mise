@@ -46,6 +46,22 @@ pub(crate) struct DotfilesPull {
     /// Resolve a conflict by keeping this machine's version (published next)
     #[usage(long, value_name = "PATH")]
     keep_local: Vec<PathBuf>,
+
+    /// Resolve every remaining conflict with the repository's version
+    ///
+    /// Paths named by --keep-local keep this machine's version; every other
+    /// conflict takes the repository's. Useful on a newly adopted machine,
+    /// where each pre-existing file that differs is a separate conflict.
+    #[usage(long, conflicts = "keep_local_all")]
+    take_remote_all: bool,
+
+    /// Resolve every remaining conflict by keeping this machine's version
+    ///
+    /// Paths named by --take-remote take the repository's version; every
+    /// other conflict keeps this machine's. Each kept path must already be
+    /// saved.
+    #[usage(long, conflicts = "take_remote_all")]
+    keep_local_all: bool,
 }
 
 impl DotfilesPull {
@@ -66,6 +82,8 @@ impl DotfilesPull {
                 yes: self.yes,
                 take_remote: self.take_remote.clone(),
                 keep_local: self.keep_local.clone(),
+                take_remote_all: self.take_remote_all,
+                keep_local_all: self.keep_local_all,
                 automatic: false,
                 plan_only: false,
             },
@@ -82,5 +100,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise dot pull --yes</bold>
     $ <bold>mise dot pull --take-remote ~/.zshrc</bold>
     $ <bold>mise dot pull --keep-local ~/.zshrc</bold>
+    $ <bold>mise dot pull --take-remote-all</bold>
+    $ <bold>mise dot pull --take-remote-all --keep-local ~/.zshrc</bold>
 "#
 );

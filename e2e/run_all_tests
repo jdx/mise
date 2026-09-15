@@ -5,21 +5,6 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
-# shellcheck source-path=SCRIPTDIR
-source "$SCRIPT_DIR/helpers.sh"
-
-mise_wait_for_gh_rate_limit() {
-  local mise_bin="$1"
-  # Allow explicit opt-out for local/dev runs.
-  if [[ ${E2E_WAIT_FOR_GH_RATE_LIMIT:-1} != 1 ]]; then
-    return 0
-  fi
-  if "$mise_bin" which wait-for-gh-rate-limit >/dev/null 2>&1; then
-    "$mise_bin" x -- wait-for-gh-rate-limit
-  else
-    warn "wait-for-gh-rate-limit not available; skipping rate-limit wait"
-  fi
-}
 
 # Check for .release-skip-e2e and skip all tests if version matches
 RELEASE_SKIP_FILE="$ROOT/.release-skip-e2e"
@@ -48,7 +33,6 @@ while IFS= read -r line; do
 done < <(list_test_files "test_*" | grep -v "_slow$")
 popd >/dev/null
 FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
-MISE_BIN="$(resolve_mise_bin)"
 test_count=0
 skipped_count=0
 status=0
@@ -175,10 +159,7 @@ start_test() {
         : >"$GITHUB_STEP_SUMMARY"
       fi
       test_status=0
-      mise_wait_for_gh_rate_limit "$MISE_BIN" || test_status=$?
-      if [[ $test_status == 0 ]]; then
-        "$ROOT/e2e/run_test" "$test_name" || test_status=$?
-      fi
+      "$ROOT/e2e/run_test" "$test_name" || test_status=$?
       # Setup failures and Docker runs may not produce their own summary row.
       if [[ -n ${GITHUB_STEP_SUMMARY:-} && ! -s $GITHUB_STEP_SUMMARY ]]; then
         if [[ $test_status == 0 ]]; then

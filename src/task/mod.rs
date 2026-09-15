@@ -3107,28 +3107,35 @@ pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
 /// Build a map of task names and aliases to task references
 /// For monorepo tasks, creates entries for both prefixed and unprefixed aliases
 /// e.g., task "//:format" with alias "fmt" creates both "//:fmt" and "fmt"
+///
+/// A task's own name always wins over another task's alias. Without that, a
+/// `tests` task aliased to `test` in a parent directory's config would shadow a
+/// `test` task defined in the current directory's config (#13219).
 pub(crate) fn build_task_ref_map<'a, I>(tasks: I) -> BTreeMap<String, &'a Task>
 where
     I: Iterator<Item = (&'a String, &'a Task)> + 'a,
 {
-    tasks
-        .flat_map(|(_, t)| {
-            t.aliases
-                .iter()
-                .flat_map(|a| {
-                    // For monorepo tasks, create entries for both prefixed and unprefixed aliases
-                    // This allows references like "fmt" to resolve to "//:format"
-                    if let Some(path) = extract_monorepo_path(&t.name) {
-                        vec![(format!("//{}:{}", path, a), t), (a.to_string(), t)]
-                    } else {
-                        // Non-monorepo task, use alias as-is
-                        vec![(a.to_string(), t)]
-                    }
-                })
-                .chain(once((t.name.clone(), t)))
-                .collect::<Vec<_>>()
+    let tasks = tasks.map(|(_, t)| t).collect_vec();
+    let mut map: BTreeMap<String, &Task> = tasks
+        .iter()
+        .flat_map(|t| {
+            t.aliases.iter().flat_map(|a| {
+                // For monorepo tasks, create entries for both prefixed and unprefixed aliases
+                // This allows references like "fmt" to resolve to "//:format"
+                if let Some(path) = extract_monorepo_path(&t.name) {
+                    vec![(format!("//{}:{}", path, a), *t), (a.to_string(), *t)]
+                } else {
+                    // Non-monorepo task, use alias as-is
+                    vec![(a.to_string(), *t)]
+                }
+            })
         })
-        .collect()
+        .collect();
+    // Names are inserted last so they replace any alias registered above.
+    for t in tasks {
+        map.insert(t.name.clone(), t);
+    }
+    map
 }
 
 /// Resolve a task dependency pattern, optionally relative to a parent task.
@@ -6609,6 +6616,39 @@ echo "test"
 
         let matches = tasks.get_matching("pr:remove").unwrap();
         assert_eq!(matches, vec![&"pr:remove".to_string()]);
+    }
+
+    #[test]
+    fn test_build_task_ref_map_prefers_names_over_aliases() {
+        use std::collections::BTreeMap;
+
+        use super::{Task, build_task_ref_map};
+
+        // A `tests` task aliased to `test` must not shadow a task actually
+        // named `test`, regardless of which config defined it (#13219).
+        let test = Task {
+            name: "test".to_string(),
+            ..Default::default()
+        };
+        let tests = Task {
+            name: "tests".to_string(),
+            aliases: vec!["test".to_string()],
+            ..Default::default()
+        };
+        let tasks: BTreeMap<String, Task> = [test.clone(), tests.clone()]
+            .into_iter()
+            .map(|t| (t.name.clone(), t))
+            .collect();
+
+        let refs = build_task_ref_map(tasks.iter());
+        assert_eq!(refs.get("test").map(|t| t.name.as_str()), Some("test"));
+        assert_eq!(refs.get("tests").map(|t| t.name.as_str()), Some("tests"));
+
+        // The alias still resolves when no task claims that name.
+        let only_tests: BTreeMap<String, Task> =
+            [(tests.name.clone(), tests)].into_iter().collect();
+        let refs = build_task_ref_map(only_tests.iter());
+        assert_eq!(refs.get("test").map(|t| t.name.as_str()), Some("tests"));
     }
 
     #[test]

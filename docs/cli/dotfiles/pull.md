@@ -38,6 +38,12 @@ their shared versions follow in the same run.
 - **`-y --yes`** — Pull without prompting
 - **`--take-remote <PATH>`** — Resolve a conflict with the repository's version
 - **`--keep-local <PATH>`** — Resolve a conflict by keeping this machine's version (published next)
+- **`--take-remote-all`** — Resolve every remaining conflict with the repository's version
+
+  Paths named by --keep-local keep this machine's version; every other conflict takes the repository's. Useful on a newly adopted machine, where each pre-existing file that differs is a separate conflict.
+- **`--keep-local-all`** — Resolve every remaining conflict by keeping this machine's version
+
+  Paths named by --take-remote take the repository's version; every other conflict keeps this machine's. Each kept path must already be saved.
 - **`-h --help`** — Print help
 
 Examples:
@@ -47,6 +53,8 @@ mise dot pull --dry-run
 mise dot pull --yes
 mise dot pull --take-remote ~/.zshrc
 mise dot pull --keep-local ~/.zshrc
+mise dot pull --take-remote-all
+mise dot pull --take-remote-all --keep-local ~/.zshrc
 ```
 
 <!-- generated reference navigation -->

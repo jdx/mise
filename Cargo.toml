@@ -240,7 +240,7 @@ signal-hook = "0.4"
 siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
-tabled = { version = "0.21", features = ["ansi"] }
+tabled = { version = "0.22", features = ["ansi"] }
 taplo = "0.14"
 tempfile = "3"
 tera = "2"
@@ -315,6 +315,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_Security",
   "Win32_Security_Authorization",
   "Win32_Storage_FileSystem",
+  "Win32_System_Console",
   "Win32_System_JobObjects",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_SystemServices",
