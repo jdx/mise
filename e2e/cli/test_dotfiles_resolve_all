@@ -63,5 +63,41 @@ assert "cat $second/.two" a-two-again
 # ---- the two blanket choices are mutually exclusive
 assert_fail 'b dot pull --take-remote-all --keep-local-all --yes'
 
+# ---- --keep-local-all keeps every saved local version, and publishes them
+assert_succeed 'b dot sync'
+assert_succeed 'mise dot sync --fetch-only'
+assert_succeed 'mise dot pull --yes'
+assert 'cat ~/.one' b-one-again
+echo a-one-3 >~/.one
+echo a-two-3 >~/.two
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-one-3 >"$second/.one"
+echo b-two-3 >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+assert_succeed 'b dot pull --keep-local-all --yes'
+assert "cat $second/.one" b-one-3
+assert "cat $second/.two" b-two-3
+# the kept versions are the ones that reach the origin next
+assert_succeed 'b dot sync'
+assert_succeed 'mise dot sync --fetch-only'
+assert_succeed 'mise dot pull --yes'
+assert 'cat ~/.one' b-one-3
+assert 'cat ~/.two' b-two-3
+
+# ---- --keep-local-all refuses a conflict whose local version is not saved
+echo a-one-4 >~/.one
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+assert_succeed 'b dot sync --fetch-only'
+echo b-one-4 >"$second/.one"
+assert_fail 'b dot pull --keep-local-all --yes' 'before choosing --keep-local'
+assert "cat $second/.one" b-one-4
+# the same unsaved conflict is still resolvable the other way
+assert_succeed 'b dot pull --take-remote-all --yes'
+assert "cat $second/.one" a-one-4
+
 # ---- a blanket choice with nothing to decide is not an error
 assert_succeed 'b dot pull --take-remote-all --yes'
+assert_succeed 'b dot pull --keep-local-all --yes'
