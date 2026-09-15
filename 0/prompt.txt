@@ -1,0 +1,41 @@
+investigate [https://github.com/jdx/mise/discussions/13109](https://github.com/jdx/mise/discussions/13109)
+
+---
+
+hmm most of these are not static though
+
+---
+
+how would this work?
+
+---
+
+make a pr, post a reply
+
+---
+
+address feedback and failing pr checks until it settles
+
+---
+
+hmm is this the right design? what if someone wants to search all of npm?
+
+---
+
+i feel like both could be good in different situations, static with a small list and search for very large ecosystmes
+
+---
+
+i'm not happy with the pr desc, i would like it to be more user-focused with examples, doesn't agents.md say to do this?
+
+---
+
+edit agents.md too
+
+---
+
+rebase then continue
+
+---
+
+rebase i think that asdf stack overflow was fixed
