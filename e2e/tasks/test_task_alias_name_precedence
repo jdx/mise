@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# A task name in a nearer config must win over a task alias from a parent
+# directory's config.
+# https://github.com/jdx/mise/discussions/13219
+
+mkdir -p child
+
+cat <<'EOF' >mise.toml
+[tasks.tests]
+run = "echo PARENT-PLURAL"
+alias = "test"
+EOF
+
+cat <<'EOF' >child/mise.toml
+[tasks.test]
+run = "echo CHILD-SINGULAR"
+EOF
+
+# From the parent, nothing claims the name "test", so the alias resolves.
+assert_contains "mise run test" "PARENT-PLURAL"
+
+cd child
+
+# The child defines a task actually named "test": it wins over the parent alias.
+assert_contains "mise run test" "CHILD-SINGULAR"
+assert_not_contains "mise run test" "PARENT-PLURAL"
+
+# The parent task is still reachable by its own name, and its alias no longer
+# resolves here because the name is taken.
+assert_contains "mise run tests" "PARENT-PLURAL"
+assert_contains "mise tasks info test" "CHILD-SINGULAR"
+
+# An alias defined alongside a same-named task in one config behaves the same.
+cat <<'EOF' >mise.toml
+[tasks.test]
+run = "echo LOCAL-EXACT"
+
+[tasks.checks]
+run = "echo LOCAL-ALIASED"
+alias = "test"
+EOF
+
+assert_contains "mise run test" "LOCAL-EXACT"
+assert_not_contains "mise run test" "LOCAL-ALIASED"
