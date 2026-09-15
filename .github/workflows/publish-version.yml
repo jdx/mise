@@ -20,6 +20,11 @@ concurrency:
   # One writer for s3://mise/VERSION regardless of what triggered the run, so a
   # scheduled reconciliation can never race a release or a manual recovery.
   group: publish-version
+  # Sharing one group means every trigger shares one pending slot, and the
+  # default `queue: single` lets an arriving run cancel whatever is already
+  # pending. Queue them instead so a scheduled run cannot displace a pending
+  # release or manual recovery.
+  queue: max
 
 jobs:
   publish-version:
