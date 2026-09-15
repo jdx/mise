@@ -141,6 +141,140 @@ struct EncryptionCacheEntry {
     oid: String,
 }
 
+/// A scratch git index belonging to one call, removed when that call ends.
+///
+/// Compositions run concurrently inside a single process: the dotfiles
+/// watcher saves a checkpoint on its own thread while the synchronization
+/// it started plans on another. Naming the scratch index after the process
+/// alone let those share one file, and a composition that reset the index
+/// under another discarded every entry the other had inserted so far. The
+/// tree written from what was left dropped a sorted prefix of its paths,
+/// which a checkpoint then recorded as deliberate deletions and published
+/// to every other machine.
+struct ScratchIndex {
+    path: PathBuf,
+    owner: PathBuf,
+    /// Held for as long as this composition runs, so another process can
+    /// tell it apart from one whose process is gone. Taken before the
+    /// index is used and released in [`Drop`].
+    lock: Option<fslock::LockFile>,
+}
+
+/// Distinguishes this process's scratch indexes from every other
+/// process's, for as long as this process runs. A process id would not:
+/// the system reuses them, so a name built from one can collide with a
+/// name an earlier process is still using.
+fn scratch_nonce() -> &'static str {
+    static NONCE: std::sync::LazyLock<String> =
+        std::sync::LazyLock::new(|| format!("{:032x}", rand::random::<u128>()));
+    &NONCE
+}
+
+impl ScratchIndex {
+    /// A scratch index in `dir`, distinct from every other live one.
+    fn new(dir: &Path, purpose: &str) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        sweep_scratch_indexes(dir);
+        let path = dir.join(format!(
+            "mise-index-{}-{purpose}-{}",
+            scratch_nonce(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let mut owner = path.clone().into_os_string();
+        owner.push(".owner");
+        let owner = PathBuf::from(owner);
+        let _ = std::fs::remove_file(&path);
+        let lock = crate::lock_file::LockFile::at(&owner)
+            .try_lock()
+            .ok()
+            .flatten();
+        if lock.is_none() {
+            // never leave behind an owner file this composition does not
+            // hold: a sweep would lock it, read the composition as ended,
+            // and remove the index out from under it. Without one the
+            // index cannot be judged, so it is kept instead.
+            let _ = std::fs::remove_file(&owner);
+        }
+        Self { path, owner, lock }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchIndex {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        // release before removing: Windows refuses to remove a file whose
+        // lock handle is still open
+        drop(self.lock.take());
+        let _ = std::fs::remove_file(&self.owner);
+    }
+}
+
+/// Removes scratch indexes, and the `.owner` and git `.lock` files beside
+/// them, that were left behind by a process killed mid-composition.
+///
+/// Runs once per directory, before that directory has handed out a scratch
+/// index of this process's own.
+///
+/// The owner file decides. A composition takes its lock before git writes
+/// the index and holds it until the composition ends; the kernel releases
+/// it when the process dies, and keeps holding it while the process is
+/// merely stopped or its machine suspended. So a lock this process can
+/// take means the owner is gone. Anything that cannot be judged is left
+/// alone: no owner file, an owner still locked, or no index written yet.
+/// Guessing from age instead would eventually delete the index of a
+/// composition suspended midway and truncate the very snapshot this all
+/// exists to protect.
+fn sweep_scratch_indexes(dir: &Path) {
+    use std::sync::{LazyLock, Mutex};
+
+    static SWEPT: LazyLock<Mutex<BTreeSet<PathBuf>>> =
+        LazyLock::new(|| Mutex::new(BTreeSet::new()));
+
+    let Ok(mut swept) = SWEPT.lock() else { return };
+    if !swept.insert(dir.to_path_buf()) {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut indexes: BTreeSet<String> = BTreeSet::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("mise-index-") {
+            continue;
+        }
+        // an index and its adjuncts belong to one composition
+        let index = name
+            .strip_suffix(".owner")
+            .or_else(|| name.strip_suffix(".lock"))
+            .unwrap_or(&name);
+        indexes.insert(index.to_string());
+    }
+    for index in indexes {
+        let path = dir.join(&index);
+        let owner = dir.join(format!("{index}.owner"));
+        if !path.exists() || !owner.exists() {
+            continue;
+        }
+        let Ok(Some(reclaimed)) = crate::lock_file::LockFile::at(&owner).try_lock() else {
+            continue;
+        };
+        // removed while the owner file stays locked, so nothing can take
+        // this index back in between and lose the composition its own
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(dir.join(format!("{index}.lock")));
+        // released first: Windows refuses to remove a file whose lock
+        // handle is still open, and an owner file left with no index
+        // beside it is one no later sweep looks at again
+        drop(reclaimed);
+        let _ = std::fs::remove_file(&owner);
+    }
+}
+
 /// Keep content fingerprints useful for cache lookup without publishing a
 /// dictionary-testable hash of a secret in the disposable cache.
 fn encryption_cache_key(dir: &Path) -> Result<[u8; 32]> {
@@ -482,27 +616,21 @@ impl HistoryRepo {
         if entries.is_empty() {
             return self.empty_object("tree");
         }
-        let index = self
-            .dir()
-            .join(format!("mise-index-{}-write-tree", std::process::id()));
-        let _ = std::fs::remove_file(&index);
+        let scratch = ScratchIndex::new(self.dir(), "write-tree");
+        let index = scratch.path();
         let mut info: Vec<u8> = vec![];
         for (mode, oid, path) in entries {
             info.extend_from_slice(format!("{mode} {oid}\t{path}").as_bytes());
             info.push(0);
         }
-        let result = (|| -> Result<String> {
-            // index-only operations; git still insists on a work tree
-            self.git.run(
-                PlumbingCall::new(["update-index", "-z", "--index-info"])
-                    .work_tree(self.dir())
-                    .index_file(&index)
-                    .stdin(&info),
-            )?;
-            self.output_str(PlumbingCall::new(["write-tree"]).index_file(&index))
-        })();
-        let _ = std::fs::remove_file(&index);
-        result
+        // index-only operations; git still insists on a work tree
+        self.git.run(
+            PlumbingCall::new(["update-index", "-z", "--index-info"])
+                .work_tree(self.dir())
+                .index_file(index)
+                .stdin(&info),
+        )?;
+        self.output_str(PlumbingCall::new(["write-tree"]).index_file(index))
     }
 
     /// Commit the tracked-file tree and minimal metadata to ordinary history.
@@ -1254,56 +1382,50 @@ impl HistoryRepo {
         if overlays.is_empty() {
             return Ok(base.to_string());
         }
-        let index = self
-            .dir()
-            .join(format!("mise-index-{}-compose", std::process::id()));
-        let _ = std::fs::remove_file(&index);
-        let result = (|| -> Result<String> {
-            self.git
-                .run(PlumbingCall::new(["read-tree", base]).index_file(&index))?;
-            for overlay in overlays {
-                let listed = self.git.output(
-                    PlumbingCall::new(["ls-files", "-z", "--", &overlay.path]).index_file(&index),
-                )?;
-                let mut removals: Vec<u8> = vec![];
-                for entry in listed.split(|byte| *byte == 0) {
-                    if entry.is_empty() {
-                        continue;
-                    }
-                    removals.extend_from_slice(entry);
-                    removals.push(0);
+        let scratch = ScratchIndex::new(self.dir(), "compose");
+        let index = scratch.path();
+        self.git
+            .run(PlumbingCall::new(["read-tree", base]).index_file(index))?;
+        for overlay in overlays {
+            let listed = self.git.output(
+                PlumbingCall::new(["ls-files", "-z", "--", &overlay.path]).index_file(index),
+            )?;
+            let mut removals: Vec<u8> = vec![];
+            for entry in listed.split(|byte| *byte == 0) {
+                if entry.is_empty() {
+                    continue;
                 }
-                // index-only operations; git still insists on a work tree
-                if !removals.is_empty() {
+                removals.extend_from_slice(entry);
+                removals.push(0);
+            }
+            // index-only operations; git still insists on a work tree
+            if !removals.is_empty() {
+                self.git.run(
+                    PlumbingCall::new(["update-index", "--force-remove", "-z", "--stdin"])
+                        .work_tree(self.dir())
+                        .index_file(index)
+                        .stdin(&removals),
+                )?;
+            }
+            if let Some((mode, oid)) = &overlay.object {
+                if mode == "040000" {
+                    let prefix = format!("--prefix={}/", overlay.path);
                     self.git.run(
-                        PlumbingCall::new(["update-index", "--force-remove", "-z", "--stdin"])
+                        PlumbingCall::new(["read-tree", &prefix, oid])
                             .work_tree(self.dir())
-                            .index_file(&index)
-                            .stdin(&removals),
+                            .index_file(index),
+                    )?;
+                } else {
+                    let info = format!("{mode},{oid},{}", overlay.path);
+                    self.git.run(
+                        PlumbingCall::new(["update-index", "--add", "--cacheinfo", &info])
+                            .work_tree(self.dir())
+                            .index_file(index),
                     )?;
                 }
-                if let Some((mode, oid)) = &overlay.object {
-                    if mode == "040000" {
-                        let prefix = format!("--prefix={}/", overlay.path);
-                        self.git.run(
-                            PlumbingCall::new(["read-tree", &prefix, oid])
-                                .work_tree(self.dir())
-                                .index_file(&index),
-                        )?;
-                    } else {
-                        let info = format!("{mode},{oid},{}", overlay.path);
-                        self.git.run(
-                            PlumbingCall::new(["update-index", "--add", "--cacheinfo", &info])
-                                .work_tree(self.dir())
-                                .index_file(&index),
-                        )?;
-                    }
-                }
             }
-            self.output_str(PlumbingCall::new(["write-tree"]).index_file(&index))
-        })();
-        let _ = std::fs::remove_file(&index);
-        result
+        }
+        self.output_str(PlumbingCall::new(["write-tree"]).index_file(index))
     }
 
     /// The commit a ref points at, if the ref exists.
@@ -2171,6 +2293,138 @@ mod tests {
                 .is_none()
         );
         assert!(repo.object_at(&without, "home/.zshrc").unwrap().is_some());
+    }
+
+    #[test]
+    fn concurrent_composition_keeps_every_overlay() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let empty = repo.empty_object("tree").unwrap();
+        let blob = repo.hash_blob(b"held\n").unwrap();
+        // Each thread composes a snapshot of its own. A scratch index shared
+        // between them loses whatever one thread inserted before another
+        // reset it -- a sorted prefix of the paths, which a checkpoint then
+        // records as deliberate deletions and publishes to every machine.
+        const THREADS: usize = 3;
+        // every round starts composing at once, so the calls really do
+        // overlap instead of happening to be scheduled one after another
+        let start = std::sync::Barrier::new(THREADS);
+        let lost: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..THREADS)
+                .map(|thread| {
+                    let (repo, empty, blob) = (&repo, empty.as_str(), blob.as_str());
+                    let start = &start;
+                    scope.spawn(move || {
+                        let overlays: Vec<Overlay> = (0..8)
+                            .map(|n| Overlay {
+                                path: format!("home/{thread}/file-{n}"),
+                                object: Some(("100644".into(), blob.to_string())),
+                            })
+                            .collect();
+                        let mut lost = vec![];
+                        for _ in 0..3 {
+                            start.wait();
+                            let tree = match repo.compose(empty, &overlays) {
+                                Ok(tree) => tree,
+                                Err(err) => {
+                                    lost.push(format!("compose failed: {err:#}"));
+                                    continue;
+                                }
+                            };
+                            // never panic past the barrier: the other
+                            // threads would block on it and the failure
+                            // would surface as a hang instead
+                            let present: BTreeSet<String> = match repo.ls_tree(&tree) {
+                                Ok(entries) => {
+                                    entries.into_iter().map(|entry| entry.path).collect()
+                                }
+                                Err(err) => {
+                                    lost.push(format!("listing the tree failed: {err:#}"));
+                                    continue;
+                                }
+                            };
+                            lost.extend(
+                                overlays
+                                    .iter()
+                                    .map(|overlay| &overlay.path)
+                                    .filter(|path| !present.contains(*path))
+                                    .cloned(),
+                            );
+                        }
+                        lost
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|handle| handle.join().unwrap())
+                .collect()
+        });
+        assert!(
+            lost.is_empty(),
+            "{} composed paths were lost, first: {}",
+            lost.len(),
+            lost[0]
+        );
+        let left: Vec<_> = std::fs::read_dir(repo.dir())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("mise-index-"))
+            .collect();
+        assert!(
+            left.is_empty(),
+            "scratch indexes were left behind: {left:?}"
+        );
+    }
+
+    #[test]
+    fn abandoned_scratch_indexes_are_swept_and_live_ones_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = "00000000000000000000000000000001";
+        let live = format!("mise-index-{other}-compose-0");
+        let dead = format!("mise-index-{other}-compose-1");
+        let unowned = format!("mise-index-{other}-compose-2");
+        let starting = format!("mise-index-{other}-compose-3");
+        let unrelated = "packed-refs".to_string();
+        for name in [&live, &dead, &unowned, &unrelated] {
+            std::fs::write(dir.path().join(name), b"index").unwrap();
+        }
+        // git's own lock, left when it was killed writing the dead index
+        std::fs::write(dir.path().join(format!("{dead}.lock")), b"lock").unwrap();
+        // a composition whose process is gone released its owner file; one
+        // that is still running -- or suspended -- has not
+        for name in [&live, &dead] {
+            std::fs::write(dir.path().join(format!("{name}.owner")), b"").unwrap();
+        }
+        // a composition that has created its owner file but has not taken
+        // the lock yet, so git has not written its index either
+        std::fs::write(dir.path().join(format!("{starting}.owner")), b"").unwrap();
+        let _held = crate::lock_file::LockFile::at(&dir.path().join(format!("{live}.owner")))
+            .try_lock()
+            .unwrap()
+            .expect("the owner file starts unlocked");
+
+        sweep_scratch_indexes(dir.path());
+
+        let gone = |name: &str| !dir.path().join(name).exists();
+        assert!(gone(&dead), "an abandoned index was kept");
+        assert!(gone(&format!("{dead}.owner")), "its owner file was kept");
+        assert!(gone(&format!("{dead}.lock")), "its git lock was kept");
+        assert!(!gone(&live), "a running composition's index was swept");
+        assert!(
+            !gone(&format!("{live}.owner")),
+            "a running composition's owner file was swept"
+        );
+        assert!(!gone(&unowned), "an index with no owner file was swept");
+        assert!(
+            !gone(&format!("{starting}.owner")),
+            "the owner file of a composition still starting up was swept"
+        );
+        assert!(!gone(&unrelated), "an unrelated file was swept");
     }
 
     #[test]
