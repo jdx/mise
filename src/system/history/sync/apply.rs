@@ -204,11 +204,17 @@ pub(crate) async fn apply_locked_with_scope(
             // path named on the command line still reports the failure. The
             // check belongs on this read, so a path that changed since the
             // blanket choice was made is held too rather than aborting it.
+            // Only the path's own fault is held: a repository failure on an
+            // otherwise sound file is nobody's to fix by hand, so it stops
+            // the pass with its own error.
             let live = match live_object(repo, &local) {
                 Ok(live) => live,
-                Err(err) if blanket_chosen.contains(&local) => {
-                    warn!("{err:#}; leaving it unresolved");
-                    blanket_held.push(format!("{err:#}"));
+                Err(err)
+                    if blanket_chosen.contains(&local)
+                        && err.downcast_ref::<UnusableLive>().is_some() =>
+                {
+                    warn!("{err}; leaving it unresolved");
+                    blanket_held.push(err.to_string());
                     take_remote.remove(&local);
                     keep_local.remove(&local);
                     continue;
@@ -887,8 +893,26 @@ pub(super) fn live_permissions(path: &Path) -> Result<Option<u32>> {
     }
 }
 
-/// Every failure names the path: a blanket resolution repeats the reason it
-/// could not decide one, and by then the path is all the caller still has.
+/// The live side of a path cannot stand in for a shared object. The file is
+/// the problem, not the machinery, so a blanket resolution may hold just this
+/// path; every other failure is the repository's and must stop the pass.
+#[derive(Debug)]
+pub(super) struct UnusableLive(String);
+
+impl std::fmt::Display for UnusableLive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for UnusableLive {}
+
+/// Each of these names the path, because a blanket resolution repeats the
+/// reason it could not decide one and by then the path is all it still has.
+fn unusable(path: &Path, what: impl std::fmt::Display) -> eyre::Report {
+    eyre::Report::new(UnusableLive(format!("{} {what}", display_path(path))))
+}
+
 pub(super) fn live_object(
     repo: &crate::system::history::shadow::HistoryRepo,
     path: &Path,
@@ -896,18 +920,18 @@ pub(super) fn live_object(
     let meta = match std::fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => bail!("{} cannot be read: {err}", display_path(path)),
+        Err(err) => return Err(unusable(path, format_args!("cannot be read: {err}"))),
     };
     if meta.file_type().is_symlink() {
         let target = std::fs::read_link(path)
-            .map_err(|err| eyre::eyre!("{} cannot be read: {err}", display_path(path)))?;
+            .map_err(|err| unusable(path, format_args!("cannot be read: {err}")))?;
         return Ok(Some((
             "120000".into(),
             repo.transient_blob_id(target.to_string_lossy().as_bytes())?,
         )));
     }
     if !meta.is_file() {
-        bail!("{} is not a regular file or symlink", display_path(path));
+        return Err(unusable(path, "is not a regular file or symlink"));
     }
     #[cfg(unix)]
     let executable = {
@@ -916,8 +940,8 @@ pub(super) fn live_object(
     };
     #[cfg(not(unix))]
     let executable = false;
-    let contents = std::fs::read(path)
-        .map_err(|err| eyre::eyre!("{} cannot be read: {err}", display_path(path)))?;
+    let contents =
+        std::fs::read(path).map_err(|err| unusable(path, format_args!("cannot be read: {err}")))?;
     Ok(Some((
         if executable { "100755" } else { "100644" }.into(),
         repo.transient_blob_id(&contents)?,
