@@ -1,0 +1,20 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2JKHT7CDHEH16Y32GDJ4WP2",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/cli/args/truncate.rs",
+    "src/cli/mod.rs",
+    "src/config/settings.rs",
+    "src/env.rs",
+    "src/ui/multi_progress_report.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "prompt": ""
+    }
+  ]
+}
