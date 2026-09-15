@@ -1,0 +1,1 @@
+what tools does mise replace? chezmoi, direnv, ansible, are some that come to mind
