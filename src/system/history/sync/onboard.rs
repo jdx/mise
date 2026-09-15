@@ -238,6 +238,26 @@ fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<RepoState> {
     Ok(state)
 }
 
+/// How to clear the paths an adoption left undecided.
+///
+/// A blanket choice only decides conflicts. Other holds — invalid incoming
+/// TOML, a directory where the repository has a file, staged git changes —
+/// each need their own fix, so `--take-remote-all` is offered only when every
+/// undecided path is a conflict it would actually resolve.
+fn undecided_advice(undecided: usize, conflicts: usize) -> String {
+    if undecided == 0 {
+        return String::new();
+    }
+    let blanket = if conflicts == undecided {
+        ", `mise dot pull --take-remote-all` takes the repository's version of every one"
+    } else {
+        ""
+    };
+    format!(
+        "; {undecided} path(s) need a decision (`mise dot status` lists them and why, `mise dot pull --take-remote <path>` or `mise dot pull --keep-local <path>` decides one{blanket})"
+    )
+}
+
 /// Sets this machine up from a repository already found to be
 /// history-managed: says what will happen, shows the plan, confirms, records
 /// the connection, and pulls (the configuration first, then what it
@@ -396,10 +416,8 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
 
     // a conflict (a file that exists here and differs) is not pending: it
     // waits for a decision, like a path held with its group
-    let undecided = run::read_status(store.state_dir())?
-        .conflicts
-        .len()
-        .max(applied.held);
+    let conflicts = run::read_status(store.state_dir())?.conflicts.len();
+    let undecided = conflicts.max(applied.held);
     let setup_held = {
         let status = run::read_status(state_dir)?;
         undecided > 0
@@ -411,13 +429,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         "Wrote {} file(s) from {}{}.",
         applied.written,
         onboarding.origin,
-        if undecided > 0 {
-            format!(
-                "; {undecided} path(s) need a decision (`mise dot status` lists them, `mise dot pull --take-remote <path>` or `mise dot pull --keep-local <path>` decides one, `mise dot pull --take-remote-all` takes the repository's version of every one)"
-            )
-        } else {
-            String::new()
-        }
+        undecided_advice(undecided, conflicts)
     );
     let durable_access = durable_access(&onboarding.origin, &onboarding.branch).await;
     if !durable_access {
@@ -547,6 +559,30 @@ async fn durable_access(url: &str, branch: &str) -> bool {
 mod preview_tests {
     use super::*;
     use crate::system::history::tracked::TrackedEntry;
+
+    #[test]
+    fn blanket_resolution_is_offered_only_when_every_undecided_path_is_a_conflict() {
+        // Every undecided path is a conflict: the blanket command clears them all.
+        let all = undecided_advice(3, 3);
+        assert!(all.contains("3 path(s) need a decision"));
+        assert!(all.contains("--take-remote-all"));
+
+        // Some paths are held for reasons a resolution cannot fix (invalid
+        // incoming TOML, a directory in the way, staged git changes). Offering
+        // the blanket command would promise a fix it does not deliver.
+        let mixed = undecided_advice(3, 1);
+        assert!(mixed.contains("3 path(s) need a decision"));
+        assert!(!mixed.contains("--take-remote-all"));
+        // the per-path commands still apply, and each is separately runnable
+        assert!(mixed.contains("`mise dot pull --take-remote <path>`"));
+        assert!(mixed.contains("`mise dot pull --keep-local <path>`"));
+
+        // No conflicts at all, only other holds.
+        assert!(!undecided_advice(2, 0).contains("--take-remote-all"));
+
+        // Nothing undecided: no advice to give.
+        assert_eq!(undecided_advice(0, 0), "");
+    }
 
     #[test]
     fn confirmed_fetch_reuses_objects_without_replacing_local_head_or_status() -> Result<()> {
