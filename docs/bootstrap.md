@@ -325,6 +325,31 @@ Use declarative sections when mise can inspect and converge the state. Use
 such as checking authentication or seeding local data. The task runs again on
 every bootstrap, so guard operations that should happen only once.
 
+## Templates
+
+Not every part of `mise.toml` is a [Tera template](/templates.html). Inside
+`[bootstrap]`, these are rendered:
+
+| Where                                                         | What is rendered                                                   |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)  | every string value in a unit                                       |
+| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html) | every string value in an agent                                     |
+| `[bootstrap.hooks]`                                           | the hook command                                                   |
+| [`[bootstrap.files]`](/bootstrap/files.html)                  | file content, only with `template = true`                          |
+| [`[dotfiles]`](/dotfiles.html)                                | file content, only with `mode = "template"` or `template = "tera"` |
+
+Everything else — section keys, package specs, repo paths, macOS defaults, and
+the remaining `[bootstrap]` values — is used exactly as written.
+
+Rendering uses the template context of the config file that declared the entry,
+so <code v-pre>{{ config_root }}</code> is the directory of _that_ config, not
+the directory you run `mise bootstrap` from. A managed file's content template
+additionally gets <code v-pre>{{ target }}</code> and
+<code v-pre>{{ secret(name="...") }}</code>.
+
+Values with no template syntax skip the renderer entirely, so a literal
+`%h`, `%i`, or `$HOME` in a unit or agent is passed through untouched.
+
 ## Hooks
 
 Hooks run only during explicit `mise bootstrap` invocations. A hook can be

@@ -140,6 +140,37 @@ user's home directory before writing the service file. `wanted_by` defaults to
 defaults to `true`; set `start = false` to write and enable without keeping the
 unit running.
 
+## Templates
+
+Unit values are rendered as [Tera templates](/templates.html) before the unit
+file is written, using the template context of the config file that declared the
+unit. That makes a unit relocatable with the project that defines it:
+
+```toml
+[bootstrap.linux.systemd.units.my-service]
+description = "my service"
+exec_start = "{{ config_root }}/bin/serve"
+working_directory = "{{ config_root }}"
+environment_file = ["{{ config_root }}/.env"]
+```
+
+With that config in `~/src/my-project/mise.toml`, the generated unit contains
+`WorkingDirectory=/home/you/src/my-project` and
+`EnvironmentFile=/home/you/src/my-project/.env`. This matters most for
+`environment_file`, where systemd expands neither `~` nor `$HOME`; `%h` is the
+only other way to write a home-relative path there.
+
+Every string value in a unit is rendered, including entries inside
+`environment`, `environment_file`, `after`, `wants`, and `requires`. Values with
+no template syntax are left exactly as written, so systemd specifiers such as
+`%h` and `%i` pass through untouched. A unit whose template fails to render is
+reported and skipped; other units still apply.
+
+Templates are rendered against the declaring config, not the current directory,
+so a unit declared in your global config keeps resolving
+<code v-pre>{{ config_root }}</code> to that config's directory no matter where
+you run `mise bootstrap` from.
+
 ## Semantics
 
 - **Declarative and additive** — unit names merge across the

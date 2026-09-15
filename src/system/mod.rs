@@ -37,6 +37,7 @@ use crate::system::shell_activation::{
     ShellActivationMode, ShellActivationRequest, ShellActivationShell, ShellActivationTarget,
 };
 use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
+use crate::system::templating::Templated;
 
 #[cfg(target_os = "linux")]
 pub(crate) mod accounts;
@@ -74,6 +75,7 @@ pub(crate) mod services_common;
 pub(crate) mod shell_activation;
 pub(crate) mod sudo;
 pub(crate) mod systemd;
+pub(crate) mod templating;
 pub(crate) mod user_services;
 
 /// `[bootstrap]` as parsed from a single mise.toml
@@ -333,7 +335,7 @@ pub(crate) struct BootstrapMacosLaunchdTomlConfig {
     /// User LaunchAgents, keyed by a short stable name. mise gives these a
     /// `dev.mise.<name>` label when rendering the plist.
     #[serde(default)]
-    pub agents: IndexMap<String, LaunchdTomlConfig>,
+    pub agents: IndexMap<String, Templated<LaunchdTomlConfig>>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -352,7 +354,7 @@ pub(crate) struct BootstrapLinuxSystemdTomlConfig {
     /// User services and timers, keyed by a short stable name. mise gives
     /// these a `dev.mise.<name>.<service|timer>` unit name when rendering.
     #[serde(default)]
-    pub units: IndexMap<String, SystemdTomlConfig>,
+    pub units: IndexMap<String, Templated<SystemdTomlConfig>>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -842,17 +844,24 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
 /// agent declaration from a global config. Invalid entries warn and are
 /// skipped.
 pub(crate) fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
-    let mut merged: IndexMap<String, LaunchdTomlConfig> = IndexMap::new();
+    let mut merged: IndexMap<String, (Templated<LaunchdTomlConfig>, PathBuf)> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
+    for (path, cf) in config.config_files.iter().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (name, agent) in sys.macos.launchd.agents {
-                merged.insert(name, agent);
+                merged.insert(name, (agent, path.clone()));
             }
         }
     }
     let mut out = vec![];
-    for (name, agent) in merged {
+    for (name, (agent, config_path)) in merged {
+        let agent = match agent.render(config, &config_path) {
+            Ok(agent) => agent,
+            Err(err) => {
+                warn!("[bootstrap.macos.launchd.agents.{name}]: {err}");
+                continue;
+            }
+        };
         match LaunchdRequest::from_toml(name, agent) {
             Ok(request) => out.push(request),
             Err(err) => warn!("[bootstrap.macos.launchd.agents]: {err}"),
@@ -1398,17 +1407,24 @@ fn merge_trackpad_defaults(
 /// Unit names union global -> local; a more local config replaces the full
 /// unit declaration from a global config. Invalid entries warn and are skipped.
 pub(crate) fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
-    let mut merged: IndexMap<String, SystemdTomlConfig> = IndexMap::new();
+    let mut merged: IndexMap<String, (Templated<SystemdTomlConfig>, PathBuf)> = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
-    for cf in config.config_files.values().rev() {
+    for (path, cf) in config.config_files.iter().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (name, unit) in sys.linux.systemd.units {
-                merged.insert(name, unit);
+                merged.insert(name, (unit, path.clone()));
             }
         }
     }
     let mut out = vec![];
-    for (name, unit) in merged {
+    for (name, (unit, config_path)) in merged {
+        let unit = match unit.render(config, &config_path) {
+            Ok(unit) => unit,
+            Err(err) => {
+                warn!("[bootstrap.linux.systemd.units.{name}]: {err}");
+                continue;
+            }
+        };
         match SystemdRequest::from_toml(name, unit) {
             Ok(request) => out.push(request),
             Err(err) => warn!("[bootstrap.linux.systemd.units]: {err}"),

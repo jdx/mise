@@ -85,6 +85,25 @@ non-empty; launchd expects the agent to drain them. launchd requires absolute
 paths here, so each entry must start with `/`, or be `~` or a `~/` path that
 expands to one.
 
+## Templates
+
+Agent values are rendered as [Tera templates](/templates.html) before the plist
+is written, using the template context of the config file that declared the
+agent:
+
+```toml
+[bootstrap.macos.launchd.agents.my-sync]
+program = "{{ config_root }}/bin/sync"
+working_directory = "{{ config_root }}"
+stdout_path = "{{ config_root }}/log/sync.log"
+```
+
+Every string value is rendered, including entries inside `args`, `environment`,
+and `queue_directories`. Values with no template syntax are left exactly as
+written.
+An agent whose template fails to render is reported and skipped; other agents
+still apply.
+
 ## Semantics
 
 - **Declarative and additive** — agent names merge across the
