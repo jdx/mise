@@ -547,9 +547,9 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "aube"
-version = "2.2.16"
+version = "2.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41e136f0fee9c635aacecc7f06945e2764f0005e1697b5868bd7fca15028fa0c"
+checksum = "053fc80c9591a43736866352fd38c5c205ed2701badef159cb350ef20fe85fde"
 dependencies = [
  "aube-codes",
  "aube-linker",
@@ -685,9 +685,9 @@ dependencies = [
 
 [[package]]
 name = "aube-registry"
-version = "2.2.16"
+version = "2.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1bdd18243b5d7d82e88737a982ff38e9979785ec8a87ad1308a7e78f9def0a0"
+checksum = "84870346cb1220d3d26cf4c01ab1ba40700de6864542c433eaa28decd132866e"
 dependencies = [
  "aube-codes",
  "aube-manifest",
@@ -7465,7 +7465,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bitfields",
  "block-padding 0.3.3",
  "blowfish",
