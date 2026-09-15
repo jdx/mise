@@ -218,8 +218,9 @@ To decide one path at a time instead, name it:
 mise dot pull --take-remote ~/.bashrc
 ```
 
-To keep this machine's version of a file, save it first — a fresh machine has
-no baseline to compare against, and `--keep-local` requires one:
+To keep this machine's version of a file, save it first. `--keep-local`
+resolves a conflict by publishing this machine's saved version, and a fresh
+machine has not saved one yet:
 
 ```sh
 mise dot save ~/.bashrc
