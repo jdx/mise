@@ -1759,7 +1759,7 @@ packages:
         supported_envs:
           - darwin
           - linux
-      - version_constraint: semver("<= 2.39.0")
+      - version_constraint: semver("<= 2.37.0")
         asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
@@ -1778,23 +1778,50 @@ packages:
               arm64: aarch64
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: Version == "v2.37.1"
         asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
-        windows_arm_emulation: true
         files:
           - name: dua
             src: "{{.AssetWithoutExt}}/dua"
         replacements:
           amd64: x86_64
+          arm64: aarch64
           darwin: apple-darwin
           linux: unknown-linux-musl
           windows: pc-windows-msvc
         overrides:
-          - goos: linux
-            replacements:
-              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.39.0")
+        asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: dua
+            src: "{{.AssetWithoutExt}}/dua"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: dua
+            src: "{{.AssetWithoutExt}}/dua"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
           - goos: windows
             format: zip
         github_artifact_attestations:
