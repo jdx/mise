@@ -213,7 +213,6 @@ pub(crate) async fn apply_locked_with_scope(
                     if blanket_chosen.contains(&local)
                         && err.downcast_ref::<UnusableLive>().is_some() =>
                 {
-                    warn!("{err}; leaving it unresolved");
                     blanket_held.push(err.to_string());
                     take_remote.remove(&local);
                     keep_local.remove(&local);
@@ -319,16 +318,17 @@ pub(crate) async fn apply_locked_with_scope(
             }
             table.print()?;
         }
+        // A blanket choice promises to decide every conflict, so it has not
+        // succeeded while one is still held -- whatever it decided alongside.
+        // Those decisions are recorded above; naming the rest is what is left.
+        if !blanket_held.is_empty() && !req.dry_run && !req.automatic {
+            bail!(
+                "sync paused: resolve all {count} conflict(s) before sharing resumes; a blanket choice cannot decide them all: {held}. Fix each of those paths, then pull again",
+                count = status.conflicts.len(),
+                held = blanket_held.join("; "),
+            );
+        }
         if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run && !req.automatic {
-            // Repeating the blanket-flag advice would be useless when the
-            // blanket flag is what just ran and found nothing it could decide.
-            if !blanket_held.is_empty() {
-                bail!(
-                    "sync paused: resolve all {count} conflict(s) before sharing resumes; a blanket choice cannot decide them all: {held}. Fix each of those paths, then pull again",
-                    count = status.conflicts.len(),
-                    held = blanket_held.join("; "),
-                );
-            }
             bail!(
                 "sync paused: resolve all {} conflict(s) before sharing resumes; `mise dot pull --take-remote-all` chooses the repository's version for every conflict at once, and `mise dot status` says whether any path still needs a different fix",
                 status.conflicts.len()
@@ -927,7 +927,7 @@ pub(super) fn live_object(
             .map_err(|err| unusable(path, format_args!("cannot be read: {err}")))?;
         return Ok(Some((
             "120000".into(),
-            repo.transient_blob_id(target.to_string_lossy().as_bytes())?,
+            repo.transient_blob_id(crate::system::history::shadow::path_bytes(&target).as_ref())?,
         )));
     }
     if !meta.is_file() {

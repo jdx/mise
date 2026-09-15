@@ -103,7 +103,8 @@ assert "cat $second/.one" a-one-4
 assert_succeed 'b dot pull --take-remote-all --yes'
 assert_succeed 'b dot pull --keep-local-all --yes'
 
-# ---- a path whose live side is a directory holds only itself
+# ---- a path whose live side is a directory holds only itself: the blanket
+# choice still decides every other conflict, and says what it could not decide
 echo a-one-5 >~/.one
 echo a-two-5 >~/.two
 assert_succeed 'mise dot save'
@@ -113,17 +114,14 @@ assert_succeed 'b dot save'
 assert_succeed 'b dot sync --fetch-only'
 rm -f "$second/.one"
 mkdir -p "$second/.one"
-# the blanket choice names the one path it cannot decide instead of failing
-# the whole command, and the setup stays paused rather than half-applied
-assert_contains "b dot pull --take-remote-all --yes 2>&1" 'not a regular file or symlink'
-assert "cat $second/.two" b-two-5
-assert_succeed "test -d $second/.one"
-# once that path is all that is left, the failure repeats the reason rather
-# than advising the blanket flag that just ran
+# the failure names the path it could not decide and why, rather than the
+# blanket flag that just ran, and nothing is half-applied
 assert_fail 'b dot pull --take-remote-all --yes' 'not a regular file or symlink'
 assert_fail 'b dot pull --take-remote-all --yes' 'Fix each of those paths'
+assert "cat $second/.two" b-two-5
+assert_succeed "test -d $second/.one"
 # with the directory gone, deciding only that path finishes the setup: the
-# choice the blanket command already recorded for ~/.two is still on file
+# choice those blanket commands recorded for ~/.two is still on file
 rm -rf "$second/.one"
 echo b-one-5 >"$second/.one"
 assert_succeed "b dot pull --take-remote $second/.one --yes"
