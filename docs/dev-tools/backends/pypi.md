@@ -124,8 +124,10 @@ starting at Python 3.8, and retains all published wheel targets for portability.
 Requirements injected with [`with`](#with) or [`expose`](#expose) are part of
 that calculation: one pinned to an exact version raises the range's floor to the
 release's own `requires-python`, because a single release cannot span the wider
-range the way uv resolves an unpinned requirement. This can make sidecars large.
-Frozen installs reuse uv's artifact cache.
+range the way uv resolves an unpinned requirement. A pin carrying an environment
+marker that tests the interpreter, such as `python_version < "3.12"`, is left
+out, since it is simply absent from the versions it excludes. This can make
+sidecars large. Frozen installs reuse uv's artifact cache.
 
 Different dependency graphs and configured Python interpreters get separate
 installations; `mise ls` still shows the package version. For system Python,
@@ -293,7 +295,9 @@ requires uv and participates in dependency locking.
 
 A requirement pinned to an exact version narrows the locked Python range to the
 versions that release supports, so the tool may end up needing a newer
-interpreter than it declares on its own.
+interpreter than it declares on its own. Guard the pin with an interpreter
+marker, such as `"legacy==1.0.0; python_version < '3.12'"`, to keep the wider
+range when the requirement is only needed on some versions.
 
 ### `expose`
 

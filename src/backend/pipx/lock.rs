@@ -527,26 +527,42 @@ impl PIPXBackend {
 /// whole interpreter range, or `None` when the requirement cannot narrow it.
 fn pinned_requirement(requirement: &str) -> Option<(&str, &str)> {
     let requirement = requirement.trim();
-    // A marker disables the requirement for part of the range, and a direct URL
-    // reference has no index entry to read metadata from.
-    if requirement.contains(';') || requirement.contains('@') {
+    // A direct URL reference has no index entry to read metadata from.
+    if requirement.contains('@') {
         return None;
     }
-    let package = PipxOptions::requirement_package_name(requirement)?;
-    let mut rest = requirement[package.len()..].trim_start();
-    if let Some(extras) = rest.strip_prefix('[') {
-        rest = extras.split_once(']')?.1.trim_start();
-    }
-    let version = rest.strip_prefix("==")?.trim();
-    // `===` is arbitrary equality, and a wildcard or a second clause spans releases.
-    if version.is_empty()
-        || version.starts_with('=')
-        || version.contains([',', '*'])
-        || version.contains(char::is_whitespace)
+    let (specifier, marker) = requirement.split_once(';').unwrap_or((requirement, ""));
+    // A marker that tests the interpreter drops the requirement below its own
+    // floor, so the release cannot constrain the project. Every other marker
+    // leaves the requirement in place across the whole range.
+    if [
+        "python_version",
+        "python_full_version",
+        "implementation_version",
+    ]
+    .iter()
+    .any(|variable| marker.contains(variable))
     {
         return None;
     }
-    Some((package, version))
+    let specifier = specifier.trim();
+    let package = PipxOptions::requirement_package_name(specifier)?;
+    let mut rest = specifier[package.len()..].trim_start();
+    if let Some(extras) = rest.strip_prefix('[') {
+        rest = extras.split_once(']')?.1.trim_start();
+    }
+    // One `==` clause pins the release whatever the surrounding clauses allow.
+    rest.split(',')
+        .filter_map(|clause| clause.trim().strip_prefix("=="))
+        .map(str::trim)
+        // `===` is arbitrary equality and a wildcard spans releases.
+        .find(|version| {
+            !version.is_empty()
+                && !version.starts_with('=')
+                && !version.contains('*')
+                && !version.contains(char::is_whitespace)
+        })
+        .map(|version| (package, version))
 }
 
 fn python_constraint(requires_python: &str) -> Option<String> {
@@ -762,20 +778,31 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
     }
 
     #[test]
-    fn only_unconditional_exact_pins_narrow_the_interpreter_range() {
+    fn only_exact_pins_outside_interpreter_markers_narrow_the_range() {
         for (requirement, pinned) in [
             ("demo==1.0.0", Some(("demo", "1.0.0"))),
             ("demo == 1.0.0", Some(("demo", "1.0.0"))),
             ("demo[extra,other]==1.0.0", Some(("demo", "1.0.0"))),
             ("  demo==1.0+local  ", Some(("demo", "1.0+local"))),
+            // A surrounding clause cannot widen what `==` already pinned.
+            ("demo==1.0.0,!=1.0.1", Some(("demo", "1.0.0"))),
+            ("demo>=1.0.0,==1.0.0", Some(("demo", "1.0.0"))),
+            // A marker on anything but the interpreter keeps the requirement
+            // active across the whole range.
+            (
+                "demo==1.0.0; sys_platform == 'linux'",
+                Some(("demo", "1.0.0")),
+            ),
             // uv resolves these across the range on its own.
             ("demo", None),
             ("demo>=1.0.0", None),
             ("demo==1.0.*", None),
-            ("demo==1.0.0,!=1.0.1", None),
             ("demo===1.0.0", None),
-            // Neither of these describes a release on the index.
+            // The interpreter marker drops this below its own floor, so the
+            // release's requirement is not the project's.
             ("demo==1.0.0; python_version < '3.10'", None),
+            ("demo==1.0.0; python_full_version >= '3.12.1'", None),
+            // There is no index entry to read metadata from.
             (
                 "demo @ https://example.org/demo-1.0.0-py3-none-any.whl",
                 None,
