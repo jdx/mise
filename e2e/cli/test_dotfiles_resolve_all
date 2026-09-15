@@ -157,3 +157,26 @@ assert_contains "b dot pull --keep-local-all --dry-run 2>&1" 'has unsaved change
 assert_succeed "b dot pull --take-remote $second/.one --yes"
 assert "cat $second/.one" a-one-6
 assert "cat $second/.two" b-two-6
+
+# ---- the other reason a local version cannot be kept -- this machine has no
+# saved version of the path at all -- holds exactly the same way
+echo b-three-own >"$second/.three"
+echo a-two-7 >~/.two
+# ~/.three arrives as a newly tracked path that b already has its own copy of
+# and has never saved, so b cannot publish a saved version of it
+echo a-three >~/.three
+assert_succeed 'mise dot track ~/.three'
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-two-7 >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+assert_fail 'b dot pull --keep-local-all --yes' 'no saved version on this machine yet'
+assert_fail 'b dot pull --keep-local-all --yes' 'Fix each of those paths'
+assert "cat $second/.three" b-three-own
+assert "cat $second/.two" b-two-7
+# again only the held path needs deciding, and ~/.two keeps the local version
+# --keep-local-all chose for it
+assert_succeed "b dot pull --take-remote $second/.three --yes"
+assert "cat $second/.three" a-three
+assert "cat $second/.two" b-two-7
