@@ -154,6 +154,8 @@ pub(crate) async fn apply_locked_with_scope(
         .iter()
         .map(|path| normalize_target(path))
         .collect();
+    // Conflicts a blanket choice had to leave alone, named in its place.
+    let mut blanket_held: Vec<PathBuf> = vec![];
     // A blanket choice covers the conflicts nothing else decided, so
     // `--take-remote-all --keep-local <path>` keeps that one exception.
     if req.take_remote_all || req.keep_local_all {
@@ -172,6 +174,30 @@ pub(crate) async fn apply_locked_with_scope(
             if let Some(path) = roots.locate(&conflict.branch_path).path()
                 && !decided.contains(path)
             {
+                // A blanket choice cannot speak for a path whose live side is
+                // neither a file nor a symlink: recording that choice fails,
+                // and failing here would discard every other conflict this
+                // pass decides. Hold that one path and resolve the rest; a
+                // path named on the command line still reports the failure.
+                match live_type(path) {
+                    Ok(LiveType::Unshareable) => {
+                        warn!(
+                            "{path} is left unresolved: it is not a regular file or symlink on this machine",
+                            path = display_path(path)
+                        );
+                        blanket_held.push(path.to_path_buf());
+                        continue;
+                    }
+                    Err(err) => {
+                        warn!(
+                            "{path} is left unresolved: {err:#}",
+                            path = display_path(path)
+                        );
+                        blanket_held.push(path.to_path_buf());
+                        continue;
+                    }
+                    Ok(_) => {}
+                }
                 blanket.insert(path.to_path_buf());
             }
         }
@@ -293,6 +319,19 @@ pub(crate) async fn apply_locked_with_scope(
             table.print()?;
         }
         if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run && !req.automatic {
+            // Repeating the blanket-flag advice would be useless when the
+            // blanket flag is what just ran and found nothing it could decide.
+            if !blanket_held.is_empty() {
+                bail!(
+                    "sync paused: resolve all {count} conflict(s) before sharing resumes; no blanket choice covers {held}, because the live side is not a regular file or symlink. Remove or replace each of those paths, then pull again",
+                    count = status.conflicts.len(),
+                    held = blanket_held
+                        .iter()
+                        .map(display_path)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+            }
             bail!(
                 "sync paused: resolve all {} conflict(s) before sharing resumes; `mise dot pull --take-remote-all` chooses the repository's version for every conflict at once, and `mise dot status` says whether any path still needs a different fix",
                 status.conflicts.len()
@@ -857,23 +896,29 @@ pub(super) fn live_permissions(path: &Path) -> Result<Option<u32>> {
     }
 }
 
-pub(super) fn live_object(
-    repo: &crate::system::history::shadow::HistoryRepo,
-    path: &Path,
-) -> Result<Option<Object>> {
+/// What the live side of a path is, before any of it is read. Classify once
+/// here so a caller that only needs the shape does not pay for the contents.
+pub(super) enum LiveType {
+    Absent,
+    Symlink,
+    File {
+        executable: bool,
+    },
+    /// A directory or another special file: nothing a shared object describes.
+    Unshareable,
+}
+
+pub(super) fn live_type(path: &Path) -> Result<LiveType> {
     let meta = match std::fs::symlink_metadata(path) {
         Ok(meta) => meta,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(LiveType::Absent),
         Err(err) => return Err(err.into()),
     };
     if meta.file_type().is_symlink() {
-        return Ok(Some((
-            "120000".into(),
-            repo.transient_blob_id(std::fs::read_link(path)?.to_string_lossy().as_bytes())?,
-        )));
+        return Ok(LiveType::Symlink);
     }
     if !meta.is_file() {
-        bail!("{} is not a regular file or symlink", display_path(path));
+        return Ok(LiveType::Unshareable);
     }
     #[cfg(unix)]
     let executable = {
@@ -882,10 +927,27 @@ pub(super) fn live_object(
     };
     #[cfg(not(unix))]
     let executable = false;
-    Ok(Some((
-        if executable { "100755" } else { "100644" }.into(),
-        repo.transient_blob_id(&std::fs::read(path)?)?,
-    )))
+    Ok(LiveType::File { executable })
+}
+
+pub(super) fn live_object(
+    repo: &crate::system::history::shadow::HistoryRepo,
+    path: &Path,
+) -> Result<Option<Object>> {
+    match live_type(path)? {
+        LiveType::Absent => Ok(None),
+        LiveType::Symlink => Ok(Some((
+            "120000".into(),
+            repo.transient_blob_id(std::fs::read_link(path)?.to_string_lossy().as_bytes())?,
+        ))),
+        LiveType::Unshareable => {
+            bail!("{} is not a regular file or symlink", display_path(path))
+        }
+        LiveType::File { executable } => Ok(Some((
+            if executable { "100755" } else { "100644" }.into(),
+            repo.transient_blob_id(&std::fs::read(path)?)?,
+        ))),
+    }
 }
 
 fn saved_object(

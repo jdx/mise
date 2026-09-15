@@ -102,3 +102,28 @@ assert "cat $second/.one" a-one-4
 # ---- a blanket choice with nothing to decide is not an error
 assert_succeed 'b dot pull --take-remote-all --yes'
 assert_succeed 'b dot pull --keep-local-all --yes'
+
+# ---- a path whose live side is a directory holds only itself
+echo a-one-5 >~/.one
+echo a-two-5 >~/.two
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-two-5 >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+rm -f "$second/.one"
+mkdir -p "$second/.one"
+# the blanket choice names the one path it cannot decide instead of failing
+# the whole command, and the setup stays paused rather than half-applied
+assert_contains "b dot pull --take-remote-all --yes 2>&1" 'not a regular file or symlink'
+assert "cat $second/.two" b-two-5
+assert_succeed "test -d $second/.one"
+# once that path is all that is left, the failure says what to fix rather than
+# advising the blanket flag that just ran
+assert_fail 'b dot pull --take-remote-all --yes' 'Remove or replace'
+# with the directory gone the same command finishes every conflict
+rm -rf "$second/.one"
+echo b-one-5 >"$second/.one"
+assert_succeed 'b dot pull --take-remote-all --yes'
+assert "cat $second/.one" a-one-5
+assert "cat $second/.two" a-two-5
