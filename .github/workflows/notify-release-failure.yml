@@ -42,9 +42,11 @@ jobs:
             echo "::warning::RESEND_API_KEY or NOTIFY_EMAIL is unset; skipping notification for ${WORKFLOW} on ${TAG}"
             exit 0
           fi
-          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
-          # Build the payload with jq so the tag and workflow name cannot break
-          # out of the JSON string they are embedded in.
+          # Build the payload with jq: --arg keeps a tag or workflow name from
+          # breaking out of the JSON string, @html keeps it from becoming markup
+          # once the mail client renders the body, and @uri keeps it from
+          # reshaping the release URL. A tag is author-controlled, so all three
+          # matter even though the values arrive from the GitHub API.
           payload=$(jq -n \
             --arg to "$NOTIFY_EMAIL" \
             --arg workflow "$WORKFLOW" \
@@ -52,18 +54,25 @@ jobs:
             --arg tag "$TAG" \
             --arg run_url "$RUN_URL" \
             --arg attempt "$ATTEMPT" \
-            --arg release_url "$release_url" \
-            '{
+            --arg repo "$GITHUB_REPOSITORY" \
+            '
+            ("https://github.com/\($repo)/releases/tag/\($tag | @uri)") as $release_url |
+            {
               from: "mise Releases <mise@en.dev>",
               to: [$to],
               subject: "❌ mise \($tag): \($workflow) \($conclusion)",
               html: (
-                "<p>The <strong>\($workflow)</strong> workflow for <strong>\($tag)</strong> finished with <strong>\($conclusion)</strong> on attempt \($attempt).</p>"
+                "<p>The <strong>\($workflow | @html)</strong> workflow for <strong>\($tag | @html)</strong> finished with <strong>\($conclusion | @html)</strong> on attempt \($attempt | @html).</p>"
                 + "<p>The release is published but whatever this workflow ships did not go out. Re-run it once the cause is fixed.</p>"
-                + "<p><a href=\"\($run_url)\">View workflow run</a> | <a href=\"\($release_url)\">View release</a></p>"
+                + "<p><a href=\"\($run_url | @html)\">View workflow run</a> | <a href=\"\($release_url | @html)\">View release</a></p>"
               )
             }')
-          curl --fail-with-body -sS -X POST 'https://api.resend.com/emails' \
+          # This mail is the only signal that a release half-shipped, so a
+          # transient Resend failure must not swallow it. A retry can duplicate
+          # an alert whose response was lost; two alerts beat none.
+          curl --fail-with-body -sS \
+            --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            -X POST 'https://api.resend.com/emails' \
             -H "Authorization: Bearer ${RESEND_API_KEY}" \
             -H 'Content-Type: application/json' \
             -d "$payload"
