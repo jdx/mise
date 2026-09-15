@@ -103,23 +103,34 @@ assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "exclude"
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "autosave"
 
 # an ordinary edit is still saved promptly while the churn goes on, and the
-# checkpoint it makes does not carry the churning file's live content (the
-# edit lands right after a save of the churning file, so its next save is a
-# whole interval away)
+# checkpoint it makes carries the version of the churning file that the save
+# before it recorded, never its live content
 captured="grep -c '\"event\":\"captured\"' watch.log"
 n="$(eval "$captured")"
 wait_until "[[ \$($captured) -gt $n ]]"
-echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
-# Pin the actual edit checkpoint: another scheduled save may become latest
-# while these assertions run, and a save the churning file is due for can
-# share the capture. Compare snapshot contents, not display lines.
-edit_capture='select(.event == "captured" and (.description | contains("monitors.lua") and (contains("state.json") | not))) | .uuid'
-wait_until "jq -e '$edit_capture' watch.log"
-monitor_checkpoint="$(jq -r "$edit_capture" watch.log | tail -1)"
-# The edit's checkpoint carries the version of the churning file that the
-# save before it recorded, never its live content. That save is whichever
-# capture precedes this one: under load the churn can be saved again
-# between the wait above and the edit.
+# Pin the capture the edit made: another scheduled save may become latest
+# while these assertions run, so compare snapshot contents, not display
+# lines. A save the churning file is due for may share that capture, which
+# then carries its live content by design and proves nothing here — edit
+# again until a capture is the edit's alone. The churn is saved once per
+# interval at most, so this normally settles on the first attempt.
+edit_captures='[.[] | select(.event == "captured" and (.description | contains("monitors.lua")))]'
+edits="jq -rs '$edit_captures | length' watch.log"
+monitor_checkpoint=""
+for attempt in 1 2 3 4 5; do
+  n="$(eval "$edits")"
+  echo "monitor=DP-2.$attempt" >~/.config/hypr/monitors.lua
+  wait_until "[[ \$($edits) -gt $n ]]"
+  edit="$(jq -rs "$edit_captures | last" watch.log)"
+  if ! printf '%s' "$edit" | jq -e '.description | contains("state.json")' >/dev/null; then
+    monitor_checkpoint="$(printf '%s' "$edit" | jq -r .uuid)"
+    break
+  fi
+done
+[[ -n $monitor_checkpoint ]] ||
+  fail "every capture of the edit was shared with a due save of the churning file"
+# the save before it, whichever capture that was: under load the churn can be
+# saved again between the wait above and the edit
 previous_checkpoint="$(jq -rs --arg uuid "$monitor_checkpoint" '[.[] | select(.event == "captured") | .uuid] | .[index($uuid) - 1]' watch.log)"
 assert "$snapshot_of $monitor_checkpoint .config/hypr/state.json" "$($snapshot_of "$previous_checkpoint" .config/hypr/state.json)"
 

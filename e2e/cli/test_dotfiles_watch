@@ -84,13 +84,16 @@ assert_contains "mise bootstrap dotfiles status" "automatic capture: running"
 # one watcher per store: a second one exits 0 immediately
 assert_contains "mise bootstrap dotfiles watch --json" '"event":"already-running"'
 
+saved="$(eval "$count")"
 echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
 echo 'bind = SUPER, Q' >~/.config/hypr/bindings.lua
 # Both changes are saved and named. The two writes normally reach the watcher
 # in one batch and become one checkpoint, but a stall between them puts them
 # in separate debounce windows, and a path that is not due yet is held back
-# from another path's capture on purpose — so assert over the newest two.
-wait_until "mise bootstrap dotfiles history --json | jq -e '[.[0,1].description] | join(\"; \") | test(\"edited hypr/monitors.lua\") and test(\"added hypr/bindings.lua\")'"
+# from another path's capture on purpose — so assert over every checkpoint
+# saved since, and only those: an older one names monitors.lua too.
+new_checkpoints="mise bootstrap dotfiles history --json -n 0 | jq -e --argjson saved $saved '.[0:(length - \$saved)] | map(.description) | join(\"; \") | test(\"edited hypr/monitors.lua\") and test(\"added hypr/bindings.lua\")'"
+wait_until "$new_checkpoints"
 assert_contains "cat watch.log" '"event":"captured"'
 
 # a configuration change replans: an excluded file stops being captured
