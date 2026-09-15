@@ -106,8 +106,13 @@ Run `mise lock` after editing a sidecar to accept its updated digest before usin
 - **No free-form installer arguments in dependency graphs:** `uvx_args` and
   `pipx_args` use version-only installation during ordinary installs. Explicit
   dependency locking rejects them because mise cannot safely translate arbitrary
-  installer arguments into a reproducible graph. Configure [Python](#choosing-python)
-  and the [registry URL](#registry-url) directly when dependency locking is required.
+  installer arguments into a reproducible graph. Use the semantic options instead
+  when dependency locking is required: [`with`](#with) injects additional
+  requirements into the tool environment, [`expose`](#expose) also exposes their
+  executables, and [`dependency_prereleases`](#dependency_prereleases) sets uv's
+  prerelease policy. These are locked together with the tool, so the graph covers
+  the injected packages. Configure [Python](#choosing-python) and the
+  [registry URL](#registry-url) directly as well.
 - **Installed Python required:** lock generation needs an interpreter discoverable
   by uv, though it need not match the tool's configured Python version. Graph
   installs use the selected mise Python and do not download a replacement.
