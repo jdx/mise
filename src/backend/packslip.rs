@@ -630,6 +630,16 @@ pub(crate) fn verify_release_list(
 /// The headers a download from GitHub needs; nothing for anywhere else.
 /// Listing timestamps only filter candidates. The authenticated log time
 /// decides whether a selected release is old enough to install.
+/// Whether the release-age cutoff has already had its say about this version.
+///
+/// The cutoff decides which release a fuzzy request may pick. A lockfile entry
+/// and an explicit pin like `hk = "2.0.1"` are both that decision already taken
+/// and committed, so re-applying the cutoff here would reject a version mise
+/// itself resolved — `minimum_release_age` documents both as unfiltered.
+fn selection_already_made(tv: &ToolVersion) -> bool {
+    tv.resolved_from_lockfile() || tv.request_pinned_this_version()
+}
+
 fn check_verified_age(
     logged_at: Option<&str>,
     published_at: &str,
@@ -1266,11 +1276,12 @@ impl PackslipBackend {
                 .map(|t| format!(", logged {t}"))
                 .unwrap_or_default()
         );
-        // Release age governs selection, but a committed lockfile has already
-        // selected this exact signed release. Keep the cutoff in InstallContext
-        // for package-manager transitive dependencies while making the locked
-        // top-level Packslip artifact reproducible during its cooling window.
-        let before = if tv.resolved_from_lockfile() {
+        // Release age governs selection, and this release was already selected:
+        // either a committed lockfile recorded it, or the request named it
+        // outright. Keep the cutoff in InstallContext for package-manager
+        // transitive dependencies while making the top-level Packslip artifact
+        // installable during its cooling window.
+        let before = if selection_already_made(&tv) {
             None
         } else {
             crate::install_before::resolve_before_date_for_tool(
@@ -1655,11 +1666,17 @@ impl Backend for PackslipBackend {
         let (statement, verified) = self
             .verified_release(&project, tv, &pin, &opts, stamp)
             .await?;
-        let before = crate::install_before::resolve_before_date_for_tool(
-            &self.ba,
-            tv.before_date,
-            raw_opts.minimum_release_age(),
-        )?;
+        // Locking records the version that resolution already chose, so a
+        // selection the cutoff does not govern stays lockable while it cools.
+        let before = if selection_already_made(tv) {
+            None
+        } else {
+            crate::install_before::resolve_before_date_for_tool(
+                &self.ba,
+                tv.before_date,
+                raw_opts.minimum_release_age(),
+            )?
+        };
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,

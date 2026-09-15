@@ -86,6 +86,13 @@ artifact, mise checks the verified transparency-log timestamp against the
 effective cutoff. Only an explicitly allowed unlogged bundle uses the signed
 publication timestamp instead.
 
+The cutoff decides which release a fuzzy request may pick, so it does not apply
+to a release that was already chosen: an exact pin such as
+`"packslip:github.com/jdx/hk" = "2.0.1"` and a version recorded in `mise.lock`
+both install and lock while the release is still cooling. Fuzzy requests like
+`latest` or `2` stay behind the cutoff, and the `npm:` and `pipx:` backends
+still apply it to unpinned transitive dependencies.
+
 ### Recommendations and fallback
 
 For an unconstrained `latest` request, mise considers the vendor's signed

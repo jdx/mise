@@ -213,6 +213,34 @@ impl ToolVersion {
         self.resolved_from_lockfile
     }
 
+    /// Whether the request named this exact release, e.g. `hk = "2.0.1"` in
+    /// `mise.toml` or `mise install hk@2.0.1`. Release-age policy governs which
+    /// version a fuzzy request may select; naming one release is that selection,
+    /// so callers use this to avoid re-applying the cutoff to a choice the user
+    /// already made.
+    ///
+    /// Version strings are opaque: this compares the request against the
+    /// resolved version byte for byte and never parses or orders them. A fuzzy
+    /// request (`"2"`), an alias (`"lts"`), a ref, or a prefix leaves the two
+    /// strings different, so only a literal pin matches.
+    pub(crate) fn request_pinned_this_version(&self) -> bool {
+        let ToolRequest::Version { version, .. } = &self.request else {
+            return false;
+        };
+        if version != &self.version {
+            return false;
+        }
+        // `latest` and rolling channels are moving pointers. A backend may list
+        // one as a literal version, which would make the strings match, but the
+        // request commits to the pointer, not to whichever release it names today.
+        if version == "latest" {
+            return false;
+        }
+        !self
+            .backend()
+            .is_ok_and(|backend| backend.is_rolling_channel(version))
+    }
+
     pub(crate) fn ba(&self) -> &BackendArg {
         self.request.ba()
     }
@@ -1211,6 +1239,37 @@ mod tests {
         assert_eq!(
             ToolVersion::new(request, version.into()).display_version(),
             "release"
+        );
+    }
+
+    #[test]
+    fn request_pinned_this_version_only_matches_a_literal_pin() {
+        let backend = Arc::new(BackendArg::from("packslip:github.com/jdx/hk"));
+        let pinned = |requested: &str, resolved: &str| {
+            let request =
+                ToolRequest::new(backend.clone(), requested, ToolSource::Argument).unwrap();
+            ToolVersion::new(request, resolved.to_string()).request_pinned_this_version()
+        };
+
+        // The request names the release that was installed.
+        assert!(pinned("2.0.1", "2.0.1"));
+        // Non-semver versions are just as pinnable — the check is a string
+        // comparison, not a version parse.
+        assert!(pinned("2026.9.9", "2026.9.9"));
+        assert!(pinned("nightly-2026-09-15", "nightly-2026-09-15"));
+
+        // Fuzzy requests let release age pick the version, so it still governs.
+        assert!(!pinned("2", "2.0.1"));
+        assert!(!pinned("2.0", "2.0.1"));
+        assert!(!pinned("latest", "2.0.1"));
+        // A moving pointer stays unpinned even when it names itself.
+        assert!(!pinned("latest", "latest"));
+
+        // A ref is not a version request at all.
+        let request = ToolRequest::new(backend, "ref:main", ToolSource::Argument).unwrap();
+        assert!(
+            !ToolVersion::new(request, "ref:main".to_string()).request_pinned_this_version(),
+            "a ref names a moving target, not a release"
         );
     }
 
