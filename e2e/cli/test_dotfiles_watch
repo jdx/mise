@@ -11,29 +11,30 @@ export MISE_HISTORY_WATCH_MAX_INTERVAL=5s
 
 count="mise bootstrap dotfiles history --json -n 0 | jq length"
 
-# waits until the checkpoint count reaches $1 (or fails after ~10s)
-wait_for_count() {
-  for _ in $(seq 1 50); do
-    if [[ "$(eval "$count")" -ge $1 ]]; then
-      return 0
-    fi
-    sleep 0.2
-  done
-  echo "expected at least $1 checkpoints, found $(eval "$count")" >&2
-  [[ -f watch.log ]] && cat watch.log >&2
-  return 1
-}
-
+# Waits until the shell condition $1 holds, for at most $2 seconds (default
+# 30). The budget is wall clock rather than a fixed number of iterations: a
+# loaded CI runner can take seconds to start the watcher or to answer one
+# `mise` invocation, which a count of sleeps silently turns into a much
+# shorter timeout.
 wait_until() {
-  for _ in $(seq 1 100); do
+  local deadline=$((SECONDS + ${2:-30}))
+  while ((SECONDS < deadline)); do
     if eval "$1" >/dev/null 2>&1; then
       return 0
     fi
     sleep 0.2
   done
   echo "timed out waiting for: $1" >&2
-  [[ -f watch.log ]] && cat watch.log >&2
+  if [[ -f watch.log ]]; then
+    cat watch.log >&2
+  fi
   return 1
+}
+
+# waits until the checkpoint count reaches $1
+wait_for_count() {
+  wait_until "[[ \"\$($count)\" -ge $1 ]]" ||
+    fail "expected at least $1 checkpoints, found $(eval "$count")"
 }
 
 # With no enrollment the service still watches policy changes, but creates
@@ -76,11 +77,7 @@ mise bootstrap dotfiles watch --json >watch.log 2>&1 &
 watcher=$!
 cleanup() { kill "$watcher" 2>/dev/null || true; }
 trap cleanup EXIT
-for _ in $(seq 1 50); do
-  grep -q '"event":"started"' watch.log && break
-  sleep 0.2
-done
-assert_contains "cat watch.log" '"event":"started"'
+wait_until "grep -q '\"event\":\"started\"' watch.log"
 assert "mise bootstrap dotfiles status --json | jq -r .history.watcher" "running"
 assert_contains "mise bootstrap dotfiles status" "automatic capture: running"
 
@@ -89,21 +86,27 @@ assert_contains "mise bootstrap dotfiles watch --json" '"event":"already-running
 
 echo 'monitor=DP-3' >~/.config/hypr/monitors.lua
 echo 'bind = SUPER, Q' >~/.config/hypr/bindings.lua
-wait_for_count 3
-assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua; added hypr/bindings.lua"
+# Both changes are saved and named. The two writes normally reach the watcher
+# in one batch and become one checkpoint, but a stall between them puts them
+# in separate debounce windows, and a path that is not due yet is held back
+# from another path's capture on purpose — so assert over the newest two.
+wait_until "mise bootstrap dotfiles history --json | jq -e '[.[0,1].description] | join(\"; \") | test(\"edited hypr/monitors.lua\") and test(\"added hypr/bindings.lua\")'"
 assert_contains "cat watch.log" '"event":"captured"'
 
 # a configuration change replans: an excluded file stops being captured
+n="$(eval "$count")"
 assert_succeed "mise bootstrap dotfiles exclude '~/.config/hypr/bindings.lua'"
-wait_for_count 4
+wait_for_count $((n + 1))
 assert_contains "cat watch.log" '"event":"replan"'
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "removed hypr/bindings.lua"
+n="$(eval "$count")"
 echo 'bind = SUPER, W' >~/.config/hypr/bindings.lua
 echo 'monitor=DP-4' >~/.config/hypr/monitors.lua
-wait_for_count 5
+wait_for_count $((n + 1))
 assert "mise bootstrap dotfiles history --json | jq -r '.[0].description'" "edited hypr/monitors.lua"
+n="$(eval "$count")"
 assert_succeed "mise bootstrap dotfiles include '~/.config/hypr/bindings.lua'"
-wait_for_count 6
+wait_for_count $((n + 1))
 
 # a running history operation defers the watcher instead of racing it: the
 # rollback records its own pair and the watcher saves nothing extra
