@@ -33,8 +33,64 @@ impl Shell for Pwsh {
                 $env:__MISE_ORIG_PATH = $env:PATH
             }}
 
+            # PowerShell's parameter binder claims the first bare `--` on a line as its own
+            # end-of-parameters token and drops it before $args is populated, so
+            # `mise exec -- pnpm --version` reaches the function below as
+            # `exec pnpm --version` and mise reads `--version` as its own flag. It takes
+            # exactly one, wherever it sits, and no spelling of the function signature
+            # avoids it -- $args, [Parameter(ValueFromRemainingArguments)] and
+            # PositionalBinding=$false all lose it identically. bash, zsh and fish forward
+            # "$@" untouched, which is why only pwsh needs this. The raw invocation text
+            # still holds the separator, so recover its position from there.
+            function Global:__mise_restore_double_dash {{
+                param([object[]]$Arguments, $Invocation)
+
+                # Every return below carries a leading comma. PowerShell unrolls an array on
+                # output, so returning the arguments bare hands back a plain string whenever
+                # there is exactly one of them, and the caller's `$arguments[0]` then indexes
+                # into that string one character at a time. The comma wraps the array so the
+                # unrolling gives it back whole.
+                $line = $Invocation.Line
+                # Cheap gate first: most calls carry no bare `--` and must not pay for a parse.
+                if (-not $line -or $line -notmatch '(^|\s)--(\s|$)') {{ return ,$Arguments }}
+
+                $ast = [System.Management.Automation.Language.Parser]::ParseInput($line, [ref]$null, [ref]$null)
+                if (-not $ast) {{ return ,$Arguments }}
+                # OffsetInLine is the 1-based column of this invocation, which is what
+                # distinguishes it from any other command sharing the line.
+                $column = $Invocation.OffsetInLine
+                $command = $ast.Find({{
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and
+                    $node.Extent.StartLineNumber -eq 1 -and
+                    $node.Extent.StartColumnNumber -eq $column
+                }}, $true)
+                if (-not $command) {{ return ,$Arguments }}
+
+                $elements = $command.CommandElements
+                $index = -1
+                for ($i = 1; $i -lt $elements.Count; $i++) {{
+                    # Extent.Text is the source spelling, so a quoted '--' -- which the binder
+                    # leaves alone and which is therefore already in $Arguments -- does not match.
+                    if ($elements[$i].Extent.Text -eq '--') {{ $index = $i; break }}
+                }}
+                if ($index -lt 0) {{ return ,$Arguments }}
+                # The element list maps one-to-one onto $Arguments, minus the command name and
+                # the separator the binder took. When it does not -- a splatted @array, say --
+                # the position cannot be trusted, so leave the arguments alone.
+                if ($elements.Count - 2 -ne $Arguments.Count) {{ return ,$Arguments }}
+
+                $restored = [System.Collections.ArrayList]::new()
+                if ($index -gt 1) {{ [void]$restored.AddRange($Arguments[0..($index - 2)]) }}
+                [void]$restored.Add('--')
+                if ($index - 1 -lt $Arguments.Count) {{
+                    [void]$restored.AddRange($Arguments[($index - 1)..($Arguments.Count - 1)])
+                }}
+                return ,$restored.ToArray()
+            }}
+
             function mise {{
-                $arguments = $args
+                $arguments = __mise_restore_double_dash $args $MyInvocation
 
                 $previous_out_encoding = $OutputEncoding
                 $previous_console_out_encoding = [Console]::OutputEncoding
@@ -293,6 +349,7 @@ impl Shell for Pwsh {
     fn deactivate(&self) -> String {
         formatdoc! {r#"
         Remove-Item -ErrorAction Ignore function:mise
+        Remove-Item -ErrorAction Ignore function:__mise_restore_double_dash
         Remove-Item -ErrorAction Ignore -Path Env:/MISE_SHELL
         Remove-Item -ErrorAction Ignore -Path Env:/__MISE_DIFF
         Remove-Item -ErrorAction Ignore -Path Env:/__MISE_SESSION
@@ -473,6 +530,56 @@ mod tests {
                 "the refresh is inline: routing it through _mise_hook is what --no-hook-env breaks"
             );
         }
+    }
+
+    /// PowerShell's parameter binder eats the first bare `--` on the line before `$args` is
+    /// populated, so the wrapper has to put it back from the raw invocation text — otherwise
+    /// `mise exec -- pnpm --version` reaches mise as `exec pnpm --version`.
+    /// See <https://github.com/jdx/mise/discussions/13196>.
+    #[test]
+    fn test_activate_restores_the_binder_eaten_double_dash() {
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
+        }
+        for no_hook_env in [false, true] {
+            let script = Pwsh::default().activate(ActivateOptions {
+                exe: Path::new("/some/dir/mise").to_path_buf(),
+                flags: "".into(),
+                no_hook_env,
+                prelude: vec![],
+            });
+
+            let helper = script
+                .find("function Global:__mise_restore_double_dash")
+                .expect("activation should define the separator repair");
+            let call = script
+                .find("$arguments = __mise_restore_double_dash $args $MyInvocation")
+                .expect("the mise wrapper should run its arguments through the repair");
+            assert!(
+                helper < call,
+                "the helper has to be defined before the wrapper that calls it"
+            );
+            // The arguments are handed back through a `return ,$x`: without the comma
+            // PowerShell unrolls the array and a single argument arrives as a bare string,
+            // which `$arguments[0]` then indexes one character at a time.
+            assert!(
+                !script.contains("return $Arguments"),
+                "every return must re-wrap the array"
+            );
+            assert!(script.contains("return ,$restored.ToArray()"), "{script}");
+        }
+    }
+
+    /// `deactivate` has to take the helper with it: leaving a `__mise_*` function behind in a
+    /// session the user deactivated is exactly what the `function:mise` removal avoids.
+    #[test]
+    fn test_deactivate_removes_the_double_dash_helper() {
+        let out = Pwsh::default().deactivate();
+        assert!(
+            out.contains("Remove-Item -ErrorAction Ignore function:__mise_restore_double_dash"),
+            "{out}"
+        );
     }
 
     #[test]
