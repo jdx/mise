@@ -316,6 +316,18 @@ mise dot pull --take-remote ~/.zshrc
 mise dot pull --keep-local ~/.zshrc
 ```
 
+To decide every conflict the same way in one command, use the blanket form.
+`--keep-local` and `--take-remote` still name the exceptions:
+
+```sh
+mise dot pull --take-remote-all
+mise dot pull --take-remote-all --keep-local ~/.zshrc
+mise dot pull --keep-local-all
+```
+
+`--keep-local-all` requires every file it keeps to be saved already, so run
+`mise dot save` first if you have unsaved edits.
+
 To combine both sides, use the conflict diff to edit the live file, explicitly
 save the merged path (also capturing files tracked with `--no-autosave`), then
 choose the saved local version:

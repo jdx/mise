@@ -158,6 +158,8 @@ assert_fail "$d bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" "ne
 assert_fail "$d bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" "nothing was bootstrapped"
 assert "cat $D/.config/mise/config.toml" $'[env]\nD_ONLY = "1"'
 assert_contains "$d bootstrap dotfiles status" "sharing is paused for the entire setup"
+# --keep-local publishes a saved version this fresh machine does not have yet
+assert_fail "$d dot pull --keep-local $D/.config/mise/config.toml --yes" "no saved version on this machine yet"
 assert_succeed "$d bootstrap dotfiles pull --take-remote $D/.config/mise/config.toml --yes"
 assert "cat $D/.config/hypr/bindings.lua" "bind = SUPER, Q, exec, foot"
 
