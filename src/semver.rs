@@ -1,6 +1,6 @@
 use nodejs_semver::{Range, Version as NodeVersion};
 use std::cmp::Ordering;
-use versions::{Mess, Versioning};
+use versions::{MChunk, Mess, Sep, Versioning};
 
 /// splits a version number into an optional prefix and the remaining version string
 pub(crate) fn split_version_prefix(version: &str) -> (String, String) {
@@ -30,14 +30,51 @@ pub(crate) fn chunkify_version(v: &str) -> Vec<String> {
         }
     }
 
+    /// Hang SemVer build metadata (`+k3s1`) off the end of a `Mess`.
+    ///
+    /// `SemVer::to_mess` only emits the metadata when the version also has a
+    /// pre-release, and `Version::to_mess` drops it outright, so `1.36.4+k3s1`
+    /// comes back as a bare `1.36.4`. That made `--bump` rewrite a k3s pin to
+    /// `1.37.0`, a tag that does not exist — the release is `v1.37.0+k3s1`.
+    fn attach_meta(m: &mut Mess, meta: &str) {
+        // An epoch or a release already occupies `next`; the metadata goes last.
+        match &mut m.next {
+            Some((_, next)) => attach_meta(next, meta),
+            None => {
+                m.next = Some((
+                    Sep::Plus,
+                    Box::new(Mess {
+                        chunks: vec![MChunk::Plain(meta.to_string())],
+                        next: None,
+                    }),
+                ))
+            }
+        }
+    }
+
     let mut chunks = vec![];
     // don't parse "latest", otherwise bump from latest to any version would have one chunk only
     if v != "latest"
         && let Some(v) = Versioning::new(v)
     {
         let m = match v {
-            Versioning::Ideal(sem_ver) => sem_ver.to_mess(),
-            Versioning::General(version) => version.to_mess(),
+            Versioning::Ideal(sem_ver) => {
+                let mut m = sem_ver.to_mess();
+                // With a pre-release, `to_mess` already carried the metadata over.
+                if let Some(meta) = &sem_ver.meta
+                    && sem_ver.pre_rel.is_none()
+                {
+                    attach_meta(&mut m, meta);
+                }
+                m
+            }
+            Versioning::General(version) => {
+                let mut m = version.to_mess();
+                if let Some(meta) = &version.meta {
+                    attach_meta(&mut m, meta);
+                }
+                m
+            }
             Versioning::Complex(mess) => mess,
         };
         chunkify(&m, "", &mut chunks);
@@ -170,6 +207,32 @@ mod tests {
         assert_eq!(
             chunkify_version("2.3.4-beta"),
             vec!["2", ".3", ".4", "-beta"]
+        );
+    }
+
+    #[test]
+    fn test_chunkify_version_keeps_build_metadata() {
+        // k3s tags its releases `v1.36.4+k3s1`. Dropping `+k3s1` here made
+        // `mise upgrade --bump` pin `1.37.0`, which is not a tag that exists.
+        assert_eq!(
+            chunkify_version("1.36.4+k3s1"),
+            vec!["1", ".36", ".4", "+k3s1"]
+        );
+        // Java's `17.0.7+7` lost its build number the same way.
+        assert_eq!(chunkify_version("17.0.7+7"), vec!["17", ".0", ".7", "+7"]);
+        // A pre-release already kept its metadata; it must not be duplicated.
+        assert_eq!(
+            chunkify_version("1.2.3-rc1+meta"),
+            vec!["1", ".2", ".3", "-rc1", "+meta"]
+        );
+        // Non-semver versions carry metadata too, epoch and release included.
+        assert_eq!(
+            chunkify_version("1.2.3a+meta"),
+            vec!["1", ".2", ".3a", "+meta"]
+        );
+        assert_eq!(
+            chunkify_version("2:1.2.3-r1+meta"),
+            vec!["2", ":1", ".2", ".3", "-r1", "+meta"]
         );
     }
 
