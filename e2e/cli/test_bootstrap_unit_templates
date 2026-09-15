@@ -51,6 +51,20 @@ exec_startt = "oops"
 EOF
 assert_contains "mise bootstrap linux systemd-units status 2>&1" "bootstrap.linux.systemd.units.typo.exec_startt"
 
+# a typo in a declaration a more local config shadows is still reported: the
+# warning belongs to the file that declared it, not to the entry that wins
+cat <<'EOF' >mise.toml
+[bootstrap.linux.systemd.units.shadowed]
+exec_start = "/bin/true"
+exec_startt = "oops"
+EOF
+cat <<'EOF' >mise.local.toml
+[bootstrap.linux.systemd.units.shadowed]
+exec_start = "/bin/true"
+EOF
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "bootstrap.linux.systemd.units.shadowed.exec_startt"
+rm mise.local.toml
+
 # exec() is unavailable in unit values so status, plan, --dry-run, and apply all
 # render the same declaration and no read-only command can shell out
 cat <<EOF >mise.toml

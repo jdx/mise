@@ -849,18 +849,20 @@ pub(crate) fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
     for (path, cf) in config.config_files.iter().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (name, agent) in sys.macos.launchd.agents {
+                // Report before merging: a typo in an agent a more local config
+                // shadows is still a typo in the file that declared it.
+                for field in agent.ignored_fields() {
+                    warn!(
+                        "unknown field in {}: bootstrap.macos.launchd.agents.{name}.{field}",
+                        crate::file::display_path(path)
+                    );
+                }
                 merged.insert(name, (agent, path.clone()));
             }
         }
     }
     let mut out = vec![];
     for (name, (agent, config_path)) in merged {
-        for field in agent.ignored_fields() {
-            warn!(
-                "unknown field in {}: bootstrap.macos.launchd.agents.{name}.{field}",
-                crate::file::display_path(&config_path)
-            );
-        }
         let agent = match agent.render(config, &config_path) {
             Ok(agent) => agent,
             Err(err) => {
@@ -1418,18 +1420,20 @@ pub(crate) fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
     for (path, cf) in config.config_files.iter().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (name, unit) in sys.linux.systemd.units {
+                // Report before merging: a typo in a unit a more local config
+                // shadows is still a typo in the file that declared it.
+                for field in unit.ignored_fields() {
+                    warn!(
+                        "unknown field in {}: bootstrap.linux.systemd.units.{name}.{field}",
+                        crate::file::display_path(path)
+                    );
+                }
                 merged.insert(name, (unit, path.clone()));
             }
         }
     }
     let mut out = vec![];
     for (name, (unit, config_path)) in merged {
-        for field in unit.ignored_fields() {
-            warn!(
-                "unknown field in {}: bootstrap.linux.systemd.units.{name}.{field}",
-                crate::file::display_path(&config_path)
-            );
-        }
         let unit = match unit.render(config, &config_path) {
             Ok(unit) => unit,
             Err(err) => {

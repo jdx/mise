@@ -176,8 +176,8 @@ you run `mise bootstrap` from.
 `plan`, `apply --dry-run`, and `apply` all render the same declaration, so a
 unit that shelled out would either give a read-only command side effects or
 make the preview disagree with the unit file that gets written. Use
-<code v-pre>{{ vars.*}}</code> or <code v-pre>{{ env.* }}</code>, or compute
-the value in a [bootstrap hook](/bootstrap.html#hooks).
+<code v-pre>{{ vars.my_value }}</code> or <code v-pre>{{ env.MY_VALUE }}</code>,
+or compute the value in a [bootstrap hook](/bootstrap.html#hooks).
 
 ## Semantics
 
