@@ -1,5 +1,46 @@
 # Changelog
 
+## [2026.9.9](https://github.com/jdx/mise/compare/v2026.9.8..v2026.9.9) - 2026-09-15
+
+### 🚀 Features
+
+- **(dotfiles)** add encryption flag to track by @jdx in [#13180](https://github.com/jdx/mise/pull/13180)
+- **(dotfiles)** add safe history replacement during adoption by @jdx in [#13182](https://github.com/jdx/mise/pull/13182)
+- **(pypi)** add semantic uv install options by @jdx in [#13181](https://github.com/jdx/mise/pull/13181)
+
+### 🐛 Bug Fixes
+
+- **(activate)** restore the `--` separator PowerShell drops in an activated pwsh session by @jdx in [#13202](https://github.com/jdx/mise/pull/13202)
+- **(dotfiles)** restart a history watcher that is not watching this store by @jdx in [#13190](https://github.com/jdx/mise/pull/13190)
+- **(dotfiles)** stop concurrent snapshots from recording false deletions by @jdx in [#13195](https://github.com/jdx/mise/pull/13195)
+- **(npm)** keep global tools satisfied when lockfiles are enabled by @jdx in [#13186](https://github.com/jdx/mise/pull/13186)
+- **(packslip)** install from private GitHub repositories by @jdx in [#13188](https://github.com/jdx/mise/pull/13188)
+
+### 📚 Documentation
+
+- show the GitHub star count in the nav overflow menu by @jdx in [#13193](https://github.com/jdx/mise/pull/13193)
+
+### 🧪 Testing
+
+- **(bootstrap)** pin what an apply ends and runs for a scheduled task by @jdx in [#13192](https://github.com/jdx/mise/pull/13192)
+- **(vfox)** remove the cmake alias e2e test by @jdx in [0e85b7d](https://github.com/jdx/mise/commit/0e85b7dced5100477bd5e1db7efb517e1629668c)
+- extend timeout for aube node-gyp bootstrap by @jdx in [e43170f](https://github.com/jdx/mise/commit/e43170fd0710324de6a7f51e692c7e575a04494a)
+
+### 📦️ Dependency Updates
+
+- bump mbx to 1.11.1 by @jdx in [6769682](https://github.com/jdx/mise/commit/6769682a3206bfbea22bf740e0d2101a021c5cda)
+
+### 📦 Registry
+
+- add nubr by @colinhacks in [#13191](https://github.com/jdx/mise/pull/13191)
+- fix dbt-fusion version test for renamed binary output by @jdx in [873c400](https://github.com/jdx/mise/commit/873c4009ebb92a34cbaffd88e1304bcac203784b)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`Byron/dua-cli`](https://github.com/Byron/dua-cli)
+
 ## [2026.9.8](https://github.com/jdx/mise/compare/v2026.9.7..v2026.9.8) - 2026-09-14
 
 ### 🚀 Features
