@@ -46,7 +46,8 @@ cat >install-env/mise.toml <<'EOF'
 [tools]
 "npm:is-number" = { version = "7.0.0", install_env = { AUBE_BLOCK_EXOTIC_SUBDEPS = "false" } }
 EOF
-install_env_output="$(mise -C install-env install 2>&1)"
+install_env_output="$(mise -C install-env install 2>&1)" ||
+  fail "install-env install failed:\n$install_env_output"
 assert_contains_text "$install_env_output" "install_env (AUBE_BLOCK_EXOTIC_SUBDEPS) is ignored for npm:is-number"
 assert_contains_text "$install_env_output" "allow_exotic_deps"
 
