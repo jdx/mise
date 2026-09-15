@@ -154,9 +154,11 @@ env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
 
 ["test:unit-ci"]
 description = "run unit tests with CI time limits"
+# NEXTEST_PROFILE lets CI pick `ci-shared` on shared runners, where the strict
+# ceilings are not a usable signal. Defaults to the strict `ci` profile.
 run = [
-  "cargo nextest run --profile ci --all-features --ignore-rust-version --no-fail-fast",
-  "cargo nextest run --profile ci --workspace --exclude mise --ignore-rust-version --no-fail-fast",
+  "cargo nextest run --profile ${NEXTEST_PROFILE:-ci} --all-features --ignore-rust-version --no-fail-fast",
+  "cargo nextest run --profile ${NEXTEST_PROFILE:-ci} --workspace --exclude mise --ignore-rust-version --no-fail-fast",
   "cargo test --doc --workspace --exclude mise --ignore-rust-version",
 ]
 
