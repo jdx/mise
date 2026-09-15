@@ -194,7 +194,7 @@ async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Re
 }
 
 async fn usable_system_ruby() -> Option<PathBuf> {
-    let ruby = crate::file::which("ruby")?;
+    let ruby = crate::file::which_no_shims("ruby")?;
     ruby_is_compatible(&ruby).await.then_some(ruby)
 }
 
@@ -375,6 +375,53 @@ mod tests {
             return Ok(Some(ruby));
         }
         super::super::source::installed_ruby_bin().await
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn ignores_mise_shim_when_selecting_system_ruby() -> Result<()> {
+        const CHILD_ENV: &str = "MISE_TEST_TAP_RUBY_SELECTION_CHILD";
+        const EXPECTED_RUBY_ENV: &str = "MISE_TEST_TAP_EXPECTED_RUBY";
+
+        if std::env::var_os(CHILD_ENV).is_some() {
+            let expected = PathBuf::from(std::env::var_os(EXPECTED_RUBY_ENV).unwrap());
+            assert_eq!(usable_system_ruby().await, Some(expected));
+            return Ok(());
+        }
+
+        let temp = tempfile::tempdir()?;
+        let data_dir = temp.path().join("data");
+        let shims_dir = data_dir.join("shims");
+        let bin_dir = temp.path().join("bin");
+        crate::file::create_dir_all(&shims_dir)?;
+        crate::file::create_dir_all(&bin_dir)?;
+
+        let shim_ruby = shims_dir.join("ruby");
+        let system_ruby = bin_dir.join("ruby");
+        for ruby in [&shim_ruby, &system_ruby] {
+            crate::file::write(ruby, "#!/bin/sh\nexit 0\n")?;
+            crate::file::make_executable(ruby)?;
+        }
+
+        let path = std::env::join_paths([&shims_dir, &bin_dir])?;
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "system::packages::brew::tap::tests::ignores_mise_shim_when_selecting_system_ruby",
+            ])
+            .env(CHILD_ENV, "1")
+            .env(EXPECTED_RUBY_ENV, &system_ruby)
+            .env("MISE_DATA_DIR", &data_dir)
+            .env("MISE_SHIMS_DIR", &shims_dir)
+            .env("PATH", path)
+            .output()?;
+        assert!(
+            output.status.success(),
+            "child test failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Ok(())
     }
 
     #[test]
