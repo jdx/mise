@@ -1073,6 +1073,12 @@ pub(crate) fn resolution_advice(path: &str, reason: &str) -> String {
     if reason == super::reconcile::ConflictKind::Repository.describe() {
         "inspect the validation error, reconcile the repository with Git, then run `mise dot sync`"
             .into()
+    } else if reason == super::reconcile::ConflictKind::UnusableLive.describe() {
+        // Neither side of the repository is in question, so neither
+        // resolution can be applied: the path itself is what has to change.
+        format!(
+            "move {path} away or make it a readable file, then run `mise dot pull`; --take-remote and --keep-local cannot decide it"
+        )
     } else {
         format!(
             "inspect with `mise dot conflicts {path}`; resolve with `mise dot pull --take-remote {path}` or `mise dot pull --keep-local {path}`"
