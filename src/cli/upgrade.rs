@@ -296,11 +296,16 @@ impl Upgrade {
             }
         }
         if outdated.is_empty() {
-            if !explicit_config_bumps.is_empty() {
+            let installed_explicit_config_bumps = explicit_config_bumps
+                .iter()
+                .filter(|bump| explicit_bump_is_installed(&ts, &config, bump))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !installed_explicit_config_bumps.is_empty() {
                 if self.is_dry_run() {
-                    print_explicit_config_bumps(&explicit_config_bumps)?;
+                    print_explicit_config_bumps(&installed_explicit_config_bumps)?;
                 } else {
-                    apply_explicit_config_bumps(&explicit_config_bumps).await?;
+                    apply_explicit_config_bumps(&installed_explicit_config_bumps).await?;
                 }
             }
             let bump_outdated = if self.bump {
@@ -603,12 +608,11 @@ impl Upgrade {
             let explicit_config_bumps = explicit_config_bumps
                 .iter()
                 .filter(|bump| {
-                    successful_versions
-                        .iter()
-                        .any(|version| backend_args_match(version.ba(), bump.request.ba()))
-                        || !outdated.iter().any(|outdated| {
-                            backend_args_match(outdated.tool_version.ba(), bump.request.ba())
-                        })
+                    successful_versions.iter().any(|version| {
+                        backend_args_match(version.ba(), bump.request.ba())
+                    }) || (!outdated.iter().any(|outdated| {
+                        backend_args_match(outdated.tool_version.ba(), bump.request.ba())
+                    }) && explicit_bump_is_installed(&ts, config, bump))
                 })
                 .cloned()
                 .collect::<Vec<_>>();
@@ -1100,6 +1104,21 @@ fn backend_args_match(left: &BackendArg, right: &BackendArg) -> bool {
     let left = left.all_fulls();
     let right = right.all_fulls();
     left.iter().any(|identity| right.contains(identity))
+}
+
+fn explicit_bump_is_installed(
+    toolset: &Toolset,
+    config: &Arc<Config>,
+    bump: &ExplicitConfigBump,
+) -> bool {
+    toolset
+        .list_current_versions()
+        .into_iter()
+        .any(|(backend, version)| {
+            backend_args_match(version.ba(), bump.request.ba())
+                && version.request.version() == bump.request.version()
+                && backend.is_version_installed(config, &version, true)
+        })
 }
 
 fn effective_persistable_request<'a>(
