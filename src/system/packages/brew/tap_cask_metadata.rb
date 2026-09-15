@@ -34,6 +34,9 @@ end
 
 CASK_FILE = ENV.fetch("MISE_BREW_SOURCE_PATH")
 
+# Preserve target interpolation for resolution against mise's configured prefix.
+HOMEBREW_PREFIX = "$HOMEBREW_PREFIX".freeze
+
 module OS
   def self.mac? = ENV.fetch("MISE_BREW_OS") == "macos"
   def self.linux? = ENV.fetch("MISE_BREW_OS") == "linux"
