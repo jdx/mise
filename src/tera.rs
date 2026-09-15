@@ -1333,6 +1333,30 @@ pub(crate) fn get_tera_for_oci(dir: Option<&Path>) -> TeraEngine {
     }
 }
 
+/// Returns the normal mise renderer with command execution disabled, for values
+/// that must render the same however they are reached.
+///
+/// `[bootstrap]` resource values use this: `status`, `plan`, `apply --dry-run`,
+/// and `apply` all render the same declaration, so letting one of them shell
+/// out would either give a read-only command side effects or make the preview
+/// disagree with what is written.
+pub(crate) fn get_tera_without_exec(dir: Option<&Path>) -> TeraEngine {
+    const MESSAGE: &str = "exec() is not available in [bootstrap] resource values";
+    if use_tera_v1() {
+        let mut tera = get_tera_v1(dir);
+        tera.register_function("exec", move |_: &HashMap<String, JsonValue>| {
+            Err(tera1_err(MESSAGE))
+        });
+        TeraEngine::V1(Box::new(tera))
+    } else {
+        let mut tera = get_tera_v2(dir);
+        tera.register_function("exec", move |_: Kwargs, _: &State| -> TeraResult<Value> {
+            Err(tera_err(MESSAGE))
+        });
+        TeraEngine::V2(Box::new(tera))
+    }
+}
+
 /// Returns the normal mise renderer with command execution disabled.
 pub(crate) fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
     if use_tera_v1() {

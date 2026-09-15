@@ -617,19 +617,29 @@ impl<'a> CmdLineRunner<'a> {
 
     #[cfg(windows)]
     pub(crate) fn kill_all() {
-        let pids = RUNNING_PIDS.lock().unwrap();
-        for pid in pids.iter() {
-            if let Err(e) = std::process::Command::new("taskkill")
-                .arg("/F")
-                .arg("/T")
-                .arg("/PID")
-                .arg(pid.to_string())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-            {
-                warn!("Failed to kill cmd {pid}: {e}");
-            }
+        let killers: Vec<_> = {
+            let pids = RUNNING_PIDS.lock().unwrap();
+            pids.iter()
+                .filter_map(|pid| {
+                    std::process::Command::new("taskkill")
+                        .arg("/F")
+                        .arg("/T")
+                        .arg("/PID")
+                        .arg(pid.to_string())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .inspect_err(|e| warn!("Failed to kill cmd {pid}: {e}"))
+                        .ok()
+                })
+                .collect()
+        };
+        // Started together and waited on afterwards: a caller that exits as soon
+        // as this returns — the Ctrl-C handler does — must not leave a tree it
+        // is taking down still standing, and the trees come down concurrently
+        // rather than one `taskkill` at a time.
+        for mut killer in killers {
+            let _ = killer.wait();
         }
     }
 

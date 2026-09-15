@@ -2015,6 +2015,16 @@ Resolve a conflict with the repository's version
 \fB\-\-keep\-local\fR \fI<PATH>\fR
 Resolve a conflict by keeping this machine's version (published next)
 .TP
+\fB\-\-take\-remote\-all\fR
+Resolve every remaining conflict with the repository's version
+
+Paths named by \-\-keep\-local keep this machine's version; every other conflict takes the repository's. Useful on a newly adopted machine, where each pre\-existing file that differs is a separate conflict.
+.TP
+\fB\-\-keep\-local\-all\fR
+Resolve every remaining conflict by keeping this machine's version
+
+Paths named by \-\-take\-remote take the repository's version; every other conflict keeps this machine's. Each kept path must already be saved.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -4452,6 +4462,16 @@ Resolve a conflict with the repository's version
 .TP
 \fB\-\-keep\-local\fR \fI<PATH>\fR
 Resolve a conflict by keeping this machine's version (published next)
+.TP
+\fB\-\-take\-remote\-all\fR
+Resolve every remaining conflict with the repository's version
+
+Paths named by \-\-keep\-local keep this machine's version; every other conflict takes the repository's. Useful on a newly adopted machine, where each pre\-existing file that differs is a separate conflict.
+.TP
+\fB\-\-keep\-local\-all\fR
+Resolve every remaining conflict by keeping this machine's version
+
+Paths named by \-\-take\-remote take the repository's version; every other conflict keeps this machine's. Each kept path must already be saved.
 .TP
 \fB\-h, \-\-help\fR
 Print help
