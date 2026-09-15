@@ -209,7 +209,7 @@ fn write_test_app_receipt(cask: &Cask, app_name: &str) -> Result<PathBuf> {
         source: app_name.to_string(),
         target: Some(format!("$HOMEBREW_PREFIX/Applications/{app_name}")),
     };
-    let target = app_target_path(app.target_name())?;
+    let target = app_target_path(app.target_name()?)?;
     file::create_dir_all(&target)?;
     file::write(target.join("version"), "1.0.0")?;
     let version_dir = caskroom_version_dir(&cask.token, &cask.version);
@@ -622,7 +622,7 @@ fn completed_receipt_ignores_app_bundle_content_drift() -> Result<()> {
         apps: vec![app.clone()],
         ..Default::default()
     };
-    let app_target = app_target_path(app.target_name())?;
+    let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
     crate::file::write(app_target.join("Contents/app"), "original")?;
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
@@ -671,7 +671,7 @@ fn completed_receipt_missing_app_is_not_installed() -> Result<()> {
         apps: vec![app.clone()],
         ..Default::default()
     };
-    let app_target = app_target_path(app.target_name())?;
+    let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
     crate::file::write(app_target.join("Contents/app"), "original")?;
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
@@ -767,7 +767,7 @@ fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
         apps: vec![app.clone()],
         ..Default::default()
     };
-    let app_target = app_target_path(app.target_name())?;
+    let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(app_target.join("Contents"))?;
     crate::file::write(app_target.join("Contents/app"), "downloaded")?;
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
@@ -4315,7 +4315,7 @@ fn link_completion_adopts_homebrew_app_symlink() -> Result<()> {
     let target = tmp.path().join(relative);
     let caskroom_completion = caskroom.join(relative);
     let app_completion =
-        app_target_path(app.target_name())?.join("Contents/Resources/etc/docker.bash-completion");
+        app_target_path(app.target_name()?)?.join("Contents/Resources/etc/docker.bash-completion");
     file::create_dir_all(caskroom_completion.parent().unwrap())?;
     file::create_dir_all(app_completion.parent().unwrap())?;
     file::create_dir_all(target.parent().unwrap())?;
@@ -4352,7 +4352,7 @@ fn link_completion_rejects_other_file_in_declared_app() -> Result<()> {
         ..Default::default()
     };
     let target = completion.target_path()?;
-    let app_resources = app_target_path(app.target_name())?.join("Contents/Resources/etc");
+    let app_resources = app_target_path(app.target_name()?)?.join("Contents/Resources/etc");
     let expected = app_resources.join("expected.bash");
     let other = app_resources.join("other.bash");
     file::create_dir_all(&app_resources)?;
@@ -5690,13 +5690,13 @@ fn installed_cask_version_uses_only_recorded_legacy_targets() -> Result<()> {
     };
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
     file::create_dir_all(&caskroom)?;
-    file::create_dir_all(app_target_path(app.target_name())?)?;
+    file::create_dir_all(app_target_path(app.target_name()?)?)?;
     let receipt = CaskReceipt {
         schema_version: 0,
         version: cask.version.clone(),
         auto_updates: false,
         metadata_only_apps: Vec::new(),
-        apps: vec![app_target_path(app.target_name())?],
+        apps: vec![app_target_path(app.target_name()?)?],
         binaries: vec![],
         fonts: vec![],
         completions: vec![],
@@ -5763,7 +5763,7 @@ fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
         source: "Example.app".to_string(),
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
-    let target = app_target_path(app.target_name())?;
+    let target = app_target_path(app.target_name()?)?;
     file::create_dir_all(&target)?;
     file::write(target.join("version"), "1.0.0")?;
     let version_dir = caskroom_version_dir(&cask.token, &cask.version);
@@ -6145,7 +6145,7 @@ fn installed_cask_version_does_not_invent_wrapper_from_current_api() -> Result<(
     };
     let caskroom = caskroom_version_dir(&cask.token, &cask.version);
     file::create_dir_all(&caskroom)?;
-    let app_target = app_target_path(app.target_name())?;
+    let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(&app_target)?;
     let receipt = CaskReceipt {
         schema_version: 0,
@@ -6652,6 +6652,206 @@ fn cask_appdir_uses_prefix_for_prefix_targeted_apps() -> Result<()> {
     };
 
     assert_eq!(cask_appdir(&[app])?, tmp.path().join("Applications"));
+    Ok(())
+}
+
+#[test]
+fn nested_app_source_defaults_to_validated_bundle_basename() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    for source in [
+        "Example.app",
+        "nested/Example.app",
+        "nested/deeper/Example.app",
+    ] {
+        let app = AppArtifact {
+            source: source.into(),
+            target: None,
+        };
+        assert_eq!(app.target_name()?, "Example.app");
+        let artifacts = CaskArtifacts {
+            apps: vec![app],
+            ..Default::default()
+        };
+        assert_eq!(
+            artifacts.app_target_paths()?,
+            [target_app_dir()?.join("Example.app")]
+        );
+    }
+    for target in ["Renamed.app", "$HOMEBREW_PREFIX/Applications/Renamed.app"] {
+        let app = AppArtifact {
+            source: "nested/Example.app".into(),
+            target: Some(target.into()),
+        };
+        assert_eq!(app.target_name()?, target);
+    }
+    for source in [
+        "",
+        ".",
+        "..",
+        "/tmp/Example.app",
+        "../Example.app",
+        "nested/../Example.app",
+        "Example.app/",
+        "nested/",
+        "Example\0.app",
+        "nested\\Example.app",
+        "__MACOSX/Example.app",
+    ] {
+        let app = AppArtifact {
+            source: source.into(),
+            target: None,
+        };
+        assert!(app.target_name().is_err(), "accepted {source:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_app_sources_reject_duplicate_targets() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let appdir = tmp.path().canonicalize()?.join("Applications");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &appdir);
+    let mut cask = test_cask("example", "1.0.0");
+    for second in [
+        serde_json::json!({"app": ["two/Example.app"]}),
+        serde_json::json!({"app": ["two/Other.app", {"target": "Example.app"}]}),
+        serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("Example.app")}]}),
+        // Distinct application paths still share a Caskroom bundle basename.
+        serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("subdir/Example.app")}]}),
+    ] {
+        cask.artifacts = vec![serde_json::json!({"app": ["one/Example.app"]}), second];
+        let error = cask_artifacts(&cask)?
+            .app_target_paths()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("duplicate app target"), "{error}");
+        assert!(error.contains("Example.app"), "{error}");
+    }
+    cask.artifacts[1] = serde_json::json!({"app": ["two/Example.app", {"target": "Renamed.app"}]});
+    assert_eq!(
+        cask_artifacts(&cask)?.app_target_paths()?,
+        [appdir.join("Example.app"), appdir.join("Renamed.app")]
+    );
+    assert!(!appdir.exists());
+    Ok(())
+}
+
+#[test]
+fn app_sources_reject_case_only_target_collisions() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let appdir = tmp.path().canonicalize()?.join("Applications");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &appdir);
+    let mut cask = test_cask("example", "1.0.0");
+    for second in [
+        serde_json::json!({"app": ["two/example.app"]}),
+        serde_json::json!({"app": ["two/Other.app", {"target": "example.app"}]}),
+        serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("example.app")}]}),
+        // Different app directories still collide in the shared Caskroom.
+        serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("subdir/example.app")}]}),
+    ] {
+        cask.artifacts = vec![serde_json::json!({"app": ["one/Example.app"]}), second];
+        let error = cask_artifacts(&cask)?
+            .app_target_paths()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("duplicate app target"), "{error}");
+        assert!(error.contains("example.app"), "{error}");
+    }
+    assert!(!appdir.exists());
+    Ok(())
+}
+
+#[test]
+fn app_sources_reject_unicode_equivalent_target_collisions() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let appdir = tmp.path().canonicalize()?.join("Applications");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &appdir);
+    let mut cask = test_cask("example", "1.0.0");
+    for (first, second) in [
+        ("Caf\u{e9}.app", "Cafe\u{301}.app"),
+        ("Cafe\u{301}.app", "Caf\u{e9}.app"),
+        ("CAF\u{c9}.app", "cafe\u{301}.app"),
+        ("\u{ac00}.app", "\u{1100}\u{1161}.app"),
+        // Case folding equates these names; lowercasing does not.
+        ("ϐ.app", "β.app"),
+        ("β.app", "ϐ.app"),
+        ("ς.app", "σ.app"),
+        ("Straße.app", "STRASSE.app"),
+        // Normalize before folding so the accent precedes ypogegrammeni
+        // before the latter folds from a combining mark to a letter.
+        ("\u{3b1}\u{345}\u{301}.app", "\u{3ac}\u{3b9}.app"),
+    ] {
+        for artifact in [
+            serde_json::json!({"app": [format!("two/{second}")]}),
+            serde_json::json!({"app": ["two/Other.app", {"target": second}]}),
+            serde_json::json!({"app": ["two/Other.app", {"target": appdir.join(second)}]}),
+            // Different app directories still collide in the shared Caskroom.
+            serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("subdir").join(second)}]}),
+        ] {
+            cask.artifacts = vec![
+                serde_json::json!({"app": [format!("one/{first}")]}),
+                artifact,
+            ];
+            let error = cask_artifacts(&cask)?
+                .app_target_paths()
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("duplicate app target"), "{error}");
+            assert!(error.contains(second), "{error}");
+        }
+    }
+    // Preserve original spelling and do not strip accents from distinct names.
+    cask.artifacts = vec![
+        serde_json::json!({"app": ["one/Cafe\u{301}.app"]}),
+        serde_json::json!({"app": ["two/Cafe.app"]}),
+    ];
+    assert_eq!(
+        cask_artifacts(&cask)?.app_target_paths()?,
+        [appdir.join("Cafe\u{301}.app"), appdir.join("Cafe.app")]
+    );
+    assert!(!appdir.exists());
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn nested_app_source_installs_under_bundle_basename() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let appdir = root.join("Applications");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &appdir);
+    let stage = root.join("stage");
+    let caskroom = root.join("Caskroom/example/1.0.0");
+    let source = "nested/Example.app";
+    file::create_dir_all(stage.join(source).join("Contents"))?;
+    file::write(stage.join(source).join("Contents/payload"), "example")?;
+    let app = AppArtifact {
+        source: source.into(),
+        target: None,
+    };
+
+    assert_eq!(
+        install_app(&stage, &caskroom, &app, true, false, false, false)?,
+        AppInstall::Installed {
+            metadata_only: false
+        }
+    );
+    for bundle in [appdir.join("Example.app"), caskroom.join("Example.app")] {
+        assert_eq!(
+            file::read_to_string(bundle.join("Contents/payload"))?,
+            "example"
+        );
+    }
+    assert!(!appdir.join("nested").exists());
+    assert!(!caskroom.join("nested").exists());
     Ok(())
 }
 
@@ -7330,7 +7530,7 @@ fn installed_cask_version_rejects_app_state_without_receipt() -> Result<()> {
 
     assert_eq!(mise_installed_cask_version(&cask)?, None);
 
-    file::create_dir_all(app_target_path(app.target_name())?)?;
+    file::create_dir_all(app_target_path(app.target_name()?)?)?;
     assert_eq!(mise_installed_cask_version(&cask)?, None);
     Ok(())
 }
@@ -7368,7 +7568,7 @@ fn installed_cask_version_uses_metadata_token() -> Result<()> {
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
     file::create_dir_all(caskroom_version_dir("configured-name", &cask.version))?;
-    file::create_dir_all(app_target_path(app.target_name())?)?;
+    file::create_dir_all(app_target_path(app.target_name()?)?)?;
 
     assert_eq!(mise_installed_cask_version(&cask)?, None);
 
