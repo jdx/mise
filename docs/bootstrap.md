@@ -348,7 +348,13 @@ additionally gets <code v-pre>{{ target }}</code> and
 <code v-pre>{{ secret(name="...") }}</code>.
 
 Values with no template syntax skip the renderer entirely, so a literal
-`%h`, `%i`, or `$HOME` in a unit or agent is passed through untouched.
+`%h`, `%i`, or `$HOME` in a unit or agent reaches the generated file unchanged by
+templating. Any `~` expansion a section documents still happens afterwards.
+
+<code v-pre>{{ exec(...) }}</code> is available in `[bootstrap.hooks]` and in file
+content templates, but not in unit or agent values: those render identically for
+`status`, `plan`, `--dry-run`, and `apply`, so a read-only command must never
+shell out.
 
 ## Hooks
 

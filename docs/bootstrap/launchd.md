@@ -99,10 +99,11 @@ stdout_path = "{{ config_root }}/log/sync.log"
 ```
 
 Every string value is rendered, including entries inside `args`, `environment`,
-and `queue_directories`. Values with no template syntax are left exactly as
-written.
-An agent whose template fails to render is reported and skipped; other agents
-still apply.
+and `queue_directories`. A value with no template syntax skips the renderer
+unchanged; the `~` expansion described above still applies to it afterwards. <code v-pre>{{ exec(...) }}</code> is not available here, for the
+[same reason as in systemd units](/bootstrap/systemd.html#templates). An agent
+whose template fails to render is reported and skipped; other agents still
+apply.
 
 ## Semantics
 

@@ -43,6 +43,23 @@ assert_contains "mise bootstrap linux systemd-units status 2>&1" "[bootstrap.lin
 assert_contains "mise bootstrap linux systemd-units status 2>&1" "dev.mise.fine.service"
 assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "dev.mise.broken.service"
 
+# a typo in a unit key is still reported, with the section and unit name
+cat <<'EOF' >mise.toml
+[bootstrap.linux.systemd.units.typo]
+exec_start = "/bin/true"
+exec_startt = "oops"
+EOF
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "bootstrap.linux.systemd.units.typo.exec_startt"
+
+# exec() is unavailable in unit values so status, plan, --dry-run, and apply all
+# render the same declaration and no read-only command can shell out
+cat <<EOF >mise.toml
+[bootstrap.linux.systemd.units.shellout]
+exec_start = "{{ exec(command='touch $PWD/side-effect') }}"
+EOF
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "exec() is not available"
+assert_fail "test -e side-effect"
+
 # LaunchAgents render the same way, on every platform
 cat <<'EOF' >mise.toml
 [vars]

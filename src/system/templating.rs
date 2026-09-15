@@ -13,13 +13,13 @@
 use std::ops::Deref;
 use std::path::Path;
 
-use eyre::{Result, WrapErr};
+use eyre::{Result, eyre};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use tera::Context;
 
 use crate::config::Config;
-use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
+use crate::tera::{TeraEngine, contains_template_syntax, get_tera_without_exec, render_str};
 
 /// A `[bootstrap]` entry that retains its raw TOML so string values can be
 /// rendered as templates before the entry is used.
@@ -31,6 +31,7 @@ use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 pub(crate) struct Templated<T> {
     raw: toml::Value,
     parsed: T,
+    ignored: Vec<String>,
 }
 
 impl<'de, T: DeserializeOwned> Deserialize<'de> for Templated<T> {
@@ -38,9 +39,19 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for Templated<T> {
     where
         D: serde::Deserializer<'de>,
     {
+        // Capturing the raw table consumes every key, so the outer
+        // `serde_ignored` pass over the config can no longer see unknown fields
+        // inside this entry. Record them here instead and let the caller report
+        // them with the section and entry name.
         let raw = toml::Value::deserialize(deserializer)?;
-        let parsed = T::deserialize(raw.clone()).map_err(serde::de::Error::custom)?;
-        Ok(Self { raw, parsed })
+        let mut ignored = vec![];
+        let parsed = serde_ignored::deserialize(raw.clone(), |path| ignored.push(path.to_string()))
+            .map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            raw,
+            parsed,
+            ignored,
+        })
     }
 }
 
@@ -48,6 +59,15 @@ impl<T> Deref for Templated<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.parsed
+    }
+}
+
+impl<T> Templated<T> {
+    /// Field paths inside this entry that no field of `T` claimed, relative to
+    /// the entry itself. The caller prefixes them with the section and entry
+    /// name when warning.
+    pub(crate) fn ignored_fields(&self) -> &[String] {
+        &self.ignored
     }
 }
 
@@ -74,13 +94,19 @@ impl<T: DeserializeOwned> Templated<T> {
         if !value_contains_template_syntax(&self.raw) {
             return Ok(self.parsed);
         }
-        let mut tera = get_tera(config_path.parent());
+        let mut tera = get_tera_without_exec(config_path.parent());
         let mut raw = self.raw;
-        render_value(&mut raw, &mut tera, ctx)
-            .wrap_err_with(|| format!("failed to render template in {}", config_path.display()))?;
-        T::deserialize(raw).wrap_err_with(|| {
-            format!(
-                "rendered template is no longer valid in {}",
+        // Flatten the cause into the message: these surface through `warn!`,
+        // which prints only the top-level error.
+        render_value(&mut raw, &mut tera, ctx).map_err(|err| {
+            eyre!(
+                "failed to render template in {}: {err}",
+                config_path.display()
+            )
+        })?;
+        T::deserialize(raw).map_err(|err| {
+            eyre!(
+                "rendered template is no longer valid in {}: {err}",
                 config_path.display()
             )
         })
@@ -183,6 +209,27 @@ mod tests {
             unit.exec_start.as_deref(),
             Some("{{ config_root }}/bin/serve")
         );
+    }
+
+    #[test]
+    fn test_unknown_fields_are_recorded_for_the_caller_to_report() {
+        let unit = templated(
+            r#"
+            exec_start = "/bin/true"
+            exec_startt = "typo"
+            "#,
+        );
+        assert_eq!(unit.ignored_fields(), ["exec_startt"]);
+    }
+
+    #[test]
+    fn test_exec_is_not_available_in_resource_values() {
+        let unit = templated(r#"exec_start = "{{ exec(command='echo hi') }}""#);
+        let err = unit
+            .render_with(&ctx(), Path::new("/home/u/proj/mise.toml"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("exec() is not available"), "{err}");
     }
 
     #[test]

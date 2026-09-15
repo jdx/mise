@@ -161,15 +161,23 @@ With that config in `~/src/my-project/mise.toml`, the generated unit contains
 only other way to write a home-relative path there.
 
 Every string value in a unit is rendered, including entries inside
-`environment`, `environment_file`, `after`, `wants`, and `requires`. Values with
-no template syntax are left exactly as written, so systemd specifiers such as
-`%h` and `%i` pass through untouched. A unit whose template fails to render is
+`environment`, `environment_file`, `after`, `wants`, and `requires`. A value with
+no template syntax skips the renderer unchanged, so systemd specifiers such as
+`%h` and `%i` reach the unit file as written; the `~` expansion described above
+still applies afterwards. A unit whose template fails to render is
 reported and skipped; other units still apply.
 
 Templates are rendered against the declaring config, not the current directory,
 so a unit declared in your global config keeps resolving
 <code v-pre>{{ config_root }}</code> to that config's directory no matter where
 you run `mise bootstrap` from.
+
+<code v-pre>{{ exec(...) }}</code> is not available in unit values. `status`,
+`plan`, `apply --dry-run`, and `apply` all render the same declaration, so a
+unit that shelled out would either give a read-only command side effects or
+make the preview disagree with the unit file that gets written. Use
+<code v-pre>{{ vars.*}}</code> or <code v-pre>{{ env.* }}</code>, or compute
+the value in a [bootstrap hook](/bootstrap.html#hooks).
 
 ## Semantics
 

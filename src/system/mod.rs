@@ -855,6 +855,12 @@ pub(crate) fn launchd_from_config(config: &Config) -> Vec<LaunchdRequest> {
     }
     let mut out = vec![];
     for (name, (agent, config_path)) in merged {
+        for field in agent.ignored_fields() {
+            warn!(
+                "unknown field in {}: bootstrap.macos.launchd.agents.{name}.{field}",
+                crate::file::display_path(&config_path)
+            );
+        }
         let agent = match agent.render(config, &config_path) {
             Ok(agent) => agent,
             Err(err) => {
@@ -1418,6 +1424,12 @@ pub(crate) fn systemd_from_config(config: &Config) -> Vec<SystemdRequest> {
     }
     let mut out = vec![];
     for (name, (unit, config_path)) in merged {
+        for field in unit.ignored_fields() {
+            warn!(
+                "unknown field in {}: bootstrap.linux.systemd.units.{name}.{field}",
+                crate::file::display_path(&config_path)
+            );
+        }
         let unit = match unit.render(config, &config_path) {
             Ok(unit) => unit,
             Err(err) => {
