@@ -568,8 +568,9 @@ printed `age1...` line is the recipient. Keep the file out of tracking, and
 restrict it with `chmod 600 ~/.config/mise/age.txt`.
 
 Repeat this on each machine and add every public key to `recipients`. A machine
-whose recipient is missing can still push and pull, but cannot read the
-encrypted files.
+whose recipient is missing can still transfer the encrypted history, but it
+cannot read those files: a pull that has to inspect or apply one fails with
+`cannot unlock <path>` rather than skipping it.
 
 #### Add a recovery recipient
 
@@ -611,10 +612,12 @@ every machine's recipient before saving private contents you expect all of them
 to read.
 
 ::: warning
-Plugin recipients such as `age1yubikey1...` require an interactive terminal.
-The history watcher runs in the background, so a plugin-only recipient list
-stops automatic saving with `plugin-dependent age recipients require
-interactive synchronization`. Include at least one age or SSH recipient.
+Plugin recipients such as `age1yubikey1...` require an interactive terminal,
+and encryption parses the whole list at once. The history watcher runs in the
+background, so a list containing **any** plugin recipient stops automatic
+saving with `plugin-dependent age recipients require interactive
+synchronization` — adding a native recipient alongside it does not help. For
+files the watcher saves, use only the age, tagged, and SSH forms above.
 :::
 
 mise encrypts contents before storing them in Git. Filenames and public
