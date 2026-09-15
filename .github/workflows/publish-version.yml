@@ -31,9 +31,10 @@ jobs:
        !github.event.release.prerelease) ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    # A primary rate limit clears only when its hourly window resets, so the
-    # step below waits it out rather than failing. Long enough to sit through
-    # that wait; the step itself bounds how long it will actually sleep.
+    # Only the release lookup can legitimately take hours, and only because it
+    # waits out a rate-limit window. This is the outer ceiling; each step sets
+    # its own bound so the generous value here never applies to work that
+    # should be quick — a run holds the concurrency group until it ends.
     timeout-minutes: 180
     permissions:
       contents: read
@@ -46,6 +47,8 @@ jobs:
 
       - name: Resolve published release
         id: release
+        # One reset wait (capped below) plus the short backoffs, with slack.
+        timeout-minutes: 75
         env:
           EVENT_TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -73,7 +76,7 @@ jobs:
             fi
             now=$(date +%s)
             if [[ "$remaining" =~ ^[0-9]+$ && "$reset" =~ ^[0-9]+$ ]] &&
-              ((remaining <= 1 && reset > now)); then
+              ((remaining == 0 && reset > now)); then
               wait_for=$((reset - now + 5))
               if ((wait_for > MAX_RATE_LIMIT_WAIT)); then
                 wait_for=$MAX_RATE_LIMIT_WAIT
@@ -118,6 +121,9 @@ jobs:
           echo "tag=$TAG" >>"$GITHUB_OUTPUT"
 
       - name: Publish VERSION and purge release caches
+        # Unrelated to the rate-limit wait, and the Cloudflare purge has no
+        # timeout of its own, so keep the bound this job had before.
+        timeout-minutes: 10
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
