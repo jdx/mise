@@ -1419,6 +1419,31 @@ impl Client {
                 headers,
             )
             .await?;
+            // This path returns before the GitHub 403 handling below, so without
+            // this a relayed rate limit stays a bare status error that
+            // `is_transient` calls deterministic and never retries. The relay
+            // authenticates upstream itself, so report auth from the headers we
+            // sent rather than claiming a token we do not hold. If the adapter
+            // does not forward the rate-limit headers this simply does not
+            // match, leaving the previous behaviour.
+            if options.error_for_status
+                && is_github_forbidden(&url, &response)
+                && is_github_rate_limited(&response)
+            {
+                let status_error = response
+                    .error_for_status_ref()
+                    .expect_err("403 response should be an error");
+                let used_github_token = headers.contains_key(AUTHORIZATION);
+                let rate_limit = github_rate_limit_summary(&response);
+                let body = read_bounded_error_body(response, self.timeout).await;
+                return Err(github_forbidden_report(
+                    status_error,
+                    used_github_token,
+                    rate_limit,
+                    true,
+                    &body,
+                ));
+            }
             return options.check_response(response);
         }
         apply_url_replacements(&mut url);
@@ -1594,7 +1619,13 @@ impl Client {
             // allow lists; stripping auth avoids that path.
             // https://github.com/orgs/community/discussions/191185
             // https://github.com/jdx/mise/discussions/9119
-            if used_github_token && body.contains("IP allow list") {
+            // Kept to api.github.com: stripping Authorization and re-sending is
+            // a response to that specific GitHub.com behaviour, not something
+            // to start doing against an enterprise host.
+            if used_github_token
+                && url.host_str() == Some("api.github.com")
+                && body.contains("IP allow list")
+            {
                 let mut headers = final_headers;
                 headers.remove(AUTHORIZATION);
                 debug!(
@@ -1673,8 +1704,11 @@ impl TextRequest<'_> {
     }
 }
 
+/// Matches what [`is_github_unauthorized`] accepts, so a GitHub Enterprise
+/// Server host gets the same 403 report and rate-limit classification as
+/// api.github.com rather than a bare status error.
 fn is_github_forbidden(url: &Url, resp: &Response) -> bool {
-    resp.status() == StatusCode::FORBIDDEN && url.host_str() == Some("api.github.com")
+    resp.status() == StatusCode::FORBIDDEN && crate::github::is_github_api_url(url)
 }
 
 fn is_github_unauthorized(url: &Url, resp: &Response) -> bool {
@@ -3047,6 +3081,21 @@ mod tests {
             r#"{"message":"API rate limit exceeded for installation."}"#
         )
     }
+    /// A secondary rate limit: quota still on the clock, `retry-after` set.
+    fn github_secondary_rate_limited_response() -> &'static str {
+        concat!(
+            "HTTP/1.1 403 Forbidden\r\n",
+            "Content-Type: application/json\r\n",
+            "X-RateLimit-Limit: 5000\r\n",
+            "X-RateLimit-Remaining: 117\r\n",
+            "X-RateLimit-Resource: core\r\n",
+            "Retry-After: 60\r\n",
+            "Content-Length: 55\r\n",
+            "Connection: close\r\n",
+            "\r\n",
+            r#"{"message":"You have exceeded a secondary rate limit."}"#
+        )
+    }
     fn github_oauth_token_response() -> &'static str {
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 51\r\nConnection: close\r\n\r\n{\"access_token\":\"ghu-refreshed\",\"expires_in\":28800}"
     }
@@ -3155,26 +3204,47 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         );
     }
 
-    /// An exhausted primary limit must be retryable. GitHub reports it as 403,
+    /// Drive a real request through the client so the whole chain is covered:
+    /// the 403 handler calling `is_github_rate_limited`, the marker reaching
+    /// `is_transient`, and the retry loop acting on it. Asserting on the
+    /// request count is the point — passing the flag to
+    /// `github_forbidden_report` by hand would still pass if the call site
+    /// stopped supplying it. `/api/v3/` makes the loopback host a GitHub API
+    /// URL, the same trick the OAuth tests use.
+    async fn send_github_403(response: &'static str, retries: i64) -> (Report, usize) {
+        let attempts = retries as usize + 1;
+        let (port, count) = spawn_canned_server(vec![response; 8]).await;
+        let _guard = set_test_http_retries(retries);
+        let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+        let err = client
+            .get_text_request(format!(
+                "http://127.0.0.1:{port}/api/v3/repos/aubepkg/aube/contents/x.json"
+            ))
+            .send()
+            .await
+            .expect_err("403 should be an error");
+        let seen = count.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            seen <= attempts,
+            "server saw {seen} requests, more than the {attempts} allowed"
+        );
+        (err, seen)
+    }
+
+    /// An exhausted primary limit must be retried. GitHub reports it as 403,
     /// which `is_transient`'s status check treats as deterministic, so without
     /// the marker a rate limit fails on the first attempt.
     #[tokio::test(flavor = "current_thread")]
-    async fn test_github_rate_limited_403_is_transient() {
-        let (port, _count) = spawn_canned_server(vec![github_rate_limited_response()]).await;
-        let url = format!("http://127.0.0.1:{port}/repos/aubepkg/aube/contents/x.json");
-        let resp = reqwest::Client::new().get(url).send().await.unwrap();
-        assert!(is_github_rate_limited(&resp));
-        let rate_limit = github_rate_limit_summary(&resp);
-        let status_error = resp
-            .error_for_status_ref()
-            .expect_err("403 response should be an error");
-        let body = resp.text().await.unwrap();
-        let err = github_forbidden_report(status_error, true, rate_limit, true, &body);
+    async fn test_github_rate_limited_403_is_retried() {
+        let (err, seen) = send_github_403(github_rate_limited_response(), 3).await;
 
+        assert_eq!(seen, 4, "exhausted limit should be retried: {err:?}");
         assert!(is_transient(&err), "{err:?}");
-        // The marker must not change what the user reads.
+        // The marker must not change what the user reads. The auth line is
+        // deliberately not asserted on: whether a token is attached depends on
+        // the environment the test runs in, and `is_github_api_url` matches the
+        // `/api/v3/` path used here. `github_forbidden_report` covers it.
         let msg = format!("{err:?}");
-        assert!(msg.contains("github auth: yes"), "{msg}");
         assert!(
             msg.contains("github rate limit: 0/5000 (core), resets at 1789456621"),
             "{msg}"
@@ -3185,21 +3255,28 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         );
     }
 
-    /// A 403 with quota left is a refusal, not a rate limit, and must stay
-    /// deterministic so mise does not retry something that cannot succeed.
+    /// The secondary-limit branch: quota remains, but `retry-after` says to
+    /// back off. Covered separately so neither detector can regress alone.
     #[tokio::test(flavor = "current_thread")]
-    async fn test_github_forbidden_with_quota_left_is_not_transient() {
-        let (port, _count) = spawn_canned_server(vec![github_forbidden_response()]).await;
-        let url = format!("http://127.0.0.1:{port}/repos/microsoft/edit/releases");
-        let resp = reqwest::Client::new().get(url).send().await.unwrap();
-        assert!(!is_github_rate_limited(&resp));
-        let rate_limit = github_rate_limit_summary(&resp);
-        let status_error = resp
-            .error_for_status_ref()
-            .expect_err("403 response should be an error");
-        let body = resp.text().await.unwrap();
-        let err = github_forbidden_report(status_error, true, rate_limit, false, &body);
+    async fn test_github_secondary_rate_limited_403_is_retried() {
+        let (err, seen) = send_github_403(github_secondary_rate_limited_response(), 2).await;
 
+        assert_eq!(seen, 3, "secondary limit should be retried: {err:?}");
+        assert!(is_transient(&err), "{err:?}");
+        assert!(
+            format!("{err:?}").contains("secondary rate limit"),
+            "{err:?}"
+        );
+    }
+
+    /// A 403 with quota left and no `retry-after` is a refusal, not a rate
+    /// limit. It must stay deterministic so mise does not spend the whole
+    /// backoff on something that cannot succeed.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_github_forbidden_with_quota_left_is_not_retried() {
+        let (err, seen) = send_github_403(github_forbidden_response(), 3).await;
+
+        assert_eq!(seen, 1, "a refusal should not be retried: {err:?}");
         assert!(!is_transient(&err), "{err:?}");
     }
 
