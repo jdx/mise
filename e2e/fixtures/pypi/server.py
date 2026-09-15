@@ -13,11 +13,15 @@ root = pathlib.Path(sys.argv[1])
 root.mkdir(exist_ok=True)
 
 
-def wheel(name, version, requires=(), script=False, data_script=False, command='lock-cli', output=None):
+python_requirements = {}
+
+
+def wheel(name, version, requires=(), script=False, data_script=False, command='lock-cli', output=None, requires_python='>=3.10'):
     module = name.replace('-', '_')
+    python_requirements[module] = requires_python
     dist = f'{module}-{version}.dist-info'
     files = {
-        f'{dist}/METADATA': f'Metadata-Version: 2.1\nName: {name}\nVersion: {version}\nRequires-Python: >=3.10\n'
+        f'{dist}/METADATA': f'Metadata-Version: 2.1\nName: {name}\nVersion: {version}\nRequires-Python: {requires_python}\n'
         + ('Provides-Extra: feature\n' if script else '')
         + ''.join(f'Requires-Dist: {req}\n' for req in requires),
         f'{dist}/WHEEL': 'Wheel-Version: 1.0\nGenerator: mise-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
@@ -45,6 +49,7 @@ def wheel(name, version, requires=(), script=False, data_script=False, command='
 
 def sdist(name, version):
     module = name.replace('-', '_')
+    python_requirements[module] = '>=3.10'
     root_name = f'{module}-{version}'
     backend = f'''import pathlib
 import zipfile
@@ -86,6 +91,7 @@ wheels = dict([
     wheel('mise-lock-dep', '2.0.0'),
     wheel('mise-lock-marker', '1.0.0'),
     wheel('mise-lock-extra', '1.0.0'),
+    wheel('mise-lock-strict', '1.0.0', requires_python='>=3.12'),
     wheel('mise-exposed', '1.0.0', script=True, command='exposed-cli', output='exposed'),
     wheel('mise-data-cli', '1.0.0', data_script=True, command='data-cli', output='data-script'),
     sdist('mise-source-cli', '1.0.0'),
@@ -102,12 +108,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split('?')[0]
         if path.startswith('/pypi/') and path.endswith('/json'):
-            body = json.dumps({'info': {'requires_python': '>=3.10'}, 'releases': {'1.0.0': [{}]}}).encode()
+            package = path.strip('/').split('/')[1].replace('-', '_')
+            requires_python = python_requirements.get(package, '>=3.10')
+            body = json.dumps({'info': {'requires_python': requires_python}, 'releases': {'1.0.0': [{}]}}).encode()
             content_type = 'application/json'
         elif path.startswith(('/simple/', '/pypi/simple/')):
             package = path.strip('/').split('/')[-1].replace('-', '_')
+            requires_python = python_requirements.get(package, '>=3.10').replace('<', '&lt;').replace('>', '&gt;')
             body = ''.join(
-                f'<a href="/files/{name}#sha256={hashlib.sha256(data).hexdigest()}" data-requires-python="&gt;=3.10">{name}</a>\n'
+                f'<a href="/files/{name}#sha256={hashlib.sha256(data).hexdigest()}" data-requires-python="{requires_python}">{name}</a>\n'
                 for name, data in wheels.items()
                 if name.startswith(package + '-') and ('-2.0.0-' not in name or (root / 'publish').exists())
             ).encode()

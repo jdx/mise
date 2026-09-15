@@ -119,9 +119,13 @@ Run `mise lock` after editing a sidecar to accept its updated digest before usin
 - **Complete lockfiles required:** revision-2 locked uv installs fail if their
   dependency graph is missing. Run `mise lock` to generate it.
 
-The graph covers the package's supported Python range, starting at Python 3.8,
-and retains all published wheel targets for portability. This can make sidecars
-large. Frozen installs reuse uv's artifact cache.
+The graph covers the Python range that every locked requirement supports,
+starting at Python 3.8, and retains all published wheel targets for portability.
+Requirements injected with [`with`](#with) or [`expose`](#expose) are part of
+that calculation: one pinned to an exact version raises the range's floor to the
+release's own `requires-python`, because a single release cannot span the wider
+range the way uv resolves an unpinned requirement. This can make sidecars large.
+Frozen installs reuse uv's artifact cache.
 
 Different dependency graphs and configured Python interpreters get separate
 installations; `mise ls` still shows the package version. For system Python,
@@ -286,6 +290,10 @@ requires uv and participates in dependency locking.
 [tools]
 "pypi:azure-cli" = { version = "latest", with = ["pip"] }
 ```
+
+A requirement pinned to an exact version narrows the locked Python range to the
+versions that release supports, so the tool may end up needing a newer
+interpreter than it declares on its own.
 
 ### `expose`
 
