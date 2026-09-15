@@ -7,7 +7,6 @@ pub(crate) use settings::{CompilePurpose, Settings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
-use std::iter::once;
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
@@ -1010,18 +1009,20 @@ impl Config {
         self.tasks_with_context(ctx).await
     }
 
+    /// Tasks keyed by both their name and their aliases. A task's own name
+    /// always wins over another task's alias, so a `tests` task aliased to
+    /// `test` in a parent config cannot shadow a `test` task defined closer to
+    /// the current directory (#13219).
     pub(crate) async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
         let tasks = self.tasks().await?;
-        Ok(tasks
+        let mut map: BTreeMap<String, Task> = tasks
             .values()
-            .flat_map(|t| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect())
+            .flat_map(|t| t.aliases.iter().map(|a| (a.to_string(), t.clone())))
+            .collect();
+        for t in tasks.values() {
+            map.insert(t.name.clone(), t.clone());
+        }
+        Ok(map)
     }
 
     pub(crate) async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {

@@ -423,12 +423,20 @@ impl Backend for AquaBackend {
         Ok(versions)
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
+    // No `latest_stable_version` override: the trait tries
+    // `latest_stable_version_info` first and only falls back to the string
+    // variant when it returns `None`. Delegating one to the other would repeat
+    // the registry lookup and the `/releases/latest` request to reach the same
+    // `None`.
+    async fn latest_stable_version_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Option<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         if self.include_prereleases(&opts) {
             return Ok(None);
         }
-        self.latest_marked_release_version().await
+        self.latest_marked_release_info().await
     }
 
     /// aqua knows, from the registry entry alone, when a version cannot be installed here:
@@ -2116,7 +2124,15 @@ impl AquaBackend {
         .await
     }
 
-    async fn latest_marked_release_version(&self) -> Result<Option<String>> {
+    /// The release GitHub marks as "Latest", with the metadata that came back
+    /// with it.
+    ///
+    /// Returning the release date matters for `minimum_release_age`: without it
+    /// the trait has to recover the date by looking this version up in the
+    /// cached remote-version list, and a list that has not yet caught up with
+    /// upstream makes an eligible release look ineligible. See
+    /// `latest_stable_candidate_allowed_by_before_date`.
+    async fn latest_marked_release_info(&self) -> Result<Option<VersionInfo>> {
         if Settings::get().offline() {
             trace!("Skipping latest stable version due to offline mode");
             return Ok(None);
@@ -2157,17 +2173,14 @@ impl AquaBackend {
         let target = PlatformTarget::from_current();
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
         let target_libc = Self::target_variant_libc(&target);
-        match versioned_package_from_tag(
+        match marked_release_version_info(
             &pkg,
-            &release.tag_name,
+            &release,
             target_os,
             target_arch,
             target_libc.as_deref(),
         ) {
-            Ok(Some((version, versioned_pkg))) if package_has_asset(&versioned_pkg) => {
-                Ok(Some(version))
-            }
-            Ok(Some(_)) | Ok(None) => Ok(None),
+            Ok(info) => Ok(info),
             Err(e) => {
                 debug!(
                     "Failed to resolve latest GitHub release tag for aqua package {}: {e}",
@@ -5043,6 +5056,43 @@ fn package_has_asset(pkg: &AquaPackage) -> bool {
     !pkg.no_asset.unwrap_or(false) && pkg.error_message.is_none()
 }
 
+/// Describe the release GitHub marks as "Latest" for the fast path in
+/// [`Backend::latest_stable_version_info`].
+///
+/// The release date has to travel with the version. Without it the trait falls
+/// back to looking the version up in the cached remote-version list to apply a
+/// `minimum_release_age` cutoff, and a list that has not caught up with upstream
+/// then hides a release that is in fact old enough to install.
+///
+/// `None` means the tag does not map to an installable version on this platform,
+/// so the caller should fall through to the full listing.
+fn marked_release_version_info(
+    pkg: &AquaPackage,
+    release: &github::GithubRelease,
+    target_os: &str,
+    target_arch: &str,
+    target_libc: Option<&str>,
+) -> Result<Option<VersionInfo>> {
+    let Some((version, versioned_pkg)) =
+        versioned_package_from_tag(pkg, &release.tag_name, target_os, target_arch, target_libc)?
+    else {
+        return Ok(None);
+    };
+    if !package_has_asset(&versioned_pkg) {
+        return Ok(None);
+    }
+    Ok(Some(VersionInfo {
+        version,
+        created_at: Some(release.released_at().to_string()),
+        release_url: Some(format!(
+            "https://github.com/{}/{}/releases/tag/{}",
+            pkg.repo_owner, pkg.repo_name, release.tag_name
+        )),
+        prerelease: Some(release.prerelease),
+        ..Default::default()
+    }))
+}
+
 /// Get tags with optional release timestamps and a pre-release flag.
 /// Returns `(tag_name, Option<released_at>, prerelease)` triples.
 ///
@@ -5735,6 +5785,121 @@ version_overrides:
 
         pkg.error_message = Some("unsupported version".to_string());
         assert!(!package_has_asset(&pkg));
+    }
+
+    fn marked_release(tag: &str, published_at: Option<&str>) -> github::GithubRelease {
+        github::GithubRelease {
+            tag_name: tag.to_string(),
+            draft: false,
+            prerelease: false,
+            // GitHub's `created_at` is the tagged commit's date, which can be
+            // much older than the publication date the cutoff cares about.
+            created_at: "2020-01-01T00:00:00Z".to_string(),
+            published_at: published_at.map(str::to_string),
+            assets: vec![],
+        }
+    }
+
+    /// The fast path has to hand the release date back with the version.
+    /// `minimum_release_age` otherwise has to re-derive the date from the
+    /// cached version list, and a list lagging upstream then hides a release
+    /// that is old enough to install (#12543).
+    #[test]
+    fn test_marked_release_version_info_carries_release_metadata() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+asset: tool.tar.gz
+"#,
+        );
+
+        let info = marked_release_version_info(
+            &pkg,
+            &marked_release("v1.2.3", Some("2026-09-09T21:43:48Z")),
+            "linux",
+            "amd64",
+            None,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(info.version, "1.2.3");
+        assert_eq!(info.created_at.as_deref(), Some("2026-09-09T21:43:48Z"));
+        assert_eq!(info.prerelease, Some(false));
+        assert_eq!(
+            info.release_url.as_deref(),
+            Some("https://github.com/owner/repo/releases/tag/v1.2.3")
+        );
+    }
+
+    #[test]
+    fn test_marked_release_version_info_falls_back_to_created_at() {
+        let pkg = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+asset: tool.tar.gz
+"#,
+        );
+
+        let info = marked_release_version_info(
+            &pkg,
+            &marked_release("v1.2.3", None),
+            "linux",
+            "amd64",
+            None,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(info.created_at.as_deref(), Some("2020-01-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn test_marked_release_version_info_skips_uninstallable_releases() {
+        let filtered = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+asset: tool.tar.gz
+version_filter: semver(">= 2.0.0")
+"#,
+        );
+        assert!(
+            marked_release_version_info(
+                &filtered,
+                &marked_release("v1.2.3", Some("2026-09-09T21:43:48Z")),
+                "linux",
+                "amd64",
+                None,
+            )
+            .unwrap()
+            .is_none()
+        );
+
+        let no_asset = pkg_from_yaml(
+            r#"
+type: github_release
+repo_owner: owner
+repo_name: repo
+no_asset: true
+"#,
+        );
+        assert!(
+            marked_release_version_info(
+                &no_asset,
+                &marked_release("v1.2.3", Some("2026-09-09T21:43:48Z")),
+                "linux",
+                "amd64",
+                None,
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 
     fn asset(name: &str) -> GithubAsset {

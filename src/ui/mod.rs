@@ -1,6 +1,7 @@
 pub(crate) use prompt::confirm;
 
-#[cfg_attr(any(test, windows), path = "ctrlc_stub.rs")]
+#[cfg_attr(test, path = "ctrlc_stub.rs")]
+#[cfg_attr(all(windows, not(test)), path = "ctrlc_windows.rs")]
 pub(crate) mod ctrlc;
 pub(crate) mod info;
 pub(crate) mod install_progress;

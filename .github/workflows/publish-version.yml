@@ -11,7 +11,17 @@ on:
         type: string
 
 concurrency:
-  group: publish-version-${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
+  # s3://mise/VERSION has one writer, so every run shares one group rather than
+  # grouping per tag. Two runs for different tags each pass the latest-release
+  # check below before either publishes, so overlapping them lets an older run
+  # finish last and move the pointer backwards. Serialized, a run that is no
+  # longer publishing the latest release re-resolves and refuses.
+  group: publish-version
+  # One group also means one pending slot, and the default `queue: single` lets
+  # an arriving run cancel whatever is pending — which could drop a release run
+  # that nothing else will retry. Queue them instead. (actionlint 1.7.12 does
+  # not know this key yet; GitHub documents it and accepts it.)
+  queue: max
 
 jobs:
   publish-version:
@@ -21,11 +31,16 @@ jobs:
        !github.event.release.prerelease) ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Only the release lookup can legitimately take hours, and only because it
+    # waits out a rate-limit window. This is the outer ceiling; each step sets
+    # its own bound so the generous value here never applies to work that
+    # should be quick — a run holds the concurrency group until it ends.
+    timeout-minutes: 180
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        timeout-minutes: 5
         with:
           # Release events normally check out the tag. Use the trusted default
           # branch so recovery also works for tags created before this script.
@@ -33,29 +48,83 @@ jobs:
 
       - name: Resolve published release
         id: release
+        # One reset wait (capped below) plus the short backoffs, with slack.
+        timeout-minutes: 75
         env:
           EVENT_TAG: ${{ github.event.release.tag_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
+          # Publishing a release fans out across many jobs that all spend the
+          # repository's hourly GITHUB_TOKEN budget, so this is the call in the
+          # release most likely to fail for reasons unrelated to the release
+          # itself. Retry rather than leaving VERSION behind over one 403.
+          #
+          # An exhausted primary rate limit is only cleared by its reset, so a
+          # short backoff cannot help and the wait is taken instead. Checking
+          # the API directly rather than bootstrapping wait-for-gh-rate-limit,
+          # since installing that helper would itself need the API access this
+          # is waiting for. /rate_limit does not consume quota, so it stays
+          # readable while the token is exhausted. Cap the sleep so a bogus
+          # reset cannot park a runner indefinitely.
+          MAX_RATE_LIMIT_WAIT=3900
+
+          wait_before_retry() {
+            local attempt="$1" status remaining="" reset="" now wait_for
+            if status=$(gh api rate_limit --jq '"\(.resources.core.remaining) \(.resources.core.reset)"' 2>/dev/null); then
+              remaining="${status%% *}"
+              reset="${status##* }"
+            fi
+            now=$(date +%s)
+            if [[ "$remaining" =~ ^[0-9]+$ && "$reset" =~ ^[0-9]+$ ]] &&
+              ((remaining == 0 && reset > now)); then
+              wait_for=$((reset - now + 5))
+              if ((wait_for > MAX_RATE_LIMIT_WAIT)); then
+                wait_for=$MAX_RATE_LIMIT_WAIT
+              fi
+              echo "::warning::GitHub API quota exhausted; waiting ${wait_for}s for the window to reset" >&2
+            else
+              wait_for=$((5 * 2 ** (attempt - 1)))
+              echo "::warning::gh api failed (attempt $attempt/5); retrying in ${wait_for}s" >&2
+            fi
+            sleep "$wait_for"
+          }
+
+          gh_api() {
+            local attempt out
+            for attempt in 1 2 3 4 5; do
+              if out=$(gh api "$@"); then
+                printf '%s' "$out"
+                return 0
+              fi
+              if ((attempt == 5)); then
+                break
+              fi
+              wait_before_retry "$attempt"
+            done
+            echo "::error::gh api $1 failed after 5 attempts" >&2
+            return 1
+          }
+
           TAG="${EVENT_TAG:-$INPUT_VERSION}"
           if ! [[ "$TAG" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]]; then
             echo "::error::Invalid release tag: $TAG" >&2
             exit 1
           fi
-          RELEASE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
-          if ! jq -e '.draft == false and .prerelease == false' <<< "$RELEASE" >/dev/null; then
-            echo "::error::$TAG is not a published stable release" >&2
-            exit 1
-          fi
-          LATEST_TAG="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+          # /releases/latest is by definition the newest release that is neither
+          # a draft nor a prerelease, so matching it proves the tag is a
+          # published stable release without spending a second API call.
+          LATEST_TAG="$(gh_api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
           if [[ "$TAG" != "$LATEST_TAG" ]]; then
             echo "::error::$TAG is not the latest stable release ($LATEST_TAG)" >&2
             exit 1
           fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >>"$GITHUB_OUTPUT"
 
       - name: Publish VERSION and purge release caches
+        # Unrelated to the rate-limit wait, and the Cloudflare purge has no
+        # timeout of its own, so keep the bound this job had before.
+        timeout-minutes: 10
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
