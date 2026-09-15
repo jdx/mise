@@ -95,6 +95,12 @@ Describe 'mise activate pwsh double-dash separator' {
         ) -join "`n"
         $out = Invoke-Activated $body $script:config
 
+        # Named rather than left as an absence: without the separator mise reads the whole
+        # line as its own, and `-NoProfile` — the first word past where the `--` used to be —
+        # is what it refuses. Asserting only that the script did not run would pass just as
+        # well if activation had failed or mise had died for some unrelated reason.
+        $out | Should -Not -Match 'ACTIVATION-ERROR'
+        $out | Should -Match "unexpected argument '-NoProfile'"
         $out | Should -Not -Match 'ARGS='
     }
 
