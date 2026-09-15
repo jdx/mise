@@ -608,11 +608,13 @@ impl Upgrade {
             let explicit_config_bumps = explicit_config_bumps
                 .iter()
                 .filter(|bump| {
-                    successful_versions.iter().any(|version| {
-                        backend_args_match(version.ba(), bump.request.ba())
-                    }) || (!outdated.iter().any(|outdated| {
-                        backend_args_match(outdated.tool_version.ba(), bump.request.ba())
-                    }) && explicit_bump_is_installed(&ts, config, bump))
+                    explicit_bump_is_successful(
+                        bump,
+                        &outdated,
+                        &successful_versions,
+                        &ts,
+                        config,
+                    )
                 })
                 .cloned()
                 .collect::<Vec<_>>();
@@ -1121,6 +1123,33 @@ fn explicit_bump_is_installed(
         })
 }
 
+fn explicit_bump_is_successful(
+    bump: &ExplicitConfigBump,
+    outdated: &[OutdatedInfo],
+    successful_versions: &[ToolVersion],
+    toolset: &Toolset,
+    config: &Arc<Config>,
+) -> bool {
+    if let Some(outdated) = outdated.iter().find(|outdated| {
+        backend_args_match(outdated.tool_version.ba(), bump.request.ba())
+            && outdated.tool_version.request.version() == bump.request.version()
+    }) {
+        return explicit_bump_matches_successful(outdated, successful_versions);
+    }
+
+    explicit_bump_is_installed(toolset, config, bump)
+}
+
+fn explicit_bump_matches_successful(
+    outdated: &OutdatedInfo,
+    successful_versions: &[ToolVersion],
+) -> bool {
+    successful_versions.iter().any(|version| {
+        backend_args_match(version.ba(), outdated.tool_request.ba())
+            && version.request.version() == outdated.tool_request.version()
+    })
+}
+
 fn effective_persistable_request<'a>(
     toolset: &'a Toolset,
     requested: &BackendArg,
@@ -1278,10 +1307,13 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 mod tests {
     use super::{
         backend_args_match, current_version_satisfies_hidden_release,
-        format_hidden_release_details, release_is_eligible_at,
+        explicit_bump_matches_successful, format_hidden_release_details, release_is_eligible_at,
     };
     use crate::cli::args::BackendArg;
+    use crate::toolset::outdated_info::OutdatedInfo;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
     use jiff::tz::TimeZone;
+    use std::sync::Arc;
 
     #[test]
     fn test_current_version_satisfies_hidden_release() {
@@ -1296,6 +1328,35 @@ mod tests {
         let explicit = BackendArg::from("aqua:terraform-linters/tflint");
 
         assert!(backend_args_match(&shorthand, &explicit));
+    }
+
+    #[test]
+    fn test_explicit_bump_matches_its_successful_selector() {
+        let backend = Arc::new(BackendArg::from("dummy"));
+        let original = ToolRequest::new(backend.clone(), "3", ToolSource::Argument).unwrap();
+        let bumped = ToolRequest::new(backend.clone(), "3.1.0", ToolSource::Argument).unwrap();
+        let outdated = OutdatedInfo {
+            name: "dummy".to_string(),
+            tool_request: bumped,
+            tool_version: ToolVersion::new(original, "1.0.0".to_string()),
+            requested: "3".to_string(),
+            current: Some("1.0.0".to_string()),
+            bump: Some("3.1.0".to_string()),
+            latest: "3.1.0".to_string(),
+            release_url: None,
+            source: ToolSource::Argument,
+        };
+        let other = ToolRequest::new(backend.clone(), "4.0.0", ToolSource::Argument).unwrap();
+        let own = ToolRequest::new(backend, "3.1.0", ToolSource::Argument).unwrap();
+
+        assert!(!explicit_bump_matches_successful(
+            &outdated,
+            &[ToolVersion::new(other, "4.0.0".to_string())],
+        ));
+        assert!(explicit_bump_matches_successful(
+            &outdated,
+            &[ToolVersion::new(own, "3.1.0".to_string())],
+        ));
     }
 
     #[test]

@@ -77,3 +77,28 @@ dummy = "1.0.0"
 EOF
 mise up --bump dummy@path:/does-not-exist --prune >/dev/null 2>&1 || :
 assert_contains "cat mise.toml" 'dummy = "1.0.0"'
+
+# Concrete selectors and successful typed selectors persist their own request.
+cat <<'EOF2' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF2
+mise install dummy@3.1.0
+mise up --bump dummy@3.1.0 --prune
+assert_contains "cat mise.toml" 'dummy = "3.1.0"'
+
+cat <<'EOF2' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF2
+mise install dummy@3.1.0
+mise up --bump dummy@prefix:3 --prune
+assert_contains "cat mise.toml" 'dummy = "prefix:3"'
+
+# A failed selector for the same backend must not be retained when its sibling succeeds.
+cat <<'EOF2' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF2
+mise up --bump dummy@3 dummy@path:/does-not-exist --prune >/dev/null 2>&1 || :
+assert_contains "cat mise.toml" 'dummy = "3"'
