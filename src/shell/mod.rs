@@ -3,7 +3,7 @@ use crate::hook_env;
 use indoc::formatdoc;
 use itertools::Itertools;
 use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use usage_rs::spec::ValueEnum;
 
@@ -129,9 +129,54 @@ pub trait Shell: Display {
                 ActivatePrelude::Set(k, v) => self.set_env(k, v),
                 ActivatePrelude::Prepend(k, v) => self.prepend_env(k, v),
                 ActivatePrelude::MovePrepend(k, v) => self.move_prepend_env(k, v),
+                ActivatePrelude::Raw(s) => s.clone(),
             })
             .join("")
     }
+
+    /// Emit `$HOME` (then `$USERPROFILE` on Windows), then `~`, into `PORTABLE_HOME_VAR`.
+    /// No generation-time paths: the output must be identical on every host.
+    fn render_portable_home_init(&self) -> String;
+
+    /// Emit an idempotent runtime block moving `front` (highest precedence
+    /// first) to the front of `key`.
+    ///
+    /// Emission is unconditional so a saved snapshot works on machines whose
+    /// runtime PATH differs from the generation-time PATH; the block itself
+    /// detects the already-positioned case at runtime so re-sourcing does
+    /// not grow PATH. Entries outside `$HOME` render as absolute paths.
+    fn render_portable_path_block(&self, key: &str, front: &[PortablePath]) -> String;
+
+    /// Whether generated functions and hooks must invoke the absolute
+    /// executable path even in portable scripts.
+    ///
+    /// PowerShell resolves `& 'mise'` to the `mise` wrapper function itself
+    /// (functions outrank PATH entries), so a bare name recurses until call
+    /// depth overflow. The other shells bypass wrappers (`command mise`,
+    /// `^"mise"`, `(external mise)`) or resolve safely, so only pwsh opts in.
+    fn prefer_absolute_exe(&self) -> bool {
+        false
+    }
+
+    /// Snapshot `$PATH` into `__MISE_ORIG_PATH` at runtime when unset, before
+    /// portable prepends run. Portable snapshots must not bake the
+    /// generation-time `PATH`; the templates snapshot after preludes, which
+    /// would otherwise preserve mise's own dirs.
+    fn render_orig_path_init(&self) -> String;
+}
+
+/// Home variable for portable scripts: one name in every shell so a shared
+/// snapshot is patched in one place.
+pub(crate) const PORTABLE_HOME_VAR: &str = "__MISE_HOME";
+
+/// One directory for a portable PATH block, in front-first order.
+pub struct PortablePath {
+    /// Home-relative suffix for runtime resolution through
+    /// `PORTABLE_HOME_VAR`, or `None` for dirs outside `$HOME` (which render
+    /// as absolute paths).
+    pub home_suffix: Option<String>,
+    /// Absolute path, rendered when the dir is outside `$HOME`.
+    pub absolute: String,
 }
 
 pub enum ActivatePrelude {
@@ -140,6 +185,19 @@ pub enum ActivatePrelude {
     /// Like Prepend but moves existing entries to the front (for fish --move).
     /// Used only by activate_shims to reorder paths on re-source.
     MovePrepend(String, String),
+    /// Verbatim shell code.
+    Raw(String),
+}
+
+/// Home-relative suffix of `path`, or `None` when it is not under `home`.
+pub fn home_suffix(path: &Path, home: &Path) -> Option<String> {
+    if home.as_os_str().is_empty() {
+        return None;
+    }
+    path.strip_prefix(home)
+        .ok()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 pub struct ActivateOptions {
@@ -216,6 +274,33 @@ mod tests {
     use super::*;
     use std::str::FromStr;
     use usage_rs::spec::ValueEnum;
+
+    /// A path under the home directory yields its relative suffix; anything
+    /// else (including an empty home) yields nothing so callers emit the
+    /// absolute path literally.
+    #[test]
+    fn home_suffix_splits_only_paths_under_home() {
+        use std::path::Path;
+        assert_eq!(
+            home_suffix(
+                Path::new("/home/alice/.local/share/mise/shims"),
+                Path::new("/home/alice")
+            ),
+            Some(".local/share/mise/shims".to_string())
+        );
+        assert_eq!(
+            home_suffix(
+                Path::new("/usr/local/share/mise/shims"),
+                Path::new("/home/alice")
+            ),
+            None
+        );
+        assert_eq!(
+            home_suffix(Path::new("/home/alice"), Path::new("/home/alice")),
+            None
+        );
+        assert_eq!(home_suffix(Path::new("/a/b"), Path::new("")), None);
+    }
 
     #[test]
     fn a_windows_path_resolves_to_its_shell() {

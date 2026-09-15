@@ -5,7 +5,7 @@ use shell_escape::unix::escape;
 
 use crate::config::Settings;
 use crate::env;
-use crate::shell::{self, ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, PORTABLE_HOME_VAR, PortablePath, Shell};
 
 #[derive(Default)]
 pub(super) struct Bash {}
@@ -27,6 +27,16 @@ fn render_flags_array(value: &str) -> String {
         .map(|word| escape(word.into()).to_string())
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Escape a path for a double-quoted bash/zsh word. Quoting neutralizes
+/// glob characters too, so the prefix check in `render_portable_path_block`
+/// compares literally even for homes holding `*`, `[`, or spaces.
+fn escape_dq(s: &str) -> String {
+    s.replace('\\', "/")
+        .replace('"', "\\\"")
+        .replace('`', "\\`")
+        .replace('$', "\\$")
 }
 
 impl Shell for Bash {
@@ -107,6 +117,43 @@ impl Shell for Bash {
             .replace('`', "\\`")
             .replace('$', "\\$");
         format!("export {k}=\"{v}:${k}\"\n")
+    }
+
+    fn render_portable_home_init(&self) -> String {
+        let var = PORTABLE_HOME_VAR;
+        format!(
+            "{var}=\"${{HOME:-${{USERPROFILE:-}}}}\"\n\
+             if [ -z \"${var}\" ]; then {var}=~; fi\n"
+        )
+    }
+
+    fn render_portable_path_block(&self, key: &str, front: &[PortablePath]) -> String {
+        debug_assert!(!front.is_empty());
+        let is_path = env::is_path_key(key);
+        let k = if is_path { "PATH" } else { key };
+        // One double-quoted word per entry: `$__MISE_HOME/...` for
+        // home-relative dirs, the absolute path otherwise.
+        let words: Vec<String> = front
+            .iter()
+            .map(|e| match &e.home_suffix {
+                Some(suffix) => format!("\"${}/{}\"", PORTABLE_HOME_VAR, escape_dq(suffix)),
+                None => format!("\"{}\"", escape_dq(&e.absolute)),
+            })
+            .collect();
+        // A single runtime prefix check keeps re-sourcing from growing PATH
+        // no matter how many dirs travel together; plain per-dir guards have
+        // no stable state once two managed dirs interleave.
+        let mut out = format!("if [[ \":${k}:\" != \":{}:\"* ]]; then\n", words.join(":"));
+        for word in words.iter().rev() {
+            out.push_str(&format!("export {k}={word}:${k}\n"));
+        }
+        out.push_str("fi\n");
+        out
+    }
+
+    fn render_orig_path_init(&self) -> String {
+        "if [ -z \"${__MISE_ORIG_PATH:-}\" ]; then export __MISE_ORIG_PATH=\"$PATH\"; fi\n"
+            .to_string()
     }
 
     fn unset_env(&self, k: &str) -> String {

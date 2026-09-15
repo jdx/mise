@@ -6,7 +6,7 @@ use shell_escape::unix::escape;
 
 use crate::config::Settings;
 use crate::shell::bash::Bash;
-use crate::shell::{self, ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, PortablePath, Shell};
 
 #[derive(Default)]
 pub(super) struct Zsh {}
@@ -163,6 +163,18 @@ impl Shell for Zsh {
         unset __MISE_ZSH_ACTIVATE_PATH
         unset __MISE_ZSH_ACTIVATE_ENV
         "#}
+    }
+
+    fn render_portable_home_init(&self) -> String {
+        Bash::default().render_portable_home_init()
+    }
+
+    fn render_portable_path_block(&self, key: &str, front: &[PortablePath]) -> String {
+        Bash::default().render_portable_path_block(key, front)
+    }
+
+    fn render_orig_path_init(&self) -> String {
+        Bash::default().render_orig_path_init()
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {

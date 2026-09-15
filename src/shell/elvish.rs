@@ -2,7 +2,8 @@
 use std::borrow::Cow;
 use std::fmt::Display;
 
-use crate::shell::{self, ActivateOptions, Shell};
+use crate::env;
+use crate::shell::{self, ActivateOptions, PORTABLE_HOME_VAR, PortablePath, Shell};
 use indoc::formatdoc;
 
 #[derive(Default)]
@@ -70,6 +71,7 @@ impl Shell for Elvish {
             unset-env MISE_SHELL
             unset-env __MISE_DIFF
             unset-env __MISE_SESSION
+            unset-env __MISE_HOME
         "#}
     }
 
@@ -82,6 +84,41 @@ impl Shell for Elvish {
         // thing this drops is the rewriting of values that never had one.
         let v = escape(v.into());
         format!("set-env {k} {v}\n")
+    }
+
+    fn render_portable_home_init(&self) -> String {
+        // The environment namespace rather than a `var`: redeclaring with
+        // `var` fails when a snapshot is sourced again, while `set-env`
+        // overwrites freely.
+        let var = PORTABLE_HOME_VAR;
+        format!(
+            "set-env {var} $E:HOME\n\
+             if (eq $E:HOME '') {{ set-env {var} $E:USERPROFILE }}\n\
+             if (eq $E:{var} '') {{ set-env {var} ~ }}\n"
+        )
+    }
+
+    fn render_portable_path_block(&self, key: &str, front: &[PortablePath]) -> String {
+        debug_assert!(!front.is_empty());
+        debug_assert!(env::is_path_key(key));
+        let var_ref = format!("$E:{}", PORTABLE_HOME_VAR);
+        let dir_sep = if cfg!(windows) { '\\' } else { '/' };
+        let render = |e: &PortablePath| match &e.home_suffix {
+            Some(suffix) => format!("{var_ref}{}", escape(format!("{dir_sep}{suffix}").into())),
+            None => escape(e.absolute.clone().into()).into_owned(),
+        };
+        let list = front.iter().map(render).collect::<Vec<_>>().join(" ");
+        // No temp variables: `var` redefinition fails on re-source, so the
+        // front list is written twice. `$paths` is elvish's list form of
+        // PATH; rebuilding it is always idempotent and order-stable.
+        format!(
+            "set paths [{list} $@(each {{|p| if (not (has-value [{list}] $p)) {{ put $p }} }} $paths)]\n"
+        )
+    }
+
+    fn render_orig_path_init(&self) -> String {
+        "if (not (has-env __MISE_ORIG_PATH)) { set-env __MISE_ORIG_PATH (get-env PATH) }\n"
+            .to_string()
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {

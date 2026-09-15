@@ -5,7 +5,8 @@ use crate::env::PATH_KEY;
 use crate::file;
 use crate::file::{canonicalize_or_self, touch_dir};
 use crate::shell::{
-    ActivateOptions, ActivatePrelude, EXAMPLE_SHELL, Shell, ShellType, require_shell,
+    ActivateOptions, ActivatePrelude, EXAMPLE_SHELL, PortablePath, Shell, ShellType, home_suffix,
+    require_shell,
 };
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, env};
@@ -74,6 +75,12 @@ pub(crate) struct Activate {
     /// Show "mise: <TOOL>@<VERSION>" message when changing directories
     #[usage(long, hide = true)]
     status: bool,
+
+    /// Bake absolute paths into the script (1), or emit a portable script
+    /// (0, default) resolving mise via PATH and home-relative dirs through a
+    /// __MISE_HOME header ($HOME, then $USERPROFILE, then ~)
+    #[usage(long, default = "0", choices("0", "1"))]
+    hardcoded_binary_paths: String,
 }
 
 impl Activate {
@@ -86,7 +93,30 @@ impl Activate {
         // touch ROOT to allow hook-env to run
         let _ = touch_dir(&dirs::DATA);
 
-        let mise_bin = if cfg!(target_os = "linux") {
+        let mise_bin = self.mise_bin(shell.as_ref());
+        match self.shims {
+            true => self.activate_shims(shell.as_ref(), &mise_bin)?,
+            false => self.activate(shell.as_ref(), &mise_bin)?,
+        }
+
+        Ok(())
+    }
+
+    fn mise_bin(&self, shell: &dyn Shell) -> PathBuf {
+        if self.is_portable() && !shell.prefer_absolute_exe() {
+            // Portable scripts invoke bare `mise` so no host-specific path
+            // is baked in; the real executable's directory is still
+            // positioned portably below for sessions where it is not on PATH.
+            PathBuf::from("mise")
+        } else {
+            Self::real_mise_bin()
+        }
+    }
+
+    /// Absolute path to the running executable, used for PATH setup and —
+    /// on shells that cannot bypass wrapper functions — for invocation.
+    fn real_mise_bin() -> PathBuf {
+        if cfg!(target_os = "linux") {
             // linux dereferences symlinks, so use argv0 instead
             let argv0 = PathBuf::from(&*env::ARGV0);
             let path = if argv0.is_absolute() {
@@ -103,24 +133,98 @@ impl Activate {
             }
         } else {
             env::MISE_BIN.clone()
-        };
-        match self.shims {
-            true => self.activate_shims(shell.as_ref(), &mise_bin)?,
-            false => self.activate(shell.as_ref(), &mise_bin)?,
         }
+    }
 
-        Ok(())
+    /// The real executable's directory, when it is an absolute non-nix path.
+    fn real_exe_dir() -> Option<PathBuf> {
+        let dir = Self::real_mise_bin();
+        let dir = dir.parent()?;
+        if dir.is_relative() || !is_dir_not_in_nix(dir) {
+            return None;
+        }
+        Some(dir.to_path_buf())
+    }
+
+    /// Home-relative suffix of the real executable's directory, if it lives
+    /// under `$HOME`. No generation-time PATH gate: a portable snapshot must
+    /// account for the runtime PATH.
+    fn portable_exe_dir_suffix() -> Option<String> {
+        home_suffix(&Self::real_exe_dir()?, &env::HOME)
+    }
+
+    fn is_portable(&self) -> bool {
+        self.hardcoded_binary_paths != "1"
+    }
+
+    /// Home header plus one idempotent runtime PATH block for `front_order`
+    /// (highest precedence first). `None` when no dir is home-relative so
+    /// callers fall back to absolute preludes. Dirs outside `$HOME` render
+    /// as absolute paths inside the block; emission itself is unconditional
+    /// so a saved snapshot works wherever it is sourced.
+    fn portable_path_preludes(
+        shell: &dyn Shell,
+        front_order: &[&Path],
+    ) -> Option<Vec<ActivatePrelude>> {
+        let home = env::HOME.clone();
+        let entries: Vec<PortablePath> = front_order
+            .iter()
+            .filter(|d| is_dir_not_in_nix(d) && !d.is_relative())
+            .map(|d| PortablePath {
+                home_suffix: home_suffix(d, &home),
+                absolute: d.to_string_lossy().to_string(),
+            })
+            .collect();
+        if !entries.iter().any(|e| e.home_suffix.is_some()) {
+            return None;
+        }
+        Some(vec![
+            ActivatePrelude::Raw(shell.render_portable_home_init()),
+            ActivatePrelude::Raw(shell.render_portable_path_block(&PATH_KEY, &entries)),
+        ])
     }
 
     fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
-        let exe_dir = mise_bin.parent().unwrap();
         let user_shims = dirs::shims();
         let system_shims = dirs::system_shims();
         let mut shim_dirs = vec![user_shims];
         if system_shims.is_dir() && !file::storage_paths_eq(&shim_dirs[0], &system_shims) {
             shim_dirs.push(system_shims);
         }
+        // In portable mode the generated command may be bare `mise`, so PATH
+        // setup uses the real executable's directory; hardcoded mode already
+        // carries the absolute path in `mise_bin`.
+        let real_exe_dir = self.is_portable().then(Self::real_exe_dir).flatten();
+        let exe_dir: &Path = real_exe_dir
+            .as_deref()
+            .unwrap_or_else(|| mise_bin.parent().unwrap());
         let mut prelude = vec![];
+        // Portable (default): one unconditional runtime block so a saved
+        // snapshot works where the runtime PATH differs; the block itself
+        // skips when already positioned, so re-sourcing does not grow PATH.
+        // The exe dir rides last (lowest precedence) so shims keep
+        // precedence — and so a cargo-installed mise never shadows its own
+        // shims with sibling binaries sharing its directory.
+        if self.is_portable() {
+            let mut front_order: Vec<&Path> = vec![];
+            if dirs::COMMAND_WRAPPERS.is_dir() {
+                front_order.push(dirs::COMMAND_WRAPPERS.as_path());
+            }
+            front_order.extend(shim_dirs.iter().map(PathBuf::as_path));
+            let exe_home = Self::portable_exe_dir_suffix().is_some();
+            if exe_home && let Some(exe) = real_exe_dir.as_deref() {
+                front_order.push(exe);
+            }
+            if let Some(portable) = Self::portable_path_preludes(shell, &front_order) {
+                prelude.extend(portable);
+                miseprint!("{}", shell.format_activate_prelude(&prelude))?;
+                return Ok(());
+            }
+            // Nothing home-relative at all: fall through to the absolute
+            // preludes below as the explicit fallback. An exe dir outside
+            // $HOME is covered there by the guarded absolute prepend; the
+            // portable default never bakes absolute exe paths.
+        }
         // The shims dir is always (move-)prepended so it stays at the front of PATH
         // even when activation is re-sourced (e.g. VS Code terminals) — see #8757.
         // The mise executable's own dir only needs to be present so `mise` is
@@ -162,10 +266,13 @@ impl Activate {
 
     fn activate(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let mut prelude = vec![];
-        // Preserve the user's PATH before adding the shim boundary. Shell activation
-        // normally snapshots this after preludes run, which would otherwise make
+        // Preserve the user's PATH before adding the shim boundary.
+        // Portable snapshots snapshot at runtime before prepends run; the
+        // templates snapshot after preludes, which would otherwise make
         // `mise deactivate` restore mise's own shim farms.
-        if env::__MISE_ORIG_PATH.is_none() {
+        if self.is_portable() {
+            prelude.push(ActivatePrelude::Raw(shell.render_orig_path_init()));
+        } else if env::__MISE_ORIG_PATH.is_none() {
             let path = std::env::join_paths(&*env::PATH)
                 .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
             prelude.push(ActivatePrelude::Set(
@@ -173,16 +280,44 @@ impl Activate {
                 path.to_string_lossy().to_string(),
             ));
         }
-        let shim_path_update =
-            if Settings::get().activate_shims && Settings::get().not_found_auto_install {
+        let wants_shims_positioned =
+            Settings::get().activate_shims && Settings::get().not_found_auto_install;
+        // Portable (default): one unconditional runtime block covering the
+        // shims and — when home-relative — the real exe dir last, so shims
+        // keep precedence. The block skips itself at runtime when already
+        // positioned, so re-sourcing does not grow PATH.
+        let real_exe_dir = self.is_portable().then(Self::real_exe_dir).flatten();
+        let exe_home = Self::portable_exe_dir_suffix().is_some();
+        let mut positioned_portably = false;
+        if self.is_portable() && wants_shims_positioned {
+            let user_shims = dirs::shims();
+            let system_shims = dirs::system_shims();
+            let mut front_order: Vec<&Path> = vec![user_shims.as_path()];
+            if system_shims.is_dir() && !file::storage_paths_eq(front_order[0], &system_shims) {
+                front_order.push(system_shims.as_path());
+            }
+            if exe_home && let Some(exe) = real_exe_dir.as_deref() {
+                front_order.push(exe);
+            }
+            // user_shims/system_shims/real_exe_dir outlive the call below.
+            if let Some(portable) = Self::portable_path_preludes(shell, &front_order) {
+                prelude.extend(portable);
+                positioned_portably = true;
+            }
+        }
+        if !positioned_portably {
+            let shim_path_update = if wants_shims_positioned {
                 position_shims_before_path()?
             } else {
                 remove_shims_from_path()?
             };
-        if let Some(set_path) = shim_path_update {
-            prelude.push(set_path);
+            if let Some(set_path) = shim_path_update {
+                prelude.push(set_path);
+            }
         }
-        let exe_dir = mise_bin.parent().unwrap();
+        let exe_dir: &Path = real_exe_dir
+            .as_deref()
+            .unwrap_or_else(|| mise_bin.parent().unwrap());
         let mut flags = vec![];
         if self.quiet {
             flags.push(" --quiet".to_string());
@@ -191,7 +326,23 @@ impl Activate {
             flags.push(" --status".to_string());
         }
         flags.extend(forwarded_logging_flags(&env::ARGS.read().unwrap()));
-        if let Some(prepend_path) = self.prepend_path(exe_dir) {
+        if self.is_portable() {
+            // Home-relative exe dirs ride inside the block above when shims
+            // are positioned; with shims off they get their own block here —
+            // after the baked remove above, whose Set would clobber prepends
+            // before it. Outside $HOME the portable default relies on PATH
+            // instead of baking an absolute path (system installs live on
+            // PATH already); `--hardcoded-binary-paths=1` restores the
+            // guarded absolute prepend.
+            if exe_home
+                && !wants_shims_positioned
+                && let Some(exe) = real_exe_dir.as_deref()
+                && let Some(portable) =
+                    Self::portable_path_preludes(shell, std::slice::from_ref(&exe))
+            {
+                prelude.extend(portable);
+            }
+        } else if let Some(prepend_path) = self.prepend_path(exe_dir) {
             prelude.push(prepend_path);
         }
 
@@ -360,7 +511,7 @@ fn is_dir_not_in_nix(dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        are_dirs_first_in_paths, forwarded_logging_flags, is_dir_first_in_paths,
+        Activate, are_dirs_first_in_paths, forwarded_logging_flags, is_dir_first_in_paths,
         should_prepend_shims,
     };
     use std::path::PathBuf;
@@ -431,6 +582,148 @@ mod tests {
     #[test]
     fn nothing_is_forwarded_without_a_logging_flag() {
         assert!(forwarded_logging_flags(&args(&["mise", "activate", "bash"])).is_empty());
+    }
+
+    fn activate_with(hardcoded_binary_paths: &str) -> Activate {
+        Activate {
+            shell_type: None,
+            quiet: false,
+            shell: None,
+            no_hook_env: false,
+            shims: false,
+            status: false,
+            hardcoded_binary_paths: hardcoded_binary_paths.to_string(),
+        }
+    }
+
+    #[test]
+    fn portable_mise_bin_by_default() {
+        use crate::shell::ShellType;
+        let shell = ShellType::Bash.as_shell();
+        assert_eq!(
+            activate_with("0").mise_bin(shell.as_ref()),
+            PathBuf::from("mise")
+        );
+    }
+
+    #[test]
+    fn hardcoded_mise_bin_is_absolute() {
+        use crate::shell::ShellType;
+        let shell = ShellType::Bash.as_shell();
+        assert!(activate_with("1").mise_bin(shell.as_ref()).is_absolute());
+    }
+
+    /// Pwsh keeps the absolute executable: `& 'mise'` inside the `mise`
+    /// wrapper function would resolve to the function itself and recurse
+    /// until call depth overflow (functions outrank PATH entries, unlike
+    /// bash's `command mise` or nu's `^"mise"`).
+    #[test]
+    fn pwsh_keeps_the_absolute_exe_in_portable_mode() {
+        use crate::shell::ShellType;
+        let shell = ShellType::Pwsh.as_shell();
+        assert!(activate_with("0").mise_bin(shell.as_ref()).is_absolute());
+    }
+
+    /// One header plus one idempotent runtime block; zero churn: the
+    /// generation-time home appears nowhere no matter how many dirs are
+    /// positioned.
+    #[test]
+    fn portable_preludes_reference_one_home_header() {
+        use crate::shell::ShellType;
+        use std::path::Path;
+        let home = crate::env::HOME.clone();
+        let home_str = home.to_string_lossy().to_string();
+        let shims = home.join(".local/share/mise/shims");
+        let wrappers = home.join(".local/share/mise/command-wrappers/bin");
+        let shell = ShellType::Bash.as_shell();
+        let preludes = Activate::portable_path_preludes(
+            shell.as_ref(),
+            &[wrappers.as_path(), shims.as_path()],
+        )
+        .expect("home-relative dirs render portably");
+        assert_eq!(preludes.len(), 2);
+        let rendered = shell.format_activate_prelude(&preludes);
+        assert_eq!(rendered.matches(&home_str).count(), 0, "{rendered}");
+        assert!(
+            rendered.contains("$__MISE_HOME/.local/share/mise/shims"),
+            "{rendered}"
+        );
+        // The block guards itself at runtime so re-sourcing is a no-op.
+        assert!(rendered.contains("if [["), "{rendered}");
+        assert!(rendered.contains("fi\n"), "{rendered}");
+        // Wrappers keep precedence over shims in the final PATH.
+        let wrappers_pos = rendered
+            .find(".local/share/mise/command-wrappers/bin")
+            .unwrap();
+        let shims_pos = rendered.find(".local/share/mise/shims").unwrap();
+        assert!(wrappers_pos < shims_pos, "{rendered}");
+        // The header resolves at runtime: HOME, then USERPROFILE, then ~.
+        // (Spelled ${HOME} in bash, $HOME in fish, $env.HOME in nu, etc.)
+        assert!(rendered.contains("HOME"), "{rendered}");
+        assert!(rendered.contains("USERPROFILE"), "{rendered}");
+        // Outside $HOME there is nothing to centralize: no header at all.
+        let outside_only = if cfg!(windows) {
+            Path::new("C:/ProgramData/mise/shims")
+        } else {
+            Path::new("/usr/local/share/mise/shims")
+        };
+        assert!(Activate::portable_path_preludes(shell.as_ref(), &[outside_only]).is_none());
+    }
+
+    /// A system dir outside $HOME still rides along as an absolute path
+    /// inside the block — otherwise its commands would vanish from PATH.
+    #[test]
+    fn portable_preludes_keep_outside_home_dirs_absolute() {
+        use crate::shell::ShellType;
+        use std::path::Path;
+        let home = crate::env::HOME.clone();
+        let shims = home.join(".local/share/mise/shims");
+        let shell = ShellType::Bash.as_shell();
+        // `/usr/local/...` is not absolute on Windows (no drive prefix), so
+        // it would be filtered as relative there; use a drive-absolute path.
+        let outside = if cfg!(windows) {
+            "C:/ProgramData/mise/shims"
+        } else {
+            "/usr/local/share/mise/shims"
+        };
+        let preludes = Activate::portable_path_preludes(
+            shell.as_ref(),
+            &[Path::new(outside), shims.as_path()],
+        )
+        .expect("mixed dirs render portably");
+        assert_eq!(preludes.len(), 2);
+        let rendered = shell.format_activate_prelude(&preludes);
+        assert!(rendered.contains(&format!("\"{outside}\"")), "{rendered}");
+        assert!(
+            rendered.contains("$__MISE_HOME/.local/share/mise/shims"),
+            "{rendered}"
+        );
+    }
+
+    /// Every shell resolves home at runtime (HOME, then USERPROFILE, then ~)
+    /// with zero generation-time churn baked in.
+    #[test]
+    fn portable_home_init_is_zero_churn_in_every_shell() {
+        use crate::shell::ShellType;
+        let home_str = crate::env::HOME.to_string_lossy().to_string();
+        for shell_type in [
+            ShellType::Bash,
+            ShellType::Zsh,
+            ShellType::Fish,
+            ShellType::Nu,
+            ShellType::Pwsh,
+            ShellType::Xonsh,
+            ShellType::Elvish,
+        ] {
+            let shell = shell_type.as_shell();
+            let init = shell.render_portable_home_init();
+            assert!(init.contains("HOME"), "{shell_type}: {init}");
+            assert!(init.contains("USERPROFILE"), "{shell_type}: {init}");
+            assert!(
+                !init.contains(&home_str),
+                "{shell_type} bakes in generation-time home: {init}"
+            );
+        }
     }
 
     #[test]

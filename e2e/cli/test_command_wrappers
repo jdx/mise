@@ -22,7 +22,8 @@ EOF
 
 mise reshim
 assert_contains "mise hook-env -s bash --force" "$MISE_DATA_DIR/command-wrappers/bin"
-assert_contains "mise activate bash --shims" "$MISE_DATA_DIR/command-wrappers/bin"
+assert_contains "mise activate bash --shims" '__MISE_HOME/.local/share/mise/command-wrappers/bin'
+assert_contains "mise activate bash --shims --hardcoded-binary-paths=1" "$MISE_DATA_DIR/command-wrappers/bin"
 eval "$(mise activate bash --shims)"
 eval "$(mise activate bash --shims)"
 assert "printf '%s\n' \"\$PATH\" | tr ':' '\n' | grep -cx '$MISE_DATA_DIR/command-wrappers/bin'" "1"

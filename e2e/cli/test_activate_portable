@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# Portable is the default: mise resolves via PATH, home-relative shims dirs
+# through a __MISE_HOME header ($HOME, then $USERPROFILE, then ~).
+# Zero churn: no generation-time home appears anywhere in the output.
+
+assert_contains "mise activate bash" "__MISE_HOME"
+assert_contains "mise activate bash" '__MISE_HOME/.local/share/mise/shims'
+assert_not_contains "mise activate bash" "export PATH=\"$HOME/.local/share/mise/shims"
+
+assert_contains "mise activate zsh" "__MISE_HOME"
+assert_contains "mise activate fish" "__MISE_HOME"
+assert_contains "mise activate nu" "__MISE_HOME"
+assert_contains "mise activate pwsh" "__MISE_HOME"
+assert_contains "mise activate xonsh" "__MISE_HOME"
+assert_contains "mise activate elvish" "__MISE_HOME"
+
+# Opting out restores absolute paths with no header.
+assert_contains "mise activate bash --hardcoded-binary-paths=1" "$HOME/.local/share/mise/shims"
+assert_not_contains "mise activate bash --hardcoded-binary-paths=1" "__MISE_HOME"

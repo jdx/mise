@@ -10,13 +10,16 @@ MISE_BIN=$(command -v mise)
 BASH_BIN=$(command -v bash)
 CUSTOM_PATH="/some/other/bin:$SHIMS_DIR:/usr/bin"
 
-# Shims later in PATH: should be emitted as a prepend with shims first
-assert_contains "env PATH='$CUSTOM_PATH' $MISE_BIN activate bash --shims" "export PATH=\"$SHIMS_DIR:"
+# Shims later in PATH: should be emitted as a portable runtime block with shims first
+assert_contains "env PATH='$CUSTOM_PATH' $MISE_BIN activate bash --shims" '__MISE_HOME/.local/share/mise/shims'
+assert_contains "env PATH='$CUSTOM_PATH' $MISE_BIN activate bash --shims --hardcoded-binary-paths=1" "export PATH=\"$SHIMS_DIR:"
 
-# Shims already first and the mise executable dir already present: no PATH
-# change is needed, so activation emits no prepend.
+# Shims already first and the mise executable dir already present: sourcing
+# must not change PATH (the runtime block detects the positioned case), so
+# the script stays portable and emits no generation-time snapshot.
 EXE_DIR="$(dirname "$MISE_BIN")"
-assert_not_contains "env PATH='$SHIMS_DIR:$EXE_DIR:/usr/bin' $MISE_BIN activate bash --shims" "export PATH="
+assert_contains "env PATH='$SHIMS_DIR:$EXE_DIR:/usr/bin' $MISE_BIN activate bash --shims" '__MISE_HOME'
+assert "env PATH='$SHIMS_DIR:$EXE_DIR:/usr/bin' \"$BASH_BIN\" -c 'eval \"\$($MISE_BIN activate bash --shims)\"; printf \"%s\" \"\$PATH\"'" "$SHIMS_DIR:$EXE_DIR:/usr/bin"
 
 check_repeated_source() {
   local shell_type="$1"
@@ -60,7 +63,8 @@ if ! out="$(env PATH="$EXE_DIR:/usr/local/bin:/usr/bin" "$MISE_BIN" activate bas
   printf '%s\n' "$out"
   exit 1
 fi
-assert_contains_text "$out" "export PATH=\"$SHIMS_DIR:"
+assert_contains_text "$out" '__MISE_HOME/.local/share/mise/shims'
+assert_contains_text "$out" "export PATH="
 path_lines="$(printf '%s\n' "$out" | grep -c 'export PATH=' || true)"
 if [[ $path_lines != "1" ]]; then
   echo "FAIL: expected exactly one 'export PATH=' line (shims only) since the mise dir is already in PATH, got $path_lines:"

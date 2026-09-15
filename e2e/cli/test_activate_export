@@ -5,8 +5,12 @@
 # 1) activate output contains 'export __MISE_EXE='
 assert_contains "mise activate bash" "export __MISE_EXE="
 
-# 2) __MISE_EXE should be an absolute path (starts with /)
-assert_contains "mise activate bash" "export __MISE_EXE=/"
+# 2) portable (default) resolves mise via PATH so snapshots stay host-independent
+assert_contains "mise activate bash" "export __MISE_EXE=mise"
+assert_not_contains "mise activate bash" "export __MISE_EXE=/"
+
+# 2b) opting out restores the absolute path
+assert_contains "mise activate bash --hardcoded-binary-paths=1" "export __MISE_EXE=/"
 
 # 3) Child shell can access __MISE_EXE because it is exported
 eval "$(mise activate bash --no-hook-env)"

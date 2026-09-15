@@ -106,7 +106,15 @@ printf 'COMPLETE=ok\n'
             $env:SHELL = 'C:\Program Files\Git\usr\bin\bash.exe'
             $env:MSYSTEM = 'MINGW64'
             $env:WSL_DISTRO_NAME = 'inherited-marker'
+            # Portable (default) output carries no host paths at all, only the
+            # __MISE_HOME runtime header — so it is inherently native-safe.
             $output = mise activate bash --shims | Out-String
+            $LASTEXITCODE | Should -Be 0
+            $output | Should -Match '__MISE_HOME'
+            $output | Should -Not -Match '/c/|/cygdrive/|msys|cygwin'
+            # Hardcoded mode still bakes native paths: a native caller must get
+            # drive-letter paths despite the inherited POSIX hints.
+            $output = mise activate bash --shims --hardcoded-binary-paths=1 | Out-String
             $LASTEXITCODE | Should -Be 0
             $output | Should -Match '[A-Za-z]:[\\/]'
         }

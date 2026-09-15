@@ -5,7 +5,7 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
-use crate::shell::{self, ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, PORTABLE_HOME_VAR, PortablePath, Shell};
 
 #[derive(Default)]
 pub(super) struct Pwsh {}
@@ -374,6 +374,64 @@ impl Shell for Pwsh {
         let k = escape_env_name(k);
         let v = escape_sq(v);
         format!("${{Env:{k}}}='{v}'\n")
+    }
+
+    fn render_portable_home_init(&self) -> String {
+        let var = PORTABLE_HOME_VAR;
+        format!(
+            "${var} = $env:HOME\n\
+             if (-not ${var} -or ${var} -eq '' -or ${var} -eq '~') {{ ${var} = $env:USERPROFILE }}\n\
+             if (-not ${var} -or ${var} -eq '' -or ${var} -eq '~') {{ ${var} = (Resolve-Path ~ -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path -ErrorAction SilentlyContinue) }}\n"
+        )
+    }
+
+    fn render_portable_path_block(&self, key: &str, front: &[PortablePath]) -> String {
+        debug_assert!(!front.is_empty());
+        let var = PORTABLE_HOME_VAR;
+        let k = escape_env_name(key);
+        let render = |e: &PortablePath| match &e.home_suffix {
+            Some(suffix) => {
+                let sep = if cfg!(windows) { '\\' } else { '/' };
+                let suffix = suffix
+                    .replace('`', "``")
+                    .replace('$', "`$")
+                    .replace('"', "`\"");
+                format!("\"${var}{sep}{suffix}\"")
+            }
+            None => format!("'{}'", escape_sq(&e.absolute)),
+        };
+        let words: Vec<String> = front.iter().map(render).collect();
+        // Exact element-wise prefix compare (no wildcards, so metacharacters
+        // in paths compare literally). A single runtime check keeps
+        // re-sourcing from growing PATH however many dirs travel together.
+        let conds = words
+            .iter()
+            .enumerate()
+            .map(|(i, w)| format!("$__mise_parts[{i}] -ne {w}"))
+            .collect::<Vec<_>>()
+            .join(" -or ");
+        let mut out = format!(
+            "$__mise_parts = @(${{env:{k}}} -split [IO.Path]::PathSeparator)\n\
+             if ($__mise_parts.Count -lt {n} -or {conds}) {{\n",
+            n = words.len(),
+            conds = conds,
+        );
+        for word in words.iter().rev() {
+            out.push_str(&format!(
+                "${{Env:{k}}}={word}+[IO.Path]::PathSeparator+${{env:{k}}}\n"
+            ));
+        }
+        out.push_str("}\nRemove-Variable -Name __mise_parts -ErrorAction SilentlyContinue\n");
+        out
+    }
+
+    fn render_orig_path_init(&self) -> String {
+        "if (-not (Test-Path -Path Env:/__MISE_ORIG_PATH)) { $env:__MISE_ORIG_PATH = $env:PATH }\n"
+            .to_string()
+    }
+
+    fn prefer_absolute_exe(&self) -> bool {
+        true
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {

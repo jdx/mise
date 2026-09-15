@@ -338,6 +338,11 @@ See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
 """#
     }
     flag --status help="Show \"mise: <TOOL>@<VERSION>\" message when changing directories" hide=#true
+    flag --hardcoded-binary-paths help="Bake absolute paths into the script (1), or emit a portable script (0, default) resolving mise via PATH and home-relative dirs through a __MISE_HOME header ($HOME, then $USERPROFILE, then ~)" default="0" {
+        arg <HARDCODED_BINARY_PATHS> {
+            choices "0" "1"
+        }
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[SHELL_TYPE]" help="Shell type to generate the script for" required=#false {
         choices {

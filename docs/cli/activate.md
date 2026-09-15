@@ -45,6 +45,11 @@ Customize status output with the `status` settings.
 
   `mise activate --shims` does not support all the features of `mise activate`.
   See <https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path> for more information
+- **`--hardcoded-binary-paths <HARDCODED_BINARY_PATHS>`** — Bake absolute paths into the script (1), or emit a portable script (0, default) resolving mise via PATH and home-relative dirs through a __MISE_HOME header ($HOME, then $USERPROFILE, then ~)
+
+  **Choices:** `0`, `1`
+
+  **Default:** `0`
 - **`-h --help`** — Print help
 
 ## Examples

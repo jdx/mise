@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
-use crate::shell::{self, ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, PORTABLE_HOME_VAR, PortablePath, Shell};
 
 #[derive(Default)]
 pub(super) struct Xonsh {}
@@ -115,6 +115,48 @@ impl Shell for Xonsh {
             k = shell_escape::unix::escape(k.into()), // todo: drop illegal chars, not escape?
             v = xonsh_escape_sq(v)
         )
+    }
+
+    fn render_portable_home_init(&self) -> String {
+        let var = PORTABLE_HOME_VAR;
+        format!(
+            "import os as _mise_os\n\
+             {var} = _mise_os.environ.get('HOME') or _mise_os.environ.get('USERPROFILE') or _mise_os.path.expanduser('~')\n"
+        )
+    }
+
+    fn render_portable_path_block(&self, key: &str, front: &[PortablePath]) -> String {
+        debug_assert!(!front.is_empty());
+        let var = PORTABLE_HOME_VAR;
+        let render = |e: &PortablePath| match &e.home_suffix {
+            Some(suffix) => {
+                let normalized = suffix.replace('\\', "/");
+                format!("{var} + '/{}'", xonsh_escape_sq(&normalized))
+            }
+            None => format!("'{}'", xonsh_escape_sq(&e.absolute)),
+        };
+        let list = front.iter().map(render).collect::<Vec<_>>().join(", ");
+        // Rebuild rather than prepend: always idempotent and order-stable,
+        // however often a saved snapshot is sourced.
+        formatdoc!(
+            r#"
+            from xonsh.built_ins import XSH
+            _mise_front = [{list}]
+            _mise_seen = set(_mise_front)
+            _mise_rest = [p for p in XSH.env.get('{k}', []) if p not in _mise_seen]
+            XSH.env['{k}'] = _mise_front + _mise_rest
+        "#,
+            k = shell_escape::unix::escape(key.into()),
+            list = list,
+        )
+    }
+
+    fn render_orig_path_init(&self) -> String {
+        formatdoc! {r#"
+            from xonsh.built_ins import XSH
+            if '__MISE_ORIG_PATH' not in XSH.env:
+                XSH.env['__MISE_ORIG_PATH'] = XSH.env.get('PATH', '')
+        "#}
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {

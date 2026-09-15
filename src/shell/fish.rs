@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
 use crate::env::{self};
-use crate::shell::{self, ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, PORTABLE_HOME_VAR, PortablePath, Shell};
 use indoc::formatdoc;
 use itertools::Itertools;
 use shell_escape::unix::escape;
@@ -233,6 +233,50 @@ impl Shell for Fish {
 
     fn supports_move_path(&self) -> bool {
         true
+    }
+
+    fn render_portable_home_init(&self) -> String {
+        let var = PORTABLE_HOME_VAR;
+        format!(
+            "if test -n \"$HOME\"; set -g {var} $HOME; else if test -n \"$USERPROFILE\"; set -g {var} $USERPROFILE; else; set -g {var} ~; end\n"
+        )
+    }
+
+    fn render_portable_path_block(&self, key: &str, front: &[PortablePath]) -> String {
+        debug_assert!(!front.is_empty());
+        let var = PORTABLE_HOME_VAR;
+        let mut out = String::new();
+        // `--move` makes the sequence stable under re-sourcing: each entry
+        // lands at the front in turn, so emitting in reverse ends with
+        // `front` first however often the script is sourced.
+        for e in front.iter().rev() {
+            match &e.home_suffix {
+                Some(suffix) if env::is_path_key(key) => {
+                    let suffix = suffix
+                        .replace('\\', "/")
+                        .replace('"', "\\\"")
+                        .replace('$', "\\$");
+                    out.push_str(&format!(
+                        "fish_add_path --global --move --path \"${var}/{suffix}\"\n"
+                    ));
+                }
+                Some(suffix) => {
+                    let k = escape(key.into());
+                    let suffix = escape(suffix.into());
+                    out.push_str(&format!("set -gx {k} \"${var}/{suffix}\" ${k}\n"));
+                }
+                None => {
+                    // Outside $HOME: absolute, but still --move so fish
+                    // re-sourcing stays stable.
+                    out.push_str(&self.move_prepend_env(key, &e.absolute));
+                }
+            }
+        }
+        out
+    }
+
+    fn render_orig_path_init(&self) -> String {
+        "if not set -q __MISE_ORIG_PATH; set -gx __MISE_ORIG_PATH $PATH; end\n".to_string()
     }
 
     fn unset_env(&self, k: &str) -> String {

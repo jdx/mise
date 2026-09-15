@@ -5,7 +5,7 @@ use indoc::formatdoc;
 
 use crate::{
     env,
-    shell::{self, ActivateOptions, ActivatePrelude, Shell},
+    shell::{self, ActivateOptions, ActivatePrelude, PORTABLE_HOME_VAR, PortablePath, Shell},
 };
 use itertools::Itertools;
 
@@ -35,17 +35,37 @@ impl Nushell {
         }
     }
 
+    /// Quote `s` for Nushell source. Raw strings cannot hold `#` at all —
+    /// any `#` inside breaks out of the literal — so values with `#` use a
+    /// double-quoted string with `\`, `"`, and `$` escaped instead.
+    fn nu_string(s: &str) -> String {
+        if s.contains('#') {
+            format!(
+                "\"{}\"",
+                s.replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('$', "\\$")
+            )
+        } else {
+            format!("r#'{s}'#")
+        }
+    }
+
     fn format_activate_prelude_inline(&self, prelude: &[ActivatePrelude]) -> String {
         prelude
             .iter()
             .map(|p| match p {
                 ActivatePrelude::Set(k, v) if env::is_path_key(k) => {
-                    format!("$env.{k} = (r#'{v}'# | split row (char esep))\n")
+                    format!(
+                        "$env.{k} = ({} | split row (char esep))\n",
+                        Self::nu_string(v)
+                    )
                 }
-                ActivatePrelude::Set(k, v) => format!("$env.{k} = r#'{v}'#\n"),
+                ActivatePrelude::Set(k, v) => format!("$env.{k} = {}\n", Self::nu_string(v)),
                 ActivatePrelude::Prepend(k, v) | ActivatePrelude::MovePrepend(k, v) => {
                     self.prepend_env(k, v)
                 }
+                ActivatePrelude::Raw(s) => s.clone(),
             })
             .join("")
     }
@@ -137,6 +157,7 @@ impl Shell for Nushell {
             self.unset_env("MISE_SHELL"),
             self.unset_env("__MISE_DIFF"),
             self.unset_env("__MISE_SESSION"),
+            self.unset_env("__MISE_HOME"),
         ]
         .join("")
     }
@@ -148,8 +169,43 @@ impl Shell for Nushell {
         EnvOp::Set { key: &k, val: &v }.to_string()
     }
 
+    fn render_portable_home_init(&self) -> String {
+        // An env var rather than `mut`: `use`/`source` re-runs this file and
+        // redeclaring a `mut` would fail, while assignment is always safe.
+        // `'~' | path expand` resolves even with neither HOME nor USERPROFILE
+        // set (a bare `~` would parse as an external command).
+        format!(
+            "$env.{var} = if (\"HOME\" in $env) and ($env.HOME != \"\" and $env.HOME != \"~\") {{ $env.HOME }} else if (\"USERPROFILE\" in $env) and ($env.USERPROFILE != \"\" and $env.USERPROFILE != \"~\") {{ $env.USERPROFILE }} else {{ '~' | path expand }}\n",
+            var = PORTABLE_HOME_VAR,
+        )
+    }
+
+    fn render_portable_path_block(&self, key: &str, front: &[PortablePath]) -> String {
+        debug_assert!(!front.is_empty());
+        let var = PORTABLE_HOME_VAR;
+        let render = |e: &PortablePath| match &e.home_suffix {
+            Some(suffix) => {
+                let sep = if cfg!(windows) { '\\' } else { '/' };
+                format!(
+                    "($env.{var} + {})",
+                    Self::nu_string(&format!("{sep}{suffix}"))
+                )
+            }
+            None => Self::nu_string(&e.absolute),
+        };
+        // Rebuild rather than prepend: always idempotent and order-stable,
+        // however often a saved snapshot is sourced.
+        let list = front.iter().map(render).collect::<Vec<_>>().join(", ");
+        let keep = format!("{{|p| $p not-in [{list}]}}");
+        format!("$env.{key} = ([{list}] | append ($env.{key} | where {keep}))\n")
+    }
+
+    fn render_orig_path_init(&self) -> String {
+        "if (\"__MISE_ORIG_PATH\" not-in $env) { $env.__MISE_ORIG_PATH = $env.PATH }\n".to_string()
+    }
+
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        format!("$env.{k} = ($env.{k} | prepend r#'{v}'#)\n")
+        format!("$env.{k} = ($env.{k} | prepend {})\n", Self::nu_string(v))
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -211,6 +267,17 @@ mod tests {
     fn test_prepend_env() {
         let sh = Nushell::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
+    }
+
+    /// Values holding `#` cannot use raw strings at all, so they render
+    /// double-quoted with `\`, `"`, and `$` escaped instead.
+    #[test]
+    fn strings_with_hashes_use_escaped_quotes() {
+        assert_eq!(Nushell::nu_string("/plain/path"), "r#'/plain/path'#");
+        assert_eq!(Nushell::nu_string("/a'#b"), "\"/a'#b\"");
+        assert_eq!(Nushell::nu_string("/a#$b"), "\"/a#\\$b\"");
+        // A lone `'` is fine inside a raw string; only `#` forces quotes.
+        assert_eq!(Nushell::nu_string("C:\\a'b"), "r#'C:\\a'b'#");
     }
 
     #[test]

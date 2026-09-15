@@ -1120,6 +1120,12 @@ See https://mise.jdx.dev/dev\-tools/shims.html#shims\-vs\-path for more informat
 \fB\-\-status\fR
 Show "mise: <TOOL>@<VERSION>" message when changing directories
 .TP
+\fB\-\-hardcoded\-binary\-paths\fR \fI<HARDCODED_BINARY_PATHS>\fR
+Bake absolute paths into the script (1), or emit a portable script (0, default) resolving mise via PATH and home\-relative dirs through a __MISE_HOME header ($HOME, then $USERPROFILE, then ~)
+.RS
+\fIDefault: \fR0
+.RE
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
