@@ -341,8 +341,10 @@ impl CaskArtifacts {
             let target = app_target_path(name)?;
             let bundle = app_bundle_name(name)?;
             // Explicit targets can differ in appdir but still overwrite the
-            // same basename in the shared Caskroom staging directory.
-            if targets.contains(&target) || !bundle_names.insert(bundle) {
+            // same basename in the shared Caskroom staging directory. Reject
+            // case-only differences conservatively even on case-sensitive
+            // volumes: the appdir and Caskroom may use different filesystems.
+            if targets.contains(&target) || !bundle_names.insert(bundle.to_lowercase()) {
                 bail!(
                     "brew-cask: duplicate app target '{}' (Caskroom bundle '{bundle}')",
                     target.display()

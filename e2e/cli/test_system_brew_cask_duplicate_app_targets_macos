@@ -31,7 +31,7 @@ class Handler(BaseHTTPRequestHandler):
             "token": "duplicate-apps", "version": "1", "sha256": "no_check",
             "url": f"{base}/payload.zip",
             "depends_on": {"cask": ["must-not-install"]},
-            "artifacts": [{"app": ["one/Example.app"]}, {"app": ["two/Example.app"]}],
+            "artifacts": [{"app": ["one/Example.app"]}, {"app": ["two/example.app"]}],
         }).encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
@@ -58,7 +58,7 @@ try:
         print(output, end="", flush=True)
         assert result.returncode != 0, output
         assert "duplicate app target" in output, output
-        assert "Example.app" in output, output
+        assert "example.app" in output, output
         assert not prefix.exists(), "duplicate targets must fail before prefix or Caskroom creation"
     assert requests and set(requests) == {"/api/cask/duplicate-apps.json"}, requests
 finally:

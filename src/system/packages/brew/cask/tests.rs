@@ -6738,6 +6738,33 @@ fn nested_app_sources_reject_duplicate_targets() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn app_sources_reject_case_only_target_collisions() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let appdir = tmp.path().canonicalize()?.join("Applications");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &appdir);
+    let mut cask = test_cask("example", "1.0.0");
+    for second in [
+        serde_json::json!({"app": ["two/example.app"]}),
+        serde_json::json!({"app": ["two/Other.app", {"target": "example.app"}]}),
+        serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("example.app")}]}),
+        // Different app directories still collide in the shared Caskroom.
+        serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("subdir/example.app")}]}),
+    ] {
+        cask.artifacts = vec![serde_json::json!({"app": ["one/Example.app"]}), second];
+        let error = cask_artifacts(&cask)?
+            .app_target_paths()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("duplicate app target"), "{error}");
+        assert!(error.contains("example.app"), "{error}");
+    }
+    assert!(!appdir.exists());
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn nested_app_source_installs_under_bundle_basename() -> Result<()> {
