@@ -134,8 +134,8 @@ assert_contains "mise install --locked --dry-run rust 2>&1" "would install"
 
 # --- Test 9: targeted install does not warn about other tools missing from the lockfile
 # `mise install tiny` with --locked should not warn about a global dummy that
-# was never requested. Installing dummy itself, or a bare `mise install`,
-# still fails because dummy is not in the lockfile.
+# was never requested. `mise ls` still warns. Installing dummy itself, or a
+# bare `mise install`, still fails because dummy is not in the lockfile.
 rm -rf "$MISE_DATA_DIR/plugins/tiny"
 ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
 cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
@@ -157,6 +157,7 @@ EOF
 tiny_out="$(MISE_LOCKED=1 mise install tiny 2>&1)" || fail "MISE_LOCKED=1 mise install tiny failed: $tiny_out"
 assert_not_contains_text "$tiny_out" "dummy@latest is not in the lockfile"
 assert_not_contains_text "$tiny_out" "Failed to resolve tool version list for dummy"
+assert_contains "MISE_LOCKED=1 mise ls 2>&1" "dummy@latest is not in the lockfile"
 assert_fail_contains "MISE_LOCKED=1 mise install dummy 2>&1" "dummy@latest is not in the lockfile"
 assert_fail_contains "MISE_LOCKED=1 mise install 2>&1" "dummy@latest is not in the lockfile"
 

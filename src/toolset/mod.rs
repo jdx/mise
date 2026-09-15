@@ -176,8 +176,7 @@ impl Toolset {
                     if Error::is_required_channel_resolution_err(&err) {
                         return Err(err);
                     }
-                    // NotInLockfile is enforced at install time; incidental toolset resolve should not warn.
-                    if Error::is_not_in_lockfile(&err) {
+                    if Error::is_not_in_lockfile(&err) && !opts.warn_not_in_lockfile {
                         debug!("Failed to resolve tool version list for {ba}: {err}");
                     } else {
                         // warn_once: a command may resolve the same toolset more than

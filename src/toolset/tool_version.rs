@@ -414,6 +414,7 @@ impl ToolVersion {
             offline: base_opts.offline,
             refresh_remote_versions: base_opts.refresh_remote_versions,
             inactive: base_opts.inactive,
+            warn_not_in_lockfile: base_opts.warn_not_in_lockfile,
         };
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
@@ -1012,6 +1013,8 @@ pub(crate) struct ResolveOptions {
     /// (for example `ToolSource::Unknown`) when resolving tools for flows like
     /// outdated/upgrade checks.
     pub inactive: bool,
+    /// If false, missing lockfile entries log at debug instead of warn.
+    pub warn_not_in_lockfile: bool,
 }
 
 impl Default for ResolveOptions {
@@ -1027,11 +1030,20 @@ impl Default for ResolveOptions {
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
+            warn_not_in_lockfile: true,
         }
     }
 }
 
 impl ResolveOptions {
+    /// Full-toolset resolve used as a side effect of another operation.
+    pub(crate) fn without_lockfile_warnings() -> Self {
+        Self {
+            warn_not_in_lockfile: false,
+            ..Default::default()
+        }
+    }
+
     /// Merge the effective release-age cutoff for a tool into these options.
     /// A cutoff pre-resolved by the caller keeps its provenance flag; cutoffs
     /// resolved here are flagged by source so installed-version fast paths
@@ -1144,6 +1156,9 @@ impl Display for ResolveOptions {
         }
         if self.refresh_remote_versions {
             opts.push("refresh_remote_versions".to_string());
+        }
+        if !self.warn_not_in_lockfile {
+            opts.push("no_lockfile_warnings".to_string());
         }
         write!(f, "({})", opts.join(", "))
     }

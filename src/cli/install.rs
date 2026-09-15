@@ -400,7 +400,9 @@ impl Install {
                     Self::resolved_toolset_from_trs(&rebuild_config, base_trs.clone()).await?;
                 &ts_owned
             } else {
-                rebuild_config.get_toolset().await?
+                rebuild_config
+                    .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                    .await?
             };
             let current_versions = ts.list_current_versions();
             // Match the configured package and options, not graph identity: accepting
@@ -476,6 +478,7 @@ impl Install {
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: false,
+                warn_not_in_lockfile: true,
             },
             dry_run: self.is_dry_run(),
             locked: Settings::get().locked,
@@ -644,7 +647,9 @@ impl Install {
                         Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
                     &ts_owned
                 } else {
-                    install_config.get_toolset().await?
+                    install_config
+                        .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                        .await?
                 };
                 hooks::run_one_hook_with_context(
                     &install_config,
@@ -687,7 +692,9 @@ impl Install {
                         Self::resolved_toolset_from_trs(&rebuild_config, base_trs.clone()).await?;
                     &ts_owned
                 } else {
-                    rebuild_config.get_toolset().await?
+                    rebuild_config
+                        .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                        .await?
                 };
                 let current_versions = ts.list_current_versions();
                 let versions = versions
@@ -734,7 +741,8 @@ impl Install {
         trs: ToolRequestSet,
     ) -> Result<Toolset> {
         let mut ts: Toolset = trs.into();
-        ts.resolve(config).await?;
+        ts.resolve_with_opts(config, &ResolveOptions::without_lockfile_warnings())
+            .await?;
         Ok(ts)
     }
 }
