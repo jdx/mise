@@ -154,14 +154,13 @@ pub(crate) async fn apply_locked_with_scope(
         .iter()
         .map(|path| normalize_target(path))
         .collect();
+    // Which conflicts a blanket choice spoke for, and why it could not speak
+    // for the rest.
+    let mut blanket_chosen: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut blanket_held: Vec<String> = vec![];
     // A blanket choice covers the conflicts nothing else decided, so
     // `--take-remote-all --keep-local <path>` keeps that one exception.
     if req.take_remote_all || req.keep_local_all {
-        let blanket = if req.take_remote_all {
-            &mut take_remote
-        } else {
-            &mut keep_local
-        };
         let decided: BTreeSet<PathBuf> = req
             .take_remote
             .iter()
@@ -172,9 +171,15 @@ pub(crate) async fn apply_locked_with_scope(
             if let Some(path) = roots.locate(&conflict.branch_path).path()
                 && !decided.contains(path)
             {
-                blanket.insert(path.to_path_buf());
+                blanket_chosen.insert(path.to_path_buf());
             }
         }
+        let blanket = if req.take_remote_all {
+            &mut take_remote
+        } else {
+            &mut keep_local
+        };
+        blanket.extend(blanket_chosen.iter().cloned());
     }
 
     // Store choices without publishing or applying any part of the setup.
@@ -193,7 +198,28 @@ pub(crate) async fn apply_locked_with_scope(
             if take_remote.contains(&local) && keep_local.contains(&local) {
                 bail!("choose only one resolution for {}", display_path(&local));
             }
-            let live = live_object(repo, &local)?;
+            // A blanket choice cannot speak for a path whose live side is not
+            // a file or symlink, and failing here would discard every other
+            // decision this pass makes. Hold that one path and keep going; a
+            // path named on the command line still reports the failure. The
+            // check belongs on this read, so a path that changed since the
+            // blanket choice was made is held too rather than aborting it.
+            // Only the path's own fault is held: a repository failure on an
+            // otherwise sound file is nobody's to fix by hand, so it stops
+            // the pass with its own error.
+            let live = match live_object(repo, &local) {
+                Ok(live) => live,
+                Err(err)
+                    if blanket_chosen.contains(&local)
+                        && err.downcast_ref::<UnusableLive>().is_some() =>
+                {
+                    blanket_held.push(err.to_string());
+                    take_remote.remove(&local);
+                    keep_local.remove(&local);
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
             let saved = shared.get(&conflict.branch_path).cloned();
             let saved_mode = permissions_at(
                 repo,
@@ -209,12 +235,25 @@ pub(crate) async fn apply_locked_with_scope(
                 // must be the file as it stands now. A freshly adopted machine
                 // has no baseline at all; an edited file has a stale one.
                 let reason = if saved.is_none() {
-                    "it has no saved version on this machine yet"
+                    "has no saved version on this machine yet"
                 } else {
-                    "it has unsaved changes"
+                    "has unsaved changes"
                 };
+                // The refusal stands either way, but as with an unusable live
+                // side a blanket choice holds just this path rather than
+                // discarding every decision it made alongside it. A path named
+                // on the command line is the user's own instruction, so it
+                // still fails the pass.
+                if blanket_chosen.contains(&local) {
+                    blanket_held.push(format!(
+                        "{path} {reason}, so run `mise dot save {path}` first",
+                        path = display_path(&local)
+                    ));
+                    keep_local.remove(&local);
+                    continue;
+                }
                 bail!(
-                    "run `mise dot save {path}` first: --keep-local publishes this machine's saved version of {path}, and {reason}",
+                    "run `mise dot save {path}` first: --keep-local publishes this machine's saved version of {path}, and it {reason}",
                     path = display_path(&local)
                 );
             }
@@ -291,6 +330,24 @@ pub(crate) async fn apply_locked_with_scope(
                 }
             }
             table.print()?;
+        }
+        // A blanket choice promises to decide every conflict, so it has not
+        // succeeded while one is still held -- whatever it decided alongside.
+        // Those decisions are recorded above; naming the rest is what is left.
+        if !blanket_held.is_empty() {
+            if !req.dry_run && !req.automatic {
+                bail!(
+                    "sync paused: resolve all {count} conflict(s) before sharing resumes; a blanket choice cannot decide them all: {held}. Fix each of those paths, then pull again",
+                    count = status.conflicts.len(),
+                    held = blanket_held.join("; "),
+                );
+            }
+            // A preview and a background pass both carry on, so this is the
+            // only chance either gets to say why a path went undecided.
+            warn!(
+                "a blanket choice cannot decide {held}",
+                held = blanket_held.join("; "),
+            );
         }
         if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run && !req.automatic {
             bail!(
@@ -857,6 +914,26 @@ pub(super) fn live_permissions(path: &Path) -> Result<Option<u32>> {
     }
 }
 
+/// The live side of a path cannot stand in for a shared object. The file is
+/// the problem, not the machinery, so a blanket resolution may hold just this
+/// path; every other failure is the repository's and must stop the pass.
+#[derive(Debug)]
+pub(super) struct UnusableLive(String);
+
+impl std::fmt::Display for UnusableLive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for UnusableLive {}
+
+/// Each of these names the path, because a blanket resolution repeats the
+/// reason it could not decide one and by then the path is all it still has.
+fn unusable(path: &Path, what: impl std::fmt::Display) -> eyre::Report {
+    eyre::Report::new(UnusableLive(format!("{} {what}", display_path(path))))
+}
+
 pub(super) fn live_object(
     repo: &crate::system::history::shadow::HistoryRepo,
     path: &Path,
@@ -864,16 +941,18 @@ pub(super) fn live_object(
     let meta = match std::fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(err.into()),
+        Err(err) => return Err(unusable(path, format_args!("cannot be read: {err}"))),
     };
     if meta.file_type().is_symlink() {
+        let target = std::fs::read_link(path)
+            .map_err(|err| unusable(path, format_args!("cannot be read: {err}")))?;
         return Ok(Some((
             "120000".into(),
-            repo.transient_blob_id(std::fs::read_link(path)?.to_string_lossy().as_bytes())?,
+            repo.transient_blob_id(crate::system::history::shadow::path_bytes(&target).as_ref())?,
         )));
     }
     if !meta.is_file() {
-        bail!("{} is not a regular file or symlink", display_path(path));
+        return Err(unusable(path, "is not a regular file or symlink"));
     }
     #[cfg(unix)]
     let executable = {
@@ -882,9 +961,11 @@ pub(super) fn live_object(
     };
     #[cfg(not(unix))]
     let executable = false;
+    let contents =
+        std::fs::read(path).map_err(|err| unusable(path, format_args!("cannot be read: {err}")))?;
     Ok(Some((
         if executable { "100755" } else { "100644" }.into(),
-        repo.transient_blob_id(&std::fs::read(path)?)?,
+        repo.transient_blob_id(&contents)?,
     )))
 }
 

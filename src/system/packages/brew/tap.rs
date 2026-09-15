@@ -625,6 +625,9 @@ class Widget < Formula
   depends_on "libfoo"
   depends_on "cmake" => :build
   depends_on(**{"ninja" => :build})
+  depends_on :macos
+  depends_on :xcode => :build
+  depends_on macos: :sequoia
   on_sequoia :or_older do
     depends_on "release-boundary"
   end
@@ -659,6 +662,9 @@ end
             formula.urls["stable"].url,
             "https://example.com/café/widget-1.2.3.tar.gz"
         );
+        // Requirement symbols (`depends_on :macos`, `:xcode`, `macos: :sequoia`) name
+        // platform constraints, not formulae. Recording them would make the resolver
+        // fetch a formula called "macos" and fail the run on a 404.
         assert_eq!(
             formula.dependencies,
             ["libfoo", "release-boundary", "system-release-boundary"]
