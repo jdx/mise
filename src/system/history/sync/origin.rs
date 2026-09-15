@@ -170,7 +170,7 @@ async fn set_inner(
             }
         }
         miseprintln!(
-            "Against the repository: {present} identical, {} differing (decided with `mise dot pull --take-remote|--keep-local`), {incoming} incoming to apply.",
+            "Against the repository: {present} identical, {} differing (decided with `mise dot pull --take-remote` or `--keep-local`), {incoming} incoming to apply.",
             differing.len()
         );
         for path in differing.iter().take(10) {

@@ -1877,7 +1877,7 @@ impl Bootstrap {
             // installations are not what was asked for
             if outcome.setup_held {
                 bail!(
-                    "the setup from {url} is paused; nothing was bootstrapped. `mise dot status` lists the paths that need attention. Existing files that differ are kept until you decide: `mise dot pull --take-remote-all` takes the repository's version of every one, or `mise dot pull --take-remote|--keep-local <path>` decides one at a time. Then run `mise bootstrap`"
+                    "the setup from {url} is paused; nothing was bootstrapped. `mise dot status` lists the paths that need attention. Existing files that differ are kept until you decide: `mise dot pull --take-remote-all` takes the repository's version of every one, or `mise dot pull --take-remote <path>` and `mise dot pull --keep-local <path>` decide one at a time. Then run `mise bootstrap`"
                 );
             }
             let config_dir = system::history::tracked::global_config_dir();

@@ -982,7 +982,7 @@ pub(crate) fn resolution_advice(path: &str, reason: &str) -> String {
             .into()
     } else {
         format!(
-            "inspect with `mise dot conflicts {path}`; resolve with `mise dot pull --take-remote|--keep-local {path}`"
+            "inspect with `mise dot conflicts {path}`; resolve with `mise dot pull --take-remote {path}` or `mise dot pull --keep-local {path}`"
         )
     }
 }

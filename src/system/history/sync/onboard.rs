@@ -413,7 +413,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         onboarding.origin,
         if undecided > 0 {
             format!(
-                "; {undecided} path(s) need a decision (`mise dot status` lists them, `mise dot pull --take-remote|--keep-local <path>` decides one, `mise dot pull --take-remote-all` takes the repository's version of every one)"
+                "; {undecided} path(s) need a decision (`mise dot status` lists them, `mise dot pull --take-remote <path>` or `mise dot pull --keep-local <path>` decides one, `mise dot pull --take-remote-all` takes the repository's version of every one)"
             )
         } else {
             String::new()
