@@ -621,8 +621,9 @@ mise dot track ~/.config/app/credentials --encrypt
 ```
 
 Configure `[history.encryption].recipients` first. See
-[encrypted shared files](/history.html#encrypted-shared-files) for key setup
-and the limits of encrypting a file that already has plaintext history.
+[choose recipients](/history.html#choose-recipients) for generating keys and
+[encrypted shared files](/history.html#encrypted-shared-files) for the limits
+of encrypting a file that already has plaintext history.
 Run encrypted enrollment as a standalone command, not from inside
 `mise dot capture`, so mise can verify its initial encrypted baseline before
 keeping the declaration.

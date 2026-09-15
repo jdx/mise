@@ -177,8 +177,61 @@ files and applies the saved mise configuration, including the watcher service.
 If configuration or required template sources are missing from history,
 bootstrap reports which files you need to track and share from the first machine.
 
-If an existing file differs, follow the reported conflict instructions before
-setup can continue. Enable automatic sharing on this machine and check its state:
+Any Git host works. `OWNER/REPO` is shorthand for GitHub; for anything else,
+pass the full URL:
+
+```sh
+mise bootstrap --adopt git@gitea.example.com:you/setup.git
+```
+
+The URL must not embed credentials. Authenticate with an SSH agent, or with a
+Git credential helper for HTTPS.
+
+### When the machine already has these files
+
+A second machine usually already has a `~/.bashrc` or a
+`~/.config/mise/config.toml`. mise never overwrites them. Files that match the
+repository are accepted silently; each file that **differs** is held for a
+decision, and adoption stops:
+
+```
+the setup from <url> is paused; nothing was bootstrapped.
+```
+
+This is expected, not a failure of the adoption. List what is waiting, then
+decide each path:
+
+```sh
+mise dot status
+mise dot pull --take-remote ~/.bashrc
+mise dot pull --take-remote ~/.config/mise/config.toml
+```
+
+`--take-remote` replaces this machine's file with the shared version; the
+version being replaced is saved first, so `mise dot undo` reverses it. Once the
+last path is decided, the same `pull` writes the remaining tracked files. Run
+`mise bootstrap` afterwards to finish the parts that are not dotfiles, such as
+tools and services.
+
+To keep this machine's version instead, save it first — a fresh machine has no
+baseline to compare against, and `--keep-local` requires one:
+
+```sh
+mise dot save ~/.bashrc
+mise dot pull --keep-local ~/.bashrc
+```
+
+::: tip
+Moving the conflicting files aside before `mise bootstrap --adopt` avoids the
+decisions entirely: a path that does not exist is simply written.
+:::
+
+`--replace-history` is a different thing and does not help here: it discards
+unrelated local _history_ while adopting, and existing files that differ still
+stop the operation. `--force-dotfiles` is unrelated too — it applies to
+`[dotfiles]` link and copy targets, not to shared history.
+
+Enable automatic sharing on this machine and check its state:
 
 ```sh
 mise settings set history.sync sync
