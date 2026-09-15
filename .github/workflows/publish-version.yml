@@ -11,7 +11,17 @@ on:
         type: string
 
 concurrency:
-  group: publish-version-${{ github.event_name == 'release' && github.event.release.tag_name || inputs.version }}
+  # s3://mise/VERSION has one writer, so every run shares one group rather than
+  # grouping per tag. Two runs for different tags each pass the latest-release
+  # check below before either publishes, so overlapping them lets an older run
+  # finish last and move the pointer backwards. Serialized, a run that is no
+  # longer publishing the latest release re-resolves and refuses.
+  group: publish-version
+  # One group also means one pending slot, and the default `queue: single` lets
+  # an arriving run cancel whatever is pending — which could drop a release run
+  # that nothing else will retry. Queue them instead. (actionlint 1.7.12 does
+  # not know this key yet; GitHub documents it and accepts it.)
+  queue: max
 
 jobs:
   publish-version:
