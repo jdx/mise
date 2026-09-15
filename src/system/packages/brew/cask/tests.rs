@@ -6778,6 +6778,14 @@ fn app_sources_reject_unicode_equivalent_target_collisions() -> Result<()> {
         ("Cafe\u{301}.app", "Caf\u{e9}.app"),
         ("CAF\u{c9}.app", "cafe\u{301}.app"),
         ("\u{ac00}.app", "\u{1100}\u{1161}.app"),
+        // Case folding equates these names; lowercasing does not.
+        ("ϐ.app", "β.app"),
+        ("β.app", "ϐ.app"),
+        ("ς.app", "σ.app"),
+        ("Straße.app", "STRASSE.app"),
+        // Normalize before folding so the accent precedes ypogegrammeni
+        // before the latter folds from a combining mark to a letter.
+        ("\u{3b1}\u{345}\u{301}.app", "\u{3ac}\u{3b9}.app"),
     ] {
         for artifact in [
             serde_json::json!({"app": [format!("two/{second}")]}),

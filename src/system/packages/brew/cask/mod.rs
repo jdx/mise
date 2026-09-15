@@ -343,10 +343,14 @@ impl CaskArtifacts {
             let bundle = app_bundle_name(name)?;
             // Explicit targets can differ in appdir but still overwrite the
             // same basename in the shared Caskroom staging directory. Reject
-            // case-only and canonically equivalent Unicode names conservatively:
-            // the appdir and Caskroom may use different filesystems. Normalize
-            // only the comparison key, preserving the original install paths.
-            let bundle_key = bundle.to_lowercase().nfd().collect::<String>();
+            // Unicode caseless matches conservatively: the appdir and Caskroom
+            // may use different filesystems. Canonical caseless matching needs
+            // NFD before and after case folding (lowercasing misses e.g. ϐ/β).
+            // Normalize only the key, preserving the original install paths.
+            let bundle_key = unicase::UniCase::new(bundle.nfd().collect::<String>())
+                .to_folded_case()
+                .nfd()
+                .collect::<String>();
             if targets.contains(&target) || !bundle_names.insert(bundle_key) {
                 bail!(
                     "brew-cask: duplicate app target '{}' (Caskroom bundle '{bundle}')",

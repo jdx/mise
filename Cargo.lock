@@ -6624,6 +6624,7 @@ dependencies = [
  "toml 1.1.5+spec-1.1.0",
  "toml_edit 0.25.13+spec-1.1.0",
  "ubi",
+ "unicase",
  "unicode-normalization",
  "url",
  "urlencoding",

@@ -20,6 +20,9 @@ cases = {
     "case-only": ("Example.app", "example.app"),
     "unicode": ("Caf\u00e9.app", "Cafe\u0301.app"),
     "unicode-case": ("CAF\u00c9.app", "cafe\u0301.app"),
+    "case-fold-beta": ("\u03d0.app", "\u03b2.app"),
+    "case-fold-sigma": ("\u03c2.app", "\u03c3.app"),
+    "case-fold-expansion": ("Stra\u00dfe.app", "STRASSE.app"),
 }
 
 
