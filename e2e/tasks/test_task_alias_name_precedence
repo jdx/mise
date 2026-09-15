@@ -31,12 +31,14 @@ assert_not_contains "mise run test" "PARENT-PLURAL"
 assert_contains "mise run tests" "PARENT-PLURAL"
 assert_contains "mise tasks info test" "CHILD-SINGULAR"
 
-# An alias defined alongside a same-named task in one config behaves the same.
+# The same holds within a single config. `tests` both overrides the inherited
+# parent task and sorts after `test`, so the alias would win here if aliases
+# could still overwrite a name.
 cat <<'EOF' >mise.toml
 [tasks.test]
 run = "echo LOCAL-EXACT"
 
-[tasks.checks]
+[tasks.tests]
 run = "echo LOCAL-ALIASED"
 alias = "test"
 EOF
