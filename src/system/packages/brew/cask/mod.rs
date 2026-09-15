@@ -334,10 +334,23 @@ impl CaskArtifacts {
     }
 
     fn app_target_paths(&self) -> Result<Vec<PathBuf>> {
-        self.apps
-            .iter()
-            .map(|app| app_target_path(app.target_name()?))
-            .collect()
+        let mut targets = Vec::with_capacity(self.apps.len());
+        let mut bundle_names = BTreeSet::new();
+        for app in &self.apps {
+            let name = app.target_name()?;
+            let target = app_target_path(name)?;
+            let bundle = app_bundle_name(name)?;
+            // Explicit targets can differ in appdir but still overwrite the
+            // same basename in the shared Caskroom staging directory.
+            if targets.contains(&target) || !bundle_names.insert(bundle) {
+                bail!(
+                    "brew-cask: duplicate app target '{}' (Caskroom bundle '{bundle}')",
+                    target.display()
+                );
+            }
+            targets.push(target);
+        }
+        Ok(targets)
     }
 
     fn binary_targets(&self) -> Result<Vec<PathBuf>> {
@@ -578,6 +591,9 @@ impl BrewCaskManager {
         }
         let artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
+        // Validate the whole app batch before dependencies, downloads, or hooks
+        // can mutate anything, including when producing a dry-run plan.
+        artifacts.app_target_paths()?;
         let installed_version = mise_installed_cask_version(&cask)?;
         if let Some(reason) =
             installed_skip_reason(&cask, &artifacts, installed_version.as_deref(), mode)?

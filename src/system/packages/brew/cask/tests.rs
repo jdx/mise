@@ -6706,6 +6706,38 @@ fn nested_app_source_defaults_to_validated_bundle_basename() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn nested_app_sources_reject_duplicate_targets() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let appdir = tmp.path().canonicalize()?.join("Applications");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &appdir);
+    let mut cask = test_cask("example", "1.0.0");
+    for second in [
+        serde_json::json!({"app": ["two/Example.app"]}),
+        serde_json::json!({"app": ["two/Other.app", {"target": "Example.app"}]}),
+        serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("Example.app")}]}),
+        // Distinct application paths still share a Caskroom bundle basename.
+        serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("subdir/Example.app")}]}),
+    ] {
+        cask.artifacts = vec![serde_json::json!({"app": ["one/Example.app"]}), second];
+        let error = cask_artifacts(&cask)?
+            .app_target_paths()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("duplicate app target"), "{error}");
+        assert!(error.contains("Example.app"), "{error}");
+    }
+    cask.artifacts[1] = serde_json::json!({"app": ["two/Example.app", {"target": "Renamed.app"}]});
+    assert_eq!(
+        cask_artifacts(&cask)?.app_target_paths()?,
+        [appdir.join("Example.app"), appdir.join("Renamed.app")]
+    );
+    assert!(!appdir.exists());
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn nested_app_source_installs_under_bundle_basename() -> Result<()> {

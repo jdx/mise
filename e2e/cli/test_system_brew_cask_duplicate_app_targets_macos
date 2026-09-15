@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  exit 0
+fi
+
+python3 - "$PWD" <<'PYTHON'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+root = Path(sys.argv[1]).resolve()
+prefix = root / "brew-prefix"
+requests = []
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        requests.append(self.path)
+        if self.path != "/api/cask/duplicate-apps.json":
+            self.send_error(500, "must reject duplicate targets before fetching dependencies or archive")
+            return
+        body = json.dumps({
+            "token": "duplicate-apps", "version": "1", "sha256": "no_check",
+            "url": f"{base}/payload.zip",
+            "depends_on": {"cask": ["must-not-install"]},
+            "artifacts": [{"app": ["one/Example.app"]}, {"app": ["two/Example.app"]}],
+        }).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+base = f"http://127.0.0.1:{server.server_port}"
+(root / "mise.toml").write_text(
+    '[settings]\nexperimental = true\n[bootstrap.packages]\n"brew-cask:duplicate-apps" = "latest"\n'
+)
+env = dict(os.environ, MISE_SYSTEM_BREW_PREFIX=str(prefix),
+           MISE_BREW_CASK_OPT_APPDIR=str(prefix / "Applications"),
+           MISE_URL_REPLACEMENTS=json.dumps({"https://formulae.brew.sh": base}))
+thread = threading.Thread(target=server.serve_forever, daemon=True)
+thread.start()
+try:
+    for options in [("--dry-run",), ()]:
+        command = ["mise", "bootstrap", "packages", "apply", "--yes", *options]
+        result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=30)
+        output = result.stdout + result.stderr
+        print("$ " + " ".join(command), flush=True)
+        print(output, end="", flush=True)
+        assert result.returncode != 0, output
+        assert "duplicate app target" in output, output
+        assert "Example.app" in output, output
+        assert not prefix.exists(), "duplicate targets must fail before prefix or Caskroom creation"
+    assert requests and set(requests) == {"/api/cask/duplicate-apps.json"}, requests
+finally:
+    server.shutdown()
+    thread.join()
+    server.server_close()
+PYTHON
