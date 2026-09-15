@@ -12,7 +12,21 @@ use itertools::Itertools;
 ///
 /// Use this to figure out what version of a tool is currently active.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise which node
+/home/username/.local/share/mise/installs/node/20.0.0/bin/node"###
+    ),
+    example(
+        r###"mise which node --plugin
+node"###
+    ),
+    example(
+        r###"mise which node --version
+20.0.0"###
+    )
+)]
 pub(crate) struct Which {
     /// The executable to look up
     #[usage(required_unless = "complete")]
@@ -94,7 +108,9 @@ impl Which {
     async fn get_toolset(&self, config: &Arc<Config>) -> Result<Toolset> {
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {
-            tsb = tsb.with_args(std::slice::from_ref(tool));
+            tsb = tsb
+                .with_args(std::slice::from_ref(tool))
+                .with_overridden_lockfile_warnings();
         }
         let ts = tsb.build(config).await?;
         Ok(ts)
@@ -127,17 +143,3 @@ impl Which {
         dirs::shims().join(shim).exists() || dirs::system_shims().join(shim).exists()
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise which node</bold>
-    /home/username/.local/share/mise/installs/node/20.0.0/bin/node
-
-    $ <bold>mise which node --plugin</bold>
-    node
-
-    $ <bold>mise which node --version</bold>
-    20.0.0
-"#
-);

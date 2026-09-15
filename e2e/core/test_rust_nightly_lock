@@ -29,6 +29,9 @@ set -euo pipefail
 
 echo "$*" >>"$CARGO_HOME/rustup.log"
 case "${1:-} ${2:-}" in
+	"show profile")
+		echo minimal
+		;;
 	"toolchain install")
 		mkdir -p "$RUSTUP_HOME/toolchains/$3"
 		;;

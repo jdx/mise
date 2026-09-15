@@ -670,6 +670,7 @@ fn compute_deactivated_path() -> String {
             .map(|s| s.to_string())
             .unwrap_or_default()
     });
+    let pristine_path = crate::windows_posix::orig_path_for_windows(&pristine_path).into_owned();
 
     if current_path.is_empty() || mise_paths.is_empty() {
         // If no current PATH or no mise PATH, just return pristine

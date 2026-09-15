@@ -30,7 +30,7 @@ pub(crate) struct TaskTemplate {
     pub vars: EnvList,
     #[serde(default)]
     pub dir: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     pub sources: Vec<String>,
     #[serde(default)]
     pub watch: Option<TaskWatchOptions>,

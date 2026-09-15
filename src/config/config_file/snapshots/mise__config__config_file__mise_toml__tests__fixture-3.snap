@@ -23,6 +23,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
         ],
         BackendArg(node): [
@@ -44,6 +45,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
             Prefix {
                 backend: BackendArg(node),
@@ -63,6 +65,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
             Ref {
                 backend: BackendArg(node),
@@ -83,6 +86,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
             Path {
                 backend: BackendArg(node),
@@ -102,6 +106,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
         ],
         BackendArg(jq): [
@@ -123,6 +128,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
         ],
         BackendArg(shellcheck): [
@@ -144,6 +150,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
         ],
         BackendArg(python): [
@@ -169,6 +176,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
             Version {
                 backend: BackendArg(python),
@@ -188,6 +196,7 @@ ToolRequestSet {
                 source: MiseToml(
                     "~/fixtures/.mise.toml",
                 ),
+                lockfile_scope: Default,
             },
         ],
     },

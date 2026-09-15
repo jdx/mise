@@ -521,23 +521,28 @@
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
           "type": "boolean"
         },
+        "activate_shims": {
+          "default": true,
+          "description": "Allow full shell activation to add tool shims to PATH.",
+          "type": "boolean"
+        },
         "age": {
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
             "identity_files": {
-              "description": "[experimental] List of age identity files to use for decryption.",
+              "description": "List of age identity files to use for decryption (encrypted shared dotfiles and the experimental `[env]` age directives).",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "key_file": {
-              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "description": "Path to the age private key file to use for encryption/decryption: the default recipient and identity for encrypted shared dotfiles and the key for the experimental `[env]` age directives.",
               "type": "string"
             },
             "ssh_identity_files": {
-              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "description": "List of SSH identity files to use for age decryption (encrypted shared dotfiles and the experimental `[env]` age directives).",
               "type": "array",
               "items": {
                 "type": "string"
@@ -740,7 +745,7 @@
         },
         "disable_backends": {
           "default": [],
-          "description": "Backends to disable for new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. This does not uninstall or disable tools already installed with those backends.",
+          "description": "Backends to exclude from tool resolution and new installs, such as `asdf`, `pypi`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled.",
           "type": "array",
           "items": {
             "type": "string"
@@ -765,6 +770,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "disable_update_warning": {
+          "default": false,
+          "description": "Suppress warnings when a newer mise version is available.",
+          "type": "boolean"
         },
         "dotfiles": {
           "type": "object",
@@ -810,7 +820,7 @@
             },
             "registry_url": {
               "default": "https://api.nuget.org/v3/index.json",
-              "description": "URL to fetch dotnet tools from.",
+              "description": "NuGet service index used to discover dotnet tool versions.",
               "type": "string"
             }
           }
@@ -973,6 +983,37 @@
           "description": "Enable GitHub Artifact Attestations verification for supported tools.",
           "type": "boolean"
         },
+        "github_relay": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "concurrency": {
+              "default": 8,
+              "description": "Maximum simultaneous GitHub relay requests (1-32); excess requests fail closed.",
+              "type": "integer"
+            },
+            "log_format": {
+              "default": "text",
+              "description": "GitHub relay request and summary output format: text or jsonl.",
+              "type": "string"
+            },
+            "log_requests": {
+              "default": false,
+              "description": "Log sanitized GitHub relay requests on the initiating machine's stderr.",
+              "type": "boolean"
+            },
+            "max_duration": {
+              "default": "0s",
+              "description": "Maximum borrowed GitHub access duration; 0s means until the session ends.",
+              "type": "string"
+            },
+            "request_timeout": {
+              "default": "5m",
+              "description": "Total time limit for a relayed request, including response streaming.",
+              "type": "string"
+            }
+          }
+        },
         "gitlab": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1086,6 +1127,69 @@
           "description": "Verify OpenPGP signatures for all tools (built-in, no external gpg required). Set to false to disable.",
           "type": "boolean"
         },
+        "history": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "allow_plaintext_history": {
+              "default": false,
+              "description": "Allow publishing history that contains unencrypted versions of files now marked for encryption.",
+              "type": "boolean"
+            },
+            "describe_command": {
+              "default": "",
+              "description": "A command that names commits the watcher saves (an agent, say): it gets one JSON object on stdin (uuid, trigger, the computed description, changed tracked paths, and a unified diff of changed unencrypted files, at most 64 KiB) and prints one line of at most 200 characters, which becomes the description. Empty: computed descriptions only.",
+              "type": "string"
+            },
+            "enabled": {
+              "default": true,
+              "description": "Record ordinary Git commits for explicitly tracked files around bootstrap operations and on explicit saves.",
+              "type": "boolean"
+            },
+            "fetch_interval": {
+              "default": "15m",
+              "description": "How often the history watcher fetches the origin branch. Values below one second use one second; use history.sync = 'manual' to disable automatic synchronization.",
+              "type": "string"
+            },
+            "notify": {
+              "default": true,
+              "description": "Show a desktop notification when conflicts pause sharing for the setup. Enabled by default; retries stay silent until sharing recovers, and a notifier that is missing or failing never holds up history or sync.",
+              "type": "boolean"
+            },
+            "sync": {
+              "default": "sync",
+              "description": "What the history watcher does with a connected setup repository on its own: `sync` publishes after saves, fetches periodically, and applies incoming changes. Any conflict pauses publication and incoming application for the entire setup; local commits and fetching continue. `fetch-only` only fetches; `manual` does nothing automatically. `mise bootstrap dotfiles sync` and `pull` work on request in every mode.",
+              "type": "string",
+              "enum": ["sync", "fetch-only", "manual"]
+            },
+            "sync_interval": {
+              "default": "5m",
+              "description": "How soon after a save the history watcher publishes to the setup repository, at most this often.",
+              "type": "string"
+            },
+            "watch": {
+              "type": "object",
+              "unevaluatedProperties": false,
+              "properties": {
+                "debounce": {
+                  "default": "2s",
+                  "description": "How long a changed file must stay quiet before the history watcher saves it (the base autosave interval). A file that keeps changing is stretched on its own and never delays the others.",
+                  "type": "string"
+                },
+                "max_interval": {
+                  "default": "24h",
+                  "description": "The longest autosave interval the history watcher stretches a constantly changing file to. Sustained churn doubles a file's own interval up to this; a settled file is saved promptly again, and a sustained quiet period resets it.",
+                  "type": "string"
+                },
+                "reconcile": {
+                  "default": "10m",
+                  "description": "How often the history watcher rescans the whole tracked set for changes its watches missed. `0` disables periodic reconciliation (startup and configuration changes still reconcile).",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
         "hook_env": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1179,7 +1283,8 @@
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.",
-          "type": "integer"
+          "type": "integer",
+          "minimum": 0
         },
         "legacy_version_file": {
           "default": true,
@@ -1228,6 +1333,11 @@
         "lockfile": {
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
+        },
+        "lockfile_mode": {
+          "description": "Choose incremental merging or complete lockfile generation.",
+          "type": "string",
+          "enum": ["merge", "generate"]
         },
         "lockfile_platforms": {
           "description": "Platforms to target in lockfile operations.",
@@ -1433,6 +1543,24 @@
             "type": "string"
           }
         },
+        "packslip": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "exec": {
+              "default": false,
+              "description": "Run a tool's own command at install time to produce a resource its packslip offers only as an exec entry, such as an agent skill.",
+              "type": "boolean"
+            },
+            "stampers": {
+              "description": "Hosts whose signed stamp lists say which packslip releases may be installed, each with its pin.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "paranoid": {
           "description": "Enables extra-secure behavior.",
           "type": "boolean"
@@ -1446,7 +1574,6 @@
           "unevaluatedProperties": false,
           "properties": {
             "registry_url": {
-              "default": "https://pypi.org/pypi/{}/json",
               "description": "URL to use for pipx registry.",
               "type": "string"
             },
@@ -1478,6 +1605,20 @@
           "default": true,
           "description": "Fail when provenance API checks cannot be completed.",
           "type": "boolean"
+        },
+        "pypi": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "registry_url": {
+              "description": "Package registry URL for Python tools (pipx.registry_url is a compatibility alias).",
+              "type": "string"
+            },
+            "uvx": {
+              "description": "Use uv for Python tools when available (pipx.uvx is a compatibility alias).",
+              "type": "boolean"
+            }
+          }
         },
         "python": {
           "type": "object",
@@ -1692,6 +1833,22 @@
             }
           }
         },
+        "self_update": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "api_url": {
+              "default": "https://api.github.com",
+              "description": "GitHub API base URL used by `mise self-update`.",
+              "type": "string"
+            },
+            "repository": {
+              "default": "jdx/mise",
+              "description": "GitHub repository used by `mise self-update`.",
+              "type": "string"
+            }
+          }
+        },
         "shared_install_dirs": {
           "description": "Additional read-only directories to search for installed tool versions.",
           "type": "array",
@@ -1711,6 +1868,32 @@
         "silent": {
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
+        },
+        "skills": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "auto_sync": {
+              "default": false,
+              "description": "Link the active tools' agent skills into the project after `mise install` and `mise use`.",
+              "type": "boolean"
+            },
+            "dir": {
+              "default": ".claude/skills",
+              "description": "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`.",
+              "type": "string"
+            },
+            "fetch": {
+              "default": true,
+              "description": "Fetch the agent skills a tool's packslip declares when installing it.",
+              "type": "boolean"
+            },
+            "prune": {
+              "default": false,
+              "description": "Remove links mise made for skills that are no longer active when syncing.",
+              "type": "boolean"
+            }
+          }
         },
         "slsa": {
           "default": true,
@@ -1974,6 +2157,11 @@
                 "silent"
               ]
             },
+            "quiet": {
+              "default": false,
+              "description": "Suppress mise's own output while executing tasks.",
+              "type": "boolean"
+            },
             "remote_no_cache": {
               "description": "Mise will always fetch the latest tasks from the remote, by default the cache is used.",
               "type": "boolean"
@@ -2085,6 +2273,11 @@
           "description": "Sets log level to trace",
           "type": "boolean"
         },
+        "truncate": {
+          "default": true,
+          "description": "Truncate long terminal output to fit the available width.",
+          "type": "boolean"
+        },
         "trusted_config_paths": {
           "default": [],
           "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable, `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).",
@@ -2099,7 +2292,7 @@
           "type": "string"
         },
         "unix_default_inline_shell_args": {
-          "default": "sh -c -o errexit",
+          "default": "sh -o errexit -c",
           "description": "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh.",
           "type": "string"
         },
@@ -3541,6 +3734,12 @@
       "minProperties": 1,
       "additionalProperties": false
     },
+    "bootstrap_file_phase": {
+      "type": "string",
+      "enum": ["pre-packages", "post-packages"],
+      "default": "post-packages",
+      "description": "When to apply the managed path during bootstrap; pre-packages runs before the pre-packages hook"
+    },
     "bootstrap_hook": {
       "description": "command or commands to run for a bootstrap phase",
       "oneOf": [
@@ -3616,6 +3815,53 @@
           "description": "absolute or ~/-relative remote path to install the provisioned mise to"
         }
       ]
+    },
+    "doctor": {
+      "description": "Project diagnostic checks, run explicitly with mise doctor project.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "checks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run"],
+            "properties": {
+              "run": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Diagnostic command. Exit zero to pass; other exit codes fail."
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable requirement checked by the command."
+              },
+              "hint": {
+                "type": "string",
+                "description": "Remediation guidance displayed on failure; never executed."
+              },
+              "timeout": {
+                "type": "string",
+                "description": "Positive command timeout, such as 5s. Defaults to 10s."
+              },
+              "dir": {
+                "type": "string",
+                "description": "Working directory. Relative paths resolve from the declaring config's root (the invocation directory for global and system config); a leading ~/ and absolute paths are used as given."
+              },
+              "shell": {
+                "description": "Shell command, including the command flag, as in tasks.",
+                "type": "string",
+                "examples": ["bash -c", "pwsh -Command"]
+              },
+              "os": {
+                "$ref": "#/$defs/os_filter",
+                "description": "OS or OS/arch selectors; omit to run everywhere."
+              }
+            }
+          }
+        }
+      }
     }
   },
   "unevaluatedProperties": false,
@@ -3820,6 +4066,12 @@
         "bun": {
           "$ref": "#/$defs/deps_provider"
         },
+        "aube": {
+          "$ref": "#/$defs/deps_provider"
+        },
+        "deno": {
+          "$ref": "#/$defs/deps_provider"
+        },
         "go": {
           "$ref": "#/$defs/deps_provider"
         },
@@ -3842,6 +4094,9 @@
           "$ref": "#/$defs/deps_provider"
         },
         "flutter": {
+          "$ref": "#/$defs/deps_provider"
+        },
+        "git-submodule": {
           "$ref": "#/$defs/deps_provider"
         }
       },
@@ -3948,7 +4203,7 @@
     },
     "dotfiles": {
       "type": "object",
-      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path",
+      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path or a logical name when every variant overrides the target; an omitted source for the latter resolves the relative key under dotfiles.root",
       "additionalProperties": {
         "oneOf": [
           {
@@ -3959,9 +4214,18 @@
             "type": "object",
             "description": "whole-file dotfile entry or file edit entry",
             "properties": {
+              "encrypt": {
+                "type": "boolean",
+                "default": false,
+                "description": "encrypt tracked file contents before storing them in Git; the live file remains plaintext"
+              },
               "source": {
                 "type": "string",
                 "description": "source file or directory"
+              },
+              "content": {
+                "type": "string",
+                "description": "literal inline file content; alternative to source"
               },
               "mode": {
                 "type": "string",
@@ -3982,6 +4246,11 @@
                   "type": "string"
                 }
               },
+              "manifest": {
+                "type": "string",
+                "description": "source manifest used to select managed files from a directory",
+                "enum": ["git"]
+              },
               "block": {
                 "type": "string",
                 "description": "block content, maintained between marker comments"
@@ -4000,13 +4269,141 @@
               },
               "line": {
                 "type": "string",
-                "description": "exact line to ensure exists (appended if absent)"
+                "description": "exact line to ensure exists"
+              },
+              "position": {
+                "type": "string",
+                "default": "append",
+                "description": "where to insert a missing line",
+                "anyOf": [
+                  {
+                    "enum": ["append", "prepend"]
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
               },
               "comment": {
                 "type": "string",
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
+              },
+              "variants": {
+                "type": "array",
+                "description": "OS/profile variants: history streams for track mode, or optional destinations for deployment modes",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "os": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "profile": {
+                      "type": "string",
+                      "description": "mise environment selected with -E or MISE_ENV"
+                    },
+                    "default": {
+                      "type": "boolean"
+                    },
+                    "target": {
+                      "type": "string",
+                      "description": "deployment destination override; requires either an explicit source or a safe relative entry key when every variant has a target, and is not supported in track mode"
+                    }
+                  }
+                }
               }
-            }
+            },
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "required": ["manifest"],
+                    "properties": {
+                      "source": {},
+                      "content": false,
+                      "mode": {
+                        "enum": ["copy", "symlink-each"]
+                      },
+                      "exclude": {},
+                      "manifest": {},
+                      "block": false,
+                      "line": false,
+                      "template": false,
+                      "comment": false
+                    }
+                  },
+                  {
+                    "properties": {
+                      "manifest": false
+                    }
+                  }
+                ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": ["content"],
+                    "properties": {
+                      "source": false,
+                      "manifest": false,
+                      "mode": false,
+                      "exclude": false,
+                      "block": false,
+                      "line": false,
+                      "position": false,
+                      "template": false,
+                      "comment": false
+                    }
+                  },
+                  {
+                    "required": ["line"],
+                    "properties": {
+                      "content": false,
+                      "mode": false,
+                      "exclude": false,
+                      "source": false,
+                      "block": false,
+                      "template": false,
+                      "comment": false
+                    }
+                  },
+                  {
+                    "properties": {
+                      "content": false,
+                      "line": false,
+                      "position": false
+                    }
+                  }
+                ]
+              }
+            ],
+            "anyOf": [
+              {
+                "properties": {
+                  "encrypt": {
+                    "const": false
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "content": false,
+                  "block": false,
+                  "line": false,
+                  "template": false
+                }
+              }
+            ]
           }
         ]
       }
@@ -4015,9 +4412,92 @@
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
+        "files": {
+          "type": "object",
+          "description": "Managed system files keyed by absolute target path",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "$ref": "#/$defs/bootstrap_file_phase"
+              },
+              "source": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "group": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "template": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["present", "absent"]
+              },
+              "replace": {
+                "type": "boolean"
+              },
+              "notify": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "directories": {
+          "type": "object",
+          "description": "Managed system directories keyed by absolute target path",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "$ref": "#/$defs/bootstrap_file_phase"
+              },
+              "owner": {
+                "type": "string"
+              },
+              "group": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["present", "absent"]
+              },
+              "recursive": {
+                "type": "boolean"
+              },
+              "replace": {
+                "type": "boolean"
+              },
+              "notify": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "config_roots": {
+          "deprecated": true,
           "type": "array",
-          "description": "independent config roots whose dotfiles and managed files/directories are composed into bootstrap",
+          "description": "deprecated; bootstrap composition across independent config roots needs more design and will be removed in mise 2027.3.3",
           "items": {
             "type": "string"
           }
@@ -4150,6 +4630,75 @@
           },
           "additionalProperties": false
         },
+        "services": {
+          "type": "object",
+          "description": "System services and portable user services managed by mise bootstrap, keyed by service name",
+          "additionalProperties": {
+            "type": "object",
+            "not": {
+              "required": ["builtin", "command"]
+            },
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["running", "stopped", "absent"],
+                "default": "running"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "masked": {
+                "type": "boolean",
+                "default": false,
+                "description": "System scope only"
+              },
+              "on_change": {
+                "type": "string",
+                "enum": ["reload", "restart", "reload_or_restart", "none"],
+                "default": "reload_or_restart",
+                "description": "System scope only"
+              },
+              "scope": {
+                "type": "string",
+                "enum": ["system", "user"],
+                "description": "Defaults to system; builtin implies user"
+              },
+              "builtin": {
+                "type": "string",
+                "enum": ["history-watch"],
+                "description": "A mise-provided user service"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "description": "User service command; mutually exclusive with builtin"
+              },
+              "description": {
+                "type": "string"
+              },
+              "restart": {
+                "type": "string",
+                "enum": ["always", "on-failure", "never"],
+                "default": "on-failure"
+              },
+              "environment": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "working_directory": {
+                "type": "string"
+              },
+              "requires_tools": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
         "plugins": {
           "type": "object",
           "description": "package manager plugins to install with `mise bootstrap plugins apply`, keyed by manager name",
@@ -4193,9 +4742,34 @@
                       }
                     ]
                   },
+                  "env": {
+                    "description": "mise environments in which this package is enabled",
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        },
+                        "minItems": 1
+                      }
+                    ]
+                  },
                   "adopt": {
                     "type": "boolean",
                     "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "desired package state; only pacman currently supports absent",
+                    "enum": ["present", "absent"],
+                    "default": "present"
                   }
                 },
                 "additionalProperties": false
@@ -4234,6 +4808,23 @@
               "type": "object",
               "description": "curated Dock preferences that compile into macOS defaults",
               "properties": {
+                "apps": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(?:/|~/(?!/)).+\\.[aA][pP][pP]/*$"
+                  },
+                  "uniqueItems": true,
+                  "description": "Pinned application paths in order; absolute or ~/ paths ending in .app. An empty array removes application tiles."
+                },
+                "autohide_delay": {
+                  "type": "number",
+                  "description": "delay before showing the Dock"
+                },
+                "autohide_time_modifier": {
+                  "type": "number",
+                  "description": "Dock autohide animation time modifier"
+                },
                 "autohide": {
                   "type": "boolean",
                   "description": "hide and show the Dock automatically"
@@ -4270,6 +4861,14 @@
               "type": "object",
               "description": "curated Finder preferences that compile into macOS defaults",
               "properties": {
+                "sort_folders_first": {
+                  "type": "boolean",
+                  "description": "keep folders first when sorting by name"
+                },
+                "save_new_documents_to_cloud": {
+                  "type": "boolean",
+                  "description": "save new documents to iCloud by default (applies globally to application save dialogs)"
+                },
                 "show_all_files": {
                   "type": "boolean",
                   "description": "show hidden files in Finder"
@@ -4298,6 +4897,14 @@
               "type": "object",
               "description": "curated keyboard preferences that compile into macOS defaults",
               "properties": {
+                "automatic_capitalization": {
+                  "type": "boolean",
+                  "description": "automatically capitalize words"
+                },
+                "automatic_spelling_correction": {
+                  "type": "boolean",
+                  "description": "automatically correct spelling"
+                },
                 "key_repeat": {
                   "type": "integer",
                   "description": "keyboard repeat interval"
@@ -4354,6 +4961,55 @@
                     }
                   ],
                   "description": "desired value, written with the matching `defaults write` type (-bool, -int, -float, -string)"
+                }
+              }
+            },
+            "defaults_entries": {
+              "type": "array",
+              "description": "Explicit macOS preferences with a selectable host scope",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["domain", "key", "value"],
+                "properties": {
+                  "domain": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Dictionary keys below the preference key; omitted to replace the whole value"
+                  },
+                  "host": {
+                    "type": "string",
+                    "enum": ["any", "current"],
+                    "default": "any"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array"
+                      },
+                      {
+                        "type": "object"
+                      }
+                    ]
+                  }
                 }
               }
             },
@@ -5005,6 +5661,57 @@
         }
       }
     },
+    "history": {
+      "type": "object",
+      "description": "dotfiles history: what is never captured, reload commands, and the setup repository (https://mise.jdx.dev/history.html)",
+      "properties": {
+        "encryption": {
+          "type": "object",
+          "properties": {
+            "recipients": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "shared age, SSH, or age-plugin public recipients for all encrypted dotfiles"
+            }
+          },
+          "additionalProperties": false
+        },
+        "exclude": {
+          "type": "array",
+          "description": "globs never captured by dotfiles history; a `!glob` entry re-includes a path an earlier glob excluded",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reload": {
+          "type": "object",
+          "description": "commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "origin": {
+          "type": "object",
+          "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "the repository url"
+            },
+            "branch": {
+              "type": "string",
+              "description": "the setup branch",
+              "default": "main"
+            }
+          },
+          "required": ["url"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "task_config": {
       "description": "configuration for task execution and management",
       "$ref": "#/$defs/task_config"
@@ -5059,6 +5766,62 @@
     "_": {
       "type": "object",
       "additionalProperties": true
+    },
+    "doctor": {
+      "$ref": "#/$defs/doctor"
+    },
+    "daemons": {
+      "description": "Experimental project daemons: custom pitchfork commands or managed presets.",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Version request for a preset matching the daemon name."
+          },
+          {
+            "type": "object",
+            "required": ["run"],
+            "not": {
+              "required": ["preset"]
+            },
+            "properties": {
+              "run": {
+                "type": "string"
+              },
+              "mise": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": ["preset", "version"],
+            "properties": {
+              "preset": {
+                "type": "string",
+                "enum": ["postgres", "redis"]
+              },
+              "version": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "options": {
+                "type": "object"
+              },
+              "run": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
     }
   }
 }

@@ -4,7 +4,14 @@ use std::env;
 
 /// Print the current PATH entries mise is providing
 #[derive(Debug, usage_rs::Args)]
-#[usage(alias="paths", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    alias = "paths",
+    verbatim_doc_comment,
+    example(
+        "mise doctor path",
+        help = "Get the PATH entries mise provides, such as `/home/user/.local/share/mise/installs/node/24.0.0/bin`, `/home/user/.local/share/mise/installs/rust/1.90.0/bin`, and `/home/user/.local/share/mise/installs/python/3.10.0/bin`."
+    )
+)]
 pub(crate) struct Path {
     /// Print all entries including those not provided by mise
     #[usage(long, short, verbatim_doc_comment)]
@@ -29,14 +36,3 @@ impl Path {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    Get the current PATH entries mise is providing
-    $ mise doctor path
-    /home/user/.local/share/mise/installs/node/24.0.0/bin
-    /home/user/.local/share/mise/installs/rust/1.90.0/bin
-    /home/user/.local/share/mise/installs/python/3.10.0/bin
-"#
-);

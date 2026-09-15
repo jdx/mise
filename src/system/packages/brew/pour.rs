@@ -1,5 +1,6 @@
 //! Pour a bottle: extract -> relocate -> codesign -> receipt -> link.
 
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use eyre::{WrapErr, bail};
@@ -40,6 +41,70 @@ pub(super) fn keg_installed(name: &str, pkg_version: &str) -> bool {
 pub(super) fn linked_version(name: &str) -> Option<String> {
     let opt = prefix::prefix().join("opt").join(name);
     record_keg(name, &opt).map(|(version, _)| version)
+}
+
+/// Return the absolute opt path only when its symlink resolves to a keg directly inside the formula rack.
+/// Preserve the configured prefix spelling and report invalid records without repairing them.
+pub(super) fn strict_package_root(name: &str) -> Result<PathBuf> {
+    if let Some(prefix) = std::env::var_os("MISE_SYSTEM_BREW_PREFIX")
+        && prefix.to_str().is_none()
+    {
+        bail!("the prefix cannot be printed as a single UTF-8 path; use a compatible prefix path");
+    }
+    let prefix = prefix::prefix();
+    let prefix = if prefix.is_absolute() {
+        prefix
+    } else {
+        std::env::current_dir()
+            .wrap_err_with(|| {
+                format!(
+                    "cannot resolve relative Homebrew prefix {}",
+                    prefix.display()
+                )
+            })?
+            .join(prefix)
+    };
+    let opt = prefix.join("opt").join(name);
+    let rack = prefix.join("Cellar").join(name);
+    let metadata =
+        std::fs::symlink_metadata(&opt).map_err(|err| package_root_io_error(name, &opt, err))?;
+    if !metadata.is_symlink() {
+        bail!(
+            "invalid opt record for brew:{name} at {}: expected a symbolic link; inspect it and restore the formula's correct opt link",
+            opt.display()
+        );
+    }
+    let target =
+        std::fs::canonicalize(&opt).map_err(|err| package_root_io_error(name, &opt, err))?;
+    let canonical_rack =
+        std::fs::canonicalize(&rack).map_err(|err| package_root_io_error(name, &rack, err))?;
+    let metadata =
+        std::fs::metadata(&target).map_err(|err| package_root_io_error(name, &target, err))?;
+    if !metadata.is_dir() || target.parent() != Some(canonical_rack.as_path()) {
+        bail!(
+            "invalid opt record for brew:{name} at {}: target {} must be a directory directly inside {}; inspect it and restore the formula's correct opt link",
+            opt.display(),
+            target.display(),
+            canonical_rack.display()
+        );
+    }
+    Ok(opt)
+}
+
+/// Retain the filesystem error while adding lookup context and actionable recovery guidance.
+fn package_root_io_error(name: &str, path: &Path, err: std::io::Error) -> eyre::Report {
+    let context = if err.kind() == std::io::ErrorKind::NotFound {
+        format!(
+            "brew:{name} has no usable installed opt link: {}; install or reconcile it with `mise bootstrap packages apply brew:{name}`",
+            path.display()
+        )
+    } else {
+        format!(
+            "cannot inspect brew:{name} at {}; check access or the reported filesystem condition",
+            path.display()
+        )
+    };
+    eyre::Report::new(err).wrap_err(context)
 }
 
 /// Return the active keg version and whether one of its active records can be repaired locally.
@@ -188,32 +253,140 @@ pub(super) fn installed_versions(name: &str) -> Vec<String> {
     versions
 }
 
-pub(super) async fn pour(
+pub(super) struct PreparedBottle {
+    name: String,
+    pkg_version: String,
+    keg: PathBuf,
+    staged_keg: PathBuf,
+    // Fields drop in declaration order: unlock before TempDir removes the
+    // lock file so cleanup also works on Windows filesystems.
+    _staging_lock: fslock::LockFile,
+    staging: tempfile::TempDir,
+    keg_only: bool,
+}
+
+fn create_staging_dir(
+    rack: &Path,
+    pkg_version: &str,
+) -> Result<(tempfile::TempDir, fslock::LockFile)> {
+    crate::file::create_dir_all(rack)?;
+    // Serialize the short cleanup/create handshake within a formula rack. The
+    // per-directory lock then protects active extraction after this lock is
+    // released, including work owned by another mise process.
+    let _rack_lock = crate::lock_file::LockFile::at(&rack.join(".mise-staging.lock")).lock()?;
+    remove_abandoned_staging_dirs(rack)?;
+    let staging = tempfile::Builder::new()
+        .prefix(&format!(".mise-extract-{pkg_version}-"))
+        .tempdir_in(rack)?;
+    let staging_lock = crate::lock_file::LockFile::at(&staging.path().join(".mise-lock")).lock()?;
+    Ok((staging, staging_lock))
+}
+
+fn remove_abandoned_staging_dirs(rack: &Path) -> Result<()> {
+    for entry in rack.read_dir()? {
+        let entry = entry?;
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(".mise-extract-") && !name.starts_with(".mise-tmp-") {
+            continue;
+        }
+        let metadata = match path.symlink_metadata() {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => return Err(err.into()),
+        };
+        if !metadata.is_dir() {
+            continue;
+        }
+        // Older mise versions used lockless staging directories. They may
+        // still belong to a running process, so only reclaim directories that
+        // opt into this cleanup protocol with a regular lock file.
+        let lock_path = path.join(".mise-lock");
+        let lock_metadata = match lock_path.symlink_metadata() {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => return Err(err.into()),
+        };
+        if !lock_metadata.is_file() {
+            continue;
+        }
+        // Open directly instead of LockFile::at(...).try_lock(), which creates
+        // the parent and could resurrect a staging directory removed between
+        // the metadata checks above.
+        let mut lock = match fslock::LockFile::open(&lock_path) {
+            Ok(lock) => lock,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => return Err(err.into()),
+        };
+        if !lock.try_lock()? {
+            continue;
+        }
+        // The rack lock prevents a new owner from appearing after this check.
+        // Drop the file handle first so cleanup also works on Windows filesystems.
+        drop(lock);
+        if let Err(err) = crate::file::remove_all(&path) {
+            let disappeared = err.chain().any(|cause| {
+                cause
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|err| err.kind() == ErrorKind::NotFound)
+            });
+            if !disappeared {
+                return Err(err);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn commit_lock_path() -> PathBuf {
+    prefix::prefix()
+        .join("var/homebrew/locks")
+        .join("mise-bootstrap.lock")
+}
+
+/// Serialize Cellar and shared-prefix mutations even when operation history is
+/// disabled. Bottle download and preparation happen before acquiring this lock;
+/// source builds hold it while writing directly into the final Cellar.
+pub(super) fn commit_lock(pr: &dyn SingleReport) -> Result<fslock::LockFile> {
+    crate::lock_file::LockFile::at(&commit_lock_path()).lock_with_notice(&|| {
+        pr.set_message("waiting for another brew install".to_string());
+    })
+}
+
+/// Extract, relocate, sign, and write the receipt into a formula-specific
+/// staging directory. This does not change the active Homebrew prefix links,
+/// so independent bottles can be prepared concurrently.
+pub(super) fn prepare_bottle(
     rf: &ResolvedFormula,
     tag: &str,
     bottle: &BottleFile,
     tarball: &Path,
     closure: &[ResolvedFormula],
     pr: &dyn SingleReport,
-) -> Result<()> {
+) -> Result<PreparedBottle> {
     let name = &rf.formula.name;
     let pkg_version = rf.formula.pkg_version()?;
     let keg = keg_path(name, &pkg_version);
     let rack = keg.parent().unwrap().to_path_buf();
-    let tmp = rack.join(format!(".mise-tmp-{pkg_version}"));
-    let scratch = rack.join(format!(".mise-extract-{pkg_version}"));
-    for dir in [&tmp, &scratch] {
-        if dir.exists() {
-            crate::file::remove_all(dir)?;
-        }
-    }
-    crate::file::create_dir_all(&scratch)?;
+    let (staging, staging_lock) = create_staging_dir(&rack, &pkg_version)?;
+    let staged_keg = staging.path().join(name).join(&pkg_version);
+    let prepared = PreparedBottle {
+        name: name.clone(),
+        pkg_version,
+        keg,
+        staged_keg,
+        _staging_lock: staging_lock,
+        staging,
+        keg_only: rf.formula.keg_only_for_target(),
+    };
 
     // bottle tarballs contain <name>/<pkg_version>/...
     pr.set_message("extract".to_string());
     crate::file::untar(
         tarball,
-        &scratch,
+        prepared.staging.path(),
         ExtractionFormat::TarGz,
         &ExtractOptions {
             strip_components: 0,
@@ -222,12 +395,12 @@ pub(super) async fn pour(
         },
     )
     .wrap_err_with(|| format!("failed to extract bottle for {name}"))?;
-    let inner = scratch.join(name).join(&pkg_version);
-    if !inner.exists() {
-        bail!("unexpected bottle layout for {name}: missing {name}/{pkg_version} in archive");
+    if !prepared.staged_keg.exists() {
+        bail!(
+            "unexpected bottle layout for {name}: missing {name}/{} in archive",
+            prepared.pkg_version
+        );
     }
-    crate::file::rename(&inner, &tmp)?;
-    crate::file::remove_all(&scratch)?;
 
     // ":any_skip_relocation" skips binary linkage relocation, but Homebrew
     // still replaces placeholders in text files. On Linux, bottles built by
@@ -235,9 +408,10 @@ pub(super) async fn pour(
     // relocation (brew applies the same version check in
     // extend/os/linux/bottle_specification.rb).
     let skip_linkage = bottle.cellar == ":any_skip_relocation"
-        && (cfg!(target_os = "macos") || bottled_by_homebrew_at_least(&tmp, (5, 1, 15)));
+        && (cfg!(target_os = "macos")
+            || bottled_by_homebrew_at_least(&prepared.staged_keg, (5, 1, 15)));
     pr.set_message("relocate".to_string());
-    let report = relocate::relocate_keg(&tmp, name, skip_linkage)?;
+    let report = relocate::relocate_keg(&prepared.staged_keg, name, skip_linkage)?;
     // arm64 macOS kills binaries whose signature doesn't match; Linux ELF
     // files have no signatures to fix
     if cfg!(target_os = "macos") && !report.changed_machos.is_empty() {
@@ -246,23 +420,34 @@ pub(super) async fn pour(
             .wrap_err_with(|| format!("failed to re-sign relocated binaries for {name}"))?;
     }
 
-    write_receipt(rf, tag, &tmp, &report, closure, true)?;
+    write_receipt(rf, tag, &prepared.staged_keg, &report, closure, true)?;
+    Ok(prepared)
+}
 
+/// Commit a prepared bottle into the Cellar and update shared prefix links.
+/// Callers keep this step sequential and dependency ordered.
+pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) -> Result<()> {
     pr.set_message("link".to_string());
-    if keg.exists() {
-        crate::file::remove_all(&keg)?;
+    let _commit_lock = commit_lock(pr)?;
+    // Another mise process may have completed the same formula while this
+    // process prepared its bottle outside the commit lock.
+    if keg_installed(&prepared.name, &prepared.pkg_version) {
+        return Ok(());
     }
-    crate::file::rename(&tmp, &keg)?;
+    if prepared.keg.exists() {
+        crate::file::remove_all(&prepared.keg)?;
+    }
+    crate::file::rename(&prepared.staged_keg, &prepared.keg)?;
     // never leave a half-installed keg: if linking fails (conflicts, IO),
     // remove the keg so the next install retries from scratch
-    if let Err(err) = link_keg(name, &pkg_version, rf.formula.keg_only) {
-        if let Err(rm_err) = crate::file::remove_all(&keg) {
+    if let Err(err) = link_keg(&prepared.name, &prepared.pkg_version, prepared.keg_only) {
+        if let Err(rm_err) = crate::file::remove_all(&prepared.keg) {
             // a keg left behind here is unlinked but looks installed, so
             // future installs would skip it — make that state visible
             warn!(
                 "failed to remove {} after link failure: {rm_err}\n\
                  remove it manually, then re-run `mise bootstrap packages apply`",
-                keg.display()
+                prepared.keg.display()
             );
         }
         return Err(err);
@@ -557,8 +742,7 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
     let opt_link = prefix_path.join("opt").join(name);
 
     let mut conflicts: Vec<PathBuf> = vec![];
-    // (dest in prefix, target in keg); opt first
-    let mut links: Vec<(PathBuf, PathBuf)> = vec![(opt_link.clone(), keg.clone())];
+    let mut links: Vec<(PathBuf, PathBuf)> = vec![];
     if keg_only {
         debug!(
             "{name} is keg-only, not linking into {}",
@@ -590,6 +774,14 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
         } else {
             conflicts.push(linked);
         }
+    }
+    if can_overwrite(&opt_link) {
+        // Create opt last: keg_installed uses it as the completion marker, so a
+        // process killed during public linking cannot make a partial pour look
+        // complete to another process waiting on the commit lock.
+        links.push((opt_link.clone(), keg.clone()));
+    } else {
+        conflicts.push(opt_link);
     }
     if !conflicts.is_empty() {
         // nothing has been linked yet, and the caller rolls the keg back on
@@ -646,6 +838,8 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::system::packages::brew::package_root;
+    use std::os::unix::fs::{PermissionsExt, symlink};
     use tokio::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::const_new(());
@@ -669,6 +863,53 @@ mod tests {
                 None => crate::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
             }
         }
+    }
+
+    #[test]
+    fn removes_abandoned_locking_staging_directories() {
+        let rack = tempfile::tempdir().unwrap();
+        let extract = rack.path().join(".mise-extract-1.0-abandoned");
+        crate::file::create_dir_all(&extract).unwrap();
+        drop(
+            crate::lock_file::LockFile::at(&extract.join(".mise-lock"))
+                .lock()
+                .unwrap(),
+        );
+
+        remove_abandoned_staging_dirs(rack.path()).unwrap();
+
+        assert!(!extract.exists());
+    }
+
+    #[test]
+    fn preserves_legacy_lockless_staging_directories() {
+        let rack = tempfile::tempdir().unwrap();
+        let extract = rack.path().join(".mise-extract-1.0-legacy");
+        let legacy_tmp = rack.path().join(".mise-tmp-1.0");
+        crate::file::create_dir_all(&extract).unwrap();
+        crate::file::create_dir_all(&legacy_tmp).unwrap();
+
+        remove_abandoned_staging_dirs(rack.path()).unwrap();
+
+        assert!(extract.exists());
+        assert!(legacy_tmp.exists());
+    }
+
+    #[test]
+    fn preserves_locked_staging_until_its_owner_finishes() {
+        let rack = tempfile::tempdir().unwrap();
+        let active = rack.path().join(".mise-extract-1.0-active");
+        crate::file::create_dir_all(&active).unwrap();
+        let held = crate::lock_file::LockFile::at(&active.join(".mise-lock"))
+            .lock()
+            .unwrap();
+
+        remove_abandoned_staging_dirs(rack.path()).unwrap();
+        assert!(active.exists());
+
+        drop(held);
+        remove_abandoned_staging_dirs(rack.path()).unwrap();
+        assert!(!active.exists());
     }
 
     /// keg with a versioned dylib and its unversioned alias (the relative
@@ -1112,6 +1353,24 @@ mod tests {
     }
 
     #[test]
+    fn test_foreign_opt_file_blocks_linking_before_changes() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        write_lib_keg(&prefix, "foo", "1.0")?;
+        let opt = prefix.join("opt/foo");
+        crate::file::create_dir_all(opt.parent().unwrap())?;
+        crate::file::write(&opt, "foreign")?;
+
+        let err = link_keg("foo", "1.0", false).unwrap_err();
+
+        assert!(err.to_string().contains("not created by mise or brew"));
+        assert_eq!(crate::file::read_to_string(&opt)?, "foreign");
+        assert!(prefix.join("lib/libfoo.dylib").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
     fn test_relative_target() {
         assert_eq!(
             relative_target(
@@ -1127,5 +1386,373 @@ mod tests {
             ),
             PathBuf::from("../Cellar/jq/1.7")
         );
+    }
+
+    /// Create the minimal rack layout needed to test lookup independently of installation metadata.
+    fn query_keg(prefix: &Path, name: &str, version: &str) -> Result<PathBuf> {
+        let keg = prefix.join("Cellar").join(name).join(version);
+        std::fs::create_dir_all(&keg)?;
+        std::fs::create_dir_all(prefix.join("opt"))?;
+        Ok(keg)
+    }
+
+    /// Require stable absolute opt output and verify that it resolves to the expected keg.
+    fn assert_query_target(name: &str, opt: &Path, keg: &Path) -> Result<()> {
+        let root = package_root(name)?;
+        assert_eq!(root, opt);
+        assert!(root.is_absolute());
+        assert_eq!(root.canonicalize()?, keg.canonicalize()?);
+        Ok(())
+    }
+
+    #[test]
+    /// Treat version suffixes literally and qualified requests as names for the same local rack.
+    fn package_root_normalizes_plain_versioned_and_qualified_names() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        for name in ["widget", "openssl@3", "widget@latest", "widget@1.2"] {
+            let keg = query_keg(&prefix, name, "opaque-active")?;
+            let opt = prefix.join("opt").join(name);
+            symlink(&keg, &opt)?;
+            for request in [
+                name.to_string(),
+                format!("homebrew/core/{name}"),
+                format!("owner/tap/{name}"),
+                format!("another/tap/{name}"),
+            ] {
+                assert_query_target(&request, &opt, &keg)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Validate names before touching the prefix so malformed requests receive identifier diagnostics.
+    fn package_root_rejects_invalid_identifiers_before_filesystem_lookup() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix.join("missing-prefix"));
+        for name in [
+            "",
+            ".",
+            "..",
+            "/widget",
+            "../widget",
+            "owner/widget",
+            "a/b/c/d",
+            "a//widget",
+            "a/b/widget/",
+            "a/./widget",
+            "../b/widget",
+            "a/../widget",
+            "a/b/..",
+            "a/b/.",
+            "widget:name",
+            "a:b/c/widget",
+            "a/b/widget:name",
+            "widget\\name",
+            "a\\b/c/widget",
+            " widget",
+            "wid get",
+            "a/ b/widget",
+            "widget\n",
+            "widget\r",
+            "wid\tget",
+            "a/b/wid\0get",
+            "a/b/wid\u{7f}get",
+            "wid\u{a0}get",
+        ] {
+            let error = format!("{:#}", package_root(name).unwrap_err());
+            assert!(error.contains("brew:"), "{name:?}: {error}");
+            assert!(!error.contains("missing-prefix"), "{name:?}: {error}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Keep cask requests separate even when a same-named formula is installed.
+    fn package_root_rejects_the_cask_namespace() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        symlink(keg, prefix.join("opt/widget"))?;
+        let error = format!("{:#}", package_root("homebrew/cask/widget").unwrap_err());
+        assert!(error.contains("cask"), "{error}");
+        Ok(())
+    }
+
+    #[test]
+    /// Allow minimal keg-only installations whose only active record is a relative opt symlink.
+    fn package_root_accepts_relative_opt_without_receipts_or_public_links() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let opt = prefix.join("opt/widget");
+        symlink("../Cellar/widget/active", &opt)?;
+        assert_query_target("widget", &opt, &keg)?;
+        assert!(!prefix.join("bin").exists());
+        assert!(!prefix.join("var/homebrew/linked/widget").exists());
+        assert_eq!(std::fs::read_dir(keg)?.count(), 0);
+        Ok(())
+    }
+
+    #[test]
+    /// Use the active opt target instead of version ordering, leaving both keg payloads unchanged.
+    fn package_root_follows_only_the_active_opaque_version_and_preserves_records() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let old = query_keg(&prefix, "widget", "old-channel")?;
+        let new = query_keg(&prefix, "widget", "2099.12.31")?;
+        let opt = prefix.join("opt/widget");
+        std::fs::write(old.join("payload"), "old")?;
+        std::fs::write(new.join("payload"), "new")?;
+        symlink(&old, &opt)?;
+        assert_query_target("widget", &opt, &old)?;
+        assert_eq!(std::fs::read_link(&opt)?, old);
+        std::fs::remove_file(&opt)?;
+        symlink(&new, &opt)?;
+        assert_query_target("widget", &opt, &new)?;
+        assert_eq!(std::fs::read_link(&opt)?, new);
+        assert_eq!(std::fs::read_to_string(old.join("payload"))?, "old");
+        assert_eq!(std::fs::read_to_string(new.join("payload"))?, "new");
+        Ok(())
+    }
+
+    #[test]
+    /// Return the user-facing prefix spelling while validating its canonical filesystem target.
+    fn package_root_preserves_symlinked_prefix_and_spaces() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, base) = canonical_tempdir()?;
+        let prefix = base.join("prefix with spaces");
+        let alias = base.join("prefix alias");
+        let keg = query_keg(&prefix, "widget", "active")?;
+        symlink(&prefix, &alias)?;
+        symlink(&keg, prefix.join("opt/widget"))?;
+        let _guard = BrewPrefixGuard::set(&alias);
+        assert_query_target("widget", &alias.join("opt/widget"), &keg)
+    }
+
+    #[test]
+    /// Anchor relative prefix settings to the current directory before returning a usable path.
+    fn package_root_makes_relative_prefix_absolute() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let cwd = std::env::current_dir()?;
+        let tmp = tempfile::tempdir_in(&cwd)?;
+        let relative = tmp.path().strip_prefix(&cwd)?;
+        let _guard = BrewPrefixGuard::set(relative);
+        let keg = query_keg(tmp.path(), "widget", "active")?;
+        symlink("../Cellar/widget/active", tmp.path().join("opt/widget"))?;
+        assert_query_target("widget", &cwd.join(relative).join("opt/widget"), &keg)
+    }
+
+    #[test]
+    /// Require an active opt record rather than inferring one from Cellar or linked-keg entries.
+    fn package_root_requires_opt_even_with_cellar_or_linked_keg() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, base) = canonical_tempdir()?;
+        for state in [
+            "missing-prefix",
+            "empty-prefix",
+            "cellar-only",
+            "linked-only",
+        ] {
+            let prefix = base.join(state);
+            let _guard = BrewPrefixGuard::set(&prefix);
+            if state != "missing-prefix" {
+                std::fs::create_dir_all(&prefix)?;
+            }
+            if matches!(state, "cellar-only" | "linked-only") {
+                let keg = query_keg(&prefix, "widget", "active")?;
+                if state == "linked-only" {
+                    std::fs::create_dir_all(prefix.join("var/homebrew/linked"))?;
+                    symlink(keg, prefix.join("var/homebrew/linked/widget"))?;
+                }
+            }
+            let error = format!("{:#}", package_root("widget").unwrap_err());
+            assert!(error.contains("widget"), "{state}: {error}");
+            assert!(
+                error.contains(&prefix.display().to_string()),
+                "{state}: {error}"
+            );
+            assert!(error.contains("apply brew:widget"), "{state}: {error}");
+            assert!(!prefix.join("opt/widget").exists());
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Report a missing target with installation guidance while preserving the link for inspection.
+    fn package_root_rejects_dangling_opt_without_repairing_it() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        std::fs::create_dir_all(prefix.join("opt"))?;
+        let opt = prefix.join("opt/widget");
+        let target = Path::new("../Cellar/widget/missing");
+        symlink(target, &opt)?;
+        let error = format!("{:#}", package_root("widget").unwrap_err());
+        assert!(error.contains(&opt.display().to_string()), "{error}");
+        assert!(error.contains("apply brew:widget"), "{error}");
+        assert_eq!(std::fs::read_link(opt)?, target);
+        Ok(())
+    }
+
+    #[test]
+    /// Require opt symlinks and preserve invalid entries for explicit user repair.
+    fn package_root_rejects_regular_directory_and_file_opt_records() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, base) = canonical_tempdir()?;
+        for directory in [true, false] {
+            let prefix = base.join(directory.to_string());
+            let _guard = BrewPrefixGuard::set(&prefix);
+            query_keg(&prefix, "widget", "active")?;
+            let opt = prefix.join("opt/widget");
+            if directory {
+                std::fs::create_dir(&opt)?;
+            } else {
+                std::fs::write(&opt, "untouched")?;
+            }
+            let error = format!("{:#}", package_root("widget").unwrap_err());
+            assert!(error.contains(&opt.display().to_string()), "{error}");
+            assert!(!opt.symlink_metadata()?.is_symlink());
+            if !directory {
+                assert_eq!(std::fs::read_to_string(opt)?, "untouched");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Accept only a direct keg directory in the requested rack, preserving rejected link targets.
+    fn package_root_rejects_foreign_nested_rack_and_file_targets() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let foreign = query_keg(&prefix, "foreign", "active")?;
+        std::fs::create_dir(keg.join("nested"))?;
+        let file = prefix.join("Cellar/widget/file");
+        std::fs::write(&file, "untouched")?;
+        let opt = prefix.join("opt/widget");
+        for target in [
+            foreign,
+            keg.join("nested"),
+            prefix.join("Cellar/widget"),
+            file,
+        ] {
+            symlink(&target, &opt)?;
+            let error = format!("{:#}", package_root("widget").unwrap_err());
+            assert!(error.contains(&opt.display().to_string()), "{error}");
+            assert_eq!(std::fs::read_link(&opt)?, target);
+            std::fs::remove_file(&opt)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    /// Validate the final canonical target rather than rejecting a legitimate intermediary symlink.
+    fn package_root_accepts_outside_intermediary_resolving_to_its_keg() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let intermediary = prefix.join("intermediary");
+        symlink(&keg, &intermediary)?;
+        let opt = prefix.join("opt/widget");
+        symlink(intermediary, &opt)?;
+        assert_query_target("widget", &opt, &keg)
+    }
+
+    #[test]
+    /// Resolve symlinks before parent traversal so lexical normalization cannot disguise a foreign keg.
+    fn package_root_uses_filesystem_dotdot_semantics_to_reject_foreign_target() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let outside = prefix.join("outside");
+        std::fs::create_dir_all(outside.join("child"))?;
+        std::fs::create_dir(outside.join("active"))?;
+        symlink(outside.join("child"), prefix.join("Cellar/widget/jump"))?;
+        let opt = prefix.join("opt/widget");
+        symlink("../Cellar/widget/jump/../active", &opt)?;
+        assert_ne!(opt.canonicalize()?, keg);
+        assert!(package_root("widget").is_err());
+        Ok(())
+    }
+
+    #[test]
+    /// Accept a valid keg reached through symlinks and parent traversal under filesystem semantics.
+    fn package_root_uses_filesystem_dotdot_semantics_to_accept_local_target() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        std::fs::create_dir(prefix.join("outside"))?;
+        std::fs::create_dir(prefix.join("Cellar/widget/child"))?;
+        symlink(
+            prefix.join("Cellar/widget/child"),
+            prefix.join("outside/jump"),
+        )?;
+        let opt = prefix.join("opt/widget");
+        symlink("../outside/jump/../active", &opt)?;
+        assert_query_target("widget", &opt, &keg)
+    }
+
+    #[test]
+    /// Preserve the OS loop error and failing opt path for filesystem diagnosis.
+    fn package_root_preserves_symlink_loop_io_error_and_path() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        query_keg(&prefix, "widget", "active")?;
+        let opt = prefix.join("opt/widget");
+        symlink("widget", &opt)?;
+        let expected = opt.canonicalize().unwrap_err();
+        let error = package_root("widget").unwrap_err();
+        assert!(format!("{error:#}").contains(&opt.display().to_string()));
+        let io = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<std::io::Error>());
+        assert_eq!(
+            io.expect("retain underlying filesystem error")
+                .raw_os_error(),
+            expected.raw_os_error()
+        );
+        assert_eq!(std::fs::read_link(opt)?, Path::new("widget"));
+        Ok(())
+    }
+
+    #[test]
+    /// Retain permission diagnostics on non-root hosts and restore fixture access for cleanup.
+    fn package_root_preserves_permission_denial_and_path() -> Result<()> {
+        if nix::unistd::geteuid().is_root() {
+            return Ok(());
+        }
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = query_keg(&prefix, "widget", "active")?;
+        let opt = prefix.join("opt/widget");
+        symlink(&keg, &opt)?;
+        let rack = prefix.join("Cellar/widget");
+        let permissions = rack.metadata()?.permissions();
+        std::fs::set_permissions(&rack, std::fs::Permissions::from_mode(0o0))?;
+        let result = package_root("widget");
+        std::fs::set_permissions(&rack, permissions)?;
+        let error = result.unwrap_err();
+        assert!(format!("{error:#}").contains(&opt.display().to_string()));
+        let io = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<std::io::Error>());
+        assert_eq!(
+            io.expect("retain underlying filesystem error").kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        Ok(())
     }
 }

@@ -13,7 +13,7 @@ use crate::config::{Config, Settings};
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
-use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
+use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
@@ -55,6 +55,10 @@ pub(crate) struct ToolVersion {
     pub conda_packages: BTreeMap<(String, String), CondaPackageInfo>,
     /// pkgx packages resolved during installation: (platform, package@version) -> PkgxPackageInfo
     pub pkgx_packages: BTreeMap<(String, String), PkgxPackageInfo>,
+    /// Portable dependency graph used by embedded aube installs.
+    pub aube_lock: Option<crate::lockfile::GraphRef<AubeLock>>,
+    pub uv_lock: Option<crate::lockfile::GraphRef<crate::lockfile::UvLock>>,
+    pub uv_python: Option<(PathBuf, String)>,
     /// Install satisfaction computed during dry-run installs.
     pub install_satisfied: Option<bool>,
 }
@@ -77,6 +81,7 @@ impl ToolVersion {
     }
 
     pub(crate) fn new(request: ToolRequest, version: String) -> Self {
+        let request = request.with_registry_version(&version);
         ToolVersion {
             request,
             version,
@@ -89,11 +94,33 @@ impl ToolVersion {
             install_path_is_explicit: false,
             conda_packages: Default::default(),
             pkgx_packages: Default::default(),
+            aube_lock: None,
+            uv_lock: None,
+            uv_python: None,
             install_satisfied: None,
         }
     }
 
     pub(crate) async fn resolve(
+        config: &Arc<Config>,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<Self> {
+        let install_env = request.options().core.install_env;
+        let mut tv =
+            crate::env::with_install_env(install_env, Self::resolve_(config, request, opts))
+                .await?;
+        if tv.uv_lock.is_some() {
+            Box::pin(
+                crate::backend::pipx::PIPXBackend::from_arg(tv.ba().clone())
+                    .restore_uv_python(config, &mut tv),
+            )
+            .await;
+        }
+        Ok(tv)
+    }
+
+    async fn resolve_(
         config: &Arc<Config>,
         request: ToolRequest,
         opts: &ResolveOptions,
@@ -115,6 +142,12 @@ impl ToolVersion {
         {
             let tv = Self::new(request.clone(), request.version());
             return Ok(tv.with_before_date(opts.before_date));
+        }
+        if matches!(
+            request,
+            ToolRequest::Prefix { .. } | ToolRequest::Ref { .. }
+        ) {
+            Self::ensure_unlocked_resolution_allowed(config, &request, &opts)?;
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
@@ -171,6 +204,8 @@ impl ToolVersion {
         tv.locked = true;
         tv.resolved_from_lockfile = true;
         tv.lock_platforms = lt.platforms;
+        tv.aube_lock = lt.aube;
+        tv.uv_lock = lt.uv;
         tv
     }
 
@@ -188,6 +223,85 @@ impl ToolVersion {
 
     pub(crate) fn short(&self) -> &str {
         &self.ba().short
+    }
+
+    /// The logical tool version, excluding an internal embedded-aube graph
+    /// identity suffix discovered while scanning install directories.
+    pub(crate) fn display_version(&self) -> &str {
+        self.aube_install_path_version()
+            .or_else(|| self.uv_install_path_version())
+            .unwrap_or(&self.version)
+    }
+
+    pub(crate) fn aube_install_path_version(&self) -> Option<&str> {
+        if !self.ba().full_without_opts().starts_with("npm:") {
+            return None;
+        }
+        let (version, identity) = self.version.rsplit_once("~aube~")?;
+        (identity.len() == 16 && identity.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .then_some(version)
+    }
+
+    pub(crate) fn uv_install_path_version(&self) -> Option<&str> {
+        if self.ba().backend_type() != crate::backend::backend_type::BackendType::Pipx {
+            return None;
+        }
+        let (version, identity) = self.version.rsplit_once("~uv~")?;
+        (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
+    }
+
+    fn uv_install_identity(&self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+        let lock = self.uv_lock.as_ref()?;
+        let python = self
+            .uv_python
+            .as_ref()
+            .map(|(_, identity)| identity.as_str())
+            .unwrap_or("");
+        let options: BTreeMap<_, _> = self
+            .request
+            .options()
+            .opts_as_strings()
+            .into_iter()
+            .collect();
+        Some(hex::encode(Sha256::digest(
+            format!(
+                "{}\n{}\n{}",
+                lock.identity(),
+                python,
+                toml::to_string(&options).ok()?
+            )
+            .as_bytes(),
+        )))
+    }
+
+    pub(crate) fn legacy_aube_install_path_version(&self) -> Option<&str> {
+        if !self.ba().full_without_opts().starts_with("npm:") {
+            return None;
+        }
+        let (version, identity) = self.version.rsplit_once("-aube-")?;
+        if identity.len() != 16 || !identity.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return None;
+        }
+        let contents =
+            crate::file::read_to_string(self.install_path().join("aube-lock.yaml")).ok()?;
+        use sha2::{Digest, Sha256};
+        let graph = crate::lockfile::AubeLock::from_yaml(&contents).ok()?;
+        let options: BTreeMap<_, _> = self
+            .request
+            .options()
+            .opts_as_strings()
+            .into_iter()
+            .collect();
+        let actual = hex::encode(Sha256::digest(
+            format!(
+                "{}\n{}",
+                graph.legacy_identity().ok()?,
+                toml::to_string(&options).ok()?
+            )
+            .as_bytes(),
+        ));
+        actual.starts_with(identity).then_some(version)
     }
 
     pub(crate) fn install_path(&self) -> PathBuf {
@@ -312,7 +426,7 @@ impl ToolVersion {
         )
     }
     pub(crate) fn tv_pathname(&self) -> String {
-        match &self.request {
+        let pathname = match &self.request {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
             ToolRequest::Sub { .. } => self.version.to_string(),
@@ -321,10 +435,12 @@ impl ToolVersion {
             } => format!("{ref_type}-{r}"),
             ToolRequest::Path { path: p, .. } => format!("path-{}", hash_to_str(p)),
             ToolRequest::System { .. } => {
-                // Only show deprecation warning if not from .tool-versions file
+                // Compatibility version files define `system` as a native value, so only
+                // warn when the request came from a mise-owned source.
                 if !matches!(
                     self.request.source(),
                     crate::toolset::ToolSource::ToolVersions(_)
+                        | crate::toolset::ToolSource::IdiomaticVersionFile(_)
                 ) {
                     deprecated!(
                         "system_tool_version",
@@ -334,7 +450,34 @@ impl ToolVersion {
                 "system".to_string()
             }
         }
-        .replace([':', '/'], "-")
+        .replace([':', '/'], "-");
+        if let Some(identity) = self.uv_install_identity() {
+            return format!("{pathname}~uv~{}", &identity[..16]);
+        }
+        if let Some(identity) = self.aube_install_identity() {
+            // `~` is not valid in an npm package version, so install-state
+            // discovery can distinguish this private identity from an opaque
+            // upstream version without guessing.
+            return format!("{pathname}~aube~{}", &identity[..16]);
+        }
+        pathname
+    }
+
+    fn aube_install_identity(&self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+
+        let lock = self.aube_lock.as_ref()?;
+        let graph_identity = lock.identity();
+        let options: BTreeMap<_, _> = self
+            .request
+            .options()
+            .opts_as_strings()
+            .into_iter()
+            .collect();
+        let options = toml::to_string(&options).ok()?;
+        Some(hex::encode(Sha256::digest(
+            format!("{graph_identity}\n{options}").as_bytes(),
+        )))
     }
     pub(crate) fn runtime_pathname(&self) -> Option<String> {
         let pathname = match &self.request {
@@ -347,6 +490,37 @@ impl ToolVersion {
         };
         Some(pathname.replace([':', '/'], "-"))
     }
+    fn ensure_unlocked_resolution_allowed(
+        config: &Config,
+        request: &ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<()> {
+        let settings = Settings::get();
+        let tool_config_locked = request.tool_config_locked(config, opts.use_locked_version);
+        let invocation_locked = config.invocation_locked_for(request.source(), settings.locked);
+        if (invocation_locked || tool_config_locked)
+            && opts.use_locked_version
+            && settings.lockfile_enabled()
+            && !has_linked_version(request.ba())
+            && request
+                .lockfile_source()
+                .and_then(ToolSource::path)
+                .is_some()
+        {
+            let hint = if tool_config_locked && !invocation_locked {
+                "Run `mise lock` to update the lockfile, or disable `tool_config.locked`"
+            } else {
+                "Run `mise install` without --locked to update the lockfile"
+            };
+            bail!(
+                "{}@{} is not in the lockfile\nhint: {hint}",
+                request.ba().short,
+                request.version()
+            );
+        }
+        Ok(())
+    }
+
     async fn resolve_version(
         config: &Arc<Config>,
         request: ToolRequest,
@@ -355,6 +529,8 @@ impl ToolVersion {
     ) -> Result<ToolVersion> {
         let backend = request.backend()?;
         let v = config.resolve_alias(&backend, v).await?;
+        let request = request.with_registry_version(&v);
+        let backend = request.backend()?;
 
         // Re-check the lockfile after alias resolution (e.g., "lts" → "24")
         // The initial lockfile check in resolve() uses the unresolved alias which
@@ -375,26 +551,7 @@ impl ToolVersion {
         {
             return Ok(Self::from_lockfile(request.clone(), lt));
         }
-        let settings = Settings::get();
-        let tool_config_locked = config.tool_config_locked(request.source());
-        let invocation_locked = config.invocation_locked_for(request.source(), settings.locked);
-        if (invocation_locked || tool_config_locked)
-            && opts.use_locked_version
-            && settings.lockfile_enabled()
-            && !has_linked_version(request.ba())
-            && request.source().path().is_some()
-        {
-            let hint = if tool_config_locked && !invocation_locked {
-                "Run `mise lock` to update the lockfile, or disable `tool_config.locked`"
-            } else {
-                "Run `mise install` without --locked to update the lockfile"
-            };
-            bail!(
-                "{}@{} is not in the lockfile\nhint: {hint}",
-                request.ba().short,
-                request.version()
-            );
-        }
+        Self::ensure_unlocked_resolution_allowed(config, &request, opts)?;
 
         match v.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
@@ -661,6 +818,7 @@ impl ToolVersion {
         v: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        let request = request.with_registry_version(v);
         let backend = request.backend()?;
         if v == "latest" && opts.offline {
             let pathname = request.version().replace([':', '/'], "-");
@@ -698,6 +856,7 @@ impl ToolVersion {
         prefix: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        let request = request.with_registry_version(prefix);
         let backend = request.backend()?;
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
@@ -780,13 +939,16 @@ pub(crate) async fn resolve_sub_base(
 
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}@{}", self.ba().full(), self.version)
+        write!(f, "{}@{}", self.ba().full(), self.display_version())
     }
 }
 
 impl PartialEq for ToolVersion {
     fn eq(&self, other: &Self) -> bool {
-        self.ba() == other.ba() && self.version == other.version
+        self.ba() == other.ba()
+            && self.version == other.version
+            && self.aube_install_identity() == other.aube_install_identity()
+            && self.uv_install_identity() == other.uv_install_identity()
     }
 }
 
@@ -801,7 +963,10 @@ impl PartialOrd for ToolVersion {
 impl Ord for ToolVersion {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.request.ba().as_ref().cmp(other.ba()) {
-            Ordering::Equal => self.version.cmp(&other.version),
+            Ordering::Equal => self
+                .version
+                .cmp(&other.version)
+                .then_with(|| self.tv_pathname().cmp(&other.tv_pathname())),
             o => o,
         }
     }
@@ -811,6 +976,10 @@ impl Hash for ToolVersion {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ba().hash(state);
         self.version.hash(state);
+        self.uv_install_identity().hash(state);
+        if let Some(identity) = self.aube_install_identity() {
+            identity.hash(state);
+        }
     }
 }
 
@@ -1028,6 +1197,24 @@ mod tests {
     }
 
     #[test]
+    fn display_version_only_hides_aube_identity_for_npm() {
+        let version = "release~aube~0123456789abcdef";
+        let github = Arc::new(BackendArg::from("github:owner/tool"));
+        let request = ToolRequest::new(github, version, ToolSource::Argument).unwrap();
+        assert_eq!(
+            ToolVersion::new(request, version.into()).display_version(),
+            version
+        );
+
+        let npm = Arc::new(BackendArg::from("npm:tool"));
+        let request = ToolRequest::new(npm, version, ToolSource::Argument).unwrap();
+        assert_eq!(
+            ToolVersion::new(request, version.into()).display_version(),
+            "release"
+        );
+    }
+
+    #[test]
     fn from_lockfile_applies_backend_and_preserves_request_options() {
         let backend = Arc::new(BackendArg::new("npm".to_string(), None));
         let mut options = ToolVersionOptions {
@@ -1045,15 +1232,21 @@ mod tests {
             "registry".to_string(),
             toml::Value::String("https://registry.example.test".to_string()),
         );
-        let request =
+        let mut request =
             ToolRequest::new_with_options(backend, "latest", options, ToolSource::Argument)
                 .unwrap();
+        let owner = ToolSource::MiseToml("/project/mise.toml".into());
+        request.set_lockfile_scope(crate::toolset::tool_request::LockfileScope::Source(
+            owner.clone(),
+        ));
         let lt = LockfileTool {
             version: "11.17.0".to_string(),
             backend: Some("npm:npm".to_string()),
             specifiers: Default::default(),
             options: BTreeMap::from([("registry".to_string(), "lockfile-value".to_string())]),
             platforms: Default::default(),
+            aube: None,
+            uv: None,
         };
 
         let tv = ToolVersion::from_lockfile(request, lt);
@@ -1063,6 +1256,8 @@ mod tests {
         assert!(tv.locked);
         assert!(tv.resolved_from_lockfile());
         assert_eq!(tv.ba().full_without_opts(), "npm:npm");
+        assert_eq!(tv.request.source(), &ToolSource::Argument);
+        assert_eq!(tv.request.lockfile_source(), Some(&owner));
         assert_eq!(options.depends, Some(vec!["node".to_string()]));
         assert_eq!(
             options.install_env.get("NODE_OPTIONS"),

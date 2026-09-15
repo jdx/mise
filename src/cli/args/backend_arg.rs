@@ -12,7 +12,7 @@ use crate::toolset::{
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
-use heck::{ToKebabCase, ToShoutySnakeCase};
+use heck::ToShoutySnakeCase;
 use std::collections::HashSet;
 use std::env;
 use std::fmt::{Debug, Display};
@@ -54,13 +54,14 @@ pub(crate) struct BackendArg {
     pub opts: Option<ToolVersionOptions>,
     opts_source: Option<ToolOptionSource>,
     resolution: BackendResolution,
+    registry_version: Option<String>,
     // TODO: make this not a hash key anymore to use this
     // backend: OnceCell<ABackend>,
 }
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let short = unalias_backend(s.as_ref()).to_string();
+        let short = unalias_backend(s.as_ref()).into_owned();
         // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
         // If so, treat it as explicit since the user specified the backend
         let explicit = if let Some((prefix, _)) = short.split_once(':') {
@@ -114,8 +115,18 @@ pub(crate) fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
     if !s.ends_with(']') {
         return None;
     }
+    let (name, opts, suffix) = split_bracketed_opts_with_suffix(s)?;
+    suffix.is_empty().then_some((name, opts))
+}
 
+/// Split inline options while preserving a following version, even when option
+/// values contain '@', quoted brackets, or nested arrays.
+pub(crate) fn split_bracketed_opts_with_suffix(s: &str) -> Option<(&str, &str, &str)> {
+    if !s.contains('[') {
+        return None;
+    }
     let mut bracket_start = None;
+    let mut depth = 0;
     let mut in_single_quotes = false;
     let mut in_double_quotes = false;
     let mut escaped = false;
@@ -124,14 +135,16 @@ pub(crate) fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
         match ch {
             '\'' if !in_double_quotes => in_single_quotes = !in_single_quotes,
             '"' if !in_single_quotes && !escaped => in_double_quotes = !in_double_quotes,
-            '[' if !in_single_quotes && !in_double_quotes && bracket_start.is_none() => {
-                bracket_start = Some(index);
+            '[' if !in_single_quotes && !in_double_quotes => {
+                bracket_start.get_or_insert(index);
+                depth += 1;
             }
-            ']' if !in_single_quotes && !in_double_quotes && index == s.len() - 1 => {
-                if let Some(start) = bracket_start {
-                    return Some((&s[..start], &s[start + 1..index]));
+            ']' if !in_single_quotes && !in_double_quotes => {
+                let start = bracket_start?;
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&s[..start], &s[start + 1..index], &s[index + 1..]));
                 }
-                return None;
             }
             _ => {}
         }
@@ -151,11 +164,9 @@ pub(crate) fn strip_opts(s: &str) -> String {
 
 /// Whether a plugin installed under `short` takes precedence over the registry entry.
 ///
-/// A plugin whose backend is disabled by `disable_backends` does not, unless a version is
-/// already installed through that same backend. `disable_backends` is an install-time guard
-/// that intentionally keeps reporting the recorded backend of an installed tool, but a
-/// leftover plugin must not route a registry shorthand to a disabled backend and turn the
-/// install into an error when the registry offers an enabled backend (discussions/6021).
+/// A plugin whose backend is disabled by `disable_backends` does not. Existing installations
+/// are left on disk, but a disabled backend must not participate in shorthand resolution
+/// (discussions/6021, discussions/12921).
 fn plugin_overrides_registry(short: &str) -> bool {
     let Some(plugin_type) = install_state::get_plugin_type(short) else {
         return false;
@@ -166,21 +177,14 @@ fn plugin_overrides_registry(short: &str) -> bool {
         PluginType::VfoxBackend => BackendType::VfoxBackend(short.to_string()),
         PluginType::Package => return true,
     };
-    if !backend::is_disabled_backend_type(&backend_type) {
-        return true;
-    }
-    // Versions are recorded per shorthand, so check the backend they were installed with:
-    // a version that came from an enabled registry backend must not keep the disabled
-    // plugin authoritative.
-    !install_state::list_versions(short).is_empty()
-        && install_state::backend_type(short).ok().flatten() == Some(backend_type)
+    !backend::is_disabled_backend_type(&backend_type)
 }
 
 fn parse_backend_components(
     short: &str,
     full: Option<&String>,
 ) -> (String, String, Option<ToolVersionOptions>) {
-    let short = unalias_backend(short).to_string();
+    let short = unalias_backend(short).into_owned();
     let source = full.unwrap_or(&short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
@@ -196,7 +200,7 @@ fn parse_backend_components_fallible(
     short: &str,
     full: Option<&String>,
 ) -> Result<(String, String, Option<ToolVersionOptions>)> {
-    let short = unalias_backend(short).to_string();
+    let short = unalias_backend(short).into_owned();
     let source = full.unwrap_or(&short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (
@@ -272,7 +276,9 @@ impl BackendArg {
         opts: Option<ToolVersionOptions>,
         resolution: BackendResolution,
     ) -> Self {
-        let pathname = short.to_kebab_case();
+        let short = unalias_backend(&short).into_owned();
+        // Keep each explicitly configured spelling in its own directory namespace.
+        let pathname = backend::tool_directory_name(&short);
         let opts_source = opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg);
         Self {
             tool_name,
@@ -284,6 +290,7 @@ impl BackendArg {
             opts,
             opts_source,
             resolution,
+            registry_version: None,
             // backend: Default::default(),
         }
     }
@@ -342,13 +349,19 @@ impl BackendArg {
         } else {
             // Check if the tool is in the registry but has no available backends
             if let Some(rt) = REGISTRY.get(self.registry_short().as_str())
-                && rt.backends().is_empty()
+                && rt
+                    .backends_for_version(self.registry_version.as_deref())
+                    .is_empty()
                 && !rt.backends.is_empty()
             {
                 let all_backends: Vec<&str> = rt.backends.iter().map(|rb| rb.full).collect();
                 bail!(
-                    "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration",
-                    all_backends.join(", ")
+                    "{self} is in the mise tool registry but none of its backends ({}) are supported in the current configuration{}",
+                    all_backends.join(", "),
+                    self.registry_version
+                        .as_ref()
+                        .map(|v| format!(" for version {v}"))
+                        .unwrap_or_default()
                 );
             }
 
@@ -405,6 +418,12 @@ impl BackendArg {
             return backend_type;
         }
 
+        // A version-scoped registry lookup with no eligible backend must not
+        // revive the backend recorded by another installed version.
+        if self.has_registry_version() {
+            return BackendType::Core;
+        }
+
         // Legacy install state may have a backend type without a full
         // identifier. Keep it as a fallback when `full()` was inconclusive.
         if !self.short.contains(':')
@@ -450,13 +469,14 @@ impl BackendArg {
         }
         let full = Config::get_()
             .all_aliases
-            .get(unalias_backend(&self.short))
+            .get(unalias_backend(&self.short).as_ref())
             .and_then(|a| a.backend.clone())?;
         let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
         if name.contains(':') {
             return None;
         }
         let name = unalias_backend(name);
+        let name = name.as_ref();
         REGISTRY.contains_key(name).then(|| name.to_string())
     }
 
@@ -485,6 +505,7 @@ impl BackendArg {
 
     pub(crate) fn full(&self) -> String {
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
 
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
@@ -510,7 +531,11 @@ impl BackendArg {
                 if let Some(registry_full) = self
                     .aliased_registry_short()
                     .and_then(|name| REGISTRY.get(name.as_str()))
-                    .and_then(|rt| rt.backends().first().cloned())
+                    .and_then(|rt| {
+                        rt.backends_for_version(self.registry_version.as_deref())
+                            .first()
+                            .cloned()
+                    })
                 {
                     return registry_full.to_string();
                 }
@@ -526,7 +551,12 @@ impl BackendArg {
             }
 
             let config = Config::get_();
-            if let Some(backend) = lockfile::get_locked_backend(&config, short) {
+            // With version-dependent backends, the first lockfile entry may
+            // belong to another version. ToolVersion restores the backend from
+            // the matching lock entry after resolving this request's binding.
+            if !self.has_registry_version()
+                && let Some(backend) = lockfile::get_locked_backend(&config, short)
+            {
                 return backend;
             }
         }
@@ -536,9 +566,11 @@ impl BackendArg {
         // the registry changes (e.g., when a tool moves from one maintainer to another).
         if !self.resolution.explicit
             && !plugin_overrides_registry(short)
-            && let Some(registry_full) = REGISTRY
-                .get(short)
-                .and_then(|rt| rt.backends().first().cloned())
+            && let Some(registry_full) = REGISTRY.get(short).and_then(|rt| {
+                rt.backends_for_version(self.registry_version.as_deref())
+                    .first()
+                    .cloned()
+            })
         {
             if let Some(stored_full) = &self.full
                 && stored_full != registry_full
@@ -548,6 +580,16 @@ impl BackendArg {
                 );
             }
             return registry_full.to_string();
+        }
+
+        if self.has_registry_version()
+            && !plugin_overrides_registry(short)
+            && self.registry_tool().is_some_and(|tool| {
+                tool.backends_for_version(self.registry_version.as_deref())
+                    .is_empty()
+            })
+        {
+            return short.to_string();
         }
 
         if let Some(full) = &self.full {
@@ -585,14 +627,36 @@ impl BackendArg {
                 PluginType::VfoxBackend => short.to_string(),
                 PluginType::Package => short.to_string(),
             }
-        } else if let Some(full) = REGISTRY
-            .get(short)
-            .and_then(|rt| rt.backends().first().cloned())
-        {
+        } else if let Some(full) = REGISTRY.get(short).and_then(|rt| {
+            rt.backends_for_version(self.registry_version.as_deref())
+                .first()
+                .cloned()
+        }) {
             full.to_string()
         } else {
             short.to_string()
         }
+    }
+
+    /// Carry a version boundary without making a registry choice user-explicit.
+    /// Keeping this separate from `full` lets installed shorthands migrate to a
+    /// newer backend while explicit identifiers, overrides, and locks stay pinned.
+    pub(crate) fn with_registry_version(&self, version: &str) -> Option<Self> {
+        if self.has_explicit_backend()
+            || self.has_env_backend_override()
+            || !self
+                .registry_tool()
+                .is_some_and(|tool| tool.backends.iter().any(|b| b.min_version.is_some()))
+        {
+            return None;
+        }
+        let mut backend = self.clone();
+        backend.registry_version = Some(version.to_string());
+        Some(backend)
+    }
+
+    pub(crate) fn has_registry_version(&self) -> bool {
+        self.registry_version.is_some()
     }
 
     pub(crate) fn full_without_opts(&self) -> String {
@@ -689,8 +753,17 @@ impl BackendArg {
 
     fn env_backend_override(&self) -> Option<String> {
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
         let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
-        env::var(&env_key).ok()
+        env::var(&env_key).ok().or_else(|| {
+            short.strip_prefix("pypi:").and_then(|name| {
+                env::var(format!(
+                    "MISE_BACKENDS_PIPX_{}",
+                    name.to_shouty_snake_case()
+                ))
+                .ok()
+            })
+        })
     }
 
     fn backend_alias_opts_from_loaded_config(&self) -> Option<ToolVersionOptions> {
@@ -698,6 +771,7 @@ impl BackendArg {
             return None;
         }
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
         Config::get_()
             .all_aliases
             .get(short)
@@ -744,6 +818,7 @@ impl BackendArg {
             full.clone()
         } else {
             let short = unalias_backend(&self.short);
+            let short = short.as_ref();
             if let Some(full) = install_state::get_tool_full(short) {
                 full
             } else if let Some(pt) = install_state::get_plugin_type(short) {
@@ -806,7 +881,7 @@ impl FromStr for BackendArg {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let short = unalias_backend(s).to_string();
+        let short = unalias_backend(s).into_owned();
         let explicit = if let Some((prefix, _)) = short.split_once(':') {
             BackendType::guess(prefix) != BackendType::Unknown
         } else {
@@ -870,6 +945,34 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use pretty_assertions::{assert_eq, assert_str_eq};
+
+    #[tokio::test]
+    async fn registry_min_version_keeps_backend_instances_separate() {
+        use crate::cli::args::ToolArg;
+        let _config = Config::get().await.unwrap();
+        // Exercise both orders: a cache hit for the shorthand must not replace
+        // the backend selected for a different version in the same process.
+        for (query, expected) in [
+            ("hk@1.57.0", "aqua:jdx/hk"),
+            ("hk@V1.57.0", "aqua:jdx/hk"),
+            ("hk@1.58.1", "packslip:github.com/jdx/hk"),
+            ("hk@prefix:1.57", "aqua:jdx/hk"),
+            ("hk@latest", "packslip:github.com/jdx/hk"),
+        ] {
+            let tool: ToolArg = query.parse().unwrap();
+            assert_eq!(tool.ba.full(), expected);
+            assert_eq!(tool.ba.backend().unwrap().ba().full(), expected);
+            assert_eq!(tool.tvr.unwrap().backend().unwrap().ba().full(), expected);
+            assert!(!tool.ba.has_explicit_backend());
+        }
+        for full in ["packslip:github.com/jdx/hk", "aqua:jdx/hk"] {
+            let explicit: ToolArg = format!("{full}@1.57.0").parse().unwrap();
+            assert_eq!(explicit.ba.full(), full);
+            let locked = BackendArg::new("hk".to_string(), Some(full.to_string()));
+            assert!(locked.with_registry_version("1.57.0").is_none());
+            assert_eq!(locked.full(), full);
+        }
+    }
 
     #[test]
     fn test_matches_bin_name_uses_tool_identity() {
@@ -1139,4 +1242,19 @@ mod tests {
         assert_eq!(opts.get("bin"), Some("solc"));
         assert_eq!(opts.get("foo"), Some("resolved"));
     }
+}
+
+#[test]
+fn pypi_and_pipx_use_distinct_tool_identities() {
+    let preferred = BackendArg::from("pypi:black");
+    let legacy = BackendArg::from("pipx:black");
+    assert_ne!(preferred, legacy);
+    assert_eq!(preferred.short, "pypi:black");
+    assert_eq!(legacy.short, "pipx:black");
+    assert_eq!(preferred.full(), "pypi:black");
+    assert_eq!(legacy.full(), "pipx:black");
+    assert_ne!(preferred.installs_path, legacy.installs_path);
+    assert_eq!(preferred.tool_dir_name(), "pypi-black");
+    assert_eq!(BackendType::guess("pipx:black"), BackendType::Pipx);
+    assert_eq!(BackendType::guess("pypi:black"), BackendType::Pipx);
 }

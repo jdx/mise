@@ -10,32 +10,28 @@ use eyre::Result;
 use itertools::Itertools;
 use path_absolutize::Absolutize;
 
-/// Remove tool versions from mise.toml and uninstall them
+/// Remove tool requests from configuration and prune unused installations
 ///
-/// By default, this will use the `mise.toml` file that has the tool defined.
-/// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
-/// the lowest precedence file (`mise.toml`) will be used.
-/// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
+/// Without a selector, mise edits the first loaded config that declares one of the
+/// requested tools. Use `--path`, `--global`, or `--env` to choose a specific file.
+/// A version argument matches the configured request literally: to remove `node = "20"`,
+/// use `mise unuse node@20`, not the concrete installed version it resolved to.
+/// Omit the version to remove all requests for that tool from the selected file.
 ///
-/// In the following order:
-///   - If `--global` is set, it will use the global config file.
-///   - If `--path` is set, it will use the config file at the given path.
-///   - If `--env` is set, it will use `mise.<env>.toml`.
-///   - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
-///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will use the first from that list.
-///   - Otherwise just "mise.toml" or global config if cwd is home directory.
-///
-/// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-///
-/// The installed version is also removed unless another config still uses it or `--no-prune` is passed.
+/// Versions are pruned only when no remaining tracked config or tool stub needs them.
+/// Pass `--no-prune` to edit configuration while keeping installations. To remove an
+/// installation without editing configuration, use `mise uninstall`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"], example(r###"mise unuse node@18.0.0"###, help = r###"remove node@18.0.0 from mise.toml and uninstall it"###),
+    example(r###"mise unuse -g node@18.0.0"###, help = r###"remove it from the global config instead"###),
+    example(r###"mise unuse --env local node@20"###, help = r###"remove the literal node@20 request from mise.local.toml"###),
+    example(r###"mise unuse --env staging node@20"###, help = r###"remove the literal node@20 request from mise.staging.toml"###))]
 pub(crate) struct Unuse {
     /// Tool(s) to remove
     #[usage(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,
 
-    /// Create/modify an environment-specific config file like .mise.<env>.toml
+    /// Modify `.mise.<env>.toml` when it exists, otherwise `mise.<env>.toml`
     #[usage(long, short, overrides = & ["global", "path"])]
     env: Option<String>,
 
@@ -46,7 +42,7 @@ pub(crate) struct Unuse {
     /// Specify a path to a config file or directory
     ///
     /// If a directory is specified, it will look for a config file in that directory following
-    /// the rules above.
+    /// the target-file selection rules.
     #[usage(short, long, visible_alias = "file", overrides = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
@@ -58,6 +54,19 @@ pub(crate) struct Unuse {
 impl Unuse {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        let requests = config.get_tool_request_set().await?;
+        for ta in &self.installed_tool {
+            if requests
+                .sources
+                .get(&ta.ba)
+                .is_some_and(|s| s.is_mise_toml_daemon())
+            {
+                warn!(
+                    "{} is declared by [daemons]; edit that declaration to remove it",
+                    ta.ba
+                );
+            }
+        }
         let cf = self.get_config_file(&config).await?;
         let system_config = config::is_system_config(cf.get_path());
         let tools = cf.to_tool_request_set()?.tools;
@@ -123,16 +132,19 @@ impl Unuse {
             info!("removed: {removals} from {}", display_path(cf.get_path()));
         }
 
-        if !self.no_prune {
-            prune(
-                &config,
-                self.installed_tool
-                    .iter()
-                    .map(|ta| ta.ba.as_ref())
-                    .collect(),
-                false,
-            )
-            .await?;
+        let prune_tools: Vec<_> = self
+            .installed_tool
+            .iter()
+            .filter(|ta| {
+                !requests
+                    .sources
+                    .get(&ta.ba)
+                    .is_some_and(|s| s.is_mise_toml_daemon())
+            })
+            .map(|ta| ta.ba.as_ref())
+            .collect();
+        if !self.no_prune && !prune_tools.is_empty() {
+            prune(&config, prune_tools, false).await?;
         }
         if !removed.is_empty() || !self.no_prune {
             let shim_scope = match (system_config, self.no_prune) {
@@ -184,20 +196,3 @@ impl Unuse {
         config_file::parse_or_init(&path).await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # remove node@18.0.0 from mise.toml and uninstall it
-    $ <bold>mise unuse node@18.0.0</bold>
-
-    # remove it from the global config instead
-    $ <bold>mise unuse -g node@18.0.0</bold>
-
-    # remove node@20 from .mise.local.toml
-    $ <bold>mise unuse --env local node@20</bold>
-
-    # remove node@20 from .mise.staging.toml
-    $ <bold>mise unuse --env staging node@20</bold>
-"#
-);

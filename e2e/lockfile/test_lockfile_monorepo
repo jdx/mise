@@ -203,9 +203,16 @@ EOF
 touch monorepo-bad-roots/mise.lock
 
 rm -rf "$MISE_DATA_DIR/installs/tiny"
-output=$(cd monorepo-bad-roots/packages/a && mise install 2>&1)
-assert_contains "echo '$output'" "lockfile = true is set"
-assert_contains "cat monorepo-bad-roots/mise.lock" 'version = "1.0.0"'
+if [[ ${MISE_LOCKFILE_MODE:-merge} == generate ]]; then
+  # Complete generation cannot prune safely without resolving membership.
+  cp monorepo-bad-roots/mise.lock monorepo-bad-roots/mise.lock.before
+  assert_fail "cd monorepo-bad-roots/packages/a && mise install"
+  assert "cmp monorepo-bad-roots/mise.lock.before monorepo-bad-roots/mise.lock"
+else
+  output=$(cd monorepo-bad-roots/packages/a && mise install 2>&1)
+  assert_contains "echo '$output'" "lockfile = true is set"
+  assert_contains "cat monorepo-bad-roots/mise.lock" 'version = "1.0.0"'
+fi
 assert_fail "test -f monorepo-bad-roots/packages/a/mise.lock"
 
 echo "=== [monorepo] lockfile = false keeps subproject lockfiles ==="

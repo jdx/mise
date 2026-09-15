@@ -26,6 +26,7 @@ Toolset {
                     source: MiseToml(
                         "/tmp/.mise.toml",
                     ),
+                    lockfile_scope: Default,
                 },
                 Version {
                     backend: BackendArg(node),
@@ -45,6 +46,7 @@ Toolset {
                     source: MiseToml(
                         "/tmp/.mise.toml",
                     ),
+                    lockfile_scope: Default,
                 },
             ],
             source: MiseToml(

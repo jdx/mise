@@ -94,6 +94,9 @@ pub(crate) struct SystemdRequest {
     pub after: Vec<String>,
     pub wants: Vec<String>,
     pub requires: Vec<String>,
+    /// Internal restart budget for mise-owned builtins; ordinary declarations
+    /// retain the service manager's defaults.
+    pub start_limit: Option<(u32, u32)>,
     pub exec_start: Option<String>,
     pub service_type: Option<String>,
     pub remain_after_exit: Option<bool>,
@@ -242,6 +245,7 @@ impl SystemdRequest {
             after: config.after,
             wants: config.wants,
             requires: config.requires,
+            start_limit: None,
             exec_start,
             service_type: config.service_type,
             remain_after_exit: config.remain_after_exit,
@@ -424,25 +428,14 @@ pub(crate) async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<
                     ])
                 );
             }
-            if req.start {
+            for args in activation_commands(req) {
                 miseprintln!(
                     "{}",
-                    shell_words::join([
-                        "systemctl".to_string(),
-                        "--user".to_string(),
-                        "restart".to_string(),
-                        req.unit.clone(),
-                    ])
-                );
-            } else {
-                miseprintln!(
-                    "{}",
-                    shell_words::join([
-                        "systemctl".to_string(),
-                        "--user".to_string(),
-                        "stop".to_string(),
-                        req.unit.clone(),
-                    ])
+                    shell_words::join(
+                        ["systemctl".to_string(), "--user".to_string()]
+                            .into_iter()
+                            .chain(args)
+                    )
                 );
             }
         }
@@ -470,13 +463,72 @@ pub(crate) async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<
         if !req.wanted_by.is_empty() {
             systemctl(&["enable".to_string(), req.unit.clone()]).await?;
         }
-        if req.start {
-            systemctl(&["restart".to_string(), req.unit.clone()]).await?;
-        } else {
-            systemctl(&["stop".to_string(), req.unit.clone()]).await?;
+        for args in activation_commands(req) {
+            systemctl(&args).await?;
         }
     }
     Ok(())
+}
+
+fn activation_commands(request: &SystemdRequest) -> Vec<Vec<String>> {
+    let mut commands = vec![];
+    // An explicit bootstrap retry starts a new budget after the user fixes
+    // the failure. Automatic manager retries remain bounded.
+    if request.start && request.start_limit.is_some() {
+        commands.push(vec!["reset-failed".into(), request.unit.clone()]);
+    }
+    commands.push(vec![
+        if request.start { "restart" } else { "stop" }.into(),
+        request.unit.clone(),
+    ]);
+    commands
+}
+
+/// Stop, disable, and delete the service unit mise wrote for `name`
+/// (`dev.mise.<name>.service`), then reload the user manager. Returns whether
+/// a unit file existed.
+pub(crate) async fn remove_service(name: &str, dry_run: bool) -> Result<bool> {
+    let unit = format!("dev.mise.{name}.service");
+    let path = user_units_dir().join(&unit);
+    if !path.exists() {
+        return Ok(false);
+    }
+    if dry_run {
+        for verb in ["stop", "disable"] {
+            miseprintln!(
+                "{}",
+                shell_words::join([
+                    "systemctl".to_string(),
+                    "--user".to_string(),
+                    verb.to_string(),
+                    unit.clone(),
+                ])
+            );
+        }
+        miseprintln!(
+            "{}",
+            shell_words::join(["rm".to_string(), path.display().to_string()])
+        );
+        miseprintln!(
+            "{}",
+            shell_words::join([
+                "systemctl".to_string(),
+                "--user".to_string(),
+                "daemon-reload".to_string(),
+            ])
+        );
+        return Ok(true);
+    }
+    stop_unit(&unit).await?;
+    disable_unit(&unit).await?;
+    std::fs::remove_file(&path)?;
+    systemctl(&["daemon-reload".to_string()]).await?;
+    Ok(true)
+}
+
+/// The unit file path mise uses for a service named `name`.
+pub(crate) fn service_unit_path(name: &str) -> PathBuf {
+    user_units_dir().join(format!("dev.mise.{name}.service"))
 }
 
 pub(crate) fn render_unit(request: &SystemdRequest) -> String {
@@ -493,6 +545,11 @@ pub(crate) fn render_unit(request: &SystemdRequest) -> String {
     }
     if !request.requires.is_empty() {
         out.push_str(&format!("Requires={}\n", request.requires.join(" ")));
+    }
+    if let Some((seconds, burst)) = request.start_limit {
+        out.push_str(&format!(
+            "StartLimitIntervalSec={seconds}\nStartLimitBurst={burst}\n"
+        ));
     }
     match request.kind {
         SystemdUnitKind::Service => render_service(request, &mut out),
@@ -511,13 +568,13 @@ fn render_service(request: &SystemdRequest, out: &mut String) {
         out.push_str(&format!("Type={service_type}\n"));
     }
     if let Some(exec_start) = &request.exec_start {
-        out.push_str(&format!("ExecStart={}\n", expand_path_string(exec_start)));
+        out.push_str(&format!("ExecStart={}\n", expand_exec_string(exec_start)));
     }
     if let Some(remain_after_exit) = request.remain_after_exit {
         out.push_str(&format!("RemainAfterExit={}\n", yes_no(remain_after_exit)));
     }
     if let Some(exec_stop) = &request.exec_stop {
-        out.push_str(&format!("ExecStop={}\n", expand_path_string(exec_stop)));
+        out.push_str(&format!("ExecStop={}\n", expand_exec_string(exec_stop)));
     }
     if let Some(timeout_start_sec) = &request.timeout_start_sec {
         out.push_str(&format!("TimeoutStartSec={timeout_start_sec}\n"));
@@ -659,6 +716,25 @@ fn sibling_unit(request: &SystemdRequest) -> String {
 
 fn sibling_unit_path(request: &SystemdRequest) -> PathBuf {
     user_units_dir().join(sibling_unit(request))
+}
+
+/// Expand the home prefix of a quoted executable without re-tokenizing
+/// systemd's command syntax or changing the arguments that follow it.
+fn expand_exec_string(command: &str) -> String {
+    for quote in ['\'', '"'] {
+        if let Some(rest) = command.strip_prefix(quote)
+            && let Some(rest) = rest.strip_prefix("~/")
+        {
+            // Replace only the home prefix. The executable's existing escapes,
+            // closing quote and all arguments retain systemd's original syntax.
+            let home = crate::dirs::HOME
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace(quote, &format!("\\{quote}"));
+            return format!("{quote}{home}/{rest}");
+        }
+    }
+    expand_path_string(command)
 }
 
 fn expand_path_string(path: &str) -> String {
@@ -831,6 +907,71 @@ fn unit_operation_error_is_noop(error: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn explicit_builtin_start_resets_its_budget_before_restart() {
+        let mut request = super::SystemdRequest::from_toml(
+            "watch".into(),
+            super::SystemdTomlConfig {
+                exec_start: Some("/bin/true".into()),
+                start: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            super::activation_commands(&request),
+            vec![vec![
+                "restart".to_string(),
+                "dev.mise.watch.service".to_string()
+            ]]
+        );
+        request.start_limit = Some((300, 3));
+        assert_eq!(
+            super::activation_commands(&request),
+            vec![
+                vec![
+                    "reset-failed".to_string(),
+                    "dev.mise.watch.service".to_string()
+                ],
+                vec!["restart".to_string(), "dev.mise.watch.service".to_string()],
+            ]
+        );
+        request.start = false;
+        assert_eq!(
+            super::activation_commands(&request),
+            vec![vec![
+                "stop".to_string(),
+                "dev.mise.watch.service".to_string()
+            ]]
+        );
+    }
+
+    #[test]
+    fn quoted_executable_home_expands_without_changing_arguments() {
+        for quote in ['\'', '"'] {
+            let command = format!("{quote}~/.local/my agent{quote} --serve '$VALUE' %i");
+            // This is systemd syntax even when the test runs on Windows:
+            // escape the home prefix, but preserve the command's literal '/'.
+            let home = crate::dirs::HOME
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace(quote, &format!("\\{quote}"));
+            assert_eq!(
+                super::expand_exec_string(&command),
+                format!("{quote}{home}/.local/my agent{quote} --serve '$VALUE' %i")
+            );
+            let rest = format!(".local/agent\\{quote}name\\x20bin{quote} --serve %i");
+            assert_eq!(
+                super::expand_exec_string(&format!("{quote}~/{rest}")),
+                format!("{quote}{home}/{rest}")
+            );
+        }
+        assert_eq!(
+            super::expand_exec_string("/bin/echo '~/literal'"),
+            "/bin/echo '~/literal'"
+        );
+    }
+
     use super::*;
 
     #[test]

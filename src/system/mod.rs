@@ -9,7 +9,7 @@
 //! `[bootstrap.directories]` — privileged filesystem resources —
 //! `[bootstrap.repos]` — declarative git checkouts — `[dotfiles]` —
 //! declarative config files applied by
-//! `mise bootstrap dotfiles apply` — `[bootstrap.mise_shell_activate]`
+//! `mise dot apply` — `[bootstrap.mise_shell_activate]`
 //! shell activation setup — `[bootstrap.macos.defaults]` — declarative macOS
 //! user defaults — `[bootstrap.macos.launchd.agents]` — declarative macOS
 //! LaunchAgents — `[bootstrap.linux.systemd.units]` — declarative Linux
@@ -29,7 +29,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::config::{Config, ConfigMap};
-use crate::system::defaults::{DefaultsRequest, DefaultsValue};
+use crate::system::defaults::{DefaultsRequest, DefaultsValue, HostScope, canonical_domain};
 use crate::system::launchd::{LaunchdRequest, LaunchdTomlConfig};
 use crate::system::packages::{PackageRequest, SystemPackageManager};
 use crate::system::repos::{RepoRequest, RepoTomlConfig};
@@ -53,14 +53,17 @@ pub(crate) mod firewall;
 #[cfg(not(target_os = "linux"))]
 #[path = "firewall_non_linux.rs"]
 pub(crate) mod firewall;
+pub(crate) mod history;
 pub(crate) mod hooks;
 pub(crate) mod launchd;
 pub(crate) mod login_shell;
 pub(crate) mod managed_files;
 pub(crate) mod packages;
 pub(crate) mod remote;
+pub(crate) mod remote_repository;
 pub(crate) mod repos;
 pub(crate) mod resources;
+pub(crate) mod scheduled_tasks;
 pub(crate) mod secrets;
 #[cfg(target_os = "linux")]
 pub(crate) mod services;
@@ -71,6 +74,7 @@ pub(crate) mod services_common;
 pub(crate) mod shell_activation;
 pub(crate) mod sudo;
 pub(crate) mod systemd;
+pub(crate) mod user_services;
 
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -151,6 +155,8 @@ pub(crate) struct PackageOptionsTomlConfig {
     pub version: String,
     #[serde(default, deserialize_with = "deserialize_package_os")]
     pub os: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_package_env")]
+    pub env: Vec<String>,
     /// Adopt an identical existing cask artifact instead of replacing it.
     #[serde(default)]
     pub adopt: Option<bool>,
@@ -201,6 +207,14 @@ impl PackageTomlConfig {
                 .iter()
                 .any(|entry| crate::cli::version::os_selector_matches(entry))
     }
+
+    /// Whether this package is enabled by at least one active mise environment.
+    fn is_env_supported(&self, environments: &[String]) -> bool {
+        let Self::Options(options) = self else {
+            return true;
+        };
+        options.env.is_empty() || options.env.iter().any(|entry| environments.contains(entry))
+    }
 }
 
 fn latest_package_version() -> String {
@@ -225,6 +239,30 @@ where
     if values.is_empty() || values.iter().any(|value| value.is_empty()) {
         return Err(serde::de::Error::custom(
             "package os must contain at least one non-empty selector",
+        ));
+    }
+    Ok(values)
+}
+
+/// Deserialize one or more non-blank mise environment selectors.
+fn deserialize_package_env<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    let values = match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(value) => vec![value],
+        OneOrMany::Many(values) => values,
+    };
+    if values.is_empty() || values.iter().any(|value| value.trim().is_empty()) {
+        return Err(serde::de::Error::custom(
+            "package env must contain at least one non-empty selector",
         ));
     }
     Ok(values)
@@ -269,10 +307,25 @@ pub(crate) struct BootstrapMacosTomlConfig {
     /// instead of failing the whole config.
     #[serde(default)]
     pub defaults: IndexMap<String, toml::Value>,
+    /// Explicit preferences with a selectable host scope.
+    #[serde(default)]
+    pub defaults_entries: Vec<BootstrapMacosDefaultsEntry>,
     /// `[bootstrap.macos.launchd.agents.<name>]`: declarative macOS user
     /// LaunchAgents rendered to ~/Library/LaunchAgents.
     #[serde(default)]
     pub launchd: BootstrapMacosLaunchdTomlConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BootstrapMacosDefaultsEntry {
+    pub domain: String,
+    pub key: String,
+    #[serde(default)]
+    pub host: HostScope,
+    #[serde(default)]
+    pub path: Option<Vec<String>>,
+    pub value: toml::Value,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -440,7 +493,7 @@ pub(crate) fn attach_brew_tap_urls(
 /// all.
 pub(crate) fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
     let brew_taps = brew_taps_from_config(config);
-    packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps)
+    packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps, true)
 }
 
 /// Merge raw `[bootstrap.packages]` declarations inherited by `target` without
@@ -479,7 +532,7 @@ pub(crate) fn pending_plugin_packages_from_config_including_disabled(
         .into_iter()
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
-    package_requests_from_config_files(&config.config_files, &brew_taps)
+    package_requests_from_config_files(&config.config_files, &brew_taps, true)
         .0
         .into_iter()
         .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
@@ -514,11 +567,12 @@ pub(crate) async fn package_requests_for_manager_from_config_and_tracked_config_
     manager: &str,
 ) -> Result<Vec<PackageRequest>> {
     let tracked = config.get_tracked_config_files().await?;
-    let mut requests = package_requests_from_config_files(&config.config_files, &IndexMap::new())
-        .0
-        .shift_remove(manager)
-        .unwrap_or_default();
-    for request in package_requests_from_config_files(&tracked, &IndexMap::new())
+    let mut requests =
+        package_requests_from_config_files(&config.config_files, &IndexMap::new(), false)
+            .0
+            .shift_remove(manager)
+            .unwrap_or_default();
+    for request in package_requests_from_config_files(&tracked, &IndexMap::new(), false)
         .0
         .shift_remove(manager)
         .unwrap_or_default()
@@ -544,7 +598,7 @@ fn packages_from_config_files_and_tracked_config_files(
     merge_manager_packages(
         &mut by_mgr,
         &mut manager_options,
-        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps),
+        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps, false),
     );
 
     let mut tracked_brew_taps = current_brew_taps;
@@ -554,7 +608,7 @@ fn packages_from_config_files_and_tracked_config_files(
     merge_manager_packages(
         &mut by_mgr,
         &mut manager_options,
-        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps),
+        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps, false),
     );
 
     resolve_managers(by_mgr, manager_options, false)
@@ -599,20 +653,23 @@ fn merge_manager_packages(
 
 /// Aggregate `[bootstrap.packages]` across a specific set of config files.
 pub(crate) fn packages_from_config_files(config_files: &ConfigMap) -> Vec<ManagerPackages> {
-    packages_from_config_files_with_brew_taps(config_files, &IndexMap::new())
+    packages_from_config_files_with_brew_taps(config_files, &IndexMap::new(), true)
 }
 
 fn packages_from_config_files_with_brew_taps(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
+    filter_env: bool,
 ) -> Vec<ManagerPackages> {
-    let (requests, options) = package_requests_from_config_files(config_files, brew_taps);
+    let (requests, options) =
+        package_requests_from_config_files(config_files, brew_taps, filter_env);
     resolve_managers(requests, options, false).expect("non-strict resolve is infallible")
 }
 
 fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
+    filter_env: bool,
 ) -> (
     IndexMap<String, Vec<PackageRequest>>,
     IndexMap<String, ManagerPackageOptions>,
@@ -626,6 +683,10 @@ fn package_requests_from_config_files(
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
+            continue;
+        }
+        if filter_env && !package.is_env_supported(&crate::env::MISE_ENV_WITH_AUTO) {
+            debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this environment");
             continue;
         }
         match parse_spec(&spec) {
@@ -705,13 +766,13 @@ fn merge_package_configs<'a>(
     merged
 }
 
-/// Aggregate `[bootstrap.macos.defaults]` across all loaded config files.
+/// Aggregate macOS defaults across all loaded config files.
 ///
-/// (domain, key) pairs union global -> local; a more local config overrides
-/// the value a global config declared. Unsupported value shapes warn
-/// (forward compatibility) and are skipped.
+/// Within each host scope, (domain, key, path) entries union global -> local;
+/// a more local config overrides the value a global config declared. Unsupported
+/// value shapes warn (forward compatibility) and are skipped.
 pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
-    let mut merged: IndexMap<(String, String), toml::Value> = IndexMap::new();
+    let mut merged = IndexMap::new();
     // config_files is ordered local -> global; reverse for global -> local
     for cf in config.config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
@@ -730,19 +791,46 @@ pub(crate) fn defaults_from_config(config: &Config) -> Vec<DefaultsRequest> {
                     ),
                 }
             }
+            let dock_apps = sys.macos.dock.contains_key("apps")
+                && !raw.contains_key(&("com.apple.dock".into(), "persistent-apps".into()));
             for (key, value) in merge_raw_over_friendly_macos_defaults(friendly, raw) {
-                merged.insert(key, value);
+                let is_dock_apps =
+                    dock_apps && key.0 == "com.apple.dock" && key.1 == "persistent-apps";
+                merged.insert(
+                    (canonical_domain(&key.0).into(), key.1, HostScope::Any, None),
+                    (value, is_dock_apps),
+                );
+            }
+            for entry in sys.macos.defaults_entries {
+                merged.insert(
+                    (
+                        canonical_domain(&entry.domain).into(),
+                        entry.key,
+                        entry.host,
+                        entry.path,
+                    ),
+                    (entry.value, false),
+                );
             }
         }
     }
     let mut out = vec![];
-    for ((domain, key), value) in merged {
+    for ((domain, key, host, path), (value, dock_apps)) in merged {
         match DefaultsValue::from_toml(&value) {
-            Some(value) => out.push(DefaultsRequest { domain, key, value }),
-            None => warn!(
-                "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
-                 (expected bool, integer, float, or string)"
-            ),
+            Some(value) => out.push(DefaultsRequest {
+                dock_apps,
+                domain,
+                key,
+                host,
+                path,
+                value,
+            }),
+            None => {
+                warn!(
+                    "[bootstrap.macos.defaults]: unsupported value type for {domain} {key} \
+                     (expected bool, integer, float, string, array, or table)"
+                );
+            }
         }
     }
     out
@@ -813,7 +901,32 @@ pub(crate) fn macos_defaults_entry_count(macos: &BootstrapMacosTomlConfig) -> us
             _ => malformed_domains += 1,
         }
     }
-    merge_raw_over_friendly_macos_defaults(friendly, raw).len() + malformed_domains
+    let mut merged: IndexMap<_, _> = merge_raw_over_friendly_macos_defaults(friendly, raw)
+        .into_iter()
+        .map(|((domain, key), value)| {
+            (
+                (
+                    canonical_domain(&domain).to_owned(),
+                    key,
+                    HostScope::Any,
+                    None,
+                ),
+                value,
+            )
+        })
+        .collect();
+    for entry in &macos.defaults_entries {
+        merged.insert(
+            (
+                canonical_domain(&entry.domain).to_owned(),
+                entry.key.clone(),
+                entry.host,
+                entry.path.clone(),
+            ),
+            entry.value.clone(),
+        );
+    }
+    merged.len() + malformed_domains
 }
 
 fn merge_raw_over_friendly_macos_defaults(
@@ -898,6 +1011,10 @@ fn is_bool(value: &toml::Value) -> bool {
     matches!(value, toml::Value::Boolean(_))
 }
 
+fn is_number(value: &toml::Value) -> bool {
+    matches!(value, toml::Value::Integer(_) | toml::Value::Float(_))
+}
+
 fn is_integer(value: &toml::Value) -> bool {
     matches!(value, toml::Value::Integer(_))
 }
@@ -908,6 +1025,46 @@ fn merge_dock_defaults(
 ) {
     for (key, value) in entries {
         match key.as_str() {
+            "apps" => insert_friendly_default(
+                out,
+                "com.apple.dock",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "persistent-apps",
+                    expected: |value| {
+                        value
+                            .as_array()
+                            .is_some_and(|apps| apps.iter().all(|app| app.as_str().is_some()))
+                    },
+                    expected_type: "array of application paths",
+                },
+                value.clone(),
+            ),
+            "autohide_delay" => insert_friendly_default(
+                out,
+                "com.apple.dock",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "autohide-delay",
+                    expected: is_number,
+                    expected_type: "number",
+                },
+                value.clone(),
+            ),
+            "autohide_time_modifier" => insert_friendly_default(
+                out,
+                "com.apple.dock",
+                FriendlyDefaultSpec {
+                    section: "dock",
+                    key,
+                    defaults_key: "autohide-time-modifier",
+                    expected: is_number,
+                    expected_type: "number",
+                },
+                value.clone(),
+            ),
             "autohide" => insert_friendly_default(
                 out,
                 "com.apple.dock",
@@ -1006,6 +1163,30 @@ fn merge_finder_defaults(
 ) {
     for (key, value) in entries {
         match key.as_str() {
+            "sort_folders_first" => insert_friendly_default(
+                out,
+                "com.apple.finder",
+                FriendlyDefaultSpec {
+                    section: "finder",
+                    key,
+                    defaults_key: "_FXSortFoldersFirst",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
+                value.clone(),
+            ),
+            "save_new_documents_to_cloud" => insert_friendly_default(
+                out,
+                "NSGlobalDomain",
+                FriendlyDefaultSpec {
+                    section: "finder",
+                    key,
+                    defaults_key: "NSDocumentSaveNewDocumentsToCloud",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
+                value.clone(),
+            ),
             "show_all_files" => insert_friendly_default(
                 out,
                 "com.apple.finder",
@@ -1094,6 +1275,30 @@ fn merge_keyboard_defaults(
 ) {
     for (key, value) in entries {
         match key.as_str() {
+            "automatic_capitalization" => insert_friendly_default(
+                out,
+                "NSGlobalDomain",
+                FriendlyDefaultSpec {
+                    section: "keyboard",
+                    key,
+                    defaults_key: "NSAutomaticCapitalizationEnabled",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
+                value.clone(),
+            ),
+            "automatic_spelling_correction" => insert_friendly_default(
+                out,
+                "NSGlobalDomain",
+                FriendlyDefaultSpec {
+                    section: "keyboard",
+                    key,
+                    defaults_key: "NSAutomaticSpellingCorrectionEnabled",
+                    expected: is_bool,
+                    expected_type: "bool",
+                },
+                value.clone(),
+            ),
             "key_repeat" => insert_friendly_default(
                 out,
                 "NSGlobalDomain",
@@ -1488,7 +1693,7 @@ pub(crate) fn hooks_from_config_files(config_files: &ConfigMap) -> Vec<hooks::Bo
     for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (phase, value) in sys.hooks {
-                match hooks::BootstrapHook::from_toml(&phase, value) {
+                match hooks::BootstrapHook::from_toml(&phase, value, cf.get_path().to_path_buf()) {
                     Ok(hooks) => out.extend(hooks),
                     Err(err) => warn!("[bootstrap.hooks.{phase}]: {err}"),
                 }
@@ -1551,7 +1756,7 @@ fn is_brew_manager(mgr: &str) -> bool {
 }
 
 fn is_opaque_package_manager(mgr: &str) -> bool {
-    is_brew_manager(mgr) || mgr == "mas"
+    is_brew_manager(mgr) || matches!(mgr, "mas" | "nix")
 }
 
 fn normalize_use_spec_package_name<'a>(mgr: &str, name: &'a str) -> eyre::Result<&'a str> {
@@ -1567,10 +1772,28 @@ fn normalize_use_spec_package_name<'a>(mgr: &str, name: &'a str) -> eyre::Result
 }
 
 fn validate_package_name(mgr: &str, name: &str) -> eyre::Result<()> {
+    if mgr == "nix" {
+        packages::nix::Installable::parse(name)?;
+    }
     if mgr == "mas" && !packages::mas::is_adam_id(name) {
         bail!("mas app IDs must be numeric ADAM IDs (e.g. \"mas:497799835\")");
     }
     Ok(())
+}
+
+/// Collect export declarations before manager validation can warn and skip an
+/// invalid entry. Export must either represent the entire selection or fail.
+pub(crate) fn nix_packages_for_export(config: &Config) -> Vec<(String, PackageTomlConfig)> {
+    let environments = &crate::env::MISE_ENV_WITH_AUTO;
+    package_configs_from_config_files(&config.config_files)
+        .into_iter()
+        .filter(|(spec, package)| {
+            spec.starts_with("nix:")
+                && package.is_os_supported()
+                && package.is_env_supported(environments)
+                && package.desired() == packages::PackageDesiredState::Present
+        })
+        .collect()
 }
 
 pub(crate) fn brew_taps_from_config(config: &Config) -> IndexMap<String, String> {
@@ -1868,6 +2091,59 @@ mod tests {
     }
 
     #[test]
+    fn package_env_selector_matches_active_environments() {
+        let package = PackageTomlConfig::Options(PackageOptionsTomlConfig {
+            version: "latest".to_string(),
+            os: vec![],
+            env: vec!["desktop".to_string(), "work".to_string()],
+            adopt: None,
+            state: PackageDesiredStateTomlConfig::Present,
+        });
+
+        assert!(package.is_env_supported(&["work".to_string()]));
+        assert!(package.is_env_supported(&["home".to_string(), "desktop".to_string()]));
+        assert!(!package.is_env_supported(&["home".to_string()]));
+        assert!(!package.is_env_supported(&[]));
+        assert!(PackageTomlConfig::Version("latest".to_string()).is_env_supported(&[]));
+    }
+
+    #[test]
+    fn package_env_selector_rejects_blank_values() {
+        for config in [r#"env = " ""#, r#"env = ["work", "\t"]"#] {
+            let err = toml::from_str::<PackageOptionsTomlConfig>(config).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("package env must contain at least one non-empty selector"),
+                "{err}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn inactive_env_packages_remain_protected_from_prune() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "config.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:profile-only" = { env = "__mise_inactive_test_env__" }
+            "#,
+        )])?;
+
+        assert!(packages_from_config_files(&config_files).is_empty());
+        let packages = packages_from_config_files_and_tracked_config_files(
+            &config_files,
+            &ConfigMap::default(),
+        )?;
+        let brew = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew")
+            .unwrap();
+        assert_eq!(brew.requests[0].name, "profile-only");
+        Ok(())
+    }
+
+    #[test]
     fn test_parse_use_spec() {
         let (mgr, req) = parse_use_spec("apt:curl").unwrap();
         assert_eq!(
@@ -2091,6 +2367,119 @@ mod tests {
     }
 
     #[test]
+    fn test_extended_friendly_macos_defaults() {
+        let cases = [
+            (
+                "dock",
+                "autohide_delay",
+                "com.apple.dock",
+                "autohide-delay",
+                "0",
+            ),
+            (
+                "dock",
+                "autohide_delay",
+                "com.apple.dock",
+                "autohide-delay",
+                "0.5",
+            ),
+            (
+                "dock",
+                "autohide_time_modifier",
+                "com.apple.dock",
+                "autohide-time-modifier",
+                "0",
+            ),
+            (
+                "dock",
+                "autohide_time_modifier",
+                "com.apple.dock",
+                "autohide-time-modifier",
+                "0.5",
+            ),
+            (
+                "finder",
+                "sort_folders_first",
+                "com.apple.finder",
+                "_FXSortFoldersFirst",
+                "true",
+            ),
+            (
+                "finder",
+                "sort_folders_first",
+                "com.apple.finder",
+                "_FXSortFoldersFirst",
+                "false",
+            ),
+            (
+                "finder",
+                "save_new_documents_to_cloud",
+                "NSGlobalDomain",
+                "NSDocumentSaveNewDocumentsToCloud",
+                "true",
+            ),
+            (
+                "finder",
+                "save_new_documents_to_cloud",
+                "NSGlobalDomain",
+                "NSDocumentSaveNewDocumentsToCloud",
+                "false",
+            ),
+            (
+                "keyboard",
+                "automatic_capitalization",
+                "NSGlobalDomain",
+                "NSAutomaticCapitalizationEnabled",
+                "true",
+            ),
+            (
+                "keyboard",
+                "automatic_capitalization",
+                "NSGlobalDomain",
+                "NSAutomaticCapitalizationEnabled",
+                "false",
+            ),
+            (
+                "keyboard",
+                "automatic_spelling_correction",
+                "NSGlobalDomain",
+                "NSAutomaticSpellingCorrectionEnabled",
+                "true",
+            ),
+            (
+                "keyboard",
+                "automatic_spelling_correction",
+                "NSGlobalDomain",
+                "NSAutomaticSpellingCorrectionEnabled",
+                "false",
+            ),
+        ];
+        for (section, key, domain, raw, value) in cases {
+            for valid in [true, false] {
+                let mut macos = BootstrapMacosTomlConfig::default();
+                let entries = match section {
+                    "dock" => &mut macos.dock,
+                    "finder" => &mut macos.finder,
+                    "keyboard" => &mut macos.keyboard,
+                    _ => unreachable!(),
+                };
+                entries.insert(
+                    key.into(),
+                    if valid { tv(value) } else { tv(r#""invalid""#) },
+                );
+                let mut out = IndexMap::new();
+                merge_friendly_macos_defaults(&mut out, &macos);
+                if valid {
+                    assert_eq!(out.len(), 1);
+                    assert_eq!(out.get(&(domain.into(), raw.into())), Some(&tv(value)));
+                } else {
+                    assert!(out.is_empty(), "{section}.{key} accepted a string");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_friendly_macos_defaults_validation() {
         let mut macos = BootstrapMacosTomlConfig::default();
         macos.dock.insert("orientation".into(), tv(r#""top""#));
@@ -2106,6 +2495,34 @@ mod tests {
         merge_friendly_macos_defaults(&mut out, &macos);
 
         assert!(out.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_dock_apps_precedence_keeps_winning_semantics() -> Result<()> {
+        let friendly = r#"[bootstrap.macos.dock]
+apps = ["/Applications/Example.app"]"#;
+        let raw = r#"[bootstrap.macos.defaults."com.apple.dock"]
+persistent-apps = []"#;
+        let explicit = r#"[[bootstrap.macos.defaults_entries]]
+domain = "com.apple.dock"
+key = "persistent-apps"
+value = []"#;
+        let config = Config::get().await?;
+        for (local, global, expected_friendly) in [
+            (friendly.to_string(), raw, true),
+            (raw.to_string(), friendly, false),
+            (format!("{friendly}\n{raw}"), "", false),
+            (format!("{friendly}\n{explicit}"), "", false),
+        ] {
+            let (_tmp, files) =
+                config_map_from_toml(&[("local.toml", &local), ("global.toml", global)])?;
+            let requests = defaults_from_config(&config.with_config_files(files));
+            assert_eq!(requests.len(), 1);
+            assert_eq!(requests[0].dock_apps, expected_friendly);
+            assert_eq!(requests[0].key, "persistent-apps");
+        }
+        Ok(())
     }
 
     #[test]
@@ -2232,5 +2649,13 @@ mod tests {
         macos.defaults.insert("malformed".into(), tv("true"));
 
         assert_eq!(macos_defaults_entry_count(&macos), 5);
+        macos.defaults_entries.push(BootstrapMacosDefaultsEntry {
+            domain: "NSGlobalDomain".into(),
+            key: "KeyRepeat".into(),
+            host: HostScope::Current,
+            path: None,
+            value: tv("3"),
+        });
+        assert_eq!(macos_defaults_entry_count(&macos), 6);
     }
 }

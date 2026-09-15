@@ -255,3 +255,9 @@ Run tests with shuffling enabled
 - **Usage:** `test:unit`
 
 run unit tests
+
+## `test:unit-ci`
+
+- **Usage:** `test:unit-ci`
+
+run unit tests with CI time limits

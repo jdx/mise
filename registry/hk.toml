@@ -1,4 +1,8 @@
-backends = ["aqua:jdx/hk"]
+backends = [
+  { full = "packslip:github.com/jdx/hk", min_version = "1.58.1" },
+  "aqua:jdx/hk",
+]
+bins = ["hk"]
 description = "git hook and pre-commit lint manager"
 test = { cmd = "hk --version", expected = "hk {{version}}" }
 version_order = "semver"

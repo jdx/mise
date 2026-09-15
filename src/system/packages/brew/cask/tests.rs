@@ -837,11 +837,16 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
 
-    assert!(install_app(&stage, &caskroom, &app, true, true, true)?);
+    assert_eq!(
+        install_app(&stage, &caskroom, &app, true, true, true, false)?,
+        AppInstall::Installed {
+            metadata_only: true
+        }
+    );
     assert!(!caskroom.join("Example.app").exists());
 
     crate::file::write(target.join("app"), "different")?;
-    let error = install_app(&stage, &caskroom, &app, true, true, true).unwrap_err();
+    let error = install_app(&stage, &caskroom, &app, true, true, true, false).unwrap_err();
     assert!(error.to_string().contains("is not identical"));
     Ok(())
 }
@@ -865,7 +870,12 @@ fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
 
-    assert!(install_app(&stage, &caskroom, &app, false, true, false)?);
+    assert_eq!(
+        install_app(&stage, &caskroom, &app, false, true, false, false)?,
+        AppInstall::Installed {
+            metadata_only: true
+        }
+    );
     assert_eq!(
         std::fs::read_to_string(target.join("app"))?,
         "self-updated version"
@@ -1102,6 +1112,7 @@ fn parses_orbstack_structured_run_step() -> Result<()> {
     assert_eq!(
         artifacts.postflight_steps,
         vec![FlightStep::Run {
+            must_succeed: true,
             command: FlightPath {
                 base: FlightPathBase::AppDir,
                 path: "OrbStack.app/Contents/MacOS/bin/orbctl".to_string(),
@@ -2962,6 +2973,7 @@ fn structured_run_expands_paths_args_and_env() -> Result<()> {
     execute_flight_steps(
         &test_cask("example", "1.2.3"),
         &[FlightStep::Run {
+            must_succeed: true,
             command: FlightPath {
                 base: FlightPathBase::Literal,
                 path: "/bin/sh".to_string(),
@@ -3043,15 +3055,117 @@ fn structured_flight_steps_move_and_remove_staged_paths() -> Result<()> {
 }
 
 #[test]
+#[cfg(unix)]
+fn structured_set_permissions_step_changes_existing_staged_paths() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let staged = tmp.path();
+    let cache = staged.join("Blender.app/Contents/Resources/5.2/python/lib/__pycache__");
+    file::create_dir_all(&cache)?;
+    let compiled = cache.join("module.pyc");
+    file::write(&compiled, "pyc")?;
+    let read_only = std::fs::Permissions::from_mode(0o555);
+    std::fs::set_permissions(&compiled, read_only.clone())?;
+    std::fs::set_permissions(&cache, read_only)?;
+
+    execute_flight_steps(
+        &test_cask("blender", "5.2.1"),
+        &[FlightStep::SetPermissions {
+            paths: vec![
+                FlightPath {
+                    base: FlightPathBase::StagedPath,
+                    path: "*.app/**/__pycache__".to_string(),
+                },
+                FlightPath {
+                    base: FlightPathBase::StagedPath,
+                    path: "Missing.app".to_string(),
+                },
+            ],
+            permissions: "u+w".to_string(),
+            recursive: false,
+        }],
+        staged,
+        staged,
+        "preflight_steps",
+    )?;
+
+    assert_eq!(cache.metadata()?.permissions().mode() & 0o777, 0o755);
+    assert_eq!(
+        compiled.metadata()?.permissions().mode() & 0o777,
+        0o555,
+        "a non-recursive step leaves the directory contents alone"
+    );
+    assert!(!staged.join("Missing.app").exists());
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn structured_set_permissions_step_recurses_by_default() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let staged = tmp.path().join("stage");
+    let appdir = tmp.path().join("Applications");
+    let binary = appdir.join("Tool.app/Contents/MacOS/tool");
+    file::create_dir_all(binary.parent().unwrap())?;
+    file::write(&binary, "#!/bin/sh\n")?;
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o644))?;
+    let external = tmp.path().join("external");
+    file::write(&external, "outside")?;
+    std::fs::set_permissions(&external, std::fs::Permissions::from_mode(0o644))?;
+    file::make_symlink(&external, &binary.with_file_name("link"))?;
+    file::create_dir_all(&staged)?;
+
+    execute_flight_steps(
+        &test_cask("tool", "1.0.0"),
+        &[FlightStep::SetPermissions {
+            paths: vec![FlightPath {
+                base: FlightPathBase::AppDir,
+                path: "Tool.app/Contents/MacOS".to_string(),
+            }],
+            permissions: "0755".to_string(),
+            recursive: true,
+        }],
+        &staged,
+        &appdir,
+        "postflight_steps",
+    )?;
+
+    assert_eq!(binary.metadata()?.permissions().mode() & 0o777, 0o755);
+    assert_eq!(
+        external.metadata()?.permissions().mode() & 0o777,
+        0o644,
+        "a symlink inside the tree must not carry the change outside it"
+    );
+    Ok(())
+}
+
+#[test]
+fn structured_set_permissions_step_skips_when_no_path_exists() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    execute_flight_steps(
+        &test_cask("tool", "1.0.0"),
+        &[FlightStep::SetPermissions {
+            paths: vec![FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "Missing-*".to_string(),
+            }],
+            permissions: "0755".to_string(),
+            recursive: true,
+        }],
+        tmp.path(),
+        tmp.path(),
+        "preflight_steps",
+    )
+}
+
+#[test]
 fn rejects_unsupported_structured_flight_steps() {
     let mut cask = test_cask("battle-net", "1.0.0");
     cask.artifacts = vec![
         serde_json::json!({
             "preflight_steps": [{
                 "steps": [{
-                    "type": "set_permissions",
-                    "paths": [{"base": "staged_path", "path": "Battle.net-Setup.app"}],
-                    "permissions": "a+x"
+                    "type": "set_ownership",
+                    "paths": [{"base": "staged_path", "path": "Battle.net-Setup.app"}]
                 }]
             }]
         }),
@@ -3059,7 +3173,122 @@ fn rejects_unsupported_structured_flight_steps() {
     ];
 
     let err = cask_artifacts(&cask).unwrap_err().to_string();
-    assert!(err.contains("unsupported preflight_steps step type set_permissions"));
+    assert!(err.contains("unsupported preflight_steps step type set_ownership"));
+}
+
+#[test]
+fn parses_structured_set_permissions_steps() -> Result<()> {
+    let mut cask = test_cask("blender", "5.2.1");
+    cask.artifacts = vec![
+        serde_json::json!({
+            "preflight_steps": [{
+                "steps": [{
+                    "type": "set_permissions",
+                    "paths": [{"base": "staged_path", "path": "*.app/**/__pycache__"}],
+                    "permissions": "u+w",
+                    "non_recursive": true
+                }]
+            }]
+        }),
+        serde_json::json!({"app": "Blender.app"}),
+        serde_json::json!({
+            "postflight_steps": [{
+                "steps": [{
+                    "type": "set_permissions",
+                    "paths": [{"base": "appdir", "path": "Blender.app/Contents/MacOS/Blender"}],
+                    "permissions": "0755"
+                }]
+            }]
+        }),
+    ];
+
+    let artifacts = cask_artifacts(&cask)?;
+    assert_eq!(
+        artifacts.preflight_steps,
+        vec![FlightStep::SetPermissions {
+            paths: vec![FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "*.app/**/__pycache__".to_string(),
+            }],
+            permissions: "u+w".to_string(),
+            recursive: false,
+        }]
+    );
+    assert_eq!(
+        artifacts.postflight_steps,
+        vec![FlightStep::SetPermissions {
+            paths: vec![FlightPath {
+                base: FlightPathBase::AppDir,
+                path: "Blender.app/Contents/MacOS/Blender".to_string(),
+            }],
+            permissions: "0755".to_string(),
+            recursive: true,
+        }]
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_malformed_structured_set_permissions_steps() {
+    for (steps, message) in [
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "staged_path", "path": "Tool.app"}]
+            }]),
+            "unsupported preflight_steps set_permissions step permissions",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "homebrew_prefix", "path": "bin/tool"}],
+                "permissions": "0755"
+            }]),
+            "unsupported preflight_steps paths base homebrew_prefix",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "appdir", "path": "*.app"}],
+                "permissions": "0755"
+            }]),
+            "unsupported preflight_steps paths glob outside staged_path *.app",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "staged_path", "path": "../Tool.app"}],
+                "permissions": "0755"
+            }]),
+            "invalid preflight_steps paths path ../Tool.app",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "staged_path", "path": "Tool.app"}],
+                "permissions": "0755",
+                "sudo": true
+            }]),
+            "unsupported preflight_steps set_permissions step field sudo",
+        ),
+        (
+            serde_json::json!([{
+                "type": "set_permissions",
+                "paths": [{"base": "staged_path", "path": "Tool.app"}],
+                "permissions": "0755",
+                "non_recursive": "true"
+            }]),
+            "preflight_steps non_recursive must be a boolean",
+        ),
+    ] {
+        let mut cask = test_cask("tool", "1.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({"preflight_steps": [{"steps": steps}]}),
+            serde_json::json!({"app": "Tool.app"}),
+        ];
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert!(err.contains(message), "{err}");
+    }
 }
 
 #[test]
@@ -3273,6 +3502,12 @@ fn cask_shim_supports_completion_stanzas_and_system_command() -> Result<()> {
   zsh_completion "#{appdir}/Example.app/Contents/Resources/etc/example.zsh-completion"
   fish_completion "#{appdir}/Example.app/Contents/Resources/etc/example.fish-completion"
   manpage "#{appdir}/Example.app/Contents/Resources/man/example.1"
+  preflight_steps do
+    raise "structured steps must run only in Rust"
+  end
+  postflight_steps do
+    raise "structured steps must run only in Rust"
+  end
   postflight do
     kubectl_target = staged_path/"kubectl-link"
     next if kubectl_target.exist?
@@ -7396,5 +7631,393 @@ fn git_only_path_rejects_symlink_escape() -> Result<()> {
     let cask = test_cask("font-test", "latest");
 
     assert!(git_only_path_source(&cask, &checkout, Path::new("escaped")).is_err());
+    Ok(())
+}
+
+/// Verifies receipt equality and install mode independently govern skip decisions.
+#[test]
+fn installed_cask_skip_depends_on_mode_and_receipt_equality() {
+    let mut cask = test_cask("example", "release,build");
+    for (auto_updates, recorded, mode, expected) in [
+        (true, "release", InstallMode::Install, true),
+        (true, "release", InstallMode::Upgrade, false),
+        (true, "release,build", InstallMode::Install, true),
+        (true, "release,build", InstallMode::Upgrade, true),
+        (false, "release", InstallMode::Install, false),
+        (false, "release", InstallMode::Upgrade, false),
+        (false, "release,build", InstallMode::Install, true),
+        (false, "release,build", InstallMode::Upgrade, true),
+    ] {
+        cask.auto_updates = auto_updates;
+        assert_eq!(
+            should_skip_installed(&cask, recorded, mode),
+            expected,
+            "auto_updates={auto_updates}, recorded={recorded}, upgrade={}",
+            mode == InstallMode::Upgrade,
+        );
+    }
+}
+
+/// Checks Homebrew token precedence, comparability, and symmetric ordering,
+/// including trailing tokens reached after the two token indexes diverge.
+#[test]
+fn auto_updates_compares_homebrew_version_tokens_with_matching_component_counts() {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+
+    for (live, current, expected) in [
+        ("1", "2", Some(Less)),
+        ("1.9", "1.10", Some(Less)),
+        ("2.0", "1.99", Some(Greater)),
+        ("1.02", "01.2", Some(Equal)),
+        ("0.000", "00.0", Some(Equal)),
+        (
+            "999999999999999999999999999999",
+            "1000000000000000000000000000000",
+            Some(Less),
+        ),
+        ("1", "1.0", None),
+        ("", "1", None),
+        ("1.", "1.0", None),
+        ("1..0", "1.0.0", Some(Equal)),
+        ("1.0-p1", "1.p1", Some(Equal)),
+        ("1.0a", "1a.0-0-1", Some(Less)),
+        ("1.0a", "1a.0-0-0", Some(Equal)),
+        ("1.2.3alpha4", "1.2.3A4", Some(Equal)),
+        ("1.2.3beta2", "1.2.3B2", Some(Equal)),
+        ("1.2.3pre9", "1.2.3PRE9", Some(Equal)),
+        ("1.2.3rc3", "1.2.3RC3", Some(Equal)),
+        ("1.2.3-p34", "1.2.3-P34", Some(Equal)),
+        ("1.2.3alpha4", "1.2.3beta2", Some(Less)),
+        ("1.2.3beta2", "1.2.3pre3", Some(Less)),
+        ("1.2.3pre3", "1.2.3rc2", Some(Less)),
+        ("1.2.3rc3", "1.2.3", Some(Less)),
+        ("1.2.3", "1.2.3a", Some(Less)),
+        ("1.2.3", "1.2.3-p34", Some(Less)),
+        ("1.2.3.post34", "1.2.3.post35", Some(Less)),
+        ("1.2.3.post34", "1.2.3", None),
+        ("HEAD-abcdef", "HEAD-fedcba", Some(Equal)),
+        ("HEAD", "2", Some(Greater)),
+        ("1.", "1", Some(Equal)),
+        ("1.0-beta", "1.0", Some(Less)),
+        ("1,2", "1.2", None),
+        ("foo", "goo", Some(Less)),
+        (" 1", "2", Some(Less)),
+        ("+1", "2", Some(Less)),
+    ] {
+        assert_eq!(
+            compare_app_versions(live, current),
+            expected,
+            "{live:?}, {current:?}"
+        );
+        assert_eq!(
+            compare_app_versions(current, live),
+            expected.map(std::cmp::Ordering::reverse)
+        );
+    }
+}
+
+/// Covers upgrade eligibility across short, build, combined, and unavailable
+/// bundle versions, including casks with multiple version candidates.
+#[test]
+fn auto_updates_matches_homebrew_short_build_decisions() {
+    for (current, short, build, expected) in [
+        ("2.61", Some("2.57"), Some("2057"), true),
+        ("2.61", Some("2.62"), Some("2057"), false),
+        ("2.61", Some("2.61"), Some("2057"), false),
+        ("2057", Some("2.61"), Some("2057"), false),
+        ("2.61,3000", Some("2.61"), Some("2057"), false),
+        ("2.61,3000,2057", Some("2.61"), Some("2057"), false),
+        ("2.61-2057", Some("2.61"), Some("2057"), false),
+        ("2.61-2057", Some("2.61"), Some("2058"), false),
+        ("2.61-2057", Some("2.61"), Some("2056"), true),
+        ("3.6.4-28955b81", Some("3.6.4"), Some("3.6.4"), false),
+        ("2.61,2057", Some("2057"), Some("3000"), false),
+        ("2.61,2056,2055", Some("2.61"), Some("2057"), false),
+        ("2.61,3000", None, Some("2057"), true),
+        ("2.61,3000,2057", None, Some("2057"), false),
+        ("2.61,3000", None, Some("3001"), false),
+        ("1.0", Some("1"), Some("200"), false),
+        ("2", None, None, false),
+        ("2", Some("0"), Some("0.0"), false),
+        ("2", Some("0.0"), Some("1"), true),
+        ("2", Some("1"), Some("0"), true),
+        ("2", Some(" \t"), Some("1"), true),
+        ("2", Some("1"), None, true),
+        ("2.5.2,4000", Some("2.5.2(3329)"), Some("3329"), false),
+        ("2.5.2,4.4", Some("2.5.2 (3.3)"), Some("3.3"), false),
+        ("2.5.2,4000", Some("2.5.2 \t(3329)"), Some("3329"), false),
+        ("2.5.3,4000", Some("2.5.2(3329)"), Some("3329"), true),
+        ("1.2.3", Some("1.2.3rc3"), None, true),
+        ("1.2.3", Some("1.2.3-p34"), None, false),
+        ("1a.0-0-1", Some("1.0a"), None, true),
+        ("latest", Some("1"), Some("1"), false),
+    ] {
+        assert_eq!(
+            app_version_outdated(current, short, build),
+            expected,
+            "current={current}, short={short:?}, build={build:?}"
+        );
+    }
+}
+
+/// Verifies both plist encodings preserve optional version strings and that
+/// malformed, missing, or directory-backed plist inputs return errors.
+#[test]
+fn auto_updates_reads_string_versions_from_xml_and_binary_plists() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let app = tmp.path().join("Example.app");
+    file::create_dir_all(app.join("Contents"))?;
+    let path = app.join("Contents/Info.plist");
+    for binary in [false, true] {
+        for (short, build) in [
+            (Some("1.02"), None),
+            (None, Some("2057")),
+            (Some("2.5.2(3329)"), Some("3329")),
+            (None, None),
+        ] {
+            let mut dict = plist::Dictionary::new();
+            for (key, value) in [
+                ("CFBundleShortVersionString", short),
+                ("CFBundleVersion", build),
+            ] {
+                if let Some(value) = value {
+                    dict.insert(key.into(), plist::Value::String(value.into()));
+                }
+            }
+            let plist = plist::Value::Dictionary(dict);
+            if binary {
+                plist.to_file_binary(&path)?;
+            } else {
+                plist.to_file_xml(&path)?;
+            }
+            let version = read_app_version(&app)?;
+            assert_eq!(version.short.as_deref(), short);
+            assert_eq!(version.build.as_deref(), build);
+        }
+    }
+    file::write(&path, "invalid plist")?;
+    assert!(read_app_version(&app).is_err());
+    std::fs::remove_file(&path)?;
+    assert!(read_app_version(&app).is_err());
+    file::create_dir_all(&path)?;
+    assert!(read_app_version(&app).is_err());
+    assert!(read_app_version(&tmp.path().join("Missing.app")).is_err());
+    Ok(())
+}
+
+/// Nested helpers match the bundle; sibling bundles sharing a prefix do not.
+#[test]
+fn running_app_matches_bundle_processes_by_path_component() {
+    let app = Path::new("/Applications/Google Chrome.app");
+    for (listing, expected) in [
+        (
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n",
+            true,
+        ),
+        (
+            "/sbin/launchd\n/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/153.0.8010.37/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)\n",
+            true,
+        ),
+        (
+            "  /Applications/Google Chrome.app/Contents/MacOS/Google Chrome  \r\n",
+            true,
+        ),
+        ("/Applications/Google Chrome.app\n", true),
+        (
+            "/Applications/Google Chrome.app 2/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        (
+            "/Applications/Google Chrome.appx/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        (
+            "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome\n",
+            false,
+        ),
+        ("Google Chrome\n-/bin/zsh\n<defunct>\n", false),
+        ("", false),
+        ("\n\n", false),
+    ] {
+        assert_eq!(
+            app_has_live_process(app, listing.as_bytes()),
+            expected,
+            "listing={listing:?}"
+        );
+    }
+    let mixed = b"/Applications/Goo\xffgle Chrome.app/Contents/MacOS/x\n/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\n";
+    assert!(app_has_live_process(app, mixed));
+    assert!(!app_has_live_process(
+        app,
+        b"/Applications/Goo\xffgle Chrome.app/Contents/MacOS/x\n"
+    ));
+}
+
+/// A process launched from inside the bundle is seen until it exits. The
+/// executable links to `/bin/sleep`; a copied platform binary is killed on exec.
+#[cfg(target_os = "macos")]
+#[test]
+fn running_app_sees_a_process_launched_from_the_bundle() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let app = tmp.path().join("Sleeper.app");
+    let executable = app.join("Contents/MacOS/Sleeper");
+    file::create_dir_all(executable.parent().unwrap())?;
+    std::os::unix::fs::symlink("/bin/sleep", &executable)?;
+    assert!(!app_is_running(&app));
+    let mut child = std::process::Command::new(&executable)
+        .arg("600")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    let running = app_is_running(&app);
+    child.kill()?;
+    child.wait()?;
+    assert!(running);
+    assert!(!app_is_running(&app));
+    Ok(())
+}
+
+/// A running app defers the swap without leaving the staged copy behind, and
+/// the swap proceeds once the app has exited.
+#[cfg(target_os = "macos")]
+#[test]
+fn defers_a_running_self_updating_app_at_the_swap() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let stage = root.join("stage");
+    let caskroom = root.join("Caskroom/example/2.0.0");
+    let appdir = root.join("Applications");
+    let target = appdir.join("Example.app");
+    file::create_dir_all(stage.join("Example.app/Contents"))?;
+    file::create_dir_all(target.join("Contents/MacOS"))?;
+    file::write(stage.join("Example.app/Contents/app"), "downloaded")?;
+    file::write(target.join("Contents/app"), "installed")?;
+    let executable = target.join("Contents/MacOS/Example");
+    std::os::unix::fs::symlink("/bin/sleep", &executable)?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+    };
+
+    let mut child = std::process::Command::new(&executable)
+        .arg("600")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    let result = install_app(&stage, &caskroom, &app, false, false, false, true);
+    child.kill()?;
+    child.wait()?;
+    assert_eq!(result?, AppInstall::Running);
+    assert_eq!(
+        std::fs::read_to_string(target.join("Contents/app"))?,
+        "installed"
+    );
+    assert!(!caskroom.join("Example.app").exists());
+    let leftovers = std::fs::read_dir(&appdir)?
+        .map(|entry| Ok(entry?.file_name()))
+        .collect::<Result<Vec<_>>>()?;
+    assert_eq!(leftovers, vec![std::ffi::OsString::from("Example.app")]);
+
+    assert_eq!(
+        install_app(&stage, &caskroom, &app, false, false, false, true)?,
+        AppInstall::Installed {
+            metadata_only: true
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(target.join("Contents/app"))?,
+        "downloaded"
+    );
+    Ok(())
+}
+
+/// Checks that symlinked bundle components and FIFO plists are rejected before
+/// live version data can be trusted or a FIFO read can block the caller.
+#[cfg(unix)]
+#[test]
+fn auto_updates_refuses_symlinked_and_nonregular_plist_paths() -> Result<()> {
+    let tmp = trusted_tempdir()?;
+    let original = tmp.path().join("Original.app");
+    file::create_dir_all(original.join("Contents"))?;
+    let mut dict = plist::Dictionary::new();
+    dict.insert(
+        "CFBundleShortVersionString".into(),
+        plist::Value::String("1".into()),
+    );
+    plist::Value::Dictionary(dict).to_file_xml(original.join("Contents/Info.plist"))?;
+    for component in ["", "Contents", "Contents/Info.plist"] {
+        let app = tmp.path().join(format!("Linked-{}.app", component.len()));
+        let destination = if component.is_empty() {
+            app.clone()
+        } else {
+            app.join(component)
+        };
+        file::create_dir_all(destination.parent().unwrap())?;
+        std::os::unix::fs::symlink(original.join(component), destination)?;
+        assert!(read_app_version(&app).is_err(), "component={component}");
+    }
+    let fifo_app = tmp.path().join("Fifo.app");
+    file::create_dir_all(fifo_app.join("Contents"))?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(fifo_app.join("Contents/Info.plist"))
+            .status()?
+            .success()
+    );
+    assert!(read_app_version(&fifo_app).is_err());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn structured_run_respects_failure_policy() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let mut cask = test_cask("example", "1.0");
+    for (policy, succeeds) in [(None, false), (Some(true), false), (Some(false), true)] {
+        let mut step = serde_json::json!({
+            "type": "run", "command": {"path": "/usr/bin/false"}
+        });
+        if let Some(policy) = policy {
+            step["must_succeed"] = policy.into();
+        }
+        cask.artifacts = vec![
+            serde_json::json!({"app": ["Example.app"]}),
+            serde_json::json!({"postflight_steps": [{"steps": [step]}]}),
+        ];
+        let artifacts = cask_artifacts(&cask)?;
+        assert_eq!(
+            execute_flight_steps(
+                &cask,
+                &artifacts.postflight_steps,
+                tmp.path(),
+                tmp.path(),
+                "postflight_steps"
+            )
+            .is_ok(),
+            succeeds
+        );
+    }
+    let signaled = serde_json::json!({
+        "type": "run", "command": {"path": "/bin/sh"},
+        "args": ["-c", "kill -TERM $$"], "must_succeed": false
+    });
+    let step = parse_flight_step(&cask, "postflight_steps", &signaled)?;
+    let err = execute_flight_steps(&cask, &[step], tmp.path(), tmp.path(), "postflight_steps")
+        .expect_err("signal termination must remain an error");
+    assert!(matches!(
+        err.downcast_ref::<crate::errors::Error>(),
+        Some(crate::errors::Error::ScriptFailed(_, Some(status))) if status.code().is_none()
+    ));
+    let invalid = serde_json::json!({"type": "run", "command": {"path": "/usr/bin/false"}, "must_succeed": "false"});
+    assert!(parse_flight_step(&cask, "postflight_steps", &invalid).is_err());
+    let missing = serde_json::json!({"type": "run", "command": {"path": "/mise-nonexistent-command"}, "must_succeed": false});
+    let step = parse_flight_step(&cask, "postflight_steps", &missing)?;
+    assert!(
+        execute_flight_steps(&cask, &[step], tmp.path(), tmp.path(), "postflight_steps").is_err()
+    );
     Ok(())
 }

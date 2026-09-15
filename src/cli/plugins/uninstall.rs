@@ -6,9 +6,12 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
 use crate::{backend, plugins};
 
-/// Remove a plugin
+/// Remove an installed plugin
+///
+/// Tool installations are retained by default. Pass `--purge` to also remove
+/// installs, downloads, and cache associated with the selected plugins.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], example(r###"mise plugins uninstall my-tool"###))]
 pub(super) struct PluginsUninstall {
     /// Plugin(s) to remove
     #[usage(verbatim_doc_comment)]
@@ -34,6 +37,7 @@ impl PluginsUninstall {
 
         for plugin_name in plugins {
             let plugin_name = unalias_backend(&plugin_name);
+            let plugin_name = plugin_name.as_ref();
             self.uninstall_one(plugin_name, &mpr).await?;
         }
         Ok(())
@@ -59,10 +63,3 @@ impl PluginsUninstall {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise plugins uninstall cmake</bold>
-"#
-);

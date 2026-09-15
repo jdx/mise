@@ -20,6 +20,10 @@ use indoc::indoc;
 #[macro_use]
 mod test;
 
+#[cfg(test)]
+#[path = "../build/lockfile_rollout.rs"]
+mod lockfile_rollout;
+
 #[macro_use]
 mod output;
 
@@ -31,6 +35,7 @@ mod timings;
 
 #[macro_use]
 mod cmd;
+mod inline_command;
 
 mod agecrypt;
 mod aqua;
@@ -39,6 +44,7 @@ pub(crate) mod build_time;
 mod cache;
 mod cli;
 mod config;
+mod daemons;
 mod deps;
 pub(crate) mod deps_graph;
 mod direnv;
@@ -55,6 +61,7 @@ pub(crate) mod forgejo;
 mod fuzzy;
 mod git;
 pub(crate) mod github;
+mod github_relay;
 pub(crate) mod gitlab;
 mod gpg;
 mod hash;
@@ -72,6 +79,10 @@ mod migrate;
 mod minisign;
 mod netrc;
 mod oci;
+mod packslip;
+mod packslip_pins;
+mod packslip_requirements;
+mod packslip_stamps;
 pub(crate) mod parallel;
 mod path;
 mod path_env;
@@ -96,6 +107,7 @@ pub(crate) mod tera;
 pub(crate) mod timeout;
 mod tokens;
 mod toml;
+mod tool_catalog;
 mod tool_purgatory;
 mod toolset;
 mod ui;
@@ -103,6 +115,7 @@ mod uv;
 mod versions_host;
 mod watch_files;
 mod wildcard;
+mod windows_posix;
 
 pub(crate) use crate::exit::request as request_exit;
 pub(crate) use crate::result::Result;
@@ -176,6 +189,7 @@ fn main() -> ExitCode {
 }
 
 async fn main_() -> eyre::Result<()> {
+    let _downloads = http::InvocationDownloads;
     // Configure color-eyre based on color preferences
     let hook_builder = if *env::CLICOLOR == Some(false) {
         // Use blank theme (no colors) when colors are disabled
@@ -236,7 +250,9 @@ fn handle_err(err: Report) -> eyre::Result<()> {
         return Err(request_exit(1));
     }
 
-    show_github_rate_limit_err(&err);
+    if !config::Settings::is_package_query() {
+        show_github_rate_limit_err(&err);
+    }
     if *env::MISE_FRIENDLY_ERROR {
         display_friendly_err(&err);
         return Err(request_exit(1));

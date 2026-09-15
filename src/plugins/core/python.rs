@@ -890,7 +890,7 @@ impl PythonPlugin {
         // Verify GitHub artifact attestations for precompiled binaries
         // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
         let verified = self
-            .verify_github_artifact_attestations(ctx, tarball_path, &tv.version)
+            .verify_github_artifact_attestations(ctx.pr.as_ref(), tarball_path, &tv.version)
             .await?;
 
         // Record provenance only if verification actually succeeded (not skipped)
@@ -925,7 +925,7 @@ impl PythonPlugin {
 
     async fn verify_github_artifact_attestations(
         &self,
-        ctx: &InstallContext,
+        pr: &dyn SingleReport,
         tarball_path: &std::path::Path,
         version: &str,
     ) -> Result<bool> {
@@ -934,8 +934,7 @@ impl PythonPlugin {
             return Ok(false);
         }
 
-        ctx.pr
-            .set_message("verify GitHub artifact attestations".to_string());
+        pr.set_message("verify GitHub artifact attestations".to_string());
 
         match crate::github::sigstore::verify_attestation(
             tarball_path,
@@ -948,8 +947,7 @@ impl PythonPlugin {
         .await
         {
             Ok(true) => {
-                ctx.pr
-                    .set_message("✓ GitHub artifact attestations verified".to_string());
+                pr.set_message("✓ GitHub artifact attestations verified".to_string());
                 debug!(
                     "GitHub artifact attestations verified successfully for python@{}",
                     version
@@ -1224,10 +1222,24 @@ impl Backend for PythonPlugin {
         let shasums_url = format!(
             "https://github.com/astral-sh/python-build-standalone/releases/download/{tag}/SHA256SUMS"
         );
-        let checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
+        let mut checksum = fetch_checksum_from_shasums(&shasums_url, &filename).await;
 
         // Detect provenance for precompiled binaries
-        let provenance = self.detect_precompiled_provenance();
+        let mut provenance = self.detect_precompiled_provenance();
+        if provenance.is_some() {
+            let artifact =
+                crate::lockfile::generate::download_for_verification(&url, &mut checksum).await?;
+            if !self
+                .verify_github_artifact_attestations(
+                    &crate::ui::progress_report::QuietReport::new(),
+                    &artifact.path().join("artifact"),
+                    version,
+                )
+                .await?
+            {
+                provenance = None;
+            }
+        }
 
         Ok(PlatformInfo {
             url: Some(url),

@@ -98,6 +98,11 @@ impl ToolDeps {
         self.inner.complete_failure(&tool_key(tr));
     }
 
+    /// Tools this request is still waiting on, by key.
+    pub(super) fn pending_dependencies(&self, tr: &ToolRequest) -> Vec<ToolKey> {
+        self.inner.dependencies_of(&tool_key(tr))
+    }
+
     /// Returns the list of blocked tools (those whose dependencies failed or are in cycles)
     pub(super) fn blocked_tools(&self) -> Vec<ToolRequest> {
         self.inner.blocked_nodes()

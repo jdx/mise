@@ -48,6 +48,8 @@ pub(crate) struct HookEnv {
     /// Show "mise: <TOOL>@<VERSION>" message when changing directories
     #[usage(long, hide = true)]
     status: bool,
+    #[usage(long, hide = true)]
+    shell_pid: Option<u32>,
 }
 
 impl HookEnv {
@@ -139,6 +141,22 @@ impl HookEnv {
         // Use env_with_path_and_split which handles caching internally
         let (mut mise_env, env_remove, user_paths, tool_paths, env_watch_files) =
             ts.env_with_path_and_split(&config).await?;
+        let daemon_commands = match crate::daemons::hook_env::emit(
+            &config,
+            &ts,
+            &mise_env,
+            self.shell_pid,
+            &*shell,
+            self.force,
+        )
+        .await
+        {
+            Ok(commands) => commands,
+            Err(err) => {
+                warn!("daemon auto lifecycle: {err:#}");
+                String::new()
+            }
+        };
         mise_env.remove(&*PATH_KEY);
 
         // Create config_paths from user_paths for display_status and build_session
@@ -194,7 +212,8 @@ impl HookEnv {
             .chain(env_watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
-        let retain_shims = Settings::get().not_found_auto_install || ts.has_lazy_declarations();
+        let retain_shims = Settings::get().activate_shims
+            && (Settings::get().not_found_auto_install || ts.has_lazy_declarations());
         patches.extend(self.build_path_operations(
             &user_paths,
             &tool_paths,
@@ -225,11 +244,17 @@ impl HookEnv {
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
+        miseprint!("{daemon_commands}")?;
 
         // Build and output alias commands
         let alias_output =
             hook_env::build_alias_commands(&*shell, &PREV_SESSION.aliases, &new_aliases);
         miseprint!("{alias_output}")?;
+
+        miseprint!(
+            "{}",
+            crate::packslip::completions::activate(&config, &ts, &shell.to_string())
+        )?;
 
         hooks::run_all_hooks(&config, &ts, &*shell).await;
         hooks::run_enter_hooks_for_newly_loaded_configs(&config, &ts, &*shell).await;
@@ -318,7 +343,8 @@ impl HookEnv {
 
         let (pre, post, post_user) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) if !Settings::get().activate_aggressive => {
-                let orig_paths: Vec<PathBuf> = split_paths(orig_path).collect();
+                let orig_path = crate::windows_posix::orig_path_for_windows(orig_path);
+                let orig_paths: Vec<PathBuf> = split_paths(orig_path.as_ref()).collect();
                 let orig_set: HashSet<_> = orig_paths.iter().collect();
 
                 // Get all mise-managed paths from the previous session
@@ -605,7 +631,7 @@ fn patch_to_status(patch: EnvDiffOperation) -> String {
 }
 
 fn format_status(status: &str) -> Cow<'_, str> {
-    if Settings::get().status.truncate {
+    if Settings::get().status.truncate && crate::env::should_truncate() {
         truncate_str(status, TERM_WIDTH.max(60) - 5, "…")
     } else {
         status.into()

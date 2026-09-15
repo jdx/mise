@@ -1,6 +1,7 @@
 use eyre::Result;
 use serde_json::json;
 
+use crate::cli::args::TruncateOptions;
 use crate::config::Config;
 use crate::path::PathExt;
 use crate::system;
@@ -8,9 +9,30 @@ use crate::system::files::FileState;
 use crate::ui::table::MiseTable;
 
 /// Show the status of dotfiles from `[dotfiles]`
+///
+/// Template entries are rendered to compare their output; trusted template
+/// functions may execute. JSON includes each entry's origin and uses the states
+/// `applied`, `missing`, `differs`, `source_missing`, and `tracked`.
+///
+/// The management state of every declaration (applied, missing, differs,
+/// tracked) followed by the history state: what is tracked, the latest
+/// checkpoint, unfinished operations, and whether edits are saved
+/// automatically.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "ls",
+    verbatim_doc_comment,
+    example(
+        r###"mise dot status
+mise dot status ~/.zshrc
+mise dot status --json
+mise dot status --missing # exit 1 if anything is out of sync"###
+    )
+)]
 pub(crate) struct DotfilesStatus {
+    #[usage(flatten)]
+    truncate: TruncateOptions,
+
     /// Only show these targets
     #[usage(value_name = "TARGET")]
     targets: Vec<String>,
@@ -23,11 +45,16 @@ pub(crate) struct DotfilesStatus {
     /// state (missing, source missing, differs)
     #[usage(long, verbatim_doc_comment)]
     missing: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesStatus {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let mut any_missing = false;
 
         let all_files = system::files::files_from_config(&config)?;
@@ -42,7 +69,7 @@ impl DotfilesStatus {
         let mut file_rows: Vec<Vec<String>> = vec![];
         let mut json_files = vec![];
         for req in &files {
-            let state = match system::files::check(&config, req) {
+            let state = match system::files::check(&config, req, &secrets) {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
@@ -51,8 +78,9 @@ impl DotfilesStatus {
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked => "tracked".to_string(),
             };
-            any_missing |= state != FileState::Applied;
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
                 json_files.push(json!({
                     "target": req.target_raw,
@@ -65,6 +93,7 @@ impl DotfilesStatus {
                         FileState::Missing => "missing",
                         FileState::SourceMissing => "source_missing",
                         FileState::Differs(_) => "differs",
+                        FileState::Tracked => "tracked",
                     },
                 }));
             } else {
@@ -110,8 +139,9 @@ impl DotfilesStatus {
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked => "tracked".to_string(),
             };
-            any_missing |= state != FileState::Applied;
+            any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
                 json_edits.push(json!({
                     "path": req.path_raw,
@@ -122,6 +152,7 @@ impl DotfilesStatus {
                         FileState::Missing => "missing",
                         FileState::SourceMissing => "source_missing",
                         FileState::Differs(_) => "differs",
+                        FileState::Tracked => "tracked",
                     },
                 }));
             } else {
@@ -139,12 +170,14 @@ impl DotfilesStatus {
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
         }
+        let history = super::history_status::report().await?;
         if self.json {
             miseprintln!(
                 "{}",
                 serde_json::to_string_pretty(&json!({
                     "files": json_files,
                     "edits": json_edits,
+                    "history": history,
                 }))?
             );
         } else {
@@ -154,6 +187,7 @@ impl DotfilesStatus {
             if !file_rows.is_empty() {
                 let mut table =
                     MiseTable::new(false, &["Target", "Mode", "Source", "Config", "State"]);
+                table.truncate(self.truncate.truncate);
                 for row in file_rows {
                     table.add_row(row);
                 }
@@ -161,11 +195,13 @@ impl DotfilesStatus {
             }
             if !edit_rows.is_empty() {
                 let mut table = MiseTable::new(false, &["File", "Edit", "Config", "State"]);
+                table.truncate(self.truncate.truncate);
                 for row in edit_rows {
                     table.add_row(row);
                 }
                 table.print()?;
             }
+            super::history_status::print(&history)?;
         }
         if self.missing && any_missing {
             return Err(crate::request_exit(1));
@@ -173,13 +209,3 @@ impl DotfilesStatus {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles status</bold>
-    $ <bold>mise bootstrap dotfiles status ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles status --json</bold>
-    $ <bold>mise bootstrap dotfiles status --missing</bold> # exit 1 if anything is out of sync
-"#
-);

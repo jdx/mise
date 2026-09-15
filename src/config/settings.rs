@@ -303,6 +303,7 @@ impl IdiomaticVersionFileSettings {
 }
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
+static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
 /// Caches the resolved `safe` value from the most recent settings load so
 /// `safe_mode()` answers correctly during the config parse pass that runs before
 /// settings are (re)loaded — e.g. after `Config::reset()`. This captures `safe`
@@ -310,6 +311,7 @@ static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 /// 0 = false, 1 = true, 2 = never loaded (fall back to the env var).
 static LAST_SAFE: AtomicU8 = AtomicU8::new(2);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
+static EXPLICIT_INLINE_SHELL: RwLock<Option<bool>> = RwLock::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 /// Settings files that failed to parse, held until warnings can be printed.
@@ -873,8 +875,19 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
 }
 
 impl Settings {
+    /// Reads explicit confirmation only from the CLI settings layer.
+    fn cli_yes_from(settings: Option<&SettingsPartial>) -> bool {
+        settings.and_then(|settings| settings.yes).unwrap_or(false)
+    }
+
+    /// Returns true only when `--yes` was explicitly supplied on this command
+    /// line, excluding implicit confirmation from CI mode or configuration.
+    pub(crate) fn cli_yes() -> bool {
+        Self::cli_yes_from(CLI_SETTINGS.lock().unwrap().as_ref())
+    }
+
     const UNIX_DEFAULT_FILE_SHELL_ARGS: &'static str = "sh";
-    const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -c -o errexit";
+    const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -o errexit -c";
     const WINDOWS_DEFAULT_FILE_SHELL_ARGS: &'static str = "cmd /c";
     const WINDOWS_DEFAULT_INLINE_SHELL_ARGS: &'static str = "cmd /c";
 
@@ -895,7 +908,7 @@ impl Settings {
             "2026.11.0",
             "2027.11.0",
             id,
-            "Default {package_type} files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every runtime version, or use package manager backends such as npm:, pipx:, gem:, or go: for CLI tools."
+            "Default {package_type} files are deprecated. Use tool-level postinstall hooks for packages that should be installed into every runtime version, or use package manager backends such as npm:, pypi:, gem:, or go: for CLI tools."
         );
     }
 
@@ -981,19 +994,59 @@ impl Settings {
     /// [`Self::try_get`]. Root-specific callers can require trusted project files without
     /// reproducing config discovery or precedence rules.
     fn load_sources_from(root: Option<&Path>, policy: SettingsLoadPolicy) -> Result<Self> {
+        let policy = if PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed) {
+            SettingsLoadPolicy::ENVIRONMENT_ONLY
+        } else {
+            policy
+        };
         if policy.trust == SettingsTrustPolicy::TrustedOnly && !is_loaded() {
             bail!("trusted settings resolution requires the base settings to be loaded");
         }
-        let mut builder = Self::builder().preloaded(Self::cli_settings_layer()).env();
+        let mut builder = Self::builder().preloaded(Self::cli_settings_layer());
+        if [
+            "MISE_PYPI_UVX",
+            "MISE_PIPX_UVX",
+            "MISE_PYPI_REGISTRY_URL",
+            "MISE_PIPX_REGISTRY_URL",
+        ]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+        {
+            let mut env_aliases = Self::builder().env().load()?;
+            env_aliases.normalize_pypi_aliases()?;
+            let mut alias_layer = SettingsPartial::default();
+            // Normalize the environment as its own source before layering it over files.
+            if std::env::var_os("MISE_PYPI_UVX").is_some()
+                || std::env::var_os("MISE_PIPX_UVX").is_some()
+            {
+                alias_layer.pypi.uvx = env_aliases.pypi.uvx;
+                alias_layer.pipx.uvx = env_aliases.pypi.uvx;
+            }
+            if std::env::var_os("MISE_PYPI_REGISTRY_URL").is_some()
+                || std::env::var_os("MISE_PIPX_REGISTRY_URL").is_some()
+            {
+                alias_layer.pypi.registry_url = env_aliases.pypi.registry_url.clone();
+                alias_layer.pipx.registry_url = env_aliases.pypi.registry_url;
+            }
+            builder = builder.preloaded(alias_layer);
+        }
+        builder = builder.env();
         if policy.source == SettingsSourcePolicy::Hierarchy {
             for layer in Self::settings_layers_from(root, policy.trust) {
+                if matches!((&layer.pypi.uvx, &layer.pipx.uvx), (Some(a), Some(b)) if a != b)
+                    || matches!((&layer.pypi.registry_url, &layer.pipx.registry_url), (Some(a), Some(b)) if a != b)
+                {
+                    bail!("conflicting pypi and pipx settings in the same file");
+                }
                 builder = builder.preloaded(layer);
             }
             builder = builder.preloaded(DEFAULT_SETTINGS.clone());
         }
         let mut settings = builder.load()?;
+        settings.normalize_pypi_aliases()?;
         normalize_storage_dirs(&mut settings)?;
         validate_settings_enum_values(&settings)?;
+        settings.validate_lockfile_mode()?;
         Ok(settings)
     }
 
@@ -1038,6 +1091,45 @@ impl Settings {
             .collect::<Vec<_>>();
         merge_settings_file_layers(&mut layers);
         layers
+    }
+
+    /// Initialize a Git credential subprocess without reading project settings.
+    pub(crate) fn init_git_credential() -> Result<()> {
+        super::miserc::init_global_only();
+        let mut builder = Self::builder().env();
+        // Reuse operator-owned authentication settings, including the OAuth
+        // client ID needed to locate cached tokens. Never discover project files.
+        let paths = super::global_config_files()
+            .into_iter()
+            .rev()
+            .chain(super::system_config_files().into_iter().rev());
+        for path in paths {
+            if let Ok(settings) = Self::parse_settings_file(&path) {
+                let mut layer = SettingsPartial::empty();
+                layer.github = settings.github;
+                builder = builder.preloaded(layer);
+            }
+        }
+        let settings = builder.load()?;
+        *BASE_SETTINGS.write().unwrap() = Some(Arc::new(settings));
+        Ok(())
+    }
+
+    /// Select process-wide query isolation before parsing can trigger lazy settings or miserc reads.
+    pub(crate) fn select_package_query_sources() {
+        PACKAGE_QUERY_SETTINGS.store(true, Ordering::Relaxed);
+    }
+
+    /// Report whether this invocation requires environment-only settings and local diagnostics.
+    pub(crate) fn is_package_query() -> bool {
+        PACKAGE_QUERY_SETTINGS.load(Ordering::Relaxed)
+    }
+
+    /// Apply CLI overrides and validate environment settings after query isolation is selected.
+    pub(crate) fn init_package_query(cli: &crate::cli::Cli) -> Result<()> {
+        Self::add_cli_matches(cli);
+        Self::try_get()?;
+        Ok(())
     }
 
     pub(crate) fn try_get() -> Result<Arc<Self>> {
@@ -1147,6 +1239,36 @@ impl Settings {
         }
     }
 
+    fn normalize_pypi_aliases(&mut self) -> Result<()> {
+        fn merge<T: PartialEq>(
+            preferred: &mut Option<T>,
+            legacy: &mut Option<T>,
+            name: &str,
+        ) -> Result<()> {
+            if let (Some(a), Some(b)) = (preferred.as_ref(), legacy.as_ref())
+                && a != b
+            {
+                eyre::bail!("conflicting pypi.{name} and pipx.{name} settings");
+            }
+            if preferred.is_none() {
+                *preferred = legacy.take();
+            } else {
+                legacy.take();
+            }
+            Ok(())
+        }
+        merge(
+            &mut self.pypi.registry_url,
+            &mut self.pipx.registry_url,
+            "registry_url",
+        )?;
+        merge(&mut self.pypi.uvx, &mut self.pipx.uvx, "uvx")?;
+        self.pypi
+            .registry_url
+            .get_or_insert_with(|| "https://pypi.org/pypi/{}/json".to_owned());
+        Ok(())
+    }
+
     /// Sets deprecated settings to new names
     fn set_hidden_configs(&mut self) {
         if let Some(v) = self.install_before.take() {
@@ -1237,6 +1359,10 @@ impl Settings {
     }
 
     pub(crate) fn add_cli_matches(cli: &Cli) {
+        Self::add_cli_matches_with(cli, None);
+    }
+
+    pub(crate) fn add_cli_matches_with(cli: &Cli, truncate: Option<bool>) {
         let mut s = SettingsPartial::empty();
 
         // Don't process mise-specific flags when running as a shim
@@ -1247,6 +1373,9 @@ impl Settings {
 
         if cli.raw {
             s.raw = Some(true);
+        }
+        if let Some(truncate) = truncate {
+            s.truncate = Some(truncate);
         }
         if cli.locked {
             s.locked = Some(true);
@@ -1303,6 +1432,30 @@ impl Settings {
             resolve_age_paths(settings, path)?;
             resolve_task_disable_paths(settings, path);
         }
+        if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
+            for leaf in ["uvx", "registry_url"] {
+                let legacy = settings
+                    .get("pipx")
+                    .and_then(|value| value.get(leaf))
+                    .cloned();
+                if let Some(legacy) = legacy {
+                    let preferred = settings
+                        .entry("pypi")
+                        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                    if let Some(preferred) = preferred.as_table_mut() {
+                        if preferred.get(leaf).is_some_and(|value| value != &legacy) {
+                            continue;
+                        }
+                        preferred.insert(leaf.to_owned(), legacy);
+                        if let Some(legacy) =
+                            settings.get_mut("pipx").and_then(toml::Value::as_table_mut)
+                        {
+                            legacy.remove(leaf);
+                        }
+                    }
+                }
+            }
+        }
         let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
         queue_deprecated_settings(deprecated);
@@ -1330,6 +1483,7 @@ impl Settings {
     }
 
     pub(crate) fn reset(cli_settings: Option<SettingsPartial>) {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *BASE_SETTINGS.write().unwrap() = None;
         // Clear caches that depend on settings and environment
@@ -1339,6 +1493,7 @@ impl Settings {
 
     /// Invalidate settings loaded from config files without discarding CLI overrides.
     pub(crate) fn reload() {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         *BASE_SETTINGS.write().unwrap() = None;
         crate::config::config_file::config_root::reset();
         crate::toolset::install_state::reset_tools();
@@ -1353,6 +1508,7 @@ impl Settings {
     /// BASE_SETTINGS so the next `Settings::get()` rebuilds with the override
     /// applied.
     pub(crate) fn override_with(updater: impl FnOnce(&mut SettingsPartial)) {
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         let mut lock = CLI_SETTINGS.lock().unwrap();
         let partial = lock.get_or_insert_with(SettingsPartial::empty);
         updater(partial);
@@ -1363,6 +1519,18 @@ impl Settings {
 
     pub(crate) fn lockfile_enabled(&self) -> bool {
         self.lockfile.unwrap_or(true)
+    }
+
+    pub(crate) fn generate_lockfiles(&self) -> bool {
+        self.lockfile_mode.as_deref() == Some("generate")
+    }
+
+    fn validate_lockfile_mode(&self) -> Result<()> {
+        validate_setting_enum_values(
+            "lockfile_mode",
+            self.lockfile_mode.as_deref(),
+            &["merge", "generate"],
+        )
     }
 
     pub(crate) fn lockfile_creation_enabled(&self) -> bool {
@@ -1600,6 +1768,26 @@ impl Settings {
         let mut shell = split_default_shell_or_fallback(sa, fallback)?;
         self.maybe_no_profile(&mut shell);
         Ok(shell)
+    }
+
+    /// Explicitly selecting even the default value expresses intent to run a
+    /// shell. Cache provenance separately from the resolved string value.
+    pub(crate) fn implicit_inline_shell(&self) -> bool {
+        if cfg!(windows) {
+            return false;
+        }
+        if let Some(explicit) = *EXPLICIT_INLINE_SHELL.read().unwrap() {
+            return !explicit;
+        }
+        let explicit = std::env::var_os("MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS").is_some()
+            || Self::cli_settings_layer()
+                .unix_default_inline_shell_args
+                .is_some()
+            || Self::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered)
+                .iter()
+                .any(|layer| layer.unix_default_inline_shell_args.is_some());
+        *EXPLICIT_INLINE_SHELL.write().unwrap() = Some(explicit);
+        !explicit
     }
 
     pub(crate) fn default_file_shell(&self) -> Result<Vec<String>> {
@@ -1969,6 +2157,28 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cli_yes_only_reads_the_cli_layer() {
+        let mut cli = SettingsPartial::empty();
+        assert!(!Settings::cli_yes_from(Some(&cli)));
+        cli.yes = Some(true);
+        assert!(Settings::cli_yes_from(Some(&cli)));
+        assert!(!Settings::cli_yes_from(None));
+    }
+
+    #[test]
+    fn lockfile_mode_defaults_and_explicit_choices() {
+        let mut settings = Settings::default();
+        assert!(!settings.generate_lockfiles());
+        settings.lockfile_mode = Some("generate".into());
+        assert!(settings.generate_lockfiles());
+        settings.lockfile_mode = Some("merge".into());
+        assert!(!settings.generate_lockfiles());
+        assert!(settings.validate_lockfile_mode().is_ok());
+        settings.lockfile_mode = Some("invalid".into());
+        assert!(settings.validate_lockfile_mode().is_err());
+    }
 
     /// File-backed exclusions are inherited in low-to-high precedence order and deduplicated.
     #[test]
@@ -2365,6 +2575,44 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_settings_file_strips_local_history_describe_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings.history]
+            describe_command = "cat dotfiles"
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.history.describe_command, None);
+    }
+
+    #[test]
+    fn test_parse_settings_file_strips_local_self_update_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings.self_update]
+            api_url = "https://github.example.com/api/v3"
+            repository = "acme/mise"
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.self_update.api_url, None);
+        assert_eq!(partial.self_update.repository, None);
+    }
+
+    #[test]
     fn test_global_config_preserves_credential_commands() {
         let path = Path::new("/tmp/global-config.toml");
         let mut settings = credential_command_settings_table();
@@ -2382,6 +2630,28 @@ mod tests {
         assert_eq!(
             partial.forgejo.credential_command.as_deref(),
             Some("echo forgejo-token")
+        );
+    }
+
+    #[test]
+    fn test_global_config_preserves_history_describe_command() {
+        let path = Path::new("/tmp/global-config.toml");
+        let mut settings = toml::from_str::<toml::Value>(
+            r#"
+            [history]
+            describe_command = "cat dotfiles"
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone();
+        strip_local_only_settings(&mut settings, path, true);
+        let partial = settings_partial_from_table(settings);
+
+        assert_eq!(
+            partial.history.describe_command.as_deref(),
+            Some("cat dotfiles")
         );
     }
 
@@ -3322,5 +3592,15 @@ mod tests {
         );
         let result: BTreeSet<PathBuf> = list_by_os_path_separator(input).unwrap();
         assert_eq!(result, [a, b].into_iter().collect());
+    }
+    #[test]
+    fn pypi_settings_aliases_merge_and_reject_conflicts() {
+        let mut settings = Settings::default();
+        settings.pipx.uvx = Some(false);
+        settings.normalize_pypi_aliases().unwrap();
+        assert_eq!(settings.pypi.uvx, Some(false));
+        assert_eq!(settings.pipx.uvx, None);
+        settings.pipx.uvx = Some(true);
+        assert!(settings.normalize_pypi_aliases().is_err());
     }
 }

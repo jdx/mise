@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::Path;
 
 use crate::config::Config;
@@ -12,11 +11,6 @@ pub(crate) async fn run() {
     tokio::join!(
         task(migrate_trusted_configs),
         task(migrate_tracked_configs),
-        task(|| remove_deprecated_plugin("node", "rtx-nodejs")),
-        task(|| remove_deprecated_plugin("go", "rtx-golang")),
-        task(|| remove_deprecated_plugin("java", "rtx-java")),
-        task(|| remove_deprecated_plugin("python", "rtx-python")),
-        task(|| remove_deprecated_plugin("ruby", "rtx-ruby")),
         migrate_runtime_symlink_dirs(),
     );
 }
@@ -49,18 +43,6 @@ fn move_dirs(from: &Path, to: &Path) -> Result<bool> {
     } else {
         Ok(false)
     }
-}
-
-fn remove_deprecated_plugin(name: &str, plugin_name: &str) -> Result<()> {
-    let plugin_root = PLUGINS.join(name);
-    let gitconfig = plugin_root.join(".git").join("config");
-    let gitconfig_body = fs::read_to_string(gitconfig).unwrap_or_default();
-    if !gitconfig_body.contains(&format!("github.com/mise-plugins/{plugin_name}")) {
-        return Ok(());
-    }
-    eprintln!("removing deprecated plugin {plugin_name}, will use core {name} plugin from now on");
-    file::remove_all(plugin_root)?;
-    Ok(())
 }
 
 async fn migrate_runtime_symlink_dirs() {

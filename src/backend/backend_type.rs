@@ -26,6 +26,8 @@ pub(crate) enum BackendType {
     Gitlab,
     Go,
     Npm,
+    Packslip,
+    #[strum(to_string = "pypi", serialize = "pipx")]
     Pipx,
     Pkgx,
     Spm,
@@ -40,6 +42,7 @@ pub(crate) enum BackendType {
 impl Display for BackendType {
     fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
         match self {
+            BackendType::Pipx => write!(formatter, "pypi"),
             BackendType::VfoxBackend(plugin_name) => write!(formatter, "{plugin_name}"),
             _ => write!(formatter, "{}", format!("{self:?}").to_lowercase()),
         }
@@ -71,7 +74,8 @@ impl BackendType {
             "gitlab" => BackendType::Gitlab,
             "go" => BackendType::Go,
             "npm" => BackendType::Npm,
-            "pipx" => BackendType::Pipx,
+            "packslip" => BackendType::Packslip,
+            "pypi" | "pipx" => BackendType::Pipx,
             "pkgx" => BackendType::Pkgx,
             "spm" => BackendType::Spm,
             "http" => BackendType::Http,
@@ -84,9 +88,10 @@ impl BackendType {
 
     /// Returns true if this backend is still gated behind experimental mode.
     pub(crate) fn is_experimental(&self) -> bool {
-        use super::{dotnet, pkgx, s3, spm};
+        use super::{dotnet, packslip, pkgx, s3, spm};
         match self {
             BackendType::Dotnet => dotnet::EXPERIMENTAL,
+            BackendType::Packslip => packslip::EXPERIMENTAL,
             BackendType::Pkgx => pkgx::EXPERIMENTAL,
             BackendType::S3 => s3::EXPERIMENTAL,
             BackendType::Spm => spm::EXPERIMENTAL,

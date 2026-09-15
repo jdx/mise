@@ -38,8 +38,8 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, template_string, template_string_for_target,
-    verify_artifact,
+    ArchiveLayout, get_filename_from_url, install_artifact, template_string,
+    template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::backend::{Backend, VersionInfo, runtime_path_for_install_path};
@@ -640,7 +640,13 @@ impl Backend for S3Backend {
         // Extract and install
         ctx.pr.next_operation();
         ctx.pr.set_message("extract".into());
-        install_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
+        install_artifact(
+            &tv,
+            &file_path,
+            opts.raw(),
+            ArchiveLayout::Guessed,
+            Some(ctx.pr.as_ref()),
+        )?;
 
         Ok(tv)
     }

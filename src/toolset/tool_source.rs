@@ -11,6 +11,7 @@ use crate::file::display_path;
 pub(crate) enum ToolSource {
     ToolVersions(PathBuf),
     MiseToml(PathBuf),
+    MiseTomlDaemon(PathBuf),
     IdiomaticVersionFile(PathBuf),
     ToolStub(PathBuf),
     Argument,
@@ -24,6 +25,7 @@ impl Display for ToolSource {
         match self {
             ToolSource::ToolVersions(path) => write!(f, "{}", display_path(path)),
             ToolSource::MiseToml(path) => write!(f, "{}", display_path(path)),
+            ToolSource::MiseTomlDaemon(path) => write!(f, "{} [daemons]", display_path(path)),
             ToolSource::IdiomaticVersionFile(path) => write!(f, "{}", display_path(path)),
             ToolSource::ToolStub(path) => write!(f, "{}", display_path(path)),
             ToolSource::Argument => write!(f, "--runtime"),
@@ -37,7 +39,7 @@ impl ToolSource {
     pub(crate) fn path(&self) -> Option<&Path> {
         match self {
             ToolSource::ToolVersions(path) => Some(path),
-            ToolSource::MiseToml(path) => Some(path),
+            ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path) => Some(path),
             ToolSource::IdiomaticVersionFile(path) => Some(path),
             ToolSource::ToolStub(path) => Some(path),
             _ => None,
@@ -52,6 +54,10 @@ impl ToolSource {
             },
             ToolSource::MiseToml(path) => indexmap! {
                 "type".to_string() => "mise.toml".to_string(),
+                "path".to_string() => path.to_string_lossy().to_string(),
+            },
+            ToolSource::MiseTomlDaemon(path) => indexmap! {
+                "type".to_string() => "mise.toml-daemon".to_string(),
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
             ToolSource::IdiomaticVersionFile(path) => indexmap! {
@@ -90,6 +96,10 @@ impl Serialize for ToolSource {
             }
             ToolSource::MiseToml(path) => {
                 s.serialize_field("type", "mise.toml")?;
+                s.serialize_field("path", path)?;
+            }
+            ToolSource::MiseTomlDaemon(path) => {
+                s.serialize_field("type", "mise.toml-daemon")?;
                 s.serialize_field("path", path)?;
             }
             ToolSource::IdiomaticVersionFile(path) => {

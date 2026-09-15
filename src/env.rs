@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::config::env_directive::EnvValue;
 use crate::config::miserc;
 use crate::env_diff::{EnvDiff, EnvMap};
 use crate::file::replace_path;
@@ -19,6 +20,30 @@ use std::{
 };
 use std::{path::Path, string::ToString};
 use std::{path::PathBuf, sync::atomic::AtomicBool};
+
+tokio::task_local! {
+    static INSTALL_ENV: IndexMap<String, EnvValue>;
+}
+
+/// Overlays a tool's `install_env` on the process env for the duration of `future`,
+/// so anything it does reads that tool's values through [`scoped_var`].
+pub(crate) async fn with_install_env<T>(
+    env: IndexMap<String, EnvValue>,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    INSTALL_ENV.scope(env, future).await
+}
+
+/// Reads an env var through the active [`with_install_env`] overlay, falling back to the
+/// process env. Blank reads as unset, as does an `install_env` entry set to `false`.
+pub(crate) fn scoped_var(key: &str) -> Option<String> {
+    match INSTALL_ENV.try_with(|env| env.get(key).cloned()) {
+        Ok(Some(value)) => value.into_string(),
+        _ => std::env::var(key).ok(),
+    }
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+}
 
 pub(crate) static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub(crate) static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
@@ -92,7 +117,7 @@ pub(crate) static EDITOR: Lazy<String> = Lazy::new(|| {
 /// else POSIX — so the shared default left `mise tasks edit` there with nothing to run at all.
 /// `notepad` is the one editor Windows can be relied on to have.
 ///
-/// It also has to *wait*, because `mise dotfiles edit --apply` converges the target as soon as the
+/// It also has to *wait*, because `mise dot edit --apply` converges the target as soon as the
 /// editor returns. Measured on Windows 11 26200, where `System32\notepad.exe` no longer exists and
 /// `notepad` resolves to a zero-byte app-execution alias under `WindowsApps`: spawned the way
 /// `Command::status` does it, the parent was still waiting five seconds later, so the alias hands
@@ -811,8 +836,6 @@ pub(crate) static GITLAB_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITLAB_TOKEN", "GITLAB_TOKEN"]));
 pub(crate) static MISE_GITLAB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITLAB_ENTERPRISE_TOKEN"]));
-pub(crate) static MISE_FORGEJO_ENTERPRISE_TOKEN: Lazy<Option<String>> =
-    Lazy::new(|| get_token(&["MISE_FORGEJO_ENTERPRISE_TOKEN"]));
 
 pub(crate) static TEST_TRANCHE: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE") as usize);
 pub(crate) static TEST_TRANCHE_COUNT: Lazy<usize> =
@@ -839,6 +862,13 @@ pub(crate) static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(
 /// Force progress bars even in non-TTY (for debugging)
 pub(crate) static MISE_FORCE_PROGRESS: Lazy<bool> =
     Lazy::new(|| var_is_true("MISE_FORCE_PROGRESS"));
+/// Whether an AI coding agent is driving this process.
+pub(crate) static AI_AGENT: Lazy<bool> = Lazy::new(mise_agent_env::is_agent);
+
+/// Whether terminal-width presentation output should be truncated.
+pub(crate) fn should_truncate() -> bool {
+    crate::config::Settings::get().truncate && !*AI_AGENT
+}
 
 // python
 pub(crate) static PYENV_ROOT: Lazy<PathBuf> =

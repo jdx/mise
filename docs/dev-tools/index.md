@@ -1,156 +1,142 @@
+---
+description: "Install developer tools and switch versions automatically for each project."
+---
+
 # Dev Tools
 
-> _Install and switch between dev tools like node, python, cmake, terraform,
-> and [hundreds more](/registry.html), all from the same project config._
+mise installs development tools and selects their versions for each project.
+Keep multiple versions of Node.js, Python, Ruby, Go, and other tools on the same
+machine, then declare which ones a project uses in `mise.toml`.
 
-`mise` manages installations of programming language runtimes and other tools for local development. For example, it can manage multiple versions of Node.js, Python, Ruby, and Go on the same machine.
+## Add a tool to a project
 
-Once [activated](/getting-started.html#activate-mise), mise can automatically switch between different versions of tools based on the directory you're in.
-This means that if you have a project that requires Node.js 18 and another that requires Node.js 22, mise automatically switches between them as you move between the two projects. See the tools available for mise in the [registry](/registry).
+From the project directory:
 
-To determine which tool version to use, mise typically looks for a `mise.toml` file in the current directory and its parents. Here is an example of a [mise.toml](/configuration.html) file showing how tools are specified:
+```sh
+mise use node@24 python@3.13
+```
+
+This installs the tools and records the version requests in your configuration:
 
 ```toml [mise.toml]
 [tools]
-node = '24'
-python = '3'
-ruby = 'latest'
+node = "24"
+python = "3.13"
 ```
 
-mise is also compatible
-with asdf `.tool-versions` files and with [idiomatic version files](/configuration#idiomatic-version-files) like `.node-version` and
-`.ruby-version`. See [configuration](/configuration) for more details.
+Run a command with those tools:
 
-When specifying tool versions and tool options, you can also refer to environment variables or
-[`vars`](/configuration/vars) defined in your config hierarchy, including values
-produced by directives like `_.source`, `_.file`, or env modules. These are resolved before tool
-version and option templates are rendered.
-
-::: info
-mise is compatible with asdf `.tool-versions` files and can still use asdf
-plugins when needed. If you're migrating from asdf, see the
-[comparison guide](./comparison-to-asdf).
-:::
-
-## How it works
-
-mise manages development tools through a sophisticated but user-friendly system that automatically handles tool installation, version management, and environment setup.
-
-### Tool Resolution Flow
-
-When you enter a directory or run a command, mise follows this process:
-
-1. **Configuration Discovery**: mise walks up the directory tree looking for configuration files (`mise.toml`, `.tool-versions`, etc.) and merges them hierarchically
-2. **Tool Resolution**: mise resolves version specifications (like `node@latest` or `python@3`) to specific versions using registries and version lists
-3. **Backend Selection**: mise chooses the appropriate [backend](/dev-tools/backend_architecture) to handle each tool (core, asdf, aqua, etc.)
-4. **Installation Check**: mise checks whether the required tool versions are installed and automatically installs missing ones
-5. **Environment Setup**: mise configures your `PATH` and environment variables to use the resolved tool versions
-
-### Environment Integration
-
-mise provides several ways to integrate with your development environment:
-
-**Automatic Activation**: With `mise activate`, mise hooks into your shell prompt and automatically updates your environment when you change directories:
-
-```bash
-eval "$(mise activate zsh)"  # In your ~/.zshrc
-cd my-project               # Automatically loads mise.toml tools
+```sh
+mise exec -- node --version
 ```
 
-**On-Demand Execution**: Use `mise exec` to run commands with mise's environment without permanent activation:
+With [shell activation](/getting-started.html#activate-mise), you can run
+`node --version` directly. mise updates your shell environment as you move between
+projects. Activation selects installed tools; use `mise install` to install tools
+after cloning a repository or editing its configuration.
 
-```bash
-mise exec -- node my-script.js  # Runs with tools from mise.toml
-```
+## Choose the right command
 
-**Shims**: mise can create lightweight wrapper scripts that automatically use the correct tool versions:
+| Goal                                             | Command                               |
+| ------------------------------------------------ | ------------------------------------- |
+| Add or change a project's tool version           | `mise use node@24`                    |
+| Set a personal default                           | `mise use --global node@24`           |
+| Install tools declared by a project              | `mise install`                        |
+| Try a version without saving it                  | `mise exec node@24 -- node --version` |
+| Show tools selected by the current configuration | `mise ls --current`                   |
+| Upgrade within the configured version request    | `mise upgrade node`                   |
 
-```bash
-mise activate --shims  # Creates shims instead of modifying PATH
-```
+A version request such as `"24"` selects a release in that series. An exact pin
+selects a specific release. See [mise.lock](/dev-tools/mise-lock.html) for recording
+resolved versions without replacing the version requests in `mise.toml`.
 
-### Path Management
+## How tools are selected
 
-mise modifies your `PATH` environment variable to prioritize the correct tool versions:
+1. mise discovers configuration in the current directory and its parents, along
+   with global configuration. More specific configuration can override defaults.
+2. Each tool's [backend](/dev-tools/backends/) resolves its version request and
+   handles installation. The [registry](/registry.html) maps short tool names to
+   backends, so you usually don't need to choose one yourself.
+3. mise adds the selected tools to the command's `PATH`. By default, `mise exec`
+   and `mise run` install missing tools before executing the command or task.
 
-```bash
-# Before mise
-echo $PATH
-/usr/local/bin:/usr/bin:/bin
+Use `mise config ls` to inspect active configuration files. See
+[configuration](/configuration.html) for the full precedence rules.
 
-# After mise activation in a project with node@20
-echo $PATH
-/home/user/.local/share/mise/installs/node/20.11.0/bin:/usr/local/bin:/usr/bin:/bin
-```
+### Shells, editors, and scripts
 
-This ensures that when you run `node`, you get the version specified in your project configuration, not a system-wide installation.
+- **Interactive shells:** [activate mise](/getting-started.html#activate-mise) to
+  update `PATH` and project environment variables at each prompt.
+- **Editors:** use [IDE integration](/ide-integration.html), including
+  [shims](/dev-tools/shims.html) where a program needs a stable executable path.
+- **Scripts and CI:** use `mise exec -- <command>` or `mise run <task>` to load the
+  project environment without relying on shell startup files.
 
-### Configuration Hierarchy
+### Existing version files
 
-mise supports nested configuration that cascades from broad to specific settings:
+mise also reads asdf `.tool-versions` files. Tool-specific files such as `.nvmrc`
+and `.python-version` require enabling
+[idiomatic version files](/configuration.html#idiomatic-version-files).
+For migration guidance, see [comparison to asdf](./comparison-to-asdf).
 
-```bash
-~/.config/mise/config.toml      # Global defaults
-~/work/mise.toml                # Work-specific tools
-~/work/project/mise.toml        # Project-specific overrides
-~/work/project/.tool-versions   # Legacy asdf compatibility
-```
+### Templates in tool configuration
 
-Each level can override or extend the previous ones, giving you fine-grained control over tool versions across different contexts.
+Tool versions and options can reference environment variables and
+[`vars`](/configuration/vars.html), including values from `_.source`, `_.file`,
+and environment modules. Those values are resolved before tool templates render.
 
 ## Tool Options
 
-Tool options let you customize how tools are installed and configured. They support nested configuration for better organization, which is particularly useful for platform-specific settings.
+Tool options customize installation for a particular backend. Start with the
+backend's reference: a valid option for one backend may not apply to another
+source for the same tool.
+
+Examples use TOML 1.1, which allows multiline inline tables and trailing commas
+inside them. Use that form when splitting an option across lines improves readability.
 
 ### Table Format (Recommended)
 
-The cleanest way to specify nested options is with TOML tables:
+Use TOML tables when an option has nested fields. This illustrates the HTTP
+backend's platform mapping; replace the example URLs with your own release assets:
 
-```toml
+```toml [mise.toml]
 [tools."http:my-tool"]
 version = "1.0.0"
 
 [tools."http:my-tool".platforms]
 macos-x64 = {
   url = "https://example.com/my-tool-macos-x64.tar.gz",
-  checksum = "sha256:abc123",
 }
 linux-x64 = {
   url = "https://example.com/my-tool-linux-x64.tar.gz",
-  checksum = "sha256:def456",
 }
 ```
 
+See the [HTTP backend](/dev-tools/backends/http.html) for checksums, executable
+selection, and additional platform mappings.
+
 ### Dotted Notation
 
-You can also use dotted notation for simpler nested configurations:
+The same nested fields can be written with dotted keys:
 
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
 platforms.macos-x64.url = "https://example.com/my-tool-macos-x64.tar.gz"
 platforms.linux-x64.url = "https://example.com/my-tool-linux-x64.tar.gz"
-simple_option = "value"
 ```
 
 ### Generic Nested Support
 
-Any backend can use nested options for organizing complex configurations:
+mise accepts nested TOML options, but the selected backend must understand them.
+Nesting is a way to organize documented options; it does not define a new backend
+or add arbitrary capabilities to an existing one. For a short declaration, use a
+single-line inline table:
 
 ```toml
-[tools."custom:my-backend"]
-version = "1.0.0"
-
-[tools."custom:my-backend".database]
-host = "localhost"
-port = 5432
-
-[tools."custom:my-backend".cache.redis]
-host = "redis.example.com"
-port = 6379
+[tools]
+node = { version = "24", postinstall = "node --version" }
 ```
-
-Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
 
 ### Version ordering
 
@@ -204,13 +190,13 @@ You can restrict tools to specific operating systems using the `os` field:
 ripgrep = { version = "latest", os = ["linux", "macos"] }
 
 # Only install on Windows
-"npm:windows-terminal" = { version = "latest", os = ["windows"] }
+"github:PowerShell/PowerShell" = { version = "latest", os = ["windows"] }
 
 # Works with other options
 "cargo:usage-cli" = {
-    version = "latest",
-    os = ["linux", "macos"],
-    locked = false
+  version = "latest",
+  os = ["linux", "macos"],
+  locked = false,
 }
 ```
 
@@ -230,7 +216,7 @@ You can also restrict tools to specific OS and architecture combinations using t
 hk = { version = "latest", os = ["linux", "macos/arm64"] }
 
 # Only install on Linux x86_64
-mytool = { version = "latest", os = ["linux/x64"] }
+jq = { version = "latest", os = ["linux/x64"] }
 ```
 
 Supported architecture identifiers:
@@ -248,7 +234,8 @@ You can declare explicit installation dependencies between tools using the `depe
 
 ```toml
 [tools]
-python = "3.12.11"
+python = "3.14"
+uv = "latest"
 "pipx:ruff" = { version = "latest", depends = ["python"] }
 ```
 
@@ -262,7 +249,7 @@ The `depends` field accepts either a single string or an array of strings:
 "pipx:ruff" = { version = "latest", depends = "python" }
 
 # Multiple dependencies
-"pipx:ruff" = { version = "latest", depends = ["python", "pipx"] }
+# "pipx:ruff" = { version = "latest", depends = ["python", "uv"] }
 ```
 
 User-specified `[tools].depends` adds ordering constraints and makes matching tools available to install hooks. Backend declarations such as vfox `PLUGIN.depends` are combined with these user declarations in the same install dependency context.
@@ -285,27 +272,17 @@ Use tool names as they would appear in `mise.toml`. Users can supplement plugin 
 
 ## Caching and Performance
 
-mise uses intelligent caching to minimize overhead:
+Remote version lists are cached according to
+[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache).
+Downloaded artifacts and backend metadata have their own caches. Retention
+and reuse depend on the backend and settings; a cached version list does not
+mean the requested tool is already installed.
 
-- **Version lists**: Cached for 1 hour by default ([`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache)) to avoid repeated API calls
-- **Installation artifacts**: Cached downloads to speed up reinstalls
-- **Environment resolution**: Cached environment setups for faster shell prompts
-- **Plugin metadata**: Cached plugin information for quicker operations
-
-This ensures that mise adds minimal latency to your daily development workflow.
-
-::: info
-After activating, mise will update env vars like PATH whenever the directory is changed or the prompt is _displayed_.
-See the [FAQ](/faq#what-does-mise-activate-do).
-:::
-
-After activating, every time your prompt is displayed, the shell calls `mise hook-env` to fetch new
-environment variables.
-This should be very fast: it exits early if the directory hasn't changed and no
-`mise.toml`/`.tool-versions` files have been modified.
-
-`mise` modifies `PATH` ahead of time so the tools are called directly. This means that calling a tool has zero overhead, and commands like `which node` return the real path to the binary.
-Other tools like asdf only support shim files, which dynamically locate tools when they're called; this adds a small delay and can cause issues with some commands. See [shims](/dev-tools/shims) for more information.
+Shell activation prepares the tool paths before commands run. `mise hook-env`
+can skip work when tracked configuration and environment inputs are unchanged.
+For slow prompts, use the [troubleshooting guide](/troubleshooting.html#slow-shell-prompts)
+to find the expensive input. See [shims](/dev-tools/shims.html) for the difference
+between resolving at the prompt and resolving each command.
 
 ## Common commands
 
@@ -314,46 +291,34 @@ header to open its reference page, which lists all available flags/options and m
 
 ### [`mise use`](/cli/use)
 
-For some users, `mise use` might be the only command they need to learn. It does the following:
+`mise use` installs a requested version and records the request in configuration:
 
-- Install the tool's plugin if needed
-- Install the specified version
-- Set the version as active (i.e. update the `PATH`)
-- Update the current configuration file (`mise.toml` or `.tool-versions`)
-
-```shell
-> cd my-project
-> mise use node@26
-# download node, verify signature...
-mise node@26.x.x ✓ installed
-mise ~/my-project/mise.toml tools: node@26.x.x # mise.toml created/updated
-
-> which node
-~/.local/share/mise/installs/node/26/bin/node
+```sh
+mise use node@24
+mise exec -- node --version
 ```
 
-`mise use node@26` installs the latest version of node 26 and creates/updates the
-`mise.toml`
-config file in the current directory. The resulting file looks like this:
+By default, it writes to the current project's `mise.toml`:
 
 ```toml [mise.toml]
 [tools]
-node = "26"
+node = "24"
 ```
 
-Whenever you're in that directory, that version of `node` is used.
+Use `--pin` to write a concrete version instead of the request, `--global` to
+set a personal default, or `--path` to choose a configuration file. See
+[write-target rules](/configuration.html#target-file-for-write-operations).
 
-`mise use -g node@26` does the same but updates the [global config](/configuration.html#global-config-config-mise-config-toml) (`~/.config/mise/config.toml`), so
-node 26 is the default version for the user unless a config file in the local directory hierarchy
-overrides it.
-
-You can also edit `mise.toml` directly instead of using `mise use` — the effect is the same. Run `mise install` after editing to install any new tools.
+The command does not directly change its parent shell. Shell activation applies
+the selection at the next prompt or supported directory-change hook; `mise exec`
+and tasks load it explicitly. Editing `mise.toml` also changes the selection;
+run `mise install` afterward to install newly declared tools.
 
 ### [`mise install`](/cli/install)
 
-`mise install` installs tools but does not activate them—it downloads/builds/compiles the tool
-into `~/.local/share/mise/installs`, but you can't use it until you "set" the version
-in a `mise.toml` or `.tool-versions` file.
+`mise install` downloads or builds tools without changing version declarations.
+To select an installed version, declare it in configuration or pass it directly
+to `mise exec`, for example `mise exec node@24 -- node --version`.
 
 ::: tip
 If you're coming from `asdf`, there is no need to run `mise plugin add` first to install
@@ -377,10 +342,10 @@ The last form is useful for warming CI, container, or offline caches before runn
 ### [`mise exec`|`mise x`](/cli/exec)
 
 Use `mise x` for one-off commands with specific tools. For example, to run a script
-with Python 3.12:
+with Python 3.14:
 
 ```sh
-mise x python@3.12 -- ./myscript.py
+mise x python@3.14 -- python myscript.py
 ```
 
 With the default [`auto_install`](/configuration/settings.html#auto_install) and
@@ -391,9 +356,7 @@ commands with
 `mise x --`:
 
 ```sh
-$ mise use node@20
-$ mise x -- node -v
-20.x.x
+mise x -- node --version
 ```
 
 ::: tip
@@ -410,16 +373,16 @@ environment with all of your tools.
 
 ## Auto-Install Mechanisms
 
-mise provides several mechanisms to automatically install missing tools or versions as needed. Below, these are grouped by how and when they are triggered, with relevant settings for each. All mechanisms require the global [auto_install](/configuration/settings.html#auto_install) setting to be enabled (**all auto_install settings are enabled by default**).
+mise provides several mechanisms to automatically install missing tools or versions as needed. Below, these are grouped by how and when they are triggered, with relevant settings for each. The general mechanisms below require [auto_install](/configuration/settings.html#auto_install), with separate controls for execution, tasks, and missing commands. See [lazy tools](/dev-tools/shims.html#lazy-tools) for explicit declarations that defer installation until a command is first used.
 
 ### On-Demand Execution ([`mise x`](/cli/exec), [`mise r`](/cli/run))
 
-When you run a command like [`mise x`](/cli/exec) or [`mise r`](/cli/run), mise automatically installs any missing tool versions required to execute the command.
+By default, [`mise x`](/cli/exec) and [`mise r`](/cli/run) install missing non-lazy tools before execution. Lazy tools are handled on first use.
 
 - **When it triggers:** Whenever you use [`mise x`](/cli/exec) or [`mise r`](/cli/run) with a tool/version that is not yet installed.
 - **How to control:**
   - Setting: [`exec_auto_install`](/configuration/settings.html#exec_auto_install) (default: true)
-  - Setting: [`task_auto_install`](/configuration/settings.html#task_auto_install) (default: true)
+  - Setting: [`task.run_auto_install`](/configuration/settings.html#task.run_auto_install) (default: true)
 
 ### Command Not Found Handler (Shell Integration)
 

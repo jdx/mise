@@ -126,13 +126,6 @@ fi
           effect = "write"
         }
     }
-    ["actionlint"] {
-        glob = List(".github/workflows/*.yml")
-        check = new CommandSpec {
-          command = "SHELLCHECK_OPTS='--exclude=SC1090 --exclude=SC2046 --exclude=SC2086 --exclude=SC2129' actionlint"
-          effect = "read"
-        }
-    }
     ["markdownlint"] {
         glob = List("**/*.md")
         check = new CommandSpec {

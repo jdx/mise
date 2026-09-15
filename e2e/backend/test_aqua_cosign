@@ -15,7 +15,7 @@ echo "=== Testing Native Cosign Verification (checksum-level) ==="
 echo "Installing fork-cleaner with native Cosign verification..."
 
 # Capture the installation output to verify the native verification is being used
-output=$(mise install aqua:caarlos0/fork-cleaner@2.4.0 2>&1)
+output=$(mise install --verbose aqua:caarlos0/fork-cleaner@2.4.0 2>&1)
 echo "$output"
 
 # Verify the native Cosign verification was used
@@ -35,7 +35,7 @@ echo "✓ fork-cleaner installed and working correctly"
 echo "=== Testing Native Cosign Verification (top-level binary config) ==="
 echo "Installing envsense with top-level binary Cosign verification..."
 
-output=$(mise install aqua:technicalpickles/envsense@0.3.4 2>&1)
+output=$(mise install --verbose aqua:technicalpickles/envsense@0.3.4 2>&1)
 echo "$output"
 
 if echo "$output" | grep -q "Cosign verified" && ! echo "$output" | grep -q "verify checksums with cosign"; then
@@ -53,7 +53,7 @@ echo "✓ envsense installed and working correctly"
 echo "=== Testing Native Cosign Verification (public key bundle config) ==="
 echo "Installing kube-linter with native public-key bundle verification..."
 
-output=$(mise install aqua:stackrox/kube-linter@0.8.3 2>&1)
+output=$(mise install --verbose aqua:stackrox/kube-linter@0.8.3 2>&1)
 echo "$output"
 
 if echo "$output" | grep -q "Cosign verified"; then

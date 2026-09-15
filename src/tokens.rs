@@ -109,11 +109,22 @@ pub(crate) fn get_credential_command_token(
     {
         command = c;
     }
-    let result = command
+    command
         .env("PATH", &path_without_shims)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("MISE_CREDENTIAL_HOST", host)
-        .env("MISE_CREDENTIAL_PROVIDER", provider)
+        .env("MISE_CREDENTIAL_PROVIDER", provider);
+    // The helper's $0/$1 belong to sh, not to a directly executed program.
+    if let Some(direct) = crate::inline_command::direct_command(
+        &command,
+        true,
+        cmd,
+        &[],
+        Settings::get().implicit_inline_shell(),
+    ) {
+        command = direct;
+    }
+    let result = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -438,7 +449,7 @@ logins:
 
     #[test]
     fn test_credential_command_shell_preserves_sh_host_arg() {
-        let shell = shell_words::split("sh -c -o errexit").unwrap();
+        let shell = shell_words::split("sh -o errexit -c").unwrap();
         let (program, args) =
             credential_command_shell_from(&shell, "echo token-for-$1", "ghe.example.com").unwrap();
 
@@ -446,9 +457,9 @@ logins:
         assert_eq!(
             args,
             vec![
-                "-c",
                 "-o",
                 "errexit",
+                "-c",
                 "echo token-for-$1",
                 "mise-credential-helper",
                 "ghe.example.com"

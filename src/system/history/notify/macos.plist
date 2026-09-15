@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>dev.jdx.mise.notifications</string>
+<key>CFBundleName</key><string>mise</string>
+<key>CFBundleDisplayName</key><string>mise</string>
+<key>CFBundleExecutable</key><string>mise-notify</string>
+<key>CFBundleIconFile</key><string>mise.icns</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSUIElement</key><true/>
+<key>LSMinimumSystemVersion</key><string>10.14</string>
+</dict></plist>

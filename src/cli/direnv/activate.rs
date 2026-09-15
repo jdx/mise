@@ -9,7 +9,15 @@ use indoc::indoc;
 /// you should run this command after installing new plugins. Otherwise
 /// direnv may not know to update environment variables when idiomatic file versions change.
 #[derive(Debug, usage_rs::Args)]
-#[usage(hide=true, verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    hide = true,
+    verbatim_doc_comment,
+    example(
+        r###"mise direnv activate > ~/.config/direnv/lib/use_mise.sh
+echo 'use mise' > .envrc
+direnv allow"###
+    )
+)]
 pub(super) struct DirenvActivate {}
 
 impl DirenvActivate {
@@ -27,12 +35,3 @@ impl DirenvActivate {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise direnv activate > ~/.config/direnv/lib/use_mise.sh</bold>
-    $ <bold>echo 'use mise' > .envrc</bold>
-    $ <bold>direnv allow</bold>
-"#
-);

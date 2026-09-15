@@ -106,6 +106,9 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             debug!("{name}: skipping, {reason}");
             continue;
         }
+        if !d.dry_run {
+            mp.manager.prepare_mutation(&mp.requests).await?;
+        }
         let statuses = mp.manager.installed(&mp.requests).await?;
         if let Some(reason) = unavailable_package_reason(d, &statuses) {
             bail!("{reason}");

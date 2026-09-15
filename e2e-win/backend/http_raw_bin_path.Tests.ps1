@@ -1,12 +1,11 @@
 Describe 'backend_http_raw_bin_path' {
-    # A raw binary declared with `bin_path` is the one shape of `http:` install
+    # A raw binary opting into shared extraction with `bin_path` is the shape
     # that `create_install_symlink` links file-to-file. On Windows that used to
     # go through `junction::create`, which builds a *directory* reparse point:
     # it succeeds, and leaves a link that cannot be resolved.
     #
-    # `http_binary_clean.Tests.ps1` covers the same binary without `bin_path`,
-    # which takes the other branch and links the install directory instead - so
-    # the broken combination was the one thing untested here.
+    # Exercise both the default independent files and opt-in sharing with a
+    # nested bin_path, including command resolution and execution in each mode.
     #
     # `bin` is set so the installed filename is decided outright rather than by
     # the name-cleaning heuristics, which keeps a failure here pointing at the
@@ -23,11 +22,6 @@ Describe 'backend_http_raw_bin_path' {
         # process, so removing an inherited value would leave the next without it.
         $script:OriginalExperimental = [Environment]::GetEnvironmentVariable('MISE_EXPERIMENTAL', 'Process')
         $env:MISE_EXPERIMENTAL = "1"
-
-        @"
-[tools]
-"http:docker-compose-binpath" = { version = "2.29.1", url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-windows-x86_64.exe", bin = "docker-compose.exe", bin_path = "bin" }
-"@ | Set-Content -Path (Join-Path $script:TestRoot "mise.toml")
     }
 
     AfterAll {
@@ -40,25 +34,33 @@ Describe 'backend_http_raw_bin_path' {
         }
     }
 
-    It 'reports the install as successful' {
-        # Asserted on purpose: the defect said nothing at install time. Without
-        # this line a reader could assume the install used to fail loudly.
-        mise install -f http:docker-compose-binpath
+    It 'installs and runs a raw binary using <Mode> extraction' -TestCases @(
+        @{ Mode = 'independent'; SharingOption = '' },
+        @{ Mode = 'shared'; SharingOption = ', shared_extraction = true' }
+    ) {
+        param($Mode, $SharingOption)
+        $tool = "http:docker-compose-binpath-$Mode"
+        @"
+[tools]
+"$tool" = { version = "2.29.1", url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-windows-x86_64.exe", bin = "docker-compose.exe", bin_path = "nested/bin"$SharingOption }
+"@ | Set-Content -Path (Join-Path $script:TestRoot "mise.toml")
+
+        mise install -f $tool
         $LASTEXITCODE | Should -Be 0
-    }
 
-    It 'resolves the binary from the tool it installed' {
-        # Checking the version alone is not enough. Docker ships on the GitHub
-        # Windows images, so an unrelated `docker-compose.exe` further along PATH
-        # could satisfy a version check while the installed link stayed broken -
-        # the test would pass on unfixed code. Assert where the command actually
-        # resolves from first.
-        $resolved = (mise exec http:docker-compose-binpath -- where.exe docker-compose | Select-Object -First 1)
-        $resolved | Should -BeLike "*http-docker-compose-binpath*"
-        $resolved | Should -BeLike "*bin*docker-compose.exe"
-    }
+        $install = mise where "${tool}@2.29.1"
+        $LASTEXITCODE | Should -Be 0
+        $binary = Join-Path $install 'nested\bin\docker-compose.exe'
+        $item = Get-Item $binary
+        $item.PSIsContainer | Should -BeFalse
+        ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) | Should -Be 0
 
-    It 'installs a binary that actually runs' {
-        mise exec http:docker-compose-binpath -- docker-compose version | Should -BeLike "Docker Compose version *"
+        # Docker ships on the CI images. Confirm the executable resolves from
+        # this installation before checking that it actually runs.
+        $resolved = (mise exec $tool -- where.exe docker-compose | Select-Object -First 1)
+        $LASTEXITCODE | Should -Be 0
+        $resolved | Should -Be $binary
+        mise exec $tool -- docker-compose version | Should -BeLike "Docker Compose version *"
+        $LASTEXITCODE | Should -Be 0
     }
 }

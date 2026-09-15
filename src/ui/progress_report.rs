@@ -17,9 +17,6 @@ pub(crate) enum ProgressIcon {
     Skipped,
     #[allow(dead_code)]
     Warning,
-    // Constructed only by the brew package managers (`#[cfg(unix)]`), so it reads
-    // as never-constructed on the windows build.
-    #[cfg_attr(windows, allow(dead_code))]
     Error,
 }
 
@@ -37,6 +34,37 @@ impl Display for ProgressIcon {
 pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
+
+    /// A line of a child process's stdout, as opposed to a phase message a
+    /// backend produced itself.
+    ///
+    /// Reporters that only have room for one status line fold it in and rely on
+    /// [`crate::cmd::CmdLineRunner`] replaying the whole stream when the command
+    /// fails. Reporters that show it as it arrives say so with
+    /// [`Self::shows_process_output`], which suppresses that replay.
+    fn set_process_output(&self, message: String) {
+        self.set_message(message);
+    }
+
+    /// Whether [`Self::set_process_output`] reaches the user immediately.
+    fn shows_process_output(&self) -> bool {
+        false
+    }
+
+    /// Secondary progress that is not a byte transfer — an embedded package
+    /// manager's `32/48 pkgs`. Reporters with one status line fold it into the
+    /// message; the install renderers show it beside the phase.
+    fn set_detail(&self, detail: String) {
+        let _ = detail;
+    }
+
+    /// Progress through the current operation in whole items rather than
+    /// bytes — packages resolved, packages fetched. Drives the bar the same way
+    /// `set_length`/`set_position` do, but is never formatted as a size or
+    /// folded into a transfer rate.
+    fn set_items(&self, done: u64, total: u64) {
+        let _ = (done, total);
+    }
     fn inc(&self, _delta: u64) {}
     fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}
@@ -56,6 +84,16 @@ pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     ///
     /// Then each set_length() call will allocate 33.33% of the total progress
     fn start_operations(&self, _count: usize) {}
+
+    /// Declare the operations with a relative cost for each, in the order they
+    /// run, when the backend can estimate them better than "all equal".
+    ///
+    /// This only paces a progress display. The numbers are estimates — a
+    /// download's share of an install varies with the artifact and the network
+    /// — so nothing may depend on them being right.
+    fn start_operations_weighted(&self, weights: &[f64]) {
+        self.start_operations(weights.len());
+    }
 
     /// Advance to the next operation
     /// Call this before each new stage (after the first one)
@@ -83,6 +121,10 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
 #[derive(Debug)]
 pub(crate) struct ProgressReport {
     job: Arc<ProgressJob>,
+    /// The phase and any secondary detail, folded into one `message` prop:
+    /// this row has a single status cell.
+    phase: Mutex<String>,
+    detail: Mutex<String>,
 }
 
 impl ProgressReport {
@@ -108,7 +150,22 @@ impl ProgressReport {
             .prop("message", "")
             .start();
 
-        ProgressReport { job }
+        ProgressReport {
+            job,
+            phase: Mutex::new(String::new()),
+            detail: Mutex::new(String::new()),
+        }
+    }
+
+    fn render_message(&self) {
+        let phase = self.phase.lock().unwrap();
+        let detail = self.detail.lock().unwrap();
+        let message = if detail.is_empty() {
+            phase.clone()
+        } else {
+            format!("{phase}  {detail}")
+        };
+        self.job.prop("message", &message);
     }
 }
 
@@ -118,7 +175,13 @@ impl SingleReport for ProgressReport {
     }
 
     fn set_message(&self, message: String) {
-        self.job.prop("message", &message.replace('\r', ""));
+        *self.phase.lock().unwrap() = message.replace('\r', "");
+        self.render_message();
+    }
+
+    fn set_detail(&self, detail: String) {
+        *self.detail.lock().unwrap() = detail.replace('\r', "");
+        self.render_message();
     }
 
     fn inc(&self, delta: u64) {
@@ -171,6 +234,7 @@ impl SingleReport for QuietReport {}
 pub(crate) struct VerboseReport {
     prefix: String,
     prev_message: Mutex<String>,
+    prev_detail: Mutex<String>,
     pad: usize,
     total_operations: Mutex<Option<usize>>,
     current_operation: Mutex<usize>,
@@ -185,6 +249,7 @@ impl VerboseReport {
         VerboseReport {
             prefix,
             prev_message: Mutex::new("".to_string()),
+            prev_detail: Mutex::new("".to_string()),
             pad,
             total_operations: Mutex::new(None),
             current_operation: Mutex::new(0),
@@ -195,6 +260,31 @@ impl VerboseReport {
 impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
         safe_eprintln!("{message}");
+    }
+    fn set_process_output(&self, message: String) {
+        // Not set_message: its dedup collapses repeated phase text, which would
+        // silently drop a child's repeated stdout lines now that
+        // `shows_process_output` suppresses the failure replay.
+        let prefix = pad_prefix(self.pad, &self.prefix);
+        log::info!("{prefix} {message}");
+    }
+    fn set_detail(&self, detail: String) {
+        // One line per change, folded with the phase, the way this reporter
+        // printed the combined message before phase and detail were split.
+        if detail.trim().is_empty() {
+            return;
+        }
+        let phase = self.prev_message.lock().unwrap().clone();
+        let mut prev = self.prev_detail.lock().unwrap();
+        if *prev == detail {
+            return;
+        }
+        let prefix = pad_prefix(self.pad, &self.prefix);
+        log::info!("{prefix} {phase} {detail}");
+        *prev = detail;
+    }
+    fn shows_process_output(&self) -> bool {
+        true
     }
     fn set_message(&self, message: String) {
         let mut prev_message = self.prev_message.lock().unwrap();
@@ -224,10 +314,11 @@ impl SingleReport for VerboseReport {
         *self.current_operation.lock().unwrap() = 1;
     }
     fn next_operation(&self) {
-        let total = *self.total_operations.lock().unwrap();
-        if total.is_some() {
+        if let Some(total) = *self.total_operations.lock().unwrap() {
             let mut current = self.current_operation.lock().unwrap();
-            *current += 1;
+            // A backend may step past its last declared operation to say "all
+            // declared work is done"; the counter stays at the last one.
+            *current = (*current + 1).min(total);
         }
     }
 }

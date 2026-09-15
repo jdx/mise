@@ -188,6 +188,10 @@ impl JavaPlugin {
     fn test_java(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
+            // `java -version` writes its normal version banner to stderr. Treat
+            // it as ordinary process output so an interactive install can fold
+            // it into the tool's progress row instead of printing three lines.
+            .stderr_as_stdout()
             .env("JAVA_HOME", tv.install_path())
             .env_values(tv.install_env())
             .arg("-version")
@@ -612,6 +616,8 @@ impl Backend for JavaPlugin {
                             .await?;
                         // Optionally verify checksum if present
                         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+                    } else {
+                        ctx.pr.set_message(format!("cached {filename}"));
                     }
 
                     // Fetch metadata for installation (for install/move logic)

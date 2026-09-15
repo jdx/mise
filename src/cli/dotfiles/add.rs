@@ -12,15 +12,27 @@ use crate::file;
 use crate::path::PathExt;
 use crate::system;
 use crate::system::files::{FileManifest, FileMode, FileRequest};
+use crate::system::history::OperationScope;
+use crate::system::history::journal;
 use crate::ui::prompt;
 
 /// Add or update dotfiles in `[dotfiles]`
 ///
 /// If the target is already managed, this updates its source from the live
 /// target. Otherwise it creates a `[dotfiles]` entry and seeds the source
-/// under `dotfiles.root` unless `--source` is provided.
+/// under `dotfiles.root` unless `--source` is provided. Captured entries are
+/// applied unless `--no-apply` is passed. Use `--dry-run` to preview both the
+/// source capture and config write without making those changes.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise dot add ~/.zshrc
+mise dot add --mode copy ~/.config/starship.toml
+mise dot add --source dotfiles/gitconfig ~/.gitconfig
+mise dot add --changed"###
+    )
+)]
 pub(crate) struct DotfilesAdd {
     /// Targets to add or update
     #[usage(value_name = "TARGET")]
@@ -68,11 +80,20 @@ pub(crate) struct DotfilesAdd {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     pub(super) yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    pub(super) prompt_secrets: bool,
 }
 
 impl DotfilesAdd {
     /// Validate and capture the requested targets as one transactional update.
-    pub(crate) async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
+        let mode = self.validate()?;
+        OperationScope::wrap("bootstrap dotfiles add", self.dry_run, self.run_inner(mode)).await
+    }
+
+    fn validate(&self) -> Result<FileMode> {
         if self.changed && !self.targets.is_empty() {
             bail!("--changed does not accept target arguments");
         }
@@ -82,13 +103,20 @@ impl DotfilesAdd {
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
         }
-        let mode = match self.mode.as_deref() {
+        match self.mode.as_deref() {
+            Some("track") => bail!(
+                "`--mode track` tracks a file where it is and takes no source; use `mise dot track <path>`"
+            ),
             Some(mode) => {
-                FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))?
+                FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))
             }
-            None => system::files::default_mode(),
-        };
+            None => Ok(system::files::default_mode()),
+        }
+    }
+
+    async fn run_inner(mut self, mode: FileMode) -> Result<()> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let managed = system::files::files_from_config(&config)?;
         if self.changed {
             for req in &managed {
@@ -97,7 +125,7 @@ impl DotfilesAdd {
                     && !req.target.is_symlink()
                     && !req.source.is_dir()
                     && matches!(
-                        system::files::check(&config, req)?,
+                        system::files::check(&config, req, &secrets)?,
                         system::files::FileState::Differs(_)
                     )
                 {
@@ -134,6 +162,14 @@ impl DotfilesAdd {
                 .collect::<PathBuf>();
             if target.is_relative() {
                 bail!("{target_raw}: target must be absolute or start with ~/");
+            }
+            if managed
+                .iter()
+                .any(|req| req.mode == FileMode::Track && req.target == target)
+            {
+                bail!(
+                    "{target_raw}: tracked in place; pass `--mode copy` after `mise dot untrack {target_raw}` to seed a source instead"
+                );
             }
             if managed_edits.iter().any(|req| {
                 system::files::matches_target(
@@ -274,6 +310,11 @@ impl DotfilesAdd {
                     let move_before_apply = item.mode == FileMode::Symlink
                         || (item.mode == FileMode::SymlinkEach && item.already_managed.is_none());
                     if !self.no_apply && move_before_apply && !item.target.is_symlink() {
+                        let pending = journal::begin_changes(
+                            "dotfiles",
+                            &item.target_raw,
+                            [item.target.clone(), item.source.clone()],
+                        )?;
                         remove_path(&item.source)?;
                         if let Some(parent) = item.source.parent() {
                             file::create_dir_all(parent)?;
@@ -315,6 +356,7 @@ impl DotfilesAdd {
                                 item.source.display_user()
                             ),
                         }
+                        journal::commit_changes(pending);
                         info!(
                             "dotfiles: moved {} to {}",
                             item.target.display_user(),
@@ -377,7 +419,7 @@ impl DotfilesAdd {
                 dry_run: false,
                 verbose: false,
                 force: false,
-                force_hint: "run `mise bootstrap dotfiles apply --force`",
+                force_hint: "run `mise dot apply --force`",
                 yes: true,
             };
             let apply_plan = if !self.no_apply && !apply_requests.is_empty() {
@@ -400,6 +442,7 @@ impl DotfilesAdd {
                     &apply_requests,
                     &active_after_add,
                     &apply_opts,
+                    &secrets,
                 )?)
             } else {
                 None
@@ -435,7 +478,7 @@ impl DotfilesAdd {
             }
             if let Some(plan) = apply_plan {
                 apply_started = true;
-                system::files::execute_apply(plan, &apply_opts)?;
+                system::files::execute_apply(&config, plan, &apply_opts)?;
             }
             Ok(())
         })();
@@ -508,6 +551,9 @@ impl PlannedAdd {
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .to_path_buf(),
+            policy: system::files::FilePolicy::for_mode(self.mode),
+            variants: vec![],
+            enabled: true,
             origin: crate::system::resources::ResourceOrigin {
                 config: config_path.to_path_buf(),
                 config_root: crate::config::config_file::config_root::config_root(config_path),
@@ -580,7 +626,9 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
-        FileMode::Content => unreachable!("dotfiles add always captures a source file"),
+        FileMode::Content | FileMode::Track => {
+            unreachable!("dotfiles add always captures a source file")
+        }
     }
 }
 
@@ -714,16 +762,6 @@ fn rollback_add(
     }
     Ok(())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles add ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles add --mode copy ~/.config/starship.toml</bold>
-    $ <bold>mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig</bold>
-    $ <bold>mise bootstrap dotfiles add --changed</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

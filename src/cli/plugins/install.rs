@@ -18,18 +18,22 @@ use crate::{backend::unalias_backend, config::Settings};
 
 use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_task};
 
-/// Install a plugin
+/// Install a plugin from a configured source, Git URL, or supported archive
 ///
-/// Note that mise installs plugins automatically when you install a tool that needs one,
-/// e.g.: `mise install cmake@3.30` installs the cmake plugin first. This command is only
-/// needed to install a plugin ahead of time or from a custom git URL.
+/// Most registry tools use built-in backends and need no plugin. When a selected
+/// backend does require a plugin, mise normally installs it with the tool.
+/// Use this command to install it ahead of time or choose a custom source.
+///
+/// A Git URL may end in `#ref` to select a plugin commit, tag, or branch. This selects
+/// the plugin implementation, separately from the tool version installed by `mise use`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP
+#[usage(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, example(r###"mise plugins install postgres https://github.com/smashedtoatoms/asdf-postgres.git"###, help = r###"Install an asdf-compatible plugin from its upstream repository"###),
+    example(r###"mise plugins install my-tool file:///path/to/mise-my-tool#v1.0.0"###, help = r###"Use a local plugin repository at a tag you created"###),
+    example(r###"mise plugins install --all"###, help = r###"Install missing plugins that have configured shorthands"###)
 )]
 pub(crate) struct PluginsInstall {
     /// The name of the plugin to install
-    /// e.g.: cmake, poetry
-    /// Can specify multiple plugins: `mise plugins install cmake poetry`
+    /// Use a configured plugin name, or supply a source URL below
     #[usage(required_unless = "all", verbatim_doc_comment)]
     new_plugin: Option<String>,
 
@@ -138,7 +142,22 @@ pub(crate) async fn install_plugin(
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
-    let (plugin_type, name) = PluginType::from_plugin_config(name);
+    let explicit_type = name.contains(':');
+    let (mut plugin_type, name) = PluginType::from_plugin_config(name);
+    let git_url = git_url.or_else(|| {
+        config
+            .get_repo_url(name)
+            .filter(|url| url.starts_with("packslip:"))
+    });
+    if git_url
+        .as_deref()
+        .is_some_and(|url| url.starts_with("packslip:"))
+    {
+        if explicit_type && plugin_type != PluginType::Vfox {
+            bail!("packslip plugin sources require the vfox plugin type");
+        }
+        plugin_type = PluginType::Vfox;
+    }
     let name = name.to_string();
     if plugin_type == PluginType::Package && crate::system::packages::is_builtin_manager_name(&name)
     {
@@ -167,6 +186,15 @@ pub(crate) async fn install_plugin(
 #[ensures(!ret.as_ref().is_ok_and(|(r, _)| r.is_empty()), "plugin name is empty")]
 fn get_name_and_url(name: &str, git_url: &Option<String>) -> Result<(String, Option<String>)> {
     let name = unalias_backend(name);
+    let name = name.as_ref();
+    if git_url.is_none()
+        && let Some((kind, short)) = name.split_once(':')
+        && matches!(kind, "vfox" | "vfox-backend" | "package" | "asdf")
+        && !short.is_empty()
+        && !short.contains(['/', ':'])
+    {
+        return Ok((name.to_string(), None));
+    }
     Ok(match git_url {
         Some(url) => match url.contains(':') {
             true => (name.to_string(), Some(url.clone())),
@@ -194,34 +222,23 @@ fn get_name_from_url(url: &str) -> Result<String> {
         return Err(eyre!("could not infer plugin name from url: {}", url));
     };
     let name = name.strip_prefix("asdf-").unwrap_or(&name);
-    let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
     let name = name.strip_prefix("vfox-").unwrap_or(name);
     Ok(unalias_backend(name).to_string())
 }
 
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # install the poetry via shorthand
-    $ <bold>mise plugins install poetry</bold>
-
-    # install the poetry plugin using a specific git url
-    $ <bold>mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git</bold>
-
-    # install the poetry plugin using the git url only
-    # (poetry is inferred from the url)
-    $ <bold>mise plugins install https://github.com/mise-plugins/mise-poetry.git</bold>
-
-    # install the poetry plugin using a specific ref
-    $ <bold>mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e</bold>
-"#
-);
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_str_eq;
+
+    #[test]
+    fn typed_plugin_name_uses_configured_source() {
+        assert_eq!(
+            get_name_and_url("vfox:bfs", &None).unwrap(),
+            ("vfox:bfs".to_string(), None)
+        );
+    }
 
     #[test]
     fn test_get_name_from_url() {

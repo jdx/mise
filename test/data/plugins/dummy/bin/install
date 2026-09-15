@@ -10,6 +10,17 @@ check_dummy_versions() {
 }
 
 check_dummy_versions
+
+# Optional E2E instrumentation for detecting overlapping top-level installs.
+if [ -n "${DUMMY_INSTALL_GATE_DIR:-}" ]; then
+    if mkdir "$DUMMY_INSTALL_GATE_DIR" 2>/dev/null; then
+        sleep 0.2
+        rmdir "$DUMMY_INSTALL_GATE_DIR"
+    else
+        touch "$DUMMY_INSTALL_GATE_DIR.overlap"
+    fi
+fi
+
 mkdir -p "$ASDF_INSTALL_PATH"
 env >"$ASDF_INSTALL_PATH/env"
 echo "$ASDF_INSTALL_VERSION" >"$ASDF_INSTALL_PATH/version"

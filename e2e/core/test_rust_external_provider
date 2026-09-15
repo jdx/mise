@@ -25,6 +25,9 @@ mkdir -p "$STATE"
 			"--version ")
 				echo "rustup 1.0.0 (external provider)"
 				;;
+			"show profile")
+				echo minimal
+				;;
 			"toolchain install")
 				version=$3
 				mkdir -p "$STATE/toolchains/$version"

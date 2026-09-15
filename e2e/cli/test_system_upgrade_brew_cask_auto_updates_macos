@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  exit 0
+fi
+
+python3 - "$PWD" <<'PYTHON'
+import io
+import json
+import os
+from pathlib import Path
+import plistlib
+import subprocess
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import zipfile
+
+root = Path(sys.argv[1]).resolve()
+prefix = root / "brew-prefix"
+responses = {}
+downloads = []
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path not in responses:
+            self.send_error(404)
+            return
+        if path.endswith(".zip"):
+            downloads.append(path)
+        body = responses[path]
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+base = f"http://127.0.0.1:{server.server_port}"
+receipts = {}
+for token in ("auto-parent", "auto-child", "auto-latest"):
+    app = prefix / "Applications" / f"{token}.app"
+    (app / "Contents").mkdir(parents=True)
+    (app / "Contents/payload").write_text("original")
+    (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}))
+    caskroom = prefix / "Caskroom" / token / "1"
+    caskroom.mkdir(parents=True)
+    (caskroom / app.name).symlink_to(app)
+    receipt = caskroom / ".mise-cask.toml"
+    receipt.write_text(f'version = "1"\nauto_updates = true\napps = [{json.dumps(str(app))}]\n')
+    receipts[token] = (receipt, receipt.read_bytes())
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(f"{app.name}/Contents/payload", "upgraded")
+        bundle.writestr(f"{app.name}/Contents/Info.plist", plistlib.dumps({"CFBundleShortVersionString": "2"}))
+    responses[f"/{token}.zip"] = archive.getvalue()
+    metadata = {"token": token, "version": "2", "auto_updates": True,
+                "url": f"{base}/{token}.zip", "sha256": "no_check", "artifacts": [{"app": [app.name]}]}
+    if token == "auto-parent":
+        metadata["depends_on"] = {"cask": ["auto-child"]}
+    if token == "auto-latest":
+        metadata["version"] = "latest"
+    responses[f"/api/cask/{token}.json"] = json.dumps(metadata).encode()
+(root / "mise.toml").write_text('[bootstrap.packages]\n"brew-cask:auto-parent" = "latest"\n"brew-cask:auto-latest" = "latest"\n')
+env = dict(os.environ, MISE_SYSTEM_BREW_PREFIX=str(prefix), MISE_BREW_CASK_OPT_APPDIR=str(prefix / "Applications"),
+           MISE_URL_REPLACEMENTS=json.dumps({"https://formulae.brew.sh": base}))
+
+
+def run(*args):
+    command = ["mise", "bootstrap", "packages", *args]
+    print("$ " + " ".join(command), flush=True)
+    result = subprocess.run(command, env=env, text=True, capture_output=True)
+    print(result.stdout + result.stderr, end="", flush=True)
+    assert result.returncode == 0, (command, result.returncode)
+    return result.stdout + result.stderr
+
+
+thread = threading.Thread(target=server.serve_forever, daemon=True)
+thread.start()
+try:
+    run("apply", "--yes")
+    run("upgrade", "--dry-run", "--yes")
+    assert downloads == []
+    for receipt, original in receipts.values():
+        assert receipt.read_bytes() == original
+    assert not (prefix / "Caskroom/.mise.lock").exists()
+
+    parent_app = prefix / "Applications/auto-parent.app"
+    parent = parent_app / "Contents/payload"
+    live_plist = parent_app / "Contents/Info.plist"
+    parent_receipt, original_receipt = receipts["auto-parent"]
+    for live in ("2", "3", "2.0", "0", "0.0", None, 1):
+        live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": live} if live is not None else {}))
+        original_plist = live_plist.read_bytes()
+        run("upgrade", "--yes")
+        assert downloads == [], (live, downloads)
+        assert parent.read_text() == "original", live
+        assert live_plist.read_bytes() == original_plist, live
+        assert parent_receipt.read_bytes() == original_receipt, live
+    live_plist.unlink()
+    run("upgrade", "--yes")
+    assert downloads == []
+    assert not live_plist.exists()
+    assert parent_receipt.read_bytes() == original_receipt
+    missing_app = parent_app.with_suffix(".missing")
+    parent_app.rename(missing_app)
+    run("upgrade", "--yes")
+    assert not parent_app.exists()
+    assert downloads == []
+    assert parent_receipt.read_bytes() == original_receipt
+    missing_app.rename(parent_app)
+    live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}))
+
+    # A running outdated app is left to update itself until nothing runs from
+    # its bundle. The executable links to /bin/sleep; a copy is killed on exec.
+    executable = parent_app / "Contents/MacOS/auto-parent"
+    executable.parent.mkdir(parents=True)
+    executable.symlink_to("/bin/sleep")
+    sleeper = subprocess.Popen([str(executable), "600"], stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for args in (("upgrade", "--dry-run", "--yes"), ("upgrade", "--yes")):
+            output = run(*args)
+            assert "skipped: installed app is running and updates itself" in output, output
+            assert downloads == [], downloads
+            assert parent.read_text() == "original"
+            assert parent_receipt.read_bytes() == original_receipt
+    finally:
+        sleeper.kill()
+        sleeper.wait()
+
+    output = run("upgrade", "--yes")
+    assert "upgraded auto-parent 1 -> 2" in output, output
+    assert downloads == ["/auto-parent.zip"], downloads
+    assert parent.read_text() == "upgraded"
+    child_receipt, original = receipts["auto-child"]
+    assert child_receipt.read_bytes() == original
+    assert (prefix / "Applications/auto-child.app/Contents/payload").read_text() == "original"
+    receipt = prefix / "Caskroom/auto-parent/2/.mise-cask.toml"
+    assert 'version = "2"' in receipt.read_text()
+    original = receipt.read_bytes()
+    original_receipt_v2 = original
+    live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "1"}, fmt=plistlib.FMT_BINARY))
+    parent.write_text("older despite equal receipt")
+    output = run("upgrade", "--dry-run", "--yes")
+    assert downloads == ["/auto-parent.zip"]
+    assert parent.read_text() == "older despite equal receipt"
+    assert receipt.read_bytes() == original
+    output = run("upgrade", "--yes")
+    assert "already up to date" in output, output
+    assert parent.read_text() == "older despite equal receipt"
+    assert plistlib.loads(live_plist.read_bytes())["CFBundleShortVersionString"] == "1"
+    assert receipt.read_bytes() == original
+    assert downloads == ["/auto-parent.zip"], downloads
+    assert child_receipt.read_bytes() == receipts["auto-child"][1]
+    assert (prefix / "Applications/auto-child.app/Contents/payload").read_text() == "original"
+    latest_receipt, original = receipts["auto-latest"]
+    assert latest_receipt.read_bytes() == original
+    assert (prefix / "Applications/auto-latest.app/Contents/payload").read_text() == "original"
+
+    # A preflight step can start the app itself. The swap is skipped, preflight
+    # work is undone, and no journal is left pending. The launcher spawns once;
+    # its pid file stops it from spawning again on the rerun.
+    pidfile = root / "preflight.pid"
+    launcher = "\n".join([
+        "#!/bin/sh",
+        "[ -e \"$2\" ] && exit 0",
+        "mkdir -p \"$(dirname \"$1\")\"",
+        "ln -sf /bin/sleep \"$1\"",
+        "\"$1\" 600 </dev/null >/dev/null 2>&1 &",
+        "echo $! > \"$2\"",
+        "",
+    ])
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(f"{parent_app.name}/Contents/payload", "third")
+        bundle.writestr(f"{parent_app.name}/Contents/Info.plist", plistlib.dumps({"CFBundleShortVersionString": "3"}))
+        info = zipfile.ZipInfo("launch")
+        info.external_attr = 0o755 << 16
+        bundle.writestr(info, launcher)
+    responses["/auto-parent-3.zip"] = archive.getvalue()
+    metadata = json.loads(responses["/api/cask/auto-parent.json"])
+    metadata["version"] = "3"
+    metadata["url"] = f"{base}/auto-parent-3.zip"
+    metadata["artifacts"] = [
+        {"preflight_steps": [{"steps": [{
+            "type": "run",
+            "command": {"base": "staged_path", "path": "launch"},
+            "args": [str(executable), str(pidfile)],
+        }]}]},
+        {"app": [parent_app.name]},
+    ]
+    responses["/api/cask/auto-parent.json"] = json.dumps(metadata).encode()
+    live_plist.write_bytes(plistlib.dumps({"CFBundleShortVersionString": "2"}))
+    journals = Path(os.environ["MISE_STATE_DIR"]) / "brew-cask/auto-parent"
+    try:
+        output = run("upgrade", "--yes")
+        assert "skipped: installed app started running during the upgrade and updates itself" in output, output
+        assert pidfile.exists()
+        assert parent.read_text() == "older despite equal receipt"
+        assert receipt.read_bytes() == original_receipt_v2
+        assert not journals.exists() or not any(journals.iterdir())
+    finally:
+        if pidfile.exists():
+            os.kill(int(pidfile.read_text()), 9)
+    for _ in range(50):
+        listing = subprocess.run(["ps", "-axo", "comm="], capture_output=True, text=True).stdout
+        if str(executable) not in listing:
+            break
+        time.sleep(0.1)
+    output = run("upgrade", "--yes")
+    assert "upgraded auto-parent 2 -> 3" in output, output
+    assert parent.read_text() == "third"
+finally:
+    server.shutdown()
+    thread.join()
+    server.server_close()
+PYTHON

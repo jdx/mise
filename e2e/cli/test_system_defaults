@@ -3,7 +3,7 @@
 cat <<EOF >mise.toml
 [bootstrap.macos.defaults]
 NSGlobalDomain = { KeyRepeat = 2 }
-"com.apple.dock" = { autohide = true, tilesize = 48, orientation = "left" }
+"com.apple.dock" = { autohide = true, tilesize = 48, orientation = "left", "persistent-apps" = [{ "tile-type" = "file-tile", "tile-data" = { enabled = true, position = 1 } }] }
 
 [bootstrap.macos.dock]
 show_recents = false
@@ -26,6 +26,7 @@ assert_contains "mise bootstrap macos defaults status" "show-recents"
 assert_contains "mise bootstrap macos defaults status" "AppleShowAllFiles"
 assert_contains "mise bootstrap macos defaults status" "InitialKeyRepeat"
 assert_contains "mise bootstrap macos defaults status" "Clicking"
+assert_contains "mise bootstrap macos defaults status" "persistent-apps"
 assert_contains "mise bootstrap macos defaults status --json" '"macos_defaults"'
 if [[ $(uname) != "Darwin" ]]; then
   assert_contains "mise bootstrap macos defaults status" "skipped"
@@ -39,10 +40,10 @@ fi
 # dry-run never writes anything
 assert_succeed "mise bootstrap macos defaults apply --dry-run --yes"
 
-# unsupported value types warn but don't fail
+# unsupported TOML datetimes warn but don't fail
 cat <<EOF >mise.toml
 [bootstrap.macos.defaults]
-"com.apple.dock" = { future-array = [1, 2] }
+"com.apple.dock" = { future-date = 1979-05-27T07:32:00Z }
 EOF
 assert_succeed "mise bootstrap macos defaults status"
 assert_contains "mise bootstrap macos defaults status 2>&1" "unsupported value type"

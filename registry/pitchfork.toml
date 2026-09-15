@@ -1,4 +1,8 @@
-backends = ["aqua:jdx/pitchfork"]
+backends = [
+  { full = "packslip:github.com/jdx/pitchfork", min_version = "2.24.2" },
+  "aqua:jdx/pitchfork",
+]
+bins = ["pitchfork"]
 description = "Daemons with DX"
 test = { cmd = "pitchfork --version", expected = "pitchfork {{version}}" }
 version_order = "semver"

@@ -9,6 +9,7 @@ use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 use crate::file::display_path;
 use crate::system;
+use crate::system::history::OperationScope;
 use crate::system::packages::PackageRequest;
 
 /// Add bootstrap packages to [bootstrap.packages] and install them
@@ -23,7 +24,15 @@ use crate::system::packages::PackageRequest;
 /// `brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
 /// a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "u", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "u",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages use brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.MSVC
+mise bootstrap packages use -g brew:postgresql@17
+mise bootstrap packages use apt:curl@8.5.0-2"###
+    )
+)]
 pub(crate) struct SystemUse {
     /// Packages in `manager:package[@version]` form
     #[usage(value_name = "PACKAGE", required = true)]
@@ -55,10 +64,18 @@ pub(crate) struct SystemUse {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Write the package declarations without checking or installing packages
+    #[usage(long)]
+    no_install: bool,
 }
 
 impl SystemUse {
     pub(crate) async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap packages use", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = crate::config::Config::get().await?;
         let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
         let mut entries: Vec<(String, String)> = vec![];
@@ -116,6 +133,10 @@ impl SystemUse {
             );
         }
 
+        if self.no_install {
+            return Ok(());
+        }
+
         // unlike `mise bootstrap packages apply apt:x`, an unavailable manager is not
         // an error here: writing apt: entries from a mac into a shared repo
         // config is the point of a declarative file. Say so (except in
@@ -145,12 +166,3 @@ impl SystemUse {
         driver::run(mgrs, Action::Install, &opts).await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835</bold>
-    $ <bold>mise bootstrap packages use -g brew:postgresql@17</bold>
-    $ <bold>mise bootstrap packages use apt:curl@8.5.0-2</bold>
-"#
-);

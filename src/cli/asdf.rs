@@ -1,11 +1,14 @@
+use std::ffi::OsStr;
 use std::sync::Arc;
 
 use eyre::Result;
 use itertools::Itertools;
 
 use crate::cli::Cli;
+use crate::cli::install::Install;
 use crate::cli::ls_remote::LsRemote;
-use crate::config::Config;
+use crate::cli::reshim::Reshim;
+use crate::config::{Config, config_file};
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] simulates asdf for plugins that call "asdf" internally
@@ -24,18 +27,42 @@ impl Asdf {
         args.append(&mut self.args);
 
         match args.get(1).map(|s| s.as_str()) {
-            Some("reshim") => Box::pin(Cli::run(&args)).await,
+            Some("reshim") => {
+                let command = parse_forwarded_args::<Reshim>(&args)?;
+                prepare_forwarded_command(&args, false)?;
+                command.run().await
+            }
             Some("list") => list_versions(&config, &args).await,
             Some("install") => {
                 if args.len() == 4 {
                     let version = args.pop().unwrap();
                     args[2] = format!("{}@{}", args[2], version);
                 }
-                Box::pin(Cli::run(&args)).await
+                let command = parse_forwarded_args::<Install>(&args)?;
+                prepare_forwarded_command(&args, true)?;
+                Box::pin(command.run()).await
             }
             _ => Box::pin(Cli::run(&args)).await,
         }
     }
+}
+
+fn prepare_forwarded_command(args: &[String], implicitly_trusts_active_config: bool) -> Result<()> {
+    {
+        let mut global_args = crate::env::ARGS.write().unwrap();
+        global_args.clear();
+        global_args.extend_from_slice(args);
+    }
+    config_file::set_implicitly_trust_active_config(implicitly_trusts_active_config);
+    config_file::trust_active_config()
+}
+
+fn parse_forwarded_args<T: usage_rs::spec::CommandArgs>(args: &[String]) -> Result<T> {
+    let argv = args[1..]
+        .iter()
+        .map(|arg| OsStr::new(arg.as_str()))
+        .collect_vec();
+    usage_rs::parse_args_from_argv(&argv).map_err(|err| super::usage_error(&argv, err))
 }
 
 async fn list_versions(config: &Arc<Config>, args: &[String]) -> Result<()> {

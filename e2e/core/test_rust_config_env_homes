@@ -27,6 +27,9 @@ set -euo pipefail
 echo "$*" >>"$CARGO_HOME/rustup.log"
 
 case "$1 $2" in
+	"show profile")
+		echo minimal
+		;;
 	"component list")
 		echo rustfmt
 		;;

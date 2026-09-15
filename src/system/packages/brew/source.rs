@@ -11,8 +11,9 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use eyre::{WrapErr, bail};
+use eyre::{WrapErr, bail, eyre};
 
 use super::api::Formula;
 use super::pour;
@@ -109,6 +110,15 @@ pub(super) async fn build(
     let formula_rb = fetch_formula_rb(rf, pr).await?;
     let archive = fetch_source(formula, pr).await?;
 
+    // Formula builds share a build root and write directly into the final
+    // Cellar, so keep the commit lock until the child exits and linking is
+    // complete. Recheck after locking because another process may have
+    // installed this formula while the downloads above were in progress.
+    let _commit_lock = pour::commit_lock(pr)?;
+    if pour::keg_installed(name, &pkg_version) {
+        return Ok(());
+    }
+
     let build_root = crate::dirs::CACHE
         .join("system-brew")
         .join("build")
@@ -122,8 +132,8 @@ pub(super) async fn build(
     let shim_path = build_root.join("mise-brew-shim.rb");
     crate::file::write(&shim_path, SHIM_RB)?;
 
-    // formulae bake the final keg path into binaries, so the build installs
-    // straight into the Cellar (same as brew); a failed build removes the keg
+    // Formulae bake the final keg path into binaries, so the build installs
+    // straight into the Cellar (same as brew); a failed build removes the keg.
     let keg = pour::keg_path(name, &pkg_version);
     if keg.exists() {
         crate::file::remove_all(&keg)?;
@@ -141,7 +151,11 @@ pub(super) async fn build(
             &formula_rb,
         ))
         .with_pr(pr);
-    let built = cmd.execute_async().await;
+    // Keep the synchronous child wait inside this future so cancellation
+    // cannot drop the commit lock while the child is still mutating Cellar.
+    // run_blocking hands the Tokio worker core off on mise's multithreaded
+    // runtime while the build runs.
+    let built = crate::file::run_blocking(|| cmd.execute());
     if let Err(err) = built {
         let _ = crate::file::remove_all(&keg);
         return Err(err.wrap_err(format!("failed to build {name} {pkg_version} from source")));
@@ -162,7 +176,8 @@ pub(super) async fn build(
         closure,
         /* poured_from_bottle */ false,
     );
-    let linked = receipt.and_then(|()| pour::link_keg(name, &pkg_version, formula.keg_only));
+    let linked =
+        receipt.and_then(|()| pour::link_keg(name, &pkg_version, formula.keg_only_for_target()));
     if let Err(err) = linked {
         if let Err(rm_err) = crate::file::remove_all(&keg) {
             warn!(
@@ -197,18 +212,38 @@ pub(crate) async fn ruby_bin() -> Result<PathBuf> {
         },
     )
     .await?;
+    find_ruby_bin(&config, &ts).await?.ok_or_else(|| {
+        eyre!("failed to provision ruby for building from source (try `mise install ruby`)")
+    })
+}
+
+pub(crate) async fn installed_ruby_bin() -> Result<Option<PathBuf>> {
+    let config = Config::get().await?;
+    let tool: crate::cli::args::ToolArg = "ruby".parse()?;
+    let ts = ToolsetBuilder::new()
+        .with_args(&[tool])
+        .with_default_to_latest(true)
+        .build(&config)
+        .await?;
+    find_ruby_bin(&config, &ts).await
+}
+
+async fn find_ruby_bin(
+    config: &Arc<Config>,
+    ts: &crate::toolset::Toolset,
+) -> Result<Option<PathBuf>> {
     for (backend, tv) in ts.list_current_versions() {
         if tv.ba().short != "ruby" {
             continue;
         }
-        for bin_dir in backend.list_bin_paths(&config, &tv).await? {
+        for bin_dir in backend.list_bin_paths(config, &tv).await? {
             let ruby = bin_dir.join("ruby");
             if ruby.is_file() {
-                return Ok(ruby);
+                return Ok(Some(ruby));
             }
         }
     }
-    bail!("failed to provision ruby for building from source (try `mise install ruby`)");
+    Ok(None)
 }
 
 /// Download the formula's .rb from homebrew/core, pinned to the commit the
@@ -233,7 +268,7 @@ async fn fetch_formula_rb(rf: &ResolvedFormula, pr: &dyn SingleReport) -> Result
         .as_deref()
         .map(|base| base.trim_end_matches("/HEAD"))
         .unwrap_or(HOMEBREW_CORE_RAW);
-    let url = format!("{raw_base}/{commit}/{rb_path}");
+    let url = super::tap::ruby_source_url(&format!("{raw_base}/{commit}"), rb_path);
     pr.set_message(format!("download {rb_path}"));
     HTTP_FETCH.download_file(&url, &dest, Some(pr)).await?;
     crate::hash::ensure_checksum(&dest, sha256, Some(pr), "sha256")?;
@@ -466,6 +501,7 @@ mod tests {
             },
             revision: 0,
             keg_only: false,
+            keg_only_reason: None,
             dependencies: vec![],
             build_dependencies: vec![],
             bottle,

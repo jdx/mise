@@ -7,7 +7,8 @@ use crate::config::config_file::ConfigFile;
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_aliases = ["add", "create"], example(r###"mise shell-alias set ll "ls -la"
+mise shell-alias set gs "git status""###), verbatim_doc_comment)]
 pub(super) struct ShellAliasSet {
     /// The alias name
     #[usage(name = "shell_alias")]
@@ -32,11 +33,3 @@ impl ShellAliasSet {
         global_config.save()
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise shell-alias set ll "ls -la"</bold>
-    $ <bold>mise shell-alias set gs "git status"</bold>
-"#
-);

@@ -1,3 +1,8 @@
+---
+description: "Declare and apply your user's login shell."
+socialDescription: "Declare and apply your user's login shell."
+---
+
 # User Login Shell
 
 mise can declare the current user's login shell in `[bootstrap.user]` and
@@ -8,6 +13,11 @@ apply it with `mise bootstrap user apply` or as part of
 [bootstrap.user]
 login_shell = "/bin/zsh"
 ```
+
+Install the shell before applying this declaration and verify that the path
+exists. This setting changes the account's login shell; it does not install a
+shell, configure [mise activation](/bootstrap/shell.html), or replace the current
+shell process.
 
 When the configured shell is not listed in `/etc/shells`, mise appends it
 first. When the configured shell differs from the user's account entry, mise

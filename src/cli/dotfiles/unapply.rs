@@ -2,15 +2,25 @@ use eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::system;
+use crate::system::history::OperationScope;
 use crate::ui::prompt;
 
 /// Remove dotfiles applied from `[dotfiles]`
 ///
 /// Removes configured whole-file entries and edits while preserving files
 /// mise cannot identify as managed. Modified copies, templates, and plain-line
-/// edits require `--force`.
+/// edits require `--force`. Source files and configuration entries are retained.
+/// Run this before deleting a declaration so mise can still identify its targets.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise dot unapply
+mise dot unapply ~/.zshrc
+mise dot unapply --dry-run
+mise dot unapply --force --yes"###
+    )
+)]
 pub(crate) struct DotfilesUnapply {
     /// Only unapply these targets
     #[usage(value_name = "TARGET")]
@@ -27,11 +37,20 @@ pub(crate) struct DotfilesUnapply {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesUnapply {
     pub(crate) async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap dotfiles unapply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let all_files = system::files::files_from_config(&config)?;
         let files = all_files
             .iter()
@@ -93,7 +112,7 @@ impl DotfilesUnapply {
             info!("dotfiles: skipped");
             return Ok(());
         }
-        system::files::resolve_unapply(&config, &mut file_plan, &file_opts)?;
+        system::files::resolve_unapply(&config, &mut file_plan, &file_opts, &secrets)?;
         system::edits::validate_unapply(&edit_plan)?;
         // Confirmation covers the complete validated plan. Suppress the
         // per-domain prompts so declining cannot leave a partial unapply.
@@ -108,13 +127,3 @@ impl DotfilesUnapply {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles unapply</bold>
-    $ <bold>mise bootstrap dotfiles unapply ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles unapply --dry-run</bold>
-    $ <bold>mise bootstrap dotfiles unapply --force --yes</bold>
-"#
-);

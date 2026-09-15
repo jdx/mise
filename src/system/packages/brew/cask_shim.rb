@@ -294,6 +294,9 @@ class CaskContext
   def uninstall(*) nil end
   def zap(*) nil end
 
+  def preflight_steps(*) nil end
+  def postflight_steps(*) nil end
+
   def preflight(&block) @hooks[:preflight] = block end
   def postflight(&block) @hooks[:postflight] = block end
   def uninstall_preflight(&block) @hooks[:uninstall_preflight] = block end

@@ -17,7 +17,11 @@ use std::path::{Path, PathBuf};
 
 /// Run task(s) and rerun them when files change
 ///
-/// Uses `watchexec` to watch for file changes and rerun the given task(s).
+/// Uses `watchexec` to watch task sources and rerun the selected tasks.
+/// Sources from dependencies are included unless `--skip-deps` is set. With no
+/// sources, watchexec watches the current directory. Use `--watch` and `--exts`
+/// for explicit watched paths and filters, and `--print-events` to diagnose them.
+/// The default task is `default`; define it or pass a task name.
 /// watchexec must be installed; `mise use -g watchexec@latest` installs it.
 ///
 /// For more advanced process management (daemon management, auto-restart, readiness checks,
@@ -26,7 +30,22 @@ use std::path::{Path, PathBuf};
 #[usage(
     visible_alias = "w",
     verbatim_doc_comment,
-    after_long_help = AFTER_LONG_HELP,
+    example(
+        "mise watch build",
+        help = "Run the build task and rerun it whenever its sources change."
+    ),
+    example(
+        "mise watch build --glob 'src/**/*.rs'",
+        help = "Watch the glob instead of the task's sources."
+    ),
+    example(
+        "mise watch build --clear",
+        help = "Extra arguments go to watchexec; see `watchexec --help`."
+    ),
+    example(
+        "mise watch serve --watch src --exts rs --restart",
+        help = "Start an API server and restart it when Rust files in ./src change."
+    ),
     unknown_flags = "value"
 )]
 pub(crate) struct Watch {
@@ -525,25 +544,6 @@ where
     (inc, exc)
 }
 
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise watch build</bold>
-    Runs the "build" task and reruns it whenever one of its sources changes.
-    The task's "sources" determine which files are watched.
-
-    $ <bold>mise watch build --glob 'src/**/*.rs'</bold>
-    Runs the "build" task, watching the files matched by the glob instead of
-    the task's "sources".
-
-    $ <bold>mise watch build --clear</bold>
-    Extra arguments are passed to watchexec. See `watchexec --help` for details.
-
-    $ <bold>mise watch serve --watch src --exts rs --restart</bold>
-    Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change.
-"#
-);
-
 //region watchexec
 #[derive(Debug, usage_rs::Args)]
 pub(crate) struct WatchexecArgs {
@@ -592,7 +592,7 @@ pub(crate) struct WatchexecArgs {
     /// For more complex uses (like watching non-recursively), use the argfile capability: build a
     /// file containing command-line options and pass it to watchexec with `@path/to/argfile`.
     ///
-    /// The special value '-' will read from STDIN; this in incompatible with '--stdin-quit'.
+    /// The special value '-' will read from STDIN; this is incompatible with '--stdin-quit'.
     #[usage(
 		short = 'F',
 		long,
@@ -668,7 +668,7 @@ pub(crate) struct WatchexecArgs {
     ///
     /// This is used by 'restart' and 'signal' modes of '--on-busy-update' (unless '--signal' is
     /// provided). The restart behaviour is to send the signal, wait for the command to exit, and if
-    /// it hasn't exited after some time (see '--timeout-stop'), forcefully terminate it.
+    /// it hasn't exited after some time (see '--stop-timeout'), forcefully terminate it.
     ///
     /// The default on unix is "SIGTERM".
     ///
@@ -964,7 +964,7 @@ pub(crate) struct WatchexecArgs {
     ///       },
     ///       {
     ///         "kind": "source",
-    ///         "source": "filesystem",
+    ///         "source": "filesystem"
     ///       }
     ///     ],
     ///     "metadata": {
@@ -1238,16 +1238,17 @@ pub(crate) struct WatchexecArgs {
     ///
     /// Pass events that touch executable files:
     ///
-    ///   'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | metadata | .executable)'
+    ///   'any(.tags[] | select(.kind == "path" and .filetype == "file"); .absolute | file_meta | .executable)'
     ///
     /// Ignore files that start with shebangs:
     ///
-    ///   'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
+    ///   'any(.tags[] | select(.kind == "path" and .filetype == "file"); .absolute | file_read(2) == "#!") | not'
     #[usage(
         long = "filter-prog",
         short = 'J',
         help_heading = "Filtering",
-        value_name = "EXPRESSION"
+        value_name = "EXPRESSION",
+        verbatim_doc_comment
     )]
     pub filter_programs: Vec<String>,
 

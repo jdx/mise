@@ -1,7 +1,7 @@
 use crate::config::Settings;
 use crate::config::env_directive::EnvDirective;
 use crate::task::task_fetcher::TaskFetcher;
-use crate::task::{Task, TaskRunPhase, dep_has_usage_ref, parse_usage_values_from_task};
+use crate::task::{Task, TaskRunPhase, parse_usage_values_from_task};
 use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
@@ -182,19 +182,13 @@ impl Deps {
                 fetcher.fetch_tasks(config, &mut tasks_to_fetch).await?;
                 a = tasks_to_fetch.into_iter().next().unwrap();
             }
-            // Re-render dependency templates with usage values (including defaults)
-            // so {{usage.*}} resolves.
-            let has_usage_deps = |raw: &Option<Vec<_>>| {
-                raw.as_ref()
-                    .is_some_and(|r| r.iter().any(dep_has_usage_ref))
-            };
-            if has_usage_deps(&a.depends_raw)
-                || has_usage_deps(&a.depends_post_raw)
-                || has_usage_deps(&a.wait_for_raw)
-            {
+            // Re-render runtime templates with usage values (including defaults)
+            // so {{usage.*}} resolves before graph construction and freshness checks.
+            if a.has_usage_runtime_templates() {
                 let usage_values = parse_usage_values_from_task(config, &a).await?;
                 if !usage_values.is_empty() {
-                    a.render_depends_with_usage(config, &usage_values).await?;
+                    a.render_runtime_templates_with_usage(config, &usage_values)
+                        .await?;
                 }
             }
             let a_idx = add_idx(&a, &mut graph);

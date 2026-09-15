@@ -10,8 +10,8 @@ use eyre::{Report, Result, WrapErr, bail, ensure, eyre};
 use regex::Regex;
 use reqwest::StatusCode;
 use reqwest::header::{
-    ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, CONTENT_TYPE, DATE, ETAG, HeaderMap,
-    HeaderValue, IF_RANGE, LAST_MODIFIED, RANGE,
+    ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, CONTENT_TYPE, COOKIE, DATE, ETAG, HeaderMap,
+    HeaderName, HeaderValue, IF_RANGE, LAST_MODIFIED, PROXY_AUTHORIZATION, RANGE,
 };
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use serde::{Deserialize, Serialize};
@@ -85,6 +85,16 @@ struct SendOnceOptions {
 }
 
 impl SendOnceOptions {
+    fn check_response(&self, response: Response) -> Result<Response> {
+        if self.error_for_status
+            && !(self.allow_range_not_satisfiable
+                && response.status() == StatusCode::RANGE_NOT_SATISFIABLE)
+        {
+            response.error_for_status_ref()?;
+        }
+        Ok(response)
+    }
+
     fn new(retry_state: Option<RetryStateHandle>, use_netrc: bool) -> Self {
         Self {
             use_netrc,
@@ -190,6 +200,51 @@ struct PartialDownloadState {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct DownloadFileMetadata {
     pub(crate) effective_filename: Option<String>,
+}
+
+type SharedDownload =
+    std::sync::Arc<tokio::sync::OnceCell<(tempfile::TempDir, DownloadFileMetadata)>>;
+static INVOCATION_DOWNLOADS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, SharedDownload>>,
+> = std::sync::LazyLock::new(Default::default);
+
+// Bound retained scratch space, excluding transfers still borrowed by callers.
+// Active transfers are bounded by their callers' jobs limit and remain shared.
+fn prune_shared_downloads(
+    downloads: &mut std::collections::HashMap<String, SharedDownload>,
+    max_bytes: u64,
+    max_entries: usize,
+) {
+    let size = |entry: &SharedDownload| {
+        entry
+            .get()
+            .and_then(|(directory, _)| {
+                std::fs::metadata(directory.path().join("artifact"))
+                    .ok()
+                    .map(|m| m.len())
+            })
+            .unwrap_or(0)
+    };
+    let mut bytes: u64 = downloads.values().map(size).sum();
+    let mut count = downloads.len();
+    downloads.retain(|_, entry| {
+        if (bytes > max_bytes || count > max_entries) && Arc::strong_count(entry) == 1 {
+            bytes = bytes.saturating_sub(size(entry));
+            count -= 1;
+            false
+        } else {
+            true
+        }
+    });
+}
+
+/// Own temporary shared artifacts for this command, including cancellation paths.
+pub(crate) struct InvocationDownloads;
+
+impl Drop for InvocationDownloads {
+    fn drop(&mut self) {
+        INVOCATION_DOWNLOADS.lock().unwrap().clear();
+    }
 }
 
 fn download_filename_hint(url: &Url) -> Option<String> {
@@ -491,6 +546,26 @@ fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
     Some(ParsedContentRange::Bytes { start, end, total })
 }
 
+fn fetch_redirect_policy() -> reqwest::redirect::Policy {
+    use reqwest::redirect::Policy;
+
+    Policy::custom(|attempt| {
+        if is_https_downgrade(attempt.previous(), attempt.url()) {
+            attempt.error(std::io::Error::other(
+                "refusing to redirect a remote version request from HTTPS to HTTP",
+            ))
+        } else {
+            Policy::default().redirect(attempt)
+        }
+    })
+}
+
+pub(crate) fn is_https_downgrade(previous: &[Url], next: &Url) -> bool {
+    previous
+        .last()
+        .is_some_and(|url| url.scheme() == "https" && next.scheme() != "https")
+}
+
 #[derive(Debug)]
 pub(crate) struct Client {
     reqwest: Result<reqwest::Client, String>,
@@ -508,7 +583,7 @@ impl Client {
     #[cfg(test)]
     fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
-            reqwest: Ok(Self::build(timeout)?),
+            reqwest: Ok(Self::build(timeout, kind)?),
             timeout,
             kind,
         })
@@ -516,17 +591,19 @@ impl Client {
 
     fn new_shared(timeout: Duration, kind: ClientKind) -> Self {
         Self {
-            reqwest: Self::build(timeout).map_err(|err| format!("{err:#}")),
+            reqwest: Self::build(timeout, kind).map_err(|err| format!("{err:#}")),
             timeout,
             kind,
         }
     }
 
-    fn build(timeout: Duration) -> Result<reqwest::Client> {
-        Ok(Self::_new()
-            .read_timeout(timeout)
-            .connect_timeout(timeout)
-            .build()?)
+    fn build(timeout: Duration, kind: ClientKind) -> Result<reqwest::Client> {
+        let builder = Self::_new().read_timeout(timeout).connect_timeout(timeout);
+        let builder = match kind {
+            ClientKind::Http => builder,
+            ClientKind::Fetch => builder.redirect(fetch_redirect_policy()),
+        };
+        Ok(builder.build()?)
     }
 
     #[cfg(test)]
@@ -826,6 +903,51 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<DownloadFileMetadata> {
+        let url = url.into_url()?;
+        if Settings::get().generate_lockfiles() {
+            let key = format!("{:p}:{}", self, download_request_hash(&url, headers));
+            let shared = INVOCATION_DOWNLOADS
+                .lock()
+                .unwrap()
+                .entry(key)
+                .or_default()
+                .clone();
+            let (directory, metadata) = shared
+                .get_or_try_init(|| async {
+                    let directory = tempfile::tempdir()?;
+                    let metadata = self
+                        .download_file_with_headers_timeout(
+                            url.clone(),
+                            &directory.path().join("artifact"),
+                            headers,
+                            pr,
+                            Settings::get().http_download_timeout(),
+                        )
+                        .await?;
+                    Ok::<_, eyre::Report>((directory, metadata))
+                })
+                .await?;
+            if let Some(parent) = path.parent() {
+                file::create_dir_all(parent)?;
+            }
+            let partial = PartialDownload::new(path, download_request_hash(&url, headers))?;
+            let lock_path = partial.path.clone();
+            let _download_lock = tokio::task::spawn_blocking(move || {
+                crate::lock_file::LockFile::new(&lock_path).lock()
+            })
+            .await??;
+            partial.clear()?;
+            file::copy(directory.path().join("artifact"), &partial.path)?;
+            partial.persist(path)?;
+            let metadata = metadata.clone();
+            drop(shared);
+            prune_shared_downloads(
+                &mut INVOCATION_DOWNLOADS.lock().unwrap(),
+                512 * 1024 * 1024,
+                64,
+            );
+            return Ok(metadata);
+        }
         self.download_file_with_headers_timeout(
             url,
             path,
@@ -1078,11 +1200,23 @@ impl Client {
                         pr.inc(chunk.len() as u64);
                     }
                 }
+                Ok::<_, Report>(())
+            }
+            .await;
+            // Outside the transfer, so it also runs when the transfer failed.
+            // `tokio::fs::File` buffers writes and dropping one does not flush,
+            // so a transfer that dies part way through was leaving the bytes it
+            // had already received unwritten — the resume then asked for a range
+            // starting before them and downloaded them again. Whether any of it
+            // survived depended on when the background flush happened to land.
+            let persisted = async {
                 file.shutdown().await?;
                 file.sync_all().await?;
                 Ok::<_, Report>(())
             }
             .await;
+            // Before `clear()`: flushing into a file that has just been removed
+            // would recreate it.
             if transfer.is_err()
                 && !resumable
                 && let Err(err) = partial.clear()
@@ -1090,6 +1224,7 @@ impl Client {
                 debug!("failed to remove unvalidated partial download: {err:#}");
             }
             transfer?;
+            persisted?;
 
             if let Some(total_size) = total_size {
                 let actual_size = tokio::fs::metadata(&partial.path).await?.len();
@@ -1254,7 +1389,22 @@ impl Client {
         options: SendOnceOptions,
     ) -> Result<Response> {
         let original_url = url.clone();
+        crate::ui::resolve_progress::fetching(&url);
+        #[cfg(unix)]
+        if matches!(url.host_str(), Some("github.com" | "api.github.com"))
+            && let Some(socket) = std::env::var_os("MISE_GITHUB_RELAY_SOCKET")
+        {
+            let response = crate::github_relay::unix::request(
+                std::path::Path::new(&socket),
+                method,
+                &url,
+                headers,
+            )
+            .await?;
+            return options.check_response(response);
+        }
         apply_url_replacements(&mut url);
+        crate::ui::resolve_progress::fetching(&url);
         let host_key = http_host_key(&url);
         if Settings::get().prefer_offline()
             && let Some(host) = &host_key
@@ -1275,12 +1425,21 @@ impl Client {
         // `host_auth_headers` from GITHUB_TOKEN/gh/github_tokens.toml) wins
         // over netrc. The one exception is when a URL replacement actually
         // redirected the request to a different URL — in that case the
-        // pre-existing auth header was built for the *original* host and is
-        // likely wrong for the replacement target, so netrc (scoped to the
-        // new host) should override it. This preserves the #7164 use case
+        // pre-existing credentials were built for the *original* host and are
+        // removed before netrc credentials scoped to the new host are applied.
+        // This preserves the #7164 use case
         // (replace a public URL with a private mirror authenticated via
         // netrc) without clobbering forge tokens on un-redirected requests.
         let mut final_headers = headers.clone();
+        clear_cross_host_credentials(&mut final_headers, &original_url, &mut url);
+        // Refuse the downgrade for credentials that survive host scoping: a same-host
+        // rewrite keeps the original Authorization, and userinfo written into the rule
+        // itself is sent as-is. This runs before netrc because netrc credentials are
+        // scoped to the *replacement* host by the user, who already gets them sent to a
+        // plain `http://` URL with no rewrite involved — a rewrite must not be stricter
+        // than the direct request, or an http mirror fronting an https origin (#7164)
+        // becomes unusable.
+        ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
         if options.use_netrc {
             final_headers =
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
@@ -1439,13 +1598,7 @@ impl Client {
                 &body,
             ));
         }
-        if options.error_for_status
-            && !(options.allow_range_not_satisfiable
-                && resp.status() == StatusCode::RANGE_NOT_SATISFIABLE)
-        {
-            resp.error_for_status_ref()?;
-        }
-        Ok(resp)
+        options.check_response(resp)
     }
 }
 
@@ -1688,13 +1841,59 @@ fn netrc_should_apply(host_changed: bool, has_existing_auth: bool) -> bool {
     host_changed || !has_existing_auth
 }
 
+fn is_credential_header(name: &HeaderName, value: &HeaderValue) -> bool {
+    if value.is_sensitive()
+        || name == AUTHORIZATION
+        || name == PROXY_AUTHORIZATION
+        || name == COOKIE
+    {
+        return true;
+    }
+    let name = name.as_str();
+    name == "api-key"
+        || name == "x-api-key"
+        || name.ends_with("-api-key")
+        || name.contains("token")
+        || name.contains("secret")
+        || name.contains("credential")
+}
+
+/// Drop credentials scoped to the original host before contacting a replacement host.
+pub(crate) fn clear_cross_host_credentials(
+    headers: &mut HeaderMap,
+    original_url: &Url,
+    url: &mut Url,
+) {
+    if url.host() == original_url.host() {
+        return;
+    }
+    let credential_headers = headers
+        .iter()
+        .filter(|(name, value)| is_credential_header(name, value))
+        .map(|(name, _)| name.clone())
+        .collect::<Vec<_>>();
+    for name in credential_headers {
+        headers.remove(name);
+    }
+    let inherited_userinfo = (!original_url.username().is_empty()
+        || original_url.password().is_some())
+        && url.username() == original_url.username()
+        && url.password() == original_url.password();
+    if inherited_userinfo {
+        url.set_password(None)
+            .expect("HTTP URLs support clearing passwords");
+        url.set_username("")
+            .expect("HTTP URLs support clearing usernames");
+    }
+}
+
 /// Merge `netrc` credentials into `final_headers`, honoring the fallback
 /// policy in [`netrc_should_apply`]. `original_url` is the URL before any
 /// `apply_url_replacements` rewrite and `url` is the (possibly rewritten)
 /// URL actually being requested; a change of *host* means the request was
-/// redirected to a different server, which lets netrc override an existing
-/// auth header. Netrc values are `insert`ed (not `extend`ed) so they replace
-/// a pre-existing Authorization rather than appending a duplicate one.
+/// redirected to a different server, which lets netrc supply replacement-host
+/// authentication after original-host credentials have been removed. Netrc
+/// values are `insert`ed so only one Authorization value is present.
 fn apply_netrc_credentials(
     mut final_headers: HeaderMap,
     original_url: &Url,
@@ -1714,6 +1913,32 @@ fn apply_netrc_credentials(
         }
     }
     final_headers
+}
+
+/// Reject credentials when a URL replacement downgrades an HTTPS request to HTTP.
+pub(crate) fn ensure_secure_replacement_credentials(
+    original_url: &Url,
+    url: &Url,
+    headers: &HeaderMap,
+) -> Result<()> {
+    let has_credentials = headers
+        .iter()
+        .any(|(name, value)| is_credential_header(name, value));
+    ensure_secure_url_replacement(original_url, url, has_credentials)
+}
+
+pub(crate) fn ensure_secure_url_replacement(
+    original_url: &Url,
+    url: &Url,
+    has_credentials: bool,
+) -> Result<()> {
+    let downgraded = original_url.scheme() == "https" && url.scheme() == "http";
+    let has_credentials = has_credentials || !url.username().is_empty() || url.password().is_some();
+    ensure!(
+        !downgraded || !has_credentials,
+        "refusing to send credentials over an HTTPS-to-HTTP URL replacement"
+    );
+    Ok(())
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
@@ -1848,7 +2073,12 @@ pub(crate) fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = Dur
     // would silently cap retries at its length. tokio_retry's ExponentialBackoff
     // ::from_millis is geometric in the base (base, base*base, …) so picking a
     // base that gives nice human-scale delays is awkward; explicit is clearer.
-    [200u64, 1_000, 4_000, 15_000]
+    #[cfg(not(test))]
+    let schedule = [200u64, 1_000, 4_000, 15_000];
+    // Retry tests assert attempts and outcomes, not wall-clock sleeping.
+    #[cfg(test)]
+    let schedule = [2u64, 10, 40, 150];
+    schedule
         .into_iter()
         .chain(std::iter::repeat(15_000))
         .map(Duration::from_millis)
@@ -1988,6 +2218,7 @@ where
                     err,
                     delay
                 );
+                crate::ui::resolve_progress::retrying(url, attempt + 1, delay);
                 tokio::time::sleep(delay).await;
                 attempt += 1;
             }
@@ -2003,6 +2234,36 @@ mod tests {
     use reqwest::dns::{Name, Resolve, Resolving};
     use std::path::PathBuf;
     use url::Url;
+
+    #[test]
+    fn relay_and_direct_responses_share_status_contract() {
+        let response =
+            |status| Response::from(http::Response::builder().status(status).body("").unwrap());
+        let options = SendOnceOptions::new(None, true);
+        assert!(options.check_response(response(403)).is_err());
+        assert!(options.check_response(response(500)).is_err());
+        assert!(options.check_response(response(416)).is_err());
+        assert!(
+            options
+                .clone()
+                .allow_range_not_satisfiable()
+                .check_response(response(416))
+                .is_ok()
+        );
+        assert!(
+            options
+                .clone()
+                .allow_range_not_satisfiable()
+                .check_response(response(403))
+                .is_err()
+        );
+        assert!(
+            options
+                .allow_error_status()
+                .check_response(response(403))
+                .is_ok()
+        );
+    }
 
     #[test]
     fn download_state_placeholder_is_the_length_tempfile_will_produce() {
@@ -2106,6 +2367,73 @@ mod tests {
         assert!(client.head("").await.is_err());
         assert!(client.get_text("").await.is_err());
         assert!(client.get_text_request("").send().await.is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_request_rejects_custom_credentials_on_https_to_http_replacement() {
+        // Same-host downgrade: host scoping keeps the credential header, so sending it
+        // would expose it in cleartext.
+        let server = mockito::Server::new_async().await;
+        let replacement = server.url();
+        let original = replacement.replacen("http://", "https://", 1);
+        let _guard = {
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let mut settings = crate::config::settings::SettingsPartial::empty();
+            settings.url_replacements = Some(indexmap::indexmap! {
+                original.clone() => replacement,
+            });
+            crate::config::Settings::reset(Some(settings));
+            SettingsGuard { _lock: lock }
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        let client = Client::new(Duration::from_secs(1), ClientKind::Http).unwrap();
+
+        let err = client
+            .get_text_request(format!("{original}/file"))
+            .headers(&headers)
+            .send()
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("refusing to send credentials"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_request_scopes_credentials_before_refusing_a_downgrade() {
+        // Host-changing downgrade: the credential header belongs to the original host and
+        // is removed, so the request proceeds without it rather than failing. Refusing
+        // here would break an http mirror fronting an https origin (#7164).
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/file")
+            .match_header("x-api-key", mockito::Matcher::Missing)
+            .with_body("ok")
+            .create_async()
+            .await;
+        let replacement = server.url();
+        let _guard = {
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let mut settings = crate::config::settings::SettingsPartial::empty();
+            settings.url_replacements = Some(indexmap::indexmap! {
+                "https://secure.example.com".to_string() => replacement,
+            });
+            crate::config::Settings::reset(Some(settings));
+            SettingsGuard { _lock: lock }
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        let client = Client::new(Duration::from_secs(1), ClientKind::Http).unwrap();
+
+        let body = client
+            .get_text_request("https://secure.example.com/file")
+            .headers(&headers)
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(body, "ok");
+        mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -2257,6 +2585,71 @@ mod tests {
         settings.offline = Some(true);
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_generation_shares_concurrent_artifact_downloads() {
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.lockfile_mode = Some("generate".into());
+        crate::config::Settings::reset(Some(settings));
+        let _settings = SettingsGuard { _lock: lock };
+        let _downloads = InvocationDownloads;
+        let (port, count) = spawn_canned_server(vec![ok_response()]).await;
+        let url = format!("http://127.0.0.1:{port}/artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        let (a, b) = tokio::join!(
+            client.download_file(&url, &first, None),
+            client.download_file(&url, &second, None)
+        );
+        a.unwrap();
+        b.unwrap();
+        assert_eq!(
+            std::fs::read(&first).unwrap(),
+            std::fs::read(&second).unwrap()
+        );
+        let (a, b) = tokio::join!(
+            client.download_file(&url, &first, None),
+            client.download_file(&url, &first, None)
+        );
+        a.unwrap();
+        b.unwrap();
+        assert_eq!(
+            std::fs::read(first).unwrap(),
+            std::fs::read(second).unwrap()
+        );
+        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn shared_download_retention_evicts_idle_bytes_but_never_active_callers() {
+        let make_entry = || {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(directory.path().join("artifact"), b"1234").unwrap();
+            Arc::new(tokio::sync::OnceCell::new_with(Some((
+                directory,
+                DownloadFileMetadata::default(),
+            ))))
+        };
+        let active = make_entry();
+        let idle = make_entry();
+        let idle_path = idle.get().unwrap().0.path().to_path_buf();
+        let mut downloads = std::collections::HashMap::from([
+            ("active".into(), active.clone()),
+            ("idle".into(), idle),
+        ]);
+        prune_shared_downloads(&mut downloads, 4, 64);
+        assert_eq!(downloads.len(), 1);
+        assert!(downloads.contains_key("active"));
+        assert!(!idle_path.exists());
+        prune_shared_downloads(&mut downloads, 0, 0);
+        assert_eq!(downloads.len(), 1);
+        drop(active);
+        prune_shared_downloads(&mut downloads, 0, 0);
+        assert!(downloads.is_empty());
     }
 
     struct AtomicBoolGuard {
@@ -2969,6 +3362,28 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     }
 
     #[test]
+    fn test_cross_host_replacement_clears_credentials_without_netrc() {
+        let original: Url = "https://user:password@public.example.com/file"
+            .parse()
+            .unwrap();
+        let mut redirected: Url = "https://user:password@mirror.internal/file"
+            .parse()
+            .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer stale"));
+        headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        headers.insert("x-request-id", HeaderValue::from_static("keep-me"));
+
+        clear_cross_host_credentials(&mut headers, &original, &mut redirected);
+
+        assert!(!headers.contains_key(AUTHORIZATION));
+        assert!(!headers.contains_key("x-api-key"));
+        assert_eq!(headers["x-request-id"], "keep-me");
+        assert!(redirected.username().is_empty());
+        assert!(redirected.password().is_none());
+    }
+
+    #[test]
     fn test_apply_netrc_keeps_forge_token_on_same_host_path_rewrite() {
         // A URL replacement that only rewrites the path/query on the SAME host
         // must not let netrc override the forge token: the token is still valid
@@ -2987,6 +3402,49 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
 
         let out = apply_netrc_credentials(headers, &original, &rewritten, basic_netrc_headers());
         assert_eq!(auth_value(&out), vec!["Bearer forge-token".to_string()]);
+    }
+
+    #[test]
+    fn test_rejects_credentials_on_https_to_http_replacement() {
+        let original: Url = "https://public.example.com/file".parse().unwrap();
+        let rewritten: Url = "http://mirror.internal/file".parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer secret"));
+
+        let err =
+            ensure_secure_replacement_credentials(&original, &rewritten, &headers).unwrap_err();
+        assert!(err.to_string().contains("refusing to send credentials"));
+        let mut cookie_headers = HeaderMap::new();
+        cookie_headers.insert(COOKIE, HeaderValue::from_static("session=secret"));
+        assert!(
+            ensure_secure_replacement_credentials(&original, &rewritten, &cookie_headers).is_err()
+        );
+        let mut api_key_headers = HeaderMap::new();
+        api_key_headers.insert("x-api-key", HeaderValue::from_static("secret"));
+        assert!(
+            ensure_secure_replacement_credentials(&original, &rewritten, &api_key_headers).is_err()
+        );
+        let rewritten_with_credentials: Url =
+            "http://user:password@mirror.internal/file".parse().unwrap();
+        assert!(
+            ensure_secure_replacement_credentials(
+                &original,
+                &rewritten_with_credentials,
+                &HeaderMap::new(),
+            )
+            .is_err()
+        );
+        assert!(
+            ensure_secure_replacement_credentials(&original, &rewritten, &HeaderMap::new()).is_ok()
+        );
+        assert!(
+            ensure_secure_replacement_credentials(
+                &"http://public.example.com/file".parse().unwrap(),
+                &rewritten,
+                &headers,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -3012,8 +3470,27 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let url: Url = format!("http://127.0.0.1:{port}/").parse().unwrap();
         let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
 
-        let resp = client.get_async(url).await.unwrap();
+        let reporter = crate::ui::resolve_progress::tests::RecordingReport::default();
+        let resp = crate::ui::resolve_progress::scope(
+            Some(Box::new(reporter.clone())),
+            client.get_async(url),
+        )
+        .await
+        .unwrap();
 
+        let messages = reporter.0.lock().unwrap();
+        assert!(
+            messages
+                .first()
+                .unwrap()
+                .contains("fetching from 127.0.0.1")
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("retrying 127.0.0.1 (attempt 2"))
+        );
+        assert!(messages.last().unwrap().contains("fetching from 127.0.0.1"));
         assert!(resp.status().is_success());
         // Two connections: the aborted one, then the retry that succeeded.
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
@@ -3060,6 +3537,20 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let _guard = set_test_prefer_offline(3);
 
         assert_eq!(client.request_timeout(), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_fetch_redirect_policy_rejects_https_to_http_downgrades() {
+        let https = Url::parse("https://example.com/versions").unwrap();
+        let other_https = Url::parse("https://cdn.example.com/versions").unwrap();
+        let http = Url::parse("http://cdn.example.com/versions").unwrap();
+
+        assert!(is_https_downgrade(std::slice::from_ref(&https), &http));
+        assert!(!is_https_downgrade(
+            std::slice::from_ref(&https),
+            &other_https
+        ));
+        assert!(!is_https_downgrade(&[http], &other_https));
     }
 
     #[test]
@@ -3422,6 +3913,12 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             .download_file_with_headers_metadata(&url, &destination, &headers, None)
             .await
             .unwrap_err();
+        // The whole point of the partial: the bytes that arrived before the
+        // body was cut short have to be on disk, or the `Range: bytes=5-` at
+        // the bottom of this test is asking to resume from somewhere the file
+        // does not reach. This was intermittently empty on macOS until the
+        // download path started flushing on the failure branch too — do not
+        // relax it to a length check.
         assert_eq!(std::fs::read(&partial.path).unwrap(), b"hello");
         let state = std::fs::read_to_string(&partial.state_path).unwrap();
         assert!(!state.contains("url-secret"));

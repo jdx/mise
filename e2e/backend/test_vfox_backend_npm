@@ -28,6 +28,14 @@ backend = "vfox-npm:prettier"
 EOF
 assert "mise install --locked --dry-run"
 
+# Legacy lockfiles stored only the backend plugin name. Keep the tool name from
+# the plugin:tool request when restoring that backend during installation.
+assert "mise uninstall vfox-npm:prettier@$latest_version"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/vfox-npm/prettier/$latest_version"
+sed -i.bak 's/backend = "vfox-npm:prettier"/backend = "vfox-npm"/' mise.lock
+mise install --locked
+assert_contains "mise exec -- prettier --version" "$latest_version"
+
 # Test uninstall functionality
 assert "mise uninstall vfox-npm:prettier@$latest_version"
 assert_directory_not_exists "$MISE_DATA_DIR/installs/vfox-npm/prettier/$latest_version"

@@ -13,7 +13,21 @@ use super::reconcile;
 ///
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"pyenv install 3.11.0
+mise sync python --pyenv
+mise use -g python@3.11.0 # uses pyenv-provided python"###
+    ),
+    example(
+        r###"uv python install 3.11.0
+mise install python@3.10.0
+mise sync python --uv
+mise x python@3.11.0 -- python -V # uses uv-provided python
+uv run -p 3.10.0 -- python -V # uses mise-provided python"###
+    )
+)]
 pub(super) struct SyncPython {
     /// Get tool versions from pyenv
     #[usage(long)]
@@ -129,18 +143,3 @@ impl SyncPython {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>pyenv install 3.11.0</bold>
-    $ <bold>mise sync python --pyenv</bold>
-    $ <bold>mise use -g python@3.11.0</bold> - uses pyenv-provided python
-    
-    $ <bold>uv python install 3.11.0</bold>
-    $ <bold>mise install python@3.10.0</bold>
-    $ <bold>mise sync python --uv</bold>
-    $ <bold>mise x python@3.11.0 -- python -V</bold> - uses uv-provided python
-    $ <bold>uv run -p 3.10.0 -- python -V</bold> - uses mise-provided python
-"#
-);

@@ -112,7 +112,9 @@ impl Logger {
             log_file: None,
         };
 
-        if let Some(log_file) = &*env::MISE_LOG_FILE {
+        if !Settings::is_package_query()
+            && let Some(log_file) = &*env::MISE_LOG_FILE
+        {
             if let Ok(log_file) = init_log_file(log_file) {
                 logger.log_file = Some(Mutex::new(log_file));
             } else {
@@ -204,9 +206,11 @@ pub(crate) fn init() {
     } else {
         // First init: nothing is in force yet, so the default is all there is. A logger at `info`
         // beats no logger at all — a warning printed too loudly still beats one that vanishes.
-        let settings = settings.unwrap_or_default();
-        let term_level = settings.log_level();
-        let file_level = env::MISE_LOG_FILE_LEVEL.unwrap_or(settings.log_level());
+        let term_level = match settings {
+            Ok(settings) => settings.log_level(),
+            Err(_) => Settings::cli_log_level().unwrap_or(LevelFilter::Info),
+        };
+        let file_level = env::MISE_LOG_FILE_LEVEL.unwrap_or(term_level);
         let logger = LOGGER.get_or_init(|| Logger::init(term_level, file_level));
         if let Err(err) = log::set_logger(logger) {
             safe_eprintln!("mise: could not initialize logger: {err}");

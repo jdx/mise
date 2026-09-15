@@ -26,22 +26,38 @@ use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
 ///
 /// Tools are loaded from mise.toml and can be overridden with <TOOL@VERSION> args. Only the
 /// tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
-/// `mise exec python@3.11`, node@20 is still loaded.
+/// `mise exec python@3.11 -- python -V`, node@20 is still loaded.
 ///
 /// The "--" separates tools from the command to pass along to the subprocess.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "x",
+    verbatim_doc_comment,
+    example(
+        r###"mise exec node@20 -- node ./app.js
+mise x node@20 -- node ./app.js"###,
+        help = "Launch app.js using node-20.x, with the full command or its shorter alias."
+    ),
+    example(
+        r###"mise exec node@20 python@3.11 --command "node -v && python -V""###,
+        help = r###"Specify command as a string:"###
+    ),
+    example(
+        r###"mise x -C /path/to/project node@20 -- node ./app.js"###,
+        help = r###"Run a command in a different directory:"###
+    )
+)]
 pub(crate) struct Exec {
     /// Tool(s) to load
     /// e.g.: node@20 python@3.10
     #[usage(value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
-    /// Command string to execute (same as --command)
+    /// Executable and arguments to run directly, after `--`
     #[usage(conflicts = "c", required_unless = "c", double_dash = "required")]
     pub command: Option<Vec<String>>,
 
-    /// Command string to execute
+    /// Command string to execute through a shell (supports pipes and redirection)
     #[usage(short, long = "command", value_hint = usage_rs::ValueHint::CommandString, conflicts = "command")]
     pub c: Option<String>,
 
@@ -57,7 +73,9 @@ pub(crate) struct Exec {
     pub allow_env: Vec<String>,
 
     /// Allow network to specific host (implies --deny-net for everything else)
-    /// macOS only in v1; on Linux falls back to allowing all network
+    /// Per-host filtering is unsupported on Linux and returns an error.
+    /// See the sandboxing guide for current macOS host-filter limitations.
+    /// On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
@@ -73,7 +91,7 @@ pub(crate) struct Exec {
     #[usage(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
-    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
     #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
@@ -231,7 +249,7 @@ impl Exec {
             // The original list was computed before the command's lazy provider
             // was installed. Refresh it so a successful install is not reported
             // as missing below.
-            missing = ts.list_missing_versions(&config).await;
+            missing = ts.list_missing_versions_for_install(&config).await;
         }
         if ts.has_lazy_declarations()
             && !opts.dry_run
@@ -246,10 +264,22 @@ impl Exec {
             ts.notify_missing_versions(missing);
         });
 
+        crate::shims::ensure_command_wrapper_shims(&config, &ts)?;
+
         let (mut env, env_remove) = measure!("env_with_path", {
             ts.env_with_path_and_removals(&config).await?
         });
         env.extend(wrapper_env);
+        if !self.tool.is_empty() {
+            // A dispatched shim reloads config in a new process. Preserve both
+            // enclosing task overrides and these explicit exec overrides.
+            let mut tools = crate::shims::task_tool_args_from_env()?;
+            tools.retain(|tool| !self.tool.iter().any(|explicit| explicit.ba == tool.ba));
+            tools.extend(self.tool.iter().cloned());
+            if let Some(value) = crate::shims::task_tool_args_env(&tools)? {
+                env.insert(crate::shims::TASK_TOOL_ARGS_ENV.into(), value);
+            }
+        }
         if strip_dispatch_dirs && let Some(path) = env.get_mut(&*env::PATH_KEY) {
             *path = crate::file::strip_dispatch_dirs_from_path(path);
         }
@@ -335,12 +365,15 @@ impl Exec {
                 deny_write: self.deny_write,
                 deny_net: self.deny_net,
                 deny_env: self.deny_env,
+                deny_process: false,
+                deny_temp_write: false,
                 allow_read: self.allow_read,
                 allow_write: self.allow_write,
                 allow_net: self.allow_net,
                 allow_env: self.allow_env,
                 pass_through_env: vec![],
                 cache_env: vec![],
+                symlinked_allow_paths: vec![],
             },
         );
         sandbox.resolve_paths();
@@ -740,17 +773,3 @@ fn parse_command(
         ),
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
-    $ <bold>mise x node@20 -- node ./app.js</bold>     # shorter alias
-
-    # Specify command as a string:
-    $ <bold>mise exec node@20 python@3.11 --command "node -v && python -V"</bold>
-
-    # Run a command in a different directory:
-    $ <bold>mise x -C /path/to/project node@20 -- node ./app.js</bold>
-"#
-);

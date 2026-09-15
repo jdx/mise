@@ -44,6 +44,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # Deliberately misleading suffix: explicit format must win.
             "/artifact.zip": "artifact.tar.gz",
             "/raw-tool": "raw-tool",
+            "/download/": "raw-tool",
         }
         filename = files.get(path)
         if filename is None:
@@ -98,6 +99,15 @@ assert_contains "mise x -- redirect-tool" "redirected archive"
 cat >mise.toml <<EOF
 [tools]
 "http:redirect-raw" = { version = "1.0.0", url = "http://127.0.0.1:$PORT/raw", bin = "redirect-raw" }
+EOF
+
+mise install
+assert_contains "mise x -- redirect-raw" "redirected raw file"
+
+# Query-selected downloads may have no filename in the URL path.
+cat >mise.toml <<EOF
+[tools]
+"http:query-raw" = { version = "1.0.0", url = "http://127.0.0.1:$PORT/download/?file=raw-tool", bin = "redirect-raw" }
 EOF
 
 mise install

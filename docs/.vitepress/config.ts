@@ -1,5 +1,7 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { socialCard, writeSocialCard } from "./social-images.mjs";
+import { pageDescription } from "./social-descriptions.mjs";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
@@ -21,6 +23,24 @@ if (!versionMatch) {
   console.warn("Unable to find package version in Cargo.toml");
 }
 const latestVersion = versionMatch?.[1] ?? "0.0.0";
+const siteUrl = "https://mise.jdx.dev";
+// Keep in sync with --vp-c-brand-1 in theme/custom.css and theme_color in
+// public/site.webmanifest so browser chrome matches the installed-app chrome.
+const brandColor = "#8B2252";
+const siteDescription =
+  "mise manages developer tools, environment variables, tasks, packages, and dotfiles in one project configuration for macOS, Linux, and Windows.";
+
+// `foo/index.md` publishes as `foo/`, everything else as `foo/bar.html`. Anchor
+// the index match on the leading slash so `guide/myindex.md` keeps its name.
+const pageUrl = (relativePath: string) =>
+  `${siteUrl}/${relativePath}`
+    .replace(/\/index\.md$/, "/")
+    .replace(/\.md$/, ".html");
+
+// VitePress writes an `application/ld+json` body through as raw HTML, so a page
+// whose title or description contains `</script>` would otherwise break out of
+// the tag. JSON allows `\u003c` anywhere `<` is legal.
+const ldJson = (data: unknown) => JSON.stringify(data).replace(/</g, "\\u003c");
 const publicSchemas = [
   "mise.json",
   "mise.plugin.json",
@@ -29,11 +49,55 @@ const publicSchemas = [
   "mise-registry-tool.json",
 ];
 
+/** Return whether VitePress emitted a documentation container with no content. */
+function hasEmptyDocContainer(html: string) {
+  const divPattern = /<div\b[^>]*\sclass="([^"]*)"[^>]*>/g;
+  for (const match of html.matchAll(divPattern)) {
+    if (!match[1].split(/\s+/).includes("vp-doc")) continue;
+
+    let content = html.slice((match.index ?? 0) + match[0].length).trimStart();
+    while (content.startsWith("<!--")) {
+      const commentEnd = content.indexOf("-->");
+      if (commentEnd === -1) return false;
+      content = content.slice(commentEnd + 3).trimStart();
+    }
+    return content.startsWith("</div>");
+  }
+  return false;
+}
+
+/** Fail the build when server-side rendering leaves a documentation page empty. */
+function assertNoEmptyDocPages(outDir: string) {
+  const emptyPages: string[] = [];
+
+  /** Recursively inspect generated HTML files beneath the output directory. */
+  function visit(dir: string) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(path);
+      } else if (entry.name.endsWith(".html")) {
+        const html = readFileSync(path, "utf8");
+        if (hasEmptyDocContainer(html)) {
+          emptyPages.push(relative(outDir, path));
+        }
+      }
+    }
+  }
+
+  visit(outDir);
+  if (emptyPages.length > 0) {
+    throw new Error(
+      `generated empty documentation pages:\n${emptyPages.map((page) => `- ${page}`).join("\n")}`,
+    );
+  }
+}
+
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
   defineConfig({
     title: "mise-en-place",
-    description: "mise-en-place documentation",
+    description: siteDescription,
     lang: "en-US",
     lastUpdated: true,
     appearance: true,
@@ -159,11 +223,12 @@ export default withMermaid(
         },
       ],
       ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
+      ["link", { rel: "manifest", href: "/site.webmanifest" }],
+      ["meta", { name: "theme-color", content: brandColor }],
       // Pre-paint setup to avoid first-load pop-in (see custom.css "preboot"
       // rules; Layout.vue removes the preboot classes right after hydration):
       // - `preboot` disables navbar transitions so hydration state
       //   corrections snap instead of visibly fading
-      // - home: hide the navbar brand before the scroll handler takes over
       // - other pages: pre-apply the has-sidebar navbar layout so the
       //   search/menu don't jump right when hydration adds the class
       // - reserve the announcement banner's space from the cached height so
@@ -176,18 +241,7 @@ export default withMermaid(
     var d = document.documentElement;
     var p = location.pathname;
     d.classList.add("preboot");
-    if (p === "/" || p === "/index.html") {
-      d.classList.add("hide-nav-brand");
-      // Scroll restoration on a mid-page reload fires before hydration —
-      // unhide the brand right away instead of waiting for Layout.vue.
-      addEventListener(
-        "scroll",
-        function () {
-          if (scrollY > 300) d.classList.remove("hide-nav-brand");
-        },
-        { once: true },
-      );
-    } else {
+    if (p !== "/" && p !== "/index.html") {
       d.classList.add("preboot-sidebar");
     }
     var c = JSON.parse(localStorage.getItem("jdx-banner-cache") || "null");
@@ -266,26 +320,71 @@ export default withMermaid(
       // Open Graph
       ["meta", { property: "og:site_name", content: "mise-en-place" }],
       ["meta", { property: "og:type", content: "website" }],
-      [
-        "meta",
-        {
-          property: "og:image",
-          content: "https://mise.jdx.dev/android-chrome-512x512.png",
-        },
-      ],
-      ["meta", { name: "twitter:card", content: "summary" }],
-      [
-        "meta",
-        {
-          name: "twitter:image",
-          content: "https://mise.jdx.dev/android-chrome-512x512.png",
-        },
-      ],
+      ["meta", { property: "og:locale", content: "en_US" }],
+      ["meta", { property: "og:image:width", content: "1200" }],
+      ["meta", { property: "og:image:height", content: "630" }],
+      ["meta", { property: "og:image:type", content: "image/png" }],
+      ["meta", { name: "twitter:card", content: "summary_large_image" }],
+      ["meta", { name: "twitter:site", content: "@jdxcode" }],
     ],
+    transformHead({ pageData, title, description, siteConfig }) {
+      const heading =
+        pageData.relativePath === "index.md"
+          ? "Dev tools, environments, and tasks"
+          : pageData.title || "mise";
+      const card = socialCard(
+        heading,
+        pageData.frontmatter.socialDescription || description,
+      );
+      writeSocialCard(siteConfig.outDir, card);
+      const image = new URL(card.path, `${siteUrl}/`).toString();
+      const imageAlt = `${heading} — mise docs. ${card.subtitle}`;
+      const url = pageUrl(pageData.relativePath);
+
+      return [
+        ...(pageData.relativePath === "404.md"
+          ? [
+              ["meta", { name: "robots", content: "noindex" }] as [
+                string,
+                Record<string, string>,
+              ],
+            ]
+          : []),
+        ["meta", { property: "og:url", content: url }],
+        ["meta", { property: "og:image", content: image }],
+        ["meta", { property: "og:image:alt", content: imageAlt }],
+        ["meta", { name: "twitter:image", content: image }],
+        ["meta", { name: "twitter:image:alt", content: imageAlt }],
+        ["meta", { property: "og:title", content: title }],
+        ["meta", { property: "og:description", content: description }],
+        ["meta", { name: "twitter:title", content: title }],
+        ["meta", { name: "twitter:description", content: description }],
+        [
+          "script",
+          { type: "application/ld+json" },
+          ldJson({
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            name: title,
+            description,
+            url,
+            isPartOf: {
+              "@type": "WebSite",
+              name: "mise-en-place",
+              url: siteUrl,
+            },
+          }),
+        ],
+      ];
+    },
     transformPageData(pageData) {
-      const canonicalUrl = `https://mise.jdx.dev/${pageData.relativePath}`
-        .replace(/index\.md$/, "")
-        .replace(/\.md$/, ".html");
+      const description = pageDescription(
+        pageData.frontmatter,
+        pageData.relativePath,
+      );
+      pageData.description = description;
+      pageData.frontmatter.description = description;
+      const canonicalUrl = pageUrl(pageData.relativePath);
 
       pageData.frontmatter.head ??= [];
       pageData.frontmatter.head.push([
@@ -307,6 +406,9 @@ export default withMermaid(
         /<script id="check-dark-mode">/,
         '<script id="check-dark-mode" data-cfasync="false">',
       );
+    },
+    buildEnd(siteConfig) {
+      assertNoEmptyDocPages(siteConfig.outDir);
     },
   }),
 );

@@ -691,7 +691,13 @@ impl AquaPackage {
         } else if os == "windows" {
             let mut ctx = HashMap::default();
             if arch == "arm64" {
-                ctx.insert("Arch".to_string(), "amd64".to_string());
+                let fallback_arch = self
+                    .replacements
+                    .get("amd64")
+                    .cloned()
+                    .unwrap_or_else(|| "amd64".to_string());
+                ctx.insert("Arch".to_string(), fallback_arch.clone());
+                ctx.insert("GOARCH".to_string(), fallback_arch);
                 let asset = self.asset_without_appended_ext(v, &ctx, os, arch)?;
                 strs.insert(self.finish_asset(asset.clone(), v, os)?);
                 strs.insert(asset);
@@ -2697,6 +2703,25 @@ packages:
                 "Asset string should not have double .exe, got: {s}"
             );
         }
+    }
+
+    #[test]
+    fn test_windows_arm64_fallback_applies_amd64_replacement() {
+        let pkg = AquaPackage {
+            asset: "tool-{{.OS}}-{{.Arch}}-{{.GOARCH}}.zip".to_string(),
+            format: "zip".to_string(),
+            replacements: HashMap::from([
+                ("windows".to_string(), "win32".to_string()),
+                ("amd64".to_string(), "x64".to_string()),
+            ]),
+            ..Default::default()
+        };
+
+        let strs = pkg.asset_strs("1.0.0", "windows", "arm64").unwrap();
+
+        assert!(strs.contains("tool-win32-arm64-arm64.zip"));
+        assert!(strs.contains("tool-win32-x64-x64.zip"));
+        assert!(!strs.iter().any(|asset| asset.contains("amd64")));
     }
 
     #[test]

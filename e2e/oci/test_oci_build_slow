@@ -105,7 +105,7 @@ cat >profile.sh <<EOF
 export PROJECT_READY=1
 EOF
 cat >app.tmpl <<EOF
-tool={{env.MISE_ENV | default(value="dev")}}
+tool={{"DEV" | lower}}
 EOF
 cat >mise.toml <<EOF
 [tools]
@@ -124,6 +124,39 @@ assert_contains "tar -tzf ./out-files/blobs/sha256/$files_layer" "etc/profile.d/
 assert_contains "tar -tzf ./out-files/blobs/sha256/$files_layer" "root/.config/app/config.toml"
 assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer etc/profile.d/project.sh" "PROJECT_READY=1"
 assert_contains "tar -xOzf ./out-files/blobs/sha256/$files_layer root/.config/app/config.toml" "tool=dev"
+
+# Secret-backed templates are rejected instead of persisting credentials in a
+# publishable image layer.
+cat >secret.tmpl <<'EOF'
+token={{ secret(name="image_token") }}
+EOF
+cat >mise.toml <<'EOF'
+[bootstrap.secrets]
+image_token = "MISE_OCI_TEST_SECRET"
+
+[dotfiles]
+"~/.config/app/secret.toml" = { source = "secret.tmpl", mode = "template" }
+EOF
+MISE_OCI_TEST_SECRET=do-not-embed \
+  assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "bootstrap secrets cannot be embedded in persistent OCI image layers"
+
+cat >secret.tmpl <<'EOF'
+token={{ get_env(name="MISE_OCI_TEST_SECRET") }}
+EOF
+MISE_OCI_TEST_SECRET=do-not-embed \
+  assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "environment access is disabled for OCI dotfile templates"
+
+cat >secret.tmpl <<'EOF'
+token={{ env.MISE_OCI_TEST_SECRET }}
+EOF
+MISE_OCI_TEST_SECRET=do-not-embed \
+  assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "failed to render template"
+
+echo "do-not-embed" >"$HOME/oci-host-secret"
+cat >secret.tmpl <<EOF
+token={{ read_file(path="$HOME/oci-host-secret") }}
+EOF
+assert_fail "mise oci build -o ./out-secret --from scratch --no-mise" "host file access is disabled for OCI dotfile templates"
 
 # --- 10. --copy and [[oci.copy]] each produce an annotated layer ---
 mkdir -p assets copy-subdir

@@ -1,4 +1,7 @@
-backends = ["github:jdx/fnox"]
+backends = [
+  { full = "packslip:github.com/jdx/fnox", min_version = "1.35.1" },
+  "github:jdx/fnox",
+]
 bins = ["fnox"]
 description = "Fort Knox for your secrets"
 test = { cmd = "fnox --version", expected = "fnox {{version}}" }

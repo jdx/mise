@@ -79,7 +79,9 @@ impl MultiProgressReport {
         let settings = Settings::get();
         let has_stderr = console::user_attended_stderr();
         let force_progress = *env::MISE_FORCE_PROGRESS;
-        let ci = settings.ci;
+        // A terminal that records frames instead of redrawing them gets the
+        // same append-only output as CI, for the same reason.
+        let ci = settings.ci || *env::AI_AGENT;
 
         progress_trace!(
             "MultiProgressReport::new: raw={}, quiet={}, verbose={}, has_stderr={}, force_progress={}, ci={}",
@@ -152,11 +154,32 @@ impl MultiProgressReport {
         self.pause_state.lock().unwrap().count
     }
 
+    /// Serialize append-only snapshots with prompt ownership. Holding this lock
+    /// through the write prevents a prompt from starting between the check and
+    /// the heartbeat's output.
+    pub(crate) fn with_progress_unpaused(&self, render: impl FnOnce()) {
+        let state = self.pause_state.lock().unwrap();
+        if state.count == 0 {
+            render();
+        }
+    }
+
     fn resume_progress(&self) {
         let mut state = self.pause_state.lock().unwrap();
         if state.release() {
             progress::resume();
         }
+    }
+
+    pub(crate) fn use_text_install_output(&self) -> bool {
+        let settings = Settings::get();
+        !self.quiet && !self.use_progress_ui && !settings.verbose && !settings.raw
+    }
+
+    /// The live install region replaces the per-tool clx rows and the old
+    /// header whenever the animated display is on at all.
+    pub(crate) fn use_tty_install_output(&self) -> bool {
+        self.use_progress_ui
     }
 
     pub(crate) fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
@@ -302,8 +325,9 @@ impl MultiProgressReport {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_multi_progress_report() {
+    #[tokio::test]
+    async fn test_multi_progress_report() {
+        crate::backend::load_tools().await.unwrap();
         let mpr = MultiProgressReport::get();
         let pr = mpr.add("PREFIX");
         pr.finish_with_message("test".into());

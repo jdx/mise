@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use tokio::sync::RwLock;
+use url::Url;
 use walkdir::WalkDir;
 
 use crate::backend::VersionInfo;
@@ -98,6 +99,26 @@ fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
     }
     #[cfg(not(windows))]
     env.shift_remove(key);
+}
+
+fn normalize_install_log(line: &str) -> String {
+    if let Some(raw_url) = line.strip_prefix("Downloading ") {
+        let artifact = Url::parse(raw_url).ok().and_then(|url| {
+            url.path_segments()
+                .and_then(|mut segments| segments.next_back())
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+        });
+        artifact.map_or_else(|| "download".to_string(), |name| format!("download {name}"))
+    } else if line.starts_with("Verifying ") && line.ends_with(" checksum") {
+        "checksum".to_string()
+    } else if line.starts_with("Verify ") && line.ends_with(" attestation") {
+        "verify attestation".to_string()
+    } else if line.starts_with("Extracting ") {
+        "extract".to_string()
+    } else {
+        line.to_string()
+    }
 }
 
 fn set_env_var(
@@ -253,8 +274,9 @@ impl Backend for VfoxBackend {
     ) -> eyre::Result<ToolVersion> {
         let mut tv = tv;
         self.ensure_plugin_installed(&ctx.config).await?;
-        let (mut vfox, log_rx) = self.plugin.vfox()?;
-        Self::forward_plugin_logs(log_rx);
+        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+        let pr = Arc::clone(&ctx.pr);
+        vfox.set_log_handler(move |line| pr.set_message(normalize_install_log(&line)));
         let mut cmd_env: indexmap::IndexMap<String, String> = self
             .dependency_env_for_install(ctx, &tv)
             .await?
@@ -623,9 +645,17 @@ impl VfoxBackend {
         plugin.full = Some(ba.full());
         let plugin = Arc::new(plugin);
 
-        // Extract the tool name from the resolved backend so aliases from a bare
-        // name to a backend plugin still provide the plugin:tool identifier.
-        let tool_name = backend_plugin_name.as_ref().map(|_| ba.tool_name());
+        // Prefer an explicit plugin:tool short name over the resolved backend.
+        // Legacy lockfiles can store only the plugin name as the backend, which
+        // must not replace the tool portion of the original request. Bare aliases
+        // still need the tool name from their resolved backend.
+        let tool_name = backend_plugin_name.as_ref().map(|plugin_name| {
+            ba.short
+                .split_once(':')
+                .filter(|(plugin, _)| plugin == plugin_name)
+                .map(|(_, tool)| tool.to_string())
+                .unwrap_or_else(|| ba.tool_name())
+        });
 
         Self {
             metadata_snapshot_cache: OnceLock::new(),
@@ -809,6 +839,31 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_normalize_install_log() {
+        assert_eq!(
+            normalize_install_log("Downloading https://example.com/releases/tool.tar.gz"),
+            "download tool.tar.gz"
+        );
+        assert_eq!(
+            normalize_install_log("Downloading https://example.com/?token=secret"),
+            "download"
+        );
+        assert_eq!(
+            normalize_install_log("Verifying \"/tmp/tool.tar.gz\" checksum"),
+            "checksum"
+        );
+        assert_eq!(
+            normalize_install_log("Verify \"/tmp/tool.tar.gz\" attestation"),
+            "verify attestation"
+        );
+        assert_eq!(
+            normalize_install_log("Extracting \"/tmp/tool.tar.gz\" to \"/tools/tool\""),
+            "extract"
+        );
+        assert_eq!(normalize_install_log("plugin message"), "plugin message");
+    }
+
+    #[test]
     fn test_add_tool_option_env() {
         let mut options = ToolOptions::default();
         options
@@ -885,6 +940,28 @@ mod test {
             backend.plugin.full,
             Some("vfox:version-fox/vfox-golang".to_string())
         );
+    }
+
+    #[test]
+    fn test_backend_plugin_tool_name_preserves_explicit_short() {
+        let ba = BackendArg::new(
+            "toolshed:get-skills".to_string(),
+            Some("toolshed".to_string()),
+        );
+        let backend = VfoxBackend::from_arg(ba, Some("toolshed".to_string()));
+
+        assert_eq!(backend.tool_name.as_deref(), Some("get-skills"));
+    }
+
+    #[test]
+    fn test_backend_plugin_tool_name_resolves_bare_alias() {
+        let ba = BackendArg::new(
+            "skills".to_string(),
+            Some("toolshed:get-skills".to_string()),
+        );
+        let backend = VfoxBackend::from_arg(ba, Some("toolshed".to_string()));
+
+        assert_eq!(backend.tool_name.as_deref(), Some("get-skills"));
     }
 
     #[test]

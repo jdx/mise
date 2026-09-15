@@ -9,3 +9,16 @@ ruby "3.3.6"
 EOF
 
 assert "mise current ruby" "3.3.6"
+
+# Bundler `ruby file:` should follow a sibling version file, including when
+# `.ruby-version` itself is not treated as an idiomatic config file.
+mise settings add idiomatic_version_file_disable_files ruby:.ruby-version
+cat >.ruby-version <<EOF
+3.3.6
+EOF
+cat >Gemfile <<EOF
+source "https://rubygems.org"
+ruby file: ".ruby-version"
+EOF
+
+assert "mise current ruby" "3.3.6"

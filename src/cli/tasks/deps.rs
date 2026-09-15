@@ -19,7 +19,22 @@ use petgraph::dot::Dot;
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
-    after_long_help = AFTER_LONG_HELP,
+    example(
+        r###"mise tasks deps"###,
+        help = r###"Show dependencies for all tasks"###
+    ),
+    example(
+        r###"mise tasks deps lint test check"###,
+        help = r###"Show dependencies for the "lint", "test" and "check" tasks"###
+    ),
+    example(
+        r###"mise tasks deps --dot"###,
+        help = r###"Show dependencies in DOT format"###
+    ),
+    example(
+        r###"mise tasks deps --compact"###,
+        help = r###"Collapse repeated dependencies"###
+    ),
     unknown_flags = "error"
 )]
 pub(super) struct TasksDeps {
@@ -221,20 +236,3 @@ impl TasksDeps {
         eyre!("no tasks named `{t}` found. Available tasks: {task_names}")
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # Show dependencies for all tasks
-    $ <bold>mise tasks deps</bold>
-
-    # Show dependencies for the "lint", "test" and "check" tasks
-    $ <bold>mise tasks deps lint test check</bold>
-
-    # Show dependencies in DOT format
-    $ <bold>mise tasks deps --dot</bold>
-
-    # Collapse repeated dependencies
-    $ <bold>mise tasks deps --compact</bold>
-"#
-);

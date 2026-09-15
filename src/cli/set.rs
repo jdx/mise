@@ -17,14 +17,23 @@ use tabled::Tabled;
 
 /// Set environment variables in mise.toml
 ///
-/// By default, this command modifies `mise.toml` in the current directory.
+/// By default, this command selects the nearest configuration directory and
+/// modifies its lowest-precedence TOML file, creating `mise.toml` here if none exists.
 /// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 /// the lowest precedence file (`mise.toml`) will be used.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 ///
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(aliases = ["ev", "env-vars"], verbatim_doc_comment, example(r###"mise set NODE_ENV=production"###),
+    example("mise set NODE_ENV", help = "Read NODE_ENV; example output: `production`."),
+    example("mise set -E staging NODE_ENV=staging", help = "Create or modify mise.staging.toml."),
+    example("mise set", help = "List keys, values, and source files."),
+    example("mise set --prompt PASSWORD", help = "Prompt for PASSWORD with hidden input."),
+    example("cat private.key | mise set --stdin MY_KEY", help = "Read a multiline value from stdin."),
+    example(r#"printf "line1\nline2" | mise set --stdin MY_KEY"#, help = "Store a multiline value from a pipeline."),
+    example("mise set --age-encrypt API_KEY=secret", help = "Encrypt the value with age (experimental)."),
+    example("mise set --age-encrypt --prompt API_KEY", help = "Prompt with hidden input and encrypt with age (experimental)."))]
 pub(crate) struct Set {
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
@@ -469,36 +478,3 @@ struct Row {
     value: String,
     source: String,
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise set NODE_ENV=production</bold>
-
-    $ <bold>mise set NODE_ENV</bold>
-    production
-
-    $ <bold>mise set -E staging NODE_ENV=staging</bold>
-    # creates or modifies mise.staging.toml
-
-    $ <bold>mise set</bold>
-    key       value       source
-    NODE_ENV  production  ~/.config/mise/config.toml
-
-    $ <bold>mise set --prompt PASSWORD</bold>
-    Enter value for PASSWORD: [hidden input]
-
-    <bold><underline>Multiline Values (--stdin):</underline></bold>
-
-    $ <bold>cat private.key | mise set --stdin MY_KEY</bold>
-
-    $ <bold>printf "line1\nline2" | mise set --stdin MY_KEY</bold>
-
-    <bold><underline>[experimental] Age Encryption:</underline></bold>
-
-    $ <bold>mise set --age-encrypt API_KEY=secret</bold>
-
-    $ <bold>mise set --age-encrypt --prompt API_KEY</bold>
-    Enter value for API_KEY: [hidden input]
-"#
-);

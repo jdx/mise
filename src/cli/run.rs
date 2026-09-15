@@ -30,36 +30,54 @@ use serde::Serialize;
 use std::panic::AssertUnwindSafe;
 use tokio::sync::Mutex;
 
-/// Run task(s)
+/// Run tasks and their dependencies
 ///
-/// Runs one task, or several tasks in parallel.
-/// Tasks may depend on other tasks and on source files.
-/// If a task has `sources` configured, it only runs when those files have changed.
+/// Use `mise run TASK [ARGS...]` for one task, or separate task invocations with `:::`
+/// to schedule several. Put mise flags before the task name; following arguments are
+/// passed to that task. With no task, mise runs `default` when defined or opens the
+/// task selector in an interactive terminal.
 ///
-/// Tasks can be defined in mise.toml or as standalone scripts.
-/// In mise.toml, tasks take this form:
+/// Tasks are defined in `mise.toml` or task directories. A task with `sources` and
+/// `outputs` can skip execution when its outputs are fresh. `--force` bypasses
+/// freshness checks; task output caching has separate `--task-cache` controls.
 ///
-///     [tasks.build]
-///     run = "npm run build"
-///     sources = ["src/**/*.ts"]
-///     outputs = ["dist/**/*.js"]
+/// For a project that already has npm build scripts and its dependencies installed:
 ///
-/// Alternatively, tasks can be defined as standalone scripts.
-/// These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
-/// `.config/mise/tasks`.
-/// The name of the script becomes the name of the task.
+/// ```toml
+/// [tasks.build]
+/// run = "npm run build"
+/// sources = ["src/**/*.ts", "package.json", "package-lock.json"]
+/// outputs = ["dist/**/*.js"]
+/// ```
 ///
-///     $ cat .mise/tasks/build<<EOF
-///     #!/usr/bin/env bash
-///     npm run build
-///     EOF
-///     $ mise run build
+/// To create a standalone script task, use `mise tasks add --file hello -- echo hello`.
+/// Then run `mise run hello`. See https://mise.jdx.dev/tasks/ for task directories,
+/// arguments, caching, and dependency configuration.
 #[derive(usage_rs::Args)]
 #[usage(
     visible_alias = "r",
     verbatim_doc_comment,
     disable_help_flag = true,
-    after_long_help = AFTER_LONG_HELP,
+    example(
+        r###"mise run lint"###,
+        help = r###"Run the "lint" task, defined either in mise.toml or as a standalone script."###
+    ),
+    example(
+        r###"mise run --force build"###,
+        help = r###"Force the "build" task to run even if its sources are up to date."###
+    ),
+    example(
+        r###"mise run --raw test"###,
+        help = r###"Run "test" with stdin/stdout/stderr all connected to the current terminal. This forces `--jobs=1` to prevent interleaving of output."###
+    ),
+    example(
+        r###"mise run lint ::: test ::: check"###,
+        help = r###"Run the "lint", "test", and "check" tasks in parallel."###
+    ),
+    example(
+        r###"mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2"###,
+        help = r###"Run multiple tasks, each with its own arguments."###
+    ),
     unknown_flags = "value"
 )]
 pub(crate) struct Run {
@@ -160,7 +178,7 @@ pub(crate) struct Run {
 
     /// Shell to use to run toml tasks
     ///
-    /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
+    /// Defaults to `sh -o errexit -c` on unix, and `cmd /c` on Windows
     /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
     /// Or it can be overridden with the `shell` property on a task.
     #[usage(long, short, verbatim_doc_comment)]
@@ -184,6 +202,9 @@ pub(crate) struct Run {
     pub allow_env: Vec<String>,
 
     /// Allow network to specific host (implies --deny-net for everything else)
+    /// Per-host filtering is unsupported on Linux and returns an error.
+    /// See the sandboxing guide for current macOS host-filter limitations.
+    /// On Windows, sandboxing is unavailable: mise warns and runs without host filtering.
     #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
@@ -199,7 +220,7 @@ pub(crate) struct Run {
     #[usage(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
-    /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
+    /// Block env var inheritance except PATH, HOME, USER, SHELL, TERM, COLORTERM, LANG
     #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
@@ -676,20 +697,13 @@ impl Run {
         let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
         fetcher.fetch_tasks(&config, &mut task_list).await?;
 
-        // Re-render dependency templates with parent task's usage arg/flag values.
-        // This enables patterns like: depends = ["child {{usage.app}}"]
+        // Re-render sources, outputs, and dependencies with this invocation's
+        // usage arg/flag values before resolving the execution graph.
         for task in &mut task_list {
-            let has_usage_deps = |raw: &Option<Vec<_>>| {
-                raw.as_ref()
-                    .is_some_and(|r| r.iter().any(crate::task::dep_has_usage_ref))
-            };
-            if has_usage_deps(&task.depends_raw)
-                || has_usage_deps(&task.depends_post_raw)
-                || has_usage_deps(&task.wait_for_raw)
-            {
+            if task.has_usage_runtime_templates() {
                 let usage_values = crate::task::parse_usage_values_from_task(&config, task).await?;
                 if !usage_values.is_empty() {
-                    task.render_depends_with_usage(&config, &usage_values)
+                    task.render_runtime_templates_with_usage(&config, &usage_values)
                         .await?;
                 }
             }
@@ -800,13 +814,9 @@ impl Run {
             {
                 warn!("failed to create shims for lazy tools: {err:#}");
             }
-            if self.dry_run {
-                installed.into_iter().collect()
-            } else {
-                HashSet::new()
-            }
+            if self.dry_run { installed } else { Vec::new() }
         } else {
-            HashSet::new()
+            Vec::new()
         };
 
         // Run auto-enabled deps steps (unless --no-deps)
@@ -855,7 +865,7 @@ impl Run {
         mut self,
         mut config: Arc<Config>,
         tasks: Vec<Task>,
-        previewed_tools: HashSet<ToolVersion>,
+        previewed_tools: Vec<ToolVersion>,
     ) -> Result<()> {
         time!("parallelize_tasks start");
 
@@ -914,7 +924,7 @@ impl Run {
                     on_task_dropped: |task: &Task| this.retire_keep_order_slot(task),
                     continue_on_error: this.continue_on_error,
                 },
-                |task, deps_for_remove, allow_during_interruption| {
+                |task, deps_for_remove, allow_during_interruption, install_tools| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
@@ -923,6 +933,7 @@ impl Run {
                             task,
                             deps_for_remove,
                             allow_during_interruption,
+                            install_tools,
                             spawn_context,
                         )
                         .await
@@ -957,6 +968,7 @@ impl Run {
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
         inherited_allow_during_interruption: bool,
+        install_tools: bool,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         if Self::should_abort_while_stopping(
@@ -974,8 +986,9 @@ impl Run {
             );
             return Ok(());
         }
-        let needs_permit = task_needs_permit(&task);
-        let permit_opt = if needs_permit {
+        let needs_task_permit = task_needs_permit(&task);
+        let needs_install = install_tools && !this.skip_tools;
+        let mut permit_opt = if needs_task_permit || needs_install {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
             trace!(
@@ -1006,6 +1019,46 @@ impl Run {
             trace!("no semaphore needed for orchestrator task: {}", task.name);
             None
         };
+
+        if needs_install {
+            let mut install_config = ctx.config.clone();
+            let install_result = crate::task::task_tool_installer::TaskToolInstaller::new(
+                &this.context_builder,
+                &this.tool,
+            )
+            .install_tasks(&mut install_config, vec![task.clone()], this.dry_run, &[])
+            .await;
+            if let Err(err) = install_result {
+                if Self::should_abort_while_stopping(
+                    &this,
+                    &task,
+                    &deps_for_remove,
+                    inherited_allow_during_interruption,
+                )
+                .await
+                {
+                    return Ok(());
+                }
+                this.fail_sched_job_before_start(task, deps_for_remove, err)
+                    .await;
+                return Ok(());
+            }
+            if Self::should_abort_while_stopping(
+                &this,
+                &task,
+                &deps_for_remove,
+                inherited_allow_during_interruption,
+            )
+            .await
+            {
+                return Ok(());
+            }
+            if !needs_task_permit {
+                // Orchestrator tasks must release the preparation permit before
+                // waiting for children, especially when --jobs is 1.
+                permit_opt = None;
+            }
+        }
 
         ctx.in_flight
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1138,6 +1191,33 @@ impl Run {
         Ok(())
     }
 
+    /// Record a preparation failure through the same task-level result path as
+    /// an execution failure, then release its dependency graph entry.
+    async fn fail_sched_job_before_start(
+        &self,
+        task: Task,
+        deps_for_remove: Arc<Mutex<Deps>>,
+        err: eyre::Report,
+    ) {
+        let prefix = task.estyled_prefix();
+        if Settings::get().verbose {
+            self.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+        } else {
+            self.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+        }
+        self.add_failed_task(task.clone(), Error::get_exit_status(&err));
+        if !self.continue_on_error {
+            #[cfg(unix)]
+            crate::cmd::CmdLineRunner::kill_all(nix::sys::signal::SIGTERM);
+            #[cfg(windows)]
+            crate::cmd::CmdLineRunner::kill_all();
+        }
+        self.retire_keep_order_slot(&task);
+        let mut deps = deps_for_remove.lock().await;
+        deps.mark_executed(&task);
+        deps.remove(&task);
+    }
+
     /// Retire a task's keep-order slot because it will never run.
     ///
     /// The completion path that normally does this lives inside the task's
@@ -1267,12 +1347,15 @@ impl Run {
                     deny_write: self.deny_write,
                     deny_net: self.deny_net,
                     deny_env: self.deny_env,
+                    deny_process: false,
+                    deny_temp_write: false,
                     allow_read: self.allow_read.clone(),
                     allow_write: self.allow_write.clone(),
                     allow_net: self.allow_net.clone(),
                     allow_env: self.allow_env.clone(),
                     pass_through_env: vec![],
                     cache_env: vec![],
+                    symlinked_allow_paths: vec![],
                 },
             ),
         };
@@ -1290,7 +1373,7 @@ impl Run {
         &self,
         config: &mut Arc<Config>,
         tasks: &Deps,
-        previewed_tools: &HashSet<ToolVersion>,
+        previewed_tools: &[ToolVersion],
     ) -> Result<()> {
         let installer = crate::task::task_tool_installer::TaskToolInstaller::new(
             &self.context_builder,
@@ -1486,29 +1569,13 @@ fn display_task_help(task: &Task) -> Result<()> {
 
 fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {
     let cmd = usage_command_for_args(spec, args);
-    usage::docs::cli::render_help(spec, cmd, true)
+    let style = if console::colors_enabled() {
+        usage::docs::cli::Style::COLOURED
+    } else {
+        usage::docs::cli::Style::PLAIN
+    };
+    usage::docs::cli::render_help_styled(spec, cmd, true, style)
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # Run the "lint" task, defined either in mise.toml or as a standalone script.
-    $ <bold>mise run lint</bold>
-
-    # Force the "build" task to run even if its sources are up to date.
-    $ <bold>mise run --force build</bold>
-
-    # Run "test" with stdin/stdout/stderr all connected to the current terminal.
-    # This forces `--jobs=1` to prevent interleaving of output.
-    $ <bold>mise run --raw test</bold>
-
-    # Run the "lint", "test", and "check" tasks in parallel.
-    $ <bold>mise run lint ::: test ::: check</bold>
-
-    # Run multiple tasks, each with its own arguments.
-    $ <bold>mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

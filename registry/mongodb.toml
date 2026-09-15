@@ -1,4 +1,9 @@
-backends = ["vfox:jdx/vfox-mongod", "asdf:mise-plugins/mise-mongodb"]
+backends = [
+  "conda:mongodb",
+  "vfox:jdx/vfox-mongod",
+  "asdf:mise-plugins/mise-mongodb",
+]
 bins = ["mongod", "mongos"]
 description = "MongoDB"
+test = { cmd = "mongod --version", expected = "db version v{{version}}" }
 version_order = "semver"

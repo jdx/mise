@@ -17,7 +17,7 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 /// Tool layers whose tool, version, mount point, and file owner match the
 /// previously pushed image (or `--cache-from`) are reused without being
 /// rebuilt — those tools don't even need to be installed locally. Pass
-/// `--no-cache` to force a full local rebuild.
+/// `--no-cache` to rebuild tool layers without using the remote or local layer cache.
 ///
 /// Credentials are read from the same places docker and podman use:
 /// `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`,
@@ -27,7 +27,10 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+    example(r###"mise oci push ghcr.io/me/devenv:latest"###, help = r###"Build and push to GHCR:"###),
+    example(r###"mise oci build -o ./img
+mise oci push --image-dir ./img ghcr.io/me/devenv:v1"###, help = r###"Push an image built earlier:"###))]
 pub(super) struct Push {
     /// Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
     #[usage(value_name = "REF")]
@@ -59,7 +62,7 @@ pub(super) struct Push {
     #[usage(long)]
     mount_point: Option<String>,
 
-    /// Don't reuse tool layers from the previously pushed image
+    /// Rebuild tool layers without using the remote or local layer cache
     #[usage(long)]
     no_cache: bool,
 
@@ -122,6 +125,8 @@ impl Push {
                     include_mise: !self.no_mise,
                     copy: vec![],
                     reuse_from: self.fetch_layer_cache().await?,
+                    push_destination: Some(self.reference.clone()),
+                    no_cache: self.no_cache,
                 };
                 let built = perform_build(opts, self.include_global).await?;
                 reused_layers = built.tool_layers.iter().filter(|l| l.reused).count();
@@ -168,7 +173,7 @@ impl Push {
             // destination doesn't have.
             let dest = registry::Reference::parse(&self.reference)?;
             let cache = registry::Reference::parse(cache_from)?;
-            if dest.registry != cache.registry || dest.repository != cache.repository {
+            if !dest.same_repository(&cache) {
                 bail!(
                     "--cache-from must reference the same repository as the destination \
                      (got {}/{}, destination is {}/{})",
@@ -195,22 +200,12 @@ impl Push {
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    Build and push to GHCR:
-    $ <bold>mise oci push ghcr.io/me/devenv:latest</bold>
-
-    Push an image built earlier:
-    $ <bold>mise oci build -o ./img</bold>
-    $ <bold>mise oci push --image-dir ./img ghcr.io/me/devenv:v1</bold>
-
-<bold><underline>Auth:</underline></bold>
+    r###"<bold><underline>Auth:</underline></bold>
 
     Credentials are resolved the same way docker/podman resolve them:
     <bold>$REGISTRY_AUTH_FILE</bold>, <bold>$XDG_RUNTIME_DIR/containers/auth.json</bold>,
     <bold>~/.config/containers/auth.json</bold>, then <bold>~/.docker/config.json</bold>
     (inline auths and credential helpers). Log in with either:
     $ <bold>docker login ghcr.io</bold>
-    $ <bold>podman login ghcr.io</bold>
-"#
+    $ <bold>podman login ghcr.io</bold>"###
 );

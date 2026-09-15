@@ -6,6 +6,22 @@ use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate, shims};
 use eyre::{Report, bail};
 use std::path::PathBuf;
+use usage_rs::config::{Layers, PropMeta, Registry as SettingsRegistry, Ty, Value};
+
+static CLI_SETTING_PROPS: &[PropMeta] = &[PropMeta {
+    cli: &["--truncate", "--no-truncate"],
+    ..PropMeta::new("truncate", Ty::Bool)
+}];
+const CLI_SETTINGS_REGISTRY: SettingsRegistry = SettingsRegistry::new(CLI_SETTING_PROPS);
+
+fn cli_truncate_setting(layer: &usage_rs::config::CliLayer) -> Result<Option<bool>> {
+    let resolved = usage_rs::config::resolve(CLI_SETTINGS_REGISTRY, Layers::new().then(layer))?;
+    Ok(match resolved.get_key("truncate") {
+        Some(Value::Bool(value)) => Some(*value),
+        None => None,
+        Some(value) => unreachable!("truncate resolved as {}", value.type_name()),
+    })
+}
 
 mod activate;
 pub(crate) mod args;
@@ -17,10 +33,11 @@ mod cache;
 mod completion;
 mod config;
 mod current;
+mod daemons;
 mod deactivate;
 mod direnv;
 mod doctor;
-mod dotfiles;
+pub(crate) mod dotfiles;
 mod en;
 mod env;
 pub(crate) mod exec;
@@ -44,12 +61,13 @@ mod install_into;
 mod latest;
 mod link;
 mod local;
-mod lock;
+pub(crate) mod lock;
 mod ls;
 mod ls_remote;
 mod mcp;
 mod oci;
 mod outdated;
+mod packslip;
 mod patrons;
 mod plugins;
 pub(crate) mod prune;
@@ -65,7 +83,9 @@ mod set;
 mod settings;
 mod shell;
 mod shell_alias;
+mod skills;
 mod sponsors;
+mod ssh;
 mod sync;
 pub(crate) mod system;
 mod tasks;
@@ -97,7 +117,27 @@ pub(crate) enum LevelFilter {
 }
 
 #[derive(usage_rs::Cli)]
-#[usage(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error")]
+#[usage(
+    name = "mise", about, long_about = LONG_ABOUT, settings,
+    example("mise install node@20.0.0", help = "Install a specific node version"),
+    example("mise install node@20", help = "Install a version matching a prefix"),
+    example("mise install node", help = "Install the node version defined in config"),
+    example("mise install", help = "Install all plugins/tools defined in config"),
+    example("mise install cargo:ripgrep", help = "Install something via cargo"),
+    example("mise install npm:prettier", help = "Install something via npm"),
+    example("mise use node@20", help = "Use node-20.x in current project"),
+    example("mise use -g node@20", help = "Use node-20.x as default"),
+    example("mise use node@latest", help = "Use latest node in current directory"),
+    example("mise up --interactive", help = "Show a menu to upgrade tools"),
+    example("mise x -- npm install", help = "Run npm install with config loaded into PATH"),
+    example("mise x node@20 -- node app.js", help = "Run node app.js with config and node-20.x on PATH"),
+    example("mise set NODE_ENV=production", help = "Set NODE_ENV=production in config"),
+    example("mise run build", help = "Run build tasks"),
+    example("mise watch build", help = "Run build tasks repeatedly when files change"),
+    example("mise settings", help = "Show settings in use"),
+    example("mise settings color=0", help = "Disable color by modifying global config file"),
+    author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error"
+)]
 pub(crate) struct Cli {
     #[usage(subcommand)]
     pub command: Option<Commands>,
@@ -231,7 +271,9 @@ pub(crate) enum Commands {
     Config(config::Config),
     Current(current::Current),
     Deactivate(deactivate::Deactivate),
+    Daemons(daemons::Daemons),
     Direnv(direnv::Direnv),
+    #[usage(visible_alias = "dot")]
     Dotfiles(dotfiles::Dotfiles),
     Doctor(doctor::Doctor),
     En(en::En),
@@ -255,6 +297,7 @@ pub(crate) enum Commands {
     LsRemote(ls_remote::LsRemote),
     Mcp(mcp::Mcp),
     Oci(oci::Oci),
+    Packslip(packslip::Packslip),
     Outdated(outdated::Outdated),
     Patrons(patrons::Patrons),
     Plugins(plugins::Plugins),
@@ -270,7 +313,9 @@ pub(crate) enum Commands {
     Set(set::Set),
     Settings(settings::Settings),
     Shell(shell::Shell),
+    Ssh(ssh::Ssh),
     ShellAlias(shell_alias::ShellAlias),
+    Skills(skills::Skills),
     Sponsors(sponsors::Sponsors),
     Sync(sync::Sync),
     Tasks(tasks::Tasks),
@@ -326,6 +371,7 @@ impl Commands {
                 | Self::SelfUpdate(_)
                 | Self::Settings(_)
                 | Self::Shell(_)
+                | Self::Ssh(_)
                 | Self::Usage(_)
                 | Self::Version(_)
         )
@@ -337,15 +383,20 @@ impl Commands {
     fn allows_tool_purgatory_auto_prune(&self) -> bool {
         !matches!(
             self,
-            Self::Activate(_) | Self::Deactivate(_) | Self::HookEnv(_) | Self::HookNotFound(_)
+            Self::Activate(_)
+                | Self::Deactivate(_)
+                | Self::HookEnv(_)
+                | Self::HookNotFound(_)
+                | Self::Ssh(_)
         )
     }
 
     fn implicitly_trusts_active_config(&self) -> bool {
-        matches!(
-            self,
-            Self::Exec(_) | Self::Install(_) | Self::Run(_) | Self::Watch(_)
-        )
+        matches!(self, Self::Daemons(cmd) if cmd.starts())
+            || matches!(
+                self,
+                Self::Exec(_) | Self::Install(_) | Self::Run(_) | Self::Watch(_)
+            )
     }
 
     pub(crate) async fn run(self) -> Result<()> {
@@ -361,6 +412,7 @@ impl Commands {
             Self::Config(cmd) => cmd.run().await,
             Self::Current(cmd) => cmd.run().await,
             Self::Deactivate(cmd) => cmd.run(),
+            Self::Daemons(cmd) => cmd.run().await,
             Self::Direnv(cmd) => cmd.run().await,
             Self::Dotfiles(cmd) => cmd.run().await,
             Self::Doctor(cmd) => cmd.run().await,
@@ -385,6 +437,7 @@ impl Commands {
             Self::LsRemote(cmd) => cmd.run().await,
             Self::Mcp(cmd) => cmd.run().await,
             Self::Oci(cmd) => cmd.run().await,
+            Self::Packslip(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
             Self::Patrons(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
@@ -400,7 +453,9 @@ impl Commands {
             Self::Set(cmd) => cmd.run().await,
             Self::Settings(cmd) => cmd.run().await,
             Self::Shell(cmd) => cmd.run().await,
+            Self::Ssh(cmd) => cmd.run().await,
             Self::ShellAlias(cmd) => cmd.run().await,
+            Self::Skills(cmd) => cmd.run().await,
             Self::Sponsors(cmd) => cmd.run(),
             Self::Sync(cmd) => cmd.run().await,
             Self::Tasks(cmd) => cmd.run().await,
@@ -801,20 +856,77 @@ fn preprocess_args_for_naked_run(cmd: &usage_rs::Command<'_>, args: &[String]) -
     result
 }
 
+/// Recognize the query path before configuration loading, even when query arguments are invalid.
+/// Parser events distinguish command names from flag values and task or exec payloads.
+fn is_packages_where_query(args: &[String]) -> bool {
+    let argv = args
+        .iter()
+        .skip(1)
+        .map(std::ffi::OsStr::new)
+        .collect::<Vec<_>>();
+    let mut parser = usage_rs::Parser::new(Cli::command(), &argv);
+    let mut path = ["bootstrap", "packages", "where"].into_iter();
+    while let Some(event) = parser.next_event() {
+        if parser.double_dash_seen() {
+            return false;
+        }
+        match event {
+            Ok(usage_rs::Event::Command(command)) => {
+                if Some(command.name) != path.next() {
+                    return false;
+                }
+                if path.len() == 0 {
+                    return true;
+                }
+            }
+            Ok(usage_rs::Event::Flag { .. }) => {}
+            _ => return false,
+        }
+    }
+    false
+}
+
 impl Cli {
     pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
     }
 
     async fn run_inner(args: &Vec<String>) -> Result<()> {
+        // Git invokes this exact internal form while holding repository locks.
+        // Avoid project configuration, shims, and normal CLI initialization.
+        if args.len() == 5 && args[1..4] == ["token", "github", "--git-credential"] {
+            crate::env::ARGS.write().unwrap().clone_from(args);
+            Settings::init_git_credential()?;
+            return token::git_credential::run(&args[4]);
+        }
         // usage-rs's generated `parse()` intercepts this, but mise never calls
         // `parse()` — it uses `parse_from_argv` after shim/naked-run rewriting.
         // Handle the hidden completion protocol here, before config or tools load.
         let completion_argv: Vec<std::ffi::OsString> =
             args.iter().skip(1).map(std::ffi::OsString::from).collect();
+        if let Some(answer) = completion::usage_spec_request(&completion_argv) {
+            print!("{}", answer?);
+            return Ok(());
+        }
         if let Some(answer) = completion::completion_request(&completion_argv) {
             print!("{answer}");
             return Ok(());
+        }
+        if is_packages_where_query(args) {
+            Settings::select_package_query_sources();
+            crate::env::ARGS.write().unwrap().clone_from(args);
+            let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+            let cli = Cli::parse_from_argv(&argv).map_err(|err| usage_error(&argv[1..], err))?;
+            if !matches!(&cli.command, Some(Commands::Bootstrap(cmd)) if cmd.is_packages_where()) {
+                bail!("internal error: recognized package query parsed as another command");
+            }
+            validate_cd_path(&cli.cd)?;
+            Settings::init_package_query(&cli)?;
+            logger::init();
+            let Some(Commands::Bootstrap(command)) = cli.command else {
+                unreachable!("package query variant was checked");
+            };
+            return command.run().await;
         }
         crate::env::ARGS.write().unwrap().clone_from(args);
         let original_cwd = std::env::current_dir().ok();
@@ -852,11 +964,15 @@ impl Cli {
 
         let parsed_argv: Vec<&std::ffi::OsStr> =
             processed_args.iter().map(std::ffi::OsStr::new).collect();
-        let mut cli = measure!("parse_args", {
-            Cli::parse_from_argv(&parsed_argv).map_err(|err| usage_error(&parsed_argv[1..], err))
+        let (mut cli, cli_settings) = measure!("parse_args", {
+            Cli::parse_from_argv_with_settings(&parsed_argv)
+                .map_err(|err| usage_error(&parsed_argv[1..], err))
         })?;
         if let Some(Commands::Bootstrap(bootstrap)) = &mut cli.command {
             bootstrap.inherit_root_flags(cli.dry_run, cli.yes);
+        }
+        if let Some(Commands::Install(install)) = &mut cli.command {
+            install.inherit_root_yes(cli.yes);
         }
         config_file::set_implicitly_trust_active_config(
             cli.command
@@ -866,13 +982,38 @@ impl Cli {
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
-        measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
+        let cli_truncate = cli_truncate_setting(&cli_settings)?;
+        measure!("add_cli_matches", {
+            Settings::add_cli_matches_with(&cli, cli_truncate)
+        });
+        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
+            // These file-only edits must remain available when alias values conflict.
+            // Honor directory selection without loading the conflicting settings.
+            if let Some(cd) = cli
+                .cd
+                .clone()
+                .or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from))
+            {
+                crate::env::set_current_dir(cd)?;
+            }
+            let Some(Commands::Settings(cmd)) = cli.command.take() else {
+                unreachable!("settings repair command was checked");
+            };
+            return cmd.run().await;
+        }
         // Propagated, not discarded: this is where `--cd` is actually applied, and a directory
         // that passed the checks above can still refuse the `chdir` — no execute permission, or a
         // path past the length `SetCurrentDirectory` accepts. Dropping the error here does not
         // avoid it, it only defers it: `BASE_SETTINGS` stays empty, so the next `Settings::get()`
         // repeats the same failure and unwraps it.
         measure!("settings", { Settings::try_get() })?;
+        // Git may hold installation locks while asking for credentials. Do not
+        // refresh registries, migrate, or auto-update from its helper process.
+        if let Some(Commands::Token(token)) = &cli.command
+            && let Some(result) = token.run_git_credential()
+        {
+            return result;
+        }
         let auto_update_command_eligible = !print_version
             && cli
                 .command
@@ -1081,36 +1222,6 @@ const LONG_ABOUT: &str = "mise installs the dev tools your projects need, sets t
 
 Tools, env vars, and tasks are declared in mise.toml. `mise use <TOOL>` adds a tool to the project in the current directory, `mise install` installs everything the config asks for, and `mise run <TASK>` runs a task. Docs: https://mise.jdx.dev";
 
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise install node@20.0.0</bold>       Install a specific node version
-    $ <bold>mise install node@20</bold>           Install a version matching a prefix
-    $ <bold>mise install node</bold>              Install the node version defined in config
-    $ <bold>mise install</bold>                   Install all plugins/tools defined in config
-
-    $ <bold>mise install cargo:ripgrep</bold>     Install something via cargo
-    $ <bold>mise install npm:prettier</bold>      Install something via npm
-
-    $ <bold>mise use node@20</bold>               Use node-20.x in current project
-    $ <bold>mise use -g node@20</bold>            Use node-20.x as default
-    $ <bold>mise use node@latest</bold>           Use latest node in current directory
-
-    $ <bold>mise up --interactive</bold>          Show a menu to upgrade tools
-
-    $ <bold>mise x -- npm install</bold>          `npm install` w/ config loaded into PATH
-    $ <bold>mise x node@20 -- node app.js</bold>  `node app.js` w/ config + node-20.x on PATH
-
-    $ <bold>mise set NODE_ENV=production</bold>   Set NODE_ENV=production in config
-
-    $ <bold>mise run build</bold>                 Run `build` tasks
-    $ <bold>mise watch build</bold>               Run `build` tasks repeatedly when files change
-
-    $ <bold>mise settings</bold>                  Show settings in use
-    $ <bold>mise settings color=0</bold>          Disable color by modifying global config file
-"#
-);
-
 /// Check if the current working directory exists and warn if not
 fn check_working_directory() {
     if std::env::current_dir().is_err() {
@@ -1150,9 +1261,341 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    /// Keep early recognition consistent with the full parser across inherited flag placements.
+    fn packages_where_classifier_accepts_global_and_parent_flags() {
+        let cases: &[&[&str]] = &[
+            &["mise", "bootstrap", "packages", "where", "brew:widget"],
+            &[
+                "mise",
+                "--quiet",
+                "--cd",
+                ".",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--yes",
+                "--only",
+                "packages",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "--cd",
+                ".",
+                "--quiet",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+                "--cd=.",
+                "--quiet",
+            ],
+            &[
+                "mise",
+                "-C.",
+                "bootstrap",
+                "packages",
+                "where",
+                "--",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "--env",
+                "bootstrap",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--from",
+                "packages",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+        ];
+        for args in cases {
+            let argv: Vec<String> = args.iter().map(ToString::to_string).collect();
+            assert!(is_packages_where_query(&argv), "{args:?}");
+            let cli = parse_cli(args).unwrap_or_else(|error| panic!("{args:?}: {error:?}"));
+            let Some(Commands::Bootstrap(bootstrap)) = cli.command else {
+                panic!("expected bootstrap for {args:?}");
+            };
+            assert!(bootstrap.is_packages_where(), "{args:?}");
+        }
+    }
+
+    #[test]
+    /// Isolate malformed queries so configuration errors cannot mask their argument diagnostics.
+    fn packages_where_recognition_precedes_query_argument_validation() {
+        let cases: &[&[&str]] = &[
+            &["mise", "bootstrap", "packages", "where"],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "--unknown-query-flag",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "--unknown-query-flag",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+                "--unknown-query-flag",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+                "brew:extra",
+            ],
+            &["mise", "bootstrap", "packages", "where", "--help"],
+            &["mise", "bootstrap", "packages", "where", "--cd"],
+            &["mise", "--cd", "/missing", "bootstrap", "packages", "where"],
+            &["mise", "bootstrap", "--only=packages", "packages", "where"],
+            &["mise", "-q", "bootstrap", "-y", "packages", "where"],
+        ];
+        for args in cases {
+            let argv: Vec<String> = args.iter().map(ToString::to_string).collect();
+            assert!(is_packages_where_query(&argv), "{args:?}");
+        }
+    }
+
+    #[test]
+    /// Preserve normal startup when query-like words occur in flag values or another command payload.
+    fn packages_where_recognizer_distinguishes_flag_values_tasks_exec_and_separators() {
+        let cases: &[&[&str]] = &[
+            &["mise"],
+            &["mise", "bootstrap", "packages"],
+            &["mise", "bootstrap", "packages", "status"],
+            &[
+                "mise",
+                "--env",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "--env=bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &["mise", "-Ebootstrap", "packages", "where", "brew:widget"],
+            &[
+                "mise",
+                "--cd",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--from",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--from=packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--only",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "exec",
+                "--",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "x",
+                "--",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "run",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "task-name",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "--",
+                "bootstrap",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "--",
+                "packages",
+                "where",
+                "brew:widget",
+            ],
+            &[
+                "mise",
+                "bootstrap",
+                "packages",
+                "--",
+                "where",
+                "brew:widget",
+            ],
+        ];
+        for args in cases {
+            let argv: Vec<String> = args.iter().map(ToString::to_string).collect();
+            assert!(!is_packages_where_query(&argv), "{args:?}");
+        }
+    }
+
+    #[test]
+    /// Keep other bootstrap operations on their normal configuration and execution path.
+    fn packages_where_classifier_distinguishes_other_bootstrap_commands() {
+        let cases: &[&[&str]] = &[
+            &["mise", "bootstrap"],
+            &["mise", "bootstrap", "packages", "status"],
+            &["mise", "bootstrap", "packages", "apply", "brew:widget"],
+            &["mise", "bootstrap", "status"],
+            &["mise", "bootstrap", "--from", "where", "packages", "status"],
+        ];
+        for args in cases {
+            let cli = parse_cli(args).unwrap_or_else(|error| panic!("{args:?}: {error:?}"));
+            let Some(Commands::Bootstrap(bootstrap)) = cli.command else {
+                panic!("expected bootstrap for {args:?}");
+            };
+            assert!(!bootstrap.is_packages_where(), "{args:?}");
+        }
+    }
+
+    #[test]
+    /// Enforce the single-formula query interface before installation lookup can run.
+    fn packages_where_parser_requires_exactly_one_package_and_valid_flags() {
+        let cases: &[&[&str]] = &[
+            &[],
+            &["brew:widget", "brew:another"],
+            &["brew:widget", "--json"],
+            &["brew:widget", "--install"],
+            &["brew:widget", "--version", "1"],
+            &["brew:widget", "--unknown-query-flag"],
+        ];
+        for suffix in cases {
+            let mut args = vec!["mise", "bootstrap", "packages", "where"];
+            args.extend_from_slice(suffix);
+            assert!(parse_cli(&args).is_err(), "{args:?}");
+        }
+    }
+
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
+    }
+
+    fn parse_truncate(args: &[&str]) -> Option<bool> {
+        let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
+        let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();
+        cli_truncate_setting(&layer).unwrap()
+    }
+
+    #[test]
+    fn truncate_flags_are_command_local_negatable_settings() {
+        assert_eq!(parse_truncate(&["mise", "ls"]), None);
+        assert_eq!(
+            parse_truncate(&["mise", "config", "ls", "--no-truncate"]),
+            Some(false)
+        );
+        assert_eq!(
+            parse_truncate(&[
+                "mise",
+                "bootstrap",
+                "dotfiles",
+                "status",
+                "--truncate",
+                "--no-truncate",
+            ]),
+            Some(false)
+        );
+        assert_eq!(
+            parse_truncate(&[
+                "mise",
+                "bootstrap",
+                "dotfiles",
+                "status",
+                "--no-truncate",
+                "--truncate",
+            ]),
+            Some(true)
+        );
+
+        for args in [
+            &["mise", "registry", "--no-truncate"][..],
+            &["mise", "config", "get", "--no-truncate"],
+        ] {
+            let argv = args.iter().map(std::ffi::OsStr::new).collect::<Vec<_>>();
+            assert!(Cli::parse_from_argv_with_settings(&argv).is_err());
+        }
     }
 
     #[test]
@@ -1335,6 +1778,33 @@ mod tests {
         assert!(parse_cli(&["mise", "bootstrap", "status", "--json"]).is_ok());
     }
 
+    #[test]
+    fn test_dotfiles_command_and_alias_expose_the_full_command_tree() {
+        let cmd = Cli::command();
+        let dotfiles = cmd
+            .subcommands
+            .iter()
+            .find(|subcommand| subcommand.name == "dotfiles")
+            .unwrap();
+
+        assert_eq!(dotfiles.aliases, &["dot"]);
+        assert!(
+            dotfiles
+                .subcommands
+                .iter()
+                .any(|command| command.name == "track")
+        );
+        assert!(
+            dotfiles
+                .subcommands
+                .iter()
+                .any(|command| command.name == "history")
+        );
+        assert!(parse_cli(&["mise", "dotfiles", "track", "~/.zshrc"]).is_ok());
+        assert!(parse_cli(&["mise", "dot", "track", "~/.zshrc"]).is_ok());
+        assert!(parse_cli(&["mise", "bootstrap", "dotfiles", "track", "~/.zshrc"]).is_ok());
+    }
+
     /// Commands that name a config file to write to accept both spellings, so it
     /// does not matter which one you remember. See
     /// <https://github.com/jdx/mise/discussions/4881>.
@@ -1396,9 +1866,9 @@ mod tests {
     }
 
     /// A `--file`/`--path` alias whose natural short form belongs to a *different* argument
-    /// on the same command teaches the wrong flag. `mise dotfiles add` carried `--file` as an
+    /// on the same command teaches the wrong flag. `mise dot add` carried `--file` as an
     /// alias of `--path` while `-f` was `--force`, and because its targets accept any string,
-    /// `mise dotfiles add -f <path>` silently adopted that config file as a dotfile instead of
+    /// `mise dot add -f <path>` silently adopted that config file as a dotfile instead of
     /// writing to it — no error, and `--force` meant no prompt either.
     ///
     /// Walks the whole CLI rather than a fixed list, so re-adding the alias anywhere fails

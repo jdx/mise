@@ -17,6 +17,7 @@ trap 'rm -rf /home/linuxbrew' EXIT
 cat <<EOF >mise.toml
 [bootstrap.packages]
 "brew:xz" = "latest"
+"brew:unzip" = "latest"
 EOF
 
 assert_contains "mise bootstrap packages status" "missing"
@@ -24,6 +25,12 @@ assert_contains "mise bootstrap packages status" "missing"
 mise bootstrap packages apply --yes
 assert_contains "mise bootstrap packages status" "installed"
 assert_succeed "test -L /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz"
+
+# unzip is keg-only upstream only because macOS provides it; on Linux mise
+# links it into the prefix like brew does, without a keg-only marker
+assert_succeed "test -L /home/linuxbrew/.linuxbrew/bin/unzip"
+assert_fail "test -e \"$(readlink -f /home/linuxbrew/.linuxbrew/opt/unzip)/.mise-keg-only\""
+assert_contains "/home/linuxbrew/.linuxbrew/bin/unzip -v" "UnZip"
 assert_succeed "test \"$(readlink -f /home/linuxbrew/.linuxbrew/opt/xz)\" = \"$(readlink -f /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz)\""
 
 # the poured binary runs at the canonical prefix (relocation + linking worked)

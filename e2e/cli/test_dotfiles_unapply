@@ -26,10 +26,12 @@ cat <<EOF >mise.toml
 "~/.managed-copydir" = { source = "dotfiles/copydir", mode = "copy" }
 "~/.managed-rc/block" = { block = "managed block" }
 "~/.managed-lines/line" = { line = "possibly preexisting" }
+"~/.managed-bom/line" = { line = "managed first", position = "prepend" }
 EOF
 
 # A line edit cannot prove it created an already-present line.
 echo "possibly preexisting" >~/.managed-lines
+printf '\357\273\277keep me\r\n' >~/.managed-bom
 printf 'before\n\n' >~/.managed-rc
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert_succeed "test -L $HOME/.managed-link"
@@ -89,6 +91,12 @@ printf 'after-no-newline' >>~/.managed-rc
 assert_succeed "mise bootstrap dotfiles unapply ~/.managed-rc/block --yes"
 assert_not_contains "cat ~/.managed-rc" "mise:block"
 assert "od -An -tx1 ~/.managed-rc | tr -d ' \n'" "6265666f72650d0a0d0a61667465722d6e6f2d6e65776c696e65"
+
+# Removing a first-line edit preserves a leading BOM and all following bytes.
+assert_fail "mise bootstrap dotfiles unapply ~/.managed-bom/line --yes"
+assert_succeed "mise bootstrap dotfiles unapply ~/.managed-bom/line --force --yes"
+printf '\357\273\277keep me\r\n' >expected-bom-unapply
+assert_succeed "cmp expected-bom-unapply ~/.managed-bom"
 
 # symlink-each removes path-equivalent and stale exact mappings, but preserves
 # unrelated and excluded user-created links and their containing directory.

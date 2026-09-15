@@ -69,7 +69,12 @@ const DEFAULT_HTTP_RETRIES: usize = 3;
 /// Backoff schedule (ms) shared with the main mise crate. Hand-rolled rather
 /// than using ExponentialBackoff::from_millis (which is geometric in the base
 /// value) so the human-readable cadence is obvious. Jitter is applied per delay.
+#[cfg(not(test))]
 const BACKOFF_SCHEDULE_MS: &[u64] = &[200, 1_000, 4_000, 15_000];
+
+// Unit tests validate retry outcomes rather than production wall-clock delays.
+#[cfg(test)]
+const BACKOFF_SCHEDULE_MS: &[u64] = &[2, 10, 40, 150];
 
 /// Read MISE_HTTP_RETRIES so vfox honors the same opt-out as the rest of mise.
 /// vfox is a separate crate without access to mise's Settings layer, so the env

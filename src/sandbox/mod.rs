@@ -20,6 +20,10 @@ pub(crate) struct SandboxConfig {
     pub deny_write: bool,
     pub deny_net: bool,
     pub deny_env: bool,
+    /// Block child-process creation. Internal-only: task/CLI sandboxes leave this disabled.
+    pub deny_process: bool,
+    /// Do not apply the normal writable-temp-directory exception.
+    pub deny_temp_write: bool,
     pub allow_read: Vec<PathBuf>,
     pub allow_write: Vec<PathBuf>,
     pub allow_net: Vec<String>,
@@ -28,6 +32,16 @@ pub(crate) struct SandboxConfig {
     pub pass_through_env: Vec<String>,
     /// Exact hashed environment names that survive an active env sandbox.
     pub cache_env: Vec<String>,
+    /// Allow-list spellings [`SandboxConfig::resolve_paths`] replaced with a
+    /// canonical target, for the entries that had one.
+    ///
+    /// Seatbelt matches a rule against the canonical path, so a caller reaching
+    /// an allowed directory through the symlink it was named by still has to
+    /// `lstat` the link and the directories above it. Only the macOS profile
+    /// needs this — Landlock resolves paths itself and restricts neither the
+    /// walk nor `stat`.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub symlinked_allow_paths: Vec<PathBuf>,
 }
 
 /// Minimal env vars inherited when deny_env is active.
@@ -111,6 +125,8 @@ impl SandboxConfig {
             || self.deny_write
             || self.deny_net
             || self.deny_env
+            || self.deny_process
+            || self.deny_temp_write
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
@@ -120,7 +136,11 @@ impl SandboxConfig {
     /// Resolve allow_* paths to absolute paths relative to cwd.
     pub(crate) fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
-        let resolve = |paths: &mut Vec<PathBuf>| {
+        // Keep the spelling a canonicalization replaces. It is the one a caller
+        // inside the sandbox will use, and macOS has to let a walk take that
+        // route — see `symlinked_allow_paths`.
+        let mut symlinked = Vec::new();
+        let mut resolve = |paths: &mut Vec<PathBuf>| {
             paths.retain(|p| !p.as_os_str().is_empty());
             for p in paths.iter_mut() {
                 *p = replace_path(&*p);
@@ -128,13 +148,16 @@ impl SandboxConfig {
                     *p = cwd.join(&*p);
                 }
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
-                if let Ok(canonical) = p.canonicalize() {
-                    *p = canonical;
+                if let Ok(canonical) = p.canonicalize()
+                    && canonical != *p
+                {
+                    symlinked.push(std::mem::replace(p, canonical));
                 }
             }
         };
         resolve(&mut self.allow_read);
         resolve(&mut self.allow_write);
+        self.symlinked_allow_paths = symlinked;
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
@@ -284,7 +307,7 @@ impl SandboxConfig {
         #[cfg(target_os = "linux")]
         {
             self.warn_missing_allow_paths();
-            self.apply_linux()?;
+            self.apply_linux(program)?;
             Ok(None)
         }
 
@@ -301,18 +324,18 @@ impl SandboxConfig {
     }
 
     #[cfg(all(not(test), target_os = "linux"))]
-    fn apply_linux(&self) -> eyre::Result<()> {
-        if self.effective_deny_read() || self.effective_deny_write() {
-            landlock::apply_landlock(self)?;
+    fn apply_linux(&self, program: &str) -> eyre::Result<()> {
+        if self.effective_deny_read() || self.effective_deny_write() || self.deny_process {
+            landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
         }
-        if self.effective_deny_net() {
+        if self.effective_deny_net() || self.deny_process {
             if !self.allow_net.is_empty() {
                 eyre::bail!(
                     "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
                      Use --deny-net to block all network, or remove --allow-net."
                 );
             }
-            seccomp::apply_seccomp_net_filter()?;
+            seccomp::apply_seccomp_filter(self.effective_deny_net(), self.deny_process)?;
         }
         Ok(())
     }
@@ -323,7 +346,8 @@ impl SandboxConfig {
         program: &str,
         args: &[String],
     ) -> eyre::Result<Option<SandboxedCommand>> {
-        let profile = macos::generate_seatbelt_profile(self).await;
+        let profile =
+            macos::generate_seatbelt_profile(self, Some(std::path::Path::new(program))).await;
         let mut sandbox_args = vec![
             "-p".to_string(),
             profile,
@@ -351,20 +375,26 @@ pub(crate) struct SandboxedCommand {
 
 /// Apply Landlock filesystem restrictions (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
-    landlock::apply_landlock(config)
+pub(crate) fn landlock_apply(
+    config: &SandboxConfig,
+    initial_program: &std::path::Path,
+) -> eyre::Result<()> {
+    landlock::apply_landlock(config, Some(initial_program))
 }
 
-/// Apply seccomp network filter (Linux only).
+/// Apply seccomp network/process filter (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn seccomp_apply() -> eyre::Result<()> {
-    seccomp::apply_seccomp_net_filter()
+pub(crate) fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
+    seccomp::apply_seccomp_filter(deny_net, deny_process)
 }
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub(crate) async fn macos_generate_profile(config: &SandboxConfig) -> String {
-    macos::generate_seatbelt_profile(config).await
+pub(crate) async fn macos_generate_profile(
+    config: &SandboxConfig,
+    program: &std::path::Path,
+) -> String {
+    macos::generate_seatbelt_profile(config, Some(program)).await
 }
 
 #[cfg(test)]
@@ -420,6 +450,33 @@ mod tests {
         };
 
         assert_eq!(config.missing_allow_paths(), vec![missing.as_path()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_paths_keeps_the_spelling_a_canonicalization_replaced() {
+        // The replaced spelling is the one a caller inside the sandbox uses, and
+        // macOS has to keep that route walkable. A path that was already
+        // canonical contributes nothing.
+        let root_dir = tempfile::tempdir().unwrap();
+        let root = root_dir.path().canonicalize().unwrap();
+        let target = root.join("target");
+        let plain = root.join("plain");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(&plain).unwrap();
+        std::os::unix::fs::symlink(&target, root.join("link")).unwrap();
+        let through_link = root.join("link");
+
+        let mut config = SandboxConfig {
+            allow_read: vec![through_link.clone()],
+            allow_write: vec![plain.clone()],
+            ..Default::default()
+        };
+        config.resolve_paths();
+
+        assert_eq!(config.allow_read, vec![target]);
+        assert_eq!(config.allow_write, vec![plain]);
+        assert_eq!(config.symlinked_allow_paths, vec![through_link]);
     }
 
     #[test]

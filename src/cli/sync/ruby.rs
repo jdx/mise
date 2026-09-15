@@ -13,7 +13,14 @@ use super::reconcile;
 
 /// Symlink ruby versions installed by Homebrew into mise
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"brew install ruby
+mise sync ruby --brew
+mise ls ruby --installed # inspect linked versions, then select one with mise use"###
+    )
+)]
 pub(super) struct SyncRuby {
     #[usage(flatten)]
     _type: SyncRubyType,
@@ -67,12 +74,3 @@ impl SyncRuby {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>brew install ruby</bold>
-    $ <bold>mise sync ruby --brew</bold>
-    $ <bold>mise use -g ruby</bold> - Use the latest version of Ruby installed by Homebrew
-"#
-);

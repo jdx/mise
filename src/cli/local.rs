@@ -23,7 +23,31 @@ use crate::{env, file};
 /// This uses `.tool-version` by default unless there is a `mise.toml` file or if `MISE_USE_TOML`
 /// is set. A future v2 release of mise will default to using `mise.toml`.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    hide = true,
+    alias = "l",
+    example(
+        r###"mise local --pin node@20"###,
+        help = r###"set the current version of node to 20.x for the current directory will use a precise version (e.g.: 20.0.0) in .tool-versions file"###
+    ),
+    example(
+        r###"mise local -p node@20"###,
+        help = r###"set node to 20.x for the current project (recurses up to find .tool-versions)"###
+    ),
+    example(
+        r###"mise local --fuzzy node@20"###,
+        help = r###"set the current version of node to 20.x for the current directory will use a fuzzy version (e.g.: 20) in .tool-versions file"###
+    ),
+    example(
+        r###"mise local --remove=node"###,
+        help = r###"removes node from .tool-versions"###
+    ),
+    example(
+        r###"mise local node"###,
+        help = r###"show the current version of node in .tool-versions; example output: `20.0.0`"###
+    )
+)]
 pub(crate) struct Local {
     /// Tool(s) to add to .tool-versions/mise.toml
     /// e.g.: node@20
@@ -153,25 +177,3 @@ pub(super) async fn local(
 
     Ok(())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-    # set the current version of node to 20.x for the current directory
-    # will use a precise version (e.g.: 20.0.0) in .tool-versions file
-    $ <bold>mise local node@20</bold>
-
-    # set node to 20.x for the current project (recurses up to find .tool-versions)
-    $ <bold>mise local -p node@20</bold>
-
-    # set the current version of node to 20.x for the current directory
-    # will use a fuzzy version (e.g.: 20) in .tool-versions file
-    $ <bold>mise local --fuzzy node@20</bold>
-
-    # removes node from .tool-versions
-    $ <bold>mise local --remove=node</bold>
-
-    # show the current version of node in .tool-versions
-    $ <bold>mise local node</bold>
-    20.0.0
-"#
-);

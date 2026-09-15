@@ -428,6 +428,8 @@ impl TaskExecutor {
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
             deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
             deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
+            deny_process: false,
+            deny_temp_write: false,
             allow_read: task
                 .allow_read
                 .iter()
@@ -466,6 +468,8 @@ impl TaskExecutor {
                 .chain(self.sandbox.cache_env.iter())
                 .cloned()
                 .collect(),
+            // Filled in by `resolve_paths` below.
+            symlinked_allow_paths: vec![],
         };
         sandbox.resolve_paths();
         Ok(sandbox)
@@ -1011,12 +1015,13 @@ impl TaskExecutor {
                         .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
                         .collect();
                     t = t.with_dependency_env(&env_directives);
-                    if let Some(config_root) = &t.config_root {
+                    if let Some(config_root) = t.config_root.clone() {
                         let env_map: IndexMap<String, String> = env.iter().cloned().collect();
                         t.outputs.re_render_with_env(
-                            &t.raw_outputs.clone(),
+                            &mut t.raw_outputs,
+                            &mut t.raw_path_env,
                             &env_map,
-                            config_root,
+                            &config_root,
                         )?;
                     } else {
                         trace!(
@@ -1093,7 +1098,7 @@ impl TaskExecutor {
                             any = true;
                             let task = task.derive_env(&task_env_directives);
                             trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
-                            let _ = sched_tx.send(SchedMsg::new(
+                            let _ = sched_tx.send(SchedMsg::injected(
                                 task,
                                 sub_deps_clone.clone(),
                                 allow_during_interruption,
@@ -1127,7 +1132,7 @@ impl TaskExecutor {
                                 task.args.join(" ")
                             );
                             let task = task.derive_env(&task_env_directives);
-                            let _ = sched_tx.send(SchedMsg::new(
+                            let _ = sched_tx.send(SchedMsg::injected(
                                 task,
                                 sub_deps_clone.clone(),
                                 allow_during_interruption,
@@ -1245,9 +1250,16 @@ impl TaskExecutor {
             file::make_executable(&file)?;
             self.exec_with_text_file_busy_retry(&file, args, ctx).await
         } else {
-            let (program, args, cmd_verbatim) =
+            let (program, shell_args, cmd_verbatim) =
                 self.get_cmd_program_and_args(script, ctx.task, args)?;
-            self.exec_program(&program, &args, cmd_verbatim, ctx).await
+            self.exec_program(
+                &program,
+                &shell_args,
+                cmd_verbatim,
+                Some((script, args)),
+                ctx,
+            )
+            .await
         }
     }
 
@@ -1366,6 +1378,10 @@ impl TaskExecutor {
         Ok((program.to_string(), full_args[1..].to_vec(), false))
     }
 
+    fn implicit_inline_shell(&self, task: &Task) -> bool {
+        task.shell.is_none() && self.shell.is_none() && Settings::get().implicit_inline_shell()
+    }
+
     fn clone_default_inline_shell(&self) -> Result<Vec<String>> {
         if let Some(shell) = &self.shell {
             let mut shell = crate::path::split_shell_command(shell)?;
@@ -1444,7 +1460,8 @@ impl TaskExecutor {
                 .env_clear()
                 .envs(&filtered_env)
                 .with_timeout(timeout)
-                .with_sandbox(sandbox.clone());
+                .with_sandbox(sandbox.clone())
+                .optimize_inline(command, &[], self.implicit_inline_shell(task));
             runner.apply_sandbox().await?;
             let (stdout_hash, stderr_hash) = runner
                 .execute_hashes_async(COMMAND_INPUT_MAX_OUTPUT_BYTES)
@@ -1490,7 +1507,7 @@ impl TaskExecutor {
     async fn exec(&self, file: &Path, args: &[String], ctx: TaskExecContext<'_>) -> Result<()> {
         if runs_without_a_shell(file) {
             let program = file.display().to_string();
-            return self.exec_program(&program, args, false, ctx).await;
+            return self.exec_program(&program, args, false, None, ctx).await;
         }
         // Resolved once, from the file the user wrote, and then used for both decisions below.
         let shell = file_task_shell(file, ctx.task)?;
@@ -1499,7 +1516,7 @@ impl TaskExecutor {
         let shim = ps1_shim(file, &shell)?;
         let script = shim.as_deref().unwrap_or(file);
         let (program, args) = self.get_file_program_and_args(script, &shell, args)?;
-        self.exec_program(&program, &args, false, ctx).await
+        self.exec_program(&program, &args, false, None, ctx).await
     }
 
     async fn exec_with_text_file_busy_retry(
@@ -1537,6 +1554,7 @@ impl TaskExecutor {
         program: &str,
         args: &[String],
         cmd_verbatim: bool,
+        inline: Option<(&str, &[String])>,
         ctx: TaskExecContext<'_>,
     ) -> Result<()> {
         let TaskExecContext {
@@ -1611,6 +1629,15 @@ impl TaskExecutor {
             .redact(redactions.deref().clone())
             .raw(raw)
             .with_sandbox(sandbox);
+        if let Some((body, forwarded)) = inline {
+            cmd = cmd
+                .current_dir(task_cwd(task, &config).await?)
+                .optimize_inline(
+                    body,
+                    forwarded,
+                    audit.is_none() && self.implicit_inline_shell(task),
+                );
+        }
         if raw && !redactions.is_empty() {
             if task.interactive && !task.raw && !Settings::get().raw {
                 hint!(
@@ -1834,7 +1861,7 @@ impl TaskExecutor {
             })
             .await;
         if let Some(audit) = audit {
-            audit.report(task);
+            audit.report(task).await;
         }
         result?;
         trace!("{prefix} exited successfully");
@@ -1903,6 +1930,11 @@ impl TaskExecutor {
             match crate::ui::prompt::confirm_with_default(&message, default_yes) {
                 Ok(Confirmation::Yes) => {}
                 Ok(Confirmation::No) => return Err(eyre!("aborted by user")),
+                Ok(Confirmation::Unanswered) => {
+                    return Err(eyre!(
+                        "task requires confirmation but stdin ended before an answer; pass --yes to accept"
+                    ));
+                }
                 Ok(Confirmation::Unavailable) => {
                     return Err(eyre!(
                         "task requires confirmation but there was nobody to ask; pass --yes to accept"
@@ -2092,6 +2124,8 @@ impl TaskExecutor {
             task.name,
             ts_build_start.elapsed().as_millis()
         );
+
+        crate::shims::ensure_command_wrapper_shims(config, &toolset)?;
 
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.

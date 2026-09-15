@@ -7,7 +7,6 @@ use crate::plugins::PluginType;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
 use eyre::{Ok, Result, WrapErr};
-use heck::ToKebabCase;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -85,7 +84,7 @@ fn manifest_path() -> PathBuf {
 
 fn tool_manifest_path(installs_dir: &Path, short: &str) -> PathBuf {
     installs_dir
-        .join(short.to_kebab_case())
+        .join(crate::backend::tool_directory_name(short))
         .join(".mise.backend.toml")
 }
 
@@ -168,7 +167,7 @@ fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool
 
     // Try .mise.backend (text format)
     let path = dirs::INSTALLS
-        .join(short.to_kebab_case())
+        .join(crate::backend::tool_directory_name(short))
         .join(".mise.backend");
     if !path.exists() {
         return None;
@@ -505,7 +504,7 @@ fn manifest_dir_for_short(short: &str) -> Option<String> {
         Arc::new(
             root_manifest()
                 .iter()
-                .filter(|(d, mt)| **d != mt.short.to_kebab_case())
+                .filter(|(d, mt)| **d != crate::backend::tool_directory_name(&mt.short))
                 .map(|(d, mt)| (mt.short.clone(), d.clone()))
                 .collect(),
         )
@@ -599,7 +598,7 @@ fn merge_scanned_into(recorded: &mut InstallStateTool, scanned: InstallStateTool
 
 fn load_tool(short: &str) -> Option<InstallStateTool> {
     let manifest = root_manifest();
-    let dir_name = short.to_kebab_case();
+    let dir_name = crate::backend::tool_directory_name(short);
     let scan_named = |dir_name: &str| {
         let dir = dirs::INSTALLS.join(dir_name);
         scan_tool_dir(dir_name, &dir, &manifest)
@@ -737,7 +736,11 @@ pub(crate) fn get_tool_full(short: &str) -> Option<String> {
 }
 
 pub(crate) fn get_plugin_type(short: &str) -> Option<PluginType> {
-    list_plugins().get(short).cloned()
+    #[cfg(test)]
+    let plugins = try_list_plugins()?;
+    #[cfg(not(test))]
+    let plugins = list_plugins();
+    plugins.get(short).cloned()
 }
 
 /// Every installed tool. This enumerates the whole installs dir (a readdir per
@@ -895,7 +898,10 @@ pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> 
         explicit_backend: explicit,
         opts: opts_map,
     };
-    manifest.insert(ba.short.to_kebab_case(), manifest_tool.clone());
+    manifest.insert(
+        crate::backend::tool_directory_name(&ba.short),
+        manifest_tool.clone(),
+    );
     write_manifest_to(path, &manifest)?;
     if let Some(installs_dir) = path.parent() {
         let tool_manifest = tool_manifest_path(installs_dir, &ba.short);
@@ -921,7 +927,7 @@ fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
 
 pub(crate) fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
     dirs::CACHE
-        .join(short.to_kebab_case())
+        .join(crate::backend::tool_directory_name(short))
         .join(v)
         .join("incomplete")
 }
@@ -937,11 +943,21 @@ fn tool_version_lock(short: &str, v: &str) -> LockFile {
 /// marker and install path. The marker path is only the lock identity; the
 /// lock itself remains a separate stable file under the lockfiles cache.
 pub(crate) fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile> {
+    lock_tool_version_with_notice(short, v, &|| {})
+}
+
+/// [`lock_tool_version`] that also tells the caller when it is actually
+/// waiting, so an install can report the pause instead of looking hung.
+pub(crate) fn lock_tool_version_with_notice(
+    short: &str,
+    v: &str,
+    on_wait: &dyn Fn(),
+) -> Result<fslock::LockFile> {
     tool_version_lock(short, v)
         .with_callback(|lock| {
             debug!("waiting for tool-version lock on {}", display_path(lock));
         })
-        .lock()
+        .lock_with_notice(on_wait)
 }
 
 pub(crate) fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
@@ -1106,6 +1122,53 @@ mod tests {
             Some(&installs_path)
         );
         assert!(!tools["babashka"].explicit_backend);
+    }
+
+    #[test]
+    fn lock_notice_fires_only_when_contended() {
+        let short = format!("lock_notice_test_{}", std::process::id());
+        let noticed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = || noticed.load(std::sync::atomic::Ordering::SeqCst);
+        // Uncontended: no notice.
+        let first = {
+            let noticed = noticed.clone();
+            super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
+                noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            })
+            .unwrap()
+        };
+        assert_eq!(count(), 0);
+        // Contended from another thread: exactly one notice, then it acquires
+        // once the first holder lets go.
+        let (noticed_tx, noticed_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let waiter = {
+            let short = short.clone();
+            let noticed = noticed.clone();
+            std::thread::spawn(move || {
+                let lock = super::lock_tool_version_with_notice(&short, "1.0.0", &|| {
+                    noticed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    noticed_tx.send(()).unwrap();
+                })
+                .unwrap();
+                acquired_tx.send(()).unwrap();
+                drop(lock);
+            })
+        };
+        noticed_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the waiter should have reported the wait");
+        assert_eq!(count(), 1);
+        assert!(
+            acquired_rx.try_recv().is_err(),
+            "must not acquire while held"
+        );
+        drop(first);
+        acquired_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("waiter acquires after release");
+        waiter.join().unwrap();
+        assert_eq!(count(), 1);
     }
 
     #[test]
@@ -1305,5 +1368,29 @@ explicit_backend = true
         // Old format should deserialize with opts empty and brackets in full
         assert!(mt.opts.is_empty());
         assert!(mt.full.as_ref().unwrap().contains('['));
+    }
+    #[test]
+    fn pipx_manifest_retains_its_configured_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("pipx-black");
+        std::fs::create_dir_all(dir.join("24.10.0")).unwrap();
+        let manifest: super::Manifest = toml::from_str(
+            r#"
+["pipx-black"]
+short = "pipx:black"
+full = "pipx:black"
+explicit_backend = true
+"#,
+        )
+        .unwrap();
+        let (tool, _) = super::scan_tool_dir("pipx-black", &dir, &manifest)
+            .unwrap()
+            .unwrap();
+        assert_eq!(tool.short, "pipx:black");
+        assert_eq!(tool.full.as_deref(), Some("pipx:black"));
+        assert_eq!(tool.installs_path, Some(dir.clone()));
+        assert_eq!(tool.versions, ["24.10.0"]);
+        assert!(dir.join("24.10.0").is_dir());
+        assert!(!temp.path().join("pypi-black").exists());
     }
 }

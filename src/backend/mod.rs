@@ -74,6 +74,7 @@ pub(crate) mod jq;
 pub(crate) mod npm;
 pub(crate) mod npm_registry;
 pub(crate) mod options;
+pub(crate) mod packslip;
 pub(crate) mod pipx;
 pub(crate) mod pkgx;
 pub(crate) mod platform_target;
@@ -373,6 +374,9 @@ pub(crate) enum SecurityFeature {
         level: Option<u8>,
     },
     Cosign,
+    /// A packslip: the vendor's signed release manifest, verified against
+    /// the identity or key the project name pins.
+    Packslip,
     Minisign {
         #[serde(skip_serializing_if = "Option::is_none")]
         public_key: Option<String>,
@@ -547,6 +551,9 @@ pub(crate) fn alias_backends() -> BackendList {
 pub(crate) fn get(ba: &BackendArg) -> Option<ABackend> {
     // Inline opts are command-scoped, so a short-name cache hit must not drop
     // the caller's BackendArg options.
+    if ba.has_registry_version() {
+        return arg_to_backend(ba.clone());
+    }
     if (ba.explicit_opts().is_some() || ba.has_explicit_backend())
         && let Some(backend) = arg_to_backend(ba.clone())
     {
@@ -577,6 +584,9 @@ pub(crate) fn remove(short: &str) {
 }
 
 pub(crate) fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+    if *backend_type == BackendType::Pipx {
+        return is_disabled_backend_name("pypi") || is_disabled_backend_name("pipx");
+    }
     backend_type
         .disable_key()
         .is_some_and(is_disabled_backend_name)
@@ -620,6 +630,7 @@ pub(crate) fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Gitlab => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
+        BackendType::Packslip => Some(Arc::new(packslip::PackslipBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
         BackendType::Pkgx => Some(Arc::new(pkgx::PkgxBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
@@ -651,6 +662,7 @@ pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> V
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Npm => npm::install_time_option_keys(),
+        BackendType::Packslip => packslip::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
         BackendType::Pkgx => pkgx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),
@@ -2075,6 +2087,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
 
+    /// Install-time dependencies for a specific tool request.
+    ///
+    /// Most backends have fixed dependencies and inherit the default implementation.
+    /// Backends whose installer is selected by tool options can override this so the
+    /// dependency graph matches the installer that will actually run.
+    fn get_dependencies_for(&self, _opts: &ToolVersionOptions) -> Result<Vec<&str>> {
+        self.get_dependencies()
+    }
+
     /// Plugin-declared system prerequisites (build tools, libraries, ...) that
     /// must be present on the machine before this tool can install. Distinct
     /// from [`Backend::get_dependencies`], which returns other *mise tools*.
@@ -2128,13 +2149,20 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
     fn get_all_dependencies(&self, optional: bool) -> Result<IndexSet<BackendArg>> {
+        self.get_all_dependencies_for(&self.ba().opts(), optional)
+    }
+    fn get_all_dependencies_for(
+        &self,
+        opts: &ToolVersionOptions,
+        optional: bool,
+    ) -> Result<IndexSet<BackendArg>> {
         let all_fulls = self.ba().all_fulls();
         if all_fulls.is_empty() {
             // this can happen on windows where we won't be able to install this os/arch so
             // the fact there might be dependencies is meaningless
             return Ok(Default::default());
         }
-        let mut deps: Vec<&str> = self.get_dependencies()?;
+        let mut deps: Vec<&str> = self.get_dependencies_for(opts)?;
         if optional {
             deps.extend(self.get_optional_dependencies()?);
         }
@@ -2287,19 +2315,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // Only local overrides count: a registry-supplied value is identical for everyone, so
         // one entry is correct for it, and leaving it out keeps the shared versions host
         // available for the default case.
-        let opt_context = has_local_version_listing_override.then(|| {
-            listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
-        });
-        let cache_context = match (
-            self.remote_version_cache_context(config).await?,
-            opt_context,
-        ) {
-            (Some(backend_context), Some(opt_context)) => {
-                Some(hash::hash_to_str(&(backend_context, opt_context)))
-            }
-            (Some(context), None) | (None, Some(context)) => Some(context),
-            (None, None) => None,
-        };
+        let cache_context = self
+            .remote_version_cache_context_for(
+                config,
+                listing_opts,
+                has_local_version_listing_override,
+            )
+            .await?;
         let remote_versions = match cache_context.as_deref() {
             Some(context) => self.get_remote_version_cache_with_context(Some(context)),
             None => self.get_remote_version_cache(),
@@ -2406,21 +2428,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let want_prereleases = self.include_prereleases(selection_opts);
 
         if Settings::get().offline() {
-            trace!(
-                "Skipping remote version listing for {} due to offline mode",
-                ba.to_string()
-            );
-            match remote_versions.get_cached() {
-                Ok(versions) => return Ok(filter_cached_prereleases(versions, want_prereleases)),
-                Err(err) => {
-                    debug!(
-                        "No cached remote versions available for {} while offline: {:#}",
-                        ba.to_string(),
-                        err
-                    );
-                }
-            }
-            return Ok(vec![]);
+            return Ok(filter_cached_prereleases(
+                cached_remote_versions_offline(&ba, &remote_versions),
+                want_prereleases,
+            ));
         }
 
         let fetch = || async {
@@ -2646,6 +2657,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
         match tv.request {
             ToolRequest::System { .. } => true,
             _ => {
+                // Embedded-aube lock graphs are part of the physical install
+                // identity. A version-only request path must never satisfy a
+                // graph-locked request for the same top-level version.
+                if tv.aube_lock.is_some() || tv.uv_lock.is_some() {
+                    return check_path(&tv.install_path(), check_symlink);
+                }
                 if let Some(install_path) = tv.request.install_path(config)
                     && check_path(&install_path, true)
                 {
@@ -3279,8 +3296,25 @@ pub(crate) trait Backend: Debug + Send + Sync {
     async fn install_version(
         &self,
         ctx: InstallContext,
-        mut tv: ToolVersion,
+        tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        let graph_install_is_current = !ctx.locked
+            && !ctx.force
+            && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
+            && self
+                .is_install_satisfied_or_false(&ctx.config, &tv, true)
+                .await;
+        let mut tv = if graph_install_is_current {
+            if let Some(graph) = &tv.uv_lock {
+                graph.warn_if_missing();
+            }
+            if let Some(graph) = &tv.aube_lock {
+                graph.warn_if_missing();
+            }
+            tv
+        } else {
+            self.prepare_install_version(&ctx, tv).await?
+        };
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
         tv.request.ensure_safe_install_options()?;
@@ -3352,7 +3386,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // uninstall so shared and system installs cannot have their marker
         // cleared while an install is still in progress.
         let state_version = tv.tv_pathname();
-        let _state_lock = install_state::lock_tool_version(&tv.ba().short, &state_version)?;
+        // Another mise may be installing this exact version. Say so while we
+        // wait on it: a row that sits in "resolving" for a minute looks hung.
+        let _state_lock =
+            install_state::lock_tool_version_with_notice(&tv.ba().short, &state_version, &|| {
+                ctx.pr.set_message("waiting for install lock".into());
+            })?;
 
         let mut install_satisfied = self
             .is_install_satisfied_or_false(&ctx.config, &tv, true)
@@ -3374,6 +3413,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
         if install_satisfied && !will_uninstall {
+            ctx.pr.finish_with_icon(
+                "already installed".into(),
+                crate::ui::progress_report::ProgressIcon::Skipped,
+            );
             return Ok(tv);
         }
 
@@ -3383,14 +3426,14 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // backend and tool-level hooks.
         ctx.dependency_context(&tv.request).await?;
 
-        // Query backend for operation count and set up progress tracking
-        let install_ops = self.install_operation_count(&tv, &ctx).await;
-        let total_ops = if will_uninstall {
-            install_ops + 1
-        } else {
-            install_ops
-        };
-        ctx.pr.start_operations(total_ops);
+        // Query backend for its operation plan and set up progress tracking
+        let mut weights = self.install_operation_weights(&tv, &ctx).await;
+        if will_uninstall {
+            // Removing the old install is bookkeeping next to fetching the new
+            // one, so it leads the plan with a small share.
+            weights.insert(0, UNINSTALL_OPERATION_WEIGHT);
+        }
+        ctx.pr.start_operations_weighted(&weights);
 
         if will_uninstall {
             self.uninstall_version_unlocked(&ctx.config, &tv, ctx.pr.as_ref(), false)
@@ -3406,7 +3449,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
-        let tv = match self.install_version_(&ctx, tv).await {
+        let install_env = tv.install_env();
+        let tv = match crate::env::with_install_env(install_env, self.install_version_(&ctx, tv))
+            .await
+        {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
@@ -3440,7 +3486,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         install_state::clear_incomplete_marker_best_effort(&tv.ba().short, &tv.tv_pathname());
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
-                .finish_with_message("running custom postinstall hook".to_string());
+                .set_message("running custom postinstall hook".to_string());
             self.run_postinstall_hook(&ctx, &tv, script).await?;
         }
         ctx.pr.finish_with_message("installed".to_string());
@@ -3574,7 +3620,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 .env("MISE_PROJECT_ROOT", project_root);
         }
 
-        runner.execute()?;
+        runner
+            .optimize_inline(
+                &rendered_script,
+                &[],
+                Settings::get().implicit_inline_shell(),
+            )
+            .execute()?;
         Ok(())
     }
 
@@ -3583,6 +3635,17 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// Default is 3: download, checksum, extract
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         3
+    }
+
+    /// Relative cost of each install operation, in the order they run.
+    ///
+    /// Only used to pace a progress display, so an estimate is fine and nothing
+    /// may depend on it. The default assumes the shape almost every backend
+    /// here has — fetch the artifact, then verify and unpack it — and weights
+    /// the fetch accordingly. Override it where that does not hold, such as a
+    /// backend that compiles from source.
+    async fn install_operation_weights(&self, tv: &ToolVersion, ctx: &InstallContext) -> Vec<f64> {
+        default_operation_weights(self.install_operation_count(tv, ctx).await)
     }
 
     /// Whether this version could install here at all, judged without downloading anything.
@@ -3601,6 +3664,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
         _tv: &ToolVersion,
     ) -> Result<()> {
         Ok(())
+    }
+
+    /// Finalize backend-specific install identity before the generic installer
+    /// acquires locks or creates paths derived from the tool version.
+    async fn prepare_install_version(
+        &self,
+        _ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        Ok(tv)
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
@@ -4080,6 +4153,56 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(VersionOrder::Source)
     }
 
+    /// The key of the remote-version cache entry these listing options select.
+    async fn remote_version_cache_context_for(
+        &self,
+        config: &Arc<Config>,
+        listing_opts: &ToolVersionOptions,
+        has_local_version_listing_override: bool,
+    ) -> eyre::Result<Option<String>> {
+        // The listing-relevant options shape the cached list, so they belong in its key.
+        // Only local overrides count: a registry-supplied value is identical for everyone, so
+        // one entry is correct for it, and leaving it out keeps the shared versions host
+        // available for the default case.
+        let opt_context = has_local_version_listing_override.then(|| {
+            listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
+        });
+        Ok(
+            match (
+                self.remote_version_cache_context(config).await?,
+                opt_context,
+            ) {
+                (Some(backend_context), Some(opt_context)) => {
+                    Some(hash::hash_to_str(&(backend_context, opt_context)))
+                }
+                (Some(context), None) | (None, Some(context)) => Some(context),
+                (None, None) => None,
+            },
+        )
+    }
+
+    /// The remote-version cache entry these listing options select. A backend
+    /// that overrides listing to consult a live policy still needs this, so
+    /// that offline it serves the same entry the shared path would.
+    async fn remote_version_cache_for(
+        &self,
+        config: &Arc<Config>,
+        listing_opts: &ToolVersionOptions,
+        has_local_version_listing_override: bool,
+    ) -> eyre::Result<Arc<TokioMutex<VersionCacheManager>>> {
+        let context = self
+            .remote_version_cache_context_for(
+                config,
+                listing_opts,
+                has_local_version_listing_override,
+            )
+            .await?;
+        Ok(match context.as_deref() {
+            Some(context) => self.get_remote_version_cache_with_context(Some(context)),
+            None => self.get_remote_version_cache(),
+        })
+    }
+
     fn get_remote_version_cache(&self) -> Arc<TokioMutex<VersionCacheManager>> {
         self.get_remote_version_cache_with_context(None)
     }
@@ -4105,6 +4228,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 let mut cm = CacheManagerBuilder::new(
                     self.ba().cache_path.join("remote_versions.msgpack.z"),
                 )
+                .with_cache_key(self.ba().full())
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
                 if let Some(context) = context {
                     cm = cm.with_cache_key(context.to_string());
@@ -4930,6 +5054,7 @@ mod latest_version_tests {
             version: "nightly".to_string(),
             options: ResolvedToolOptions::default(),
             source: ToolSource::Argument,
+            lockfile_scope: Default::default(),
         };
         let tv = ToolVersion::new(request, "nightly".to_string());
 
@@ -4974,10 +5099,39 @@ mod latest_version_tests {
         );
     }
 
-    /// The regression this fixes: two option values that produce different listings shared one
-    /// cache entry, so whichever ran first answered for both. `short` is the same for the two
-    /// (inline opts are stripped from it), so they do share a cache *directory* — only the key
-    /// keeps them apart.
+    #[tokio::test]
+    async fn registry_min_version_partitions_persisted_backend_lists() {
+        let config = Config::get().await.unwrap();
+        let make_backend = |full: &str, version: &str| {
+            let mut backend = LatestBackend::new("test-registry-min-version-cache")
+                .with_remote_versions(vec![VersionInfo {
+                    version: version.to_string(),
+                    ..Default::default()
+                }]);
+            backend.ba = Arc::new(BackendArg::new(
+                "test-registry-min-version-cache".to_string(),
+                Some(full.to_string()),
+            ));
+            backend
+        };
+        let older = make_backend("aqua:example/tool", "1.0.0");
+        let newer = make_backend("packslip:github.com/example/tool", "2.0.0");
+        assert_eq!(older.ba().cache_path, newer.ba().cache_path);
+        let _ = fs::remove_dir_all(&older.ba().cache_path);
+        assert_eq!(
+            older.list_remote_versions(&config).await.unwrap(),
+            ["1.0.0"]
+        );
+        // Separate in-memory entries must also have separate files on disk.
+        assert_eq!(
+            newer.list_remote_versions(&config).await.unwrap(),
+            ["2.0.0"]
+        );
+        assert_eq!(newer.list_calls(), 1);
+    }
+
+    /// Two option values that produce different listings must not share a cache
+    /// entry, even though inline options are stripped from the cache directory.
     #[tokio::test]
     async fn test_remote_versions_cache_is_partitioned_by_listing_options() {
         let config = Config::get().await.unwrap();
@@ -5192,6 +5346,29 @@ mod latest_version_tests {
 
 /// Helper function for calculating install operation count in HTTP/S3-style backends.
 /// Used by HttpBackend and S3Backend to avoid code duplication.
+/// Share of an install the initial fetch is assumed to take when a backend has
+/// not said otherwise. Downloading is normally the long pole; verification and
+/// extraction split what is left.
+const DOWNLOAD_OPERATION_WEIGHT: f64 = 0.7;
+
+/// Replacing an existing install before the new one is fetched.
+const UNINSTALL_OPERATION_WEIGHT: f64 = 0.05;
+
+/// Weight the first operation as the fetch and split the remainder evenly over
+/// whatever verification and unpacking steps the backend declared.
+pub(crate) fn default_operation_weights(count: usize) -> Vec<f64> {
+    match count {
+        0 => vec![],
+        1 => vec![1.0],
+        n => {
+            let rest = (1.0 - DOWNLOAD_OPERATION_WEIGHT) / (n - 1) as f64;
+            std::iter::once(DOWNLOAD_OPERATION_WEIGHT)
+                .chain(std::iter::repeat_n(rest, n - 1))
+                .collect()
+        }
+    }
+}
+
 pub(crate) fn http_install_operation_count(
     has_checksum_opt: bool,
     platform_key: &str,
@@ -5251,6 +5428,30 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
 /// either from upstream metadata or, for metadata-free listing backends, mise's
 /// legacy pre-release pattern. This helper drops pre-release entries when the
 /// current tool opts don't opt in.
+/// What a backend may report while offline: whatever the cache holds, and
+/// otherwise nothing. Never the network, whatever the backend would rather
+/// recheck.
+pub(crate) fn cached_remote_versions_offline(
+    ba: &BackendArg,
+    cache: &VersionCacheManager,
+) -> Vec<VersionInfo> {
+    trace!(
+        "Skipping remote version listing for {} due to offline mode",
+        ba.to_string()
+    );
+    match cache.get_cached() {
+        Ok(versions) => versions,
+        Err(err) => {
+            debug!(
+                "No cached remote versions available for {} while offline: {:#}",
+                ba.to_string(),
+                err
+            );
+            vec![]
+        }
+    }
+}
+
 pub(crate) fn filter_cached_prereleases(
     versions: Vec<VersionInfo>,
     want_prereleases: bool,
@@ -5379,17 +5580,33 @@ pub(crate) fn fuzzy_match_versions(
         .collect()
 }
 
-pub(crate) fn unalias_backend(backend: &str) -> &str {
+/// Derive the directory namespace from the configured tool spelling.
+pub(crate) fn tool_directory_name(short: &str) -> String {
+    use heck::ToKebabCase;
+    short.to_kebab_case()
+}
+
+pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str> {
+    match backend.strip_prefix("pipx:") {
+        Some(name) => format!("pypi:{name}").into(),
+        None => backend.into(),
+    }
+}
+
+pub(crate) fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
         _ => backend.trim_start_matches("core:"),
     }
+    .into()
 }
 
 #[test]
 fn test_unalias_backend() {
+    assert_eq!(unalias_backend("pipx:black"), "pipx:black");
+    assert_eq!(unalias_backend("pypi:black"), "pypi:black");
     assert_eq!(unalias_backend("node"), "node");
     assert_eq!(unalias_backend("nodejs"), "node");
     assert_eq!(unalias_backend("core:node"), "node");

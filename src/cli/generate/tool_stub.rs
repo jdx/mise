@@ -35,7 +35,12 @@ use toml_edit::DocumentMut;
 /// platforms to existing stub files rather than overwriting them. This allows you
 /// to incrementally build cross-platform tool stubs.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, example(r###"mise generate tool-stub ./bin/node --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz"###, help = r###"Download and inspect a real archive to detect its binary and checksum"###),
+    example(r###"mise generate tool-stub ./bin/node --platform-url linux-x64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz"###, help = r###"Add a Linux artifact to the same stub"###),
+    example(r###"mise generate tool-stub ./bin/my-tool --url https://example.com/my-tool.tar.gz --skip-download
+# Replace the URL with a real artifact before fetching metadata or executing it"###, help = r###"Create a draft for your own artifact without fetching the placeholder URL"###),
+    example(r###"mise generate tool-stub ./bin/node --fetch"###, help = r###"Fill missing checksums and sizes in an existing stub"###),
+    example(r###"mise generate tool-stub ./bin/registry-node --lock --version 22"###, help = r###"For an existing registry-backed stub, resolve and embed version/platform lock data"###))]
 pub(super) struct ToolStub {
     /// Output file path for the tool stub
     #[usage(value_hint = ValueHint::FilePath)]
@@ -987,6 +992,7 @@ static WINDOWS_LAUNCHER: LazyLock<String> =
 ///
 /// - lists a `[platforms.*]` table with a windows entry → yes
 /// - lists `[platforms.*]` tables but none for windows → no, this tool does not ship for Windows
+/// - lists an `os` selector that excludes Windows → no, regardless of backend support
 /// - lists no platforms at all (`tool = "python"`, or a bare `url`) → yes, nothing was ruled out
 ///
 /// The stub's *name* is judged separately, by [`super::windows_launcher_path`].
@@ -998,6 +1004,14 @@ fn wants_windows_launcher(stub_content: &str) -> bool {
         // launcher so a Windows user is not silently left without one.
         return true;
     };
+    if let Some(os) = doc.get("os").and_then(|os| os.as_array())
+        && !os.iter().filter_map(|entry| entry.as_str()).any(|entry| {
+            let os = entry.split_once('/').map_or(entry, |(os, _)| os);
+            crate::cli::version::normalize_os(os) == "windows"
+        })
+    {
+        return false;
+    }
     let Some(platforms) = doc.get("platforms").and_then(|p| p.as_table_like()) else {
         return true;
     };
@@ -1011,58 +1025,6 @@ fn wants_windows_launcher(stub_content: &str) -> bool {
         .filter_map(|(key, _)| Platform::parse(key).ok())
         .any(|p| p.os == "windows")
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    Generate a tool stub for a single URL:
-    $ <bold>mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"</bold>
-
-    Generate a tool stub with platform-specific URLs:
-    $ <bold>mise generate tool-stub ./bin/rg \
-        --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
-        --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz</bold>
-
-    Append additional platforms to an existing stub:
-    $ <bold>mise generate tool-stub ./bin/rg \
-        --platform-url linux-x64:https://example.com/rg-linux.tar.gz</bold>
-    $ <bold>mise generate tool-stub ./bin/rg \
-        --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz</bold>
-    # The stub now contains both platforms
-
-    Use auto-detection for platform from URL:
-    $ <bold>mise generate tool-stub ./bin/node \
-        --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz</bold>
-    # Platform 'macos-arm64' will be auto-detected from the URL
-
-    Generate with platform-specific binary paths:
-    $ <bold>mise generate tool-stub ./bin/tool \
-        --platform-url linux-x64:https://example.com/tool-linux.tar.gz \
-        --platform-url windows-x64:https://example.com/tool-windows.zip \
-        --platform-bin windows-x64:tool.exe</bold>
-
-    Generate without downloading (faster):
-    $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --skip-download</bold>
-
-    Fetch checksums for an existing stub:
-    $ <bold>mise generate tool-stub ./bin/jq --fetch</bold>
-    # This will read the existing stub and download files to fill in any missing checksums/sizes
-
-    Generate a bootstrap stub that installs mise if needed:
-    $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap</bold>
-    # The stub will check for mise and install it automatically before running the tool
-
-    Generate a bootstrap stub with a pinned mise version:
-    $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap --bootstrap-version 2025.1.0</bold>
-
-    Lock an existing tool stub with pinned version and platform URLs/checksums:
-    $ <bold>mise generate tool-stub ./bin/node --lock</bold>
-
-    Bump the version in a locked stub:
-    $ <bold>mise generate tool-stub ./bin/node --lock --version 22</bold>
-    # Resolves the latest node 22.x, pins it, and updates platform URLs/checksums
-"#
-);
 
 #[cfg(test)]
 mod tests {
@@ -1118,6 +1080,32 @@ url = "https://example.com/tool-linux.tar.gz"
 
 [platforms.macos-arm64]
 url = "https://example.com/tool-macos.tar.gz"
+"#;
+        assert!(!wants_windows_launcher(stub));
+    }
+
+    #[test]
+    fn a_stub_with_an_os_selector_that_excludes_windows_does_not() {
+        assert!(!wants_windows_launcher(
+            "tool = \"github:jdx/tiny\"\nos = [\"linux\", \"macos/arm64\"]\n"
+        ));
+    }
+
+    #[test]
+    fn a_stub_with_a_windows_os_selector_gets_a_launcher() {
+        for os in ["windows", "win/amd64"] {
+            let stub = format!("tool = \"github:example/tool\"\nos = [\"{os}\"]\n");
+            assert!(wants_windows_launcher(&stub), "{os}");
+        }
+    }
+
+    #[test]
+    fn a_windows_os_selector_does_not_bypass_platform_tables() {
+        let stub = r#"
+os = ["windows"]
+
+[platforms.linux-x64]
+url = "https://example.com/tool-linux.tar.gz"
 "#;
         assert!(!wants_windows_launcher(stub));
     }

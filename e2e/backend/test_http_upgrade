@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Test that HTTP backend tools (which use symlinks to cache) can be upgraded
+# Test that HTTP backend tools opting into shared extraction can be upgraded
 # This validates the fix for https://github.com/jdx/mise/pull/7012
 #
-# The HTTP backend creates symlinks from installs/ to http-tarballs/ cache.
+# With shared_extraction enabled, the HTTP backend creates symlinks from installs/ to http-tarballs/ cache.
 # Before the fix, these symlinks caused tools to be incorrectly skipped
 # in the outdated check, preventing upgrades from working.
 
@@ -47,6 +47,7 @@ fi
 echo "Test 1: Install HTTP tool with version_list_url"
 cat <<EOF >mise.toml
 [tools."http:hello-upgrade"]
+shared_extraction = true
 version = "1.0.0"
 url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz"
 version_list_url = "http://localhost:$HTTP_PORT/versions.txt"
@@ -66,6 +67,7 @@ echo "Verified: Install path is a symlink (HTTP backend caching)"
 
 cat <<EOF >mise.toml
 [tools."http:hello-upgrade"]
+shared_extraction = true
 version = "1.0.0"
 url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz"
 version_list_url = "http://localhost:$HTTP_PORT/versions.txt"

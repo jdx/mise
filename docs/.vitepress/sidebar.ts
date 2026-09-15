@@ -11,10 +11,10 @@ export type SidebarItem = {
 
 export const sidebar: SidebarItem[] = [
   {
-    text: "Guides",
+    text: "Start Here",
     items: [
-      { text: "Demo", link: "/demo" },
       { text: "Getting Started", link: "/getting-started" },
+      { text: "Demo", link: "/demo" },
       { text: "Walkthrough", link: "/walkthrough" },
       { text: "Installing mise", link: "/installing-mise" },
       { text: "IDE Integration", link: "/ide-integration" },
@@ -26,6 +26,10 @@ export const sidebar: SidebarItem[] = [
     items: [
       { text: "mise.toml", link: "/configuration" },
       { text: "Variables", link: "/configuration/vars" },
+      {
+        text: "Project Diagnostics",
+        link: "/configuration/project-diagnostics",
+      },
       { text: "Settings", link: "/configuration/settings" },
       {
         text: "Configuration Environments",
@@ -48,6 +52,14 @@ export const sidebar: SidebarItem[] = [
       { text: "GitHub Tokens", link: "/dev-tools/github-tokens" },
       { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
       { text: "Security", link: "/security" },
+      {
+        text: "Packslip Man Pages, Completions, and Skills",
+        link: "/dev-tools/packslip-resources",
+      },
+      {
+        text: "Packslip Verification and Policy",
+        link: "/dev-tools/packslip-verification",
+      },
       { text: "OCI Images (experimental)", link: "/dev-tools/mise-oci" },
       { text: "Deps", link: "/dev-tools/deps" },
       {
@@ -90,7 +102,8 @@ export const sidebar: SidebarItem[] = [
           { text: "go", link: "/dev-tools/backends/go" },
           { text: "http", link: "/dev-tools/backends/http" },
           { text: "npm", link: "/dev-tools/backends/npm" },
-          { text: "pipx", link: "/dev-tools/backends/pipx" },
+          { text: "packslip", link: "/dev-tools/backends/packslip" },
+          { text: "pypi", link: "/dev-tools/backends/pypi" },
           { text: "pkgx", link: "/dev-tools/backends/pkgx" },
           { text: "spm", link: "/dev-tools/backends/spm" },
           { text: "ubi", link: "/dev-tools/backends/ubi" },
@@ -103,6 +116,7 @@ export const sidebar: SidebarItem[] = [
     text: "Bootstrap",
     items: [
       { text: "Overview", link: "/bootstrap" },
+      { text: "Set Up a Machine", link: "/bootstrap/setup" },
       {
         text: "Remote Hosts",
         link: "/bootstrap/remote",
@@ -118,6 +132,7 @@ export const sidebar: SidebarItem[] = [
           { text: "dnf", link: "/bootstrap/packages/dnf" },
           { text: "pacman", link: "/bootstrap/packages/pacman" },
           { text: "brew", link: "/bootstrap/packages/brew" },
+          { text: "nix", link: "/bootstrap/packages/nix" },
           { text: "mas", link: "/bootstrap/packages/mas" },
           {
             text: "Package Plugins",
@@ -134,7 +149,7 @@ export const sidebar: SidebarItem[] = [
         link: "/bootstrap/files",
       },
       {
-        text: "System Services",
+        text: "Services",
         link: "/bootstrap/services",
       },
       {
@@ -152,6 +167,10 @@ export const sidebar: SidebarItem[] = [
       {
         text: "Dotfiles",
         link: "/dotfiles",
+      },
+      {
+        text: "Dotfiles History",
+        link: "/history",
       },
       {
         text: "Shell Activation",
@@ -190,6 +209,7 @@ export const sidebar: SidebarItem[] = [
         ],
       },
       { text: "Hooks", link: "/hooks" },
+      { text: "Daemons", link: "/daemons" },
       { text: "direnv", link: "/direnv" },
     ],
   },
@@ -203,6 +223,7 @@ export const sidebar: SidebarItem[] = [
       { text: "File Tasks", link: "/tasks/file-tasks" },
       { text: "Task Arguments", link: "/tasks/task-arguments" },
       { text: "Task Configuration", link: "/tasks/task-configuration" },
+      { text: "Task Caching", link: "/tasks/caching" },
       { text: "Remote Cache Protocol", link: "/tasks/remote-cache-protocol" },
       { text: "Task Templates", link: "/tasks/templates" },
       { text: "Monorepo Tasks", link: "/tasks/monorepo" },
@@ -284,26 +305,23 @@ export const sidebar: SidebarItem[] = [
   },
 ];
 
-function cliReference(commands: { [key: string]: Command }) {
+function cliReference(
+  commands: { [key: string]: Command },
+  parent: string[] = [],
+): SidebarItem[] {
   return Object.keys(commands)
     .map((name) => [name, commands[name]] as [string, Command])
     .filter(([_name, command]) => command.hide !== true)
     .map(([name, command]) => {
-      const x: any = {
-        text: `mise ${name}`,
-        link: `/cli/${name}`,
+      const path = [...parent, name];
+      const item: SidebarItem = {
+        text: `mise ${path.join(" ")}`,
+        link: `/cli/${path.join("/")}`,
       };
       if (command.subcommands) {
-        x.collapsed = true;
-        x.items = Object.keys(command.subcommands)
-          .filter(
-            (subcommand) => command.subcommands![subcommand].hide !== true,
-          )
-          .map((subcommand) => ({
-            text: `mise ${name} ${subcommand}`,
-            link: `/cli/${name}/${subcommand}`,
-          }));
+        item.collapsed = true;
+        item.items = cliReference(command.subcommands, path);
       }
-      return x;
+      return item;
     });
 }

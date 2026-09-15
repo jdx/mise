@@ -11,8 +11,9 @@ use crate::toolset::{
     NeededVersions, ToolVersion, ToolsetBuilder, get_versions_needed_by_tracked_configs,
     get_versions_needed_by_tracked_stubs,
 };
+use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::prompt;
+use crate::ui::prompt::{self, Confirmation};
 use crate::{backend::Backend, config, env, exit};
 use console::style;
 use eyre::Result;
@@ -31,7 +32,13 @@ use super::trust::Trust;
 ///
 /// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        "mise prune --dry-run",
+        help = "Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`."
+    )
+)]
 pub(crate) struct Prune {
     /// Prune only these tools
     #[usage()]
@@ -82,7 +89,14 @@ impl Prune {
             let (to_delete, needed) = prunable_tools_with_sources(&config, tools).await?;
             let has_work = !to_delete.is_empty();
             let explain = self.is_dry_run().then_some(&needed);
-            delete(&config, self.is_dry_run(), to_delete, explain).await?;
+            delete(
+                &config,
+                self.is_dry_run(),
+                to_delete,
+                explain,
+                UnavailableConfirmation::Error,
+            )
+            .await?;
             if self.dry_run_code && has_work {
                 return Err(exit::request(1));
             }
@@ -167,42 +181,103 @@ pub(super) async fn prune(
     dry_run: bool,
 ) -> Result<()> {
     let to_delete = prunable_tools(config, tools).await?;
-    delete(config, dry_run, to_delete, None).await
+    delete(
+        config,
+        dry_run,
+        to_delete,
+        None,
+        UnavailableConfirmation::Decline,
+    )
+    .await
 }
 
+/// How a caller wants to handle a confirmation prompt that nobody can answer.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UnavailableConfirmation {
+    Error,
+    Decline,
+}
+
+/// Confirms and removes the supplied versions according to the caller's prompt policy.
 async fn delete(
     config: &Arc<Config>,
     dry_run: bool,
     to_delete: Vec<(Arc<dyn Backend>, ToolVersion)>,
     explain: Option<&NeededVersions>,
+    unavailable: UnavailableConfirmation,
 ) -> Result<()> {
     let mpr = MultiProgressReport::get();
+    if dry_run {
+        for (p, tv) in to_delete {
+            if let Some(needed) = explain {
+                explain_removal(&tv, needed);
+            }
+            let prefix = format!("{} {} ", tv.style(), style("[dryrun]").bold());
+            let pr = mpr.add(&prefix);
+            p.uninstall_version(config, &tv, pr.as_ref(), true).await?;
+            pr.finish();
+        }
+        return Ok(());
+    }
+
+    // Ask about everything first, then remove. A prompt in the middle of a
+    // live region has to pause it, and the answers are the same either way.
+    let mut confirmed = Vec::with_capacity(to_delete.len());
     for (p, tv) in to_delete {
         if let Some(needed) = explain {
             explain_removal(&tv, needed);
         }
-        let mut prefix = tv.style();
-        if dry_run {
-            prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
-        }
-        if !dry_run
-            && !Settings::get().yes
-            && !prompt::confirm_with_all(format!("remove {} ?", tv))?.is_yes()
-        {
+        if Settings::get().yes {
+            confirmed.push((p, tv));
             continue;
         }
-        let pr = mpr.add(&prefix);
-        p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
-            .await?;
-        if !dry_run {
-            if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
-                warn!("failed to clear tool purgatory entry: {err:#}");
-            }
-            runtime_symlinks::remove_missing_symlinks(p)?;
+        match prompt::confirm_with_all(format!("remove {} ?", tv))? {
+            Confirmation::Yes => confirmed.push((p, tv)),
+            Confirmation::No | Confirmation::Unanswered => {}
+            Confirmation::Unavailable if unavailable == UnavailableConfirmation::Decline => {}
+            Confirmation::Unavailable => eyre::bail!(
+                "mise prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
+            ),
         }
-        pr.finish();
+    }
+
+    let mut progress = removal_progress(
+        &mpr,
+        confirmed
+            .iter()
+            .map(|(_, tv)| (removal_key(tv), tv.style())),
+    );
+    for (p, tv) in confirmed {
+        let tool = progress
+            .as_ref()
+            .and_then(|progress| progress.start_tool(&removal_key(&tv)));
+        let pr = match &tool {
+            Some(tool) => tool.reporter(),
+            None => mpr.add(&tv.style()),
+        };
+        let result = p.uninstall_version(config, &tv, pr.as_ref(), false).await;
+        if let Some(tool) = &tool {
+            tool.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
+        }
+        result?;
+        if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
+            warn!("failed to clear tool purgatory entry: {err:#}");
+        }
+        runtime_symlinks::remove_missing_symlinks(p)?;
+        if tool.is_none() {
+            pr.finish();
+        }
+    }
+    if let Some(progress) = progress.as_mut() {
+        progress.finish(vec![]);
     }
     Ok(())
+}
+
+/// The session key for a version being removed: the same `short@version`
+/// shape the install scheduler uses.
+fn removal_key(tv: &ToolVersion) -> String {
+    format!("{}@{}", tv.ba().short, tv.version)
 }
 
 /// Say why `tv` is up for removal.
@@ -240,12 +315,3 @@ fn explain_removal(tv: &ToolVersion, needed: &NeededVersions) {
         kept.join("; ")
     );
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise prune --dry-run</bold>
-    rm -rf ~/.local/share/mise/versions/node/20.0.0
-    rm -rf ~/.local/share/mise/versions/node/20.0.1
-"#
-);

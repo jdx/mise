@@ -85,6 +85,11 @@ pub(crate) struct GithubAsset {
     pub digest: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GithubRepository {
+    full_name: String,
+}
+
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
 
 static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubRelease>>>> = Lazy::new(Default::default);
@@ -155,11 +160,16 @@ pub(crate) async fn list_releases_from_url(
     api_url: &str,
     repo: &str,
 ) -> Result<Vec<GithubRelease>> {
-    Ok(list_releases_including_prereleases_from_url(api_url, repo)
-        .await?
-        .into_iter()
-        .filter(|r| !r.prerelease)
-        .collect())
+    // `false`: this variant's callers (ubi, spm, and the github backend's
+    // security-feature probe) keep asset-less releases, so their pagination
+    // must stop where it always did.
+    Ok(
+        list_releases_including_prereleases_from_url(api_url, repo, false)
+            .await?
+            .into_iter()
+            .filter(|r| !r.prerelease)
+            .collect(),
+    )
 }
 
 /// Like [`list_releases`] but includes releases flagged `prerelease: true`.
@@ -171,25 +181,67 @@ pub(crate) async fn list_releases_including_prereleases(repo: &str) -> Result<Ve
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_releases_(API_URL, repo).await)
+        .get_or_try_init_async(async || list_releases_(API_URL, repo, false).await)
         .await?
         .to_vec())
 }
 
+/// `require_assets` reaches the fetch loop from the caller's own filter: the
+/// `github:` backend drops releases with nothing uploaded, so for it a stable
+/// release with no assets is not a place to stop paginating. See
+/// `has_stopping_stable_release`. It is part of the cache key because the two
+/// answers are different lists — the `true` list is a superset, and handing the
+/// shorter one to a caller that filters is the bug this argument exists to fix.
 pub(crate) async fn list_releases_including_prereleases_from_url(
     api_url: &str,
     repo: &str,
+    require_assets: bool,
 ) -> Result<Vec<GithubRelease>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key = releases_cache_key(api_url, repo, require_assets);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
-        .get_or_try_init_async(async || list_releases_(api_url, repo).await)
+        .get_or_try_init_async(async || list_releases_(api_url, repo, require_assets).await)
         .await?
         .to_vec())
 }
 
-async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+/// Cache key for one release listing.
+///
+/// `require_assets` cannot be a suffix on the readable part. Appending
+/// `-with-assets` makes `("owner/foo", true)` and `("owner/foo-with-assets",
+/// false)` the same string, and this cache is global and persisted, so one
+/// repository would be served the other's releases. The hash of the tuple is
+/// what separates them; the kebab-cased prefix is kept only so the file on disk
+/// is still recognisable.
+fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
+    format!(
+        "{}-{}",
+        format!("{api_url}-{repo}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, require_assets))
+    )
+}
+
+/// Whether the bounded prerelease fallback has found what it went looking for:
+/// a stable release the caller will actually keep.
+///
+/// Without `require_assets` this is the original test — any published,
+/// non-prerelease release. With it, a stable release that carries no assets no
+/// longer counts, because the `github:` backend removes those from the version
+/// list; stopping on one would leave an installable stable release sitting on a
+/// page that is never fetched. Callers that keep every release pass `false` and
+/// stop exactly where they always have.
+fn has_stopping_stable_release(releases: &[GithubRelease], require_assets: bool) -> bool {
+    releases
+        .iter()
+        .any(|r| !r.prerelease && !r.draft && (!require_assets || !r.assets.is_empty()))
+}
+
+async fn list_releases_(
+    api_url: &str,
+    repo: &str,
+    require_assets: bool,
+) -> Result<Vec<GithubRelease>> {
     let mut url = format!("{api_url}/repos/{repo}/releases?per_page=100");
     let headers = get_headers(&url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
@@ -204,7 +256,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
     let mut pages_fetched = 1;
     while let Some(next) = next_page(&headers) {
         if !*env::MISE_LIST_ALL_VERSIONS
-            && (releases.iter().any(|r| !r.prerelease && !r.draft)
+            && (has_stopping_stable_release(&releases, require_assets)
                 || pages_fetched >= MAX_RELEASE_FALLBACK_PAGES)
         {
             break;
@@ -325,6 +377,17 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
 
 pub(crate) async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
     get_release_with_versions_host(repo, tag, true).await
+}
+
+/// Resolve a repository name through GitHub so callers can follow repository
+/// transfers without weakening identity checks to the former owner/name.
+pub(crate) async fn canonical_repo(repo: &str) -> Result<String> {
+    let url = format!("{API_URL}/repos/{repo}");
+    let headers = get_headers(&url)?;
+    let repository: GithubRepository = crate::http::HTTP_FETCH
+        .json_with_headers(url, &headers)
+        .await?;
+    Ok(repository.full_name)
 }
 
 pub(crate) async fn get_release_with_versions_host(
@@ -469,7 +532,13 @@ async fn get_release_with_options(
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
-        format!("{api_url}/repos/{repo}/releases/tags/{tag}")
+        // As one path segment: a tag may hold `#` or `/`, which would
+        // otherwise start a fragment or reach a different path. GitHub accepts
+        // the encoded form, and `versions_host` already sends it that way.
+        format!(
+            "{api_url}/repos/{repo}/releases/tags/{}",
+            urlencoding::encode(tag)
+        )
     };
     let headers = get_headers(&url)?;
     crate::http::HTTP_FETCH
@@ -614,6 +683,68 @@ pub(crate) async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -
     }
 }
 
+/// Split a `github.com/{owner}/{repo}/releases/download/{tag}/{asset}` browser
+/// URL into `(owner/repo, tag, asset name)`. `None` for any other URL.
+///
+/// A tag may contain `/`, and GitHub leaves those literal in the download URL
+/// (`.../download/@biomejs/biome@2.5.2/biome-linux-x64`) while percent-encoding
+/// the rest. An asset name never contains one, so the last segment is the asset
+/// and everything before it is the tag.
+pub(crate) fn release_asset_from_url(url: &str) -> Option<(String, String, String)> {
+    let url = url::Url::parse(url).ok()?;
+    if url.host_str()? != "github.com" {
+        return None;
+    }
+    let segments = url.path_segments()?.collect::<Vec<_>>();
+    let [owner, repo, "releases", "download", tail @ ..] = segments.as_slice() else {
+        return None;
+    };
+    let (asset, tag) = tail.split_last()?;
+    if tag.is_empty() || asset.is_empty() {
+        return None;
+    }
+    let tag = tag
+        .iter()
+        .map(|segment| urlencoding::decode(segment).map(|s| s.into_owned()))
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?
+        .join("/");
+    let asset = urlencoding::decode(asset).ok()?.into_owned();
+    Some((format!("{owner}/{repo}"), tag, asset))
+}
+
+/// The API endpoint that serves the release asset a browser-facing URL names.
+///
+/// A private repository answers `github.com/.../releases/download/...` with 404
+/// even for a caller holding a valid token, so the asset has to be fetched from
+/// `api.github.com/repos/{repo}/releases/assets/{id}` instead — and only the
+/// release metadata knows that id. `None` when the URL is not a GitHub release
+/// download, the release cannot be read, or it carries no asset by that name.
+///
+/// Pass `use_versions_host: false` when the browser URL has already failed: the
+/// repository is most likely private, so mise-versions cannot hold the release
+/// and asking would only tell a public host the owner, repository, and tag.
+pub(crate) async fn release_asset_api_url(
+    browser_url: &str,
+    use_versions_host: bool,
+) -> Option<String> {
+    let (repo, tag, asset_name) = release_asset_from_url(browser_url)?;
+    let release = match get_release_with_versions_host(&repo, &tag, use_versions_host).await {
+        Ok(release) => release,
+        Err(err) => {
+            debug!("failed to resolve GitHub release asset {repo}@{tag}/{asset_name}: {err:#}");
+            return None;
+        }
+    };
+    match release.assets.iter().find(|asset| asset.name == asset_name) {
+        Some(asset) => Some(asset.url.clone()),
+        None => {
+            debug!("GitHub release {repo}@{tag} did not include asset {asset_name}");
+            None
+        }
+    }
+}
+
 /// Standard GitHub token env vars, in precedence order (applies to every host).
 const GITHUB_TOKEN_ENV_VARS: &[&str] = &["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"];
 
@@ -655,6 +786,15 @@ pub(crate) fn token_source_for_token(host: &str, token: &str) -> Option<TokenSou
 /// 6. gh CLI token (from `hosts.yml`)
 /// 7. `git credential fill` (if enabled)
 pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+    resolve_token_inner(host, true)
+}
+
+/// Git already runs its configured helpers; do not recursively invoke them.
+pub(crate) fn resolve_token_for_git(host: &str) -> Option<(String, TokenSource)> {
+    resolve_token_inner(host, false)
+}
+
+fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
     if is_github_release_asset_host(host) {
@@ -670,20 +810,13 @@ pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let lookup_hosts = token_lookup_hosts(host);
 
     // 1. Enterprise token (non-github.com only)
-    if !is_ghcom && let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_deref() {
-        return Some((
-            token.to_string(),
-            TokenSource::EnvVar("MISE_GITHUB_ENTERPRISE_TOKEN"),
-        ));
+    if !is_ghcom && let Some(token) = env::scoped_var("MISE_GITHUB_ENTERPRISE_TOKEN") {
+        return Some((token, TokenSource::EnvVar("MISE_GITHUB_ENTERPRISE_TOKEN")));
     }
 
     // 2. Standard env vars (checked individually for correct precedence and source reporting)
     for var_name in GITHUB_TOKEN_ENV_VARS {
-        if let Some(token) = std::env::var(var_name)
-            .ok()
-            .map(|t| t.trim().to_string())
-            .filter(|t| !t.is_empty())
-        {
+        if let Some(token) = env::scoped_var(var_name) {
             return Some((token, TokenSource::EnvVar(var_name)));
         }
     }
@@ -695,7 +828,8 @@ pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     // `resolve_token("api.github.com")` whenever the first call returned
     // `None`, which manifests as extra password-manager prompts.
     let credential_command = &settings.github.credential_command;
-    if !credential_command.is_empty()
+    if use_git_credentials
+        && !credential_command.is_empty()
         && let Some(canonical) = lookup_hosts.first()
         && let Some(token) =
             tokens::get_credential_command_token("github", credential_command, canonical)
@@ -725,7 +859,7 @@ pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     }
 
     // 7. git credential fill
-    if settings.github.use_git_credentials {
+    if use_git_credentials && settings.github.use_git_credentials {
         for lookup_host in &lookup_hosts {
             if let Some(token) = tokens::get_git_credential_token("github", lookup_host) {
                 return Some((token, TokenSource::GitCredential));
@@ -1049,6 +1183,73 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_release_asset_from_url_parses_browser_download_urls() {
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/owner/repo/releases/download/v1.2.3/tool-aarch64.tar.gz"
+            ),
+            Some((
+                "owner/repo".to_string(),
+                "v1.2.3".to_string(),
+                "tool-aarch64.tar.gz".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_decodes_tag_and_asset() {
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/owner/repo/releases/download/v1%2Bmeta/tool%20name.tar.gz"
+            ),
+            Some((
+                "owner/repo".to_string(),
+                "v1+meta".to_string(),
+                "tool name.tar.gz".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_keeps_a_tag_that_spans_segments() {
+        // GitHub percent-encodes `@` but leaves a tag's `/` as a path
+        // separator, so the asset is the last segment and the tag is the rest.
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.2/biome-linux-x64"
+            ),
+            Some((
+                "biomejs/biome".to_string(),
+                "@biomejs/biome@2.5.2".to_string(),
+                "biome-linux-x64".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_ignores_non_release_urls() {
+        assert_eq!(
+            release_asset_from_url("https://example.com/owner/repo/releases/download/v1/tool"),
+            None
+        );
+        assert_eq!(
+            release_asset_from_url("https://github.com/owner/repo/archive/refs/tags/v1.tar.gz"),
+            None
+        );
+        // An API asset endpoint is already what the fallback resolves to, so it
+        // is not itself a browser URL to resolve.
+        assert_eq!(
+            release_asset_from_url("https://api.github.com/repos/owner/repo/releases/assets/1"),
+            None
+        );
+        // A tag with no asset after it names no file.
+        assert_eq!(
+            release_asset_from_url("https://github.com/owner/repo/releases/download/v1"),
+            None
+        );
+    }
+
     const GITHUB_TOKEN_VARS: [&str; 4] = [
         "MISE_GITHUB_TOKEN",
         "GITHUB_API_TOKEN",
@@ -1275,6 +1476,115 @@ something_else = "value"
         }
     }
 
+    #[tokio::test]
+    async fn test_download_uses_scoped_install_env() {
+        let _token = GithubTokenGuard::new();
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let api_url = ghes_api_url(&server.url());
+        let install_env = [(
+            "GITHUB_TOKEN".to_string(),
+            crate::config::env_directive::EnvValue::from(false),
+        )]
+        .into_iter()
+        .collect();
+        let mock = server
+            .mock("GET", format!("{API_PATH}/download").as_str())
+            .match_header("authorization", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_body("download")
+            .expect(1)
+            .create_async()
+            .await;
+        let tempdir = tempfile::tempdir().unwrap();
+
+        crate::env::with_install_env(install_env, async {
+            crate::http::HTTP
+                .download_file(
+                    format!("{api_url}/download"),
+                    &tempdir.path().join("file"),
+                    None,
+                )
+                .await
+        })
+        .await
+        .unwrap();
+        mock.assert_async().await;
+    }
+
+    fn asset(name: &str) -> GithubAsset {
+        GithubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.invalid/{name}"),
+            url: format!("https://example.invalid/api/{name}"),
+            digest: None,
+        }
+    }
+
+    #[test]
+    fn releases_cache_key_separates_the_suffix_collision() {
+        let api = "https://api.github.com";
+
+        // The pair a `-with-assets` suffix would collapse. This cache is global
+        // and persisted, so a collision serves one repository the other's
+        // releases.
+        assert_ne!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo-with-assets", false)
+        );
+
+        // The flag still separates one repository from itself...
+        assert_ne!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo", false)
+        );
+        // ...the api_url still separates two hosts...
+        assert_ne!(
+            releases_cache_key(api, "owner/foo", false),
+            releases_cache_key("https://github.example.com/api/v3", "owner/foo", false)
+        );
+        // ...and the same inputs still land on the same entry.
+        assert_eq!(
+            releases_cache_key(api, "owner/foo", true),
+            releases_cache_key(api, "owner/foo", true)
+        );
+    }
+
+    #[test]
+    fn stopping_stable_release_ignores_assets_unless_asked() {
+        let mut assetless = make_release("v1.0.0");
+        let mut nightly = make_release("v2.0.0-nightly");
+        nightly.prerelease = true;
+        let releases = vec![nightly, assetless.clone()];
+
+        // A caller that keeps every release stops here, exactly as before.
+        assert!(has_stopping_stable_release(&releases, false));
+
+        // The `github:` backend does not: it will drop `v1.0.0` from the
+        // listing, so stopping on it would hide an installable stable release
+        // sitting on the next page.
+        assert!(!has_stopping_stable_release(&releases, true));
+
+        assetless.assets = vec![asset("tool-x86_64-unknown-linux-gnu.tar.gz")];
+        assert!(has_stopping_stable_release(&[assetless], true));
+    }
+
+    #[test]
+    fn stopping_stable_release_still_rejects_drafts_and_prereleases() {
+        // Assets do not promote a draft or a prerelease into a stopping point.
+        let mut draft = make_release("v1.0.0");
+        draft.draft = true;
+        draft.assets = vec![asset("tool.tar.gz")];
+
+        let mut prerelease = make_release("v2.0.0");
+        prerelease.prerelease = true;
+        prerelease.assets = vec![asset("tool.tar.gz")];
+
+        let releases = vec![draft, prerelease];
+        assert!(!has_stopping_stable_release(&releases, true));
+        assert!(!has_stopping_stable_release(&releases, false));
+    }
+
     #[test]
     fn release_date_prefers_published_at() {
         let mut release = make_release("v1.0.0");
@@ -1379,6 +1689,34 @@ something_else = "value"
             url: format!("https://api.github.com/repos/owner/repo/releases/assets/{name}"),
             digest: None,
         }
+    }
+
+    #[tokio::test]
+    async fn test_release_lookup_encodes_the_tag_as_one_path_segment() {
+        // A tag may hold `#` or `/`. Interpolated raw, the first would start a
+        // fragment and the second would reach a different path, so neither
+        // release could be looked up.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/tag-encoding-test";
+        let tag = "release/2026#1";
+        let mock = server
+            .mock(
+                "GET",
+                format!("/repos/{repo}/releases/tags/release%2F2026%231").as_str(),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&make_release(tag)).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, false)
+            .await
+            .unwrap();
+        assert_eq!(release.tag_name, tag);
+        mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -1525,7 +1863,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         page1_mock.assert_async().await;
         page2_mock.assert_async().await;
         assert!(
@@ -1533,6 +1871,93 @@ something_else = "value"
                 .iter()
                 .any(|r| r.tag_name == "v1.0.0" && !r.prerelease),
             "stable release from page 2 should be discovered, got {:?}",
+            releases.iter().map(|r| &r.tag_name).collect::<Vec<_>>()
+        );
+    }
+
+    // The listing filter reaching back into the fetch loop: a stable release
+    // with no assets is dropped from the version list, so for a caller that
+    // drops it there is nothing on this page worth stopping for.
+    #[tokio::test]
+    async fn test_list_releases_paginates_past_an_assetless_stable_release() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+
+        // Published, not a draft, not a prerelease -- and nothing attached.
+        let assetless_page = vec![make_release("v2.0.0")];
+        let asset_page = vec![GithubRelease {
+            assets: vec![asset("tool-x86_64-unknown-linux-gnu.tar.gz")],
+            ..make_release("v1.0.0")
+        }];
+
+        let repo = "owner/assetless-stable-first-page";
+        let page1_mock = server
+            .mock("GET", format!("/repos/{repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+            .with_body(serde_json::to_string(&assetless_page).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let page2_mock = server
+            .mock("GET", "/page2")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&asset_page).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, repo, true).await.unwrap();
+        page1_mock.assert_async().await;
+        page2_mock.assert_async().await;
+        assert!(
+            releases.iter().any(|r| r.tag_name == "v1.0.0"),
+            "installable stable release from page 2 should be discovered, got {:?}",
+            releases.iter().map(|r| &r.tag_name).collect::<Vec<_>>()
+        );
+
+        // The same first page still stops the loop for a caller that keeps
+        // asset-less releases. Without this the test above would also pass if
+        // the bound had simply been removed for everyone.
+        let kept_repo = "owner/assetless-stable-kept";
+        let kept_page1_mock = server
+            .mock("GET", format!("/repos/{kept_repo}/releases").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_header(
+                "link",
+                format!("<{base}/page2-kept>; rel=\"next\"").as_str(),
+            )
+            .with_body(serde_json::to_string(&assetless_page).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let kept_page2_mock = server
+            .mock("GET", "/page2-kept")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&asset_page).unwrap())
+            .expect(0)
+            .create_async()
+            .await;
+
+        let releases = list_releases_(&base, kept_repo, false).await.unwrap();
+        kept_page1_mock.assert_async().await;
+        kept_page2_mock.assert_async().await;
+        assert!(
+            releases.iter().all(|r| r.tag_name != "v1.0.0"),
+            "page 2 should not have been fetched, got {:?}",
             releases.iter().map(|r| &r.tag_name).collect::<Vec<_>>()
         );
     }
@@ -1569,7 +1994,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         page1_mock.assert_async().await;
         page2_mock.assert_async().await;
         assert!(releases.iter().any(|r| r.tag_name == "v1.0.0"));
@@ -1626,7 +2051,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&base, repo).await.unwrap();
+        let releases = list_releases_(&base, repo, false).await.unwrap();
         p1.assert_async().await;
         p2.assert_async().await;
         p3.assert_async().await;
@@ -1691,7 +2116,7 @@ something_else = "value"
             .create_async()
             .await;
 
-        let releases = list_releases_(&api, repo).await.unwrap();
+        let releases = list_releases_(&api, repo, false).await.unwrap();
         page1.assert_async().await;
         page2.assert_async().await;
         assert_eq!(releases.len(), 2);

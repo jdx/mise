@@ -165,7 +165,7 @@ async fn configured_package_closure(configured: &[PackageRequest]) -> Result<Has
     if configured.is_empty() {
         return Ok(HashSet::new());
     }
-    Ok(resolve::resolve_closure_with_taps(configured)
+    Ok(resolve::resolve_closure_with_taps(configured, false)
         .await?
         .into_iter()
         .map(|rf| formula_package_name(&rf.formula))

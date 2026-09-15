@@ -1,3 +1,8 @@
 {
-  "enabled": true
+  "enabled": true,
+  "checkpoints": {
+    "primary": {
+      "type": "git-refs"
+    }
+  }
 }

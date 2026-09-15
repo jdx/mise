@@ -1,3 +1,4 @@
+use crate::cli::args::TruncateOptions;
 use crate::config::tracking::Tracker;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -8,8 +9,19 @@ use itertools::Itertools;
 
 /// List config files currently in use
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise config ls
+Path                        Tools
+~/.config/mise/config.toml  pitchfork
+~/src/mise/mise.toml        bun, cargo-binstall, cargo:cargo-insta"###
+    )
+)]
 pub(crate) struct ConfigLs {
+    #[usage(flatten)]
+    truncate: TruncateOptions,
+
     /// Output in JSON format
     #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
@@ -45,6 +57,7 @@ impl ConfigLs {
             .map(|cf| cf.as_ref())
             .collect_vec();
         let mut table = MiseTable::new(self.no_header, &["Path", "Tools"]);
+        table.truncate(self.truncate.truncate);
         for cfg in configs {
             let ts = cfg.to_tool_request_set().unwrap();
             let tools = ts.list_tools().into_iter().join(", ");
@@ -78,7 +91,7 @@ impl ConfigLs {
             };
             table.add_row(vec![Cell::new(display_path(f)), tools]);
         }
-        table.truncate(true).print()
+        table.print()
     }
 
     async fn display_json(&self) -> Result<()> {
@@ -119,13 +132,3 @@ impl ConfigLs {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise config ls</bold>
-    Path                        Tools
-    ~/.config/mise/config.toml  pitchfork
-    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta
-"#
-);

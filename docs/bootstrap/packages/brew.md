@@ -1,4 +1,8 @@
-# brew
+---
+description: "Homebrew formulae and casks — without requiring Homebrew to be installed."
+---
+
+# Homebrew formulae and casks
 
 Homebrew formulae and casks — **without requiring Homebrew to be installed**.
 
@@ -20,15 +24,43 @@ bottle. Formulae without a usable bottle are built from source, also without
 Homebrew (see [Source formulae](#source-formulae)). mise never shells out to
 `brew` for homebrew/core formulae.
 
-Third-party taps are supported directly when the tap publishes Homebrew API
-metadata (`api/formula/<name>.json` or `api/cask/<token>.json`). Use the same
-fully-qualified name you would pass to Homebrew:
+## First install
+
+Use this manager when you want software in the shared Homebrew prefix. For a
+CLI that needs project-specific version switching, use a [tool backend](/dev-tools/backends/).
+These package declarations do not create mise shims or modify the current shell's PATH.
+
+```sh
+mise bootstrap packages status
+mise bootstrap packages apply --manager brew --dry-run
+mise bootstrap packages apply --manager brew
+```
+
+Check [platform support](#supported-platforms) first. Source builds need a
+compiler and build tools, and some casks need permission to write system-owned
+paths. An installation can include the package's dependencies.
+
+## Third-party taps
+
+Third-party taps are supported with the same fully-qualified name you would
+pass to Homebrew:
 
 ```toml
 [bootstrap.packages]
-"brew:railwaycat/emacsmacport/emacs-mac" = "latest"
+"brew:owner/tap/formula" = "latest"
 "brew-cask:owner/tap/app" = "latest"
 ```
+
+mise first looks for published Homebrew API metadata at
+`api/formula/<name>.json` or `api/cask/<token>.json`. When a tap does not
+publish it, mise fetches the Ruby definition at a pinned tap commit and
+evaluates its metadata with mise's own Formula or Cask DSL shim. Formula
+definitions are discovered with Homebrew's directory-wide precedence:
+`Formula/`, then `HomebrewFormula/`, then the repository root. Nested formulae
+are supported in the first two directories; root-level discovery is top-level
+only. Formulae resolved this way are built from source. mise does not invoke or
+install Homebrew. The shims support the commonly used DSL and report an error
+when a definition cannot be evaluated or installed safely.
 
 For taps whose GitHub URL cannot be inferred, add a tap source. This mirrors
 `[plugins]`: the key is the tap name and the value is the GitHub git URL.
@@ -45,7 +77,7 @@ For taps whose GitHub URL cannot be inferred, add a tap source. This mirrors
 `mise bootstrap packages brew tap` and `mise bootstrap packages brew untap`
 manage `[bootstrap.brew.taps]` in `mise.toml`; they do not mutate a Homebrew
 installation. Non-GitHub taps are not currently supported because mise needs
-direct raw access to the generated API metadata.
+direct raw access to tap metadata and Ruby definitions.
 
 ```sh
 mise bootstrap packages brew tap railwaycat/emacsmacport
@@ -59,7 +91,7 @@ Casks use the `brew-cask:` manager. mise fetches cask metadata directly from
 the Homebrew cask API (or from tap API metadata), downloads the artifact,
 verifies its sha256 when the cask provides one, extracts the archive, and
 installs app bundles into `/Applications` while recording the version under
-`<prefix>/Caskroom`. Like Homebrew, mise moves each app bundle into
+`<prefix>/Caskroom`. For an ordinary managed app artifact, mise moves the bundle into
 `/Applications` and leaves a symlink at its versioned Caskroom path instead of
 retaining a second copy of the application.
 
@@ -122,7 +154,23 @@ Casks declaring `auto_updates: true` in their Homebrew metadata are installed
 at the current version and then left to update themselves. mise does not expose
 an `auto_updates` override: the cask definition remains authoritative. These
 self-updating apps are also tracked by receipt without a duplicate Caskroom app
-bundle, and ordinary mise upgrades skip them.
+bundle. Install/apply and dependency installation leave installed self-updating
+apps unchanged. Explicit `mise bootstrap packages upgrade` follows Homebrew's
+default decision: `latest` and matching receipt versions skip. Otherwise, casks
+with a single owned app upgrade when its live `CFBundleShortVersionString` and
+`CFBundleVersion` indicate an older version using Homebrew's comparison rules,
+including CSV and combined short/build versions. Current, newer, unreadable, or
+incomparable app versions skip replacement. An outdated app that is running is
+also skipped and left to update itself. Browsers, Electron apps, and similar
+launch helper processes from their bundle on demand, so replacing the bundle
+under a live process strands every helper it starts afterwards; the app's own
+updater moves between versions without that. mise checks again after
+downloading and acquiring the install lock, and once more right before the
+bundle is replaced, because preflight steps and installers can start the app
+themselves; that last skip restores what preflight protected and leaves the
+receipt unchanged. An external self-updater can still change the app between
+the lock check and replacement. Dry-run reports the decision without replacing
+the app.
 
 `mise bootstrap status` marks these entries as `installed (auto-updates)`.
 For mise-owned casks, the `Current` column is the version recorded in the mise
@@ -157,7 +205,9 @@ mise prints a warning whenever it replaces an existing `.app`. Version
 upgrades still replace the bundle when upstream publishes a new cask version —
 expect to re-confirm TCC prompts after those upgrades, just as with Homebrew.
 
-On Linux, initial cask support is limited to font-only casks without lifecycle
+### Linux font casks
+
+On Linux, cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
 Homebrew's cask DSL, documented in the
 [Homebrew Cask Cookbook](https://docs.brew.sh/Cask-Cookbook). Fonts are
@@ -175,6 +225,8 @@ still fails with a clear unsupported-platform error. You can also mark macOS
 casks explicitly with `{ os = "macos" }`. This boundary will expand as mise
 gains portable implementations for more cask artifact types.
 
+### Supported artifacts and lifecycle actions
+
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
 generic prefix artifacts (`artifact`), font artifacts (`font`), simple macOS
@@ -191,10 +243,12 @@ cleanup metadata, not install receipts. For casks with lifecycle hooks, mise
 fetches the sha256-verified cask Ruby source pinned by the API metadata and runs
 supported `preflight`/`postflight` hooks through its own Cask DSL shim, without
 delegating to Homebrew. mise also supports structured `preflight_steps` and
-`postflight_steps` for `move`/`remove` operations against `staged_path`, `run`
-operations using Homebrew's serialized command bases, arguments, environment,
-guards, and sudo setting, and `terminate_process` operations with
-Homebrew-compatible name/full matching, retries, notices, and failure policy.
+`postflight_steps` for `move`/`remove` operations against `staged_path`,
+`set_permissions` operations that `chmod` existing `staged_path` or `appdir`
+paths with Homebrew's recursive default, `run` operations using Homebrew's
+serialized command bases, arguments, environment, guards, and sudo setting, and
+`terminate_process` operations with Homebrew-compatible name/full matching,
+retries, notices, and failure policy.
 Structured `copy` and `symlink` steps support Homebrew path bases, templates,
 guards, source globs, replacement, and sudo behavior. External paths created by
 lifecycle steps are recorded in the mise receipt and restored if the install
@@ -203,6 +257,8 @@ and declared cask conflicts fail before anything is modified. Casks that
 require custom installer choices, services, unsupported hook DSL, unsupported
 structured lifecycle steps, or other cask artifact types fail with a clear
 unsupported artifact error instead of delegating to Homebrew.
+
+### Ownership and installed state
 
 Direct cask pours remain mise-owned. Their completed state is recorded in
 `.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
@@ -228,12 +284,6 @@ reported as unhealthy so the next apply can reconcile them. Version upgrades
 and an explicit remove + apply still replace the app when you want a fresh
 pour.
 
-The `brew` manager exists because shared-library packages — postgres, ffmpeg,
-imagemagick, php — fundamentally can't be served by mise's per-project backends like
-`aqua:` or `github:`: their bottles are built against fixed install paths and
-a shared dependency tree. Installing them at Homebrew's canonical prefix is
-what makes them work.
-
 ## Supported platforms
 
 | Platform                    | Prefix                       |
@@ -249,10 +299,65 @@ source instead.
 
 ## The prefix
 
-If the prefix doesn't exist, mise creates it with the standard layout. This is
-the only time the brew manager uses sudo, mirroring what Homebrew's own
-installer does (`mkdir` + `chown` to your user). After that, installs are plain
-file operations as your user; nothing runs as root.
+If the prefix doesn't exist, mise creates it with the standard layout.
+Formula installation may elevate for prefix creation and ownership setup
+(`mkdir` + `chown`), then writes formulae as the prefix owner. Cask installation
+can also require elevation for package installers or lifecycle steps. Run mise
+as the intended owner and let it request the privileges needed for each step.
+
+Linked commands need `<prefix>/bin` on `PATH`. For example, in the appropriate
+shell startup file:
+
+```sh
+# Apple Silicon macOS
+export PATH="/opt/homebrew/bin:$PATH"
+
+# Linux
+# export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+```
+
+Keg-only formulae are not linked there. Use their `<prefix>/opt/<formula>` path
+when configuring compilers or services that need them. As with brew, formulae
+that are keg-only only because macOS already provides them are not keg-only on
+Linux and are linked normally.
+
+### Locate an installed formula
+
+`mise bootstrap packages where brew:unzip` prints the installed formula's
+absolute `<prefix>/opt/unzip` root as one line. Append `/bin` to use its commands,
+including commands from keg-only formulae:
+
+```sh
+if package_root="$(mise bootstrap packages where brew:unzip)"; then
+  export PATH="$package_root/bin:$PATH"
+fi
+```
+
+The lookup works for formulae installed by mise or Homebrew, with no package
+declaration or Homebrew executable required. Library-only formulae also have
+roots, so a successful lookup does not guarantee a `bin` directory exists.
+The stable `opt` spelling follows upgrades that repoint the link. It describes
+the active installation at lookup time; a concurrent upgrade or unlink can
+change the target before a later command uses it.
+
+Use the canonical installed formula name, such as `brew:openssl@3`.
+`brew:homebrew/core/unzip` and `brew:owner/tap/unzip` both query the local
+`unzip` rack; the lookup does not verify tap provenance or resolve aliases.
+`@latest` and numeric `@` suffixes are literal parts of the formula name.
+The command supports brew formulae on macOS arm64 and Linux x86_64/arm64;
+casks and other package managers are unsupported.
+
+A missing or unusable `opt` link produces an error on stderr, a nonzero exit
+status, and empty stdout. Install or reconcile the formula separately with
+`mise bootstrap packages apply brew:unzip`; inspect and restore an invalid
+link as directed by the error. Lookup reads local records without repairing
+them, downloading metadata, running subprocesses, or selecting another Cellar
+version.
+
+For this query, settings come exclusively from environment variables and global
+CLI options, including `--cd`. Project/global configuration and `.miserc.toml`
+are outside its inputs, so their errors and executable templates cannot affect
+the lookup. Automatic updates and startup housekeeping are skipped.
 
 ## Coexistence with a real Homebrew
 
@@ -362,6 +467,9 @@ For each formula in the dependency closure (dependencies first):
    linked-keg record is created for non-keg-only formulae.
    [keg-only](https://docs.brew.sh/FAQ#what-does-keg-only-mean) formulae get
    the `opt` link but are not linked into the prefix, just as with brew.
+   Keg-only reasons tied to macOS (`:provided_by_macos`, `:shadowed_by_macos`)
+   do not apply on other OSes, where these formulae are linked normally —
+   also matching brew.
 
 ## Source formulae
 
@@ -404,6 +512,14 @@ linked keg — the new keg replaces the old one and the links are repointed,
 the same dance `brew upgrade` does. Since bottles only exist for a formula's
 current version, "upgrade" and "install the current bottle" are the same
 operation.
+
+## Troubleshooting
+
+- **Link conflict:** inspect the paths mise lists and identify their owner before changing them. Repeated apply does not authorize overwriting unrelated files.
+- **Unsupported formula DSL or cask artifact:** read the named unsupported operation. mise's built-in installer has its own coverage; an upstream Homebrew recipe is not a guarantee of support.
+- **Installed but command missing:** check the prefix's `bin` directory and whether the formula is keg-only.
+- **Existing app differs:** decide whether to keep managing it outside mise or use the documented adoption workflow. `adopt` is not permission to overwrite a different app.
+- **App replaced successfully but permissions changed:** check macOS Privacy & Security grants for that app.
 
 ## Limitations
 

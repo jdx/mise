@@ -133,26 +133,61 @@ impl Toolset {
         config: &Arc<Config>,
         opts: &ResolveOptions,
     ) -> eyre::Result<()> {
+        self.resolve_with_progress(config, opts, false).await
+    }
+
+    pub(crate) async fn resolve_with_progress(
+        &mut self,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+        show_progress: bool,
+    ) -> eyre::Result<()> {
+        let mut progress = show_progress
+            .then(|| {
+                crate::ui::install_progress::resolution_progress(
+                    self.versions
+                        .keys()
+                        .map(|ba| (ba.short.clone(), ba.short.clone())),
+                )
+            })
+            .flatten();
         self.list_missing_plugins();
         let versions = self
             .versions
             .clone()
             .into_iter()
-            .map(|(ba, tvl)| (config.clone(), ba, tvl.clone(), opts.clone()))
+            .map(|(ba, tvl)| {
+                let reporter = progress.as_ref().and_then(|p| p.start_tool(&ba.short));
+                (config.clone(), ba, tvl, opts.clone(), reporter)
+            })
             .collect::<Vec<_>>();
-        let tvls = parallel::parallel(versions, |(config, ba, mut tvl, opts)| async move {
-            if let Err(err) = tvl.resolve(&config, &opts).await {
-                if Error::is_required_channel_resolution_err(&err) {
-                    return Err(err);
+        let tvls = parallel::parallel(
+            versions,
+            |(config, ba, mut tvl, opts, reporter)| async move {
+                let result = crate::ui::resolve_progress::scope(
+                    reporter.as_ref().map(|p| p.reporter()),
+                    tvl.resolve(&config, &opts),
+                )
+                .await;
+                if let Some(reporter) = reporter {
+                    reporter.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
                 }
-                // warn_once: a command may resolve the same toolset more than
-                // once, and repeating an identical failure adds no information.
-                warn_once!("Failed to resolve tool version list for {ba}: {err}");
-            }
-            Ok((ba, tvl))
-        })
+                if let Err(err) = result {
+                    if Error::is_required_channel_resolution_err(&err) {
+                        return Err(err);
+                    }
+                    // warn_once: a command may resolve the same toolset more than
+                    // once, and repeating an identical failure adds no information.
+                    warn_once!("Failed to resolve tool version list for {ba}: {err}");
+                }
+                Ok((ba, tvl))
+            },
+        )
         .await?;
         self.versions = tvls.into_iter().collect();
+        if let Some(progress) = progress.as_mut() {
+            progress.finish(vec![]);
+        }
         Ok(())
     }
 
@@ -172,9 +207,26 @@ impl Toolset {
             .collect()
     }
 
+    /// Lists missing install markers without invoking backend-specific checks.
     pub(crate) async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
         trace!("list_missing_versions");
         measure!("toolset::list_missing_versions", {
+            self.list_current_versions()
+                .into_iter()
+                .filter_map(|(backend, tv)| {
+                    (!backend.is_version_installed(config, &tv, true)).then_some(tv)
+                })
+                .collect()
+        })
+    }
+
+    /// Lists versions whose complete backend-managed install state is unsatisfied.
+    pub(crate) async fn list_missing_versions_for_install(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<ToolVersion> {
+        trace!("list_missing_versions_for_install");
+        measure!("toolset::list_missing_versions_for_install", {
             let versions = self.list_current_versions().into_iter().collect::<Vec<_>>();
             let parallel_versions = versions
                 .clone()
@@ -357,6 +409,26 @@ impl Toolset {
         filter_tools: Option<&[crate::cli::args::ToolArg]>,
         exclude_tools: Option<&[crate::cli::args::ToolArg]>,
     ) -> Vec<OutdatedInfo> {
+        self.list_outdated_versions_with_progress(
+            config,
+            bump,
+            opts,
+            filter_tools,
+            exclude_tools,
+            false,
+        )
+        .await
+    }
+
+    pub(crate) async fn list_outdated_versions_with_progress(
+        &self,
+        config: &Arc<Config>,
+        bump: bool,
+        opts: &ResolveOptions,
+        filter_tools: Option<&[crate::cli::args::ToolArg]>,
+        exclude_tools: Option<&[crate::cli::args::ToolArg]>,
+        show_progress: bool,
+    ) -> Vec<OutdatedInfo> {
         let list_versions = if opts.inactive {
             match self.list_all_versions(config).await {
                 Ok(v) => v,
@@ -387,43 +459,84 @@ impl Toolset {
             })
             .map(|(t, tv)| (config.clone(), t, tv, bump, opts.clone()))
             .collect::<Vec<_>>();
-        let outdated = parallel::parallel(versions, |(config, t, tv, bump, opts)| async move {
-            let mut outdated = HashSet::new();
-            match t.outdated_info(&config, &tv, bump, &opts).await {
-                Ok(Some(oi)) => {
-                    outdated.insert(oi);
+        let mut progress = show_progress
+            .then(|| {
+                crate::ui::install_progress::resolution_progress(
+                    versions
+                        .iter()
+                        .map(|(_, _, tv, _, _)| (tv.to_string(), tv.to_string())),
+                )
+            })
+            .flatten();
+        let versions = versions
+            .into_iter()
+            .map(|args| {
+                let reporter = progress
+                    .as_ref()
+                    .and_then(|p| p.start_tool(&args.2.to_string()));
+                (args, reporter)
+            })
+            .collect();
+        let outdated = parallel::parallel(
+            versions,
+            |((config, t, tv, bump, opts), reporter)| async move {
+                let mut error = None;
+                let result = crate::ui::resolve_progress::scope(
+                    reporter.as_ref().map(|p| p.reporter()),
+                    async {
+                        let mut outdated = Vec::new();
+                        match t.outdated_info(&config, &tv, bump, &opts).await {
+                            Ok(Some(oi)) => {
+                                if !outdated.contains(&oi) {
+                                    outdated.push(oi);
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                error = Some(e.to_string());
+                                warn!("Error getting outdated info for {tv}: {e:#}");
+                            }
+                        }
+                        if let Some(symlink_path) = t.symlink_path(&tv)
+                            && !is_runtime_symlink(&symlink_path)
+                        {
+                            trace!("skipping symlinked version {tv}");
+                            // do not consider symlinked versions to be outdated
+                            return Ok(outdated);
+                        }
+                        if t.uses_custom_outdated_info() {
+                            return Ok(outdated);
+                        }
+                        match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
+                            Ok(Some(oi)) => {
+                                if !outdated.contains(&oi) {
+                                    outdated.push(oi);
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                error = Some(e.to_string());
+                                warn!("Error creating OutdatedInfo for {tv}: {e:#}");
+                            }
+                        }
+                        Ok(outdated)
+                    },
+                )
+                .await;
+                if let Some(reporter) = reporter {
+                    reporter.complete(error.as_deref());
                 }
-                Ok(None) => {}
-                Err(e) => {
-                    warn!("Error getting outdated info for {tv}: {e:#}");
-                }
-            }
-            if let Some(symlink_path) = t.symlink_path(&tv)
-                && !is_runtime_symlink(&symlink_path)
-            {
-                trace!("skipping symlinked version {tv}");
-                // do not consider symlinked versions to be outdated
-                return Ok(outdated);
-            }
-            if t.uses_custom_outdated_info() {
-                return Ok(outdated);
-            }
-            match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
-                Ok(Some(oi)) => {
-                    outdated.insert(oi);
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    warn!("Error creating OutdatedInfo for {tv}: {e:#}");
-                }
-            }
-            Ok(outdated)
-        })
+                result
+            },
+        )
         .await
         .unwrap_or_else(|e| {
             warn!("Error in parallel outdated version check: {e:#}");
             vec![]
         });
+        if let Some(progress) = progress.as_mut() {
+            progress.finish(vec![]);
+        }
         outdated.into_iter().flatten().collect()
     }
 
@@ -652,6 +765,10 @@ impl Toolset {
         }
         let mut missing = vec![];
         for tv in missing_versions.into_iter() {
+            // A missing lazy tool is the intended state until one of its commands is invoked.
+            if tv.request.options().lazy == Some(true) {
+                continue;
+            }
             if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always {
                 missing.push(tv);
                 continue;
@@ -671,10 +788,14 @@ impl Toolset {
             .map(|tv| tv.style())
             .collect::<Vec<_>>()
             .join(" ");
-        warn!(
-            "missing: {}",
-            truncate_str(&versions, *TERM_WIDTH - 14, "…"),
-        );
+        if crate::env::should_truncate() {
+            warn!(
+                "missing: {}",
+                truncate_str(&versions, *TERM_WIDTH - 14, "…"),
+            );
+        } else {
+            warn!("missing: {versions}");
+        }
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
@@ -786,7 +907,10 @@ pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
                 ),
             }
         }
-        let mut ts = Toolset::from(cf.to_tool_request_set()?);
+        let mut requests = cf.to_tool_request_set()?;
+        let files = [(path.clone(), cf.clone())].into_iter().collect();
+        crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
+        let mut ts = Toolset::from(requests);
         ts.resolve_with_opts(config, &opts).await?;
         collect_needed_versions(&ts, offline, &path, &mut needed);
     }
@@ -897,6 +1021,7 @@ mod tests {
             let req = ToolRequest::System {
                 backend: ba,
                 source: ToolSource::Argument,
+                lockfile_scope: Default::default(),
                 options: Default::default(),
             };
             ToolVersion::new(req, version.into())

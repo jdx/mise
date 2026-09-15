@@ -23,6 +23,30 @@ assert "cat '$managed_file'" "first"
 assert "stat -c %a '$managed_dir'" "750"
 assert "stat -c %a '$managed_file'" "640"
 
+# A bare tilde remains a config-relative filename.
+echo "from bare tilde source" >"~"
+cat <<EOF >mise.toml
+[bootstrap.files."$managed_file"]
+source = "~"
+mode = "0600"
+EOF
+
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status --json | jq -e '.[0].origin.source == \"$PWD/~\"'"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "cat '$managed_file'" "from bare tilde source"
+
+echo "from tilde source" >"$HOME/bootstrap-source"
+cat <<EOF >mise.toml
+[bootstrap.files."$managed_file"]
+source = "~/bootstrap-source"
+mode = "0600"
+EOF
+
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status --json | jq -e '.[0].origin.source == \"$HOME/bootstrap-source\"'"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "cat '$managed_file'" "from tilde source"
+assert "stat -c %a '$managed_file'" "600"
+
 cat <<EOF >mise.toml
 [bootstrap.files."$managed_file"]
 content = "second"

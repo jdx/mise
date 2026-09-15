@@ -9,6 +9,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(crate) enum Error {
+    #[error("{0}")]
+    UnsupportedTarget(String),
     #[error("[{ts}] {tr}: {source:#}")]
     FailedToResolveVersion {
         tr: Box<ToolRequest>,

@@ -3,6 +3,7 @@ use eyre::Result;
 use super::driver::{self, Action, DriverOpts};
 use crate::config::Config;
 use crate::system;
+use crate::system::history::OperationScope;
 
 /// Upgrade installed bootstrap packages from `[bootstrap.packages]`
 ///
@@ -11,13 +12,25 @@ use crate::system;
 /// available version (apk, apt, and dnf honor a version pinned in config), brew
 /// pours the formula's current bottle and replaces the old keg, brew-cask
 /// installs the current cask artifact, flatpak and flatpak-user update
-/// applications and runtimes, and mas upgrades App Store apps. Packages that
-/// are not installed yet are skipped — use `mise bootstrap packages apply` for
-/// those.
+/// applications and runtimes, mas upgrades App Store apps, and winget upgrades
+/// Windows packages. Packages that are not installed yet are skipped — use
+/// `mise bootstrap packages apply` for those.
 ///
 /// Packages can also be given explicitly in `manager:package` form.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "up",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages upgrade
+mise bootstrap packages upgrade brew:postgresql@17
+mise bootstrap packages upgrade --manager brew-cask
+mise bootstrap packages upgrade --manager mas
+mise bootstrap packages upgrade --manager winget
+mise bootstrap packages upgrade --manager apt --yes
+mise bootstrap packages upgrade --dry-run"###
+    )
+)]
 pub(crate) struct SystemUpgrade {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
@@ -39,6 +52,10 @@ pub(crate) struct SystemUpgrade {
 
 impl SystemUpgrade {
     pub(crate) async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap packages upgrade", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
             system::packages_from_config(&config)
@@ -59,15 +76,3 @@ impl SystemUpgrade {
         driver::run(mgrs, Action::Upgrade, &opts).await
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages upgrade</bold>
-    $ <bold>mise bootstrap packages upgrade brew:postgresql@17</bold>
-    $ <bold>mise bootstrap packages upgrade --manager brew-cask</bold>
-    $ <bold>mise bootstrap packages upgrade --manager mas</bold>
-    $ <bold>mise bootstrap packages upgrade --manager apt --yes</bold>
-    $ <bold>mise bootstrap packages upgrade --dry-run</bold>
-"#
-);

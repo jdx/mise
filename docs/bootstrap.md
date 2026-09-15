@@ -1,87 +1,133 @@
+---
+description: "Declare and apply machine setup: packages, dotfiles, repositories, and services."
+---
+
 # Bootstrap
 
-`mise bootstrap` sets up a machine for the current config in one command: Linux
-users and groups, OS packages, privileged files and directories, system services,
-Linux host firewall policy, Docker Compose projects, git repos, dotfiles, mise shell
-activation, macOS defaults, macOS LaunchAgents, Linux systemd user services,
-the user's login shell, tools, and any final project-specific task. It can
-consume declared secret inputs without storing their values in mise config. You
-can also add hooks that run at named points in the bootstrap sequence.
+`mise bootstrap` applies the machine setup declared in your mise configuration:
+packages, files, services, repositories, shell setup, tools, and a final task.
+Use it for workstation or server setup that needs more than installing
+`[tools]`. Run it explicitly when you want to apply that configuration.
 
-The same configuration can be applied to named inventory hosts or ad-hoc SSH
-destinations with [`mise bootstrap remote`](/bootstrap/remote.html).
+Start with the parts your machine needs, preview them, and add more resources
+as the configuration grows. Each section has its own status and apply commands.
+For SSH targets, see [remote bootstrap](/bootstrap/remote.html).
 
-On a new machine, mise can clone the repository containing that configuration
-before it starts:
+## Example
 
-```sh
-mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
-```
-
-The checkout defaults to `$MISE_DATA_DIR/bootstrap-repo`; use `--from-dir` to choose
-another location. The explicitly supplied checkout is trusted for this
-invocation, and the active `-E` environments are forwarded to it, so files such
-as `mise.home.toml` and `mise.work.toml` can select different profiles. Existing
-checkouts must have the requested URL as their `origin`. They are reused as-is
-unless `--update` is passed, in which case mise runs a fast-forward-only pull
-before applying the bootstrap configuration. During `--dry-run`, a missing
-checkout is reported but not cloned.
-
-If the repository is the global mise configuration itself, use `--from-git`
-instead:
-
-```sh
-mise -E work bootstrap --from-git git@github.com:example/mise-config.git --yes
-```
-
-This clones the repository into `$MISE_CONFIG_DIR` (normally
-`~/.config/mise`). Files such as `config.toml`, `config.work.toml`, `conf.d/`,
-and `tasks/` are therefore loaded as global configuration during the first
-bootstrap and remain active for future mise invocations. If
-`$MISE_GLOBAL_CONFIG_FILE` selects an individual global config file, the repo
-is cloned into that file's parent directory instead and that file is loaded.
-As with `--from`, an existing non-empty destination must be a git checkout
-whose `origin` exactly matches the requested URL; pass `--update` to
-fast-forward it before bootstrap.
-
-Use bootstrap for things that are needed before a project or workstation is
-ready, but that do not belong in `[tools]`: native libraries, Homebrew
-formulae, dotfile repositories, shell rc files, editor config, macOS
-preferences, user services, and one-time machine setup.
-
-## Composing configuration roots
-
-`[bootstrap].config_roots` composes declarative resources from independent
-configuration roots into the current bootstrap operation:
+This small `mise.toml` configures zsh activation, installs Node.js, and verifies
+it in a final task. Choose the [shell entries](/bootstrap/shell.html) for the
+shell you actually use:
 
 ```toml
-[bootstrap]
-config_roots = ["bundles/*"]
+[bootstrap.mise_shell_activate]
+zprofile = "shims"
+zshrc = "activate"
+
+[tools]
+node = "24"
+
+[tasks.bootstrap]
+run = "node --version"
 ```
 
-Entries are relative to the declaring config root and may use single-level `*`
-globs. Each matched directory is loaded with the normal active configuration
-environments. Relative resource sources and template `config_root` values remain
-relative to the config that declared them. Variables declared by a selected root
-are available to that root's dotfile templates without leaking into sibling
-roots.
+Review the configuration before trusting it, then preview and apply it:
 
-Composition includes `[dotfiles]`, `[bootstrap.files]`,
-`[bootstrap.directories]`, `[bootstrap.services]`, and `[bootstrap.compose]`.
-Equivalent declarations are deduplicated. Different declarations for the same
-dotfile target, edit `(path, id)`, managed file, managed directory, service, or
-Compose project are errors that identify both declaring configs. Independent
-roots never acquire precedence from their order in `config_roots`.
-Same-target `symlink-each` declarations are the exception: their source trees
-compose when their leaf paths are disjoint, while overlapping leaves or
-file/directory collisions are reported with both declaring configs.
-Directory `copy` and `symlink-each` footprints are also checked against nested
-dotfile declarations. Disjoint leaves may share directories, but two entries
-cannot own the same leaf or place a file where another entry needs a directory.
+```sh
+mise trust
+mise bootstrap --dry-run
+mise bootstrap
+mise bootstrap status
+```
 
-Other configuration such as tools, tasks, packages, hooks, and repos is not
-collected from these roots. Use their existing explicit workflows when those
-resources need aggregate behavior.
+`--yes` skips confirmation prompts for an unattended apply. A dry run inspects
+state and prints proposed actions; hooks and the final task are not executed.
+Open a new shell after activation files change.
+
+## Starting from a repository
+
+Choose the command that matches what your repository contains:
+
+| Repository contents                                                      | Command                        | Where the files go                                       |
+| ------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------- |
+| A bootstrap project with `mise.toml` and source files                    | `mise bootstrap --from <url>`  | A separate checkout, then targets defined by the project |
+| Global mise configuration such as `config.toml`, `conf.d/`, and `tasks/` | `mise bootstrap --adopt <url>` | Your global mise configuration directory                 |
+| Tracked dotfiles shared through `mise dot origin set`                    | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
+
+For a walkthrough of sharing tracked dotfiles, see
+[Set up a machine](/bootstrap/setup.html).
+
+### A bootstrap project
+
+Use `--from` to clone a project and apply its `mise.toml`:
+
+```sh
+mise bootstrap --from git@github.com:example/dotfiles.git
+```
+
+The checkout defaults to `$MISE_DATA_DIR/bootstrap-repo`. Use `--from-dir`
+to choose another location. mise trusts the repository you supply for this
+invocation, so review it before running the command.
+
+To select a mise environment, pass `-E`, for example
+`mise -E work bootstrap --from <url>`. The cloned project then loads the
+matching configuration, such as `mise.work.toml`.
+
+An existing checkout must have the requested URL as its `origin`. mise uses
+the current checkout unless you pass `--update` to pull newer commits first.
+That pull only accepts a fast-forward. With `--dry-run`, mise reports a
+missing checkout and leaves it uncloned.
+
+### Global mise configuration
+
+Use `--adopt` when the repository contains your global mise configuration:
+
+```sh
+mise bootstrap --adopt example/mise-config
+```
+
+mise clones it into `$MISE_CONFIG_DIR`, normally `~/.config/mise`, and runs
+bootstrap using that configuration. Files such as `config.toml`,
+`config.work.toml`, `conf.d/`, and `tasks/` stay available to future mise
+commands. Pass `-E work` to select `config.work.toml`.
+
+If you set `$MISE_GLOBAL_CONFIG_FILE`, mise clones into that file's parent
+directory and loads the selected file. An existing non-empty destination
+must be a Git checkout with the requested URL as its `origin`. Pass
+`--update` to fast-forward it before bootstrap.
+
+### Shared dotfile history
+
+A **setup repository** holds the dotfile history you share through
+`mise dot origin set`. On another machine, run:
+
+```sh
+mise bootstrap --adopt you/setup
+```
+
+mise recognizes the repository's `.mise-history/format.toml` marker and:
+
+1. Fetches the latest branch into its history store.
+2. Restores the tracked files to their paths on this machine.
+3. Remembers the origin for future synchronization.
+4. Runs bootstrap using the restored mise configuration.
+
+Track the mise configuration and any template sources on the first machine
+before sharing them. They let bootstrap recreate tools and services and
+render templates on the next machine. Tracked files can still be restored
+when the repository contains no global mise configuration.
+
+If an existing file differs, mise asks you to resolve the conflict before
+restoring files or running the remaining bootstrap steps. Use `--dry-run`
+to preview the plan. See [history](/history.html#sharing-across-machines)
+for synchronization and recovery details.
+
+This workflow stores Git history separately from `$MISE_CONFIG_DIR`; it
+leaves any existing checkout there as a checkout. If that directory is a
+Git checkout, its origin must match the requested repository.
+
+Setup repositories always fetch their latest branch. `--update` controls
+the subsequent bootstrap's package metadata and declared repository updates.
 
 ## How it runs
 
@@ -95,18 +141,22 @@ preflight prevents a missing input from leaving a partially provisioned host.
    [`[bootstrap.users]` and `[bootstrap.groups]`](/bootstrap/accounts.html).
 2. `mise bootstrap plugins apply` installs package manager plugins declared in
    [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html).
+   Files and directories with [`phase = "pre-packages"`](/bootstrap/files.html#files-before-packages)
+   are then applied, before the `pre-packages` hook.
 3. Built-in managers install missing [`[bootstrap.packages]`](/bootstrap/packages/).
 4. `mise bootstrap files apply` converges
-   [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html).
-5. `mise bootstrap services apply` converges existing systemd system units from
-   [`[bootstrap.services]`](/bootstrap/services.html).
+   the remaining [`[bootstrap.files]` and `[bootstrap.directories]`](/bootstrap/files.html)
+   (the default `"post-packages"` phase).
+5. [`[bootstrap.services]`](/bootstrap/services.html) converges existing Linux
+   systemd system units and user services on Linux, macOS, and Windows.
+   User services with `requires_tools = true` wait until after tool installation.
 6. `mise bootstrap firewall apply` converges host firewall policy and rules from
    [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html).
 7. `mise bootstrap compose apply` converges
    [`[bootstrap.compose]`](/bootstrap/compose.html) projects.
 8. `mise bootstrap repos apply` clones or updates
    [`[bootstrap.repos]`](/bootstrap/repos.html).
-9. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
+9. `mise dot apply` applies [`[dotfiles]`](/dotfiles.html).
 10. `mise bootstrap mise-shell-activate apply` configures shell activation from
     [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
 11. `mise bootstrap macos defaults apply` writes
@@ -119,9 +169,17 @@ preflight prevents a missing input from leaving a partially provisioned host.
     as configured.
 14. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
 15. `mise install` installs missing `[tools]`.
-16. Plugin package managers apply after their host tools are available.
+16. Plugin package managers apply after their host tools are available, followed
+    by user services with `requires_tools = true`.
 17. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
 18. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+
+Every mutating run — the full `mise bootstrap`, each `mise bootstrap <part>
+apply`, and the commands that change dotfiles or bootstrap config in place
+(`dotfiles add`, `unapply`, `edit`, `packages use`, `import`, brew `tap`) —
+records a pair of [history checkpoints](/history.html): the tracked files
+before and after the run, plus a journal of what the run changed. Dry runs
+record nothing.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
 `accounts`, `plugins`, `packages`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`,
@@ -136,136 +194,37 @@ same part names and can be repeated or comma-separated, for example
 exclusive.
 
 Use `mise bootstrap --update` to refresh system package manager metadata
-before installing packages (apk: `--update-cache`, apt: `apt-get update`).
+before installing packages (apk: `--update-cache`, apt: `apt-get update`,
+winget: `winget source update`) and
+update declared repositories. Check the [repo update rules](/bootstrap/repos.html)
+for clean-worktree and fast-forward requirements.
 
 Hook phases can also run before and after the built-in steps:
 `pre-packages`, `post-packages`, `pre-repos`, `post-repos`, `pre-dotfiles`,
 `post-dotfiles`, `pre-defaults`, `post-defaults`, `pre-user`, `post-user`,
-`pre-tools`, and `post-tools`.
+`pre-tools`, and `post-tools`. Hook commands support [Tera templates](/templates.html)
+using the declaring config's context, including values such as
+<code v-pre>{{ config_root }}</code>, <code v-pre>{{ xdg_config_home }}</code>,
+and <code v-pre>{{ vars.name }}</code>.
 
-The declarative steps converge: if a package is already installed, a repo is
-already at the requested ref, a dotfile already matches, or a default is already
-set, mise skips it. The `bootstrap` task runs every time, so keep it idempotent.
+The declarative steps compare the requested state with the host and apply
+needed changes. Hooks and the `bootstrap` task run on every selected apply, so
+make them safe to repeat. Bootstrap is a sequence, not a transaction: if a later
+phase fails, earlier successful changes remain. Fix the reported failure and
+run bootstrap again.
 
-## Example
+## Previewing changes
 
-```toml
-[bootstrap.packages]
-"apk:build-base" = "latest"
-"apt:build-essential" = "latest"
-"brew:postgresql@17" = "latest"
-
-[bootstrap.secrets]
-service_token = "EXAMPLE_SERVICE_TOKEN"
-
-[bootstrap.groups.example]
-system = true
-
-[bootstrap.users.example]
-system = true
-group = "example"
-home = "/var/lib/example"
-create_home = true
-
-[bootstrap.directories."/opt/example"]
-owner = "root"
-group = "root"
-mode = "0755"
-
-[bootstrap.files."/etc/example.conf"]
-content = 'token={{ secret(name="service_token") }}'
-template = true
-owner = "root"
-group = "root"
-mode = "0644"
-notify = ["example"]
-
-[bootstrap.services.example]
-state = "running"
-enabled = true
-on_change = "reload_or_restart"
-
-[bootstrap.linux.firewall]
-backend = "auto"
-state = "enabled"
-default_incoming = "deny"
-default_outgoing = "allow"
-
-[[bootstrap.linux.firewall.rules]]
-name = "https"
-port = 443
-protocol = "tcp"
-action = "allow"
-
-[bootstrap.repos]
-"~/src/dotfiles" = { url = "git@github.com:jdx/dotfiles.git", ref = "main" }
-
-[dotfiles]
-"~/.config/mise/config.toml" = { source = "config.toml", mode = "symlink" }
-"~/.gitconfig" = { mode = "symlink" }
-"~/.config/nvim" = { mode = "symlink" }
-
-[bootstrap.mise_shell_activate]
-zprofile = "shims"
-zshrc = "activate"
-fish = "activate"
-
-[bootstrap.macos.dock]
-autohide = true
-orientation = "left"
-tilesize = 48
-
-[bootstrap.macos.finder]
-show_pathbar = true
-
-[bootstrap.macos.keyboard]
-key_repeat = 2
-initial_key_repeat = 15
-
-[bootstrap.macos.trackpad]
-tap_to_click = true
-
-[bootstrap.macos.defaults]
-"com.apple.finder" = { AppleShowAllFiles = true }
-
-[bootstrap.macos.launchd.agents.my-sync]
-program = "~/.local/bin/my-sync"
-args = ["--watch"]
-run_at_load = true
-
-[bootstrap.linux.systemd.units.my-sync]
-description = "sync files"
-exec_start = "~/.local/bin/my-sync --watch"
-restart = "on-failure"
-
-[bootstrap.user]
-login_shell = "/bin/zsh"
-
-[bootstrap.hooks.pre-packages]
-run = "softwareupdate --install-rosetta --agree-to-license"
-
-[bootstrap.hooks.post-defaults]
-run = "killall Dock || true"
-
-[tools]
-node = "lts"
-python = "3.12"
-
-[tasks.bootstrap]
-run = "gh auth status || gh auth login"
-```
-
-Then converge the whole machine (`--yes` skips the confirmation prompts):
+Use `mise bootstrap --dry-run` to preview the selected phases. To narrow an
+apply while developing a configuration, for example:
 
 ```sh
-mise bootstrap --yes
+mise bootstrap --only dotfiles,tools --dry-run
+mise bootstrap --only dotfiles,tools
 ```
 
-To preview what would change without touching anything:
-
-```sh
-mise bootstrap --dry-run
-```
+Select every prerequisite your changes need. `--only services` does not install
+the packages or unit files that supply those services.
 
 For a structured resource plan, use `mise bootstrap plan`. The provisioning
 planner reports accounts, system packages, privileged files and directories,
@@ -312,9 +271,9 @@ mise bootstrap status --json
 mise bootstrap status --missing
 mise bootstrap packages status
 mise bootstrap repos status
-mise bootstrap dotfiles status
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --dry-run --verbose
+mise dot status
+mise dot apply --dry-run
+mise dot apply --dry-run --verbose
 mise bootstrap mise-shell-activate status
 mise bootstrap macos defaults status
 mise bootstrap macos launchd-agents status
@@ -323,33 +282,48 @@ mise bootstrap firewall status
 mise bootstrap user status
 ```
 
+Use `mise dot history` to see the checkpoints bootstrap has recorded — a pair per
+mutating run, with the tracked files before and after. See [History](/history.html).
+
+```sh
+mise dot history
+mise dot history show latest
+mise dot history diff 11 12
+```
+
 `mise bootstrap status --missing` checks the whole declarative bootstrap
 surface in one command. The narrower `mise bootstrap packages status --missing`
-and `mise bootstrap dotfiles status --missing` commands are useful when you only
+and `mise dot status --missing` commands are useful when you only
 want to check one part without installing anything.
 
 ## What goes where
 
-| Config                                                         | Use for                                                       |
-| -------------------------------------------------------------- | ------------------------------------------------------------- |
-| [`[bootstrap.packages]`](/bootstrap/packages/)                 | OS packages from apk, apt, dnf, pacman, brew, flatpak, or mas |
-| [`[bootstrap.repos]`](/bootstrap/repos.html)                   | Git repos cloned before dotfiles are applied                  |
-| [`[dotfiles]`](/dotfiles.html)                                 | Whole-file dotfiles and small managed edits to existing files |
-| [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)     | mise activation snippets in shell startup files               |
-| [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)        | Curated macOS preferences for Dock/Finder/keyboard/trackpad   |
-| [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html) | macOS user preferences written through `defaults write`       |
-| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)  | macOS user LaunchAgents written and loaded with `launchctl`   |
-| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)   | Linux systemd user services managed with `systemctl --user`   |
-| [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)       | Linux host firewall policy and managed rules                  |
-| [`[bootstrap.user]`](/bootstrap/user.html)                     | Current-user settings such as `login_shell`                   |
-| `[bootstrap.hooks]`                                            | Commands that run at named bootstrap phases                   |
-| `[tools]`                                                      | Versioned dev tools managed by mise                           |
-| `[tasks.bootstrap]`                                            | Anything custom that should run after tools are installed     |
+| Config                                                                  | Use for                                                                     |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`[bootstrap.secrets]`](/bootstrap/secrets.html)                        | Names of secret inputs consumed by managed file templates                   |
+| [`[bootstrap.users]`, `[bootstrap.groups]`](/bootstrap/accounts.html)   | Linux service accounts and groups                                           |
+| [`[bootstrap.files]`, `[bootstrap.directories]`](/bootstrap/files.html) | Managed system paths, content, ownership, and permissions                   |
+| [`[bootstrap.services]`](/bootstrap/services.html)                      | User services on Linux, macOS, and Windows; existing Linux system services  |
+| [`[bootstrap.compose]`](/bootstrap/compose.html)                        | Docker Compose project lifecycle                                            |
+| [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)               | Package manager plugins                                                     |
+| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, or winget       |
+| [`[bootstrap.repos]`](/bootstrap/repos.html)                            | Git repos cloned before dotfiles are applied                                |
+| [`[dotfiles]`](/dotfiles.html)                                          | Tracking dotfiles, creating files from sources, and editing blocks or lines |
+| [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)              | mise activation snippets in shell startup files                             |
+| [`[bootstrap.macos.*]`](/bootstrap/macos-defaults.html)                 | Curated macOS preferences for Dock/Finder/keyboard/trackpad                 |
+| [`[bootstrap.macos.defaults]`](/bootstrap/macos-defaults.html)          | macOS user preferences written through `defaults write`                     |
+| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html)           | macOS user LaunchAgents written and loaded with `launchctl`                 |
+| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)            | Linux systemd user services managed with `systemctl --user`                 |
+| [`[bootstrap.linux.firewall]`](/bootstrap/firewall.html)                | Linux host firewall policy and managed rules                                |
+| [`[bootstrap.user]`](/bootstrap/user.html)                              | Current-user settings such as `login_shell`                                 |
+| `[bootstrap.hooks]`                                                     | Commands that run at named bootstrap phases                                 |
+| `[tools]`                                                               | Versioned dev tools managed by mise                                         |
+| `[tasks.bootstrap]`                                                     | Anything custom that should run after tools are installed                   |
 
 Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
-such as running an auth flow, seeding local data, or other one-off project
-setup.
+such as checking authentication or seeding local data. The task runs again on
+every bootstrap, so guard operations that should happen only once.
 
 ## Hooks
 
@@ -361,18 +335,17 @@ bootstrap if they fail, and print the command instead of running it during
 `mise exec -- ...` inside a hook, or use `[tasks.bootstrap]`, when the command
 needs tools from `[tools]` on PATH.
 
-```toml
-[bootstrap.hooks.pre-packages]
-run = "softwareupdate --install-rosetta --agree-to-license"
+The following hooks assume `node`, `python`, and `gh` are declared in `[tools]`.
 
+```toml
 [bootstrap.hooks.post-tools]
 run = [
-  "mise exec -- corepack enable",
-  "mise exec -- rustup component add rustfmt clippy",
+  "mise exec -- node --version",
+  "mise exec -- python --version",
 ]
 
 [bootstrap.hooks.final]
-run = "gh auth status || gh auth login"
+run = "mise exec -- gh auth status"
 ```
 
 As shorthand, a hook phase can also be set directly:
@@ -385,9 +358,12 @@ post-defaults = "killall Dock || true"
 Hooks merge across the config hierarchy from global to local, so shared config
 can define broad machine setup while a project adds its own phase commands.
 The `pre-dotfiles` and `post-dotfiles` phases also wrap
-`mise bootstrap dotfiles apply`.
+`mise dot apply`.
 
 ## Common workflows
+
+For a walkthrough from your first tracked file to a second machine sharing
+its changes, see [Set up a machine](/bootstrap/setup.html).
 
 ### New machine
 
@@ -399,26 +375,33 @@ mise bootstrap --yes
 ### Add a package
 
 ```sh
-mise bootstrap packages use apk:zlib-dev apt:libssl-dev
+mise bootstrap packages use apk:zlib-dev apt:libssl-dev winget:BurntSushi.ripgrep.MSVC
 ```
 
 This writes `[bootstrap.packages]` and installs what is missing.
 
 ### Capture an edited dotfile
 
+For a file you already manage in `copy` mode, save edits back to its source:
+
 ```sh
 $EDITOR ~/.zshrc
-mise bootstrap dotfiles add ~/.zshrc
+mise dot add ~/.zshrc
 ```
 
-`mise bootstrap dotfiles add` stores the live file under `dotfiles.root` and writes an
-explicit `[dotfiles]` entry with `mode`.
+`add` updates the managed source. For a file mise does not yet manage, it
+creates a source under `dotfiles.root`, writes a configuration entry, and
+applies it. See [capturing changes](/dotfiles.html#capturing-changes).
+
+For a file you edit in place and want to save in history, use
+`mise dot track ~/.zshrc`, then set up
+[automatic saves](/history.html#automatic-saves).
 
 ### Edit a managed dotfile
 
 ```sh
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles apply ~/.zshrc
+mise dot edit ~/.zshrc
+mise dot apply ~/.zshrc
 ```
 
 For symlinked dotfiles, `edit` opens the managed source, so it works with the

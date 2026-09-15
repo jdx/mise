@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+detect_platform
+OTHER_PLATFORM=linux-x64
+if [[ $MISE_PLATFORM == linux-x64 ]]; then
+  OTHER_PLATFORM=macos-arm64
+fi
+
+# Neither request can finish until both have started. A sequential lock/install
+# implementation fails rather than passing through a timing-sensitive assertion.
+python3 -u - <<'PY' >server.port &
+import io
+import json
+import tarfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+events = {"/host.tar.gz": threading.Event(), "/other.tar.gz": threading.Event()}
+counts = {}
+mutex = threading.Lock()
+payload = io.BytesIO()
+with tarfile.open(fileobj=payload, mode="w:gz") as archive:
+    content = b"#!/bin/sh\necho fixture\n"
+    member = tarfile.TarInfo("bin/generate-overlap")
+    member.mode = 0o755
+    member.size = len(content)
+    archive.addfile(member, io.BytesIO(content))
+body = payload.getvalue()
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path not in events:
+            self.send_error(404)
+            return
+        with mutex:
+            counts[self.path] = counts.get(self.path, 0) + 1
+            with open("requests.json", "w") as output:
+                json.dump(counts, output)
+        events[self.path].set()
+        if not all(event.wait(15) for event in events.values()):
+            self.send_error(500, "installation and generation did not overlap")
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_):
+        pass
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+print(server.server_port, flush=True)
+server.serve_forever()
+PY
+SERVER_PID=$!
+trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+for _ in {1..100}; do
+  [[ -s server.port ]] && break
+  sleep 0.05
+done
+PORT=$(cat server.port)
+
+cat >mise.toml <<EOF
+[settings]
+lockfile = true
+lockfile_mode = "generate"
+lockfile_platforms = ["$OTHER_PLATFORM"]
+jobs = 2
+
+[tools."http:generate-overlap"]
+version = "1.0"
+
+[tools."http:generate-overlap".platforms."$MISE_PLATFORM"]
+url = "http://127.0.0.1:$PORT/host.tar.gz"
+
+[tools."http:generate-overlap".platforms."$OTHER_PLATFORM"]
+url = "http://127.0.0.1:$PORT/other.tar.gz"
+EOF
+
+MISE_HTTP_RETRIES=0 mise install 2>progress.log
+assert_contains "cat progress.log" "lock"
+assert "jq '.[\"/host.tar.gz\"]' requests.json" "1"
+assert "jq '.[\"/other.tar.gz\"]' requests.json" "1"
+cp mise.lock expected.lock
+mise lock
+diff -u expected.lock mise.lock
+assert "jq '.[\"/host.tar.gz\"]' requests.json" "1"
+assert "jq '.[\"/other.tar.gz\"]' requests.json" "1"

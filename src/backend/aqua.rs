@@ -51,6 +51,7 @@ pub(crate) struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
+    verification_target: Option<PlatformTarget>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -875,7 +876,7 @@ impl Backend for AquaBackend {
         }
 
         // Try to get checksum from checksum file if not available from GitHub API
-        let checksum = match checksum {
+        let mut checksum = match checksum {
             Some(c) => Some(c),
             None => match self
                 .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref(), target)
@@ -951,20 +952,19 @@ impl Backend for AquaBackend {
             }
         }
 
-        // For the current platform, verify provenance cryptographically at lock time.
-        // This ensures the lockfile's provenance entry is backed by actual verification,
-        // not just registry metadata. Cross-platform entries remain detection-only.
+        // Record only cryptographically verified provenance for the target artifact.
         if provenance.is_some()
-            && target.is_current()
             && let Some(ref artifact_url) = url
         {
-            match self
+            let mut verifier = Self::from_arg(self.ba.as_ref().clone());
+            verifier.verification_target = Some(target.clone());
+            match verifier
                 .verify_provenance_at_lock_time(
                     &pkg,
                     &v,
                     artifact_url,
                     provenance.as_ref().unwrap(),
-                    checksum.as_deref(),
+                    &mut checksum,
                 )
                 .await
             {
@@ -972,16 +972,10 @@ impl Backend for AquaBackend {
                     provenance = verified;
                 }
                 Err(e) => {
-                    // Clear provenance so install-time verification will run.
-                    // If we kept the unverified provenance, has_lockfile_integrity
-                    // would be true and verify_provenance() would be skipped.
-                    warn!(
-                        "lock-time provenance verification failed for {}, \
-                         will be verified at install time: {e}{}",
-                        self.id,
+                    return Err(e.wrap_err(format!(
+                        "lock-time provenance verification failed{}",
                         Self::scratch_length_hint()
-                    );
-                    provenance = None;
+                    )));
                 }
             }
         }
@@ -997,6 +991,25 @@ impl Backend for AquaBackend {
 }
 
 impl AquaBackend {
+    fn verification_target(&self) -> PlatformTarget {
+        self.verification_target
+            .clone()
+            .unwrap_or_else(PlatformTarget::from_current)
+    }
+
+    fn verification_os(&self) -> &str {
+        self.verification_target
+            .as_ref()
+            .map(|target| Self::to_aqua_platform(target).0)
+            .unwrap_or_else(|| os())
+    }
+
+    fn verification_arch(&self) -> &str {
+        self.verification_target
+            .as_ref()
+            .map(|target| Self::to_aqua_platform(target).1)
+            .unwrap_or_else(|| arch())
+    }
     /// Resolve the registry entry for `tv` and decide whether it can be installed here at all.
     ///
     /// Split out of `install_version_` so `verify_install_feasible` can reach `validate` without
@@ -1108,10 +1121,7 @@ impl AquaBackend {
             "macos" => "darwin",
             other => other,
         };
-        let target_arch = match target.arch_name() {
-            "x64" => "amd64",
-            other => other,
-        };
+        let target_arch = to_aqua_arch(target.arch_name());
         (target_os, target_arch)
     }
 
@@ -1410,7 +1420,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
-        expected_checksum: Option<&str>,
+        checksum: &mut Option<String>,
     ) -> Result<Option<ProvenanceType>> {
         let tmp_dir = Self::lock_time_download_dir()?;
         let filename = get_filename_from_url(artifact_url);
@@ -1422,6 +1432,19 @@ impl AquaBackend {
         );
         HTTP.download_file(artifact_url, &artifact_path, None)
             .await?;
+        if let Some((algorithm, expected)) = checksum
+            .as_deref()
+            .and_then(|checksum| checksum.split_once(':'))
+        {
+            crate::hash::ensure_checksum(&artifact_path, expected, None, algorithm)?;
+        }
+        if checksum.is_none() {
+            *checksum = Some(format!(
+                "sha256:{}",
+                crate::hash::file_hash_sha256(&artifact_path, None)?
+            ));
+        }
+        let expected_checksum = checksum.as_deref();
 
         match detected {
             ProvenanceType::GithubAttestations => {
@@ -1563,8 +1586,9 @@ impl AquaBackend {
             .map(unescape_regex_literal);
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let predicate_type = attestations.predicate_type.as_deref();
+        let mut verified_repo = repo.clone();
 
-        match crate::github::sigstore::verify_attestation_with_predicate_type(
+        let mut result = crate::github::sigstore::verify_attestation_with_predicate_type(
             artifact_path,
             &pkg.repo_owner,
             &pkg.repo_name,
@@ -1573,13 +1597,40 @@ impl AquaBackend {
             None,
             self.use_versions_host_for_github_metadata(&repo),
         )
-        .await
+        .await;
+
+        // GitHub keeps release URLs working after a repository transfer, but the
+        // certificate identity uses the canonical repository name. Verification
+        // errors may aggregate a workflow mismatch with failures from unrelated
+        // attestations, so resolve a confirmed transfer through GitHub and retry
+        // with the same workflow policy rebased to the canonical repository.
+        if attestation_needs_transfer_retry(&result)
+            && let Ok(canonical_repo) = github::canonical_repo(&repo).await
+            && !canonical_repo.eq_ignore_ascii_case(&repo)
+            && let Some((canonical_owner, canonical_name)) = canonical_repo.split_once('/')
         {
+            let canonical_workflow = signer_workflow
+                .as_deref()
+                .map(|workflow| rebase_github_signer_workflow(workflow, &repo, &canonical_repo));
+            debug!(
+                "retrying GitHub attestation verification for transferred repository {repo} as {canonical_repo}"
+            );
+            verified_repo.clone_from(&canonical_repo);
+            result = crate::github::sigstore::verify_attestation_with_predicate_type(
+                artifact_path,
+                canonical_owner,
+                canonical_name,
+                canonical_workflow.as_deref(),
+                predicate_type,
+                None,
+                self.use_versions_host_for_github_metadata(&canonical_repo),
+            )
+            .await;
+        }
+
+        match result {
             Ok(true) => {
-                debug!(
-                    "GitHub attestations verified for {}/{}",
-                    pkg.repo_owner, pkg.repo_name
-                );
+                debug!("GitHub attestations verified for {verified_repo}");
                 Ok(GithubAttestationStatus::Verified)
             }
             Ok(false) => Err(eyre!(
@@ -1652,9 +1703,16 @@ impl AquaBackend {
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
-        let target = PlatformTarget::from_current();
-        let (provenance_url, url_api) =
-            self.resolve_slsa_url(pkg, v, os(), arch(), &target).await?;
+        let target = self.verification_target();
+        let (provenance_url, url_api) = self
+            .resolve_slsa_url(
+                pkg,
+                v,
+                self.verification_os(),
+                self.verification_arch(),
+                &target,
+            )
+            .await?;
         let download_url =
             select_github_download_url(pkg.private, &provenance_url, url_api.as_deref()).await;
         let provenance_path = download_dir.join(get_filename_from_url(&provenance_url));
@@ -1692,7 +1750,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
     ) -> Result<bool> {
-        let format = pkg.format(v, os(), arch())?;
+        let format = pkg.format(v, self.verification_os(), self.verification_arch())?;
         let format = Self::effective_extraction_format(pkg, format)?;
         if !format.is_archive() {
             return Err(eyre!(
@@ -1720,7 +1778,14 @@ impl AquaBackend {
     async fn run_minisign_check(&self, check: MinisignCheck<'_>) -> Result<()> {
         let template_ctx = check
             .checksum
-            .map(|checksum| checksum.template_ctx(check.pkg, check.version, os(), arch()))
+            .map(|checksum| {
+                checksum.template_ctx(
+                    check.pkg,
+                    check.version,
+                    self.verification_os(),
+                    self.verification_arch(),
+                )
+            })
             .transpose()?;
         let sig_path = match check.config._type() {
             AquaMinisignType::GithubRelease => {
@@ -1731,16 +1796,16 @@ impl AquaBackend {
                         check.config.asset.as_ref().unwrap(),
                         check.version,
                         &overrides,
-                        os(),
-                        arch(),
+                        self.verification_os(),
+                        self.verification_arch(),
                     )?
                 } else {
                     check.config.asset(
                         check.pkg,
                         check.artifact_filename,
                         check.version,
-                        os(),
-                        arch(),
+                        self.verification_os(),
+                        self.verification_arch(),
                     )?
                 };
                 let asset_strs = IndexSet::from([asset]);
@@ -1766,11 +1831,16 @@ impl AquaBackend {
                         check.config.url.as_ref().unwrap(),
                         check.version,
                         ctx,
-                        os(),
-                        arch(),
+                        self.verification_os(),
+                        self.verification_arch(),
                     )?
                 } else {
-                    check.config.url(check.pkg, check.version, os(), arch())?
+                    check.config.url(
+                        check.pkg,
+                        check.version,
+                        self.verification_os(),
+                        self.verification_arch(),
+                    )?
                 };
                 let path = check
                     .download_dir
@@ -1782,9 +1852,12 @@ impl AquaBackend {
         let data = file::read(check.artifact_path)?;
         let sig = file::read_to_string(&sig_path)?;
         minisign::verify(
-            &check
-                .config
-                .public_key(check.pkg, check.version, os(), arch())?,
+            &check.config.public_key(
+                check.pkg,
+                check.version,
+                self.verification_os(),
+                self.verification_arch(),
+            )?,
             &data,
             &sig,
         )?;
@@ -1808,12 +1881,13 @@ impl AquaBackend {
                 resolve_repo_info(key.repo_owner.as_ref(), key.repo_name.as_ref(), pkg);
             let (key_url, key_download_url) = match key.r#type.as_deref().unwrap_or_default() {
                 "github_release" => {
-                    let asset_strs = key.asset_strs(pkg, v, os(), arch())?;
+                    let asset_strs =
+                        key.asset_strs(pkg, v, self.verification_os(), self.verification_arch())?;
                     self.github_release_asset_urls(&key_pkg, v, asset_strs)
                         .await?
                 }
                 "http" => {
-                    let url = key.url(pkg, v, os(), arch())?;
+                    let url = key.url(pkg, v, self.verification_os(), self.verification_arch())?;
                     (url.clone(), url)
                 }
                 t => return Err(eyre!("unsupported cosign key type: {t}")),
@@ -1831,12 +1905,22 @@ impl AquaBackend {
                 let (sig_url, sig_download_url) =
                     match signature.r#type.as_deref().unwrap_or_default() {
                         "github_release" => {
-                            let asset_strs = signature.asset_strs(pkg, v, os(), arch())?;
+                            let asset_strs = signature.asset_strs(
+                                pkg,
+                                v,
+                                self.verification_os(),
+                                self.verification_arch(),
+                            )?;
                             self.github_release_asset_urls(&sig_pkg, v, asset_strs)
                                 .await?
                         }
                         "http" => {
-                            let url = signature.url(pkg, v, os(), arch())?;
+                            let url = signature.url(
+                                pkg,
+                                v,
+                                self.verification_os(),
+                                self.verification_arch(),
+                            )?;
                             (url.clone(), url)
                         }
                         t => return Err(eyre!("unsupported cosign signature type: {t}")),
@@ -1869,12 +1953,18 @@ impl AquaBackend {
             let (bundle_url, bundle_download_url) =
                 match bundle.r#type.as_deref().unwrap_or_default() {
                     "github_release" => {
-                        let asset_strs = bundle.asset_strs(pkg, v, os(), arch())?;
+                        let asset_strs = bundle.asset_strs(
+                            pkg,
+                            v,
+                            self.verification_os(),
+                            self.verification_arch(),
+                        )?;
                         self.github_release_asset_urls(&bundle_pkg, v, asset_strs)
                             .await?
                     }
                     "http" => {
-                        let url = bundle.url(pkg, v, os(), arch())?;
+                        let url =
+                            bundle.url(pkg, v, self.verification_os(), self.verification_arch())?;
                         (url.clone(), url)
                     }
                     t => return Err(eyre!("unsupported cosign bundle type: {t}")),
@@ -1883,7 +1973,7 @@ impl AquaBackend {
             HTTP.download_file(&bundle_download_url, &bundle_path, pr)
                 .await?;
 
-            let opts = cosign.opts(pkg, v, os(), arch())?;
+            let opts = cosign.opts(pkg, v, self.verification_os(), self.verification_arch())?;
             let result = if let Some(key_url) = cosign_opt_value(&opts, "--key") {
                 let key_path = download_dir.join(get_filename_from_url(key_url));
                 HTTP.download_file(key_url, &key_path, pr).await?;
@@ -1935,11 +2025,16 @@ impl AquaBackend {
     ) -> Result<(String, String)> {
         match checksum._type() {
             AquaChecksumType::GithubRelease => {
-                let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
+                let asset_strs = checksum.asset_strs(
+                    pkg,
+                    v,
+                    self.verification_os(),
+                    self.verification_arch(),
+                )?;
                 self.github_release_asset_urls(pkg, v, asset_strs).await
             }
             AquaChecksumType::Http => checksum
-                .url(pkg, v, os(), arch())
+                .url(pkg, v, self.verification_os(), self.verification_arch())
                 .map(|url| (url.clone(), url)),
         }
     }
@@ -1985,6 +2080,7 @@ impl AquaBackend {
         Self {
             id: id.to_string(),
             ba: Arc::new(ba),
+            verification_target: None,
             // Bumped from `version_tags.msgpack.z`: this cache used to be filtered
             // by the inline `prerelease` opt, so previously cached lists could be
             // missing pre-release tags needed at install/lock time. The new cache
@@ -2194,7 +2290,7 @@ impl AquaBackend {
         v: &str,
         asset_strs: IndexSet<String>,
     ) -> Result<(String, String)> {
-        let target = PlatformTarget::from_current();
+        let target = self.verification_target();
         self.github_release_asset_urls_for_target(pkg, v, asset_strs, &target)
             .await
     }
@@ -2456,6 +2552,9 @@ impl AquaBackend {
     ) -> Result<()> {
         let tarball_path = tv.download_path().join(filename);
         if tarball_path.exists() {
+            // Say so: a reporter that only sees the fetch vanish would show a
+            // suspiciously instant install, and the download cache is why.
+            ctx.pr.set_message(format!("cached {filename}"));
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
@@ -2489,7 +2588,7 @@ impl AquaBackend {
         let has_lockfile_integrity = tv
             .lock_platforms
             .get(&platform_key)
-            .is_some_and(PlatformInfo::has_checksum_and_verified_provenance);
+            .is_some_and(PlatformInfo::has_checksum_and_provenance);
         let locked_provenance = tv
             .lock_platforms
             .get(&platform_key)
@@ -2749,7 +2848,7 @@ impl AquaBackend {
     /// When skipping full provenance re-verification (lockfile has checksum+provenance),
     /// check that the setting for the recorded provenance type is still enabled.
     /// Disabling a verification setting while the lockfile expects it is a downgrade.
-    fn ensure_provenance_setting_enabled(
+    pub(crate) fn ensure_provenance_setting_enabled(
         &self,
         tv: &ToolVersion,
         platform_key: &str,
@@ -3378,6 +3477,24 @@ fn unescape_regex_literal(pattern: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
+fn rebase_github_signer_workflow(workflow: &str, old_repo: &str, canonical_repo: &str) -> String {
+    workflow
+        .strip_prefix(old_repo)
+        .filter(|suffix| suffix.starts_with('/'))
+        .map_or_else(
+            || workflow.to_string(),
+            |suffix| format!("{canonical_repo}{suffix}"),
+        )
+}
+
+/// A failed verification may become valid after resolving a repository transfer.
+/// Only a verified attestation can skip the canonical-repository lookup.
+fn attestation_needs_transfer_retry(
+    result: &std::result::Result<bool, crate::github::sigstore::AttestationError>,
+) -> bool {
+    !matches!(result, Ok(true))
+}
+
 fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
@@ -3604,6 +3721,13 @@ pub(crate) fn is_install_time_option_key(key: &str) -> bool {
 mod tests {
     use super::*;
     use aqua_registry::{AquaFile, AquaVar, ParsedRegistry};
+
+    #[test]
+    fn aqua_uses_go_arch_name_for_32_bit_arm() {
+        assert_eq!(to_aqua_arch("arm"), "arm");
+        assert_eq!(to_aqua_arch("x64"), "amd64");
+        assert_eq!(to_aqua_arch("arm64"), "arm64");
+    }
 
     // `--dry-run` reaches `validate` through `resolve_validated_package`, and this is the sentence
     // it has to be able to produce before the install starts. Pinned here because
@@ -4831,6 +4955,41 @@ packages:
     }
 
     #[test]
+    fn test_rebase_github_signer_workflow_after_repo_transfer() {
+        assert_eq!(
+            rebase_github_signer_workflow(
+                "jdx/aube/.github/workflows/release.yml",
+                "jdx/aube",
+                "aubepkg/aube",
+            ),
+            "aubepkg/aube/.github/workflows/release.yml"
+        );
+    }
+
+    #[test]
+    fn test_rebase_github_signer_workflow_preserves_reusable_workflow_repo() {
+        assert_eq!(
+            rebase_github_signer_workflow(
+                "aquaproj/aqua-registry/.github/workflows/release.yml",
+                "jdx/aube",
+                "aubepkg/aube",
+            ),
+            "aquaproj/aqua-registry/.github/workflows/release.yml"
+        );
+    }
+
+    #[test]
+    fn test_attestation_transfer_retry_result_handling() {
+        use crate::github::sigstore::AttestationError;
+
+        assert!(!attestation_needs_transfer_retry(&Ok(true)));
+        assert!(attestation_needs_transfer_retry(&Ok(false)));
+        assert!(attestation_needs_transfer_retry(&Err(
+            AttestationError::NoAttestations
+        )));
+    }
+
+    #[test]
     fn test_unescape_regex_literal_only_backslash() {
         assert_eq!(unescape_regex_literal("\\"), "\\");
     }
@@ -5143,14 +5302,13 @@ pub(crate) fn os() -> &'static str {
 }
 
 pub(crate) fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        "amd64"
-    } else if cfg!(target_arch = "arm") {
-        "armv6l"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        &ARCH
+    to_aqua_arch(&ARCH)
+}
+
+fn to_aqua_arch(arch: &str) -> &str {
+    match arch {
+        "x64" => "amd64",
+        other => other,
     }
 }
 

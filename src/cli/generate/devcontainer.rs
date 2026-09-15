@@ -7,9 +7,12 @@ use crate::{
 };
 use serde::Serialize;
 
-/// Generate a devcontainer to execute mise
+/// Generate devcontainer configuration for mise
+///
+/// Prints JSON by default. `--write` saves .devcontainer/devcontainer.json;
+/// review the image, mounts, and generated setup commands before opening it.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, example(r###"mise generate devcontainer"###))]
 pub(super) struct Devcontainer {
     /// The image to use for the devcontainer
     #[usage(long, short, verbatim_doc_comment)]
@@ -131,10 +134,3 @@ impl Devcontainer {
         Ok(output)
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise generate devcontainer</bold>
-"#
-);

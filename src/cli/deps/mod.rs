@@ -6,19 +6,27 @@ mod remove;
 
 /// [experimental] Manage project dependencies
 ///
-/// Runs all applicable dependency install steps for the current project.
-/// This checks if dependency lockfiles are newer than installed outputs
-/// (e.g., package-lock.json vs node_modules/) and runs install commands
-/// if needed.
+/// With no subcommand, runs dependency installation for the current project, the same
+/// as `mise deps install`. Providers detect their inputs and installed outputs to
+/// decide whether work is needed; use `--explain PROVIDER` to inspect that decision.
 ///
-/// Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
-/// unless skipped with the --no-deps flag.
+/// Providers with `auto = true` run before `mise exec` and `mise run` unless `--no-deps`
+/// is passed. These install project dependencies, such as node_modules, separately
+/// from versioned tools managed by `mise install`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     visible_alias = "dep",
     alias = "prepare",
     verbatim_doc_comment,
-    after_long_help = AFTER_LONG_HELP
+    after_long_help = AFTER_LONG_HELP,
+    example(r###"mise deps                    # Install all project dependencies
+mise deps install            # Same as bare `mise deps`
+mise deps install --force    # Force reinstall even if fresh
+mise deps install --dry-run  # Show what would run
+mise deps --monorepo         # Install deps from explicit monorepo config roots
+mise deps add npm:react      # Add a dependency
+mise deps add -D npm:vitest  # Add a dev dependency
+mise deps remove npm:lodash  # Remove a dependency"###)
 )]
 pub(crate) struct Deps {
     #[usage(subcommand)]
@@ -63,18 +71,7 @@ pub(super) fn parse_package_spec(spec: &str) -> Result<(&str, &str)> {
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise deps</bold>                    # Install all project dependencies
-    $ <bold>mise deps install</bold>            # Same as bare `mise deps`
-    $ <bold>mise deps install --force</bold>    # Force reinstall even if fresh
-    $ <bold>mise deps install --dry-run</bold>  # Show what would run
-    $ <bold>mise deps --monorepo</bold>         # Install deps from explicit monorepo config roots
-    $ <bold>mise deps add npm:react</bold>      # Add a dependency
-    $ <bold>mise deps add -D npm:vitest</bold>  # Add a dev dependency
-    $ <bold>mise deps remove npm:lodash</bold>  # Remove a dependency
-
-<bold><underline>Configuration:</underline></bold>
+    r###"<bold><underline>Configuration:</underline></bold>
 
 ```toml
 # Built-in npm provider (auto-detects lockfile)
@@ -88,8 +85,6 @@ sources = ["schema/*.graphql"]
 outputs = ["src/generated/"]
 run = "npm run codegen"
 
-[deps]
-disable = ["npm"]        # Disable specific providers at runtime
-```
-"#
+# To disable npm instead, add `disable = ["npm"]` under [deps].
+```"###
 );

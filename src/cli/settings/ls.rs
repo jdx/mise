@@ -7,14 +7,21 @@ use eyre::Result;
 use std::path::{Path, PathBuf};
 use tabled::{Table, Tabled};
 
-/// Show current settings
+/// List configured settings and their sources
 ///
-/// This is the contents of ~/.config/mise/config.toml
-///
-/// Note that aliases are also stored in this file
-/// but managed separately with `mise tool-alias`
+/// By default, list explicit settings from loaded TOML files. `--all` also includes
+/// effective defaults. Use `--local` to restrict output to the selected local file,
+/// and `--json-extended` to include source information in machine-readable output.
+/// Use `mise settings get KEY` when you need one effective value.
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise settings ls
+mise settings ls --all
+mise settings ls python --json-extended"###
+    ),
+    verbatim_doc_comment
+)]
 pub(crate) struct SettingsLs {
     /// Name of setting
     pub setting: Option<String>,
@@ -162,19 +169,6 @@ impl SettingsLs {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise settings ls</bold>
-    idiomatic_version_file = false
-    ...
-
-    $ <bold>mise settings ls python</bold>
-    default_packages_file = "~/.default-python-packages"
-    ...
-"#
-);
 
 #[derive(Debug, Tabled)]
 #[tabled(rename_all = "PascalCase")]

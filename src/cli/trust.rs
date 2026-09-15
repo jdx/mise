@@ -32,7 +32,17 @@ use itertools::Itertools;
 /// checkout has been trusted. Paranoid mode disables this sharing since
 /// worktrees can check out branches with different config contents.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise trust ~/some_dir/mise.toml"###,
+        help = r###"trusts ~/some_dir/mise.toml"###
+    ),
+    example(
+        r###"mise trust"###,
+        help = r###"trusts mise.toml in the current or parent directory"###
+    )
+)]
 pub(crate) struct Trust {
     /// The config file whose trust status to change
     #[usage(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
@@ -379,17 +389,6 @@ impl Trust {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # trusts ~/some_dir/mise.toml
-    $ <bold>mise trust ~/some_dir/mise.toml</bold>
-
-    # trusts mise.toml in the current or parent directory
-    $ <bold>mise trust</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

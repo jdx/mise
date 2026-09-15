@@ -8,19 +8,33 @@ use crate::backend::unalias_backend;
 use crate::file::{make_symlink, remove_all};
 use crate::{dirs, file};
 
-/// Symlink a plugin into mise
+/// Link a local plugin directory into mise for development
 ///
-/// This is used for developing a plugin.
+/// Edits in the source directory take effect without reinstalling the plugin. Pass
+/// both a name and directory, or only a directory to infer the name after stripping
+/// a known prefix such as `mise-` or `vfox-`. This does not install a tool version.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "ln",
+    verbatim_doc_comment,
+    example(r###"mise plugins link my-tool ./mise-my-tool"###),
+    example(
+        r###"mise plugins link ./mise-my-tool"###,
+        help = r###"Alternative: infer the name "my-tool""###
+    ),
+    example(
+        r###"mise ls-remote my-tool"###,
+        help = r###"List versions through the linked plugin"###
+    )
+)]
 pub(super) struct PluginsLink {
     /// The name of the plugin
-    /// e.g.: cmake, poetry
+    /// With one argument, this is the plugin directory and the name is inferred
     #[usage(verbatim_doc_comment)]
     name: String,
 
     /// The local path to the plugin
-    /// e.g.: ./vfox-cmake
+    /// e.g.: ./mise-my-tool
     #[usage(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     dir: Option<PathBuf>,
 
@@ -40,6 +54,7 @@ impl PluginsLink {
             }
         };
         let name = unalias_backend(&name);
+        let name = name.as_ref();
         let path = path.absolutize()?;
         let symlink = dirs::PLUGINS.join(name);
         if symlink.exists() {
@@ -62,19 +77,7 @@ impl PluginsLink {
 fn get_name_from_path(path: &Path) -> String {
     let name = path.file_name().unwrap().to_str().unwrap();
     let name = name.strip_prefix("asdf-").unwrap_or(name);
-    let name = name.strip_prefix("rtx-").unwrap_or(name);
     let name = name.strip_prefix("mise-").unwrap_or(name);
     let name = name.strip_prefix("vfox-").unwrap_or(name);
     unalias_backend(name).to_string()
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # essentially just `ln -s ./vfox-cmake ~/.local/share/mise/plugins/cmake`
-    $ <bold>mise plugins link cmake ./vfox-cmake</bold>
-
-    # infer plugin name as "cmake"
-    $ <bold>mise plugins link ./vfox-cmake</bold>
-"#
-);

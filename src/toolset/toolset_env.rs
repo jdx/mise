@@ -5,6 +5,7 @@ use std::time::SystemTime;
 
 use eyre::Result;
 
+use crate::backend::backend_type::BackendType;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{Config, Settings};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
@@ -390,12 +391,18 @@ impl Toolset {
             })
             .collect();
 
-        // Collect tool versions
+        // Runtime options can change tool environments and wrapper activation without
+        // changing versions, so include them in the cache identity.
         let tool_versions: Vec<(String, String)> = self
             .list_current_versions()
             .into_iter()
-            .map(|(b, tv)| (b.id().to_string(), tv.version.clone()))
-            .collect();
+            .map(|(b, tv)| {
+                Ok((
+                    b.id().to_string(),
+                    serde_json::to_string(&(tv.version.clone(), tv.request.options()))?,
+                ))
+            })
+            .collect::<Result<_>>()?;
 
         // Get settings hash
         let settings_hash = compute_settings_hash();
@@ -425,6 +432,7 @@ impl Toolset {
             &tool_versions,
             &settings_hash,
             &base_path,
+            env::PRISTINE_ENV.get("MANPATH").map(String::as_str),
         ))
     }
 
@@ -462,6 +470,8 @@ impl Toolset {
             .collect()
     }
 
+    /// Resolve tool and non-tool environment contributions needed before the
+    /// tools-aware environment pass.
     pub(crate) async fn env(&self, config: &Arc<Config>) -> Result<(EnvMap, Vec<PathBuf>)> {
         time!("env start");
         let entries = self
@@ -491,6 +501,7 @@ impl Toolset {
                 env.insert(k, v);
             }
         }
+        self.prepend_packslip_manpaths(config, &mut env)?;
         for key in &config.env_results().await?.env_remove {
             env.remove(key);
         }
@@ -498,6 +509,39 @@ impl Toolset {
         Ok((env, paths_to_add))
     }
 
+    /// Prepend normalized man roots from the active Packslip installs.
+    fn prepend_packslip_manpaths(&self, config: &Arc<Config>, env: &mut EnvMap) -> Result<()> {
+        let mut paths: Vec<PathBuf> = self
+            .list_current_installed_versions(config)
+            .into_iter()
+            .filter(|(backend, _)| backend.get_type() == BackendType::Packslip)
+            .filter_map(|(_, tv)| crate::packslip::manpath(&tv.install_path()))
+            .collect();
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        let existing = env
+            .get("MANPATH")
+            .or_else(|| crate::env::PRISTINE_ENV.get("MANPATH"));
+        if let Some(existing) = existing {
+            paths.extend(std::env::split_paths(existing));
+        } else {
+            // An empty component asks `man` to retain its platform defaults.
+            // Without it, merely activating one Packslip tool would hide the
+            // operating system's own manual pages.
+            paths.push(PathBuf::new());
+        }
+        let mut seen = BTreeSet::new();
+        paths.retain(|path| seen.insert(path.clone()));
+        env.insert(
+            "MANPATH".into(),
+            std::env::join_paths(paths)?.to_string_lossy().into_owned(),
+        );
+        Ok(())
+    }
+
+    /// Resolve the complete environment, including tools-aware directives.
     pub(crate) async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
         let (mut env, add_paths) = self.env(config).await?;
         let non_tool_env = config.env_results().await?;
@@ -554,6 +598,13 @@ impl Toolset {
         }
         effective_removals.extend(env_results.env_remove.clone());
         env_results.env_remove = effective_removals;
+
+        // A tools-aware directive may replace MANPATH after env() added the
+        // Packslip roots. Compose it once more against the final value, while
+        // continuing to honor an explicit unset from either environment pass.
+        if !env_results.env_remove.contains("MANPATH") {
+            self.prepend_packslip_manpaths(config, &mut env)?;
+        }
 
         // Apply redactions from tools-only env vars (e.g. redact=true + tools=true)
         if !env_results.redactions.is_empty() {

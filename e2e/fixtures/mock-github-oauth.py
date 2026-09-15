@@ -61,6 +61,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "scope": "",
             }
         if grant_type == "refresh_token":
+            if form.get("refresh_token", [""])[0] == "ghr-rejected":
+                return {
+                    "error": "incorrect_client_credentials",
+                    "error_description": "The client credentials are incorrect.",
+                }
             return {
                 "access_token": REFRESHED_TOKEN,
                 "expires_in": 28800,

@@ -24,6 +24,9 @@ cat >"$CARGO_HOME/bin/rustup" <<'RUSTUP'
 set -euo pipefail
 
 case "${1:-} ${2:-}" in
+	"show profile")
+		echo minimal
+		;;
 	"toolchain install")
 		version="$3"
 		if ! mkdir "$RUSTUP_HOME/install-in-progress" 2>/dev/null; then

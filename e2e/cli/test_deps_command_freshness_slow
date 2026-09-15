@@ -29,7 +29,7 @@ assert_contains "mise deps --only command 2>&1" "up to date"
 mkdir -p "$HOME/.config/mise"
 cat >"$HOME/.config/mise/config.toml" <<'EOF'
 [settings]
-unix_default_inline_shell_args = "sh -c -o errexit"
+unix_default_inline_shell_args = "sh -o errexit -c"
 EOF
 
 cat >mise.toml <<'EOF'

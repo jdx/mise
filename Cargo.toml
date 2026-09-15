@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/mise-cache-core",
+  "crates/mise-agent-env",
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
@@ -11,7 +12,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.9.1"
+version = "2026.9.9"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -27,16 +28,21 @@ include = [
   "/LICENSE",
   "/README.md",
   "/build.rs",
+  "/build/lockfile_rollout.rs",
   "/completions/*",
+  "/docs/public/apple-touch-icon.png",
+  "/docs/public/android-chrome-512x512.png",
   "/minisign.pub",
   "/registry/*.toml",
+  "/registry/daemon-presets/*.toml",
   "/settings.toml",
   "/zipsign.pub",
   "/src/**/*.rs",
+  "/src/system/history/notify/macos.m",
+  "/src/system/history/notify/macos.plist",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
-  "/src/system/packages/brew/cask_shim.rb",
-  "/src/system/packages/brew/shim.rb",
+  "/src/system/packages/brew/*.rb",
   "/vendor/aqua-registry/LICENSE",
   "/vendor/aqua-registry/metadata.json",
   "/vendor/aqua-registry/registry.yml",
@@ -66,7 +72,7 @@ panic = "abort"
 opt-level = 3
 
 [dependencies]
-age = { version = "0.12", features = ["ssh"] }
+age = { version = "0.12", features = ["ssh", "plugin"] }
 aho-corasick = "1"
 aube-registry = { version = "2", default-features = false, features = [
   "rustls",
@@ -96,13 +102,16 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-usage_rs = { package = "usage-rs", version = "6", features = [
+usage_rs = { package = "usage-rs", version = "6.8", features = [
   "completions",
+  "config",
   "diagnostics",
   "validation",
 ] }
-usage-cli = "6"
-color-eyre = "0.6"
+usage-cli = "6.8"
+color-eyre = { version = "0.6", default-features = false, features = [
+  "track-caller",
+] }
 color-print = "0.3"
 comfy-table = "8"
 confique = { version = "0.4", default-features = false }
@@ -118,13 +127,22 @@ dunce = "1"
 homedir = "0.3"
 expr-lang = "2"
 eyre = "0.6"
+file-id = "0.2"
 filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
+mise-agent-env = { path = "crates/mise-agent-env", version = "0.1" }
 fslock = "0.2"
-gix = { version = "<1", features = ["worktree-mutation"] }
+gix = { version = "<1", default-features = false, features = [
+  "max-performance-safe",
+  "worktree-mutation",
+  "sha1",
+  "sha256",
+  "interrupt",
+  "auto-chain-error",
+] }
 glob = "0.3"
 globwalk = "0.9"
 globset = "0.4"
@@ -132,6 +150,10 @@ ignore = { version = "0.4", features = [] }
 heck = "0.5"
 hex = "0.4"
 http = "1"
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "tokio",
+] }
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
 ipnet = { version = "2", features = ["serde"] }
@@ -148,8 +170,13 @@ miette = { version = "7", features = ["fancy"] }
 netrc-rs = "0.1"
 nodejs-semver = "5"
 nucleo-matcher = "0.3"
+notify = { version = "8", default-features = false, features = [
+  "macos_fsevent",
+] }
+notify-debouncer-full = { version = "0.7", default-features = false }
 num_cpus = "1"
 once_cell = "1"
+packslip = { version = "0.3", default-features = false }
 openssl = { version = "0.10", optional = true }
 path-absolutize = "4"
 petgraph = "0.8"
@@ -157,7 +184,7 @@ pgp = "0.20"
 phf = "0.14"
 rand = "0.10"
 rattler = { version = "0.48", default-features = false }
-rattler_conda_types = { version = "0.51", default-features = false }
+rattler_conda_types = { version = "0.52", default-features = false }
 rattler_repodata_gateway = { version = "0.33", default-features = false, features = [
   "gateway",
 ] }
@@ -165,7 +192,7 @@ rattler_solve = { version = "9", default-features = false, features = [
   "resolvo",
 ] }
 rattler_package_streaming = { version = "0.27", default-features = false }
-rattler_virtual_packages = { version = "5", default-features = false }
+rattler_virtual_packages = { version = "6", default-features = false }
 regex = "1"
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = [
@@ -202,7 +229,7 @@ serde_ignored = "0.1"
 serde_json = "1"
 serde_yaml = "0.9"
 semver = "1"
-sevenz-rust2 = "0.20"
+sevenz-rust2 = "0.22"
 sha1 = "0.11"
 sha2 = "0.11"
 blake3 = "1"
@@ -213,12 +240,12 @@ signal-hook = "0.4"
 siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
-tabled = { version = "0.21", features = ["ansi"] }
+tabled = { version = "0.22", features = ["ansi"] }
 taplo = "0.14"
 tempfile = "3"
 tera = "2"
 tera1 = { package = "tera", version = "1" }
-tera-contrib = { version = "0.2", features = [
+tera-contrib = { version = "0.3", features = [
   "base64",
   "date",
   "filesize_format",
@@ -232,14 +259,15 @@ tera-contrib = { version = "0.2", features = [
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["io"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.12", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { version = "6", features = ["docs"] }
-versions = { version = "7", features = ["serde"] }
+uuid = { version = "1", features = ["v7"] }
+usage-lib = { version = "6.8", features = ["docs"] }
+versions = { version = "8", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
 mise-interactive-config = { path = "crates/mise-interactive-config", version = "2026" }
@@ -266,6 +294,10 @@ self_update = { version = "1", optional = true, default-features = false, featur
 landlock = "0.4"
 seccompiler = "0.5"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+
 [target.'cfg(windows)'.dependencies]
 self_update = { version = "1", optional = true, default-features = false, features = [
   "archive-zip",
@@ -282,6 +314,8 @@ windows-sys = { version = "0.61", features = [
   "Win32_Security",
   "Win32_Security_Authorization",
   "Win32_Storage_FileSystem",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_SystemServices",
   "Win32_System_Threading",
 ] }
@@ -289,11 +323,13 @@ windows-sys = { version = "0.61", features = [
 [build-dependencies]
 aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
+cc = "1"
 cfg_aliases = "0.2"
 eyre = "0.6"
 heck = "0.5"
 indexmap = "2"
 phf_codegen = "0.14"
+semver = "1"
 serde = "1"
 serde_yaml = "0.9"
 toml = "1"
@@ -361,6 +397,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ 
 ignored = [
   "aws-lc-rs",
   "built",
+  "cc", # Used by build.rs for the macOS notification helper.
   "cfg_aliases",
   "openssl",
   "phf_codegen",

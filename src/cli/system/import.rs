@@ -21,6 +21,7 @@ use crate::file::display_path;
 use crate::system;
 #[cfg(unix)]
 use crate::system::PackageTomlConfig;
+use crate::system::history::OperationScope;
 #[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
@@ -34,7 +35,15 @@ use toml_edit::{Array, InlineTable, Value};
 /// formulae whose active keg receipt says they were installed on request.
 /// Pass `--all` to import every linked formula, including dependencies.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages import --manager brew
+mise bootstrap packages import --manager brew --all
+mise bootstrap packages import --manager brew --global
+mise bootstrap packages import --manager brew --dry-run"###
+    )
+)]
 pub(crate) struct SystemImport {
     /// Write to the config file for this environment (mise.<ENV>.toml)
     #[usage(long, short, value_name = "ENV", conflicts = ["global", "path"])]
@@ -69,6 +78,10 @@ pub(crate) struct SystemImport {
 
 impl SystemImport {
     pub(crate) async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap packages import", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         if Settings::get()
             .system_packages
             .managers
@@ -189,7 +202,7 @@ fn imported_package_value(
         Some(PackageTomlConfig::Version(_)) => None,
         None => match configured {
             Some(PackageTomlConfig::Options(options))
-                if !options.os.is_empty() || options.adopt.is_some() =>
+                if !options.os.is_empty() || !options.env.is_empty() || options.adopt.is_some() =>
             {
                 Some(options)
             }
@@ -205,6 +218,11 @@ fn imported_package_value(
         let mut os = Array::new();
         os.extend(options.os.clone());
         table.insert("os", Value::Array(os));
+    }
+    if !options.env.is_empty() {
+        let mut env = Array::new();
+        env.extend(options.env.clone());
+        table.insert("env", Value::Array(env));
     }
     if let Some(adopt) = options.adopt {
         table.insert("adopt", Value::from(adopt));
@@ -263,17 +281,19 @@ mod tests {
         let inherited = PackageTomlConfig::Options(PackageOptionsTomlConfig {
             version: "1.0.0".to_string(),
             os: vec!["macos".to_string()],
+            env: vec!["work".to_string()],
             adopt: None,
             state: crate::system::PackageDesiredStateTomlConfig::Present,
         });
         assert_eq!(
             imported_package_value(None, Some(&inherited)).to_string(),
-            r#"{ version = "latest", os = ["macos"] }"#
+            r#"{ version = "latest", os = ["macos"], env = ["work"] }"#
         );
 
         let adopted = PackageTomlConfig::Options(PackageOptionsTomlConfig {
             version: "1.0.0".to_string(),
             os: vec![],
+            env: vec![],
             adopt: Some(true),
             state: crate::system::PackageDesiredStateTomlConfig::Present,
         });
@@ -283,13 +303,3 @@ mod tests {
         );
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages import --manager brew</bold>
-    $ <bold>mise bootstrap packages import --manager brew --all</bold>
-    $ <bold>mise bootstrap packages import --manager brew --global</bold>
-    $ <bold>mise bootstrap packages import --manager brew --dry-run</bold>
-"#
-);

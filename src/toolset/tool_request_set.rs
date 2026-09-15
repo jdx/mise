@@ -47,16 +47,6 @@ impl ToolRequestSet {
     //         .collect()
     // }
 
-    pub(crate) async fn missing_tools(&self, config: &Arc<Config>) -> Vec<&ToolRequest> {
-        let mut tools = vec![];
-        for tr in self.tools.values().flatten() {
-            if tr.is_os_supported() && !tr.is_install_satisfied(config).await {
-                tools.push(tr);
-            }
-        }
-        tools
-    }
-
     pub(crate) fn list_tools(&self) -> Vec<&Arc<BackendArg>> {
         self.tools.keys().collect()
     }
@@ -228,6 +218,11 @@ impl ToolRequestSetBuilder {
         let config_files = self.config_files.as_ref().unwrap_or(&config.config_files);
         for cf in config_files.values().rev() {
             trs = merge(trs, cf.to_tool_request_set()?);
+        }
+        if self.config_files.is_none() {
+            config.daemons()?.add_tool_requests(&mut trs)?;
+        } else {
+            crate::daemons::load(config_files)?.add_tool_requests(&mut trs)?;
         }
         Ok(trs)
     }

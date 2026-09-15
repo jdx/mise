@@ -20,6 +20,7 @@ use crate::toolset::{
     ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
     get_versions_needed_by_tracked_stubs,
 };
+use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{config, env, exit, runtime_symlinks, ui};
@@ -39,7 +40,16 @@ const MAX_OUT_OF_RANGE_UPDATES: usize = 5;
 ///
 /// This also updates mise.lock if lockfiles are enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+    example(r###"mise upgrade node"###, help = r###"Upgrades node to the latest version matching the range in mise.toml"###),
+    example(r###"mise upgrade node --bump"###, help = r###"Upgrades node to the latest version and bumps the version in mise.toml"###),
+    example(r###"mise upgrade"###, help = r###"Upgrades all configured tools within their current requests"###),
+    example(r###"mise upgrade --bump"###, help = r###"Upgrades all tools to the latest versions and bumps the version in mise.toml"###),
+    example(r###"mise upgrade --dry-run"###, help = r###"Just print what would be done, don't actually do it"###),
+    example(r###"mise upgrade node python"###, help = r###"Upgrades node and python within their current requests"###),
+    example(r###"mise upgrade --exclude go"###, help = r###"Upgrade all tools except go"###),
+    example(r###"mise upgrade --interactive"###, help = r###"Show a multiselect menu to choose which tools to upgrade"###),
+    example(r###"mise upgrade --local"###, help = r###"Only upgrade tools defined in local mise.toml, not global ones"###))]
 pub(crate) struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
@@ -181,10 +191,11 @@ impl Upgrade {
             unimplemented!("mise upgrade --monorepo is not implemented yet");
         }
         let mut config = Config::get().await?;
-        if !self.is_dry_run() {
+        if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()
+            .with_resolution_progress(!self.is_dry_run() && !self.raw)
             .with_args(&self.tool)
             .with_scope(self.scope())
             .build(&config)
@@ -215,7 +226,14 @@ impl Upgrade {
             None
         };
         let mut outdated = ts
-            .list_outdated_versions_filtered(&config, self.bump, &opts, filter_tools, exclude_tools)
+            .list_outdated_versions_with_progress(
+                &config,
+                self.bump,
+                &opts,
+                filter_tools,
+                exclude_tools,
+                !self.is_dry_run() && !self.raw,
+            )
             .await;
         self.warn_if_newer_versions_hidden_by_minimum_release_age(
             &config,
@@ -293,7 +311,9 @@ impl Upgrade {
         let mut failed_config_files = HashSet::new();
         let mut outdated_with_config_files = vec![];
         for o in outdated.iter() {
-            if let (Some(path), Some(_bump)) = (o.source.path(), &o.bump) {
+            if let (Some(path), Some(_bump)) = (o.source.path(), &o.bump)
+                && !o.source.is_mise_toml_daemon()
+            {
                 let cf = if let Some(cf) = parsed_config_files.get(path) {
                     Some(Arc::clone(cf))
                 } else if failed_config_files.contains(path) {
@@ -410,6 +430,7 @@ impl Upgrade {
 
         let opts = InstallOptions {
             reason: "upgrade".to_string(),
+            hide_success_summary: true,
             force: false,
             jobs: self.jobs,
             raw: self.raw,
@@ -483,201 +504,246 @@ impl Upgrade {
             ))
         };
 
-        // Only update config files for tools that were successfully installed
-        let mut config_file_updates_by_path = IndexMap::new();
-        for (o, cf) in config_file_updates {
-            if successful_versions
-                .iter()
-                .any(|v| v.ba() == o.tool_version.ba())
-            {
-                config_file_updates_by_path
-                    .entry(cf.get_path().to_path_buf())
-                    .or_insert_with(|| (cf, vec![]))
-                    .1
-                    .push(o);
-            }
-        }
-        let mut config_file_errors = vec![];
-        for (path, (cf, updates)) in config_file_updates_by_path {
-            let mut update_failed = false;
-            for o in updates {
-                if let Err(e) =
-                    cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])
+        // Installation has already changed disk state. Always report those results,
+        // even if updating config, pruning, or rebuilding links subsequently fails.
+        let post_install_result: Result<()> = async {
+            // Only update config files for tools that were successfully installed
+            let mut config_file_updates_by_path = IndexMap::new();
+            for (o, cf) in config_file_updates {
+                if successful_versions
+                    .iter()
+                    .any(|v| v.ba() == o.tool_version.ba())
                 {
-                    config_file_errors.push(eyre!("Failed to update config for {}: {}", o.name, e));
-                    update_failed = true;
-                    break;
+                    config_file_updates_by_path
+                        .entry(cf.get_path().to_path_buf())
+                        .or_insert_with(|| (cf, vec![]))
+                        .1
+                        .push(o);
                 }
             }
-            if update_failed {
-                continue;
-            }
-            if let Err(e) = cf.save() {
-                config_file_errors.push(eyre!(
-                    "Failed to save config {}: {}",
-                    display_path(&path),
-                    e
-                ));
-            }
-        }
-        if config_file_errors.len() == 1 {
-            return Err(config_file_errors.pop().unwrap());
-        }
-        if !config_file_errors.is_empty() {
-            let errors = config_file_errors
-                .into_iter()
-                .map(|e| format!("{e:#}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            return Err(eyre!("Failed to update config files:\n{errors}"));
-        }
-
-        // When a specific version is provided via CLI (e.g., `mise upgrade tiny@3.0.1`),
-        // update the config file prefix if the new version doesn't match the current specifier.
-        // Skip if --bump was used since it already handles config updates.
-        if !self.bump {
-            use crate::toolset::outdated_info::{apply_config_bumps, compute_config_bumps};
-            let tool_versions: Vec<(String, String)> = self
-                .tool
-                .iter()
-                .filter_map(|t| {
-                    t.tvr.as_ref().and_then(|tvr| {
-                        let name = t.ba.short.clone();
-                        // Only process tools that were successfully installed
-                        if successful_versions.iter().any(|v| v.ba().short == name) {
-                            Some((name, tvr.version()))
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .collect();
-            let refs: Vec<(&str, &str)> = tool_versions
-                .iter()
-                .map(|(n, v)| (n.as_str(), v.as_str()))
-                .collect();
-            let bumps = compute_config_bumps(config, &refs);
-            apply_config_bumps(config, &bumps)?;
-        }
-
-        // Reset config after upgrades so tracked configs resolve with new versions
-        *config = Config::reset().await?;
-
-        // Rebuild symlinks BEFORE getting versions needed by tracked configs
-        // This ensures "latest" symlinks point to the new versions, not the old ones
-        let ts = config.get_toolset().await?;
-        runtime_symlinks::rebuild_for_toolset(config, ts)
-            .await
-            .wrap_err("failed to rebuild runtime symlinks")?;
-
-        // Get versions needed by tracked configs AFTER upgrade. Preserve lockfile pins
-        // from other projects, but ignore stale pre-upgrade locks for configs we just
-        // upgraded so their old versions can still be removed.
-        let successful_backends: HashSet<_> = successful_versions
-            .iter()
-            .flat_map(|v| {
-                [
-                    v.ba().short.clone(),
-                    v.ba().tool_name.clone(),
-                    v.ba().full(),
-                    v.ba().full_without_opts(),
-                ]
-            })
-            .collect();
-        let mut upgraded_config_paths: HashSet<_> = outdated
-            .iter()
-            .filter(|o| backend_matches(&successful_backends, o.tool_version.ba()))
-            .filter_map(|o| o.source.path().map(|path| path.to_path_buf()))
-            .collect();
-        for tvl in ts.versions.values() {
-            if backend_matches(&successful_backends, &tvl.backend)
-                && let Some(path) = tvl.source.path()
-            {
-                upgraded_config_paths.insert(path.to_path_buf());
-            }
-        }
-        for (path, cf) in config.config_files.iter() {
-            let Ok(trs) = cf.to_tool_request_set() else {
-                continue;
-            };
-            if trs
-                .tools
-                .keys()
-                .any(|ba| backend_matches(&successful_backends, ba))
-            {
-                upgraded_config_paths.insert(path.clone());
-            }
-        }
-        // Resolving every tracked config and stub is only worth doing when something is
-        // actually up for removal — with --no-prune, or when every upgrade was in-place,
-        // the answer would be discarded.
-        let versions_needed_by_tracked = if to_remove.is_empty() {
-            NeededVersions::new()
-        } else {
-            let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
-                config,
-                true,
-                false,
-                &upgraded_config_paths,
-            )
-            .await?;
-            needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
-            needed
-        };
-
-        // Only uninstall old versions of tools that were successfully upgraded
-        // and are not needed by any tracked config
-        for (o, old_version) in to_remove {
-            if successful_versions
-                .iter()
-                .any(|v| v.ba() == o.tool_version.ba())
-            {
-                // Build a ToolVersion that targets the actual installed old version
-                // (e.g., "1.0.0"), not the resolved latest (e.g., "2.0.0").
-                // When minimum_release_age forces a remote lookup for "latest",
-                // the toolset resolves to the remote version, and tv_pathname()
-                // on the toolset version would give the wrong key.
-                let old_tv = ToolVersion::new(o.tool_version.request.clone(), old_version.clone());
-                let version_key = (old_tv.ba().short.to_string(), old_tv.tv_pathname());
-                if versions_needed_by_tracked.contains_key(&version_key) {
-                    debug!(
-                        "Keeping {}@{} because it's still needed by a tracked config or tool stub",
-                        o.name, old_version
-                    );
+            let mut config_file_errors = vec![];
+            for (path, (cf, updates)) in config_file_updates_by_path {
+                let mut update_failed = false;
+                for o in updates {
+                    if let Err(e) =
+                        cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])
+                    {
+                        config_file_errors.push(eyre!("Failed to update config for {}: {}", o.name, e));
+                        update_failed = true;
+                        break;
+                    }
+                }
+                if update_failed {
                     continue;
                 }
+                if let Err(e) = cf.save() {
+                    config_file_errors.push(eyre!(
+                        "Failed to save config {}: {}",
+                        display_path(&path),
+                        e
+                    ));
+                }
+            }
+            if config_file_errors.len() == 1 {
+                return Err(config_file_errors.pop().unwrap());
+            }
+            if !config_file_errors.is_empty() {
+                let errors = config_file_errors
+                    .into_iter()
+                    .map(|e| format!("{e:#}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(eyre!("Failed to update config files:\n{errors}"));
+            }
 
-                match prune_mode {
-                    PruneMode::Immediate => {
-                        let pr = mpr.add(&format!("uninstall {}@{}", o.name, old_version));
-                        if let Err(e) = self
-                            .uninstall_old_version(config, &old_tv, pr.as_ref())
-                            .await
-                        {
-                            warn!("Failed to uninstall old version of {}: {}", o.name, e);
-                        } else if let Err(err) =
-                            crate::tool_purgatory::forget_path(&old_tv.install_path())
+            // When a specific version is provided via CLI (e.g., `mise upgrade tiny@3.0.1`),
+            // update the config file prefix if the new version doesn't match the current specifier.
+            // Skip if --bump was used since it already handles config updates.
+            if !self.bump {
+                use crate::toolset::outdated_info::{apply_config_bumps, compute_config_bumps};
+                let tool_versions: Vec<(String, String)> = self
+                    .tool
+                    .iter()
+                    .filter_map(|t| {
+                        t.tvr.as_ref().and_then(|tvr| {
+                            let name = t.ba.short.clone();
+                            // Only process tools that were successfully installed
+                            if successful_versions.iter().any(|v| v.ba().short == name) {
+                                Some((name, tvr.version()))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+                let refs: Vec<(&str, &str)> = tool_versions
+                    .iter()
+                    .map(|(n, v)| (n.as_str(), v.as_str()))
+                    .collect();
+                let bumps = compute_config_bumps(config, &refs);
+                apply_config_bumps(config, &bumps)?;
+            }
+
+            // Reset config after upgrades so tracked configs resolve with new versions
+            *config = Config::reset().await?;
+
+            // Rebuild symlinks BEFORE getting versions needed by tracked configs
+            // This ensures "latest" symlinks point to the new versions, not the old ones
+            let ts = config.get_toolset().await?;
+            runtime_symlinks::rebuild_for_toolset(config, ts)
+                .await
+                .wrap_err("failed to rebuild runtime symlinks")?;
+
+            // Get versions needed by tracked configs AFTER upgrade. Preserve lockfile pins
+            // from other projects, but ignore stale pre-upgrade locks for configs we just
+            // upgraded so their old versions can still be removed.
+            let successful_backends: HashSet<_> = successful_versions
+                .iter()
+                .flat_map(|v| {
+                    [
+                        v.ba().short.clone(),
+                        v.ba().tool_name.clone(),
+                        v.ba().full(),
+                        v.ba().full_without_opts(),
+                    ]
+                })
+                .collect();
+            let mut upgraded_config_paths: HashSet<_> = outdated
+                .iter()
+                .filter(|o| backend_matches(&successful_backends, o.tool_version.ba()))
+                .filter_map(|o| o.source.path().map(|path| path.to_path_buf()))
+                .collect();
+            for tvl in ts.versions.values() {
+                if backend_matches(&successful_backends, &tvl.backend)
+                    && let Some(path) = tvl.source.path()
+                {
+                    upgraded_config_paths.insert(path.to_path_buf());
+                }
+            }
+            for (path, cf) in config.config_files.iter() {
+                let Ok(trs) = cf.to_tool_request_set() else {
+                    continue;
+                };
+                if trs
+                    .tools
+                    .keys()
+                    .any(|ba| backend_matches(&successful_backends, ba))
+                {
+                    upgraded_config_paths.insert(path.clone());
+                }
+            }
+            // Resolving every tracked config and stub is only worth doing when something is
+            // actually up for removal — with --no-prune, or when every upgrade was in-place,
+            // the answer would be discarded.
+            let versions_needed_by_tracked = if to_remove.is_empty() {
+                NeededVersions::new()
+            } else {
+                let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
+                    config,
+                    true,
+                    false,
+                    &upgraded_config_paths,
+                )
+                .await?;
+                needed.extend(get_versions_needed_by_tracked_stubs(config).await?);
+                needed
+            };
+
+            // Only uninstall old versions of tools that were successfully upgraded
+            // and are not needed by any tracked config. Immediate removals are
+            // collected and run as one session below, with a summary of removed versions.
+            let mut immediate: Vec<ToolVersion> = Vec::new();
+            let mut scheduled_pruning = false;
+            for (o, old_version) in to_remove {
+                if successful_versions
+                    .iter()
+                    .any(|v| v.ba() == o.tool_version.ba())
+                {
+                    // Build a ToolVersion that targets the actual installed old version
+                    // (e.g., "1.0.0"), not the resolved latest (e.g., "2.0.0").
+                    // When minimum_release_age forces a remote lookup for "latest",
+                    // the toolset resolves to the remote version, and tv_pathname()
+                    // on the toolset version would give the wrong key.
+                    let old_tv = ToolVersion::new(o.tool_version.request.clone(), old_version.clone());
+                    let version_key = (old_tv.ba().short.to_string(), old_tv.tv_pathname());
+                    if versions_needed_by_tracked.contains_key(&version_key) {
+                        debug!(
+                            "Keeping {}@{} because it's still needed by a tracked config or tool stub",
+                            o.name, old_version
+                        );
+                        continue;
+                    }
+
+                    match prune_mode {
+                        PruneMode::Immediate => immediate.push(old_tv),
+                        PruneMode::Deferred(after) => {
+                            if let Err(err) = crate::tool_purgatory::schedule(&old_tv, after) {
+                                warn!(
+                                    "failed to schedule {}@{} for pruning: {err:#}",
+                                    o.name, old_version
+                                );
+                            } else {
+                                scheduled_pruning = true;
+                                debug!(
+                                    "{}@{} will be pruned after {}",
+                                    o.name,
+                                    old_version,
+                                    Settings::get().upgrade.prune_after
+                                );
+                            }
+                        }
+                        PruneMode::None => unreachable!(),
+                    }
+                }
+            }
+
+            if scheduled_pruning {
+                let prune_after = &Settings::get().upgrade.prune_after;
+                hint!(
+                    "upgrade_auto_prune",
+                    "old tool versions are kept for {prune_after} before automatic pruning. Disable this for future upgrades with",
+                    "mise settings set upgrade.auto_prune false"
+                );
+            }
+
+            if !immediate.is_empty() {
+                let mut progress = removal_progress(
+                    &mpr,
+                    immediate
+                        .iter()
+                        .map(|tv| (format!("{}@{}", tv.ba().short, tv.version), tv.style())),
+                );
+                for old_tv in immediate {
+                    let key = format!("{}@{}", old_tv.ba().short, old_tv.version);
+                    let tool = progress
+                        .as_ref()
+                        .and_then(|progress| progress.start_tool(&key));
+                    let pr = match &tool {
+                        Some(tool) => tool.reporter(),
+                        None => mpr.add(&format!("uninstall {}", old_tv.style())),
+                    };
+                    let result = self
+                        .uninstall_old_version(config, &old_tv, pr.as_ref())
+                        .await;
+                    if let Some(tool) = &tool {
+                        tool.complete(result.as_ref().err().map(|e| e.to_string()).as_deref());
+                    }
+                    match result {
+                        Err(e) => warn!(
+                            "Failed to uninstall old version of {}: {}",
+                            old_tv.ba().short,
+                            e
+                        ),
+                    Ok(()) => {
+                        if let Err(err) = crate::tool_purgatory::forget_path(&old_tv.install_path())
                         {
                             warn!("failed to clear tool purgatory entry: {err:#}");
                         }
                     }
-                    PruneMode::Deferred(after) => {
-                        if let Err(err) = crate::tool_purgatory::schedule(&old_tv, after) {
-                            warn!(
-                                "failed to schedule {}@{} for pruning: {err:#}",
-                                o.name, old_version
-                            );
-                        } else {
-                            info!(
-                                "{}@{} will be pruned after {}",
-                                o.name,
-                                old_version,
-                                Settings::get().upgrade.prune_after
-                            );
-                        }
-                    }
-                    PruneMode::None => unreachable!(),
                 }
+            }
+            if let Some(progress) = progress.as_mut() {
+                progress.finish(vec![]);
             }
         }
 
@@ -711,17 +777,29 @@ impl Upgrade {
         .await?;
 
         if successful_versions.iter().any(|v| v.short() == "python") {
-            PIPXBackend::reinstall_all(config)
+            PIPXBackend::reinstall_all(
+                config,
+                opts.locked,
+                opts.resolve_options.use_locked_version,
+            )
                 .await
                 .unwrap_or_else(|err| {
                     warn!("failed to reinstall pipx tools: {err}");
                 });
         }
 
+            Ok(())
+        }
+        .await;
+
         mpr.finish_progress();
         Self::print_summary(&outdated, &successful_versions)?;
 
-        install_error
+        match (install_error, post_install_result) {
+            (Err(install), Err(post)) => Err(eyre!("{install:#}\n{post:#}")),
+            (Err(install), Ok(())) => Err(install),
+            (Ok(()), post) => post,
+        }
     }
 
     async fn uninstall_old_version(
@@ -1060,40 +1138,10 @@ fn release_is_eligible_at(created_at: Timestamp, now: Timestamp, age: &Span) -> 
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Deprecation:</underline></bold>
+    r###"<bold><underline>Deprecation:</underline></bold>
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
-After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
-
-<bold><underline>Examples:</underline></bold>
-
-    # Upgrades node to the latest version matching the range in mise.toml
-    $ <bold>mise upgrade node</bold>
-
-    # Upgrades node to the latest version and bumps the version in mise.toml
-    $ <bold>mise upgrade node --bump</bold>
-
-    # Upgrades all tools to the latest versions
-    $ <bold>mise upgrade</bold>
-
-    # Upgrades all tools to the latest versions and bumps the version in mise.toml
-    $ <bold>mise upgrade --bump</bold>
-
-    # Just print what would be done, don't actually do it
-    $ <bold>mise upgrade --dry-run</bold>
-
-    # Upgrades node and python to the latest versions
-    $ <bold>mise upgrade node python</bold>
-
-    # Upgrade all tools except go
-    $ <bold>mise upgrade --exclude go</bold>
-
-    # Show a multiselect menu to choose which tools to upgrade
-    $ <bold>mise upgrade --interactive</bold>
-
-    # Only upgrade tools defined in local mise.toml, not global ones
-    $ <bold>mise upgrade --local</bold>
-"#
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead."###
 );
 
 #[cfg(test)]

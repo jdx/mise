@@ -1,6 +1,14 @@
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
-{%- if path == "bootstrap/packages/apply" -%}
+{%- if path == "daemons" or path is starting_with(pat="daemons/") -%}
+{%- set path = "daemons.rs" -%}
+{%- elif path == "dotfiles/history" -%}
+{%- set path = "dotfiles/history/mod.rs" -%}
+{%- elif path == "dotfiles/include" -%}
+{%- set path = "dotfiles/exclude.rs" -%}
+{%- elif path == "dotfiles/origin" or path == "dotfiles/origin/set" -%}
+{%- set path = "dotfiles/origin.rs" -%}
+{%- elif path == "bootstrap/packages/apply" -%}
 {%- set path = "system/install.rs" -%}
 {%- elif path == "bootstrap/packages/import" -%}
 {%- set path = "system/import.rs" -%}
@@ -12,6 +20,8 @@ source_code_link_template #"""
 {%- set path = "system/upgrade.rs" -%}
 {%- elif path == "bootstrap/packages/use" -%}
 {%- set path = "system/use.rs" -%}
+{%- elif path == "bootstrap/packages/where" -%}
+{%- set path = "system/where.rs" -%}
 {%- elif path is starting_with(pat="bootstrap/packages/brew") -%}
 {%- set path = "system/brew/mod.rs" -%}
 {%- elif path == "bootstrap/dotfiles/add" -%}
@@ -24,6 +34,38 @@ source_code_link_template #"""
 {%- set path = "dotfiles/status.rs" -%}
 {%- elif path == "bootstrap/dotfiles/unapply" -%}
 {%- set path = "dotfiles/unapply.rs" -%}
+{%- elif path == "bootstrap/dotfiles/history" -%}
+{%- set path = "dotfiles/history/mod.rs" -%}
+{%- elif path is starting_with(pat="bootstrap/dotfiles/history/") -%}
+{%- set path = path | replace(from="bootstrap/dotfiles/history/", to="dotfiles/history/") ~ ".rs" -%}
+{%- elif path == "bootstrap/dotfiles/paths" -%}
+{%- set path = "dotfiles/paths.rs" -%}
+{%- elif path == "bootstrap/dotfiles/save" -%}
+{%- set path = "dotfiles/save.rs" -%}
+{%- elif path == "bootstrap/dotfiles/capture" -%}
+{%- set path = "dotfiles/capture.rs" -%}
+{%- elif path == "bootstrap/dotfiles/conflicts" -%}
+{%- set path = "dotfiles/conflicts.rs" -%}
+{%- elif path == "bootstrap/dotfiles/track" -%}
+{%- set path = "dotfiles/track.rs" -%}
+{%- elif path == "bootstrap/dotfiles/untrack" -%}
+{%- set path = "dotfiles/untrack.rs" -%}
+{%- elif path == "bootstrap/dotfiles/rollback" -%}
+{%- set path = "dotfiles/rollback.rs" -%}
+{%- elif path == "bootstrap/dotfiles/undo" -%}
+{%- set path = "dotfiles/undo.rs" -%}
+{%- elif path == "bootstrap/dotfiles/watch" -%}
+{%- set path = "dotfiles/watch.rs" -%}
+{%- elif path == "bootstrap/dotfiles/exclude" or path == "bootstrap/dotfiles/include" -%}
+{%- set path = "dotfiles/exclude.rs" -%}
+{%- elif path == "bootstrap/dotfiles/origin" or path == "bootstrap/dotfiles/origin/set" -%}
+{%- set path = "dotfiles/origin.rs" -%}
+{%- elif path == "bootstrap/dotfiles/sync" -%}
+{%- set path = "dotfiles/sync.rs" -%}
+{%- elif path == "bootstrap/dotfiles/pull" -%}
+{%- set path = "dotfiles/pull.rs" -%}
+{%- elif path == "bootstrap/dotfiles/recover" -%}
+{%- set path = "dotfiles/recover.rs" -%}
 {%- elif path is starting_with(pat="bootstrap") -%}
 {%- set path = "bootstrap.rs" -%}
 {%- elif path == "tasks/run" -%}
@@ -45,7 +87,7 @@ complete "plugin" run="mise plugins --core --user"
 complete "prefix" run="mise ls-remote {{words[PREV]}}"
 complete "setting" run="mise settings --complete" descriptions=#true
 complete "task" run="mise tasks ls --complete" descriptions=#true
-complete "tool" run="mise registry --complete" descriptions=#true
+complete "tool" run="mise search --complete {{words[CURRENT]}}" descriptions=#true
 complete "env_var" run=#"mise set --complete | awk '{print $1"="}'"#
 complete "env_key" run="mise set --complete"
 complete "backend" run="mise backends"
@@ -65,7 +107,7 @@ case $cur in
     done
     ;;
   *)
-    plugins=$(mise registry | awk '{print $1}')
+    plugins=$(mise search --complete-ids "$cur")
     for plugin in $plugins; do
       echo "$plugin@"
     done

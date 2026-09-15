@@ -10,7 +10,14 @@ use crate::system;
 /// Edit entries manage a marker-delimited block or a single line in a file
 /// mise doesn't otherwise own.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise dot apply
+mise dot apply --dry-run
+mise dot apply --force --yes"###
+    )
+)]
 pub(crate) struct DotfilesApply {
     /// Only apply these targets
     #[usage(value_name = "TARGET")]
@@ -27,6 +34,10 @@ pub(crate) struct DotfilesApply {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesApply {
@@ -45,8 +56,11 @@ impl DotfilesApply {
         super::select_requests(config, &self.targets)
     }
 
-    pub(crate) async fn run(self) -> Result<bool> {
+    /// The apply without an operation of its own, for a caller that already
+    /// opened one.
+    pub(crate) async fn run_inner(self) -> Result<bool> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
@@ -61,12 +75,13 @@ impl DotfilesApply {
                 force_hint: "use --force",
                 yes: self.yes,
             };
-            if !system::files::apply(&config, &files, &opts)? {
+            if !system::files::apply(&config, &files, &opts, &secrets)? {
                 return Ok(false);
             }
         }
         if !edits.is_empty() {
             let opts = system::edits::ApplyOpts {
+                part: "dotfiles",
                 dry_run: self.dry_run,
                 verbose: Settings::get().verbose,
                 yes: self.yes,
@@ -78,12 +93,3 @@ impl DotfilesApply {
         Ok(true)
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles apply</bold>
-    $ <bold>mise bootstrap dotfiles apply --dry-run</bold>
-    $ <bold>mise bootstrap dotfiles apply --force --yes</bold>
-"#
-);

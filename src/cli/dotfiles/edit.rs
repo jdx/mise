@@ -7,11 +7,18 @@ use crate::config::Config;
 use crate::file;
 use crate::system;
 use crate::system::edits::{BlockSource, EditOp};
+use crate::system::history::OperationScope;
 use crate::ui::prompt;
 
 /// Edit a managed dotfile source
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise dot edit ~/.zshrc
+mise dot edit --apply ~/.config/starship.toml"###
+    )
+)]
 pub(crate) struct DotfilesEdit {
     /// Target to edit
     #[usage(value_name = "TARGET")]
@@ -32,11 +39,21 @@ pub(crate) struct DotfilesEdit {
     /// Skip the confirmation prompt when adding an unmanaged target
     #[usage(long, short)]
     yes: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesEdit {
     /// Open the managed source and optionally converge its target afterward.
     pub(crate) async fn run(self) -> Result<()> {
+        // The editor itself changes the managed source, so the whole command
+        // is one generation, not just the optional apply.
+        OperationScope::wrap("bootstrap dotfiles edit", false, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mut config = Config::get().await?;
         let target = system::files::resolve_target_arg(&self.target);
         if self.apply {
@@ -48,7 +65,7 @@ impl DotfilesEdit {
             open_or_create(&path)?;
             crate::cli::editor::open_in_editor(&path)?;
             if self.apply {
-                apply_target(&self.target).await?;
+                apply_target(&self.target, self.prompt_secrets).await?;
             }
             return Ok(());
         }
@@ -75,6 +92,7 @@ impl DotfilesEdit {
             no_apply: true,
             force: false,
             yes: true,
+            prompt_secrets: self.prompt_secrets,
         }
         .run()
         .await?;
@@ -86,7 +104,7 @@ impl DotfilesEdit {
         open_or_create(&path)?;
         crate::cli::editor::open_in_editor(&path)?;
         if self.apply {
-            apply_target(&self.target).await?;
+            apply_target(&self.target, self.prompt_secrets).await?;
         }
         Ok(())
     }
@@ -147,8 +165,9 @@ fn open_or_create(path: &std::path::Path) -> Result<()> {
 }
 
 /// Apply a selected target after validating the complete composed footprint.
-async fn apply_target(target: &str) -> Result<()> {
+async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
     let config = Config::reset().await?;
+    let secrets = system::secrets::resolve(&config, prompt_secrets)?;
     let targets = vec![target.to_string()];
     let all_files = system::files::files_from_config(&config)?;
     system::files::validate_composed_file_footprints(&all_files)?;
@@ -165,13 +184,14 @@ async fn apply_target(target: &str) -> Result<()> {
             dry_run: false,
             verbose: false,
             force: false,
-            force_hint: "use `mise bootstrap dotfiles apply --force`",
+            force_hint: "use `mise dot apply --force`",
             yes: true,
         };
-        system::files::apply(&config, &files, &opts)?;
+        system::files::apply(&config, &files, &opts, &secrets)?;
     }
     if !edits.is_empty() {
         let opts = system::edits::ApplyOpts {
+            part: "dotfiles",
             dry_run: false,
             verbose: false,
             yes: true,
@@ -180,11 +200,3 @@ async fn apply_target(target: &str) -> Result<()> {
     }
     Ok(())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles edit ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles edit --apply ~/.config/starship.toml</bold>
-"#
-);

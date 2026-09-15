@@ -10,13 +10,27 @@ use serde::Serialize;
 use std::sync::Arc;
 use tokio::{sync::Semaphore, task::JoinSet};
 
-/// List available tools to install
+/// List registry shorthand names and their backends
 ///
-/// This command lists the tools available in the registry as shorthand names.
+/// The registry maps short names to installation backends. For example, `node`
+/// uses the built-in Node backend. A tool may have multiple candidates; explicit
+/// backend syntax and configuration can override registry selection.
 ///
-/// For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
+/// This is not a list of every tool mise can install. Use an explicit identifier
+/// such as `github:owner/repo` for a supported source without a registry shorthand.
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise registry
+mise registry node"###,
+        help = "List the registry, then inspect node. The second command prints `core:node`."
+    ),
+    example(
+        r###"mise registry --backend aqua
+mise registry --json"###
+    ),
+    verbatim_doc_comment
+)]
 pub(crate) struct Registry {
     /// Show only the specified tool's full name
     name: Option<String>,
@@ -227,19 +241,6 @@ async fn to_output(tool: RegistryToolOutputArgs, security: bool) -> RegistryTool
         security,
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise registry</bold>
-    node    core:node
-    poetry  asdf:mise-plugins/mise-poetry
-    ubi     cargo:ubi-cli
-
-    $ <bold>mise registry poetry</bold>
-    asdf:mise-plugins/mise-poetry
-"#
-);
 
 fn filter_enabled(short: &str) -> bool {
     let settings = Settings::get();

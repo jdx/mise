@@ -110,6 +110,8 @@ impl FreshnessResult {
 /// A command to execute for dependency management
 #[derive(Debug, Clone)]
 pub(crate) struct DepsCommand {
+    /// True only for commands originating as inline shell text.
+    pub inline: bool,
     /// The program to execute
     pub program: String,
     /// Arguments to pass to the program
@@ -145,6 +147,7 @@ impl DepsCommand {
         args.push(run.to_string());
 
         Ok(Self {
+            inline: true,
             program: program.to_string(),
             args,
             env: config.env.clone(),
@@ -171,6 +174,7 @@ impl DepsCommand {
         }
 
         let mut hasher = blake3::Hasher::new();
+        update(&mut hasher, &[u8::from(self.inline)]);
         update(&mut hasher, self.program.as_bytes());
         update(&mut hasher, &(self.args.len() as u64).to_le_bytes());
         for arg in &self.args {
@@ -467,6 +471,7 @@ mod tests {
 
     fn command() -> DepsCommand {
         DepsCommand {
+            inline: true,
             program: "sh".to_string(),
             args: vec!["-c".to_string(), "echo first".to_string()],
             env: BTreeMap::from([("MODE".to_string(), "debug".to_string())]),
@@ -478,6 +483,9 @@ mod tests {
     #[test]
     fn deps_command_freshness_hash_tracks_execution_inputs() {
         let original = command();
+        let mut changed = original.clone();
+        changed.inline = !original.inline;
+        assert_ne!(original.freshness_hash(), changed.freshness_hash());
         assert_eq!(original.freshness_hash(), command().freshness_hash());
 
         let mut changed = command();

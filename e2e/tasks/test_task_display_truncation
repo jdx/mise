@@ -48,4 +48,22 @@ else
   fail "[task execution] no '…' expected in output, got: $output"
 fi
 
+# Agent-driven commands also need the complete command for diagnosis and
+# follow-up, even outside CI.
+output=$(env AI_AGENT=test mise run insanely-long-task-output 2>&1)
+if [[ $output != *"…"* ]]; then
+  ok "[task execution] agent output is not truncated"
+else
+  fail "[task execution] no '…' expected in agent output, got: $output"
+fi
+
+# The general truncation setting applies to task command lines without changing
+# task.show_full_cmd's separate multiline-script behavior.
+output=$(env MISE_TRUNCATE=0 mise run insanely-long-task-output 2>&1)
+if [[ $output != *"…"* ]]; then
+  ok "[task execution] configured output is not truncated"
+else
+  fail "[task execution] no '…' expected with MISE_TRUNCATE=0, got: $output"
+fi
+
 echo "Task display truncation test completed successfully"

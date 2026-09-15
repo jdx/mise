@@ -1,3 +1,7 @@
+---
+description: "mise can install Rust/cargo using rustup under the hood."
+---
+
 # Rust
 
 mise can install Rust/cargo using rustup under the hood. It installs rustup if it is not already installed, then
@@ -27,25 +31,30 @@ version, and asks rustup to install any configured components or targets when yo
 
 ## Usage
 
-Use the latest stable version of Rust:
+Install the latest stable toolchain for the current project and verify it:
 
 ```sh
-mise use -g rust
-cargo build
+mise use rust
+mise exec -- rustc --version
+mise exec -- cargo --version
 ```
+
+In a Cargo project, use `mise exec -- cargo build` or a mise task. Add `-g` to
+`mise use` for a personal default. These examples select the toolchain through
+mise; they do not require shell activation.
 
 Use the latest beta version of Rust:
 
 ```sh
-mise use -g rust@beta
-cargo build
+mise use rust@beta
+mise exec -- cargo build
 ```
 
 Use the rolling nightly channel:
 
 ```sh
-mise use -g rust@nightly
-cargo build
+mise use rust@nightly
+mise exec -- cargo build
 ```
 
 The configuration remains `nightly`, while mise resolves the current Rust channel manifest to a concrete
@@ -55,7 +64,7 @@ locked installs reproducible. Run `mise upgrade rust` or `mise lock --bump` to a
 To keep a specific nightly instead, configure its date explicitly:
 
 ```sh
-mise use -g rust@nightly-2026-08-13
+mise use rust@nightly-2026-08-13
 ```
 
 An explicitly dated nightly is an exact pin. Commands using `--bump`, such as `mise upgrade --bump rust`, can replace
@@ -64,43 +73,77 @@ that pin with the current nightly.
 Use a specific version of Rust:
 
 ```sh
-mise use -g rust@1.82
-cargo build
+mise use rust@1.82
+mise exec -- cargo build
 ```
+
+## Existing rustup projects
+
+If the project already uses `rust-toolchain.toml`, enable idiomatic-file discovery
+instead of duplicating a conflicting Rust version in `mise.toml`:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools rust
+mise install
+mise exec -- rustup show active-toolchain
+```
+
+mise sets `RUSTUP_TOOLCHAIN` for its selected toolchain. Use `mise exec` when
+comparing selection with a standalone rustup invocation, since the environment
+can change which override rustup sees.
 
 ## Share Cargo builds with Mr Boxington
 
-[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) gives every checkout on a machine one shared,
-self-pruning compilation cache. A crate compiled in one worktree can be reused in another, and concurrent Cargo
-commands share a CPU and memory budget instead of oversubscribing the machine. It can also share cached artifacts
-with teammates and CI runners through a cache server, S3, or GitHub Actions.
+[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) is a Rust build cache and scheduler.
+It reuses matching compilations across projects, worktrees, and CI, so a fresh checkout can benefit from
+work you've already built. Parallel Cargo commands share a CPU and memory budget, and the cache prunes itself.
+You keep using ordinary Cargo commands; no cache server is needed for local use.
+See the [benchmarks](https://mr-boxington.jdx.dev/benchmarks) for examples.
 
-Install `mbx` and configure mise's [`cargo` command wrapper](/dev-tools/shims.html#command-wrappers) to use it:
+Enable the `mr_boxington` tool option and install mbx as a separate tool:
+
+```sh
+mise use --tool-option mr_boxington=true rust mr-boxington
+```
+
+This writes the equivalent of:
 
 ```toml [mise.toml]
 [tools]
-rust = "latest"
+rust = { version = "latest", mr_boxington = true }
 mr-boxington = "latest"
-
-[wrappers.cargo]
-command = "mbx"
-env = { MBX_CARGO_SHIM_MODE = "1" }
 ```
 
-Run `mise reshim` after adding the wrapper. Existing commands and mise tasks can keep invoking `cargo` normally:
+Cargo commands run through mbx in `mise exec`, tasks, activated shells, and
+mise shims. No `mbx setup` or postinstall hook is needed. mbx uses its normal
+mise version selection and lockfile entry, independently of Rust.
 
-```toml [mise.toml]
-[tasks.build]
-run = "cargo build"
+```sh
+mise exec -- cargo build
 ```
 
-Within the mise environment, the wrapper transparently routes those commands through `mbx`. This also avoids
-rewriting every task as `mbx build`, and keeps the same tasks usable if the wrapper is later removed.
+Editors and coding agents must invoke mise's Cargo shim or use `mise exec`.
+Direct calls to rustup's Cargo proxy or a toolchain's Cargo binary bypass mise.
+Safe mode ignores the opt-in from project-scoped Rust entries.
+
+An explicit `[wrappers.cargo]` configuration takes precedence over this option.
+The [generic command wrapper configuration](/dev-tools/shims.html#command-wrappers)
+remains available when Rust is managed outside mise.
 
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `rust` backend—these
 go in `[tools]` in `mise.toml`.
+
+### `mr_boxington`
+
+Set `mr_boxington = true` to wrap Cargo with Mr Boxington. Defaults to `false`.
+Requires `mr-boxington` in the active tool configuration; merely having `mbx` on
+PATH is not sufficient. Keep its version in a separate `[tools]` entry.
+
+The option applies to the first platform-supported Rust version in the selected
+configuration. Set it to `false` in a project's Rust entry to disable an inherited
+opt-in. An explicitly configured Cargo wrapper is unaffected.
 
 ### `install_env`
 
@@ -147,7 +190,7 @@ be given as an array or as a comma-separated string.
 
 ```toml
 [tools]
-"rust" = {
+rust = {
   version = "1.83.0",
   targets = ["wasm32-unknown-unknown", "thumbv7em-none-eabi"],
 }

@@ -18,10 +18,15 @@ assert_fail_contains "mise prune --dry-run-code 2>&1" "[dryrun]"
 assert "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
 assert "ls $MISE_DATA_DIR/installs/tiny/2.0.0"
 assert "test -L '$MISE_DATA_DIR/installs/dummy/latest'"
-assert "mise prune tiny"
+# Without a terminal or --yes, prune must not silently treat an unavailable
+# confirmation prompt as a decline and report success.
+assert_fail_contains "MISE_YES=0 mise prune tiny 2>&1" \
+  "mise prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
+assert "ls $MISE_DATA_DIR/installs/tiny/2.0.0"
+MISE_YES=1 assert "mise prune tiny"
 assert "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
 assert_fail "ls $MISE_DATA_DIR/installs/tiny/2.0.0"
-assert "mise prune"
+MISE_YES=1 assert "mise prune"
 assert_fail "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
 assert "test \"\$(readlink '$MISE_DATA_DIR/installs/dummy/latest')\" = ./3.0.0"
 assert "ls $MISE_DATA_DIR/installs/dummy/3.0.0"

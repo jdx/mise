@@ -25,6 +25,22 @@ use crate::tera::{
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
 static INVOCATION_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 
+/// Load operator-owned environment selection without discovering project files.
+pub(crate) fn init_global_only() {
+    let mut settings = MisercSettings::default();
+    // A broken file must not block credentials or discard another valid layer.
+    for path in [
+        env::MISE_SYSTEM_CONFIG_DIR.join("miserc.toml"),
+        dirs::CONFIG.join("miserc.toml"),
+    ] {
+        if let Ok(layer) = load_miserc_files(vec![path]) {
+            merge_settings(&mut settings, layer);
+        }
+    }
+    let _ = MISERC.set(settings);
+    let _ = take_tera_accessed_files();
+}
+
 /// Initialize miserc settings by loading .miserc.toml files.
 /// This must be called early in the initialization process, before
 /// MISE_ENV or other early settings are accessed.
@@ -50,6 +66,11 @@ pub(crate) fn invocation_cwd() -> Option<&'static Path> {
 
 /// Get the loaded miserc settings, or default if not initialized.
 pub(crate) fn get() -> &'static MisercSettings {
+    if super::Settings::is_package_query() {
+        static QUERY_MISERC: std::sync::LazyLock<MisercSettings> =
+            std::sync::LazyLock::new(MisercSettings::default);
+        return &QUERY_MISERC;
+    }
     MISERC.get_or_init(|| {
         let settings = load_miserc_settings().unwrap_or_default();
         let _ = take_tera_accessed_files();
@@ -142,11 +163,12 @@ fn render_miserc_template(
 /// 2. Global ~/.config/mise/miserc.toml
 /// 3. System /etc/mise/miserc.toml
 fn load_miserc_settings() -> Result<MisercSettings> {
+    load_miserc_files(find_miserc_files())
+}
+
+fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     let mut merged = MisercSettings::default();
-
     // Load in reverse precedence order so later loads override earlier ones
-    let files = find_miserc_files();
-
     // Tera is initialized lazily inside render_miserc_template — only paid if a file
     // actually contains template syntax. Shared across all files to avoid redundant clones.
     let mut tera: Option<TeraEngine> = None;

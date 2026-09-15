@@ -9,12 +9,26 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 use crate::wildcard::wildcard_match;
 use indexmap::IndexSet;
 
-/// Export env vars to activate mise a single time
+/// Print the environment for the current configuration
 ///
-/// Use this to load the environment into one shell without adding `mise activate` to
-/// your shell rc file. It is not needed in shells where mise is already activated.
+/// Evaluate the shell output to load tools and variables once, without installing
+/// prompt hooks. Changing directories afterward does not recompute this environment.
+/// Use `mise exec -- command` to apply it to one child process instead.
+///
+/// JSON, dotenv, and shell output contain actual variable values, including secrets.
+/// `--redacted` selects variables marked for redaction; it does not mask their values.
+/// Environment construction may install missing tools according to mise's settings.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "e",
+    verbatim_doc_comment,
+    example(
+        r###"eval "$(mise env -s bash)"
+eval "$(mise env -s zsh)"
+mise env -s fish | source
+execx($(mise env -s xonsh))"###
+    )
+)]
 pub(crate) struct Env {
     /// Tool(s) to include in addition to those in config, e.g. node@20
     #[usage(value_name = "TOOL@VERSION")]
@@ -36,7 +50,7 @@ pub(crate) struct Env {
     #[usage(long, overrides = "shell")]
     json_extended: bool,
 
-    /// Only show redacted environment variables
+    /// Only include variables marked for redaction; their values are printed unmasked
     #[usage(long)]
     redacted: bool,
 
@@ -55,6 +69,15 @@ impl Env {
         let (_, missing) = ts
             .install_missing_versions(&mut config, &InstallOptions::default())
             .await?;
+        // The printed environment places the shim farms on PATH for lazy
+        // declarations, so evaluating it must leave working bootstrap shims
+        // behind: an eval'd shell has no command-not-found handler to fall
+        // back on (discussion #12678).
+        if ts.has_lazy_declarations()
+            && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
+        {
+            warn!("failed to create shims for lazy tools: {err:#}");
+        }
         ts.notify_missing_versions(missing);
 
         // Pre-compute final_env when needed by --redacted or --dotenv to
@@ -262,16 +285,6 @@ fn fallback_shell() -> ShellType {
         false => ShellType::Bash,
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>eval "$(mise env -s bash)"</bold>
-    $ <bold>eval "$(mise env -s zsh)"</bold>
-    $ <bold>mise env -s fish | source</bold>
-    $ <bold>execx($(mise env -s xonsh))</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

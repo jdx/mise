@@ -58,6 +58,11 @@ pub(crate) struct BuildOptions {
     /// NOTE: the resulting layout omits reused layer blobs, so it is only
     /// valid to push to the repository the cache image came from.
     pub reuse_from: Option<registry::RemoteImage>,
+    /// Push destination; permits base blobs already in that repository to
+    /// remain remote when no build step needs to unpack them.
+    pub push_destination: Option<String>,
+    /// Bypass the local tool-layer cache (remote reuse is supplied separately).
+    pub no_cache: bool,
 }
 
 /// Cache key for tool-layer reuse. All four parts must match — a layer built
@@ -218,7 +223,12 @@ impl Builder {
                 crate::oci::normalize_arch(std::env::consts::ARCH),
                 crate::oci::normalize_os(std::env::consts::OS),
             ));
-            let pull = registry::pull_base_image(ref_, &layout, desired)
+            let destination = self
+                .opts
+                .push_destination
+                .as_deref()
+                .filter(|_| self.system_packages.is_empty());
+            let pull = registry::pull_base_image(ref_, &layout, desired, destination)
                 .await
                 .wrap_err_with(|| format!("pulling base image {ref_}"))?;
             base_layers = pull
@@ -325,17 +335,12 @@ impl Builder {
                 n = built_tool_count
             );
         }
+        // Fail cheaply before unpacking a rootfs or installing system packages.
+        // Confirm a missing path under the lock: a reinstall may temporarily
+        // remove it. The packaging check remains authoritative for present paths.
         for (i, (_, tv)) in versions.iter().enumerate() {
-            if tool_reuse[i].is_some() {
-                continue; // layer comes from the cache image; no install needed
-            }
-            let install_path = tv.install_path();
-            if !install_path.is_dir() {
-                bail!(
-                    "{} install path does not exist: {}. Run `mise install` first.",
-                    tv.style(),
-                    install_path.display()
-                );
+            if tool_reuse[i].is_none() {
+                preflight_tool_install(tv)?;
             }
         }
 
@@ -373,6 +378,11 @@ impl Builder {
                 );
                 ToolLayer::Reused(reused.clone())
             } else {
+                // Coordinate with install, link, and uninstall before inspecting
+                // the source. Hold through fingerprinting, packaging, and cache
+                // publication so a same-version reinstall cannot poison a key.
+                let _install_lock = lock_tool_install(tv)?;
+                require_tool_install(tv)?;
                 let is_pipx = tv.ba().backend_type() == BackendType::Pipx;
                 // Only pipx layers are expected to link into another tool's
                 // install. Other backends get their own mapping for shebang
@@ -395,12 +405,28 @@ impl Builder {
                     Vec::new()
                 };
                 let relocation = layer::ToolRelocation::new(paths).with_pythons(pythons);
-                let blob = layer::build_relocated_tool_layer_from_dir(
-                    &tv.install_path(),
-                    &tv_prefix,
-                    owner,
-                    &relocation,
-                )
+                let blob = if self.opts.no_cache {
+                    layer::build_relocated_tool_layer_from_dir(
+                        &tv.install_path(),
+                        &tv_prefix,
+                        owner,
+                        &relocation,
+                    )
+                } else {
+                    layer::build_cached_tool_layer(
+                        &tv.install_path(),
+                        &tv_prefix,
+                        owner,
+                        &relocation,
+                        &tv.cache_path().join("oci-layers"),
+                    )
+                    .map(|(blob, hit)| {
+                        if hit {
+                            info!("oci: reusing {} layer from the local cache", tv.style());
+                        }
+                        blob
+                    })
+                }
                 .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
                 ToolLayer::Built(blob)
             };
@@ -607,6 +633,7 @@ impl Builder {
         let image_config = self
             .build_image_config(
                 &versions,
+                &tool_reuse,
                 &mount_point,
                 base_config_json.as_ref(),
                 all_diff_ids.clone(),
@@ -659,6 +686,7 @@ impl Builder {
     async fn build_image_config(
         &self,
         versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
+        tool_reuse: &[Option<ReusedLayer>],
         mount_point: &str,
         base_config_json: Option<&serde_json::Value>,
         diff_ids: Vec<String>,
@@ -780,9 +808,21 @@ impl Builder {
         // `<install>/bin` if a backend returns nothing or paths outside its
         // install dir.
         let mut path_entries: Vec<String> = Vec::new();
-        for (backend, tv) in versions {
+        for (i, (backend, tv)) in versions.iter().enumerate() {
             let install_path = crate::file::canonicalize_or_self(&tv.install_path());
             let in_image_tool_root = tool_in_image_path(mount_point, tv);
+            if tool_reuse[i].is_some() {
+                let cached_entries = self
+                    .opts
+                    .reuse_from
+                    .as_ref()
+                    .map(|remote| cached_tool_path_entries(remote, &in_image_tool_root))
+                    .unwrap_or_default();
+                if !cached_entries.is_empty() {
+                    path_entries.extend(cached_entries);
+                    continue;
+                }
+            }
             let bin_paths = backend
                 .list_bin_paths(&self.cfg, tv)
                 .await
@@ -897,6 +937,36 @@ impl Builder {
     }
 }
 
+/// Coordinate source checks and packaging with installation transactions.
+fn lock_tool_install(tv: &ToolVersion) -> Result<fslock::LockFile> {
+    crate::toolset::install_state::lock_tool_version_with_notice(
+        &tv.ba().short,
+        &tv.tv_pathname(),
+        &|| info!("oci: waiting for {} install lock", tv.style()),
+    )
+}
+
+/// Check cheaply when present, but wait for a reinstall before reporting absence.
+fn preflight_tool_install(tv: &ToolVersion) -> Result<()> {
+    if !tv.install_path().is_dir() {
+        let _install_lock = lock_tool_install(tv)?;
+        require_tool_install(tv)?;
+    }
+    Ok(())
+}
+
+fn require_tool_install(tv: &ToolVersion) -> Result<()> {
+    let install_path = tv.install_path();
+    if !install_path.is_dir() {
+        bail!(
+            "{} install path does not exist: {}. Run `mise install` first.",
+            tv.style(),
+            install_path.display()
+        );
+    }
+    Ok(())
+}
+
 fn resolve_layer_owner(opts_owner: Option<LayerOwner>, oci: &OciConfig) -> LayerOwner {
     opts_owner.unwrap_or_else(|| {
         let uid = oci.user_id.unwrap_or(0);
@@ -913,7 +983,7 @@ fn build_dotfiles_layer(
     let mut entries = DotfilesLayerEntries::default();
 
     for req in requests {
-        if req.mode != FileMode::Content && !req.source.exists() {
+        if !matches!(req.mode, FileMode::Content | FileMode::Track) && !req.source.exists() {
             bail!(
                 "[dotfiles].\"{}\": source does not exist: {}",
                 req.target_raw,
@@ -922,6 +992,9 @@ fn build_dotfiles_layer(
         }
 
         match req.mode {
+            // a tracked file lives on the machine that tracks it; an image
+            // has nothing to copy
+            FileMode::Track => continue,
             FileMode::Symlink | FileMode::Copy => {
                 collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
                     .wrap_err_with(|| {
@@ -954,7 +1027,7 @@ fn build_dotfiles_layer(
                 }
             }
             FileMode::Template => {
-                let rendered = crate::system::files::render_template(cfg, req)?;
+                let rendered = crate::system::files::render_template_for_oci(cfg, req)?;
                 entries.add_file(
                     oci_target_path(req)?,
                     rendered.into_bytes(),
@@ -1307,9 +1380,86 @@ fn sanitize_label(s: &str) -> String {
     s.replace([':', '/'], ".")
 }
 
+/// Recover the PATH entries that described a reused tool in the cache image.
+/// A reused tool may not be installed locally, so asking its backend for bin
+/// paths can return nothing even though the remote layer has a non-standard
+/// layout such as an executable directly in the install root.
+fn cached_tool_path_entries(remote: &registry::RemoteImage, tool_root: &str) -> Vec<String> {
+    remote
+        .config
+        .get("config")
+        .and_then(|config| config.get("Env"))
+        .and_then(|env| env.as_array())
+        .and_then(|env| {
+            env.iter()
+                .filter_map(|entry| entry.as_str())
+                .filter_map(|entry| entry.strip_prefix("PATH="))
+                .next_back()
+        })
+        .map(|path| {
+            path.split(':')
+                .filter(|entry| {
+                    let has_parent = PathBuf::from(entry)
+                        .components()
+                        .any(|component| component == std::path::Component::ParentDir);
+                    !has_parent
+                        && (*entry == tool_root
+                            || entry
+                                .strip_prefix(tool_root)
+                                .is_some_and(|suffix| suffix.starts_with('/')))
+                })
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_install_preflight_waits_for_reinstall() {
+        use crate::toolset::{ToolRequest, ToolSource};
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let td = tempfile::tempdir().unwrap();
+        let version = td
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let backend =
+            crate::cli::args::BackendArg::new("node".to_string(), Some("core:node".to_string()));
+        let request =
+            ToolRequest::new_version_for_test(backend.into(), &version, ToolSource::Unknown);
+        let mut tv = ToolVersion::new(request, version);
+        tv.install_path = Some(td.path().join("install"));
+        let held = lock_tool_install(&tv).unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                started_tx.send(()).unwrap();
+                done_tx.send(preflight_tool_install(&tv)).unwrap();
+            });
+            started_rx.recv().unwrap();
+            let before_unlock = done_rx.recv_timeout(Duration::from_millis(100));
+            // Simulate the installer completing while holding its transaction lock.
+            std::fs::create_dir(tv.install_path()).unwrap();
+            drop(held);
+            assert!(matches!(
+                before_unlock,
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ));
+            done_rx
+                .recv_timeout(Duration::from_secs(10))
+                .unwrap()
+                .unwrap();
+        });
+    }
 
     fn layer(annotations: &[(&str, &str)], digest: &str) -> Descriptor {
         Descriptor {
@@ -1385,6 +1535,7 @@ mod tests {
                 annotations: Default::default(),
             },
             diff_ids: vec!["sha256:diff-a".into(), "sha256:diff-b".into()],
+            config: serde_json::json!({}),
         };
 
         let index = build_reuse_index(&remote);
@@ -1411,6 +1562,36 @@ mod tests {
                     relocation: TOOL_LAYER_RELOCATION_VERSION.into(),
                 })
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn cached_path_entries_are_scoped_to_the_reused_tool() {
+        let remote = registry::RemoteImage {
+            manifest: ImageManifest {
+                schema_version: 2,
+                media_type: manifest::MEDIA_TYPE_OCI_MANIFEST.to_string(),
+                config: layer(&[], "sha256:cfg"),
+                layers: vec![],
+                annotations: Default::default(),
+            },
+            diff_ids: vec![],
+            config: serde_json::json!({
+                "config": {
+                    "Env": [
+                        "PATH=/mise/installs/pnpm/9.15.9:/mise/installs/deno/2.0.0/bin:/mise/installs/pnpm/9.15.9/../../other/bin:/usr/bin"
+                    ]
+                }
+            }),
+        };
+
+        assert_eq!(
+            cached_tool_path_entries(&remote, "/mise/installs/pnpm/9.15.9"),
+            vec!["/mise/installs/pnpm/9.15.9"]
+        );
+        assert_eq!(
+            cached_tool_path_entries(&remote, "/mise/installs/deno/2.0.0"),
+            vec!["/mise/installs/deno/2.0.0/bin"]
         );
     }
 

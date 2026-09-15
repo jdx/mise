@@ -2,10 +2,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use eyre::bail;
+use eyre::{Report, bail};
+use futures_util::stream::{self, StreamExt};
 
 use super::api::{self, Formula};
 use super::tag;
+use crate::config::Settings;
 use crate::result::Result;
 use crate::system::packages::PackageRequest;
 
@@ -34,6 +36,22 @@ impl FormulaKey {
     }
 }
 
+fn accept_resolved_alias_failures(
+    failed: Vec<(FormulaKey, bool, Report)>,
+    canonical: &HashMap<FormulaKey, FormulaKey>,
+    on_request: &mut HashSet<FormulaKey>,
+) -> Result<()> {
+    for (key, requested, err) in failed {
+        let Some(canonical_key) = canonical.get(&key).cloned() else {
+            return Err(err);
+        };
+        if requested {
+            on_request.insert(canonical_key);
+        }
+    }
+    Ok(())
+}
+
 /// The `variations` entry that applies to what will actually be installed:
 /// the selected bottle tag (which may be older than the host's), or the
 /// host's own tag for formulae that will be built from source. Shared with
@@ -60,6 +78,7 @@ fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
 
 pub(super) async fn resolve_closure_with_taps(
     roots: &[PackageRequest],
+    provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
     let roots = roots
         .iter()
@@ -72,7 +91,7 @@ pub(super) async fn resolve_closure_with_taps(
             )
         })
         .collect::<Vec<_>>();
-    resolve_closure_pairs(&roots).await
+    resolve_closure_pairs(&roots, provision_ruby).await
 }
 
 /// Resolve the runtime closure of `roots` into install order (dependencies
@@ -80,6 +99,7 @@ pub(super) async fn resolve_closure_with_taps(
 /// their canonical formula.
 async fn resolve_closure_pairs(
     roots: &[(String, Option<String>, Option<String>)],
+    provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
     let host_tag = tag::host_tag();
     let mut formulae: HashMap<FormulaKey, Formula> = HashMap::new();
@@ -97,76 +117,99 @@ async fn resolve_closure_pairs(
             )
         })
         .collect();
-    while let Some((key, requested)) = queue.pop() {
-        let known = canonical.get(&key).cloned();
-        let canonical_key = match known {
-            Some(c) => c,
-            None => {
-                let (formula, effective_tap_name, effective_tap_url) = match fetch_formula(
-                    &key, requested,
-                )
-                .await
-                {
-                    Ok(formula) => {
-                        let effective_tap_name = match formula.tap.as_deref() {
-                            Some("homebrew/core") => None,
-                            Some(tap) => Some(tap.to_string()),
-                            None => key.tap_name.clone(),
-                        };
-                        let effective_tap_url =
-                            effective_tap_name.as_ref().and(key.tap_url.clone());
-                        (formula, effective_tap_name, effective_tap_url)
-                    }
-                    Err(err)
-                        if key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() =>
-                    {
-                        debug!(
-                            "brew: {} unavailable in tap metadata ({err}); falling back to core metadata",
-                            key.name
-                        );
-                        (api::formula(&key.name).await?, None, None)
-                    }
-                    Err(err) => return Err(err),
-                };
-                let c = formula.name.clone();
-                let canonical_key = FormulaKey::new(
-                    c.clone(),
-                    effective_tap_name.clone(),
-                    effective_tap_url.clone(),
+    while !queue.is_empty() {
+        // Resolve one dependency frontier at a time. Formulae within the
+        // frontier are independent, so their metadata can be fetched
+        // concurrently; the next frontier is discovered from these results.
+        let mut pending: Vec<(FormulaKey, bool)> = vec![];
+        let mut pending_positions: HashMap<FormulaKey, usize> = HashMap::new();
+        while let Some((key, requested)) = queue.pop() {
+            if let Some(canonical_key) = canonical.get(&key).cloned() {
+                if requested {
+                    on_request.insert(canonical_key);
+                }
+                continue;
+            }
+            if let Some(index) = pending_positions.get(&key).copied() {
+                pending[index].1 |= requested;
+            } else {
+                pending_positions.insert(key.clone(), pending.len());
+                pending.push((key, requested));
+            }
+        }
+
+        let fetches: Vec<_> = pending
+            .into_iter()
+            .enumerate()
+            .map(|(index, (key, requested))| async move {
+                let result = fetch_formula_with_fallback(&key, requested, provision_ruby).await;
+                (index, key, requested, result)
+            })
+            .collect();
+        let mut fetched = stream::iter(fetches)
+            .buffer_unordered(crate::jobs::normalize(Settings::get().jobs).max(1))
+            .collect::<Vec<_>>()
+            .await;
+        // buffer_unordered returns completion order. Restore the frontier's
+        // deterministic stack order before aliases and dependencies are added.
+        fetched.sort_by_key(|(index, ..)| *index);
+
+        let mut failed = vec![];
+        for (_, key, requested, result) in fetched {
+            let (formula, effective_tap_name, effective_tap_url) = match result {
+                Ok(resolved) => resolved,
+                Err(err) => {
+                    failed.push((key, requested, err));
+                    continue;
+                }
+            };
+            if let Some(canonical_key) = canonical.get(&key).cloned() {
+                if requested {
+                    on_request.insert(canonical_key);
+                }
+                continue;
+            }
+            let canonical_key = FormulaKey::new(
+                formula.name.clone(),
+                effective_tap_name.clone(),
+                effective_tap_url.clone(),
+            );
+            canonical.insert(key, canonical_key.clone());
+            canonical.insert(canonical_key.clone(), canonical_key.clone());
+            for alias in &formula.aliases {
+                canonical.insert(
+                    FormulaKey::new(
+                        alias.clone(),
+                        effective_tap_name.clone(),
+                        effective_tap_url.clone(),
+                    ),
+                    canonical_key.clone(),
                 );
-                canonical.insert(key.clone(), canonical_key.clone());
-                canonical.insert(canonical_key.clone(), canonical_key.clone());
-                for alias in &formula.aliases {
-                    canonical.insert(
+            }
+            if !formulae.contains_key(&canonical_key) {
+                let tag = dep_tag(&formula, &host_tag);
+                for dep in install_deps(&formula, &tag) {
+                    queue.push((
                         FormulaKey::new(
-                            alias.clone(),
+                            dep.clone(),
                             effective_tap_name.clone(),
                             effective_tap_url.clone(),
                         ),
-                        canonical_key.clone(),
-                    );
+                        false,
+                    ));
                 }
-                if !formulae.contains_key(&canonical_key) {
-                    let tag = dep_tag(&formula, &host_tag);
-                    for dep in install_deps(&formula, &tag) {
-                        queue.push((
-                            FormulaKey::new(
-                                dep.clone(),
-                                effective_tap_name.clone(),
-                                effective_tap_url.clone(),
-                            ),
-                            false,
-                        ));
-                    }
-                    raw_bases.insert(canonical_key.clone(), tap_raw_base(&canonical_key));
-                    formulae.insert(canonical_key.clone(), formula);
-                }
-                canonical_key
+                raw_bases.insert(canonical_key.clone(), tap_raw_base(&canonical_key));
+                formulae.insert(canonical_key.clone(), formula);
             }
-        };
-        if requested {
-            on_request.insert(canonical_key);
+            if requested {
+                on_request.insert(canonical_key);
+            }
         }
+        // A frontier may contain both a canonical name and one of its aliases
+        // before either response teaches us that they are the same formula.
+        // Accept a failed redundant request when another response resolved its
+        // key, but preserve errors for genuinely unresolved formulae.
+        accept_resolved_alias_failures(failed, &canonical, &mut on_request)?;
     }
 
     // depth-first post-order = dependencies first
@@ -235,7 +278,7 @@ async fn resolve_closure_pairs(
     Ok(sorted)
 }
 
-async fn fetch_formula(key: &FormulaKey, requested: bool) -> Result<Formula> {
+async fn fetch_formula(key: &FormulaKey, requested: bool, provision_ruby: bool) -> Result<Formula> {
     if !requested && key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() {
         match api::formula(&key.name).await {
             Ok(formula) => return Ok(formula),
@@ -247,7 +290,39 @@ async fn fetch_formula(key: &FormulaKey, requested: bool) -> Result<Formula> {
             }
         }
     }
-    api::formula_with_tap_name(&key.name, key.tap_name.as_deref(), key.tap_url.as_deref()).await
+    api::formula_with_tap_name(
+        &key.name,
+        key.tap_name.as_deref(),
+        key.tap_url.as_deref(),
+        provision_ruby,
+    )
+    .await
+}
+
+async fn fetch_formula_with_fallback(
+    key: &FormulaKey,
+    requested: bool,
+    provision_ruby: bool,
+) -> Result<(Formula, Option<String>, Option<String>)> {
+    match fetch_formula(key, requested, provision_ruby).await {
+        Ok(formula) => {
+            let effective_tap_name = match formula.tap.as_deref() {
+                Some("homebrew/core") => None,
+                Some(tap) => Some(tap.to_string()),
+                None => key.tap_name.clone(),
+            };
+            let effective_tap_url = effective_tap_name.as_ref().and(key.tap_url.clone());
+            Ok((formula, effective_tap_name, effective_tap_url))
+        }
+        Err(err) if key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() => {
+            debug!(
+                "brew: {} unavailable in tap metadata ({err}); falling back to core metadata",
+                key.name
+            );
+            Ok((api::formula(&key.name).await?, None, None))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn tap_raw_base(key: &FormulaKey) -> Option<String> {
@@ -255,4 +330,39 @@ fn tap_raw_base(key: &FormulaKey) -> Option<String> {
     let formula_name = format!("{tap_name}/x");
     let (owner, tap, _) = api::split_tap_name(&formula_name)?;
     api::tap_raw_base(owner, tap, key.tap_url.as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_alias_is_accepted_after_canonical_resolution() {
+        let canonical_key = FormulaKey::new("canonical".into(), None, None);
+        let alias_key = FormulaKey::new("alias".into(), None, None);
+        let canonical = HashMap::from([(alias_key.clone(), canonical_key.clone())]);
+        let mut on_request = HashSet::new();
+
+        accept_resolved_alias_failures(
+            vec![(alias_key, true, eyre::eyre!("redundant alias failed"))],
+            &canonical,
+            &mut on_request,
+        )
+        .unwrap();
+
+        assert_eq!(on_request, HashSet::from([canonical_key]));
+    }
+
+    #[test]
+    fn failed_unresolved_formula_is_preserved() {
+        let key = FormulaKey::new("missing".into(), None, None);
+        let err = accept_resolved_alias_failures(
+            vec![(key, false, eyre::eyre!("metadata failed"))],
+            &HashMap::new(),
+            &mut HashSet::new(),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.to_string(), "metadata failed");
+    }
 }

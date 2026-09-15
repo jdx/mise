@@ -18,7 +18,8 @@ impl Shell for Fish {
         let exe = opts.exe;
         let flags = opts.flags;
 
-        let exe = escape(exe.to_string_lossy());
+        let exe = exe.to_string_lossy();
+        let exe = escape(crate::windows_posix::executable_for_shell(&exe));
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
 
@@ -68,14 +69,14 @@ impl Shell for Fish {
             out.push_str(&formatdoc! {r#"
 
             function __mise_env_eval --description {description};
-                {exe} hook-env{flags} -s fish | source;
+                {exe} hook-env{flags} --shell-pid $fish_pid -s fish $argv | source;
 
                 if test "$mise_fish_mode" != "disable_arrow";
                     function __mise_cd_hook --on-variable PWD --description {description};
                         if test "$mise_fish_mode" = "eval_after_arrow";
                             set -g __mise_env_again 0;
                         else;
-                            {exe} hook-env{flags} -s fish | source;
+                            {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source;
                         end;
                     end;
                 end;
@@ -96,7 +97,7 @@ impl Shell for Fish {
             function __mise_env_eval_2 --on-event fish_preexec --description {description};
                 if set -q __mise_env_again;
                     set -e __mise_env_again;
-                    {exe} hook-env{flags} -s fish | source;
+                    {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source;
                     echo;
                 end;
 
@@ -105,7 +106,7 @@ impl Shell for Fish {
                 end;
             end;
 
-            __mise_env_eval
+            __mise_env_eval --force
             set -g __mise_skip_first_prompt_pwd "$PWD"
         "#});
         }
@@ -119,7 +120,7 @@ impl Shell for Fish {
             function fish_command_not_found
                 if string match -qrv -- '^(?:mise$|mise-)' $argv[1] &&
                     {exe} hook-not-found -s fish -- $argv[1]
-                    {exe} hook-env{flags} -s fish | source
+                    {exe} hook-env{flags} --shell-pid $fish_pid -s fish | source
                 else if functions -q __mise_fish_command_not_found
                     __mise_fish_command_not_found $argv
                 else
@@ -147,7 +148,16 @@ impl Shell for Fish {
     }
 
     fn set_env(&self, key: &str, v: &str) -> String {
-        let k = escape(key.into());
+        if cfg!(windows) && key == "__MISE_ORIG_PATH" {
+            // An opaque native snapshot, not a Fish path list. MSYS must not
+            // reinterpret it before mise reads it back.
+            return format!("set --unpath -gx __MISE_ORIG_PATH {}\n", escape(v.into()));
+        }
+        let k = if env::is_path_key(key) {
+            "PATH".into()
+        } else {
+            escape(key.into())
+        };
         // Fish keeps PATH as a list, so the value is split on the host's separator -- `;` on
         // Windows, `:` on unix -- the way `prepend_env` below already does it. Splitting on `:`
         // unconditionally severed every Windows drive letter from its path, and matching on the
@@ -156,10 +166,10 @@ impl Shell for Fish {
         // Empty entries are dropped, as they are in `prepend_env` and in `env::split_colon_list`:
         // an empty element of a fish list is the current directory, and a Windows PATH ending in
         // `;` -- the usual shape -- yields one from `split_paths`.
-        if env::is_path_key(key) {
-            let paths = env::split_paths(v)
+        if env::is_path_key(key) || !cfg!(windows) && key == "__MISE_ORIG_PATH" {
+            let paths = crate::windows_posix::windows_path_entries_for_shell(v)
+                .into_iter()
                 .filter_map(|p| {
-                    let p = p.to_string_lossy().into_owned();
                     if p.is_empty() {
                         None
                     } else {
@@ -167,7 +177,7 @@ impl Shell for Fish {
                     }
                 })
                 .join(" ");
-            format!("set -gx PATH {paths}\n")
+            format!("set -gx {k} {paths}\n")
         } else {
             let v = escape(v.into());
             format!("set -gx {k} {v}\n")
@@ -178,19 +188,21 @@ impl Shell for Fish {
         let k = escape(key.into());
 
         match key {
-            env_key if env_key == *env::PATH_KEY => env::split_paths(value)
-                .filter_map(|path| {
-                    let path_str = path.to_str()?;
-                    if path_str.is_empty() {
-                        None
-                    } else {
-                        Some(format!(
-                            "fish_add_path --global --path {}\n",
-                            escape(path_str.into())
-                        ))
-                    }
-                })
-                .collect::<String>(),
+            env_key if env::is_path_key(env_key) => {
+                crate::windows_posix::windows_path_entries_for_shell(value)
+                    .into_iter()
+                    .filter_map(|path| {
+                        if path.is_empty() {
+                            None
+                        } else {
+                            Some(format!(
+                                "fish_add_path --global --path {}\n",
+                                escape(path.into())
+                            ))
+                        }
+                    })
+                    .collect::<String>()
+            }
             _ => {
                 let v = escape(value.into());
                 format!("set -gx {k} {v} ${k}\n")
@@ -200,19 +212,21 @@ impl Shell for Fish {
 
     fn move_prepend_env(&self, key: &str, value: &str) -> String {
         match key {
-            env_key if env_key == *env::PATH_KEY => env::split_paths(value)
-                .filter_map(|path| {
-                    let path_str = path.to_str()?;
-                    if path_str.is_empty() {
-                        None
-                    } else {
-                        Some(format!(
-                            "fish_add_path --global --move --path {}\n",
-                            escape(path_str.into())
-                        ))
-                    }
-                })
-                .collect::<String>(),
+            env_key if env::is_path_key(env_key) => {
+                crate::windows_posix::windows_path_entries_for_shell(value)
+                    .into_iter()
+                    .filter_map(|path| {
+                        if path.is_empty() {
+                            None
+                        } else {
+                            Some(format!(
+                                "fish_add_path --global --move --path {}\n",
+                                escape(path.into())
+                            ))
+                        }
+                    })
+                    .collect::<String>()
+            }
             _ => self.prepend_env(key, value),
         }
     }
@@ -308,6 +322,14 @@ mod tests {
         assert_eq!(
             Fish::default().set_env("PATH", "/a::/b"),
             "set -gx PATH /a /b\n"
+        );
+    }
+
+    #[test]
+    fn original_path_is_emitted_as_a_fish_path_list() {
+        assert_eq!(
+            Fish::default().set_env("__MISE_ORIG_PATH", "/a path:/say'hi"),
+            concat!(r"set -gx __MISE_ORIG_PATH '/a path' '/say'\''hi'", "\n")
         );
     }
 

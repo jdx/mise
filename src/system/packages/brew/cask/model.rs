@@ -12,7 +12,7 @@ pub(super) struct CaskUrlSpecs {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(super) struct Cask {
+pub(in crate::system::packages::brew) struct Cask {
     pub(super) token: String,
     #[serde(default)]
     pub(super) aliases: Vec<String>,

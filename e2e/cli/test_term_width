@@ -22,3 +22,32 @@ assert "COLUMNS=40 mise registry | $maxw" "narrow"
 
 # MISE_TERM_WIDTH takes precedence over COLUMNS.
 assert "MISE_TERM_WIDTH=400 COLUMNS=40 mise registry | $maxw" "wide"
+
+# Only commands that opt into truncation expose the command-local flag.
+assert_fail "mise registry --no-truncate" "unexpected argument '--no-truncate'"
+
+cat <<'EOF' >mise.toml
+[dotfiles."~/.config/example/a-very-long-directory-name/a-very-long-file-name.toml"]
+content = "example"
+EOF
+
+# Human output is compact by default. The command flag, environment setting,
+# and agent detection all preserve complete table cells.
+assert_contains "MISE_TERM_WIDTH=40 mise bootstrap dotfiles status" "..."
+assert_not_contains "MISE_TERM_WIDTH=40 mise bootstrap dotfiles status --no-truncate" "..."
+assert_not_contains "MISE_TRUNCATE=0 MISE_TERM_WIDTH=40 mise bootstrap dotfiles status" "..."
+assert_not_contains "AI_AGENT=test MISE_TERM_WIDTH=40 mise bootstrap dotfiles status" "..."
+assert_not_contains "CODEX_THREAD_ID=test MISE_TERM_WIDTH=40 mise bootstrap dotfiles status" "..."
+
+# A command-line value outranks the configured or environment value. usage-rs
+# tracks whether either spelling was actually present, so an absent flag does
+# not mask settings.truncate.
+assert_contains "MISE_TRUNCATE=0 MISE_TERM_WIDTH=40 mise bootstrap dotfiles status --truncate" "..."
+
+cat <<'EOF' >>mise.toml
+
+[settings]
+truncate = false
+EOF
+assert_not_contains "MISE_TERM_WIDTH=40 mise bootstrap dotfiles status" "..."
+assert_contains "MISE_TERM_WIDTH=40 mise bootstrap dotfiles status --truncate" "..."

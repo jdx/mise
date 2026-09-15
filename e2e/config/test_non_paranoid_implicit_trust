@@ -7,7 +7,7 @@
 export MISE_TRUSTED_CONFIG_PATHS=""
 unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
 
-mkdir -p install run exec ignored ci paranoid
+mkdir -p install asdf-install run exec ignored ci paranoid
 
 cat <<'EOF' >install/mise.toml
 [env]
@@ -17,6 +17,13 @@ EOF
 assert_not_contains "cd install && MISE_YES=0 mise hook-env -s bash 2>&1 || true" "IMPLICIT_TRUST=install"
 assert "cd install && MISE_YES=0 mise install"
 assert_contains "cd install && MISE_YES=0 mise hook-env -s bash" "IMPLICIT_TRUST"
+
+cat <<'EOF' >asdf-install/mise.toml
+min_version = "2020.1.1"
+EOF
+
+assert "cd asdf-install && MISE_YES=0 mise asdf install"
+assert_contains "cd asdf-install && MISE_YES=0 mise trust --show" "trusted"
 
 cat <<'EOF' >run/mise.toml
 [env]

@@ -1,16 +1,24 @@
-# launchd
+---
+description: "Declare and apply macOS user LaunchAgents in mise.toml."
+socialDescription: "Declare and apply macOS user LaunchAgents in mise.toml."
+---
+
+# macOS LaunchAgents
 
 mise can declare macOS user LaunchAgents in
 `[bootstrap.macos.launchd.agents]` and apply them with
 `mise bootstrap macos launchd-agents apply` or as part of
 [`mise bootstrap`](/bootstrap.html):
 
+Run this as the user who owns the agent in a macOS session with a GUI launchd
+domain. Create the executable and any log directories before applying it.
+The example's `my-sync` is a placeholder for your own program:
+
 ```toml
 [bootstrap.macos.launchd.agents.my-sync]
 program = "~/.local/bin/my-sync"
 args = ["--watch"]
 run_at_load = true
-start_calendar_interval = { hour = 2, minute = 0 }
 environment = { PATH = "/opt/homebrew/bin:/usr/bin:/bin" }
 working_directory = "~"
 stdout_path = "~/Library/Logs/my-sync.log"
@@ -23,23 +31,33 @@ loaded with `launchctl bootstrap gui/$UID
 numbers, `.`, `_`, and `-`. mise owns only the plist files it creates with the
 `dev.mise.` label prefix.
 
+The agent receives launchd's environment, not your interactive shell's
+activation. Use explicit executable paths and declare required environment
+variables. `program` and `args` form an argument vector; shell expressions such
+as pipes and redirections need an explicitly invoked shell or a wrapper script.
+
 ## Supported keys
 
-| TOML key                  | launchd key               |
-| ------------------------- | ------------------------- |
-| `program`                 | `ProgramArguments[0]`     |
-| `args`                    | `ProgramArguments[1..]`   |
-| `run_at_load`             | `RunAtLoad`               |
-| `keep_alive`              | `KeepAlive`               |
-| `start_interval`          | `StartInterval`           |
-| `throttle_interval`       | `ThrottleInterval`        |
-| `start_calendar_interval` | `StartCalendarInterval`   |
-| `queue_directories`       | `QueueDirectories`        |
-| `environment`             | `EnvironmentVariables`    |
-| `working_directory`       | `WorkingDirectory`        |
-| `stdout_path`             | `StandardOutPath`         |
-| `stderr_path`             | `StandardErrorPath`       |
-| `kickstart`               | run `launchctl kickstart` |
+| TOML key                  | launchd key                              |
+| ------------------------- | ---------------------------------------- |
+| `program`                 | `ProgramArguments[0]`                    |
+| `args`                    | `ProgramArguments[1..]`                  |
+| `run_at_load`             | `RunAtLoad`                              |
+| `keep_alive`              | `KeepAlive`                              |
+| `keep_alive_on_failure`   | `KeepAlive = { SuccessfulExit = false }` |
+| `start_interval`          | `StartInterval`                          |
+| `throttle_interval`       | `ThrottleInterval`                       |
+| `start_calendar_interval` | `StartCalendarInterval`                  |
+| `queue_directories`       | `QueueDirectories`                       |
+| `environment`             | `EnvironmentVariables`                   |
+| `working_directory`       | `WorkingDirectory`                       |
+| `stdout_path`             | `StandardOutPath`                        |
+| `stderr_path`             | `StandardErrorPath`                      |
+
+`keep_alive` and `keep_alive_on_failure` are mutually exclusive. Set only one:
+the former keeps the process running after any exit, while the latter restarts
+it only after a failure.
+| `kickstart` | run `launchctl kickstart` |
 
 `program`, `working_directory`, `stdout_path`, `stderr_path`, and each entry in
 `queue_directories` expand bare `~` and `~/` to the current user's home
@@ -51,6 +69,8 @@ launchd calendar keys. For multiple independent calendar schedules, use an
 array of inline tables:
 
 ```toml
+[bootstrap.macos.launchd.agents.daily-sync]
+program = "~/.local/bin/my-sync"
 start_calendar_interval = [{ hour = 3 }, { hour = 12, weekday = 1 }]
 ```
 

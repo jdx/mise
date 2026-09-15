@@ -270,8 +270,7 @@ impl NodePlugin {
         let settings = Settings::get();
         let tarball_name = local.file_name().unwrap().to_string_lossy().to_string();
         if local.exists() {
-            ctx.pr
-                .set_message(format!("using previously downloaded {tarball_name}"));
+            ctx.pr.set_message(format!("cached {tarball_name}"));
         } else {
             ctx.pr.set_message(format!("download {tarball_name}"));
             HTTP.download_file(url.clone(), local, Some(ctx.pr.as_ref()))

@@ -1298,6 +1298,68 @@ pub(crate) fn get_tera(dir: Option<&Path>) -> TeraEngine {
     }
 }
 
+/// Returns the normal mise renderer without access to the host environment or
+/// command execution. OCI dotfile templates use this to avoid persisting
+/// ambient credentials in publishable image layers.
+pub(crate) fn get_tera_for_oci(dir: Option<&Path>) -> TeraEngine {
+    const ENV_MESSAGE: &str = "environment access is disabled for OCI dotfile templates";
+    const FILE_MESSAGE: &str = "host file access is disabled for OCI dotfile templates";
+    if use_tera_v1() {
+        let mut tera = get_tera_v1(dir);
+        tera.register_function("get_env", move |_: &HashMap<String, JsonValue>| {
+            Err(tera1_err(ENV_MESSAGE))
+        });
+        tera.register_function("exec", move |_: &HashMap<String, JsonValue>| {
+            Err(tera1_err(ENV_MESSAGE))
+        });
+        tera.register_function("read_file", move |_: &HashMap<String, JsonValue>| {
+            Err(tera1_err(FILE_MESSAGE))
+        });
+        TeraEngine::V1(Box::new(tera))
+    } else {
+        let mut tera = get_tera_v2(dir);
+        tera.register_function(
+            "get_env",
+            move |_: Kwargs, _: &State| -> TeraResult<Value> { Err(tera_err(ENV_MESSAGE)) },
+        );
+        tera.register_function("exec", move |_: Kwargs, _: &State| -> TeraResult<Value> {
+            Err(tera_err(ENV_MESSAGE))
+        });
+        tera.register_function(
+            "read_file",
+            move |_: Kwargs, _: &State| -> TeraResult<Value> { Err(tera_err(FILE_MESSAGE)) },
+        );
+        TeraEngine::V2(Box::new(tera))
+    }
+}
+
+/// Returns the normal mise renderer with command execution disabled.
+pub(crate) fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
+    if use_tera_v1() {
+        let mut tera = get_tera_v1(dir);
+        tera.register_function("exec", dry_run_disabled_fn_v1("exec"));
+        TeraEngine::V1(Box::new(tera))
+    } else {
+        let mut tera = get_tera_v2(dir);
+        tera.register_function("exec", dry_run_disabled_fn("exec"));
+        TeraEngine::V2(Box::new(tera))
+    }
+}
+
+fn dry_run_disabled_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |_args: Kwargs, _: &State| -> TeraResult<Value> {
+        Err(tera_err(format!("{name}() is disabled during dry run")))
+    }
+}
+
+fn dry_run_disabled_fn_v1(
+    name: &'static str,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |_args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        Err(tera1_err(format!("{name}() is disabled during dry run")))
+    }
+}
+
 /// Like [`get_tera`] but with `os()` and `arch()` bound to an explicit target
 /// platform instead of the current host. Used by cross-platform `mise lock` to
 /// render URL/checksum templates for platforms other than the one mise runs on.
@@ -1452,7 +1514,14 @@ pub(crate) fn tera1_exec(
             if let Some(dir) = &dir {
                 expr = expr.dir(dir);
             }
-            Ok(expr.read()?)
+            Ok(crate::inline_command::optimize_expression(
+                expr,
+                command,
+                &env_no_shims,
+                dir.as_deref(),
+                Settings::get().implicit_inline_shell(),
+            )
+            .read()?)
         };
         Ok(json!(
             run_once().map_err(|e| tera1_err(format!("exec command: {e}")))?
@@ -1579,7 +1648,14 @@ pub(crate) fn tera_exec(
                     if let Some(dir) = &dir {
                         expr = expr.dir(dir);
                     }
-                    Ok(expr.read()?)
+                    Ok(crate::inline_command::optimize_expression(
+                        expr,
+                        &command,
+                        &env_no_shims,
+                        dir.as_deref(),
+                        Settings::get().implicit_inline_shell(),
+                    )
+                    .read()?)
                 };
                 let result = if cache.is_some() || cache_duration.is_some() {
                     let cachehash = hash::hash_blake3_to_str(

@@ -68,6 +68,9 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      "config-roots": {
+        hide: true,
+      },
       dotfiles: {
         hide: false,
         subcommands: {
@@ -77,16 +80,83 @@ export const commands: { [key: string]: Command } = {
           apply: {
             hide: false,
           },
+          capture: {
+            hide: false,
+          },
+          conflicts: {
+            hide: false,
+          },
           diff: {
             hide: false,
           },
           edit: {
             hide: false,
           },
+          exclude: {
+            hide: false,
+          },
+          history: {
+            hide: false,
+            subcommands: {
+              describe: {
+                hide: false,
+              },
+              diff: {
+                hide: false,
+              },
+              ls: {
+                hide: false,
+              },
+              show: {
+                hide: false,
+              },
+            },
+          },
+          include: {
+            hide: false,
+          },
+          origin: {
+            hide: false,
+            subcommands: {
+              set: {
+                hide: false,
+              },
+            },
+          },
+          paths: {
+            hide: false,
+          },
+          pull: {
+            hide: false,
+          },
+          recover: {
+            hide: false,
+          },
+          rollback: {
+            hide: false,
+          },
+          save: {
+            hide: false,
+          },
           status: {
             hide: false,
           },
+          sync: {
+            hide: false,
+          },
+          track: {
+            hide: false,
+          },
           unapply: {
+            hide: false,
+          },
+          undo: {
+            hide: false,
+          },
+          untrack: {
+            hide: false,
+          },
+          watch: {
             hide: false,
           },
         },
@@ -206,6 +276,9 @@ export const commands: { [key: string]: Command } = {
               },
             },
           },
+          export: {
+            hide: false,
+          },
           import: {
             hide: false,
           },
@@ -219,6 +292,9 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           use: {
+            hide: false,
+          },
+          where: {
             hide: false,
           },
         },
@@ -269,6 +345,9 @@ export const commands: { [key: string]: Command } = {
         hide: false,
         subcommands: {
           apply: {
+            hide: false,
+          },
+          remove: {
             hide: false,
           },
           status: {
@@ -340,6 +419,35 @@ export const commands: { [key: string]: Command } = {
   current: {
     hide: true,
   },
+  daemons: {
+    hide: false,
+    subcommands: {
+      __init: {
+        hide: true,
+      },
+      logs: {
+        hide: false,
+      },
+      ls: {
+        hide: false,
+      },
+      restart: {
+        hide: false,
+      },
+      start: {
+        hide: false,
+      },
+      status: {
+        hide: false,
+      },
+      stop: {
+        hide: false,
+      },
+      tui: {
+        hide: false,
+      },
+    },
+  },
   deactivate: {
     hide: false,
   },
@@ -377,28 +485,98 @@ export const commands: { [key: string]: Command } = {
       path: {
         hide: false,
       },
+      project: {
+        hide: false,
+      },
     },
   },
   dotfiles: {
-    hide: true,
+    hide: false,
     subcommands: {
       add: {
-        hide: true,
+        hide: false,
       },
       apply: {
-        hide: true,
+        hide: false,
+      },
+      capture: {
+        hide: false,
+      },
+      conflicts: {
+        hide: false,
       },
       diff: {
-        hide: true,
+        hide: false,
       },
       edit: {
-        hide: true,
+        hide: false,
+      },
+      exclude: {
+        hide: false,
+      },
+      history: {
+        hide: false,
+        subcommands: {
+          describe: {
+            hide: false,
+          },
+          diff: {
+            hide: false,
+          },
+          ls: {
+            hide: false,
+          },
+          show: {
+            hide: false,
+          },
+        },
+      },
+      include: {
+        hide: false,
+      },
+      origin: {
+        hide: false,
+        subcommands: {
+          set: {
+            hide: false,
+          },
+        },
+      },
+      paths: {
+        hide: false,
+      },
+      pull: {
+        hide: false,
+      },
+      recover: {
+        hide: false,
+      },
+      rollback: {
+        hide: false,
+      },
+      save: {
+        hide: false,
       },
       status: {
-        hide: true,
+        hide: false,
+      },
+      sync: {
+        hide: false,
+      },
+      track: {
+        hide: false,
       },
       unapply: {
-        hide: true,
+        hide: false,
+      },
+      undo: {
+        hide: false,
+      },
+      untrack: {
+        hide: false,
+      },
+      watch: {
+        hide: false,
       },
     },
   },
@@ -513,6 +691,17 @@ export const commands: { [key: string]: Command } = {
   outdated: {
     hide: false,
   },
+  packslip: {
+    hide: false,
+    subcommands: {
+      forget: {
+        hide: false,
+      },
+      pins: {
+        hide: false,
+      },
+    },
+  },
   patrons: {
     hide: false,
   },
@@ -603,7 +792,21 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  skills: {
+    hide: false,
+    subcommands: {
+      ls: {
+        hide: false,
+      },
+      sync: {
+        hide: false,
+      },
+    },
+  },
   sponsors: {
+    hide: false,
+  },
+  ssh: {
     hide: false,
   },
   sync: {

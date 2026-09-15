@@ -1,3 +1,7 @@
+---
+description: "[bootstrap.groups] and [bootstrap.users] declaratively manage local Linux accounts."
+---
+
 # Linux users and groups
 
 `[bootstrap.groups]` and `[bootstrap.users]` declaratively manage local Linux
@@ -55,6 +59,17 @@ with a warning so one configuration can be shared across platforms. Explicit
 When a managed file or directory names one of these ignored declarations as
 its owner or group, that ownership field is ignored with a warning too. Its
 content, mode, and any unrelated local owner or group still converge normally.
+
+## Preview and apply
+
+Run `mise bootstrap accounts apply --dry-run` before changing existing users.
+Inspect any UID/GID and supplementary-group changes: these affect the account
+database even when the user's files are outside this configuration. To use a
+new account as a file owner, apply the full bootstrap or include both
+`accounts` and `files` in `--only`.
+
+Removing an account declaration leaves the account in place. Use the explicit
+removal state below when it should be deleted.
 
 ## Removal
 

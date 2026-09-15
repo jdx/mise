@@ -9,7 +9,16 @@ use crate::ui::table;
 /// Shows the shell aliases that are set in the current directory.
 /// These are defined in `mise.toml` under the `[shell_alias]` section.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    visible_alias = "list",
+    example(
+        r###"mise shell-alias ls
+alias    command
+ll       ls -la
+gs       git status"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct ShellAliasLs {
     /// Don't show table header
     #[usage(long)]
@@ -38,13 +47,3 @@ struct Row {
     alias: String,
     command: String,
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise shell-alias ls</bold>
-    alias    command
-    ll       ls -la
-    gs       git status
-"#
-);

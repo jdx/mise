@@ -22,6 +22,7 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
             source: MiseToml(
                 "~/cwd/.test.mise.toml",
             ),
+            lockfile_scope: Default,
         },
     ],
     BackendArg(jq): [
@@ -43,6 +44,7 @@ expression: "replace_path(&format!(\"{:#?}\", cf.to_tool_request_set().unwrap().
             source: MiseToml(
                 "~/cwd/.test.mise.toml",
             ),
+            lockfile_scope: Default,
         },
     ],
 }

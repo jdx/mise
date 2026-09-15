@@ -22,7 +22,7 @@ use serde_json::json;
 /// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 /// tasks will override the global ones if they have the same name.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, example(r###"mise tasks ls"###))]
 pub(crate) struct TasksLs {
     /// Only show global tasks
     #[usage(short, long, overrides = "local", verbatim_doc_comment)]
@@ -347,9 +347,3 @@ impl TasksLs {
 }
 
 // TODO: fill this out
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise tasks ls</bold>
-"#
-);

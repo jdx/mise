@@ -11,7 +11,7 @@ use crate::{config, duration, file};
 /// With `--local`, modifies the local config file instead.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_aliases = ["create"], example(r###"mise settings set jobs 4"###), verbatim_doc_comment)]
 pub(super) struct SettingsSet {
     /// The setting to set
     #[usage()]
@@ -40,6 +40,7 @@ impl SettingsSet {
 }
 
 pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
+    key = super::canonical_setting(key);
     let meta = match SETTINGS_META.get(key) {
         Some(meta) => meta,
         None => {
@@ -72,6 +73,8 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
 
     let path = if local {
         config::local_toml_config_path()
+    } else if key == "history.sync" && crate::env::MISE_GLOBAL_CONFIG_FILE.is_none() {
+        crate::cli::dotfiles::track::declaration_file(true)?
     } else {
         config::global_config_path()
     };
@@ -84,6 +87,7 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
         config["settings"] = toml_edit::Item::Table(settings);
     }
     if let Some(settings) = config["settings"].as_table_like_mut() {
+        super::remove_legacy_pypi_setting(settings, key);
         let settings: &mut dyn toml_edit::TableLike =
             if let Some((parent_key, child_key)) = key.split_once('.') {
                 key = child_key;
@@ -196,13 +200,6 @@ fn parse_indexmap_by_json(value: &str) -> Result<toml_edit::Value> {
         table
     }))
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise settings idiomatic_version_file=true</bold>
-"#
-);
 
 #[cfg(test)]
 mod tests {

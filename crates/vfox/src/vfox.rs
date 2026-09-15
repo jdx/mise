@@ -13,7 +13,10 @@ use crate::error::Result;
 use crate::hooks::available::AvailableVersion;
 use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
+use crate::hooks::backend_list_tools::BackendListToolsContext;
 use crate::hooks::backend_list_versions::BackendListVersionsContext;
+use crate::hooks::backend_search_tools::BackendSearchToolsContext;
+use crate::hooks::backend_tools::BackendTool;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
@@ -73,6 +76,7 @@ pub struct Vfox {
     url_rewriter: Option<UrlRewriter>,
     http_headers_resolver: Option<HttpHeadersResolver>,
     log_tx: Option<mpsc::Sender<String>>,
+    log_handler: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 pub(crate) type UrlRewriter = Arc<dyn Fn(&mut Url) + Send + Sync>;
@@ -101,6 +105,10 @@ impl std::fmt::Debug for Vfox {
                 "http_headers_resolver",
                 &self.http_headers_resolver.as_ref().map(|_| "<closure>"),
             )
+            .field(
+                "log_handler",
+                &self.log_handler.as_ref().map(|_| "<closure>"),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -114,6 +122,13 @@ impl Vfox {
         let (tx, rx) = mpsc::channel();
         self.log_tx = Some(tx);
         rx
+    }
+
+    pub fn set_log_handler<F>(&mut self, handler: F)
+    where
+        F: Fn(String) + Send + Sync + 'static,
+    {
+        self.log_handler = Some(Arc::new(handler));
     }
 
     pub fn set_url_rewriter<F>(&mut self, rewriter: F)
@@ -138,7 +153,10 @@ impl Vfox {
 
     fn log_emit(&self, msg: String) {
         if let Some(tx) = &self.log_tx {
-            let _ = tx.send(msg);
+            let _ = tx.send(msg.clone());
+        }
+        if let Some(handler) = &self.log_handler {
+            handler(msg);
         }
     }
 
@@ -529,6 +547,37 @@ impl Vfox {
         plugin.backend_list_versions(ctx).await.map(|r| r.versions)
     }
 
+    pub async fn backend_search_tools(
+        &self,
+        sdk: &str,
+        query: String,
+    ) -> Result<Option<Vec<BackendTool>>> {
+        let plugin = self.get_sdk_with_env(sdk)?;
+        if !plugin
+            .get_metadata()?
+            .hooks
+            .contains("backend_search_tools")
+        {
+            return Ok(None);
+        }
+        let ctx = BackendSearchToolsContext { query };
+        plugin
+            .backend_search_tools(ctx)
+            .await
+            .map(|r| Some(r.tools))
+    }
+
+    pub async fn backend_list_tools(&self, sdk: &str) -> Result<Option<Vec<BackendTool>>> {
+        let plugin = self.get_sdk_with_env(sdk)?;
+        if !plugin.get_metadata()?.hooks.contains("backend_list_tools") {
+            return Ok(None);
+        }
+        plugin
+            .backend_list_tools(BackendListToolsContext {})
+            .await
+            .map(|r| Some(r.tools))
+    }
+
     pub async fn backend_install(
         &self,
         sdk: &str,
@@ -852,6 +901,7 @@ impl Default for Vfox {
             url_rewriter: None,
             http_headers_resolver: None,
             log_tx: None,
+            log_handler: None,
         }
     }
 }
@@ -884,6 +934,7 @@ fn ensure_checksum(file: &Path, algo: &str, expected: &str, actual: &str) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     impl Vfox {
         pub fn test() -> Self {
@@ -902,6 +953,7 @@ mod tests {
                 url_rewriter: None,
                 http_headers_resolver: None,
                 log_tx: None,
+                log_handler: None,
             }
         }
     }
@@ -911,6 +963,21 @@ mod tests {
     const ABC: &[u8] = b"abc";
     const ABC_SHA1: &str = "a9993e364706816aba3e25717850c26c9cd0d89d";
     const ABC_MD5: &str = "900150983cd24fb0d6963f7d28e17f72";
+
+    #[test]
+    fn log_handler_receives_messages() {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let received = Arc::clone(&messages);
+        let mut vfox = Vfox::test();
+        vfox.set_log_handler(move |message| received.lock().unwrap().push(message));
+
+        vfox.log_emit("download tool.tar.gz".to_string());
+
+        assert_eq!(
+            *messages.lock().unwrap(),
+            vec!["download tool.tar.gz".to_string()]
+        );
+    }
 
     fn pre_install_with(sha1: Option<&str>, md5: Option<&str>) -> PreInstall {
         PreInstall {
@@ -1252,5 +1319,50 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(versions, vec!["fallback".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_backend_search_tools() {
+        let vfox = Vfox::test();
+        let tools = vfox
+            .backend_search_tools("dummy-backend", "dem".into())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            tools,
+            vec![BackendTool {
+                name: "search-dem".into(),
+                description: Some("A dynamically discovered tool".into()),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_backend_list_tools() {
+        let vfox = Vfox::test();
+        let tools = vfox
+            .backend_list_tools("dummy-backend")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(tools[0].name, "demo");
+    }
+
+    #[tokio::test]
+    async fn test_backend_search_tools_is_optional() {
+        let vfox = Vfox::test();
+        assert_eq!(
+            vfox.backend_search_tools("dummy", "dem".into())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn test_backend_list_tools_is_optional() {
+        let vfox = Vfox::test();
+        assert_eq!(vfox.backend_list_tools("dummy").await.unwrap(), None);
     }
 }

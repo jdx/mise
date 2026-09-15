@@ -7,7 +7,21 @@ use serde::Serialize;
 
 /// [experimental] Inspect the workspace project graph
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise tasks graph"###,
+        help = r###"Inspect projects and their dependency edges"###
+    ),
+    example(
+        r###"mise tasks graph --json"###,
+        help = r###"Emit the project graph as JSON"###
+    ),
+    example(
+        r###"mise tasks graph --explain"###,
+        help = r###"Explain where inferred projects and task fields came from"###
+    )
+)]
 pub(super) struct TasksGraph {
     /// Output the project graph as JSON
     #[usage(short = 'J', long, verbatim_doc_comment)]
@@ -158,17 +172,3 @@ fn print_inline_provenance(
     }
     Ok(())
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # Inspect projects and their dependency edges
-    $ <bold>mise tasks graph</bold>
-
-    # Emit the project graph as JSON
-    $ <bold>mise tasks graph --json</bold>
-
-    # Explain where inferred projects and task fields came from
-    $ <bold>mise tasks graph --explain</bold>
-"#
-);

@@ -5,9 +5,19 @@ use crate::file::display_path;
 use eyre::bail;
 use std::path::PathBuf;
 
-/// Display a value from a mise.toml file
+/// Display a value from one mise TOML file
+///
+/// Reads the highest-precedence loaded TOML file by default. Select another with
+/// `--file`, `--global`, or `--system`. This reads stored values, not the merged or
+/// template-expanded environment; use `mise env` for the resolved environment.
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise config get tools.python
+3.12"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct ConfigGet {
     /// Dotted key path to display, e.g. `tools.python`; omit to print the whole file
     pub key: Option<String>,
@@ -16,7 +26,7 @@ pub(super) struct ConfigGet {
     ///
     /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
     ///
-    /// If not provided, the nearest mise.toml file will be used
+    /// If not provided, the highest-precedence loaded TOML file is used
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
@@ -95,11 +105,3 @@ impl ConfigGet {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise toml get tools.python</bold>
-    3.12
-"#
-);

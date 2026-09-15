@@ -44,7 +44,7 @@ impl ResourceOrigin {
 
 const ENCODED_PATH_PREFIX: &str = "mise:path-";
 
-fn serialize_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
+pub(crate) fn serialize_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -136,6 +136,11 @@ pub(crate) struct ResourcePlan {
     pub origin: Option<ResourceOrigin>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<ResourceId>,
+    /// Execution order only; these resources do not affect change prediction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order_after: Vec<ResourceId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<super::managed_files::ManagedFilePhase>,
 }
 
 impl ResourcePlan {
@@ -152,11 +157,18 @@ impl ResourcePlan {
             action,
             origin: None,
             depends_on: vec![],
+            order_after: vec![],
+            phase: None,
         }
     }
 
     pub(crate) fn with_origin(mut self, origin: ResourceOrigin) -> Self {
         self.origin = Some(origin);
+        self
+    }
+
+    pub(crate) fn with_file_phase(mut self, phase: super::managed_files::ManagedFilePhase) -> Self {
+        self.phase = Some(phase);
         self
     }
 }
@@ -237,6 +249,16 @@ impl BootstrapPlan {
         Ok(BootstrapPlanOutput { resources, summary })
     }
 
+    fn add_ordering(&mut self, resource: &ResourceId, predecessor: ResourceId) -> Result<()> {
+        let Some(resource) = self.resources.get_mut(resource) else {
+            bail!("cannot order missing bootstrap resource '{resource}'");
+        };
+        if !resource.order_after.contains(&predecessor) {
+            resource.order_after.push(predecessor);
+        }
+        Ok(())
+    }
+
     fn ordered(&self) -> Result<Vec<&ResourcePlan>> {
         let mut incoming = self
             .resources
@@ -247,7 +269,7 @@ impl BootstrapPlan {
         let mut outgoing: HashMap<ResourceId, Vec<ResourceId>> = HashMap::new();
 
         for resource in self.resources.values() {
-            for dependency in &resource.depends_on {
+            for dependency in resource.depends_on.iter().chain(&resource.order_after) {
                 let Some(count) = incoming.get_mut(&resource.id) else {
                     unreachable!("every resource was added to incoming")
                 };
@@ -412,7 +434,8 @@ pub(crate) async fn plan(
         cfg!(target_os = "linux"),
     )?;
     let services = super::services::status_requests_from_config(config)?;
-    super::services::validate_notifications(&files, &directories, &services)?;
+    let user_services = super::services_common::user_service_names(config)?;
+    super::services::validate_notifications(&files, &directories, &services, &user_services)?;
     let notified_services = super::managed_files::pending_notifications(&files, &directories)?;
     let directory_states = directories
         .iter()
@@ -524,6 +547,17 @@ pub(crate) async fn plan(
     for resource in unavailable_files {
         plan.insert(resource)?;
     }
+    let builtin_packages = super::packages_from_config(config)
+        .into_iter()
+        .filter(|packages| !packages.manager.is_plugin())
+        .flat_map(|packages| {
+            let manager = packages.manager.name().to_string();
+            packages.requests.into_iter().map(move |request| {
+                ResourceId::new("package", format!("{manager}:{}", request.name))
+            })
+        })
+        .collect::<Vec<_>>();
+    add_file_phase_ordering(&mut plan, &builtin_packages)?;
     let service_dependencies = plan
         .resources
         .keys()
@@ -536,6 +570,10 @@ pub(crate) async fn plan(
         for dependency in &service_dependencies {
             plan.add_dependency(&id, dependency.clone())?;
         }
+    }
+    let user_service_requests = super::user_services::requests_from_config(config)?;
+    for status in super::user_services::status(&user_service_requests).await? {
+        plan.insert(status.plan())?;
     }
     if let Some(mut firewall) = super::firewall::prepare_request_from_config(config)? {
         super::firewall::inspect_request(&mut firewall)?;
@@ -613,6 +651,46 @@ pub(crate) async fn plan(
     // Validate dependency references and cycles even when callers only need JSON.
     plan.output()?;
     Ok(plan)
+}
+
+fn add_file_phase_ordering(plan: &mut BootstrapPlan, packages: &[ResourceId]) -> Result<()> {
+    use super::managed_files::ManagedFilePhase;
+
+    let early = plan
+        .resources
+        .values()
+        .filter(|resource| resource.phase == Some(ManagedFilePhase::PrePackages))
+        .map(|resource| resource.id.clone())
+        .collect::<Vec<_>>();
+    let late = plan
+        .resources
+        .values()
+        .filter(|resource| resource.phase == Some(ManagedFilePhase::PostPackages))
+        .map(|resource| resource.id.clone())
+        .collect::<Vec<_>>();
+    for package in packages {
+        for file in &early {
+            plan.add_ordering(package, file.clone())?;
+        }
+    }
+    for file in &late {
+        for dependency in packages.iter().chain(&early) {
+            plan.add_ordering(file, dependency.clone())?;
+        }
+    }
+    // Installed and pending plugin managers both run after the file phases.
+    let plugin_packages = plan
+        .resources
+        .keys()
+        .filter(|id| id.kind == "package" && !packages.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
+    for package in plugin_packages {
+        for predecessor in early.iter().chain(&late).chain(packages) {
+            plan.add_ordering(&package, predecessor.clone())?;
+        }
+    }
+    Ok(())
 }
 
 fn add_account_dependencies(
@@ -730,6 +808,43 @@ fn package_resource_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_phases_order_resources_around_packages() {
+        use super::super::managed_files::ManagedFilePhase;
+
+        let mut plan = BootstrapPlan::default();
+        let late = ResourceId::new("file", "/etc/service.conf");
+        let package = ResourceId::new("package", "apt:vendor");
+        let early = ResourceId::new("file", "/etc/apt/sources.list.d/vendor.sources");
+        let plugin = ResourceId::new("package", "custom:vendor");
+        for (id, phase) in [
+            (plugin.clone(), None),
+            (late.clone(), Some(ManagedFilePhase::PostPackages)),
+            (package.clone(), None),
+            (early.clone(), Some(ManagedFilePhase::PrePackages)),
+        ] {
+            let mut resource = ResourcePlan::new(id, "missing", "present", ResourceAction::Create);
+            resource.phase = phase;
+            plan.insert(resource).unwrap();
+        }
+        add_file_phase_ordering(&mut plan, std::slice::from_ref(&package)).unwrap();
+        let output = plan.output().unwrap();
+        assert_eq!(
+            output
+                .resources
+                .iter()
+                .map(|resource| &resource.id)
+                .collect::<Vec<_>>(),
+            [&early, &package, &late, &plugin]
+        );
+        assert!(
+            output
+                .resources
+                .iter()
+                .all(|resource| resource.depends_on.is_empty())
+        );
+    }
 
     #[cfg(unix)]
     #[test]

@@ -1,3 +1,8 @@
+---
+description: "Manage system files and directories, including paths that require root privileges."
+socialDescription: "Manage system files and directories, including paths that require root privileges."
+---
+
 # System files and directories
 
 `[bootstrap.files]` and `[bootstrap.directories]` declaratively manage absolute
@@ -17,8 +22,14 @@ group = "root"
 mode = "0644"
 ```
 
+Create `files/example.conf` beside the declaring configuration before applying
+this example. The source is read by mise; `/etc/example.conf` is its destination.
+For file templates containing credentials, use mode `"0600"` and ownership that
+allows only the intended service account or root to read them.
+
 File content may come from `source` or inline `content`. Relative source paths
-are resolved from the configuration file that declares them. Present files
+are resolved from the configuration file that declares them, and source paths
+beginning with `~/` are resolved from the user's home directory. Present files
 must declare exactly one content source. Targets must be absolute paths, and
 mise refuses to manage `/` itself.
 
@@ -35,7 +46,9 @@ an empty directory; recursive destruction still requires an explicit
 
 Set `template = true` to render file content with mise's template engine. This
 is explicit so literal <span v-pre>`{{ ... }}`</span> content remains untouched
-by default. A template can consume a declared
+by default. Templates can use configured `vars`, the declaring configuration's
+directory as <span v-pre>`{{ config_root }}`</span>, and the destination as
+<span v-pre>`{{ target }}`</span>. A template can consume a declared
 [bootstrap secret input](/bootstrap/secrets.html) with
 <span v-pre>`{{ secret(name="logical_name") }}`</span>. Secret values are never
 included in plans, dry-run descriptions, status output, or privileged helper
@@ -51,6 +64,58 @@ search one of its parent directories, mise compares its metadata and content in
 one privileged batch. Plans and file content are sent to narrowly scoped mise
 helpers over stdin, so file content does not appear in process arguments or
 logs.
+
+## Files before packages
+
+Set `phase = "pre-packages"` on files and directories needed by the package
+manager, such as repository definitions and signing keys:
+
+```toml
+[bootstrap.directories."/etc/apt/keyrings"]
+mode = "0755"
+phase = "pre-packages"
+
+[bootstrap.files."/etc/apt/keyrings/vendor.asc"]
+source = "./files/vendor.asc"
+phase = "pre-packages"
+
+[bootstrap.files."/etc/apt/sources.list.d/vendor.sources"]
+source = "./files/vendor.sources"
+phase = "pre-packages"
+
+[bootstrap.packages]
+"apt:vendor-tool" = "latest"
+```
+
+Provide the vendor's key and repository definition in the source files. Run
+`mise bootstrap --update` to refresh package metadata after applying the files;
+changing repository files does not automatically refresh metadata.
+
+Early files run after accounts and package manager plugins, before the
+`pre-packages` hook. The default phase is `"post-packages"`, which keeps files
+after built-in package installation. Each file is applied once per bootstrap
+run. Service notifications from both phases are collected for the services step.
+
+Declared parent directories must be created no later than their children and
+removed no earlier than their children. Conflicting phase declarations fail
+validation before bootstrap makes changes. Set a declared parent's phase to
+`"pre-packages"` when an early file needs it.
+
+`mise bootstrap files apply` still applies all declared files and directories.
+`mise bootstrap --only files` runs both file phases; `--skip files` skips both.
+`--only packages` does not apply files. Plans include each file's phase.
+
+## Preview and inspect
+
+```sh
+mise bootstrap files status --json
+mise bootstrap files apply --dry-run
+```
+
+Check source paths, ownership, modes, and any `unknown` states before applying.
+Inspection may need elevated access to read protected targets. A missing source
+must be fixed in the configuration checkout; changing target permissions does
+not supply that source.
 
 ## Removing resources
 

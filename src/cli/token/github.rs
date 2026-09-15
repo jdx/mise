@@ -7,11 +7,33 @@ use eyre::bail;
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise token github
+github.com: ghp_…xxxx (source: GITHUB_TOKEN)"###
+    ),
+    example(
+        r###"mise token github --unmask
+github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)"###
+    ),
+    example(
+        r###"mise token github github.mycompany.com
+github.mycompany.com: (none)"###
+    ),
+    example(
+        r###"mise token github --oauth --refresh
+github.com: gho_…xxxx (source: GitHub OAuth)"###
+    )
+)]
 pub(crate) struct Github {
     /// GitHub hostname
     #[usage(default = "github.com")]
     pub(crate) host: String,
+
+    /// Speak Git's credential helper protocol
+    #[usage(long, hide = true)]
+    pub(crate) git_credential: Option<String>,
 
     /// Resolve only via the native GitHub OAuth source (cache,
     /// refresh, or device-code flow), bypassing other token sources
@@ -36,12 +58,16 @@ pub(crate) struct Github {
 
 impl Github {
     pub(crate) fn run(self) -> eyre::Result<()> {
+        if let Some(operation) = &self.git_credential {
+            return super::git_credential::run(operation);
+        }
         let resolved = if self.oauth {
             Some((
                 github::oauth::token(github::oauth::TokenRequest {
                     host: self.host.clone(),
                     allow_device_flow: true,
                     force_refresh: self.refresh,
+                    ..Default::default()
                 })?,
                 github::TokenSource::GithubOauth,
             ))
@@ -71,20 +97,3 @@ impl Github {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise token github</bold>
-    github.com: ghp_…xxxx (source: GITHUB_TOKEN)
-
-    $ <bold>mise token github --unmask</bold>
-    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
-
-    $ <bold>mise token github github.mycompany.com</bold>
-    github.mycompany.com: (none)
-
-    $ <bold>mise token github --oauth --refresh</bold>
-    github.com: gho_…xxxx (source: GitHub OAuth)
-"#
-);

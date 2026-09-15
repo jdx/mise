@@ -13,7 +13,7 @@ echo "=== Testing Native SLSA Verification ==="
 echo "Installing sops with native SLSA verification..."
 
 # Capture the installation output to verify the native verification is being used
-output=$(mise install aqua:getsops/sops@3.9.0 2>&1)
+output=$(mise install --verbose aqua:getsops/sops@3.9.0 2>&1)
 echo "$output"
 
 # Verify the native SLSA verification was used

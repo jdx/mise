@@ -1,8 +1,3 @@
-/**
- * Customize default theme styling by overriding CSS variables
- * Color palette: Warm culinary aesthetic — burgundy, gold, sage
- */
-
 @font-face {
   font-family: "Roc Grotesk";
   src: url("/fonts/rocgrotesk-light-webfont.woff2") format("woff2");
@@ -33,187 +28,6 @@
   font-weight: 700;
   font-style: normal;
   font-display: swap;
-}
-
-:root {
-  /* Brand Colors - Rich burgundy */
-  --vp-c-brand-1: #8B2252;
-  --vp-c-brand-2: #722F37;
-  --vp-c-brand-3: #5C1A2A;
-  --vp-c-brand-soft: rgba(139, 34, 82, 0.14);
-
-  /* Accent Colors - Sage green */
-  --vp-c-success-1: #8FA86E;
-  --vp-c-success-2: #7A9460;
-  --vp-c-success-3: #6B7F4E;
-  --vp-c-success-soft: rgba(143, 168, 110, 0.14);
-
-  /* Warning Colors - Warm gold */
-  --vp-c-warning-1: #C5975B;
-  --vp-c-warning-2: #B08450;
-  --vp-c-warning-3: #9A7245;
-  --vp-c-warning-soft: rgba(197, 151, 91, 0.14);
-
-  /* Danger Colors - Terra cotta */
-  --vp-c-danger-1: #C44536;
-  --vp-c-danger-2: #B33A2E;
-  --vp-c-danger-3: #A03025;
-  --vp-c-danger-soft: rgba(196, 69, 54, 0.14);
-
-  /* Custom accent */
-  --mise-accent-gold: #D4A76A;
-
-  /* Typography */
-  --vp-font-family-base: "Roc Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --vp-font-family-mono: "JetBrains Mono", "Fira Code", "SF Mono", Monaco,
-    "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
-  --vp-font-family-heading: "Cormorant Garamond", Georgia, serif;
-
-
-  /* Custom spacing for better readability */
-  --vp-layout-max-width: 1440px;
-}
-
-/* Dark mode specific customizations */
-.dark {
-  /* Brand overrides for dark mode */
-  --vp-c-brand-1: #C75B7A;
-  --vp-c-brand-2: #B04A68;
-  --vp-c-brand-3: #9A3D5A;
-  --vp-c-brand-soft: rgba(199, 91, 122, 0.14);
-
-  /* Enhanced dark mode colors - deeper for contrast */
-  --vp-c-bg: #141010;
-  --vp-c-bg-soft: #1C1614;
-  --vp-c-bg-mute: #261E1A;
-  --vp-c-bg-alt: #181312;
-
-  /* Warm dividers */
-  --vp-c-divider: #3A2E25;
-  --vp-c-divider-light: #4A3D33;
-
-  /* Text colors with warm undertones */
-  --vp-c-text-1: #EDE6DF;
-  --vp-c-text-2: #C9BFB5;
-  --vp-c-text-3: #9E9288;
-  --vp-c-text-4: #71685E;
-
-  /* Code block enhancements */
-  --vp-code-block-bg: #1F1713;
-  --vp-code-block-divider-color: #3A2E25;
-  --vp-code-copy-code-hover-bg: #3A2E25;
-
-  /* Inline code styling */
-  --vp-c-code-bg: #2D221A;
-  --vp-c-code-color: #C75B7A;
-}
-
-/* Light mode customizations */
-:root:not(.dark) {
-  /* Light mode brand colors */
-  --vp-c-brand-1: #8B2252;
-  --vp-c-brand-2: #722F37;
-  --vp-c-brand-3: #5C1A2A;
-  --vp-c-brand-soft: rgba(139, 34, 82, 0.08);
-
-  /* Adjusted success colors for light mode */
-  --vp-c-success-1: #6B7F4E;
-  --vp-c-success-2: #5A6B40;
-  --vp-c-success-soft: rgba(107, 127, 78, 0.08);
-
-  /* Adjusted warning colors */
-  --vp-c-warning-1: #C5975B;
-  --vp-c-warning-2: #B08450;
-  --vp-c-warning-soft: rgba(197, 151, 91, 0.08);
-
-  /* Cream/warm background colors */
-  --vp-c-bg: #FDF8F3;
-  --vp-c-bg-soft: #F5EDE3;
-  --vp-c-bg-mute: #E8DDD0;
-  --vp-c-bg-alt: #F0E6DA;
-
-  /* Text colors */
-  --vp-c-text-1: #2A1F1A;
-  --vp-c-text-2: #5A4D42;
-  --vp-c-text-3: #7D7068;
-  --vp-c-text-4: #A09489;
-
-  /* Warm dividers */
-  --vp-c-divider: #D4C8B8;
-  --vp-c-divider-light: #C5B8A5;
-
-  /* Light mode code styling */
-  --vp-c-code-bg: #F0E6DA;
-  --vp-c-code-color: #8B2252;
-
-  /* Code blocks in light mode */
-  --vp-code-block-bg: #F5EDE3;
-  --vp-code-block-divider-color: #D4C8B8;
-}
-
-/* Navigation Bar — solid background, no pop-in */
-.VPNav {
-  background-color: var(--vp-c-bg) !important;
-  border-bottom: 1px solid var(--vp-c-divider);
-}
-
-.VPNavBar {
-  background-color: transparent !important;
-}
-
-.VPNavBar .wrapper {
-  background-color: transparent !important;
-}
-
-.VPNavBar .content {
-  background-color: transparent !important;
-}
-
-/* Logo */
-.VPNavBarTitle .VPImage.logo {
-  height: 40px !important;
-  width: auto !important;
-  transition: transform 0.25s ease, filter 0.25s ease;
-}
-
-/* On the home page the navbar brand stays hidden while the big hero
-   lockup is on screen (class toggled from Layout.vue), then fades in
-   as you scroll past — one logo that settles into the header. */
-.VPNavBarTitle {
-  transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
-}
-
-.hide-nav-brand .VPNavBarTitle {
-  opacity: 0;
-  transform: translateY(6px);
-  pointer-events: none;
-}
-
-/* SSR renders the navbar without the `home top` state classes, so its
-   divider and solid background flash on first paint until hydration
-   catches up. While the hero lockup is on screen (same pre-paint class),
-   keep the navbar chrome transparent like VitePress's own top-of-home
-   state does. !important because VitePress's scoped selectors
-   (.VPNavBar:not(.home) .divider-line[data-v-*]) out-specify us. */
-.hide-nav-brand .VPNavBar .divider-line {
-  background-color: transparent !important;
-}
-
-.hide-nav-brand .VPNavBar:not(.has-sidebar) {
-  background-color: transparent !important;
-}
-
-/* During "preboot" (pre-paint class from the inline head script, removed
-   by Layout.vue right after hydration) navbar transitions are disabled so
-   state corrections snap invisibly instead of fading in front of the user
-   — e.g. reloading the home page while scrolled down, or the divider's
-   0.5s background fade. */
-.preboot .VPNavBar,
-.preboot .VPNavBarTitle,
-.preboot .VPNavBar .divider-line {
-  transition: none !important;
 }
 
 /* Non-home pages: mirror VitePress's `.VPNavBar.has-sidebar` layout before
@@ -253,10 +67,13 @@
 
 @media (min-width: 1440px) {
   .preboot-sidebar .VPNavBar .title {
-    padding-left: max(32px, calc((100% - (var(--vp-layout-max-width) - 64px)) / 2));
+    padding-left: max(
+      32px,
+      calc((100% - (var(--vp-layout-max-width) - 64px)) / 2)
+    );
     width: calc(
-      (100% - (var(--vp-layout-max-width) - 64px)) / 2 + var(--vp-sidebar-width) -
-        32px
+      (100% - (var(--vp-layout-max-width) - 64px)) / 2 +
+        var(--vp-sidebar-width) - 32px
     );
   }
 
@@ -277,71 +94,6 @@
 .VPNavBarTitle:hover .VPImage.logo {
   transform: scale(1.1);
   filter: drop-shadow(0 0 10px rgba(139, 34, 82, 0.4));
-}
-
-/* Site Title */
-.VPNavBarTitle .title {
-  font-size: 1.05rem;
-  letter-spacing: -0.02em;
-  margin-left: 0.25rem;
-  color: var(--vp-c-text-1);
-}
-
-/* Mobile adjustments */
-@media (max-width: 768px) {
-  .VPNavBarTitle .title::before {
-    display: none;
-  }
-}
-
-/* Social links */
-.VPSocialLinks {
-  align-items: center !important;
-}
-
-/* GitHub star count badge */
-.VPSocialLinks a[href*="github.com/jdx/mise"] {
-  display: inline-flex !important;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  position: relative;
-  padding-bottom: 12px !important;
-  margin-bottom: -12px !important;
-}
-
-/* Ensure GitHub icon is visible and aligned */
-.VPSocialLinks a[href*="github.com/jdx/mise"] svg {
-  display: block !important;
-  width: 20px;
-  height: 20px;
-  margin-top: 2px;
-}
-
-.VPSocialLinks .star-count {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.6rem;
-  font-weight: 600;
-  color: var(--vp-c-text-3);
-  font-family: var(--vp-font-family-mono);
-  letter-spacing: -0.02em;
-  transition: color 0.25s ease;
-  white-space: nowrap;
-  line-height: 1;
-}
-
-.VPSocialLinks .star-count .star-glyph {
-  font-family: -apple-system, "Segoe UI Symbol", sans-serif;
-  line-height: 1;
-  margin-right: 0.2em;
-}
-
-.VPSocialLinks a[href*="github.com/jdx/mise"]:hover .star-count {
-  color: var(--vp-c-brand-1);
 }
 
 .EndevFooter {
@@ -381,1733 +133,320 @@
   width: 28px;
 }
 
-/* Hide star count on mobile to save space */
-@media (max-width: 640px) {
-  .VPSocialLinks .star-count {
-    display: none;
-  }
-}
-
-/* Cormorant Garamond — all headings */
-h1, h2, h3, h4, h5, h6,
-.vp-doc h1, .vp-doc h2, .vp-doc h3, .vp-doc h4,
-.VPHero .name,
-.VPHome .name,
-.VPFeatures .title,
-.VPDocOutlineTitle {
-  font-family: "Cormorant Garamond", Georgia, serif !important;
-  letter-spacing: 0.01em;
-  font-weight: 600;
-}
-
-/* Details/summary — keep body font, not heading serif */
-.vp-doc details,
-.vp-doc summary {
-  font-family: var(--vp-font-family-base) !important;
-}
-
-/* Nav — all Roc Grotesk */
-.VPNav,
-.VPNavBar,
-.VPNavBarTitle .title,
-.VPNavBarMenu .VPNavBarMenuLink,
-.VPNavBarMenuGroup .text,
-.VPNavBarSearch,
-.DocSearch-Button {
-  font-family: "Roc Grotesk", sans-serif !important;
-  font-weight: 400;
-}
-
-/* Nav bar menu items */
-.VPNavBarMenu .VPNavBarMenuLink {
-  font-size: 1rem;
-  letter-spacing: 0.02em;
-}
-
-/* Buttons — Roc Grotesk */
-.VPButton {
-  font-family: "Roc Grotesk", sans-serif !important;
-}
-
-/* "On this page" header */
-.VPDocOutlineTitle {
-  font-size: 1rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-
-/* Make search button text invisible but maintain layout */
-.DocSearch-Button .DocSearch-Button-Placeholder {
-  visibility: hidden;
-}
-
-/* Body text */
-.vp-doc p,
-.vp-doc li,
-.vp-doc td,
-.vp-doc blockquote {
-  font-size: 1rem;
-  line-height: 1.75;
-  font-weight: 400;
-}
-
-/* Reset mermaid diagrams — don't inherit body text styles */
-.vp-doc .mermaid,
-.vp-doc .mermaid * {
-  font-size: initial !important;
-  font-family: sans-serif !important;
-  font-weight: 400 !important;
-}
-
-/* Tab headers — Roc Grotesk */
-.vp-code-group .tabs label,
-.plugin-tabs--tab {
-  font-family: "Roc Grotesk", sans-serif !important;
-  font-weight: 400;
-  font-size: 1rem !important;
-}
-
-/* Reset code sizing — don't inherit body bump */
-.vp-doc :not(pre) > code {
-  font-size: 0.8em !important;
-  font-weight: 400 !important;
-  padding: 2px 5px !important;
-}
-
-.vp-doc div[class*="language-"] code {
-  font-size: 0.85rem !important;
-}
-
-/* h1 sizing */
-.vp-doc h1 {
-  font-size: 2.8rem;
-  line-height: 1.2;
-  font-weight: 600;
-}
-
-.vp-doc h2 {
-  font-size: 1.8rem;
-  line-height: 1.25;
-}
-
-.vp-doc h3 {
-  font-size: 1.4rem;
-  line-height: 1.3;
-}
-
-.vp-doc h4 {
-  font-size: 1.15rem;
-  line-height: 1.35;
-}
-
-/* Site title */
-.VPNavBarTitle .title {
-  font-size: 1.15rem !important;
-  letter-spacing: 0.03em;
-}
-
-/* Landing page feature card text */
-.VPFeature .details {
-  font-size: 1rem;
-  line-height: 1.6;
-  font-weight: 400;
-}
-
-/* Button customization */
-.VPButton {
-  font-weight: 500;
-  font-size: 0.8rem;
-  transition: all 0.25s ease !important;
-  border-radius: 6px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.VPButton.brand:hover,
-.VPButton.alt:hover {
-  transform: translateY(-3px) !important;
-}
-
-.VPButton.medium {
-  padding: 0 24px;
-  height: 40px;
-  line-height: 1;
-}
-
-.VPButton.brand {
-  background: linear-gradient(135deg, #8B2252 0%, #722F37 100%);
-  border-color: transparent;
-  box-shadow: 0 2px 8px rgba(139, 34, 82, 0.2);
-}
-
-.VPButton.brand:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(139, 34, 82, 0.3);
-  background: linear-gradient(135deg, #9A2860 0%, #8B2252 100%);
-}
-
-.dark .VPButton.brand {
-  background: linear-gradient(135deg, #C75B7A 0%, #B04A68 100%);
-  box-shadow: 0 2px 8px rgba(199, 91, 122, 0.2);
-}
-
-.dark .VPButton.brand:hover {
-  box-shadow: 0 6px 20px rgba(199, 91, 122, 0.3);
-  background: linear-gradient(135deg, #D46A88 0%, #C75B7A 100%);
-}
-
-.VPButton.alt {
-  border-color: var(--vp-c-divider);
-  background: var(--vp-c-bg-soft);
-}
-
-.VPButton.alt:hover {
-  transform: translateY(-2px);
-  border-color: var(--vp-c-brand-1);
-  box-shadow: 0 4px 12px rgba(139, 34, 82, 0.1);
-}
-
-.VPButton:hover {
-  transform: translateY(-2px);
-}
-
-/* Sidebar — Roc Grotesk */
-.VPSidebar {
-  font-family: "Roc Grotesk", sans-serif !important;
-  backdrop-filter: blur(8px);
-}
-
-/* Light mode sidebar background */
-:root:not(.dark) .VPSidebar {
-  background-color: rgba(253, 248, 243, 0.8);
-}
-
-.VPSidebarItem {
-  margin: 0;
-}
-
-/* Override serif heading font for sidebar collapsible group titles (rendered as h3) */
-.VPSidebarItem .text {
-  font-family: var(--vp-font-family-base) !important;
-}
-
-.VPSidebarItem.level-0 > .item {
-  padding-top: 2px;
-  padding-bottom: 2px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-  font-size: 0.75rem;
-  color: var(--vp-c-text-3);
-}
-
-.VPSidebarItem .link {
-  transition: all 0.2s ease;
-  border-radius: 4px;
-  padding: 2px 6px !important;
-  margin: 0;
-  font-size: 0.875rem;
-  font-weight: 400;
-  line-height: 1.5;
-}
-
-.VPSidebarItem .link:hover {
-  background-color: var(--vp-c-bg-mute);
-  color: var(--vp-c-brand-1);
-}
-
-.VPSidebarItem .link.active {
-  background-color: rgba(139, 34, 82, 0.15) !important;
-  color: var(--vp-c-brand-1) !important;
-  font-weight: 700 !important;
-  border-left: 3px solid var(--vp-c-brand-1) !important;
-  padding-left: 10px !important;
-  border-radius: 0 6px 6px 0 !important;
-  box-shadow: inset 0 0 0 1px rgba(139, 34, 82, 0.08);
-}
-
-.dark .VPSidebarItem .link.active {
-  background-color: rgba(199, 91, 122, 0.22) !important;
-  box-shadow: inset 0 0 0 1px rgba(199, 91, 122, 0.12);
-}
-
-/* Code blocks with better syntax highlighting */
-.vp-code-group {
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-div[class*="language-"] {
-  border-radius: 8px;
-  border: 1px solid var(--vp-code-block-divider-color);
-  transition:
-    box-shadow 0.3s ease,
-    border-color 0.3s ease;
-}
-
-div[class*="language-"]:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-}
-
-div[class*="language-"] .lang {
-  color: var(--vp-c-brand-1);
-  font-weight: 600;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-}
-
-/* Copy code button enhancement */
-div[class*="language-"] .copy {
-  background-color: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 6px;
-  transition: all 0.2s ease;
-}
-
-div[class*="language-"] .copy:hover {
-  background-color: var(--vp-c-brand-1);
-  border-color: var(--vp-c-brand-1);
-  color: white;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--vp-c-bg-soft);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--vp-c-divider);
-  border-radius: 5px;
-  border: 2px solid var(--vp-c-bg-soft);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--vp-c-text-3);
-}
-
-/* ═══ Feature cards — culinary mise cards ═══ */
-.VPFeatures {
-  position: relative;
-  z-index: 1;
-}
-
-.VPFeatures .title {
-  font-family: "Cormorant Garamond", Georgia, serif !important;
-  font-size: 1.5rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.VPFeature {
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1) !important;
-  background: var(--vp-c-bg);
-  position: relative;
-  overflow: hidden;
-}
-
-.VPFeature:hover {
-  transform: translateY(-6px) !important;
-}
-
-/* Accent top border — each card gets a color via nth-child */
-.VPFeature::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: var(--vp-c-brand-1);
-  opacity: 0;
-  transition: opacity 0.35s ease;
-}
-
-.VPFeatures .items .item:nth-child(1) .VPFeature::before {
-  background: linear-gradient(90deg, #8B2252, #C75B7A);
-}
-
-.VPFeatures .items .item:nth-child(2) .VPFeature::before {
-  background: linear-gradient(90deg, #D4A76A, #C5975B);
-}
-
-.VPFeatures .items .item:nth-child(3) .VPFeature::before {
-  background: linear-gradient(90deg, #6B7F4E, #8FA86E);
-}
-
-.VPFeature:hover {
-  border-color: var(--vp-c-brand-soft);
-  transform: translateY(-6px);
-  box-shadow:
-    0 16px 40px rgba(139, 34, 82, 0.08),
-    0 4px 12px rgba(0, 0, 0, 0.04);
-}
-
-.dark .VPFeature:hover {
-  box-shadow:
-    0 16px 40px rgba(199, 91, 122, 0.06),
-    0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.VPFeature:hover::before {
-  opacity: 1;
-}
-
-.VPFeature .icon {
-  font-size: 2.2rem;
-  margin-bottom: 0.75rem;
-  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.VPFeature:hover .icon {
-  transform: scale(1.15) rotate(-3deg);
-}
-
-/* Table styling */
-.vp-doc .vp-table {
-  margin: 1.5rem 0;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 0 0 1px var(--vp-c-divider);
-}
-
-.vp-doc table {
-  border-collapse: collapse;
-  font-family: "Roc Grotesk", sans-serif;
-  font-size: 0.95rem;
-  width: 100%;
-  margin: 0;
-  display: block;
-  overflow-x: auto;
-}
-
-.vp-doc th {
-  background: var(--vp-c-bg-soft);
-  font-family: "Roc Grotesk", sans-serif;
-  font-weight: 500;
-  text-transform: uppercase;
-  font-size: 0.8rem;
-  letter-spacing: 0.04em;
-  color: var(--vp-c-text-2);
-}
-
-.vp-doc td {
-  font-family: "Roc Grotesk", sans-serif !important;
-  font-weight: 400;
-  font-size: 0.95rem !important;
-}
-
-.vp-doc tr {
-  transition: background-color 0.2s ease;
-}
-
-.vp-doc tbody tr:hover {
-  background-color: var(--vp-c-bg-soft);
-}
-
-/* Links with underline animation */
-.vp-doc a {
-  position: relative;
-  color: var(--vp-c-brand-1);
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-
-.vp-doc a:hover {
-  color: var(--vp-c-brand-2);
-}
-
-.vp-doc a:not(.header-anchor):not(.VPButton)::after {
-  content: "";
-  position: absolute;
-  width: 100%;
-  height: 2px;
-  bottom: -2px;
-  left: 0;
-  background-color: var(--vp-c-brand-1);
-  transform: scaleX(0);
-  transform-origin: bottom right;
-  transition: transform 0.25s ease-out;
-}
-
-.vp-doc a:not(.header-anchor):not(.VPButton):hover::after {
-  transform: scaleX(1);
-  transform-origin: bottom left;
-}
-
-/* Tip/Warning/Danger blocks customization */
-.custom-block {
-  border-radius: 8px;
-  border-width: 1px;
-  margin: 1.5rem 0;
-}
-
-.custom-block.tip {
-  border-color: var(--vp-c-success-2);
-  background-color: var(--vp-c-success-soft);
-}
-
-.custom-block.warning {
-  border-color: var(--vp-c-warning-2);
-  background-color: var(--vp-c-warning-soft);
-}
-
-.custom-block.danger {
-  border-color: var(--vp-c-danger-2);
-  background-color: var(--vp-c-danger-soft);
-}
-
-.custom-block-title {
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-  font-size: 0.85rem;
-}
-
-/* Search modal enhancement */
-.VPLocalSearchBox {
-  --vp-local-search-highlight-bg: var(--vp-c-brand-soft);
-  --vp-local-search-highlight-text: var(--vp-c-brand-1);
-}
-
-/* Algolia DocSearch customization */
-.DocSearch {
-  --docsearch-primary-color: var(--vp-c-brand-1) !important;
-  --docsearch-highlight-color: var(--vp-c-brand-1) !important;
-  --docsearch-muted-color: var(--vp-c-text-2) !important;
-  --docsearch-hit-color: var(--vp-c-text-1) !important;
-  --docsearch-hit-active-color: var(--vp-c-text-1) !important;
-  --docsearch-hit-background: var(--vp-c-bg-soft) !important;
-}
-
-/* Warm burgundy background for selected search results */
-.DocSearch-Hit[aria-selected="true"] {
-  background-color: rgba(139, 34, 82, 0.1) !important;
-}
-
-.DocSearch-Hit[aria-selected="true"] a {
-  background-color: rgba(139, 34, 82, 0.1) !important;
-}
-
-.dark .DocSearch-Hit[aria-selected="true"] {
-  background-color: rgba(199, 91, 122, 0.08) !important;
-}
-
-.dark .DocSearch-Hit[aria-selected="true"] a {
-  background-color: rgba(199, 91, 122, 0.08) !important;
-}
-
-/* Page transitions — disabled for snappy feel */
-
-/* Terminal-style elements */
-.terminal {
-  background: #1A1210;
-  color: #D4A76A;
-  padding: 1rem;
-  border-radius: 8px;
-  font-family: var(--vp-font-family-mono);
-  position: relative;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.terminal::before {
-  content: "● ● ●";
-  position: absolute;
-  top: 0.75rem;
-  left: 1rem;
-  color: #C44536;
-  font-size: 0.75rem;
-  letter-spacing: 0.25rem;
-}
-
-/* Loading animation for async content */
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.loading {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Custom badge styles */
-.badge {
-  display: inline-block;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-family: var(--vp-font-family-base);
-  border-radius: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-}
-
-.badge-new {
-  background-color: var(--vp-c-success-soft);
-  color: var(--vp-c-success-1);
-  border: 1px solid var(--vp-c-success-2);
-}
-
-.badge-beta {
-  background-color: var(--vp-c-warning-soft);
-  color: var(--vp-c-warning-1);
-  border: 1px solid var(--vp-c-warning-2);
-}
-
-.badge-deprecated {
-  background-color: var(--vp-c-danger-soft);
-  color: var(--vp-c-danger-1);
-  border: 1px solid var(--vp-c-danger-2);
-}
-
-
-/* ═══ Landing page ═══
-   A centered editorial hero, then a "card" showing one mise.toml driving
-   three outputs. The three pillars — tools, env, tasks — each carry one
-   accent (burgundy, gold, sage) that repeats down the page. Flat surfaces,
-   hairline rules, no motion beyond hover. */
-
+/* Shared palette. Keep the burgundy identity; use quieter surfaces for reading. */
 :root {
+  --vp-font-family-base:
+    "Roc Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  --vp-font-family-heading: "Cormorant Garamond", Georgia, serif;
+  --vp-layout-max-width: 1440px;
+  --vp-c-brand-1: #8b2252;
+  --vp-c-brand-2: #721a43;
+  --vp-c-brand-3: #8b2252;
+  --vp-c-brand-soft: #8b225210;
+  --vp-c-bg: #fffcf9;
+  --vp-c-bg-alt: #f7f3ef;
+  --vp-c-bg-soft: #f4efeb;
+  --vp-c-bg-mute: #ebe4df;
+  --vp-c-divider: #e2d9d3;
+  --vp-c-border: #cbbdb4;
+  --vp-c-text-1: #2c2428;
+  --vp-c-text-2: #60565b;
+  --vp-c-text-3: #756971;
+  --vp-c-success-1: #43643d;
+  --vp-c-success-2: #587c4e;
+  --vp-c-success-soft: #587c4e12;
+  --vp-c-warning-1: #866024;
+  --vp-c-warning-2: #a07938;
+  --vp-c-warning-soft: #a0793812;
+  --vp-c-danger-1: #ae3838;
+  --vp-c-danger-2: #bb4c4c;
+  --vp-c-danger-soft: #bb4c4c12;
+  --vp-code-color: var(--vp-c-brand-1);
+  --vp-code-bg: var(--vp-c-bg-soft);
+  --vp-code-block-bg: var(--vp-c-bg-alt);
+  --vp-code-block-divider-color: var(--vp-c-divider);
+  --vp-button-brand-bg: #8b2252;
+  --vp-button-brand-hover-bg: #721a43;
+  --vp-button-brand-text: #fff;
+  --vp-button-brand-hover-text: #fff;
+  --mise-accent-gold: #e1bd87;
   --pillar-tools: var(--vp-c-brand-1);
-  --pillar-env: #9a7245;
-  --pillar-tasks: #6b7f4e;
-  --pillar-boot: #a8503d;
+  --pillar-env: #866024;
+  --pillar-tasks: #43643d;
+  --pillar-boot: #a34b36;
 }
 
 .dark {
-  --pillar-env: #d4a76a;
-  --pillar-tasks: #8fa86e;
-  --pillar-boot: #d4826c;
+  --vp-c-brand-1: #ed9fbc;
+  --vp-c-brand-2: #f5bbd0;
+  --vp-c-brand-3: #d98bac;
+  --vp-c-brand-soft: #ed9fbc15;
+  --vp-c-bg: #191619;
+  --vp-c-bg-alt: #211d21;
+  --vp-c-bg-soft: #292329;
+  --vp-c-bg-mute: #342c33;
+  --vp-c-divider: #3b323a;
+  --vp-c-border: #64535e;
+  --vp-c-text-1: #f1e9ed;
+  --vp-c-text-2: #c1b3bc;
+  --vp-c-text-3: #a3949f;
+  --vp-c-success-1: #adce9c;
+  --vp-c-success-2: #8bab7d;
+  --vp-c-success-soft: #adce9c12;
+  --vp-c-warning-1: #e1bd87;
+  --vp-c-warning-2: #c4a06b;
+  --vp-c-warning-soft: #e1bd8712;
+  --vp-c-danger-1: #f0a19b;
+  --vp-c-danger-2: #d28580;
+  --vp-c-danger-soft: #f0a19b12;
+  --vp-button-brand-bg: #ed9fbc;
+  --vp-button-brand-hover-bg: #f5bbd0;
+  --vp-button-brand-text: #311522;
+  --vp-button-brand-hover-text: #311522;
+  --pillar-env: #e1bd87;
+  --pillar-tasks: #adce9c;
+  --pillar-boot: #eaa58e;
 }
 
 .pillar-tools {
   --pillar: var(--pillar-tools);
 }
-
 .pillar-env {
   --pillar: var(--pillar-env);
 }
-
 .pillar-tasks {
   --pillar: var(--pillar-tasks);
 }
-
 .pillar-boot {
   --pillar: var(--pillar-boot);
 }
 
-/* ─── Hero ─── */
-/* .heading wraps .name; hide it too or it occupies an empty grid row */
-.VPHero .heading,
-.VPHero .name,
-.VPHero .tagline,
-.VPHero .actions {
-  display: none !important;
+::selection {
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
 }
 
-/* VitePress pulls the hero up under the nav with a negative margin
-   (nav height + layout-top banner), so padding-top must include that
-   offset or the hero content hides behind the navbar. */
-.VPHero {
-  position: relative;
-  z-index: 1;
-  padding-top: calc(
-    var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 72px
-  ) !important;
-  padding-bottom: 56px !important;
+:where(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 4px;
 }
 
-.VPHero .container {
-  max-width: 1120px !important;
-  margin: 0 auto !important;
+/* Navigation keeps a stable, visible brand on every route. */
+.VPNav,
+.VPNavBar:not(.has-sidebar),
+.VPNavBar .content-body {
+  background: var(--vp-c-bg) !important;
 }
 
-.VPHero .main {
-  display: block !important;
+.VPNavBar .divider-line {
+  background: var(--vp-c-divider) !important;
 }
-
-.VPHero .text {
-  max-width: none !important;
-}
-
-.VPContent.is-home,
-.VPHome {
-  overflow-x: hidden;
-}
-
-.hero-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  max-width: 860px;
-  margin: 0 auto;
-  text-align: center;
-}
-
-/* Big brand lockup — same composition as the navbar brand, scaled up.
-   The navbar copy stays hidden until this scrolls past (see .hide-nav-brand). */
-.hero-lockup {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.hero-lockup .chef-logo {
+.VPNavBarTitle .VPImage.logo {
+  height: 34px;
   width: auto;
-  height: clamp(56px, 8vw, 80px);
 }
-
-.lockup-word {
-  font-family: "Roc Grotesk", sans-serif;
-  font-size: clamp(1.6rem, 3vw, 2.2rem);
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  color: var(--vp-c-text-1);
-  white-space: nowrap;
-}
-
-.hero-lockup .chef-logo-dark {
-  display: none;
-}
-
-.dark .hero-lockup .chef-logo-light {
-  display: none;
-}
-
-.dark .hero-lockup .chef-logo-dark {
-  display: inline;
-}
-
-.hero-copy h1 {
-  margin: 36px 0 0;
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(2.9rem, 6.2vw, 5rem);
-  font-weight: 300;
-  font-style: normal;
-  line-height: 1;
-  letter-spacing: -0.01em;
-  color: var(--vp-c-text-1);
-  text-wrap: balance;
-}
-
-.hero-copy h1 em {
-  font-style: italic;
-  color: var(--vp-c-brand-1);
-}
-
-.hero-lede {
-  max-width: 58ch;
-  margin: 26px 0 0;
-  font-size: 1.15rem;
-  line-height: 1.6;
-  color: var(--vp-c-text-2);
-  text-wrap: pretty;
-}
-
-.hero-lede code {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.88em;
-}
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 34px;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 48px;
-  padding: 0 22px;
-  border-radius: 8px;
-  font-family: "Roc Grotesk", sans-serif;
-  font-size: 0.78rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  text-decoration: none;
-  line-height: 1;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease;
-}
-
-.action-btn-brand {
-  background: var(--vp-c-brand-1);
-  color: #fff;
-}
-
-.action-btn-brand:hover {
-  background: var(--vp-c-brand-2);
-}
-
-.action-btn-alt {
-  border: 1px solid var(--vp-c-divider);
-  background: transparent;
-  color: var(--vp-c-text-1);
-}
-
-.action-btn-alt:hover {
-  border-color: var(--vp-c-brand-1);
-  color: var(--vp-c-brand-1);
-}
-
-.hero-meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin: 26px 0 0;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--vp-c-text-3);
-}
-
-.hero-meta span + span::before {
-  content: "·";
-  margin: 0 12px;
-}
-
-/* ─── Page frame ─── */
-.VPHome .vp-doc {
-  max-width: none;
-  padding: 0 24px;
-}
-
-.landing-page {
-  max-width: 1120px;
-  margin: 0 auto;
-}
-
-/* vp-doc list/link/heading defaults don't fit a composed page */
-.landing-page ul,
-.landing-page ol {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.landing-page li + li {
-  margin-top: 0;
-}
-
-.landing-page h2,
-.landing-page h3 {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.landing-page a::after {
-  content: none !important;
-}
-
-.landing-page p a {
-  color: var(--vp-c-brand-1);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--vp-c-brand-1) 40%, transparent);
-  text-underline-offset: 3px;
-}
-
-.landing-page p a:hover {
-  text-decoration-color: var(--vp-c-brand-1);
-}
-
-/* ─── Terminal transcript (shared) ─── */
-.terminal-lines {
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.84rem;
-  line-height: 1.8;
-  color: var(--vp-c-text-1);
-  white-space: nowrap;
-  overflow: auto;
-}
-
-.terminal-lines .prompt {
-  color: var(--vp-c-brand-1);
-}
-
-.terminal-lines .ok {
-  color: var(--vp-c-success-1);
-}
-
-.terminal-lines .key {
-  color: var(--vp-c-warning-1);
-}
-
-.terminal-lines .dim {
-  color: var(--vp-c-text-3);
-}
-
-/* ─── The card: mise.toml → three outputs ─── */
-.hero-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  overflow: hidden;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 10px;
-  background: var(--vp-c-bg-soft);
-  box-shadow: 0 32px 64px -48px rgba(0, 0, 0, 0.45);
-}
-
-.card-file {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border-right: 1px solid var(--vp-c-divider);
-}
-
-.card-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--vp-c-divider);
-  background: var(--vp-c-bg-mute);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--vp-c-text-3);
-}
-
-.card-bar strong {
-  font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 0.78rem;
-  color: var(--vp-c-text-1);
-}
-
-.card-toml {
-  flex: 1;
-  padding: 20px 0;
-  overflow: auto;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.86rem;
-  line-height: 1.9;
-  white-space: pre;
-  color: var(--vp-c-text-2);
-}
-
-.card-toml .row {
-  padding: 0 20px 0 18px;
-  border-left: 2px solid transparent;
-}
-
-.card-toml .row-blank {
-  height: 0.9em;
-}
-
-.card-toml .row-tools {
-  border-left-color: var(--pillar-tools);
-}
-
-.card-toml .row-env {
-  border-left-color: var(--pillar-env);
-}
-
-.card-toml .row-tasks {
-  border-left-color: var(--pillar-tasks);
-}
-
-.card-toml .row-boot {
-  border-left-color: var(--pillar-boot);
-}
-
-.card-toml .tk-section {
-  font-weight: 600;
-}
-
-.card-toml .row-tools .tk-section {
-  color: var(--pillar-tools);
-}
-
-.card-toml .row-env .tk-section {
-  color: var(--pillar-env);
-}
-
-.card-toml .row-tasks .tk-section {
-  color: var(--pillar-tasks);
-}
-
-.card-toml .row-boot .tk-section {
-  color: var(--pillar-boot);
-}
-
-.card-toml .tk-key {
-  color: var(--vp-c-text-1);
-}
-
-.card-toml .tk-str {
-  color: var(--vp-c-text-2);
-}
-
-.card-outputs {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.card-output {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--vp-c-divider);
-}
-
-.card-output:last-child {
-  border-bottom: 0;
-}
-
-.card-output-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--vp-c-text-3);
-}
-
-.pillar-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--pillar);
-}
-
-.landing-page .card-output-head code {
-  margin-left: auto;
-  padding: 0 !important;
-  background: transparent;
-  font-size: 0.78rem !important;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--vp-c-text-1);
-}
-
-.card-output .terminal-lines {
-  margin-top: 8px;
-  font-size: 0.82rem;
-}
-
-/* ─── Sections ─── */
-.landing-section {
-  margin-top: 96px;
-  padding-top: 28px;
-  border-top: 1px solid var(--vp-c-divider);
-}
-
-.landing-page .landing-kicker {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.68rem;
-  line-height: 1.3;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--vp-c-text-3);
-}
-
-.landing-kicker span {
-  color: var(--vp-c-brand-1);
-}
-
-.landing-page .landing-section h2,
-.landing-page .landing-cta h2 {
-  margin: 18px 0 0;
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(2.4rem, 4.6vw, 3.6rem);
-  font-weight: 300;
-  line-height: 1.02;
-  letter-spacing: -0.01em;
-  color: var(--vp-c-text-1);
-  text-wrap: balance;
-}
-
-.landing-page h2 em {
-  font-style: italic;
-  color: var(--vp-c-brand-1);
-}
-
-.landing-page .landing-lede {
-  margin: 22px 0 0;
+.VPNavBarTitle .title {
   font-size: 1.1rem;
-  line-height: 1.65;
+  letter-spacing: -0.025em;
+}
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 0.875rem;
+}
+.preboot .VPNavBar,
+.preboot .VPNavBar .divider-line {
+  transition: none !important;
+}
+
+.DocSearch-Button {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 7px;
+}
+
+.DocSearch {
+  --docsearch-primary-color: var(--vp-c-brand-1);
+  --docsearch-highlight-color: var(--vp-c-brand-1);
+  --docsearch-text-color: var(--vp-c-text-1);
+  --docsearch-muted-color: var(--vp-c-text-2);
+  --docsearch-searchbox-background: var(--vp-c-bg-soft);
+  --docsearch-searchbox-focus-background: var(--vp-c-bg);
+  --docsearch-modal-background: var(--vp-c-bg-alt);
+  --docsearch-hit-background: var(--vp-c-bg);
+  --docsearch-hit-color: var(--vp-c-text-1);
+  --docsearch-hit-active-color: var(--vp-c-bg);
+  --docsearch-footer-background: var(--vp-c-bg);
+}
+
+.VPSocialLinks {
+  align-items: center;
+}
+.VPSocialLinks a[href*="github.com/jdx/mise"] {
+  position: relative;
+  margin-bottom: 6px;
+}
+.VPSocialLinks .star-count {
+  position: absolute;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
   color: var(--vp-c-text-2);
+}
+.star-glyph {
+  margin-right: 3px;
+}
+
+/* Documentation: sans-serif hierarchy, generous line-height, clear navigation. */
+.VPDoc .vp-doc h1,
+.VPDoc .vp-doc h2,
+.VPDoc .vp-doc h3,
+.VPDoc .vp-doc h4 {
+  font-family: var(--vp-font-family-base);
+  font-weight: 500;
+  letter-spacing: -0.025em;
   text-wrap: pretty;
 }
-
-.landing-page .landing-note {
-  margin: 16px 0 0;
-  font-size: 0.92rem;
-  line-height: 1.6;
-  color: var(--vp-c-text-3);
+.VPDoc .vp-doc h1 {
+  font-size: clamp(2rem, 4vw, 2.6rem);
+  line-height: 1.2;
 }
-
-/* 01 · Why: before/after ledger */
-.landing-why-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.95fr);
-  gap: 48px;
-  align-items: start;
+.VPDoc .vp-doc h2 {
+  margin-top: 44px;
+  padding-top: 28px;
+  font-size: 1.65rem;
 }
-
-.landing-ledger {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin-top: 26px;
-  overflow: hidden;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 10px;
-  background: var(--vp-c-bg-soft);
+.VPDoc .vp-doc h3 {
+  font-size: 1.25rem;
 }
-
-.ledger-col {
-  min-width: 0;
-  padding: 20px 22px 22px;
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.8;
 }
-
-.ledger-before {
-  border-right: 1px solid var(--vp-c-divider);
-}
-
-.landing-page .ledger-head {
-  margin: 0 0 6px;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.66rem;
-  line-height: 1.3;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--vp-c-text-3);
-}
-
-.landing-page .ledger-col li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 0;
-  border-top: 1px solid var(--vp-c-divider);
-  font-family: "Roc Grotesk", sans-serif;
-  font-size: 0.95rem;
-  line-height: 1.4;
+.VPDoc .vp-doc > div > h1 + p {
+  font-size: 1.125rem;
   color: var(--vp-c-text-2);
 }
-
-.ledger-col li span {
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.72rem;
-  text-align: right;
-  color: var(--vp-c-text-3);
+.vp-doc :not(pre) > code {
+  font-size: 0.875em;
+  border-radius: 4px;
+}
+.vp-doc a {
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.vp-doc a:hover {
+  text-decoration: underline;
+}
+.vp-doc .header-anchor {
+  text-decoration: none;
 }
 
-.landing-page .ledger-after li {
-  color: var(--vp-c-text-1);
+.VPSidebar {
+  background: var(--vp-c-bg-alt);
 }
-
-.ledger-after li strong {
+.VPSidebarItem.level-0 > .item > .text,
+.VPSidebarItem.level-0 > .item > .link > .text {
+  font-family: var(--vp-font-family-base);
+  font-size: 0.875rem;
   font-weight: 500;
 }
-
-.ledger-pillars {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 16px;
+.VPSidebarItem > .item > .link {
+  padding: 2px 8px;
+  margin-left: -8px;
+  border-radius: 5px;
+  transition: background-color 0.15s;
 }
-
-.ledger-pillars span {
-  padding: 3px 9px;
-  border: 1px solid color-mix(in srgb, var(--pillar) 45%, transparent);
-  border-radius: 999px;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.64rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--pillar);
-}
-
-/* 02 · Stations: three ruled columns */
-.stations-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0 32px;
-  margin-top: 40px;
-}
-
-.station {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding-top: 20px;
-  border-top: 2px solid var(--pillar);
-  color: var(--vp-c-text-1);
-  text-decoration: none !important;
-}
-
-.landing-page .station-cmd {
-  margin: 0;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.74rem;
-  line-height: 1.4;
-  color: var(--pillar);
-}
-
-.landing-page .station h3 {
-  margin: 12px 0 8px;
-  font-size: 1.9rem;
-  line-height: 1.1;
-  color: var(--vp-c-text-1);
-  transition: color 0.2s ease;
-}
-
-.station:hover h3 {
-  color: var(--pillar);
-}
-
-.landing-page .station p:not(.station-cmd) {
-  margin: 0;
-  font-size: 0.97rem;
-  line-height: 1.6;
-  color: var(--vp-c-text-2);
-}
-
-.card-link {
-  display: inline-block;
-  margin-top: auto;
-  padding-top: 20px;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--pillar, var(--vp-c-brand-1));
-}
-
-.card-link::after {
-  content: "→";
-  display: inline-block;
-  margin-left: 6px;
-  transition: transform 0.2s ease;
-}
-
-a:hover > .card-link::after,
-a:hover > div + .card-link::after {
-  transform: translateX(3px);
-}
-
-/* 03 · Day to day */
-.landing-switch-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
-  gap: 56px;
-  align-items: center;
-}
-
-.landing-page .landing-checklist {
-  margin-top: 26px;
-}
-
-.landing-page .landing-checklist li {
-  display: flex;
-  gap: 14px;
-  padding: 11px 0;
-  border-top: 1px solid var(--vp-c-divider);
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--vp-c-text-1);
-}
-
-.landing-checklist li::before {
-  content: "";
-  flex: none;
-  width: 6px;
-  height: 6px;
-  margin-top: 0.55em;
-  border-radius: 50%;
-  background: var(--vp-c-brand-1);
-}
-
-.landing-terminal {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 10px;
-  background: var(--vp-c-bg-soft);
-  box-shadow: 0 32px 64px -48px rgba(0, 0, 0, 0.45);
-}
-
-.terminal-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--vp-c-divider);
+.VPSidebarItem > .item > .link:hover {
   background: var(--vp-c-bg-mute);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--vp-c-text-3);
+}
+.VPSidebarItem.is-active > .item > .link {
+  background: var(--vp-c-brand-soft);
+  box-shadow: inset 2px 0 var(--vp-c-brand-1);
+}
+.VPSidebarItem.is-active > .item > .link > .text {
+  font-weight: 500;
+}
+.VPDocAsideOutline .outline-title {
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+.VPDocAsideOutline .outline-link {
+  font-size: 0.875rem;
+}
+.VPDocFooter .pager-link {
+  border-radius: 8px;
+  background: var(--vp-c-bg-alt);
 }
 
-.landing-terminal .terminal-lines {
-  padding: 18px 20px;
-}
-
-/* 04 · New machine: bootstrap config beside the pitch */
-.landing-machine-grid {
-  display: grid;
-  grid-template-columns: minmax(360px, 1.1fr) minmax(0, 0.9fr);
-  gap: 56px;
-  align-items: center;
-}
-
-.landing-config-card {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 10px;
-  background: var(--vp-c-bg-soft);
-  box-shadow: 0 32px 64px -48px rgba(0, 0, 0, 0.45);
-}
-
-.landing-config-card .card-toml {
-  padding: 18px 0;
-}
-
-.landing-inline-cmd {
-  margin-top: 24px;
-  padding: 12px 16px;
-  overflow: auto;
+.vp-doc div[class*="language-"] {
   border: 1px solid var(--vp-c-divider);
   border-radius: 8px;
-  background: var(--vp-c-bg-soft);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.84rem;
-  white-space: nowrap;
-  color: var(--vp-c-text-1);
 }
-
-.landing-page .landing-inline-cmd code {
-  padding: 0 !important;
-  background: transparent;
-  color: inherit;
-  font-size: inherit !important;
+.vp-code-group {
+  border-radius: 8px;
 }
-
-/* The pantry: full-bleed strip */
-.landing-pantry {
-  width: 100vw;
-  margin: 96px calc(50% - 50vw) 0;
-  padding: 44px 24px;
-  border-top: 1px solid var(--vp-c-divider);
-  border-bottom: 1px solid var(--vp-c-divider);
-  background: var(--vp-c-bg-soft);
+.vp-code-group .tabs {
+  box-shadow: inset 0 -1px var(--vp-c-divider);
 }
-
-.landing-pantry-inner {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 28px 56px;
-  align-items: start;
-  max-width: 1120px;
-  margin: 0 auto;
+.vp-doc div[class*="language-"] code {
+  font-size: 0.875rem;
 }
-
-.landing-page .pantry-stat {
-  margin: 12px 0 0;
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: 3.4rem;
-  font-weight: 300;
-  line-height: 1;
-  color: var(--vp-c-text-1);
+.vp-doc div[class*="language-"] .lang {
+  color: var(--vp-c-text-3);
 }
-
-.pantry-stat small {
+.vp-doc div[class*="language-"] .copy {
+  border-radius: 5px;
+}
+.vp-doc table {
   display: block;
-  margin-top: 8px;
-  font-family: "Roc Grotesk", sans-serif;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--vp-c-text-2);
+  overflow-x: auto;
+  font-size: 0.9375rem;
 }
-
-.landing-tools-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.landing-tools-list a {
-  padding: 6px 12px;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 999px;
-  background: var(--vp-c-bg);
-  color: var(--vp-c-text-1);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.8rem;
-  line-height: 1.4;
-  text-decoration: none;
-  transition:
-    border-color 0.2s ease,
-    color 0.2s ease;
-}
-
-.landing-tools-list a:hover {
-  border-color: var(--vp-c-brand-1);
-  color: var(--vp-c-brand-1);
-}
-
-.landing-tools-list a.more {
-  border-style: dashed;
-  background: transparent;
-  color: var(--vp-c-text-2);
-}
-
-.landing-page .pantry-backends {
-  grid-column: 2;
-  margin: 0;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.74rem;
-  line-height: 1.8;
-  letter-spacing: 0.04em;
-  color: var(--vp-c-text-3);
-}
-
-.landing-page .pantry-backends a {
-  color: var(--vp-c-text-2);
-  text-decoration: underline;
-  text-decoration-color: var(--vp-c-divider);
-  text-underline-offset: 3px;
-}
-
-.landing-page .pantry-backends a:hover {
-  color: var(--vp-c-brand-1);
-  text-decoration-color: currentColor;
-}
-
-/* Chef's special: promo strip */
-.landing-special {
-  --pillar: var(--pillar-tasks);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 32px;
-  margin-top: 56px;
-  padding: 24px 28px;
-  border: 1px solid color-mix(in srgb, var(--pillar-tasks) 40%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--pillar-tasks) 7%, var(--vp-c-bg-soft));
-  color: var(--vp-c-text-1);
-  text-decoration: none !important;
-  transition: border-color 0.2s ease;
-}
-
-.landing-special:hover {
-  border-color: var(--pillar-tasks);
-}
-
-.landing-special .landing-kicker span {
-  color: var(--pillar-tasks);
-}
-
-.landing-page .landing-special h2 {
-  margin: 8px 0 0;
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(1.6rem, 2.8vw, 2.2rem);
-  font-weight: 400;
-  font-style: italic;
-  line-height: 1.1;
-  color: var(--vp-c-text-1);
-  text-wrap: balance;
-}
-
-.landing-page .landing-special p:not(.landing-kicker) {
-  margin: 8px 0 0;
-  font-size: 0.95rem;
-  color: var(--vp-c-text-2);
-}
-
-.landing-special .card-link {
-  flex: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* 04 · Quickstart: a ruled recipe */
-.landing-page .recipe {
-  margin-top: 40px;
-  border-top: 1px solid var(--vp-c-divider);
-}
-
-.recipe-row {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: 24px 56px;
-  align-items: center;
-  padding: 30px 0;
-  border-bottom: 1px solid var(--vp-c-divider);
-}
-
-.recipe-num {
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--vp-c-brand-1);
-}
-
-.landing-page .recipe-text h3 {
-  margin: 8px 0 6px;
-  font-size: 1.6rem;
-  line-height: 1.2;
-  color: var(--vp-c-text-1);
-}
-
-.landing-page .recipe-text p {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: var(--vp-c-text-2);
-}
-
-.recipe-code {
-  min-width: 0;
-  padding: 16px 20px;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
+.vp-doc th {
   background: var(--vp-c-bg-soft);
+  font-weight: 500;
 }
-
-/* CTA band */
-.landing-cta {
-  width: 100vw;
-  margin: 96px calc(50% - 50vw) 0;
-  padding: 88px 24px 96px;
-  background: #4e1626;
-  color: #fff;
-  text-align: center;
+.vp-doc td,
+.vp-doc th {
+  padding: 10px 16px;
 }
-
-.dark .landing-cta {
-  background: #2f1019;
-}
-
-.landing-page .landing-cta .landing-kicker {
-  justify-content: center;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.landing-cta .landing-kicker span,
-.landing-page .landing-cta h2 em {
-  color: var(--mise-accent-gold);
-}
-
-.landing-page .landing-cta h2 {
-  font-size: clamp(2.6rem, 5.5vw, 4.4rem);
-  color: #fff;
-}
-
-.landing-mini-install {
-  display: inline-flex;
-  align-items: center;
-  min-height: 52px;
-  max-width: 100%;
-  margin-top: 32px;
-  padding: 0 22px;
-  overflow: auto;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+.custom-block {
+  border: 1px solid var(--vp-c-divider);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.25);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.92rem;
-  color: #fff;
 }
-
-/* strip VitePress's inline-code pill so it doesn't box-in-a-box
-   (needs .landing-page to outweigh `.vp-doc :not(pre) > code`) */
-.landing-page .landing-mini-install code {
-  padding: 0 !important;
-  border-radius: 0;
-  background: transparent;
-  color: inherit;
-  font-size: inherit !important;
+.custom-block.tip {
+  background: var(--vp-c-success-soft);
+  border-color: var(--vp-c-success-2);
 }
-
-.landing-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 20px;
+.custom-block.warning {
+  background: var(--vp-c-warning-soft);
+  border-color: var(--vp-c-warning-2);
 }
-
-.landing-links a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+.custom-block.danger {
+  background: var(--vp-c-danger-soft);
+  border-color: var(--vp-c-danger-2);
+}
+.custom-block-title {
+  font-weight: 500;
+}
+.VPButton {
   border-radius: 6px;
-  color: #fff;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  text-decoration: none;
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.landing-links a:hover {
-  border-color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-/* ─── Responsive ─── */
-@media (max-width: 960px) {
-  .hero-card,
-  .landing-why-grid,
-  .landing-switch-grid,
-  .landing-pantry-inner,
-  .recipe-row {
-    grid-template-columns: 1fr;
-  }
-
-  .card-file {
-    border-right: 0;
-    border-bottom: 1px solid var(--vp-c-divider);
-  }
-
-  .stations-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 36px 32px;
-  }
-
-  .landing-machine-grid {
-    grid-template-columns: 1fr;
-  }
-
-  /* pitch first, config second on narrow screens */
-  .landing-machine-grid > .landing-config-card {
-    order: 2;
-  }
-
-  .landing-page .pantry-backends {
-    grid-column: auto;
-  }
-
-  .landing-special {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 18px;
-  }
+  font-weight: 500;
 }
 
 @media (max-width: 640px) {
-  .VPHero {
-    padding-top: calc(
-      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 40px
-    ) !important;
-    padding-bottom: 40px !important;
+  .VPSocialLinks .star-count {
+    display: none;
   }
-
-  .VPHero .container {
-    padding-right: 24px !important;
-    padding-left: 24px !important;
-  }
-
-  .hero-copy h1 {
-    font-size: 2.5rem;
-  }
-
-  .hero-lede {
-    font-size: 1rem;
-  }
-
-  .hero-actions {
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-  }
-
-  .hero-meta span + span::before {
-    margin: 0 8px;
-  }
-
-  .landing-section,
-  .landing-pantry,
-  .landing-cta {
-    margin-top: 64px;
-  }
-
-  .landing-page .landing-section h2 {
-    font-size: 2.1rem;
-  }
-
-  .landing-ledger,
-  .stations-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .ledger-before {
-    border-right: 0;
-    border-bottom: 1px solid var(--vp-c-divider);
-  }
-
-  .landing-pantry {
-    padding: 36px 24px;
-  }
-
-  .landing-page .pantry-stat {
-    font-size: 2.6rem;
-  }
-
-  .terminal-lines {
-    font-size: 0.76rem;
-  }
-
-  .landing-cta {
-    padding: 64px 24px 72px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
   }
 }

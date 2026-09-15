@@ -157,6 +157,13 @@ class MacOSVersion
 
   def to_s = @version
   def major = @version.split(".").first.to_i
+  def same_release?(other)
+    other = self.class.from_symbol(other) if other.is_a?(Symbol)
+    other = self.class.new(other.to_s) unless other.is_a?(MacOSVersion)
+    mine = @version.split(".").map(&:to_i)
+    theirs = other.to_s.split(".").map(&:to_i)
+    mine[0] == theirs[0] && (mine[0] >= 11 || mine[1] == theirs[1])
+  end
   def requires_nehalem_cpu? = false
 end
 
@@ -616,9 +623,9 @@ class Formula
       host = MacOSVersion.host
       target = MacOSVersion.from_symbol(base.to_sym)
       case comparator
-      when :or_older then host <= target
+      when :or_older then host <= target || host.same_release?(target)
       when :or_newer then host >= target
-      else host.major == target.major
+      else host.same_release?(target)
       end
     end
     private :macos_condition_matches?
@@ -630,9 +637,9 @@ class Formula
         host = MacOSVersion.host
         target = MacOSVersion.from_symbol(sym)
         run = case comparator
-              when :or_older then host <= target
+              when :or_older then host <= target || host.same_release?(target)
               when :or_newer then host >= target
-              else host.major == target.major
+              else host.same_release?(target)
               end
         class_exec(&block) if run
       end

@@ -3,6 +3,7 @@ use eyre::Result;
 use super::driver::{self, Action, DriverOpts};
 use crate::config::{Config, Settings};
 use crate::system;
+use crate::system::history::OperationScope;
 
 #[derive(Debug, Default)]
 pub(crate) struct BootstrapApplyReport {
@@ -19,11 +20,20 @@ pub(crate) struct BootstrapApplyReport {
 /// not running as root (see `system_packages.sudo`); package plugins never do.
 ///
 /// Packages can also be given explicitly in `manager:package` form (e.g.
-/// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
-/// the config. Explicit packages and `--manager` scope the run to packages
+/// `apk:zlib-dev`, `apt:curl`, `brew:jq`, `winget:BurntSushi.ripgrep.MSVC`);
+/// they are installed whether or not they appear in the config. Explicit packages and `--manager` scope the run to packages
 /// only. `install` is accepted as an alias for this command.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "i",
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap packages apply
+mise bootstrap packages apply brew:jq brew-cask:firefox winget:BurntSushi.ripgrep.MSVC
+mise bootstrap packages apply --dry-run
+mise bootstrap packages apply --manager apt --yes"###
+    )
+)]
 pub(crate) struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
@@ -42,13 +52,17 @@ pub(crate) struct SystemInstall {
     #[usage(long, short)]
     yes: bool,
 
-    /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
+    /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, winget: `source update`)
     #[usage(long)]
     update: bool,
 }
 
 impl SystemInstall {
     pub(crate) async fn run(self) -> Result<()> {
+        OperationScope::wrap("bootstrap packages apply", self.dry_run, self.run_inner()).await
+    }
+
+    async fn run_inner(self) -> Result<()> {
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
             system::packages_from_config(&config)
@@ -212,6 +226,7 @@ pub(crate) fn apply_shell_activation(
         .map(|request| request.edit)
         .collect::<Vec<_>>();
     let opts = system::edits::ApplyOpts {
+        part: "mise-shell-activate",
         dry_run,
         verbose: Settings::get().verbose,
         yes,
@@ -450,13 +465,3 @@ pub(crate) async fn apply_systemd_with_report(
         skipped_reason: None,
     })
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap packages apply</bold>
-    $ <bold>mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835</bold>
-    $ <bold>mise bootstrap packages apply --dry-run</bold>
-    $ <bold>mise bootstrap packages apply --manager apt --yes</bold>
-"#
-);

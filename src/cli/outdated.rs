@@ -14,7 +14,19 @@ use tabled::settings::location::ByColumnName;
 ///
 /// See `mise upgrade` to upgrade these versions.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP,
+    example(r###"mise outdated
+Plugin  Requested  Current  Latest
+python  3.11       3.11.0   3.11.1
+node    20         20.0.0   20.1.0"###),
+    example(r###"mise outdated node
+Plugin  Requested  Current  Latest
+node    20         20.0.0   20.1.0"###),
+    example(r###"mise outdated --json
+{"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}"###),
+    example(r###"mise outdated --local
+Plugin  Requested  Current  Latest
+node    20         20.0.0   20.1.0"###))]
 pub(crate) struct Outdated {
     /// Tool(s) to show outdated versions for
     /// e.g.: node@20 python@3.10
@@ -157,27 +169,8 @@ impl Outdated {
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Deprecation:</underline></bold>
+    r###"<bold><underline>Deprecation:</underline></bold>
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
-After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
-
-<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise outdated</bold>
-    Plugin  Requested  Current  Latest
-    python  3.11       3.11.0   3.11.1
-    node    20         20.0.0   20.1.0
-
-    $ <bold>mise outdated node</bold>
-    Plugin  Requested  Current  Latest
-    node    20         20.0.0   20.1.0
-
-    $ <bold>mise outdated --json</bold>
-    {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
-
-    $ <bold>mise outdated --local</bold>
-    Plugin  Requested  Current  Latest
-    node    20         20.0.0   20.1.0
-"#
+After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead."###
 );

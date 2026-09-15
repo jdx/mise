@@ -5,16 +5,27 @@ use crate::system;
 
 /// Show the changes needed to apply dotfiles from `[dotfiles]`
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise dot diff
+mise dot diff ~/.zshrc"###
+    )
+)]
 pub(crate) struct DotfilesDiff {
     /// Only show these targets
     #[usage(value_name = "TARGET")]
     targets: Vec<String>,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
 }
 
 impl DotfilesDiff {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
         let (files, edits) = super::select_requests(&config, &self.targets)?;
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
@@ -23,7 +34,7 @@ impl DotfilesDiff {
         }
 
         if !files.is_empty() {
-            system::files::print_diffs(&config, &files)?;
+            system::files::print_diffs(&config, &files, &secrets)?;
         }
         if !edits.is_empty() {
             system::edits::print_diffs(&config, &edits)?;
@@ -31,11 +42,3 @@ impl DotfilesDiff {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise bootstrap dotfiles diff</bold>
-    $ <bold>mise bootstrap dotfiles diff ~/.zshrc</bold>
-"#
-);

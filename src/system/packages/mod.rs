@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, mas) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, mas, winget) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -18,8 +18,10 @@ pub(crate) mod brew;
 pub(crate) mod dnf;
 pub(crate) mod flatpak;
 pub(crate) mod mas;
+pub(crate) mod nix;
 pub(crate) mod pacman;
 pub(crate) mod plugin;
+pub(crate) mod winget;
 
 /// A single package entry from `[bootstrap.packages]` — the part after the
 /// `manager:` prefix of a `"manager:package" = "version"` config entry.
@@ -172,6 +174,15 @@ pub(crate) trait SystemPackageManager: Send + Sync {
     /// Query installed state. Must be side-effect free and never elevate.
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>>;
 
+    /// Prepare for a mutating package operation before querying installed state.
+    ///
+    /// This hook is never called for status or dry-run operations. Managers may
+    /// use it for mutation prerequisites that their read-only query cannot
+    /// perform, such as accepting repository agreements.
+    async fn prepare_mutation(&self, _pkgs: &[PackageRequest]) -> Result<()> {
+        Ok(())
+    }
+
     /// Whether each name exists as an installable package, positionally.
     ///
     /// This is *availability*, not installed state — [`Self::installed`]
@@ -250,7 +261,9 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(flatpak::FlatpakManager::new()),
         Arc::new(flatpak::FlatpakManager::new_user()),
         Arc::new(mas::MasManager::new()),
+        Arc::new(nix::NixManager),
         Arc::new(pacman::PacmanManager::new()),
+        Arc::new(winget::WingetManager::new()),
     ]
 }
 

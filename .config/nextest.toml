@@ -3,3 +3,28 @@ test-threads = 1
 slow-timeout = { period = "250ms", terminate-after = 4 }
 status-level = "all"
 retries = { backoff = "exponential", count = 4, delay = "1s", max-delay = "10s" }
+
+[profile.ci]
+inherits = "default"
+retries = 0
+
+# These tests construct, render, or traverse the entire CLI command graph. Keep
+# their regression coverage in-process, but still enforce a strict per-test ceiling.
+[[profile.ci.overrides]]
+filter = 'test(/cli::(command_effects|mcp|usage)::tests::/)'
+slow-timeout = { period = "500ms", terminate-after = 4 }
+
+# This binary-level integration test performs a network-backed, first-run
+# node-gyp bootstrap, so keep a bounded but realistic cold-cache ceiling.
+[[profile.ci.overrides]]
+filter = 'test(mise_binary_services_aube_node_gyp_bootstrap_trampoline)'
+slow-timeout = { period = "5s", terminate-after = 6 }
+
+# This test composes trees from several threads at once, so its cost is a few
+# hundred git subprocesses rather than anything this process computes. It takes
+# well under the default period here, but subprocess spawning is far slower on
+# some CI hosts, so give it a ceiling that reflects that without letting a
+# genuine hang through.
+[[profile.ci.overrides]]
+filter = 'test(system::history::shadow::tests::concurrent_composition_keeps_every_overlay)'
+slow-timeout = { period = "2s", terminate-after = 4 }

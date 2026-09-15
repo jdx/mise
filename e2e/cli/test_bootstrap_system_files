@@ -23,6 +23,9 @@ assert_fail "mise bootstrap plan" "user '$missing_owner' does not exist"
 assert_fail "test -e $PWD/missing-owner"
 
 cat <<EOF >mise.toml
+[vars]
+managed_content = "first"
+
 [bootstrap.directories."$managed_dir"]
 owner = "$managed_owner"
 group = "$managed_group"
@@ -34,7 +37,8 @@ group = "$managed_group"
 mode = "0750"
 
 [bootstrap.files."$managed_file"]
-content = "first"
+content = '{{ vars.managed_content }}'
+template = true
 owner = "$managed_owner"
 group = "$managed_group"
 mode = "0640"

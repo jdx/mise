@@ -17,6 +17,7 @@ cat >bin/tiny <<'EOF'
 tool = "github:jdx/tiny"
 version = "1"
 bin = "bin/tiny"
+os = ["macos", "linux"]
 EOF
 chmod +x bin/tiny
 
@@ -36,6 +37,10 @@ assert_contains "cat bin/tiny" "#!/usr/bin/env -S mise tool-stub"
 
 # Verify the tool field is preserved
 assert_contains "cat bin/tiny" 'tool = "github:jdx/tiny"'
+
+# The stub's OS selector is the support boundary. Lock coverage only controls which artifacts are
+# pre-resolved, so a missing lock platform alone must not decide whether a launcher is written.
+assert_fail "test -f bin/tiny.cmd"
 
 # Test 2: Bump version with --lock --version
 assert_succeed "mise generate tool-stub bin/tiny --lock --version 2"

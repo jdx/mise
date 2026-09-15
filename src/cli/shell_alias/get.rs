@@ -4,7 +4,13 @@ use crate::config::Config;
 
 /// Show the command for a shell alias
 #[derive(Debug, usage_rs::Args)]
-#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(
+    example(
+        r###"mise shell-alias get ll
+ls -la"###
+    ),
+    verbatim_doc_comment
+)]
 pub(super) struct ShellAliasGet {
     /// The alias to show
     #[usage(name = "shell_alias")]
@@ -23,11 +29,3 @@ impl ShellAliasGet {
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise shell-alias get ll</bold>
-    ls -la
-"#
-);

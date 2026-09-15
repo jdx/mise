@@ -610,7 +610,7 @@ pub(super) async fn resolve_cask_dependency_closure(
         if closure.casks.contains_key(&cask_dependency_key(&request)) {
             continue;
         }
-        let cask = fetch_cask(&request).await?;
+        let cask = fetch_cask(&request, false).await?;
         extend_cask_dependency_closure(&mut closure, &mut pending, &request, cask);
     }
     Ok(closure)

@@ -1,4 +1,9 @@
-backends = ["aqua:jdx/aube", "github:jdx/aube", "cargo:aube"]
+backends = [
+  { full = "packslip:github.com/aubepkg/aube", min_version = "2.2.11" },
+  "aqua:jdx/aube",
+  "github:jdx/aube",
+  "cargo:aube",
+]
 bins = ["aube", "aubr", "aubx"]
 description = "A fast Node.js package manager"
 test = { cmd = "aube --version", expected = "{{version}}" }

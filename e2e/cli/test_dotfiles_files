@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# The canonical command is visible while the deprecated top-level alias is hidden.
-assert_not_contains "mise --help" "  dotfiles "
+# The top-level command is visible with its short alias.
+assert_contains "mise --help" "  dotfiles      Manage dotfiles from"
+assert_contains "mise --help" "[aliases: dot]"
 assert_contains "mise bootstrap dotfiles --help" "add"
 assert_contains "mise bootstrap dotfiles --help" "diff"
 assert_contains "mise bootstrap dotfiles --help" "edit"
@@ -446,7 +447,7 @@ assert_contains_text "$ignored_out" "mise trust"
 # --json gets the hint too: it goes to stderr, so stdout stays parseable
 json_out="$(MISE_IGNORED_CONFIG_PATHS="$PWD/mise.toml" mise dotfiles status --json 2>&1 >/dev/null)"
 assert_contains_text "$json_out" "are not trusted"
-assert_json "MISE_IGNORED_CONFIG_PATHS=\"$PWD/mise.toml\" mise dotfiles status --json 2>/dev/null" '{"files":[],"edits":[]}'
+assert_json "MISE_IGNORED_CONFIG_PATHS=\"$PWD/mise.toml\" mise dotfiles status --json 2>/dev/null | jq -c 'del(.history)'" '{"files":[],"edits":[]}'
 # an ignored config with no [dotfiles] of its own doesn't produce the hint
 cat <<EOF >mise.toml
 [tools]
@@ -576,7 +577,7 @@ rmdir same-dir-target/extra-empty
 chmod 755 same-dir-source
 chmod 700 same-dir-target
 assert_fail "mise dotfiles apply --yes"
-chmod --reference=same-dir-source same-dir-target
+chmod 755 same-dir-target
 ln -s first same-dir-source/link
 ln -s second same-dir-target/link
 assert_fail "mise dotfiles apply --yes"
@@ -764,3 +765,72 @@ cat <<EOF >mise.toml
 EOF
 EDITOR="$PWD/editor-append" mise dotfiles edit ~/inline-edit
 assert_contains "cat mise.toml" "# edited config"
+
+# Dotfile templates consume the same declared bootstrap secrets as managed
+# system files. Missing inputs fail closed, while dry-runs stay inert.
+dotfile_secret_env="MISE_DOTFILES_TEST_SECRET"
+dotfile_secret_value="mise-dotfiles-secret-4d29c8"
+unset "$dotfile_secret_env"
+export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise/config.toml:$PWD/mise.toml"
+cat <<'EOF' >dotfiles/secret.tmpl
+token={{ secret(name="dotfile_token") }}
+EOF
+secret_config="$PWD/secret-mise.toml"
+cat <<EOF >"$secret_config"
+[bootstrap.secrets]
+dotfile_token = "$dotfile_secret_env"
+
+[bootstrap.hooks.pre-packages]
+run = "touch should-not-run-before-secret-preflight"
+
+[dotfiles]
+"~/.secret-dotfile" = { source = "dotfiles/secret.tmpl", mode = "template" }
+EOF
+assert_succeed "MISE_CONFIG_FILE=$secret_config mise dotfiles apply --dry-run --prompt-secrets"
+assert_fail "MISE_CONFIG_FILE=$secret_config mise bootstrap --yes" "required bootstrap secrets are unavailable"
+assert_fail "test -e should-not-run-before-secret-preflight"
+assert_fail "MISE_CONFIG_FILE=$secret_config mise dotfiles apply --yes" "required bootstrap secrets are unavailable"
+assert_fail "MISE_CONFIG_FILE=$secret_config MISE_TERA_V1=1 mise dotfiles apply --yes" "required bootstrap secrets are unavailable"
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes --prompt-secrets"
+assert "cat ~/.secret-dotfile" "token=$dotfile_secret_value"
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles status --missing --prompt-secrets"
+assert_contains "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise bootstrap status --prompt-secrets" "dotfile_token"
+
+# Diffs redact secrets from both the current and desired content.
+echo "token=stale-$dotfile_secret_value" >~/.secret-dotfile
+secret_diff="$(env MISE_CONFIG_FILE="$secret_config" "$dotfile_secret_env=$dotfile_secret_value" mise dotfiles diff --prompt-secrets)"
+assert_contains_text "$secret_diff" "[redacted]"
+assert_not_contains_text "$secret_diff" "$dotfile_secret_value"
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes"
+
+# Compatibility rendering and aggregate bootstrap share the same resolver.
+rm ~/.secret-dotfile
+assert_succeed "MISE_CONFIG_FILE=$secret_config MISE_TERA_V1=1 $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes"
+assert "cat ~/.secret-dotfile" "token=$dotfile_secret_value"
+cat <<'EOF' >dotfiles/secret.tmpl
+token={{ secret(name="undeclared") }}
+EOF
+assert_fail "MISE_CONFIG_FILE=$secret_config MISE_TERA_V1=1 $dotfile_secret_env=$dotfile_secret_value mise dotfiles apply --yes" "Failed to render"
+cat <<'EOF' >dotfiles/secret.tmpl
+token={{ secret(name="dotfile_token") }}
+EOF
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise dotfiles unapply --yes --prompt-secrets"
+assert_fail "test -e ~/.secret-dotfile"
+cat <<'EOF' >dotfiles/dynamic-input
+preflight
+EOF
+cat <<'EOF' >dotfiles/secret.tmpl
+token={{ secret(name="dotfile_token") }}
+phase={{ read_file(path="dotfiles/dynamic-input") | trim }}
+EOF
+cat <<'EOF' >>"$secret_config"
+
+[bootstrap.hooks.pre-dotfiles]
+run = "printf apply-time > dotfiles/dynamic-input"
+EOF
+assert_succeed "MISE_CONFIG_FILE=$secret_config $dotfile_secret_env=$dotfile_secret_value mise bootstrap --only dotfiles --yes --prompt-secrets"
+assert_contains "cat ~/.secret-dotfile" "phase=apply-time"
+
+for command in add apply diff edit status unapply; do
+  assert_contains "mise dotfiles $command --help" "--prompt-secrets"
+done

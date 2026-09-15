@@ -11,7 +11,27 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 /// This is similar to `mise ls --current`, but this only shows the runtime
 /// and/or version. It's designed to fit into scripts more easily.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    hide = true,
+    example(
+        r###"mise current
+python 3.11.0 3.10.0
+shfmt 3.6.0
+shellcheck 0.9.0
+node 20.0.0"###,
+        help = r###"outputs `.tool-versions` compatible format"###
+    ),
+    example(
+        r###"mise current node
+20.0.0"###
+    ),
+    example(
+        r###"mise current python
+3.11.0 3.10.0"###,
+        help = r###"can output multiple versions"###
+    )
+)]
 pub(crate) struct Current {
     /// Plugin to show versions of
     /// e.g.: ruby, node, cargo:eza, npm:prettier, etc.
@@ -112,22 +132,3 @@ impl Current {
         Ok(())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # outputs `.tool-versions` compatible format
-    $ <bold>mise current</bold>
-    python 3.11.0 3.10.0
-    shfmt 3.6.0
-    shellcheck 0.9.0
-    node 20.0.0
-
-    $ <bold>mise current node</bold>
-    20.0.0
-
-    # can output multiple versions
-    $ <bold>mise current python</bold>
-    3.11.0 3.10.0
-"#
-);

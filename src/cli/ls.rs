@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use versions::Versioning;
 
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, TruncateOptions};
 use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
@@ -26,8 +26,38 @@ use crate::ui::table::MiseTable;
 /// Lists the tools mise knows about: versions that are installed, and versions requested
 /// by a config file (active) whether or not they are installed.
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    visible_alias = "list",
+    verbatim_doc_comment,
+    example(
+        r###"mise ls"###,
+        help = r###"Show installed versions and requests from active configuration"###
+    ),
+    example(
+        r###"mise ls --current"###,
+        help = r###"Show only versions requested by the current configuration"###
+    ),
+    example(
+        r###"mise ls --missing"###,
+        help = r###"Find configured versions that need installation"###
+    ),
+    example(
+        r###"mise ls --json"###,
+        help = r###"Machine-readable output: an object keyed by tool name"###
+    ),
+    example(
+        r###"mise ls node --json"###,
+        help = r###"With a tool argument, JSON output is an array of its version records"###
+    ),
+    example(
+        r###"mise ls --all-sources"###,
+        help = r###"Include references from every tracked configuration file"###
+    )
+)]
 pub(crate) struct Ls {
+    #[usage(flatten)]
+    truncate: TruncateOptions,
+
     /// Only show tool versions from [TOOL]
     #[usage(conflicts = "tool_flag")]
     installed_tool: Option<Vec<BackendArg>>,
@@ -255,6 +285,7 @@ impl Ls {
             });
         }
         let mut table = MiseTable::new(self.no_header, &["Tool", "Version", "Source", "Requested"]);
+        table.truncate(self.truncate.truncate);
         for r in rows {
             if self.all_sources && !r.sources.is_empty() {
                 for (idx, source_entry) in r.sources.iter().enumerate() {
@@ -284,7 +315,7 @@ impl Ls {
                 table.add_row(row);
             }
         }
-        table.truncate(true).print()
+        table.print()
     }
 
     /// Deliberately does *not* widen the tool filter the way the other listings do.
@@ -315,7 +346,9 @@ impl Ls {
             trs = trs
                 .iter()
                 .filter(|(.., ts)| match ts {
-                    ToolSource::MiseToml(p) => config::is_global_config(p),
+                    ToolSource::MiseToml(p) | ToolSource::MiseTomlDaemon(p) => {
+                        config::is_global_config(p)
+                    }
                     _ => false,
                 })
                 .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
@@ -326,7 +359,7 @@ impl Ls {
                 .filter(|(.., ts)| {
                     matches!(
                         ts,
-                        ToolSource::MiseToml(p)
+                        ToolSource::MiseToml(p) | ToolSource::MiseTomlDaemon(p)
                         | ToolSource::IdiomaticVersionFile(p)
                         | ToolSource::ToolVersions(p)
                         if !config::is_global_config(p)
@@ -629,7 +662,7 @@ async fn json_tool_version_from(
             None
         },
         install_path,
-        version: tv.version.clone(),
+        version: tv.display_version().to_string(),
         requested_version: if all_sources || source.is_unknown() {
             None
         } else {
@@ -727,12 +760,12 @@ async fn resolve_version_status(
     if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
         // `exists()` resolves the link, so this is asking whether it still leads anywhere.
         if install_path.exists() {
-            VersionStatus::Symlink(tv.version.clone(), active)
+            VersionStatus::Symlink(tv.display_version().to_string(), active)
         } else {
-            VersionStatus::BrokenSymlink(tv.version.clone())
+            VersionStatus::BrokenSymlink(tv.display_version().to_string())
         }
     } else if !p.is_version_installed(config, tv, true) {
-        VersionStatus::Missing(tv.version.clone())
+        VersionStatus::Missing(tv.display_version().to_string())
     } else {
         let category = env::install_path_category(&install_path);
         if category != env::InstallPathCategory::Local {
@@ -741,7 +774,7 @@ async fn resolve_version_status(
                 env::InstallPathCategory::Shared => "shared",
                 _ => unreachable!(),
             };
-            return VersionStatus::Shared(tv.version.clone(), active, label);
+            return VersionStatus::Shared(tv.display_version().to_string(), active, label);
         }
         if active {
             let outdated = if ls.outdated {
@@ -749,45 +782,12 @@ async fn resolve_version_status(
             } else {
                 false
             };
-            VersionStatus::Active(tv.version.clone(), outdated)
+            VersionStatus::Active(tv.display_version().to_string(), outdated)
         } else {
-            VersionStatus::Inactive(tv.version.clone())
+            VersionStatus::Inactive(tv.display_version().to_string())
         }
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise ls</bold>
-    node    20.0.0 ~/src/myapp/.tool-versions latest
-    python  3.11.0 ~/.tool-versions           3.10
-    python  3.10.0
-
-    $ <bold>mise ls --current</bold>
-    node    20.0.0 ~/src/myapp/.tool-versions 20
-    python  3.11.0 ~/.tool-versions           3.11.0
-
-    $ <bold>mise ls --json</bold>
-    {
-      "node": [
-        {
-          "version": "20.0.0",
-          "install_path": "/Users/jdx/.mise/installs/node/20.0.0",
-          "source": {
-            "type": "mise.toml",
-            "path": "/Users/jdx/mise.toml"
-          }
-        }
-      ],
-      "python": [...]
-    }
-
-    $ <bold>mise ls --all-sources</bold>
-    node    20.0.0  ~/src/myapp/mise.toml  20
-                    ~/.config/mise/config.toml  latest
-"#
-);
 
 #[cfg(test)]
 mod tests {

@@ -35,7 +35,7 @@ tempfile = "3"
 # Template parsing and evaluation
 expr-lang = "2"
 heck = "0.5"
-versions = { version = "7", features = ["serde"] }
+versions = { version = "8", features = ["serde"] }
 
 # Logging
 log = "0.4"

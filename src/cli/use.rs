@@ -13,7 +13,6 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
-use crate::registry::REGISTRY;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion,
     ToolVersionOptions, ToolsetBuilder,
@@ -21,28 +20,57 @@ use crate::toolset::{
 use crate::ui::ctrlc;
 use crate::{config, env, exit, file};
 
-/// Install a tool and add it to mise.toml
+/// Install a tool and add it to configuration
 ///
-/// Installs the tool version if it is not already installed, then writes it to a config file.
-/// By default, this is `mise.toml` in the current directory.
-/// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
-/// the lowest precedence file (`mise.toml`) will be used.
+/// Installs missing tool versions and records the requests in a config file.
+/// By default, mise selects the nearest directory with a supported config and writes
+/// to its lowest-precedence file, such as `mise.toml` rather than `mise.local.toml`.
+/// If no project config exists, it creates one in the current directory. Running from
+/// your home directory targets global configuration.
+///
+/// Use `--path` for an explicit file/directory, `--global` for personal defaults, or
+/// `--env` to write `mise.ENV.toml` in the current directory (preserving an existing
+/// `.mise.ENV.toml`). These selectors override one another; use one per command.
+///
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
-///
-/// In the following order:
-///   - If `--global` is set, it will use the global config file.
-///   - If `--path` is set, it will use the config file at the given path.
-///   - If `--env` is set, it will use `mise.<env>.toml`.
-///   - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
-///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will use the first from that list.
-///   - Otherwise just "mise.toml" or global config if cwd is home directory.
-///
-/// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+/// for filename overrides and configuration precedence. Selection takes effect in
+/// an activated shell on its next prompt, or immediately in `mise exec` commands.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
     visible_alias = "u",
-    after_long_help = AFTER_LONG_HELP,
+    example(
+        r###"mise use"###,
+        help = r###"run with no arguments to use the interactive selector"###
+    ),
+    example(
+        r###"mise use node@20"###,
+        help = r###"set the current version of node to 20.x in the selected project config will write the fuzzy version (e.g.: 20)"###
+    ),
+    example(
+        r###"mise use --postinstall "mbx setup --defaults" mr-boxington"###,
+        help = r###"run a command after installing a tool"###
+    ),
+    example(
+        r###"mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b"###,
+        help = r###"associate a different postinstall command with each tool"###
+    ),
+    example(
+        r###"mise use --tool-option mr_boxington=true rust mr-boxington"###,
+        help = r###"enable a Rust tool option while installing Rust and mbx"###
+    ),
+    example(
+        r###"mise use -g --pin node@20"###,
+        help = r###"set the current version of node to 20.x in ~/.config/mise/config.toml will write the precise version (e.g.: 20.0.0)"###
+    ),
+    example(
+        r###"mise use --env local node@20"###,
+        help = r###"writes mise.local.toml (preserving .mise.local.toml if it already exists)"###
+    ),
+    example(
+        r###"mise use --env staging node@20"###,
+        help = r###"writes mise.staging.toml (loaded with MISE_ENV=staging)"###
+    ),
     unknown_flags = "error"
 )]
 pub(crate) struct Use {
@@ -74,7 +102,7 @@ pub(crate) struct Use {
     /// Specify a path to a config file or directory
     ///
     /// If a directory is specified, it will look for a config file in that directory following
-    /// the rules above.
+    /// the target-file selection rules.
     // No `--file` alias here: `-f` on this command is `--force`, so offering `--file`
     // invites `-f <path>`, which is a different action. See `mise unset --path` for the
     // commands where the short form is free.
@@ -128,6 +156,12 @@ struct UseTool {
     #[usage(long, value_name = "COMMAND")]
     postinstall: Option<String>,
 
+    /// Set an option for this tool (repeat for multiple options).
+    /// Values use inline tool-option types; unquoted text is treated as a string.
+    /// Place these flags before the tool they apply to.
+    #[usage(long, value_name = "KEY=VALUE", verbatim_doc_comment)]
+    tool_option: Vec<String>,
+
     /// Tool to add to config file
     ///
     /// e.g.: node@20, cargo:ripgrep@latest, npm:prettier@3
@@ -140,6 +174,63 @@ struct UseTool {
     tool: ToolArg,
 }
 
+impl UseTool {
+    fn has_options(&self) -> bool {
+        self.postinstall.is_some() || !self.tool_option.is_empty()
+    }
+
+    fn request_options(&self) -> Result<ToolVersionOptions> {
+        let mut options = ToolVersionOptions::default();
+        let mut entries = Vec::new();
+        if let Some(command) = &self.postinstall {
+            entries.push((
+                "postinstall".to_string(),
+                toml::Value::String(command.clone()),
+                "--postinstall",
+            ));
+        }
+        for option in &self.tool_option {
+            let (key, value) = option
+                .split_once('=')
+                .ok_or_else(|| eyre!("--tool-option expects KEY=VALUE: {option}"))?;
+            let key = key.trim();
+            if key.is_empty() {
+                bail!("--tool-option requires a non-empty key");
+            }
+            let value = toml::from_str::<toml::Table>(&format!("value = {value}"))
+                .ok()
+                .filter(|table| table.len() == 1)
+                .and_then(|mut table| table.remove("value"))
+                .unwrap_or_else(|| toml::Value::String(value.to_string()));
+            entries.push((key.to_string(), value, "--tool-option"));
+        }
+        let mut seen = std::collections::HashSet::new();
+        for (key, value, flag) in entries {
+            if !seen.insert(key.clone()) {
+                bail!(
+                    "tool option {key:?} was specified more than once for {}",
+                    self.tool
+                );
+            }
+            if self
+                .tool
+                .ba
+                .explicit_opts()
+                .is_some_and(|options| options.contains_key(&key))
+            {
+                bail!(
+                    "cannot combine {flag} with an inline {key} option for {}",
+                    self.tool
+                );
+            }
+            options
+                .insert_option(key, value)
+                .map_err(|error| eyre!(error))?;
+        }
+        Ok(options)
+    }
+}
+
 impl Use {
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
@@ -149,7 +240,8 @@ impl Use {
         if self.tools.is_empty() && self.remove.is_empty() {
             self.tools = vec![UseTool {
                 postinstall: None,
-                tool: self.tool_selector()?,
+                tool_option: Vec::new(),
+                tool: self.tool_selector().await?,
             }];
         }
         let tool_args = self
@@ -174,6 +266,14 @@ impl Use {
         {
             bail!("--postinstall requires a TOML config file");
         }
+        if self
+            .tools
+            .iter()
+            .any(|target| !target.tool_option.is_empty())
+            && !matches!(cf.source(), ToolSource::MiseToml(_))
+        {
+            bail!("--tool-option requires a TOML config file");
+        }
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
@@ -191,27 +291,7 @@ impl Use {
             .tools
             .iter()
             .map(|target| {
-                if target.postinstall.is_some()
-                    && target
-                        .tool
-                        .ba
-                        .explicit_opts()
-                        .is_some_and(|options| options.contains_key("postinstall"))
-                {
-                    bail!(
-                        "cannot combine --postinstall with an inline postinstall option for {}",
-                        target.tool
-                    );
-                }
-                let mut request_options = ToolVersionOptions::default();
-                if let Some(command) = &target.postinstall {
-                    request_options
-                        .insert_option(
-                            "postinstall".to_string(),
-                            toml::Value::String(command.clone()),
-                        )
-                        .map_err(|error| eyre!(error))?;
-                }
+                let request_options = target.request_options()?;
                 match target.tool.tvr.clone() {
                     Some(tvr) => {
                         if tvr.version() == "latest" && !Settings::get().locked {
@@ -221,7 +301,10 @@ impl Use {
                             resolve_options.use_locked_version = false;
                         }
                         let mut tvr = tvr;
-                        if target.postinstall.is_some() {
+                        if Settings::get().generate_lockfiles() {
+                            tvr.set_source(cf.source());
+                        }
+                        if target.has_options() {
                             tvr.set_options(request_options);
                         }
                         Ok(tvr)
@@ -273,6 +356,7 @@ impl Use {
                         && let ToolRequest::Version {
                             version: _version,
                             source,
+                            lockfile_scope,
                             options,
                             backend,
                         } = request
@@ -280,6 +364,7 @@ impl Use {
                         request = ToolRequest::Version {
                             version: tv.version.clone(),
                             source,
+                            lockfile_scope,
                             options,
                             backend,
                         };
@@ -314,6 +399,7 @@ impl Use {
                 crate::lockfile::LockfileUpdateMode::Normal,
             )
             .await?;
+            crate::packslip::auto_sync_skills(&config).await;
         }
 
         self.render_success_message(cf.as_ref(), &versions, &self.remove)?;
@@ -322,7 +408,7 @@ impl Use {
 
     async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let has_postinstall = self.tools.iter().any(|target| target.postinstall.is_some());
+        let has_options = self.tools.iter().any(UseTool::has_options);
         let explicit_file = self.path.as_ref().is_some_and(|path| !path.is_dir());
         let opts = ConfigPathOptions {
             global: self.global,
@@ -333,7 +419,7 @@ impl Use {
             prevent_home_local: true, // When in HOME, use global config
         };
         let mut path = resolve_target_config_path(opts)?;
-        if has_postinstall && !explicit_file && path.extension().is_none_or(|ext| ext != "toml") {
+        if has_options && !explicit_file && path.extension().is_none_or(|ext| ext != "toml") {
             // Tool-level options cannot be represented in .tool-versions or idiomatic
             // version files. Keep the selected directory, but write the hook to its
             // default TOML config rather than unexpectedly selecting a TOML file above it.
@@ -422,7 +508,7 @@ impl Use {
         Ok(())
     }
 
-    fn tool_selector(&self) -> Result<ToolArg> {
+    async fn tool_selector(&self) -> Result<ToolArg> {
         if !console::user_attended_stderr() {
             bail!("No tool specified and not running interactively");
         }
@@ -432,17 +518,19 @@ impl Use {
             .filtering(true)
             .filterable(true)
             .theme(&theme);
-        for rt in REGISTRY.values().unique_by(|r| r.short) {
-            if let Some(backend) = rt.backends().first() {
-                // TODO: populate registry with descriptions from aqua and other sources
-                // TODO: use the backend from the lockfile if available
-                let description = rt.description.unwrap_or(backend);
-                s = s.option(demand::DemandOption::new(rt).description(description));
-            }
+        for tool in crate::tool_catalog::search("")
+            .await
+            .into_iter()
+            .filter(|tool| tool.selectable())
+            .unique_by(|tool| tool.canonical_id().to_string())
+        {
+            let id = tool.canonical_id().to_string();
+            let description = tool.selector_description().to_string();
+            s = s.option(demand::DemandOption::new(id).description(&description));
         }
         ctrlc::show_cursor_after_ctrl_c();
         match s.run() {
-            Ok(rt) => rt.short.parse(),
+            Ok(tool) => tool.parse(),
             Err(err) => {
                 Term::stderr().show_cursor()?;
                 Err(eyre!(err))
@@ -456,31 +544,3 @@ impl Use {
         resolve_cli_minimum_release_age(self.minimum_release_age.as_deref())
     }
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    # run with no arguments to use the interactive selector
-    $ <bold>mise use</bold>
-
-    # set the current version of node to 20.x in mise.toml of current directory
-    # will write the fuzzy version (e.g.: 20)
-    $ <bold>mise use node@20</bold>
-
-    # run a command after installing a tool
-    $ <bold>mise use --postinstall "mbx setup --defaults" mr-boxington</bold>
-
-    # associate a different postinstall command with each tool
-    $ <bold>mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b</bold>
-
-    # set the current version of node to 20.x in ~/.config/mise/config.toml
-    # will write the precise version (e.g.: 20.0.0)
-    $ <bold>mise use -g --pin node@20</bold>
-
-    # sets .mise.local.toml (which is intended not to be committed to a project)
-    $ <bold>mise use --env local node@20</bold>
-
-    # sets .mise.staging.toml (which is used if MISE_ENV=staging)
-    $ <bold>mise use --env staging node@20</bold>
-"#
-);

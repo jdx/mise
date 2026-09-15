@@ -20,11 +20,11 @@ use crate::cli::args::{BackendArg, split_bracketed_opts};
 use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
-use crate::config::config_file::mise_toml::{MiseToml, Tasks};
+use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig, Tasks};
 use crate::config::config_file::{
     ConfigFile, TaskConfig, config_trust_root, is_path_trusted, trust_check,
 };
-use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
@@ -49,6 +49,7 @@ use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shim
 
 pub(crate) mod command_wrapper;
 pub(crate) mod config_file;
+pub(crate) mod doctor;
 pub(crate) mod env_directive;
 pub(crate) mod miserc;
 pub(crate) mod provenance;
@@ -134,6 +135,8 @@ fn extend_monorepo_tool_request_set(union: &mut ToolRequestSet, requests: &ToolR
 struct BootstrapConfigMap {
     config_files: ConfigMap,
     tera_ctx: tera::Context,
+    config_root: Option<PathBuf>,
+    vars_results: EnvResults,
 }
 
 pub(crate) struct Config {
@@ -158,6 +161,7 @@ pub(crate) struct Config {
     /// Provider errors remain on the graph so strict consumers can reject it.
     workspace_project_graph_cache:
         Mutex<Option<Arc<crate::task::workspace::WorkspaceProjectGraph>>>,
+    daemons: once_cell::sync::OnceCell<crate::daemons::DaemonSet>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_results: OnceCell<EnvResults>,
@@ -177,6 +181,8 @@ pub(crate) struct Alias {
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 static _REDACTOR: Lazy<Mutex<Redactor>> = Lazy::new(Default::default);
+const BOOTSTRAP_CONFIG_ROOTS_WARN_AT: &str = "2026.9.3";
+const BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT: &str = "2027.3.3";
 const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
 const MONOREPO_LOCKFILE_DEFAULT_AT: &str = "2027.6.0";
 
@@ -211,7 +217,7 @@ impl Config {
     /// lockfile enforcement. Non-config sources remain governed only by the
     /// invocation-wide `locked` setting/flag.
     pub(crate) fn tool_config_locked(&self, source: &ToolSource) -> bool {
-        let ToolSource::MiseToml(path) = source else {
+        let (ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path)) = source else {
             return false;
         };
         let Some(root) = self.config_files.get(path).map(|cf| cf.config_root()) else {
@@ -250,6 +256,7 @@ impl Config {
                 GLOB_RESULTS.lock().unwrap().clear();
                 crate::lockfile::invalidate_caches();
                 crate::task::reset();
+                crate::system::files::clear_invalid_declarations();
                 Ok(())
             },
             Duration::from_secs(5),
@@ -272,6 +279,7 @@ impl Config {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: self.all_aliases.clone(),
@@ -341,6 +349,7 @@ impl Config {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -363,6 +372,7 @@ impl Config {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: config.all_aliases.clone(),
@@ -452,6 +462,69 @@ impl Config {
         config.env_results().await?;
         Ok(config)
     }
+
+    /// Build the config view used to preview hooks introduced by dotfiles.
+    ///
+    /// This deliberately avoids the normal config loader: resolving vars or env can execute
+    /// templates, source scripts, or modules, which a dry-run must not do. Literal vars are
+    /// folded with normal config precedence; already-resolved dynamic vars are retained only
+    /// when their declaring config file is unchanged.
+    pub(crate) fn with_bootstrap_dry_run_config_files(
+        &self,
+        config_files: ConfigMap,
+    ) -> Result<Arc<Self>> {
+        let mut config = self.with_config_files(config_files);
+        let bootstrap_roots = self
+            .bootstrap_config_maps
+            .iter()
+            .filter_map(|map| map.config_root.as_deref())
+            .collect_vec();
+        let mut main_config_files = config.config_files.clone();
+        main_config_files
+            .retain(|path, _| !bootstrap_roots.iter().any(|root| path.starts_with(root)));
+        let vars = bootstrap_dry_run_vars(
+            Some(&self.config_files),
+            self.vars_results_cached(),
+            &main_config_files,
+            IndexMap::new(),
+            false,
+        )?;
+        let main_vars_changed = vars != self.vars;
+        let config_mut = Arc::get_mut(&mut config).expect("new config Arc is uniquely owned");
+        config_mut.vars = vars.clone();
+        config_mut.tera_ctx.insert("vars", &vars);
+        for map in &mut config_mut.bootstrap_config_maps {
+            let original_config_files = map.config_files.clone();
+            for (path, simulated) in &config_mut.config_files {
+                let belongs_to_map = match &map.config_root {
+                    Some(root) => path.starts_with(root),
+                    None => !bootstrap_roots.iter().any(|root| path.starts_with(root)),
+                };
+                if belongs_to_map {
+                    insert_bootstrap_dry_run_config_file(
+                        &mut map.config_files,
+                        path.clone(),
+                        simulated.clone(),
+                    );
+                }
+            }
+            if map.config_root.is_some() {
+                let map_vars = bootstrap_dry_run_vars(
+                    Some(&original_config_files),
+                    Some(&map.vars_results),
+                    &map.config_files,
+                    vars.clone(),
+                    main_vars_changed,
+                )?;
+                map.tera_ctx.insert("vars", &map_vars);
+            } else {
+                // The base map's context is the main config context. Re-folding its files
+                // would lose cached dynamic vars that the normal loader already resolved.
+                map.tera_ctx.insert("vars", &vars);
+            }
+        }
+        Ok(config)
+    }
     pub(crate) fn env_maybe(&self) -> Option<IndexMap<String, String>> {
         self.env_with_sources.get().map(|env| {
             env.iter()
@@ -471,6 +544,18 @@ impl Config {
                     .map(|config| &config.config_files),
             )
         }
+    }
+
+    /// Returns the independently selected bootstrap roots with their active config files.
+    pub(crate) fn selected_bootstrap_config_maps(
+        &self,
+    ) -> impl Iterator<Item = (&Path, &ConfigMap)> {
+        self.bootstrap_config_maps.iter().filter_map(|config| {
+            config
+                .config_root
+                .as_deref()
+                .map(|root| (root, &config.config_files))
+        })
     }
 
     /// Returns the root-scoped template context for a bootstrap resource declaration.
@@ -509,6 +594,11 @@ impl Config {
     pub(crate) async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)
     }
+    pub(crate) fn daemons(&self) -> Result<&crate::daemons::DaemonSet> {
+        self.daemons
+            .get_or_try_init(|| crate::daemons::load(&self.config_files))
+    }
+
     pub(crate) async fn get_tool_request_set(self: &Arc<Self>) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
             .get_or_try_init(async || ToolRequestSetBuilder::new().build(self).await)
@@ -566,6 +656,7 @@ impl Config {
             return None;
         }
         let short = backend::unalias_backend(&backend_arg.short);
+        let short = short.as_ref();
         self.all_aliases
             .get(short)
             .and_then(|alias| alias.backend.as_deref())
@@ -582,7 +673,9 @@ impl Config {
 
     pub(crate) fn get_repo_url(&self, plugin_name: &str) -> Option<String> {
         if let Some(url) = self.repo_urls.get(plugin_name)
-            && (Path::new(url).is_absolute() || url.starts_with("file://"))
+            && (Path::new(url).is_absolute()
+                || url.starts_with("file://")
+                || url.starts_with("packslip:"))
         {
             return Some(url.clone());
         }
@@ -603,7 +696,10 @@ impl Config {
             .and_then(|k| self.repo_urls.get(k))
         {
             return Some(
-                if Path::new(url).is_absolute() || url.starts_with("file://") {
+                if Path::new(url).is_absolute()
+                    || url.starts_with("file://")
+                    || url.starts_with("packslip:")
+                {
                     url.clone()
                 } else {
                     registry::full_to_url(url)
@@ -634,14 +730,11 @@ impl Config {
     pub(crate) fn monorepo_lockfile_discovery_key(
         &self,
     ) -> Option<(PathBuf, Option<bool>, Vec<String>)> {
-        let cf = find_monorepo_config(&self.config_files)?;
-        let monorepo = cf.monorepo();
+        let config = find_monorepo_config(&self.config_files)?;
         Some((
-            cf.get_path().to_path_buf(),
-            monorepo.and_then(|config| config.lockfile),
-            monorepo
-                .map(|config| config.config_roots.clone())
-                .unwrap_or_default(),
+            config.monorepo_source.get_path().to_path_buf(),
+            config.monorepo.lockfile,
+            config.monorepo.config_roots.unwrap_or_default(),
         ))
     }
 
@@ -661,10 +754,7 @@ impl Config {
     pub(crate) async fn monorepo_global_task_inputs(self: &Arc<Self>) -> Result<Vec<String>> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config
-            .project_root()
-            .ok_or_else(|| eyre!("monorepo root config has no project root"))?
-            .to_path_buf();
+        let monorepo_root = monorepo_config.root;
         let configs = self
             .config_files
             .values()
@@ -673,7 +763,7 @@ impl Config {
         let task_inputs = ResolvedTaskInputs::from_configs(&configs);
         let mut task = Task {
             name: "affected".to_string(),
-            cf: Some(monorepo_config.clone()),
+            cf: Some(monorepo_config.root_config),
             config_root: Some(monorepo_root),
             ..Default::default()
         };
@@ -697,14 +787,8 @@ impl Config {
     ) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config
-            .project_root()
-            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
-        let overrides = monorepo_config
-            .monorepo()
-            .map(|config| &config.projects)
-            .cloned()
-            .unwrap_or_default();
+        let monorepo_root = monorepo_config.root;
+        let overrides = monorepo_config.monorepo.projects;
         let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
         let go = crate::task::workspace::go::GoWorkspaceProvider;
         let node = crate::task::workspace::node::NodeWorkspaceProvider;
@@ -723,12 +807,12 @@ impl Config {
     /// `[monorepo].config_roots` to match directories, because legacy lockfiles
     /// can exist in roots whose live config is idiomatic-only or was removed.
     pub(crate) fn monorepo_lockfile_root(&self) -> Option<PathBuf> {
-        let cf = find_monorepo_config(&self.config_files)?;
-        let setting = cf.monorepo().and_then(|m| m.lockfile);
+        let config = find_monorepo_config(&self.config_files)?;
+        let setting = config.monorepo.lockfile;
         if !monorepo_lockfile_enabled_for_version(&version::V, setting) {
             return None;
         }
-        let monorepo_root = cf.project_root().map(|p| p.to_path_buf())?;
+        let monorepo_root = config.root;
 
         // An explicit opt-in always routes descendant configs to the root
         // lockfile, even when config_roots cannot be resolved. Avoid expanding
@@ -779,21 +863,19 @@ impl Config {
     ) -> Result<Vec<PathBuf>> {
         let monorepo_config = find_monorepo_config(&self.config_files)
             .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config
-            .project_root()
-            .ok_or_else(|| eyre!("monorepo root config has no project root"))?;
-        let patterns = &monorepo_config
-            .monorepo()
-            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?
-            .config_roots;
+        let monorepo_root = monorepo_config.root;
+        let patterns = monorepo_config
+            .monorepo
+            .config_roots
+            .ok_or_else(|| eyre!("[monorepo].config_roots is required for monorepo operations"))?;
         if patterns.is_empty() {
             bail!("[monorepo].config_roots is required for monorepo operations");
         }
         let roots = match filenames {
             Some(filenames) => {
-                expand_config_roots_with_filenames(&monorepo_root, patterns, None, filenames)?
+                expand_config_roots_with_filenames(&monorepo_root, &patterns, None, filenames)?
             }
-            None => expand_config_root_dirs(&monorepo_root, patterns, None)?,
+            None => expand_config_root_dirs(&monorepo_root, &patterns, None)?,
         };
         if roots.is_empty() {
             bail!("[monorepo].config_roots did not match any config roots");
@@ -1301,9 +1383,12 @@ impl Config {
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
             };
-            if !load_command_wrappers(&self.config_files)?.is_empty()
-                && !env_results.env_paths.contains(&*dirs::COMMAND_WRAPPERS)
-            {
+            // Keep only explicit wrappers in the non-tool environment. Tool-derived
+            // wrappers are selected later, after sourced env and tool templates resolve.
+            env_results
+                .env_paths
+                .retain(|path| path != &*dirs::COMMAND_WRAPPERS);
+            if !load_command_wrappers(&self.config_files, std::iter::empty())?.is_empty() {
                 env_results
                     .env_paths
                     .insert(0, dirs::COMMAND_WRAPPERS.clone());
@@ -1326,7 +1411,8 @@ impl Config {
             trace!("env_cache: using cached non-tool env results");
             return Ok(env_results);
         }
-        let entries = self
+        let mut entries = self.daemons()?.env_entries();
+        let explicit_entries: Vec<_> = self
             .config_files
             .iter()
             .rev()
@@ -1338,6 +1424,7 @@ impl Config {
             .into_iter()
             .flatten()
             .collect();
+        entries.extend(explicit_entries);
         // trace!("load_env: entries: {:#?}", entries);
         let mut env_results = EnvResults::resolve(
             self,
@@ -1351,7 +1438,7 @@ impl Config {
             },
         )
         .await?;
-        if !load_command_wrappers(&self.config_files)?.is_empty() {
+        if !load_command_wrappers(&self.config_files, std::iter::empty())?.is_empty() {
             env_results
                 .env_paths
                 .insert(0, dirs::COMMAND_WRAPPERS.clone());
@@ -1553,6 +1640,47 @@ impl Config {
     }
 }
 
+/// Insert a simulated config alongside configs from the same directory while preserving the
+/// highest-precedence-first order produced by `config_paths_in_dir_with_filenames`.
+fn insert_bootstrap_dry_run_config_file(
+    config_files: &mut ConfigMap,
+    path: PathBuf,
+    config_file: Arc<dyn ConfigFile>,
+) {
+    if config_files.contains_key(&path) {
+        config_files.insert(path, config_file);
+        return;
+    }
+
+    let precedence = bootstrap_config_filename_precedence(&path);
+    let sibling_indices = config_files
+        .keys()
+        .enumerate()
+        .filter(|(_, existing)| existing.parent() == path.parent())
+        .map(|(index, _)| index)
+        .collect_vec();
+    let index = sibling_indices
+        .iter()
+        .copied()
+        .find(|index| {
+            bootstrap_config_filename_precedence(
+                config_files
+                    .get_index(*index)
+                    .expect("config index exists")
+                    .0,
+            ) < precedence
+        })
+        .or_else(|| sibling_indices.last().map(|index| index + 1))
+        .unwrap_or(config_files.len());
+    config_files.shift_insert(index, path, config_file);
+}
+
+fn bootstrap_config_filename_precedence(path: &Path) -> Option<usize> {
+    DEFAULT_CONFIG_FILENAMES.iter().position(|candidate| {
+        !is_glob_pattern(candidate) && Path::new(candidate).file_name() == path.file_name()
+    })
+}
+
 fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
     // Highest precedence config files are returned first.
     let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
@@ -1591,25 +1719,80 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
-    find_monorepo_config(config_files).and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
+    find_monorepo_config(config_files).map(|config| config.root)
 }
 
-/// Find the config file that has monorepo_root = true
+#[derive(Clone)]
+struct ResolvedMonorepoConfig {
+    root: PathBuf,
+    root_config: Arc<dyn ConfigFile>,
+    monorepo_source: Arc<dyn ConfigFile>,
+    monorepo: MonorepoConfig,
+    task_defaults: IndexMap<String, SourcedTaskTemplate>,
+}
+
+/// Find the nearest directory whose effective layered config has `monorepo_root = true`.
 ///
 /// `ConfigMap` is ordered nearest-first — [`load_config_paths`] builds it from
-/// [`file::all_dirs`], which walks from the cwd upward — so the first match is the
-/// *deepest* applicable monorepo root. That matters when monorepo roots nest, e.g. a
-/// git worktree checked out inside the main checkout (`<repo>/.worktrees/<name>`),
-/// where both configs set `monorepo_root = true`: the nested one wins, and its
-/// `[monorepo].config_roots` are the ones expanded. Configs above the selected root
-/// still inherit as ordinary parent configs for env/tools/vars, but tasks from an
-/// enclosing monorepo are dropped — see [`dir_is_in_enclosing_monorepo`],
-/// `e2e/tasks/test_task_monorepo_nested_root`, and
-/// https://github.com/jdx/mise/discussions/11276.
-fn find_monorepo_config(config_files: &ConfigMap) -> Option<&Arc<dyn ConfigFile>> {
+/// [`file::all_dirs`], which walks from the cwd upward. Within one directory,
+/// `configs_at_root` returns config layers from highest to lowest precedence, so an
+/// environment overlay can override `monorepo_root` without becoming a separate root.
+/// This preserves nearest-root behavior for nested monorepos while resolving sibling
+/// overlays as one logical root configuration.
+fn find_monorepo_config(config_files: &ConfigMap) -> Option<ResolvedMonorepoConfig> {
     config_files
         .values()
-        .find(|cf| cf.monorepo_root() == Some(true))
+        .filter_map(|cf| cf.project_root())
+        .unique()
+        .find_map(|root| resolve_monorepo_config_at_root(&root, config_files))
+}
+
+fn resolve_monorepo_config_at_root(
+    root: &Path,
+    config_files: &ConfigMap,
+) -> Option<ResolvedMonorepoConfig> {
+    let configs = configs_at_root(root, config_files);
+    let (root_config, enabled) = configs
+        .iter()
+        .find_map(|cf| cf.monorepo_root().map(|enabled| ((*cf).clone(), enabled)))?;
+    if !enabled {
+        return None;
+    }
+
+    let mut monorepo = MonorepoConfig::default();
+    let mut monorepo_source = root_config.clone();
+    let mut task_defaults = IndexMap::new();
+    for cf in configs.into_iter().rev() {
+        let Some(layer) = cf.monorepo() else {
+            continue;
+        };
+        monorepo_source = cf.clone();
+        if layer.config_roots.is_some() {
+            monorepo.config_roots.clone_from(&layer.config_roots);
+        }
+        if layer.lockfile.is_some() {
+            monorepo.lockfile = layer.lockfile;
+        }
+        monorepo.projects.extend(layer.projects.clone());
+        monorepo.task_defaults.extend(layer.task_defaults.clone());
+        task_defaults.extend(layer.task_defaults.iter().map(|(name, template)| {
+            (
+                name.clone(),
+                SourcedTaskTemplate {
+                    template: template.clone(),
+                    source: cf.get_path().to_path_buf(),
+                },
+            )
+        }));
+    }
+
+    Some(ResolvedMonorepoConfig {
+        root: root.to_path_buf(),
+        root_config,
+        monorepo_source,
+        monorepo,
+        task_defaults,
+    })
 }
 
 /// Loads each selected bootstrap root as an independent hierarchy with scoped variables.
@@ -1620,6 +1803,13 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
     }) else {
         return Ok(vec![]);
     };
+    deprecated_at!(
+        BOOTSTRAP_CONFIG_ROOTS_WARN_AT,
+        BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT,
+        "bootstrap.config_roots",
+        "`[bootstrap].config_roots` in {} is deprecated. Composing bootstrap configuration across independent roots needs more design; move bootstrap declarations into global or system configuration.",
+        display_path(declaring_config)
+    );
     if patterns.is_empty() {
         return Ok(vec![]);
     }
@@ -1646,6 +1836,8 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
     let mut maps = vec![BootstrapConfigMap {
         config_files: base,
         tera_ctx: config.tera_ctx.clone(),
+        config_root: None,
+        vars_results: config.vars_results_cached().cloned().unwrap_or_default(),
     }];
     let idiomatic_filenames = BTreeMap::new();
     for root in roots {
@@ -1666,6 +1858,8 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         maps.push(BootstrapConfigMap {
             config_files,
             tera_ctx,
+            config_root: Some(root),
+            vars_results,
         });
     }
     Ok(maps)
@@ -1795,7 +1989,6 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".mise/config.toml",
             "mise/conf.d/*.toml",
             "mise/config.toml",
-            ".rtx.toml",
             "mise.toml",
             &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
             ".mise.toml",
@@ -1804,7 +1997,6 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".config/mise.local.toml",
             ".mise/config.local.toml",
             "mise/config.local.toml",
-            ".rtx.local.toml",
             "mise.local.toml",
             ".mise.local.toml",
         ]);
@@ -2323,15 +2515,15 @@ fn warn_if_monorepo_lockfile_default_changes(config: &Config) {
         !monorepo_lockfile_default_for_version(&version::V),
         "monorepo lockfiles are now default-on; remove warn_if_monorepo_lockfile_default_changes() and should_warn_monorepo_lockfile_default()"
     );
-    let Some(cf) = find_monorepo_config(&config.config_files) else {
+    let Some(monorepo_config) = find_monorepo_config(&config.config_files) else {
         return;
     };
-    let setting = cf.monorepo().and_then(|m| m.lockfile);
+    let setting = monorepo_config.monorepo.lockfile;
     if !should_warn_monorepo_lockfile_default(
         &version::V,
         setting,
         Settings::get().lockfile_enabled(),
-        monorepo_lockfiles_exist(config, cf),
+        monorepo_lockfiles_exist(config, &monorepo_config),
     ) {
         return;
     }
@@ -2339,18 +2531,16 @@ fn warn_if_monorepo_lockfile_default_changes(config: &Config) {
     warn_once!(
         "Monorepo lockfiles will default to a single root lockfile starting in mise {MONOREPO_LOCKFILE_DEFAULT_AT}. \
         Set `[monorepo] lockfile = true` in {} to opt in now, or `lockfile = false` to keep per-subproject lockfiles and silence this warning.",
-        display_path(cf.get_path())
+        display_path(monorepo_config.monorepo_source.get_path())
     );
 }
 
-fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &Arc<dyn ConfigFile>) -> bool {
-    let Some(monorepo_root) = monorepo_config.project_root() else {
-        return false;
-    };
+fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &ResolvedMonorepoConfig) -> bool {
+    let monorepo_root = &monorepo_config.root;
     let mut lockfile_paths = IndexSet::new();
 
     for (config_path, cf) in &config.config_files {
-        if !config_path.starts_with(&monorepo_root) || !cf.source().is_mise_toml() {
+        if !config_path.starts_with(monorepo_root) || !cf.source().is_mise_toml() {
             continue;
         }
         lockfile_paths.insert(lockfile::lockfile_path_for_config(config_path, None).0);
@@ -2359,9 +2549,8 @@ fn monorepo_lockfiles_exist(config: &Config, monorepo_config: &Arc<dyn ConfigFil
         );
     }
 
-    if let Some(monorepo) = monorepo_config.monorepo()
-        && let Ok(config_roots) =
-            expand_config_root_dirs(&monorepo_root, &monorepo.config_roots, None)
+    if let Some(patterns) = &monorepo_config.monorepo.config_roots
+        && let Ok(config_roots) = expand_config_root_dirs(monorepo_root, patterns, None)
     {
         for config_root in config_roots {
             for lockfile_path in lockfile::lockfile_variant_paths_in_dir(&config_root) {
@@ -2691,21 +2880,45 @@ pub(crate) fn system_config_files() -> IndexSet<PathBuf> {
 /// Config files in a global/system config dir, lowest precedence first: `conf.d`,
 /// then `config.toml`/`mise.toml`, then the `.local` variants.
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
+    config_files_with_incoming(dir, &Default::default())
+}
+
+/// Discover the configuration that would exist after an incoming batch,
+/// using the same precedence and environment selection as live discovery.
+pub(crate) fn config_files_with_incoming(
+    dir: &Path,
+    incoming: &std::collections::BTreeSet<PathBuf>,
+) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
-    for p in file::ls(&dir.join("conf.d")).unwrap_or_default() {
+    let conf_dir = dir.join("conf.d");
+    let conf_files: std::collections::BTreeSet<PathBuf> = file::ls(&conf_dir)
+        .unwrap_or_default()
+        .into_iter()
+        .chain(
+            incoming
+                .iter()
+                .filter(|p| p.parent() == Some(&conf_dir))
+                .cloned(),
+        )
+        .collect();
+    for p in &conf_files {
         if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
             && !file_name.starts_with(".")
             && file_name.ends_with(".toml")
-            && (!env::env_conf_d() || !is_environment_conf_d_file(&p))
+            && (!env::env_conf_d() || !is_environment_conf_d_file(p))
         {
-            warn_on_dotted_conf_d_file(&p);
-            files.insert(p);
+            warn_on_dotted_conf_d_file(p);
+            files.insert(p.clone());
         }
     }
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
-            files.extend(conf_d_environment_files(dir, environment, false));
+            files.extend(conf_d_environment_candidates(
+                &conf_files,
+                environment,
+                false,
+            ));
         }
         files.extend([
             dir.join(format!("config.{environment}.toml")),
@@ -2715,26 +2928,48 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
         if env::env_conf_d() {
-            files.extend(conf_d_environment_files(dir, environment, true));
+            files.extend(conf_d_environment_candidates(
+                &conf_files,
+                environment,
+                true,
+            ));
         }
         files.extend([
             dir.join(format!("config.{environment}.local.toml")),
             dir.join(format!("mise.{environment}.local.toml")),
         ]);
     }
-    files.into_iter().filter(|p| p.is_file()).collect()
+    files
+        .into_iter()
+        .filter(|p| p.is_file() || incoming.contains(p))
+        .collect()
 }
 
 fn conf_d_environment_files(dir: &Path, environment: &str, local: bool) -> Vec<PathBuf> {
-    file::ls(&dir.join("conf.d"))
-        .unwrap_or_default()
-        .into_iter()
+    conf_d_environment_candidates(
+        &file::ls(&dir.join("conf.d"))
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
+        environment,
+        local,
+    )
+}
+
+fn conf_d_environment_candidates(
+    candidates: &std::collections::BTreeSet<PathBuf>,
+    environment: &str,
+    local: bool,
+) -> Vec<PathBuf> {
+    candidates
+        .iter()
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| !name.starts_with('.'))
                 && conf_d_file_environment(path) == Some((environment, local))
         })
+        .cloned()
         .collect()
 }
 
@@ -2747,6 +2982,29 @@ pub(crate) fn global_config_path() -> PathBuf {
     first_config_file(&files)
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
+        .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
+}
+
+/// The shared global config file: where declarations meant for every
+/// machine go. `MISE_GLOBAL_CONFIG_FILE`, else the global TOML file that
+/// already exists (`mise.toml` when that is what the user keeps), else
+/// `config.toml`. An explicitly selected global file is honored even when
+/// it is `.local.toml`; implicit selection prefers a shared file.
+pub(crate) fn global_shared_config_path() -> PathBuf {
+    let local = |path: &PathBuf| {
+        path.file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with(".local.toml"))
+    };
+    // an explicit global file is the one mise loads: declarations go there
+    // (writing TOML into a file that is not TOML fails, rather than landing
+    // in a file that is never read)
+    if let Some(path) = env::MISE_GLOBAL_CONFIG_FILE.clone() {
+        return path;
+    }
+    let files = global_config_files();
+    first_config_file(&files)
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml") && !local(path))
+        .cloned()
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
@@ -2867,34 +3125,60 @@ async fn load_all_config_files(
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    let mut config_map = ConfigMap::default();
-    for f in config_filenames.iter().unique() {
-        if f.is_dir() {
-            continue;
-        }
-        let cf = match parse_config_file(f, idiomatic_filenames).await {
-            Ok(cfg) => cfg,
-            Err(err) => {
-                return Err(err.wrap_err(format!(
-                    "error parsing config file: {}",
-                    style::ebold(display_path(f))
-                )));
+    let mut groups = config_filenames
+        .iter()
+        .unique()
+        .filter(|path| !path.is_dir())
+        .fold(
+            IndexMap::<PathBuf, Vec<&PathBuf>>::new(),
+            |mut groups, path| {
+                groups
+                    .entry(config_trust_root(path))
+                    .or_default()
+                    .push(path);
+                groups
+            },
+        )
+        .into_iter()
+        .collect_vec();
+    // Resolve trusted ancestor roots before parsing descendants so a stale
+    // monorepo marker cannot authorize a child after an overlay disables it.
+    groups.sort_by_key(|(root, _)| root.components().count());
+
+    let mut parsed = HashMap::new();
+    for (_, paths) in groups {
+        let mut root_configs = ConfigMap::new();
+        for f in paths {
+            let cf = match parse_config_file(f, idiomatic_filenames).await {
+                Ok(cfg) => cfg,
+                Err(err) => {
+                    return Err(err.wrap_err(format!(
+                        "error parsing config file: {}",
+                        style::ebold(display_path(f))
+                    )));
+                }
+            };
+            if let Err(err) = Tracker::track(f) {
+                warn!("tracking config: {err:#}");
             }
-        };
-        if let Err(err) = Tracker::track(f) {
-            warn!("tracking config: {err:#}");
+            parsed.insert(f.clone(), cf.clone());
+            root_configs.insert(f.clone(), cf);
         }
 
-        // Mark monorepo roots so descendant configs are implicitly trusted
-        if cf.monorepo_root() == Some(true)
-            && let Err(err) = config_file::mark_as_monorepo_root(f)
-        {
-            warn!("failed to mark monorepo root: {err:#}");
+        if let Some(project_root) = root_configs.values().find_map(|cf| cf.project_root()) {
+            let enabled = resolve_monorepo_config_at_root(&project_root, &root_configs).is_some();
+            if let Some(source) = root_configs.values().next()
+                && let Err(err) = config_file::set_monorepo_root_marker(source.get_path(), enabled)
+            {
+                warn!("failed to synchronize monorepo root marker: {err:#}");
+            }
         }
-
-        config_map.insert(f.clone(), cf);
     }
-    Ok(config_map)
+
+    Ok(config_filenames
+        .iter()
+        .filter_map(|path| parsed.remove(path).map(|cf| (path.clone(), cf)))
+        .collect())
 }
 
 /// Load config files from a list of paths (for monorepo task config contexts)
@@ -2963,7 +3247,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 
     for config_file in config_files.values() {
         for (plugin, plugin_aliases) in config_file.aliases()? {
-            let alias = aliases.entry(plugin.clone()).or_default();
+            let alias = aliases.entry(plugin).or_default();
             if let Some(full) = plugin_aliases.backend {
                 alias.backend = Some(full);
             }
@@ -3003,8 +3287,9 @@ fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
 }
 
 /// Load command wrappers from global through project scope.
-pub(crate) fn load_command_wrappers(
+pub(crate) fn load_command_wrappers<'a>(
     config_files: &ConfigMap,
+    tools: impl IntoIterator<Item = &'a crate::toolset::ToolRequest>,
 ) -> Result<IndexMap<String, CommandWrapper>> {
     let mut wrappers = IndexMap::new();
     let safe_mode = Settings::safe_mode();
@@ -3019,6 +3304,7 @@ pub(crate) fn load_command_wrappers(
             wrappers.insert(name, wrapper);
         }
     }
+    command_wrapper::add_rust_wrapper(&mut wrappers, tools)?;
     Ok(wrappers)
 }
 
@@ -3061,6 +3347,107 @@ pub(crate) async fn resolve_vars_from_config_files(
         },
     )
     .await
+}
+
+fn bootstrap_dry_run_vars(
+    original_config_files: Option<&ConfigMap>,
+    existing_results: Option<&EnvResults>,
+    config_files: &ConfigMap,
+    mut vars: IndexMap<String, String>,
+    mut preceding_layer_changed: bool,
+) -> Result<IndexMap<String, String>> {
+    for (source, config_file) in config_files.iter().rev() {
+        let unchanged = original_config_files
+            .and_then(|files| files.get(source))
+            .is_some_and(|original| Arc::ptr_eq(original, config_file));
+        for directive in config_file.vars_entries()? {
+            if directive.options().tools {
+                continue;
+            }
+            let existing = |key: &str| {
+                (unchanged && !preceding_layer_changed)
+                    .then(|| existing_results?.vars.get(key))
+                    .flatten()
+                    .filter(|(_, existing_source)| existing_source == source)
+                    .map(|(value, _)| value.clone())
+            };
+            match directive {
+                EnvDirective::Val(key, value, _) => {
+                    if let Some(value) = bootstrap_dry_run_var(source, &value, &vars) {
+                        vars.insert(key, value);
+                    } else if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    } else {
+                        vars.shift_remove(&key);
+                    }
+                }
+                EnvDirective::Default(key, value, _) => {
+                    if vars.get(&key).is_some_and(|value| !value.is_empty()) {
+                        continue;
+                    }
+                    if let Some(value) = env::PRISTINE_ENV
+                        .get(&key)
+                        .filter(|value| !value.is_empty())
+                    {
+                        vars.insert(key, value.clone());
+                    } else if let Some(value) = bootstrap_dry_run_var(source, &value, &vars) {
+                        vars.insert(key, value);
+                    } else if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    }
+                }
+                EnvDirective::Rm(key, _) => {
+                    vars.shift_remove(&key);
+                }
+                EnvDirective::Age { key, .. } => {
+                    if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    } else {
+                        vars.shift_remove(&key);
+                    }
+                }
+                EnvDirective::Required(..)
+                | EnvDirective::File(..)
+                | EnvDirective::Path(..)
+                | EnvDirective::Source(..)
+                | EnvDirective::PythonVenv { .. }
+                | EnvDirective::Module(..) => {}
+            }
+        }
+        preceding_layer_changed |= !unchanged;
+    }
+    Ok(vars)
+}
+
+fn bootstrap_dry_run_var(
+    source: &Path,
+    value: &str,
+    vars: &IndexMap<String, String>,
+) -> Option<String> {
+    if !contains_template_syntax(value) {
+        return Some(value.to_string());
+    }
+    let mut context = BASE_CONTEXT.clone();
+    context.insert("vars", vars);
+    context.insert(
+        "config_root",
+        &config_file::config_root::config_root(source),
+    );
+    context.insert(
+        "config_source",
+        &config_file::config_root::config_source(source),
+    );
+    let mut tera = crate::tera::get_tera_for_dry_run(source.parent());
+    match render_str(&mut tera, value, &context) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            debug!(
+                "bootstrap: var template from {} omitted from dry-run context: {err}",
+                source.display()
+            );
+            None
+        }
+    }
 }
 
 async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
@@ -3132,8 +3519,7 @@ struct SourcedTaskTemplate {
 #[derive(Clone, Debug)]
 struct WorkspaceTaskDefaults {
     project_roots: BTreeSet<PathBuf>,
-    tasks: IndexMap<String, TaskTemplate>,
-    source: PathBuf,
+    tasks: IndexMap<String, SourcedTaskTemplate>,
 }
 
 /// Collect all task templates from the config file hierarchy and task-name defaults from the
@@ -3161,15 +3547,19 @@ fn collect_task_definitions(
     let workspace_defaults = Settings::get()
         .experimental
         .then(|| {
-            let cf = find_monorepo_config(config_files)?;
-            let root = cf.project_root()?.to_path_buf();
-            let monorepo = cf.monorepo()?;
-            let tasks = monorepo.task_defaults.clone();
-            let mut project_roots = expand_config_root_dirs(&root, &monorepo.config_roots, None)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|project_root| file::desymlink_path(&project_root))
-                .collect::<BTreeSet<_>>();
+            let config = find_monorepo_config(config_files)?;
+            let root = config.root;
+            let monorepo = config.monorepo;
+            let tasks = config.task_defaults;
+            let mut project_roots = expand_config_root_dirs(
+                &root,
+                monorepo.config_roots.as_deref().unwrap_or_default(),
+                None,
+            )
+            .unwrap_or_default()
+            .into_iter()
+            .map(|project_root| file::desymlink_path(&project_root))
+            .collect::<BTreeSet<_>>();
             project_roots.extend(
                 monorepo
                     .projects
@@ -3188,7 +3578,6 @@ fn collect_task_definitions(
             (!tasks.is_empty()).then_some(WorkspaceTaskDefaults {
                 project_roots,
                 tasks,
-                source: cf.get_path().to_path_buf(),
             })
         })
         .flatten();
@@ -3237,8 +3626,8 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
             .filter(|_| crate::task::is_workspace_project_task(&task.name))
             .map_or(task.name.as_str(), |(_, name)| name);
         if let Some(default) = defaults.tasks.get(task_name) {
-            task.merge_template(default);
-            task.add_config_source(&defaults.source);
+            task.merge_template(&default.template);
+            task.add_config_source(&default.source);
         }
     }
     Ok(())
@@ -3315,7 +3704,9 @@ impl ResolvedTaskEnvironment {
     }
 }
 
-const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
+/// Prefix that marks a `sources` or `global_inputs` entry as a reference to a
+/// named input group rather than a file pattern.
+pub(crate) const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
 
 #[derive(Clone, Debug, Default)]
 struct ResolvedTaskInputs {
@@ -3556,7 +3947,20 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
         &changed_install_paths,
         lockfile_update_mode,
     )
-    .await
+    .await?;
+    if Settings::get().generate_lockfiles()
+        && Settings::get().lockfile_enabled()
+        && (!Settings::get().locked
+            || lockfile_update_mode == lockfile::LockfileUpdateMode::AllowLocked)
+    {
+        lockfile::generate::ensure_install_succeeded()?;
+        Box::pin(crate::cli::lock::Lock::generate_after_install(
+            config.clone(),
+            new_versions,
+        ))
+        .await?;
+    }
+    Ok(())
 }
 
 /// Reconcile runtime links and shim farms after versions have been removed.
@@ -3635,6 +4039,9 @@ async fn rebuild_shims_and_runtime_symlinks_for_changes(
                 .wrap_err("failed to rebuild system shims")?;
         }
     });
+    if Settings::get().generate_lockfiles() {
+        return Ok(());
+    }
     lockfile::migrate_monorepo_lockfiles(config, false)?;
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
     // current-platform entries — auto-lock uses this to tell a curated lockfile
@@ -3742,8 +4149,9 @@ async fn inferred_workspace_tasks(
 fn enclosing_monorepo_roots(config_files: &ConfigMap, selected_root: &Path) -> Vec<PathBuf> {
     config_files
         .values()
-        .filter(|cf| cf.monorepo_root() == Some(true))
         .filter_map(|cf| cf.project_root())
+        .unique()
+        .filter_map(|root| resolve_monorepo_config_at_root(&root, config_files).map(|c| c.root))
         .filter(|root| {
             !file::same_file(root, selected_root)
                 && file::path_starts_with_resolved(selected_root, root)
@@ -3787,7 +4195,7 @@ async fn load_local_tasks_with_context(
 ) -> Result<Vec<Task>> {
     let mut tasks = vec![];
     let monorepo_config = find_monorepo_config(&config.config_files);
-    let monorepo_root = monorepo_config.and_then(|cf| cf.project_root().map(|p| p.to_path_buf()));
+    let monorepo_root = monorepo_config.as_ref().map(|config| config.root.clone());
 
     // Load tasks from parent directories (current working directory up to root)
 
@@ -3842,8 +4250,8 @@ async fn load_local_tasks_with_context(
 
         // Get config_roots from [monorepo] section if defined
         let config_roots = monorepo_config
-            .and_then(|cf| cf.monorepo())
-            .map(|m| &m.config_roots);
+            .as_ref()
+            .and_then(|config| config.monorepo.config_roots.as_ref());
         let subdirs = discover_monorepo_subdirs(monorepo_root, config_roots, ctx)?;
 
         // Load tasks from subdirectories in parallel
@@ -4807,7 +5215,7 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
 }
 
 /// Check if a pattern contains glob metacharacters
-fn is_glob_pattern(pattern: &str) -> bool {
+pub(crate) fn is_glob_pattern(pattern: &str) -> bool {
     // Check for unescaped glob metacharacters: *, ?, [, ], {, }
     // Note: This is a simple check that may have false positives with escaped chars,
     // but glob() will handle those correctly
@@ -5488,12 +5896,14 @@ mod tests {
             project_roots: BTreeSet::from([project_root.clone()]),
             tasks: IndexMap::from([(
                 "build".to_string(),
-                TaskTemplate {
-                    description: "default description".to_string(),
-                    ..Default::default()
+                SourcedTaskTemplate {
+                    template: TaskTemplate {
+                        description: "default description".to_string(),
+                        ..Default::default()
+                    },
+                    source: defaults_source.clone(),
                 },
             )]),
-            source: defaults_source.clone(),
         });
         let primary_source = project_root.join("mise.toml");
         let mut task = Task {
@@ -6450,6 +6860,7 @@ mod tests {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -6496,6 +6907,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pipx_aliases_keep_their_tool_spelling() -> Result<()> {
+        crate::backend::load_tools().await?;
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("mise.toml");
+        fs::write(
+            &path,
+            r#"
+[alias."pipx:black"]
+versions = { stable = "24.10.0" }
+[alias.formatter]
+backend = "pipx:black"
+"#,
+        )?;
+        let mut files: ConfigMap = Default::default();
+        files.insert(
+            path.clone(),
+            Arc::new(config_file::mise_toml::MiseToml::from_file(&path)?),
+        );
+        let all_aliases = load_aliases(&files)?;
+        assert_eq!(
+            all_aliases["formatter"].backend.as_deref(),
+            Some("pipx:black")
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            bootstrap_config_maps: vec![],
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases,
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
+        };
+        let legacy = crate::backend::get(&BackendArg::from("pipx:black")).unwrap();
+        let preferred = crate::backend::get(&BackendArg::from("pypi:black")).unwrap();
+        assert_eq!(config.resolve_alias(&legacy, "stable").await?, "24.10.0");
+        assert_eq!(config.resolve_alias(&preferred, "stable").await?, "stable");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_resolve_tool_opts_tracks_alias_config_and_inline_sources() -> Result<()> {
         crate::toolset::install_state::init().await?;
 
@@ -6535,6 +7000,7 @@ mod tests {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases,
@@ -6624,6 +7090,7 @@ mod tests {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -6715,6 +7182,7 @@ mod tests {
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -6776,6 +7244,7 @@ mod tests {
                 hooks: OnceCell::new(),
                 tasks_cache: Arc::new(DashMap::new()),
                 workspace_project_graph_cache: Mutex::new(None),
+                daemons: Default::default(),
                 tool_request_set: OnceCell::new(),
                 toolset: OnceCell::new(),
                 all_aliases,
@@ -6862,6 +7331,7 @@ config_roots = ["apps/api", "apps/web"]
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -7036,6 +7506,7 @@ config_roots = ["apps/api", "apps/web"]
             hooks: OnceCell::new(),
             tasks_cache: Arc::new(DashMap::new()),
             workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),

@@ -3,6 +3,7 @@ source: src/shell/pwsh.rs
 expression: replace_path(&deactivate)
 ---
 Remove-Item -ErrorAction Ignore function:mise
+Remove-Item -ErrorAction Ignore function:__mise_restore_double_dash
 Remove-Item -ErrorAction Ignore -Path Env:/MISE_SHELL
 Remove-Item -ErrorAction Ignore -Path Env:/__MISE_DIFF
 Remove-Item -ErrorAction Ignore -Path Env:/__MISE_SESSION

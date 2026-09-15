@@ -1,5 +1,4 @@
 use std::env::join_paths;
-#[cfg(unix)]
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
@@ -8,8 +7,23 @@ use indoc::indoc;
 
 use crate::{env, file};
 
-#[ctor::ctor(unsafe)]
+// ctor puts the constructor body in `__TEXT,__text_startup` on Apple targets, a
+// section laid out after `__text`. The debug test binary's `__text` is past the
+// 128MB reach of an arm64 direct branch, and ld only inserts branch islands
+// inside `__text`, so a call from that section into the front of `__text` fails
+// to link with "B/BL out of range". Keeping the body in `__text` lets the
+// linker island the call like any other.
+#[cfg_attr(
+    target_vendor = "apple",
+    ctor::ctor(unsafe, body(link_section = "__TEXT,__text,regular,pure_instructions"))
+)]
+#[cfg_attr(not(target_vendor = "apple"), ctor::ctor(unsafe))]
 fn init() {
+    // Tests must start from the environment nextest gives their process, not
+    // from an activation diff inherited from the process that launched it.
+    // This has to happen before the first access to env::HOME initializes
+    // PRISTINE_ENV.
+    env::remove_var("__MISE_DIFF");
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "debug")
     }
@@ -112,12 +126,10 @@ fn init() {
 /// Unit tests run single-threaded (`RUST_TEST_THREADS=1` in `.cargo/config.toml`
 /// and in the `test:unit` task), so a guarded set/read/restore sequence is not
 /// observed by other tests.
-#[cfg(unix)]
 pub(crate) struct EnvVarGuard {
     prev: Vec<(OsString, Option<OsString>)>,
 }
 
-#[cfg(unix)]
 impl EnvVarGuard {
     pub(crate) fn new() -> Self {
         Self { prev: vec![] }
@@ -142,7 +154,6 @@ impl EnvVarGuard {
     }
 }
 
-#[cfg(unix)]
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         // restore in reverse so repeated sets of the same key unwind correctly

@@ -1,0 +1,4 @@
+backends = ["aqua:anordal/shellharden"]
+description = "The corrective bash syntax highlighter"
+test = { cmd = "shellharden --version", expected = "{{version}}" }
+version_order = "semver"

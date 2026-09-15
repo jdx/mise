@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# Manual files use the ordinary parent commit, never a second saved history.
+require_cmd git
+
+echo saved >~/.manual
+echo first >~/.automatic
+assert_succeed "mise bootstrap dotfiles track ~/.manual --no-autosave"
+assert_succeed "mise bootstrap dotfiles track ~/.automatic"
+echo unsaved >~/.manual
+echo second >~/.automatic
+assert_succeed "mise bootstrap dotfiles save"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:home/.manual" "saved"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:home/.automatic" "second"
+assert_succeed "mise bootstrap dotfiles save ~/.manual"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:home/.manual" "unsaved"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git for-each-ref --format='%(refname)' refs/promoted refs/checkpoints" ""
+
+mkdir -p ~/manual-dir
+echo old-a >~/manual-dir/a
+echo old-b >~/manual-dir/b
+assert_succeed "mise bootstrap dotfiles track ~/manual-dir --no-autosave"
+echo new-a >~/manual-dir/a
+echo new-b >~/manual-dir/b
+assert_succeed "mise bootstrap dotfiles save ~/manual-dir/a"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:home/manual-dir/a" "new-a"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:home/manual-dir/b" "old-b"
+
+before_untrack=$(git --git-dir="$MISE_STATE_DIR/history/repo.git" rev-parse HEAD)
+assert_succeed "mise bootstrap dotfiles untrack ~/.manual"
+assert "cat ~/.manual" "unsaved"
+assert_fail "git --git-dir=$MISE_STATE_DIR/history/repo.git cat-file -e HEAD:home/.manual"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show $before_untrack:home/.manual" "unsaved"
+
+# The local index can be discarded and rebuilt from ordinary commits alone.
+mv "$MISE_STATE_DIR/history/index" "$MISE_STATE_DIR/history/index-before-rebuild"
+assert_succeed "mise bootstrap dotfiles history --json"
+echo third >~/.automatic
+assert_succeed "mise bootstrap dotfiles save"
+assert "git --git-dir=$MISE_STATE_DIR/history/repo.git show HEAD:home/manual-dir/b" "old-b"

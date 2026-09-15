@@ -13,11 +13,24 @@ use xx::regex;
 /// Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
 /// setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise generate install-script --write ./bin/mise
+./bin/mise install"###,
+        help = "Download mise to .mise if it is not already installed."
+    ),
+    example(
+        r###"mise generate install-script --write ./bin/mise --windows
+.\bin\mise.cmd install"###,
+        help = r###"Write bin/mise.cmd as a launcher for contributors who clone the project on Windows."###
+    )
+)]
 pub(super) struct InstallScript {
-    /// Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
+    /// Keep mise data and cache in a project-local directory (`.mise` by default)
     ///
-    /// This is necessary if users may use a different version of mise outside the project.
+    /// Use `--localized-dir` to choose its location. This isolates mise state;
+    /// it is not an OS sandbox for commands the generated script runs.
     #[usage(long, short, verbatim_doc_comment)]
     localize: bool,
     /// Specify mise version to fetch
@@ -482,18 +495,6 @@ exit /b 1
 "#
     )
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise generate install-script --write ./bin/mise</bold>
-    $ <bold>./bin/mise install</bold>                                    <dim># downloads mise to .mise if not already installed</dim>
-
-    <dim># add a launcher for contributors who clone the project on Windows</dim>
-    $ <bold>mise generate install-script --write ./bin/mise --windows</bold>  <dim># also writes bin/mise.cmd</dim>
-    $ <bold>.\bin\mise.cmd install</bold>
-"#
-);
 
 /// Not gated on `#[cfg(unix)]`: these are string handling, so Windows should run them too — and
 /// Windows is the platform the code they cover exists for.

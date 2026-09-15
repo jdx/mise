@@ -9,13 +9,20 @@ use crate::{dirs, duration, file};
 
 /// Show the individuals supporting mise as Patron-tier members
 ///
-/// Lists the individuals on the Patron tier from <https://jdx.dev/patrons.json>.
+/// Lists the individuals on the Patron tier from https://jdx.dev/patrons.json.
 /// The list refreshes daily; supporting terminals will render each patron's
 /// name as a clickable link via OSC 8 hyperlinks.
 ///
-/// To appear here, become a patron at <https://jdx.dev/sponsors.html>.
+/// To appear here, become a patron at https://jdx.dev/sponsors.html.
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise patrons
+mise patrons -J
+mise patrons --refresh"###
+    )
+)]
 pub(crate) struct Patrons {
     /// Output in JSON format
     #[usage(long, short = 'J')]
@@ -142,11 +149,3 @@ fn hyperlink(url: &str, text: &str) -> String {
 fn strip_control(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
 }
-
-static AFTER_LONG_HELP: &str = color_print::cstr!(
-    r#"<bold><underline>Examples:</underline></bold>
-
-    $ <bold>mise patrons</bold>
-    $ <bold>mise patrons -J</bold>
-    $ <bold>mise patrons --refresh</bold>"#
-);

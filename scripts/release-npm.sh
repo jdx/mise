@@ -6,6 +6,13 @@ error() {
 	exit 1
 }
 
+write_update_instructions() {
+	mkdir -p "$RELEASE_DIR/npm/lib"
+	cat >"$RELEASE_DIR/npm/lib/mise-self-update-instructions.toml" <<'EOF'
+message = "Update mise using the package manager that installed it (npm, pnpm, or yarn)."
+EOF
+}
+
 mkdir -p "$RELEASE_DIR/npm"
 
 NPM_PLATFORM_PREFIX="${NPM_PLATFORM_PREFIX:-$NPM_PREFIX}"
@@ -41,6 +48,7 @@ if [ "$PUBLISH_PLATFORM_PACKAGES" != "0" ]; then
 		tar -xzvf "$RELEASE_DIR/mise-latest-$platform.tar.gz" -C "$RELEASE_DIR"
 		rm -rf "$RELEASE_DIR/npm"
 		mv "$RELEASE_DIR/mise" "$RELEASE_DIR/npm"
+		write_update_instructions
 		cat <<EOF >"$RELEASE_DIR/npm/package.json"
 {
   "name": "$NPM_PLATFORM_PREFIX-$os-$arch",
@@ -55,6 +63,7 @@ if [ "$PUBLISH_PLATFORM_PACKAGES" != "0" ]; then
   },
   "files": [
     "bin",
+    "lib",
     "README.md"
   ],
   "license": "MIT",
@@ -87,6 +96,9 @@ else
 fi
 
 cp README.md "$RELEASE_DIR/npm/README.md"
+# The installer hard-links the binary into the wrapper package, so both the
+# wrapper and platform packages need instructions relative to their own prefix.
+write_update_instructions
 
 cat <<EOF >"$RELEASE_DIR/npm/installArchSpecificPackage.js"
 var spawn = require('child_process').spawn;
@@ -159,6 +171,7 @@ cat <<EOF >"$RELEASE_DIR/npm/package.json"
   },
   "files": [
     "installArchSpecificPackage.js",
+    "lib",
     "README.md"
   ],
   "scripts": {

@@ -1,7 +1,19 @@
+---
+description: "The aur manager installs packages from the Arch User Repository with yay or paru:"
+---
+
 # Arch User Repository (AUR)
 
 The `aur` manager installs packages from the
 [Arch User Repository](https://aur.archlinux.org/) with `yay` or `paru`:
+
+::: warning Review AUR packages before installing
+AUR packages are user-submitted build recipes, not packages vetted or supported
+by Arch Linux. A compromised or malicious PKGBUILD can execute code as your user
+during the build. Review the PKGBUILD and related sources before installing a
+package, and review upstream changes before applying upgrades. mise delegates to
+your AUR helper and does not add an independent trust or verification layer.
+:::
 
 ```toml
 [bootstrap.packages]
@@ -9,7 +21,10 @@ The `aur` manager installs packages from the
 "aur:visual-studio-code-bin" = "latest"
 ```
 
-mise prefers `yay` when both helpers are on `PATH`, matching Omarchy's default,
+Install a working AUR helper and its build prerequisites before applying this
+configuration. Run as a regular user, not root.
+
+mise prefers `yay` when both helpers are on `PATH`,
 and otherwise uses `paru`. The helper runs as the current user because AUR
 packages are built with `makepkg`; the helper requests elevation from pacman
 when it installs the finished package.
@@ -29,10 +44,13 @@ versions, so version pins are status-only. Use `"latest"` for entries mise can
 install automatically.
 
 ```sh
-mise bootstrap packages status --manager aur
+mise bootstrap packages status
+mise bootstrap packages apply --manager aur --dry-run
 mise bootstrap packages apply --manager aur
 mise bootstrap packages upgrade --manager aur
 ```
 
 `upgrade` rebuilds only the configured AUR packages. It does not upgrade every
-foreign package on the machine.
+foreign package on the machine. The helper can still resolve dependencies while
+building those packages. A dry run shows the helper invocation; it does not
+fetch and review the PKGBUILD for you.

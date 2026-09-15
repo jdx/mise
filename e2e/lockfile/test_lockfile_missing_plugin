@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_LOCKED=1
+
+# Temporarily move the harness's fixture symlink so resolution sees a missing plugin.
+mv "$MISE_DATA_DIR/plugins/dummy" "$HOME/dummy-plugin"
+
+for selector in 1 prefix:1 ref:main; do
+  # Keep the backend known even when the plugin cannot supply its identity.
+  printf '[tools]\ndummy = "%s"\n\n[tool_alias]\ndummy = "asdf:dummy"\n' "$selector" >mise.toml
+
+  # Missing plugins defer resolution for every selector, keeping the request
+  # discoverable so the installer can install the plugin and resolve again.
+  mise ls --current --json >listing.json 2>warning
+  assert "jq -r '.dummy[0].version' listing.json" "$selector"
+  assert "jq -r '.dummy[0].installed' listing.json" "false"
+  assert_not_contains "cat warning" "not in the lockfile"
+done
+
+mv "$HOME/dummy-plugin" "$MISE_DATA_DIR/plugins/dummy"
+
+for selector in 1 prefix:1 ref:main; do
+  printf '[tools]\ndummy = "%s"\n\n[tool_alias]\ndummy = "asdf:dummy"\n' "$selector" >mise.toml
+
+  # Once the plugin exists, the deferred request must pass the locked check
+  # before any unlocked resolution or installation can take place.
+  assert_fail_contains "mise which dummy --tool dummy@$selector 2>&1" "dummy@$selector is not in the lockfile"
+done

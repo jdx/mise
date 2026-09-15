@@ -4,6 +4,7 @@ use std::fmt::Display;
 use shell_escape::unix::escape;
 
 use crate::config::Settings;
+use crate::env;
 use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
@@ -33,7 +34,8 @@ impl Shell for Bash {
         let exe = opts.exe;
         let settings = Settings::get();
 
-        let exe = escape(exe.to_string_lossy());
+        let exe = exe.to_string_lossy();
+        let exe = escape(crate::windows_posix::executable_for_shell(&exe));
         let flags = render_flags_array(&opts.flags);
 
         let mut out = String::new();
@@ -79,12 +81,31 @@ impl Shell for Bash {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
+        let is_path = env::is_path_key(k);
+        let v = if is_path {
+            crate::windows_posix::windows_path_list_for_shell(v)
+        } else {
+            v.into()
+        };
+        let k = if is_path { "PATH" } else { k };
         let k = shell_escape::unix::escape(k.into());
-        let v = shell_escape::unix::escape(v.into());
+        let v = shell_escape::unix::escape(v);
         format!("export {k}={v}\n")
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
+        let is_path = env::is_path_key(k);
+        let v = if is_path {
+            crate::windows_posix::windows_path_list_for_shell(v)
+        } else {
+            v.into()
+        };
+        let k = if is_path { "PATH" } else { k };
+        let v = v
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('`', "\\`")
+            .replace('$', "\\$");
         format!("export {k}=\"{v}:${k}\"\n")
     }
 
@@ -147,6 +168,23 @@ mod tests {
     fn test_prepend_env() {
         let bash = Bash::default();
         assert_snapshot!(replace_path(&bash.prepend_env("PATH", "/some/dir:/2/dir")));
+    }
+
+    #[test]
+    fn path_preludes_quote_spaces_and_single_quotes() {
+        assert_eq!(
+            Bash::default().prepend_env("PATH", "/a b/say'hi"),
+            "export PATH=\"/a b/say'hi:$PATH\"\n"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_unrecognized_windows_context_keeps_native_path_entries() {
+        let output = Bash::default().set_env("Path", r"C:\a bin;D:\b");
+        assert!(output.starts_with("export PATH="));
+        assert!(output.contains(r"C:\a bin;D:\b"));
+        assert!(!output.contains("/c/a bin"));
     }
 
     #[test]

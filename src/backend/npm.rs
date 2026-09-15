@@ -96,9 +96,9 @@ impl<'a> NpmOptions<'a> {
         )
     }
 
-    /// Whether this tool's own package may install despite falling below
-    /// aube's weekly-download threshold. Scoped to the requested package
-    /// only — transitive dependencies stay gated.
+    /// Whether this tool's own package may bypass aube's reputation gates.
+    /// Scoped to the requested package only — transitive dependencies stay
+    /// gated, and the malicious-package advisory check still runs.
     fn allow_low_downloads(&self) -> eyre::Result<bool> {
         let Some(value) = self.values.raw().opts.get("allow_low_downloads") else {
             return Ok(false);
@@ -285,6 +285,18 @@ fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
 
 #[async_trait]
 impl Backend for NPMBackend {
+    /// The embedded installer reports resolve → fetch → link through
+    /// [`AubeProgress`]; these are aube's own bar weights for those phases.
+    /// The subprocess package managers never advance operations, so for them
+    /// the bar simply waits for the worker like any plugin backend.
+    async fn install_operation_weights(
+        &self,
+        _tv: &ToolVersion,
+        _ctx: &InstallContext,
+    ) -> Vec<f64> {
+        AUBE_OPERATION_WEIGHTS.to_vec()
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Npm
     }
@@ -416,6 +428,89 @@ impl Backend for NPMBackend {
         // passes `pkg@version` through to the package manager, which fails
         // when the version does not exist upstream.
         Ok(versions::SemVer::new(version).map(|_| version.to_string()))
+    }
+
+    async fn prepare_install_version(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        let package_manager = self
+            .package_manager_for_install(&ctx.config, Some(&ctx.ts))
+            .await;
+        if package_manager == NpmPackageManager::Aube
+            && tv.aube_lock.is_none()
+            && let Some(version) = tv
+                .aube_install_path_version()
+                .or_else(|| tv.legacy_aube_install_path_version())
+                .map(str::to_string)
+        {
+            tv.version = version;
+        }
+        let source_lockfile_version = if tv.resolved_from_lockfile() {
+            crate::lockfile::version_for_request(&ctx.config, &tv.request)?
+        } else {
+            None
+        };
+        if tv.aube_lock.is_some() && package_manager != NpmPackageManager::Aube {
+            eyre::bail!(
+                "npm:{} is locked with an embedded-aube dependency graph, but npm.package_manager is set to {}; use the embedded aube package manager or refresh the lockfile",
+                self.tool_name(),
+                package_manager
+            );
+        }
+        if package_manager == NpmPackageManager::Aube
+            && tv.resolved_from_lockfile()
+            && tv.aube_lock.is_none()
+            && ctx.locked
+            && source_lockfile_version.is_some_and(|v| v >= 2)
+        {
+            eyre::bail!(
+                "npm:{} has no embedded-aube dependency graph in the revision 2 lockfile; run `mise lock` to repair it or disable locked mode",
+                self.tool_name()
+            );
+        }
+        if package_manager == NpmPackageManager::Aube
+            && tv.aube_lock.is_none()
+            && (source_lockfile_version.is_some_and(|v| v >= 2)
+                || Self::aube_lock_creation_enabled(&tv))
+        {
+            tv.aube_lock = Some(self.resolve_aube_lock(&tv).await?);
+        }
+        if let Some(lock) = &tv.aube_lock {
+            let lock = if !ctx.locked && lock.load().is_err() {
+                lock.refresh()?
+            } else {
+                lock.clone()
+            };
+            self.validate_aube_lock(&tv, lock.load()?)?;
+            tv.aube_lock = Some(lock);
+        }
+        Ok(tv)
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if tv.aube_lock.is_some() && !Self::uses_embedded_aube() {
+            return Ok(false);
+        }
+        if Self::uses_embedded_aube() && tv.aube_lock.is_none() {
+            let source_lockfile_version = if tv.resolved_from_lockfile() {
+                crate::lockfile::version_for_request(config, &tv.request)?
+            } else {
+                None
+            };
+            if source_lockfile_version.is_some_and(|version| version >= 2)
+                || Self::aube_lock_creation_enabled(tv)
+            {
+                return Ok(false);
+            }
+        }
+        Ok(self.is_version_installed(config, tv, check_symlink))
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
@@ -604,6 +699,26 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    /// Return whether automatic project-lockfile maintenance should create an
+    /// aube graph for this request. Settings are invocation-wide, but automatic
+    /// lockfile updates deliberately exclude tools owned by global configs.
+    fn aube_lock_creation_enabled(tv: &ToolVersion) -> bool {
+        !tv.resolved_from_lockfile()
+            && Settings::get().lockfile_creation_enabled()
+            && !tv
+                .request
+                .source()
+                .path()
+                .is_some_and(crate::config::is_global_config)
+    }
+
+    pub(crate) fn uses_embedded_aube() -> bool {
+        let settings = Settings::get();
+        matches!(settings.npm.package_manager, NpmPackageManager::Aube)
+            || (matches!(settings.npm.package_manager, NpmPackageManager::Auto)
+                && !settings.npm.shell_out)
+    }
+
     async fn package_install_spec(
         &self,
         ctx: &InstallContext,
@@ -1064,6 +1179,39 @@ impl NPMBackend {
             &allow_builds,
             tv.resolved_from_lockfile(),
         )?;
+        self.write_aube_root_dependency(&install_path, &self.tool_name(), &tv.version)?;
+
+        if let Some(lock) = &tv.aube_lock {
+            crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut install_options = aube::embed::InstallOptions::new(&install_path);
+            install_options.frozen_mode = aube::embed::FrozenMode::Frozen;
+            install_options.strict_no_lockfile = true;
+            install_options.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
+            install_options.dangerously_allow_all_builds = matches!(allow_builds, AllowBuilds::All);
+            install_options.control =
+                aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
+                    .with_prompt_decision_handler(Arc::new(AubePromptHandler {
+                        yes: ctx.explicit_yes,
+                    }));
+            install_options.runtime = self.aube_embed_runtime(ctx).await;
+            let install = aube::embed::install_with_overrides(
+                install_options,
+                Self::aube_embed_install_overrides(),
+            );
+            tokio::pin!(install);
+            let mut progress = AubeProgress::default();
+            let result = loop {
+                tokio::select! {
+                    res = &mut install => break res,
+                    Some(event) = rx.recv() => progress.apply(event, ctx.pr.as_ref()),
+                }
+            };
+            while let Ok(event) = rx.try_recv() {
+                progress.apply(event, ctx.pr.as_ref());
+            }
+            return result.map_err(|error| self.format_aube_install_error(error));
+        }
 
         if let Some(args) = options.aube_args() {
             warn!(
@@ -1085,7 +1233,9 @@ impl NPMBackend {
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
             control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
-                .with_prompt_handler(Arc::new(AubePromptHandler)),
+                .with_prompt_decision_handler(Arc::new(AubePromptHandler {
+                    yes: ctx.explicit_yes,
+                })),
             // Run dependency lifecycle scripts on the node mise resolved as a
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
@@ -1095,6 +1245,12 @@ impl NPMBackend {
         };
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
 
+        // Before aube reports its first phase it vets the package — the
+        // typosquat, download-count and age gates — and looks up the version
+        // the request resolves to, both against the registry. Without a name
+        // for that the row sits on the wrapper's "installing" for however long
+        // the registry takes.
+        ctx.pr.set_message("checking package".into());
         let package = package.to_string();
         let install = aube::embed::add_with_overrides(
             &install_path,
@@ -1106,16 +1262,17 @@ impl NPMBackend {
         // Drain events alongside the install rather than after it: the
         // reporter only enqueues (it must never wait on us while holding an
         // install worker), so nothing renders unless someone is pulling.
+        let mut progress = AubeProgress::default();
         let result = loop {
             tokio::select! {
                 res = &mut install => break res,
-                Some(event) = rx.recv() => apply_aube_event(event, ctx.pr.as_ref()),
+                Some(event) = rx.recv() => progress.apply(event, ctx.pr.as_ref()),
             }
         };
         // Events queued between the last poll and the install returning —
         // notably the terminal `Complete` snapshot.
         while let Ok(event) = rx.try_recv() {
-            apply_aube_event(event, ctx.pr.as_ref());
+            progress.apply(event, ctx.pr.as_ref());
         }
         result.map_err(|e| self.format_aube_install_error(e))?;
         Ok(())
@@ -1258,6 +1415,76 @@ impl NPMBackend {
             format!("{}\n", toml::to_string_pretty(&aube_config)?),
         )?;
         Ok(())
+    }
+
+    fn write_aube_root_dependency(
+        &self,
+        install_path: &Path,
+        package: &str,
+        version: &str,
+    ) -> Result<()> {
+        let path = install_path.join("package.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_str(&crate::file::read_to_string(&path)?)?;
+        manifest["dependencies"] = serde_json::json!({ package: version });
+        crate::file::write(
+            path,
+            format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn validate_aube_lock(
+        &self,
+        tv: &ToolVersion,
+        lock: &crate::lockfile::AubeLock,
+    ) -> Result<()> {
+        let requirement = lock
+            .graph
+            .get("importers")
+            .and_then(|v| v.get("."))
+            .and_then(|v| v.get("dependencies"))
+            .and_then(|v| v.get(self.tool_name()))
+            .and_then(|v| v.get("specifier"))
+            .and_then(toml::Value::as_str);
+        if requirement != Some(tv.version.as_str()) {
+            eyre::bail!(
+                "npm:{} dependency graph does not match root version {}; run `mise lock`",
+                self.tool_name(),
+                tv.version
+            );
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn resolve_aube_lock(
+        &self,
+        tv: &ToolVersion,
+    ) -> Result<crate::lockfile::GraphRef<crate::lockfile::AubeLock>> {
+        crate::backend::aube_host::init();
+        let temp = tempfile::tempdir()?;
+        let request_options = tv.request.options();
+        let options = NpmOptions::new(&request_options);
+        let allow_builds = options.allow_builds()?;
+        self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;
+        self.write_aube_root_dependency(temp.path(), &self.tool_name(), &tv.version)?;
+        let mut install_options = aube::embed::InstallOptions::new(temp.path());
+        install_options.lockfile_only = true;
+        install_options.ignore_scripts = true;
+        install_options.run_root_lifecycle = false;
+        install_options.control = aube::embed::InstallControl::silent()
+            .with_prompt_decision_handler(Arc::new(AubePromptHandler {
+                yes: Settings::cli_yes(),
+            }));
+        aube::embed::install_with_overrides(install_options, Self::aube_embed_install_overrides())
+            .await
+            .map_err(|error| self.format_aube_install_error(error))?;
+        let contents = crate::file::read_to_string(temp.path().join("aube-lock.yaml"))?;
+        let mut graph = crate::lockfile::AubeLock::from_yaml(&contents)?;
+        graph.project = Some(crate::file::read_to_string(
+            temp.path().join("package.json"),
+        )?);
+        Ok(graph.into())
     }
 
     /// Configure a standalone `aube add --global` invocation to install into
@@ -1484,14 +1711,31 @@ impl aube::embed::InstallReporter for AubeProgressReporter {
 /// installs fail closed instead of waiting on stdin and interactive prompts
 /// cannot be overwritten by the progress renderer.
 #[derive(Debug)]
-struct AubePromptHandler;
+struct AubePromptHandler {
+    yes: bool,
+}
 
-impl aube::embed::InstallPromptHandler for AubePromptHandler {
-    fn confirm(&self, prompt: aube::embed::InstallPrompt) -> aube::embed::InstallPromptFuture<'_> {
+impl aube::embed::InstallPromptDecisionHandler for AubePromptHandler {
+    fn decide(
+        &self,
+        prompt: aube::embed::InstallPrompt,
+    ) -> aube::embed::InstallPromptDecisionFuture<'_> {
+        let yes = self.yes;
         Box::pin(async move {
-            crate::ui::prompt::confirm_with_default(aube_prompt_message(&prompt), false)
-                .map(|answer| answer.is_yes())
-                .map_err(|err| miette::miette!("{err:#}"))
+            if yes {
+                return Ok(aube::embed::InstallPromptDecision::Accept);
+            }
+            let answer =
+                crate::ui::prompt::confirm_with_default(aube_prompt_message(&prompt), false)
+                    .map_err(|err| miette::miette!("{err:#}"))?;
+            Ok(match answer {
+                crate::ui::prompt::Confirmation::Yes => aube::embed::InstallPromptDecision::Accept,
+                crate::ui::prompt::Confirmation::No => aube::embed::InstallPromptDecision::Decline,
+                crate::ui::prompt::Confirmation::Unanswered
+                | crate::ui::prompt::Confirmation::Unavailable => {
+                    aube::embed::InstallPromptDecision::Unavailable
+                }
+            })
         })
     }
 }
@@ -1536,6 +1780,51 @@ fn aube_prompt_message(prompt: &aube::embed::InstallPrompt) -> String {
 /// anything fetches them. The result is a bar pinned near 15% with an ETA
 /// swinging between 5s and 30s. The package tally below is the honest number,
 /// and mise's spinner already says the work is live.
+/// Resolving fills a small leading slice, fetching most of the rest, and
+/// linking holds the tail — the shape aube's own bar uses.
+const AUBE_OPERATION_WEIGHTS: [f64; 3] = [0.15, 0.80, 0.05];
+
+/// Turns aube's event stream into the reporter's phase and progress calls.
+///
+/// The plan itself — these three weights, plus the removal a forced reinstall
+/// puts in front of them — is declared by the install wrapper through
+/// [`Backend::install_operation_weights`] before the worker starts; this only
+/// walks through it. Aube reports the phase on every snapshot rather than as
+/// transitions, so this remembers the last phase seen and advances the
+/// reporter's operation when it changes. One instance per install.
+#[derive(Default)]
+struct AubeProgress {
+    operation: usize,
+}
+
+impl AubeProgress {
+    fn apply(&mut self, event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
+        use aube::embed::{InstallEvent, InstallPhase};
+
+        if let InstallEvent::Progress(snap) = &event {
+            // Complete sits past the last declared operation, which the model
+            // reads as "all declared work done, waiting for the worker".
+            let operation = match snap.phase {
+                Some(InstallPhase::Resolving) | None => 0,
+                Some(InstallPhase::Fetching) => 1,
+                Some(InstallPhase::Linking) => 2,
+                Some(InstallPhase::Complete) => AUBE_OPERATION_WEIGHTS.len(),
+            };
+            // A snapshot from a phase already left would paint that phase's
+            // label and counts over the current one. Neither the operation nor
+            // the row goes backwards.
+            if operation < self.operation {
+                return;
+            }
+            for _ in self.operation..operation {
+                pr.next_operation();
+            }
+            self.operation = operation;
+        }
+        apply_aube_event(event, pr);
+    }
+}
+
 fn apply_aube_event(event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
     use aube::embed::{InstallEvent, InstallOutputLevel, InstallPhase};
 
@@ -1563,21 +1852,32 @@ fn apply_aube_event(event: aube::embed::InstallEvent, pr: &dyn SingleReport) {
 
             // The first snapshot lands before resolution has counted anything;
             // `0/0 pkgs` is worse than no tally at all.
-            let mut message = if total == 0 {
-                label.to_string()
+            let mut detail = if total == 0 {
+                String::new()
             } else {
-                format!("{label} {cur}/{total} pkgs")
+                format!("{cur}/{total} pkgs")
             };
             // Bytes actually transferred — no denominator, so nothing here can
             // be wrong the way a percentage would be. Omitted entirely for an
             // install served from the store, which downloads nothing.
             if snap.downloaded_bytes > 0 {
-                message.push_str(&format!(
-                    " · {}",
-                    ByteSize::b(snap.downloaded_bytes).display().iec()
-                ));
+                if !detail.is_empty() {
+                    detail.push_str(" · ");
+                }
+                detail.push_str(
+                    &ByteSize::b(snap.downloaded_bytes)
+                        .display()
+                        .iec()
+                        .to_string(),
+                );
             }
-            pr.set_message(message);
+            // The phase is the message; the tally is detail. Reporters with room
+            // show them apart; those with one status line fold them back.
+            pr.set_message(label.to_string());
+            pr.set_detail(detail);
+            if total > 0 && snap.phase != Some(InstallPhase::Complete) {
+                pr.set_items(cur as u64, total as u64);
+            }
         }
         // Text aube would have written to stderr itself. Warnings are the
         // user's business; a fatal error also comes back as the returned
@@ -1782,6 +2082,17 @@ fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> St
              the npm CLI and bypasses this check entirely, so it should be a last resort.\n\n\
              Investigation guide and known exceptions: \
              https://aube.jdx.dev/security#trust-policy"
+        ));
+    } else if matches!(
+        err.code().map(|c| c.to_string()).as_deref(),
+        Some(
+            "ERR_AUBE_LOW_DOWNLOAD_PACKAGE"
+                | "ERR_AUBE_NEW_PACKAGE_NAME"
+                | "ERR_AUBE_SIMILAR_PACKAGE_NAME"
+        )
+    ) {
+        msg.push_str(&format!(
+            "\n  help: after verifying the package, set `allow_low_downloads = true` on `{tool_full}` to approve it"
         ));
     } else if let Some(help) = err.help() {
         msg.push_str(&format!("\n  help: {help}"));
@@ -2018,6 +2329,22 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_aube_prompt_handler_auto_confirms_yes_install_option() {
+        use aube::embed::InstallPromptDecisionHandler;
+
+        let decision = AubePromptHandler { yes: true }
+            .decide(aube::embed::InstallPrompt::LowDownloadPackage {
+                package: "tiny".to_string(),
+                weekly_downloads: 12,
+                threshold: 1000,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(decision, aube::embed::InstallPromptDecision::Accept);
+    }
+
     #[test]
     fn test_build_aube_install_error_message_trust_downgrade() {
         use miette::Diagnostic;
@@ -2070,6 +2397,29 @@ mod tests {
         assert!(msg.contains("aube install failed: something else failed"));
         assert!(msg.contains("help: try again later"));
         assert!(!msg.contains("trust_policy_excludes"));
+    }
+
+    #[test]
+    fn test_build_aube_install_error_message_uses_mise_prompt_gate_remedy() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("refusing to add @n8n/cli: only 569 weekly downloads (threshold: 1000)")]
+        #[diagnostic(
+            code(ERR_AUBE_LOW_DOWNLOAD_PACKAGE),
+            help("pass --allow-low-downloads to bypass")
+        )]
+        struct LowDownloads;
+
+        let report = miette::Report::new(LowDownloads);
+        let msg = build_aube_install_error_message(&report, "npm:@n8n/cli");
+
+        assert!(msg.contains("569 weekly downloads"));
+        assert!(msg.contains("allow_low_downloads = true"));
+        assert!(msg.contains("`npm:@n8n/cli`"));
+        assert!(!msg.contains("--allow-low-downloads"));
+        assert!(!msg.contains("mise add"));
     }
 
     fn assert_npm_view_versions_time(data: &serde_json::Value) {
@@ -3149,6 +3499,82 @@ pkg@1.2.0 '1.2.0'
         // Hyphen only inside build metadata (not legal semver, but be defensive)
         // — we treat it as stable since the version core has no pre-release.
         assert!(!is_semver_prerelease("1.0.0+build-5"));
+    }
+
+    /// Records the progress calls a reporter receives, in order.
+    #[derive(Debug, Default)]
+    struct ProgressRecorder(std::sync::Mutex<Vec<String>>);
+
+    impl SingleReport for ProgressRecorder {
+        fn start_operations_weighted(&self, weights: &[f64]) {
+            self.0.lock().unwrap().push(format!("start {:?}", weights));
+        }
+        fn next_operation(&self) {
+            self.0.lock().unwrap().push("next".into());
+        }
+        fn set_items(&self, done: u64, total: u64) {
+            self.0.lock().unwrap().push(format!("items {done}/{total}"));
+        }
+    }
+
+    fn snapshot(
+        phase: Option<aube::embed::InstallPhase>,
+        resolved: usize,
+        total: usize,
+        fetched: usize,
+    ) -> aube::embed::InstallEvent {
+        aube::embed::InstallEvent::Progress(aube::embed::InstallProgressSnapshot {
+            phase,
+            resolved,
+            total,
+            reused: 0,
+            downloaded: fetched,
+            downloaded_bytes: 0,
+            estimated_bytes: 0,
+        })
+    }
+
+    #[test]
+    fn aube_snapshots_drive_operations_and_item_progress() {
+        use aube::embed::InstallPhase;
+        let report = ProgressRecorder::default();
+        let mut progress = AubeProgress::default();
+
+        // Resolving counts against a frontier that can still grow.
+        progress.apply(snapshot(Some(InstallPhase::Resolving), 3, 10, 0), &report);
+        progress.apply(snapshot(Some(InstallPhase::Resolving), 12, 10, 0), &report);
+        // Fetching is the next operation; the tally is packages in place.
+        progress.apply(snapshot(Some(InstallPhase::Fetching), 12, 12, 5), &report);
+        progress.apply(snapshot(Some(InstallPhase::Fetching), 12, 12, 12), &report);
+        // Skipping straight to Complete still advances past every operation,
+        // once, and reports no tally for a phase with nothing left to count.
+        progress.apply(snapshot(Some(InstallPhase::Complete), 12, 12, 12), &report);
+        progress.apply(snapshot(Some(InstallPhase::Complete), 12, 12, 12), &report);
+
+        assert_eq!(
+            *report.0.lock().unwrap(),
+            [
+                "items 3/10",
+                "items 12/12",
+                "next",
+                "items 5/12",
+                "items 12/12",
+                "next",
+                "next",
+            ]
+        );
+    }
+
+    #[test]
+    fn aube_progress_never_walks_operations_backwards() {
+        use aube::embed::InstallPhase;
+        let report = ProgressRecorder::default();
+        let mut progress = AubeProgress::default();
+        progress.apply(snapshot(Some(InstallPhase::Linking), 4, 4, 4), &report);
+        // A late resolving snapshot must neither rewind the operation nor
+        // repaint the row with the old phase's counts.
+        progress.apply(snapshot(Some(InstallPhase::Resolving), 2, 4, 0), &report);
+        assert_eq!(*report.0.lock().unwrap(), ["next", "next", "items 4/4"]);
     }
 
     #[test]

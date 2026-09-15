@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -6,11 +6,15 @@ use demand::Input;
 use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use tera::{Kwargs, State, TeraResult, Value};
 
-use crate::config::Config;
+use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
-use crate::tera::{BASE_CONTEXT, get_tera_v2, render_str_v2};
+use crate::system::resources::ResourceOrigin;
+use crate::tera::{
+    BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -27,7 +31,7 @@ pub(crate) struct SecretOptionsTomlConfig {
     pub allow_empty: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SecretDeclaration {
     pub name: String,
     pub env: String,
@@ -87,18 +91,49 @@ struct SecretUnavailable {
 }
 
 pub(crate) fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration>> {
+    let mut merged: IndexMap<String, (SecretDeclaration, ResourceOrigin)> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for (name, declaration) in secrets_from_config_files(config_files)? {
+            if let Some(existing) = merged.get(&name) {
+                if existing.0 == declaration.0 {
+                    continue;
+                }
+                bail!(
+                    "conflicting bootstrap secret declarations for {name}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    existing.1.conflict_description(),
+                    declaration.1.conflict_description(),
+                );
+            }
+            merged.insert(name, declaration);
+        }
+    }
+    Ok(merged
+        .into_values()
+        .map(|(declaration, _)| declaration)
+        .collect())
+}
+
+fn secrets_from_config_files(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<String, (SecretDeclaration, ResourceOrigin)>> {
     let mut merged = IndexMap::new();
-    for cf in config.config_files.values() {
+    for (path, cf) in config_files {
         if let Some(bootstrap) = cf.bootstrap_config() {
+            let origin = ResourceOrigin {
+                config: path.clone(),
+                config_root: cf.config_root(),
+                environment: crate::config::environments_for_config_path(path),
+                source: None,
+            };
             for (name, declaration) in bootstrap.secrets {
-                merged.entry(name).or_insert(declaration);
+                let declaration = declaration_from_toml(name.clone(), declaration)?;
+                merged
+                    .entry(name)
+                    .or_insert_with(|| (declaration, origin.clone()));
             }
         }
     }
-    merged
-        .into_iter()
-        .map(|(name, declaration)| declaration_from_toml(name, declaration))
-        .collect()
+    Ok(merged)
 }
 
 pub(crate) fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
@@ -159,63 +194,120 @@ impl SecretValues {
         input: &str,
         base: &Path,
         target: &Path,
+        config_path: &Path,
     ) -> Result<String> {
-        self.render_inner(Some(config), input, base, target)
+        self.render_inner(Some((config, config_path)), input, base, target)
+    }
+
+    pub(crate) fn render_dotfile(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+    ) -> Result<String> {
+        let mut tera = get_tera(Some(base));
+        let used = match &mut tera {
+            TeraEngine::V2(tera) => self.register_v2(tera),
+            TeraEngine::V1(tera) => self.register_v1(tera),
+        };
+        let rendered = render_str(&mut tera, input, config.bootstrap_tera_ctx(config_path));
+        self.finish_render(Some(config), used, rendered)
+    }
+
+    pub(crate) fn render_dotfile_for_oci(
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+    ) -> Result<String> {
+        const MESSAGE: &str = "bootstrap secrets cannot be embedded in persistent OCI image layers";
+        let mut tera = get_tera_for_oci(Some(base));
+        match &mut tera {
+            TeraEngine::V2(tera) => tera
+                .register_function("secret", |_: Kwargs, _: &State| -> TeraResult<Value> {
+                    Err(tera::Error::message(MESSAGE))
+                }),
+            TeraEngine::V1(tera) => tera.register_function(
+                "secret",
+                |_: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+                    Err(tera1::Error::msg(MESSAGE))
+                },
+            ),
+        }
+        let mut context = config.bootstrap_tera_ctx(config_path).clone();
+        context.remove("env");
+        render_str(&mut tera, input, &context).map_err(Into::into)
     }
 
     fn render_inner(
         &self,
-        config: Option<&Config>,
+        config: Option<(&Config, &Path)>,
         input: &str,
         base: &Path,
         target: &Path,
     ) -> Result<String> {
+        let mut tera = get_tera_v2(Some(base));
+        let used = self.register_v2(&mut tera);
+        let mut context = BASE_CONTEXT.clone();
+        // Independently selected bootstrap roots keep their legacy template
+        // context until scoped composition and execution semantics are defined.
+        if let Some((config, config_path)) = config
+            && !config
+                .selected_bootstrap_config_maps()
+                .any(|(_, files)| files.contains_key(config_path))
+        {
+            context.insert("vars", &config.vars);
+        }
+        context.insert("config_root", base);
+        context.insert("target", target);
+        let rendered = render_str_v2(&mut tera, input, &context);
+        self.finish_render(config.map(|(config, _)| config), used, rendered)
+    }
+
+    fn register_v2(&self, tera: &mut tera::Tera) -> Arc<Mutex<BTreeSet<String>>> {
         let resolution = self.resolution.clone();
         let used = Arc::new(Mutex::new(BTreeSet::new()));
         let used_by_function = used.clone();
         let prompt = self.prompt;
-        let mut tera = get_tera_v2(Some(base));
         tera.register_function(
             "secret",
             move |args: Kwargs, _: &State| -> TeraResult<Value> {
                 let name = args.must_get::<&str>("name")?;
-                used_by_function
-                    .lock()
-                    .map_err(|_| tera::Error::message("bootstrap secret resolver is unavailable"))?
-                    .insert(name.to_string());
-                let mut resolution = resolution.lock().map_err(|_| {
-                    tera::Error::message("bootstrap secret resolver is unavailable")
-                })?;
-                if let Some(value) = resolution.values.get(name) {
-                    return Ok(Value::from(value.as_str()));
-                }
-                if resolution.unavailable.contains_key(name) {
-                    return Ok(Value::from(""));
-                }
-                let declaration = resolution.declarations.get(name).cloned().ok_or_else(|| {
-                    tera::Error::message(format!(
-                        "bootstrap secret '{name}' is not declared in [bootstrap.secrets]"
-                    ))
-                })?;
-                match resolve_declaration(&declaration, prompt) {
-                    Ok(value) => {
-                        resolution
-                            .redaction_env
-                            .insert(declaration.env, value.clone());
-                        resolution.values.insert(name.to_string(), value.clone());
-                        Ok(Value::from(value))
-                    }
-                    Err(detail) => {
-                        resolution.unavailable.insert(name.to_string(), detail);
-                        Ok(Value::from(""))
-                    }
-                }
+                resolve_secret(&resolution, &used_by_function, prompt, name)
+                    .map(Value::from)
+                    .map_err(tera::Error::message)
             },
         );
-        let mut context = BASE_CONTEXT.clone();
-        context.insert("config_root", base);
-        context.insert("target", target);
-        let rendered = render_str_v2(&mut tera, input, &context);
+        used
+    }
+
+    fn register_v1(&self, tera: &mut tera1::Tera) -> Arc<Mutex<BTreeSet<String>>> {
+        let resolution = self.resolution.clone();
+        let used = Arc::new(Mutex::new(BTreeSet::new()));
+        let used_by_function = used.clone();
+        let prompt = self.prompt;
+        tera.register_function(
+            "secret",
+            move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+                let name = args
+                    .get("name")
+                    .and_then(JsonValue::as_str)
+                    .ok_or_else(|| tera1::Error::msg("missing required argument: name"))?;
+                resolve_secret(&resolution, &used_by_function, prompt, name)
+                    .map(JsonValue::from)
+                    .map_err(tera1::Error::msg)
+            },
+        );
+        used
+    }
+
+    fn finish_render(
+        &self,
+        config: Option<&Config>,
+        used: Arc<Mutex<BTreeSet<String>>>,
+        rendered: TeraResult<String>,
+    ) -> Result<String> {
         let resolution = self
             .resolution
             .lock()
@@ -252,6 +344,42 @@ impl SecretValues {
                 ..Default::default()
             })),
             prompt: false,
+        }
+    }
+}
+
+fn resolve_secret(
+    resolution: &Arc<Mutex<SecretResolution>>,
+    used: &Arc<Mutex<BTreeSet<String>>>,
+    prompt: bool,
+    name: &str,
+) -> std::result::Result<String, String> {
+    used.lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?
+        .insert(name.to_string());
+    let mut resolution = resolution
+        .lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?;
+    if let Some(value) = resolution.values.get(name) {
+        return Ok(value.clone());
+    }
+    if resolution.unavailable.contains_key(name) {
+        return Ok(String::new());
+    }
+    let declaration = resolution.declarations.get(name).cloned().ok_or_else(|| {
+        format!("bootstrap secret '{name}' is not declared in [bootstrap.secrets]")
+    })?;
+    match resolve_declaration(&declaration, prompt) {
+        Ok(value) => {
+            resolution
+                .redaction_env
+                .insert(declaration.env, value.clone());
+            resolution.values.insert(name.to_string(), value.clone());
+            Ok(value)
+        }
+        Err(detail) => {
+            resolution.unavailable.insert(name.to_string(), detail);
+            Ok(String::new())
         }
     }
 }
