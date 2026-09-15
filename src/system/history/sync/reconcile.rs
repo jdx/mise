@@ -88,6 +88,11 @@ pub(crate) enum ConflictKind {
     InvalidIncoming,
     /// A user checkout has staged changes that must not be overwritten.
     StagedEdits,
+    /// The path on this machine cannot stand in for a shared file at all:
+    /// a directory or other non-file sits there, or it cannot be read.
+    /// Neither side of the repository is at fault, so neither resolution
+    /// applies until the path itself is fixed.
+    UnusableLive,
 }
 
 impl ConflictKind {
@@ -104,6 +109,9 @@ impl ConflictKind {
             Self::UnsavedEdits => "unsaved edits: save or discard them first",
             Self::InvalidIncoming => "incoming configuration is invalid; correct it upstream",
             Self::StagedEdits => "staged git changes: commit or unstage them first",
+            Self::UnusableLive => {
+                "a directory or unreadable path stands where the repository has a file"
+            }
         }
     }
 }
@@ -378,6 +386,20 @@ mod tests {
 
     fn obj(oid: &str) -> Object {
         ("100644".to_string(), oid.to_string())
+    }
+
+    #[test]
+    fn a_file_against_a_symlink_is_still_a_type_change() {
+        // The live side being unusable is a separate kind; a side that
+        // really did change type keeps this one.
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let ours = ("120000".into(), repo.hash_blob(b"local-target").unwrap());
+        let theirs = ("100644".into(), repo.hash_blob(b"remote contents").unwrap());
+        assert!(matches!(
+            merge(&repo, None, Some(&ours), Some(&theirs)).unwrap(),
+            Merged::Conflict(ConflictKind::TypeChange)
+        ));
     }
 
     #[test]

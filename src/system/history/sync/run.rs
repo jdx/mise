@@ -925,7 +925,14 @@ fn apply_resolutions(
             {
                 kind = kind.or(Some(reconcile::ConflictKind::UnsavedEdits));
             }
-            Err(_) => kind = kind.or(Some(reconcile::ConflictKind::TypeChange)),
+            // Only the live path's own fault is a conflict: neither side of
+            // the repository changed type, so say what is really there. A
+            // repository or process failure is nobody's to fix by hand, so it
+            // stops the pass with its own error instead of posing as one.
+            Err(err) if err.downcast_ref::<super::apply::UnusableLive>().is_some() => {
+                kind = kind.or(Some(reconcile::ConflictKind::UnusableLive));
+            }
+            Err(err) => return Err(err),
             _ => {}
         }
         if !fresh
@@ -1168,6 +1175,38 @@ mod capture_tests {
         assert_eq!(
             plans[0].conflict.as_ref().map(|c| c.kind),
             Some(reconcile::ConflictKind::UnsavedEdits)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_directory_in_the_way_is_not_reported_as_a_type_change() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let repo = store.repo().ok_or_else(|| eyre::eyre!("git required"))?;
+        let roots = Roots::current();
+        // The live side is a directory: nothing changed type on either side
+        // of the repository, so neither resolution applies until it is gone.
+        let live = tempfile::Builder::new()
+            .prefix(".mise-unusable-test-")
+            .tempdir_in(&roots.home)?;
+        let branch_path = roots
+            .branch_path(live.path(), None)
+            .ok_or_else(|| eyre::eyre!("path is not under a root"))?;
+        let saved = ("100644".into(), repo.hash_blob(b"saved")?);
+        let incoming = ("100644".into(), repo.hash_blob(b"incoming")?);
+        let shared = BTreeMap::from([(branch_path.clone(), saved.clone())]);
+        let upstream = reconcile::Upstream::default();
+        let mut status = SyncStatus::default();
+        let mut plans = vec![PathPlan {
+            branch_path,
+            apply: Some(Some(incoming)),
+            ..Default::default()
+        }];
+        apply_resolutions(repo, &mut status, &shared, &upstream, &mut plans)?;
+        assert_eq!(
+            plans[0].conflict.as_ref().map(|c| c.kind),
+            Some(reconcile::ConflictKind::UnusableLive)
         );
         Ok(())
     }
