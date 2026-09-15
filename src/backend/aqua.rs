@@ -423,13 +423,11 @@ impl Backend for AquaBackend {
         Ok(versions)
     }
 
-    async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
-        Ok(self
-            .latest_stable_version_info(config)
-            .await?
-            .map(|info| info.version))
-    }
-
+    // No `latest_stable_version` override: the trait tries
+    // `latest_stable_version_info` first and only falls back to the string
+    // variant when it returns `None`. Delegating one to the other would repeat
+    // the registry lookup and the `/releases/latest` request to reach the same
+    // `None`.
     async fn latest_stable_version_info(
         &self,
         config: &Arc<Config>,
