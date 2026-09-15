@@ -199,26 +199,38 @@ the setup from <url> is paused; nothing was bootstrapped.
 ```
 
 This is expected, not a failure of the adoption. List what is waiting, then
-decide each path:
+take the repository's version of everything:
 
 ```sh
 mise dot status
-mise dot pull --take-remote ~/.bashrc
-mise dot pull --take-remote ~/.config/mise/config.toml
+mise dot pull --take-remote-all
 ```
 
-`--take-remote` replaces this machine's file with the shared version; the
-version being replaced is saved first, so `mise dot undo` reverses it. Once the
-last path is decided, the same `pull` writes the remaining tracked files. Run
-`mise bootstrap` afterwards to finish the parts that are not dotfiles, such as
-tools and services.
+`--take-remote-all` replaces each conflicting file with the shared version; the
+versions being replaced are saved first, so `mise dot undo` reverses the whole
+pull. Once the last path is decided, the same `pull` writes the remaining
+tracked files. Run `mise bootstrap` afterwards to finish the parts that are not
+dotfiles, such as tools and services.
 
-To keep this machine's version instead, save it first — a fresh machine has no
-baseline to compare against, and `--keep-local` requires one:
+To decide one path at a time instead, name it:
+
+```sh
+mise dot pull --take-remote ~/.bashrc
+```
+
+To keep this machine's version of a file, save it first — a fresh machine has
+no baseline to compare against, and `--keep-local` requires one:
 
 ```sh
 mise dot save ~/.bashrc
 mise dot pull --keep-local ~/.bashrc
+```
+
+`--keep-local` also names the exceptions to a blanket choice. This takes the
+repository's version of everything except `~/.bashrc`:
+
+```sh
+mise dot pull --take-remote-all --keep-local ~/.bashrc
 ```
 
 ::: tip

@@ -35,6 +35,10 @@ pub(crate) struct ApplyRequest {
     pub take_remote: Vec<PathBuf>,
     /// Resolve these conflicts by publishing the local version next.
     pub keep_local: Vec<PathBuf>,
+    /// Resolve every conflict not named above with the upstream version.
+    pub take_remote_all: bool,
+    /// Resolve every conflict not named above by keeping the local version.
+    pub keep_local_all: bool,
     /// The watcher applying in the background: no prompt, no plan on
     /// stdout, and held paths are a count, not a failure.
     pub automatic: bool,
@@ -51,6 +55,8 @@ impl ApplyRequest {
             yes: true,
             take_remote: vec![],
             keep_local: vec![],
+            take_remote_all: false,
+            keep_local_all: false,
             automatic: true,
             plan_only: false,
         }
@@ -138,16 +144,38 @@ pub(crate) async fn apply_locked_with_scope(
         !req.automatic && console::user_attended_stderr(),
     )?;
     let roots = Roots::current();
-    let take_remote: BTreeSet<PathBuf> = req
+    let mut take_remote: BTreeSet<PathBuf> = req
         .take_remote
         .iter()
         .map(|path| normalize_target(path))
         .collect();
-    let keep_local: BTreeSet<PathBuf> = req
+    let mut keep_local: BTreeSet<PathBuf> = req
         .keep_local
         .iter()
         .map(|path| normalize_target(path))
         .collect();
+    // A blanket choice covers the conflicts nothing else decided, so
+    // `--take-remote-all --keep-local <path>` keeps that one exception.
+    if req.take_remote_all || req.keep_local_all {
+        let blanket = if req.take_remote_all {
+            &mut take_remote
+        } else {
+            &mut keep_local
+        };
+        let decided: BTreeSet<PathBuf> = req
+            .take_remote
+            .iter()
+            .chain(req.keep_local.iter())
+            .map(|path| normalize_target(path))
+            .collect();
+        for conflict in &status.conflicts {
+            if let Some(path) = roots.locate(&conflict.branch_path).path()
+                && !decided.contains(path)
+            {
+                blanket.insert(path.to_path_buf());
+            }
+        }
+    }
 
     // Store choices without publishing or applying any part of the setup.
     let mut sync_state = state::load(repo)?;
@@ -254,7 +282,7 @@ pub(crate) async fn apply_locked_with_scope(
         }
         if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run && !req.automatic {
             bail!(
-                "sync paused: resolve all {} conflict(s) before sharing resumes",
+                "sync paused: resolve all {} conflict(s) before sharing resumes; `mise dot pull --take-remote-all` takes the repository's version of every one",
                 status.conflicts.len()
             );
         }
