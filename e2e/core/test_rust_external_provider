@@ -28,6 +28,9 @@ mkdir -p "$STATE"
 			"show profile")
 				echo minimal
 				;;
+			"show active-toolchain")
+				echo "$RUSTUP_TOOLCHAIN-x86_64-unknown-linux-gnu (environment override)"
+				;;
 			"toolchain install")
 				version=$3
 				mkdir -p "$STATE/toolchains/$version"
@@ -55,6 +58,10 @@ mkdir -p "$STATE"
 				rm -rf "$STATE/toolchains/$3"
 				;;
 			"component list")
+				printf '%s\n' \
+					cargo-x86_64-unknown-linux-gnu \
+					rust-std-x86_64-unknown-linux-gnu \
+					rustc-x86_64-unknown-linux-gnu
 				cat "$STATE/components" 2>/dev/null || true
 				;;
 			"target list")
