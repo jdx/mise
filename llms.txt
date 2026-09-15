@@ -580,7 +580,6 @@ hk check --step shellcheck
 - **clippy**: Rust linting with `cargo clippy`
 - **shellcheck**: Shell script linting
 - **shfmt**: Shell script formatting
-- **pkl**: Pkl configuration file validation
 
 **Using hk in Development:**
 ```bash

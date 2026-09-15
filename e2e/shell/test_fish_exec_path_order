@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# `mise exec -- fish` hands fish an `-C` script instead of assigning PATH. Emitting
+# one `fish_add_path` per directory reversed mise's resolved order (each call
+# prepends) and re-ran fish's `--on-variable fish_user_paths` handler once per
+# directory, which is O(n^2) — over a second of startup for a large toolset.
+# See: https://github.com/jdx/mise/discussions/13225
+mkdir -p "$PWD/first" "$PWD/second" "$PWD/third" "$PWD/stub"
+
+cat <<TOML >mise.toml
+[env]
+_.path = ["{{config_root}}/first", "{{config_root}}/second", "{{config_root}}/third"]
+TOML
+
+# A stub named "fish" captures the -C script mise generates, so the batching is
+# asserted even on hosts without fish installed.
+cat <<'STUB' >"$PWD/stub/fish"
+#!/usr/bin/env bash
+printf '%s\n' "$2" >"$CAPTURE"
+STUB
+chmod +x "$PWD/stub/fish"
+
+CAPTURE="$PWD/init.fish" mise x -- "$PWD/stub/fish" -c exit
+assert "grep -c '^fish_add_path ' '$PWD/init.fish'" "1"
+
+# The one call lists the directories in mise's resolved precedence order.
+assert "grep '^fish_add_path ' '$PWD/init.fish' | tr ' ' '\n' | grep -E '/(first|second|third)\$' | sed 's|.*/||' | tr '\n' ' '" "first second third "
+
+if type -p fish >/dev/null; then
+  # bash is the reference: it gets PATH assigned directly, so its order always
+  # reflects what mise resolved. fish must agree.
+  assert "mise x -- fish -c 'for p in \$PATH; echo \$p; end' | grep -E '/(first|second|third)\$' | sed 's|.*/||' | tr '\n' ' '" "first second third "
+fi

@@ -244,7 +244,7 @@ jobs:
     env:
       MISE_TASK_CACHE_REMOTE_OIDC_AUDIENCE: https://cache.example.com
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: jdx/mise-action@v4
       - run: mise run test
 ```

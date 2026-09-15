@@ -238,6 +238,31 @@ fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<RepoState> {
     Ok(state)
 }
 
+/// How to clear the paths an adoption left undecided.
+///
+/// A blanket choice records a decision for every conflict, which is all it
+/// can promise. Whether each one then applies depends on preconditions checked
+/// later — incoming TOML that parses, no directory where the repository has a
+/// file, no staged git changes — and some of those blocked paths are conflicts
+/// themselves (`InvalidIncoming`, `StagedEdits`). Their number is unknowable
+/// here: when conflicts exist the apply stops before computing the other
+/// holds, reporting the conflict count as its held count. So the wording
+/// describes the decision it makes, and sends the reader to `mise dot status`
+/// for whatever still needs a different fix.
+fn undecided_advice(undecided: usize, conflicts: usize) -> String {
+    if undecided == 0 {
+        return String::new();
+    }
+    let blanket = if conflicts > 0 {
+        ", `mise dot pull --take-remote-all` chooses the repository's version for every conflict at once"
+    } else {
+        ""
+    };
+    format!(
+        "; {undecided} path(s) need a decision (`mise dot status` lists them and why, `mise dot pull --take-remote <path>` or `mise dot pull --keep-local <path>` decides one{blanket})"
+    )
+}
+
 /// Sets this machine up from a repository already found to be
 /// history-managed: says what will happen, shows the plan, confirms, records
 /// the connection, and pulls (the configuration first, then what it
@@ -396,10 +421,8 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
 
     // a conflict (a file that exists here and differs) is not pending: it
     // waits for a decision, like a path held with its group
-    let undecided = run::read_status(store.state_dir())?
-        .conflicts
-        .len()
-        .max(applied.held);
+    let conflicts = run::read_status(store.state_dir())?.conflicts.len();
+    let undecided = conflicts.max(applied.held);
     let setup_held = {
         let status = run::read_status(state_dir)?;
         undecided > 0
@@ -411,13 +434,7 @@ pub(crate) async fn run(store: &Store, onboarding: &Onboarding) -> Result<Outcom
         "Wrote {} file(s) from {}{}.",
         applied.written,
         onboarding.origin,
-        if undecided > 0 {
-            format!(
-                "; {undecided} path(s) need a decision (`mise dot status` lists them, `mise dot pull --take-remote|--keep-local <path>` decides)"
-            )
-        } else {
-            String::new()
-        }
+        undecided_advice(undecided, conflicts)
     );
     let durable_access = durable_access(&onboarding.origin, &onboarding.branch).await;
     if !durable_access {
@@ -547,6 +564,37 @@ async fn durable_access(url: &str, branch: &str) -> bool {
 mod preview_tests {
     use super::*;
     use crate::system::history::tracked::TrackedEntry;
+
+    #[test]
+    fn blanket_resolution_is_scoped_to_conflicts_and_never_promises_the_rest() {
+        // With conflicts present, the blanket command is worth offering, but
+        // only ever as covering the conflicting files. A path held for another
+        // reason is not cleared by it, and when conflicts exist the apply has
+        // not yet counted those holds, so the message must not imply a total.
+        for (undecided, conflicts) in [(3, 3), (3, 1)] {
+            let advice = undecided_advice(undecided, conflicts);
+            assert!(advice.contains(&format!("{undecided} path(s) need a decision")));
+            assert!(advice.contains("--take-remote-all"));
+            // It promises a decision, never that every path then applies:
+            // `InvalidIncoming` and `StagedEdits` are conflicts a choice
+            // records but the apply still blocks.
+            assert!(advice.contains("chooses the repository's version for every conflict"));
+            assert!(!advice.contains("takes the repository's version"));
+            // the per-path commands stay, each separately runnable
+            assert!(advice.contains("`mise dot pull --take-remote <path>`"));
+            assert!(advice.contains("`mise dot pull --keep-local <path>`"));
+            // and status is what explains why each path is held
+            assert!(advice.contains("lists them and why"));
+        }
+
+        // Nothing is a conflict: the blanket command would decide nothing.
+        let holds_only = undecided_advice(2, 0);
+        assert!(holds_only.contains("2 path(s) need a decision"));
+        assert!(!holds_only.contains("--take-remote-all"));
+
+        // Nothing undecided: no advice to give.
+        assert_eq!(undecided_advice(0, 0), "");
+    }
 
     #[test]
     fn confirmed_fetch_reuses_objects_without_replacing_local_head_or_status() -> Result<()> {
