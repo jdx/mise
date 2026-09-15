@@ -120,6 +120,8 @@ assert_fail 'b dot pull --take-remote-all --yes' 'not a regular file or symlink'
 assert_fail 'b dot pull --take-remote-all --yes' 'Fix each of those paths'
 assert "cat $second/.two" b-two-5
 assert_succeed "test -d $second/.one"
+# a preview carries on rather than failing, so it says the reason itself
+assert_contains "b dot pull --take-remote-all --dry-run 2>&1" 'not a regular file or symlink'
 # with the directory gone, deciding only that path finishes the setup: the
 # choice those blanket commands recorded for ~/.two is still on file
 rm -rf "$second/.one"

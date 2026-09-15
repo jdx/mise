@@ -321,10 +321,18 @@ pub(crate) async fn apply_locked_with_scope(
         // A blanket choice promises to decide every conflict, so it has not
         // succeeded while one is still held -- whatever it decided alongside.
         // Those decisions are recorded above; naming the rest is what is left.
-        if !blanket_held.is_empty() && !req.dry_run && !req.automatic {
-            bail!(
-                "sync paused: resolve all {count} conflict(s) before sharing resumes; a blanket choice cannot decide them all: {held}. Fix each of those paths, then pull again",
-                count = status.conflicts.len(),
+        if !blanket_held.is_empty() {
+            if !req.dry_run && !req.automatic {
+                bail!(
+                    "sync paused: resolve all {count} conflict(s) before sharing resumes; a blanket choice cannot decide them all: {held}. Fix each of those paths, then pull again",
+                    count = status.conflicts.len(),
+                    held = blanket_held.join("; "),
+                );
+            }
+            // A preview and a background pass both carry on, so this is the
+            // only chance either gets to say why a path went undecided.
+            warn!(
+                "a blanket choice cannot decide {held}",
                 held = blanket_held.join("; "),
             );
         }
