@@ -294,7 +294,7 @@ pub(crate) async fn apply_locked_with_scope(
         }
         if take_remote.is_empty() && keep_local.is_empty() && !req.dry_run && !req.automatic {
             bail!(
-                "sync paused: resolve all {} conflict(s) before sharing resumes; `mise dot pull --take-remote-all` takes the repository's version of every one",
+                "sync paused: resolve all {} conflict(s) before sharing resumes; `mise dot pull --take-remote-all` chooses the repository's version for every conflict at once, and `mise dot status` says whether any path still needs a different fix",
                 status.conflicts.len()
             );
         }

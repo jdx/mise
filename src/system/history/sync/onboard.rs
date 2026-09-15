@@ -240,18 +240,21 @@ fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<RepoState> {
 
 /// How to clear the paths an adoption left undecided.
 ///
-/// A blanket choice decides conflicts and nothing else. Other holds — invalid
-/// incoming TOML, a directory where the repository has a file, staged git
-/// changes — each need their own fix. Their number is not known here: when
-/// conflicts exist, the apply stops before computing them and reports the
-/// conflict count as its held count. So the offer is scoped to what it does
-/// decide rather than implying it clears every undecided path.
+/// A blanket choice records a decision for every conflict, which is all it
+/// can promise. Whether each one then applies depends on preconditions checked
+/// later — incoming TOML that parses, no directory where the repository has a
+/// file, no staged git changes — and some of those blocked paths are conflicts
+/// themselves (`InvalidIncoming`, `StagedEdits`). Their number is unknowable
+/// here: when conflicts exist the apply stops before computing the other
+/// holds, reporting the conflict count as its held count. So the wording
+/// describes the decision it makes, and sends the reader to `mise dot status`
+/// for whatever still needs a different fix.
 fn undecided_advice(undecided: usize, conflicts: usize) -> String {
     if undecided == 0 {
         return String::new();
     }
     let blanket = if conflicts > 0 {
-        ", `mise dot pull --take-remote-all` takes the repository's version of every conflicting file"
+        ", `mise dot pull --take-remote-all` chooses the repository's version for every conflict at once"
     } else {
         ""
     };
@@ -572,8 +575,11 @@ mod preview_tests {
             let advice = undecided_advice(undecided, conflicts);
             assert!(advice.contains(&format!("{undecided} path(s) need a decision")));
             assert!(advice.contains("--take-remote-all"));
-            assert!(advice.contains("every conflicting file"));
-            assert!(!advice.contains("version of every one"));
+            // It promises a decision, never that every path then applies:
+            // `InvalidIncoming` and `StagedEdits` are conflicts a choice
+            // records but the apply still blocks.
+            assert!(advice.contains("chooses the repository's version for every conflict"));
+            assert!(!advice.contains("takes the repository's version"));
             // the per-path commands stay, each separately runnable
             assert!(advice.contains("`mise dot pull --take-remote <path>`"));
             assert!(advice.contains("`mise dot pull --keep-local <path>`"));
