@@ -296,6 +296,32 @@ still required to approve the first unlocked install.
 These are reputation signals, not proof that a package is unsafe. Verify the package name and
 publisher before approving it. This option does not affect `npm`, `pnpm`, or `bun` installs.
 
+### `allow_exotic_deps`
+
+Allows dependencies in the tool's graph to come from somewhere other than the npm registry — a
+`git+` URL, a `file:` path, or a direct tarball URL. aube blocks these by default with
+[`blockExoticSubdeps`](https://aube.sh/settings/#setting-blockexoticsubdeps); without the option
+the install fails, for example:
+
+```
+registry error for xlsx: uses exotic specifier "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+which is blocked by blockExoticSubdeps (declared by @gmickel/gno)
+```
+
+```toml
+[tools]
+"npm:@gmickel/gno" = { version = "latest", allow_exotic_deps = true }
+```
+
+This is written to the aube install's `.config/aube/config.toml` as `blockExoticSubdeps = false`. It
+applies to `aube` and `aube_cli` installs only; `npm`, `pnpm`, and `bun` do not enforce this gate.
+
+aube has no per-package form of the setting, so opting in trusts **every** non-registry specifier in
+that tool's dependency graph, not just the one that failed. A tarball or git URL in a transitive
+dependency is fetched from a host the registry's own protections never see, so check where the
+dependency actually comes from before allowing it. Where the upstream package can be fixed instead —
+by pinning the dependency to a registry release — that is the better outcome.
+
 ### `aube_args`
 
 Additional arguments to pass to `aube add --global` when

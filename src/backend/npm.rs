@@ -100,16 +100,28 @@ impl<'a> NpmOptions<'a> {
     /// Scoped to the requested package only — transitive dependencies stay
     /// gated, and the malicious-package advisory check still runs.
     fn allow_low_downloads(&self) -> eyre::Result<bool> {
-        let Some(value) = self.values.raw().opts.get("allow_low_downloads") else {
+        self.bool_option("allow_low_downloads")
+    }
+
+    /// Whether dependencies in this tool's graph may come from non-registry
+    /// sources (`git+`, `file:`, or a direct tarball URL). aube blocks them by
+    /// default via `blockExoticSubdeps`; some packages legitimately depend on
+    /// one, e.g. a package the registry no longer carries a safe release of.
+    fn allow_exotic_deps(&self) -> eyre::Result<bool> {
+        self.bool_option("allow_exotic_deps")
+    }
+
+    /// Parse a boolean tool option, accepting the TOML boolean and the string
+    /// spellings `mise use npm:x[key=true]` produces. Absent reads as `false`.
+    fn bool_option(&self, key: &str) -> eyre::Result<bool> {
+        let Some(value) = self.values.raw().opts.get(key) else {
             return Ok(false);
         };
         match value {
             toml::Value::Boolean(value) => Ok(*value),
             toml::Value::String(value) if value.eq_ignore_ascii_case("true") => Ok(true),
             toml::Value::String(value) if value.eq_ignore_ascii_case("false") => Ok(false),
-            value => Err(eyre::eyre!(
-                "allow_low_downloads must be a boolean, got {value}"
-            )),
+            value => Err(eyre::eyre!("{key} must be a boolean, got {value}")),
         }
     }
 
@@ -1171,6 +1183,7 @@ impl NPMBackend {
         let install_path = tv.install_path();
         crate::file::create_dir_all(&install_path)?;
 
+        Self::warn_if_install_env_ignored(tv);
         let allow_builds = options.allow_builds()?;
         self.write_aube_embed_project(
             &install_path,
@@ -1276,6 +1289,24 @@ impl NPMBackend {
         }
         result.map_err(|e| self.format_aube_install_error(e))?;
         Ok(())
+    }
+
+    /// The embedded installer runs in-process, so nothing hands it a
+    /// per-tool environment: aube snapshots the real process env when the
+    /// install starts. `install_env` is therefore silently inert here, which
+    /// otherwise looks like the setting simply not working — notably for
+    /// someone reaching for `AUBE_*` to relax an install-scoped gate. Point at
+    /// the tool options that do reach aube instead.
+    fn warn_if_install_env_ignored(tv: &ToolVersion) {
+        let keys = tv.install_env().keys().cloned().collect::<Vec<_>>();
+        if keys.is_empty() {
+            return;
+        }
+        warn!(
+            "install_env ({}) is ignored for {}: mise installs through the embedded aube package manager, which runs in-process rather than as a subprocess. Install-scoped aube settings have npm backend tool options (`allow_builds`, `allow_exotic_deps`, `allow_low_downloads`, `trust_policy_excludes`); anything else has to be set in mise's own environment.",
+            keys.join(", "),
+            tv.ba().full(),
+        );
     }
 
     /// Install through a standalone aube executable while keeping version
@@ -1527,6 +1558,7 @@ impl NPMBackend {
     ) -> Result<toml::Table> {
         let trust_policy_excludes = options.trust_policy_excludes()?;
         let allow_low_downloads = options.allow_low_downloads()?;
+        let allow_exotic_deps = options.allow_exotic_deps()?;
         let mut config = toml::Table::new();
         if let Some(before_date) = before_date {
             let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
@@ -1556,6 +1588,15 @@ impl NPMBackend {
             config.insert(
                 "allowedUnpopularPackages".to_string(),
                 toml::Value::Array(vec![toml::Value::String(self.tool_name())]),
+            );
+        }
+        if allow_exotic_deps {
+            // aube has no per-package form of this gate, so opting in trusts
+            // every non-registry specifier in the tool's graph. Only written
+            // when asked: leaving the key out keeps aube's default.
+            config.insert(
+                "blockExoticSubdeps".to_string(),
+                toml::Value::Boolean(false),
             );
         }
         Ok(config)
@@ -2094,6 +2135,22 @@ fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> St
         msg.push_str(&format!(
             "\n  help: after verifying the package, set `allow_low_downloads = true` on `{tool_full}` to approve it"
         ));
+    } else if msg.contains("blockExoticSubdeps") {
+        // aube's own help points at `.npmrc` / `settings.toml`, which mise
+        // generates and overwrites on every install. Name the mise option
+        // instead. Matched on the message because the blocked-specifier
+        // failure reaches mise as a plain registry error on some paths, with
+        // `ERR_AUBE_BLOCKED_EXOTIC_SUBDEP` only on others.
+        msg.push_str(&format!(
+            "\n\n  A dependency in this package's graph is fetched from a git, file, or direct \
+             tarball URL rather than the npm registry, which aube blocks by default.\n\n  \
+             Review where that dependency actually comes from before allowing it — an \
+             attacker-controlled URL in a transitive dependency is a supply-chain foothold the \
+             registry's own protections never see. Then set `allow_exotic_deps` for this tool:\n  \
+             \"{tool_full}\" = {{ version = \"latest\", allow_exotic_deps = true }}\n\n  \
+             aube has no per-package form of this gate, so it trusts every non-registry \
+             specifier in this tool's graph."
+        ));
     } else if let Some(help) = err.help() {
         msg.push_str(&format!("\n  help: {help}"));
     }
@@ -2110,6 +2167,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "allow_builds".into(),
         "trust_policy_excludes".into(),
         "allow_low_downloads".into(),
+        "allow_exotic_deps".into(),
     ]
 }
 
@@ -2380,6 +2438,38 @@ mod tests {
         assert!(msg.contains("\"npm:danger\""));
         assert!(msg.contains("npm.shell_out=true"));
         assert!(msg.contains("https://aube.jdx.dev/security#trust-policy"));
+    }
+
+    #[test]
+    fn test_build_aube_install_error_message_points_at_allow_exotic_deps() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        // The shape a blocked non-registry subdep actually reaches mise in: a
+        // plain registry error nested under the resolver's summary, with
+        // aube's own `.npmrc` / `settings.toml` help attached.
+        #[derive(Debug, Error, Diagnostic)]
+        #[error(
+            "registry error for xlsx: uses exotic specifier \"https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz\" which is blocked by blockExoticSubdeps (declared by @gmickel/gno)"
+        )]
+        #[diagnostic(help("set blockExoticSubdeps=false in .npmrc / settings.toml"))]
+        struct Cause;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("failed to resolve dependencies")]
+        struct TopErr {
+            #[source]
+            source: Cause,
+        }
+
+        let report = miette::Report::new(TopErr { source: Cause });
+        let msg = build_aube_install_error_message(&report, "npm:@gmickel/gno");
+        assert!(msg.contains("caused by: registry error for xlsx"));
+        assert!(msg.contains("allow_exotic_deps = true"));
+        assert!(msg.contains("\"npm:@gmickel/gno\""));
+        // aube's help names the config files mise generates and overwrites, so
+        // it must not be the remedy the user is told to follow.
+        assert!(!msg.contains("help: set blockExoticSubdeps=false"));
     }
 
     #[test]
@@ -3255,6 +3345,71 @@ pkg@1.2.0 '1.2.0'
         // half-written project behind for a later step to trip over.
         assert!(!install_path.join("package.json").exists());
         assert!(!install_path.join(".config/aube/config.toml").exists());
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_unblocks_exotic_deps_when_asked() {
+        let backend = create_npm_backend("@gmickel/gno");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-gno").join("1.0.0");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options
+            .opts
+            .insert("allow_exotic_deps".to_string(), toml::Value::Boolean(true));
+        let options = NpmOptions::new(&raw_options);
+        let allow_builds = options.allow_builds().unwrap();
+
+        backend
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
+            .unwrap();
+
+        let config: toml::Table = toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(config["blockExoticSubdeps"], toml::Value::Boolean(false));
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_leaves_exotic_deps_blocked_by_default() {
+        let backend = create_npm_backend("@gmickel/gno");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-gno").join("1.0.0");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let raw_options = ToolVersionOptions::default();
+        let options = NpmOptions::new(&raw_options);
+        let allow_builds = options.allow_builds().unwrap();
+
+        backend
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
+            .unwrap();
+
+        let config: toml::Table = toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap();
+        // Absent rather than `true`: aube's own default stays in charge, and a
+        // stricter org-managed config can still win.
+        assert!(!config.contains_key("blockExoticSubdeps"));
+    }
+
+    #[test]
+    fn test_allow_exotic_deps_defaults_off_and_rejects_non_bool() {
+        let empty = ToolVersionOptions::default();
+        assert!(!NpmOptions::new(&empty).allow_exotic_deps().unwrap());
+
+        let mut string_true = ToolVersionOptions::default();
+        string_true.opts.insert(
+            "allow_exotic_deps".to_string(),
+            toml::Value::String("true".into()),
+        );
+        assert!(NpmOptions::new(&string_true).allow_exotic_deps().unwrap());
+
+        let mut bad = ToolVersionOptions::default();
+        bad.opts
+            .insert("allow_exotic_deps".to_string(), toml::Value::Integer(1));
+        assert!(NpmOptions::new(&bad).allow_exotic_deps().is_err());
     }
 
     #[test]
