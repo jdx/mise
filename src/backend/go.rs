@@ -220,7 +220,14 @@ impl Backend for GoBackend {
         let go = self.spawn_program(&ctx.config, Some(&ctx.ts), "go").await;
 
         let install = async |v| {
-            let mut cmd = CmdLineRunner::new(&go).arg("install").arg("-mod=readonly");
+            // `-mod=mod` overrides a `-mod=vendor` that a project's GOFLAGS would
+            // otherwise leak into this install (#7052), and unlike `-mod=readonly`
+            // it still installs a tool whose published go.mod is not fully tidy,
+            // which `go install pkg@version` otherwise rejects with
+            // "updates to go.mod needed, disabled by -mod=readonly". The tool
+            // module lives in the read-only module cache, so nothing on disk is
+            // modified either way.
+            let mut cmd = CmdLineRunner::new(&go).arg("install").arg("-mod=mod");
 
             if let Some(tags) = opts.tags() {
                 cmd = cmd.arg("-tags").arg(tags);
