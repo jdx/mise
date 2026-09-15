@@ -240,16 +240,18 @@ fn probe(store: &Store, fetch_from: &str, branch: &str) -> Result<RepoState> {
 
 /// How to clear the paths an adoption left undecided.
 ///
-/// A blanket choice only decides conflicts. Other holds — invalid incoming
-/// TOML, a directory where the repository has a file, staged git changes —
-/// each need their own fix, so `--take-remote-all` is offered only when every
-/// undecided path is a conflict it would actually resolve.
+/// A blanket choice decides conflicts and nothing else. Other holds — invalid
+/// incoming TOML, a directory where the repository has a file, staged git
+/// changes — each need their own fix. Their number is not known here: when
+/// conflicts exist, the apply stops before computing them and reports the
+/// conflict count as its held count. So the offer is scoped to what it does
+/// decide rather than implying it clears every undecided path.
 fn undecided_advice(undecided: usize, conflicts: usize) -> String {
     if undecided == 0 {
         return String::new();
     }
-    let blanket = if conflicts == undecided {
-        ", `mise dot pull --take-remote-all` takes the repository's version of every one"
+    let blanket = if conflicts > 0 {
+        ", `mise dot pull --take-remote-all` takes the repository's version of every conflicting file"
     } else {
         ""
     };
@@ -561,24 +563,28 @@ mod preview_tests {
     use crate::system::history::tracked::TrackedEntry;
 
     #[test]
-    fn blanket_resolution_is_offered_only_when_every_undecided_path_is_a_conflict() {
-        // Every undecided path is a conflict: the blanket command clears them all.
-        let all = undecided_advice(3, 3);
-        assert!(all.contains("3 path(s) need a decision"));
-        assert!(all.contains("--take-remote-all"));
+    fn blanket_resolution_is_scoped_to_conflicts_and_never_promises_the_rest() {
+        // With conflicts present, the blanket command is worth offering, but
+        // only ever as covering the conflicting files. A path held for another
+        // reason is not cleared by it, and when conflicts exist the apply has
+        // not yet counted those holds, so the message must not imply a total.
+        for (undecided, conflicts) in [(3, 3), (3, 1)] {
+            let advice = undecided_advice(undecided, conflicts);
+            assert!(advice.contains(&format!("{undecided} path(s) need a decision")));
+            assert!(advice.contains("--take-remote-all"));
+            assert!(advice.contains("every conflicting file"));
+            assert!(!advice.contains("version of every one"));
+            // the per-path commands stay, each separately runnable
+            assert!(advice.contains("`mise dot pull --take-remote <path>`"));
+            assert!(advice.contains("`mise dot pull --keep-local <path>`"));
+            // and status is what explains why each path is held
+            assert!(advice.contains("lists them and why"));
+        }
 
-        // Some paths are held for reasons a resolution cannot fix (invalid
-        // incoming TOML, a directory in the way, staged git changes). Offering
-        // the blanket command would promise a fix it does not deliver.
-        let mixed = undecided_advice(3, 1);
-        assert!(mixed.contains("3 path(s) need a decision"));
-        assert!(!mixed.contains("--take-remote-all"));
-        // the per-path commands still apply, and each is separately runnable
-        assert!(mixed.contains("`mise dot pull --take-remote <path>`"));
-        assert!(mixed.contains("`mise dot pull --keep-local <path>`"));
-
-        // No conflicts at all, only other holds.
-        assert!(!undecided_advice(2, 0).contains("--take-remote-all"));
+        // Nothing is a conflict: the blanket command would decide nothing.
+        let holds_only = undecided_advice(2, 0);
+        assert!(holds_only.contains("2 path(s) need a decision"));
+        assert!(!holds_only.contains("--take-remote-all"));
 
         // Nothing undecided: no advice to give.
         assert_eq!(undecided_advice(0, 0), "");
