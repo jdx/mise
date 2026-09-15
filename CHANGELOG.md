@@ -1,5 +1,55 @@
 # Changelog
 
+## [2026.9.10](https://github.com/jdx/mise/compare/v2026.9.9..v2026.9.10) - 2026-09-15
+
+### 🚀 Features
+
+- **(bootstrap)** render templates in systemd unit and launchd agent values by @jdx in [#13227](https://github.com/jdx/mise/pull/13227)
+- **(dotfiles)** resolve every sharing conflict in one command by @jdx in [#13233](https://github.com/jdx/mise/pull/13233)
+- **(npm)** add allow_exotic_deps for non-registry dependencies by @jdx in [#13231](https://github.com/jdx/mise/pull/13231)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** keep the release date on the latest-version fast path by @jdx in [#13228](https://github.com/jdx/mise/pull/13228)
+- **(backend)** list versions from the resolved backend, not the registry's preferred one by @jdx in [#13238](https://github.com/jdx/mise/pull/13238)
+- **(brew)** do not treat tap formula requirement symbols as dependencies by @waynehoover in [#13240](https://github.com/jdx/mise/pull/13240)
+- **(dotfiles)** keep a blanket conflict choice from aborting on a directory by @jdx in [#13239](https://github.com/jdx/mise/pull/13239)
+- **(dotfiles)** hold an unsaved path instead of discarding --keep-local-all by @jdx in [#13242](https://github.com/jdx/mise/pull/13242)
+- **(exec)** speed up fish startup and restore its PATH precedence by @jdx in [#13235](https://github.com/jdx/mise/pull/13235)
+- **(task)** handle Ctrl-C on Windows instead of orphaning the task by @jdx in [#13226](https://github.com/jdx/mise/pull/13226)
+- **(task)** prefer a task's own name over another task's alias by @jdx in [#13230](https://github.com/jdx/mise/pull/13230)
+
+### 📚 Documentation
+
+- **(ci)** bump actions/checkout example to v6 for doc consistency by @Bartok9 in [#13081](https://github.com/jdx/mise/pull/13081)
+- **(dotfiles)** explain encryption key setup and first-adoption conflicts by @jdx in [#13232](https://github.com/jdx/mise/pull/13232)
+- **(pypi)** point locking limitations at the lockable options by @jdx in [#13222](https://github.com/jdx/mise/pull/13222)
+
+### 📦️ Dependency Updates
+
+- update rust crate tabled to 0.22 by @renovate[bot] in [#13209](https://github.com/jdx/mise/pull/13209)
+- update ghcr.io/jdx/mise:alpine docker digest to 9af1743 by @renovate[bot] in [#13204](https://github.com/jdx/mise/pull/13204)
+
+### Chore
+
+- **(ci)** stop renovate from proposing fedora major bumps by @jdx in [#13237](https://github.com/jdx/mise/pull/13237)
+- drop the pkl dev dependency by upgrading hk to 2.0.0 by @jdx in [#13236](https://github.com/jdx/mise/pull/13236)
+
+### Ci
+
+- **(release)** wait out an exhausted rate limit instead of leaving VERSION stale by @jdx in [#13224](https://github.com/jdx/mise/pull/13224)
+- stop unit tests timing out on hosts slower than the dedicated runner by @jdx in [#13229](https://github.com/jdx/mise/pull/13229)
+
+### New Contributors
+
+- @waynehoover made their first contribution in [#13240](https://github.com/jdx/mise/pull/13240)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`boyter/cs`](https://github.com/boyter/cs)
+
 ## [2026.9.9](https://github.com/jdx/mise/compare/v2026.9.8..v2026.9.9) - 2026-09-15
 
 ### 🚀 Features
