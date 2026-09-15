@@ -235,12 +235,25 @@ pub(crate) async fn apply_locked_with_scope(
                 // must be the file as it stands now. A freshly adopted machine
                 // has no baseline at all; an edited file has a stale one.
                 let reason = if saved.is_none() {
-                    "it has no saved version on this machine yet"
+                    "has no saved version on this machine yet"
                 } else {
-                    "it has unsaved changes"
+                    "has unsaved changes"
                 };
+                // The refusal stands either way, but as with an unusable live
+                // side a blanket choice holds just this path rather than
+                // discarding every decision it made alongside it. A path named
+                // on the command line is the user's own instruction, so it
+                // still fails the pass.
+                if blanket_chosen.contains(&local) {
+                    blanket_held.push(format!(
+                        "{path} {reason}, so run `mise dot save {path}` first",
+                        path = display_path(&local)
+                    ));
+                    keep_local.remove(&local);
+                    continue;
+                }
                 bail!(
-                    "run `mise dot save {path}` first: --keep-local publishes this machine's saved version of {path}, and {reason}",
+                    "run `mise dot save {path}` first: --keep-local publishes this machine's saved version of {path}, and it {reason}",
                     path = display_path(&local)
                 );
             }
