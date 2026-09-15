@@ -67,24 +67,37 @@ impl Shell for Pwsh {
                 }}, $true)
                 if (-not $command) {{ return ,$Arguments }}
 
+                # Only what stands *before* the separator decides where it goes: every element
+                # there contributes exactly one argument, so the separator belongs at that same
+                # offset. What follows may expand as freely as it likes -- `mise exec -- pnpm
+                # @rest` moves nothing -- which is why this counts the leading elements rather
+                # than comparing the whole list against $Arguments.
                 $elements = $command.CommandElements
                 $index = -1
                 for ($i = 1; $i -lt $elements.Count; $i++) {{
+                    $element = $elements[$i]
                     # Extent.Text is the source spelling, so a quoted '--' -- which the binder
                     # leaves alone and which is therefore already in $Arguments -- does not match.
-                    if ($elements[$i].Extent.Text -eq '--') {{ $index = $i; break }}
+                    if ($element.Extent.Text -eq '--') {{ $index = $i; break }}
+                    # `@rest` becomes some unknown number of arguments, so nothing past it can be
+                    # counted and the position is no longer knowable: stop, and leave the
+                    # arguments as they came. (`@(...)` is one argument and is not splatting.)
+                    if ($element -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                        $element.Splatted) {{
+                        break
+                    }}
                 }}
                 if ($index -lt 0) {{ return ,$Arguments }}
-                # The element list maps one-to-one onto $Arguments, minus the command name and
-                # the separator the binder took. When it does not -- a splatted @array, say --
-                # the position cannot be trusted, so leave the arguments alone.
-                if ($elements.Count - 2 -ne $Arguments.Count) {{ return ,$Arguments }}
+                $at = $index - 1
+                # Past the end means the line and $args disagree about something not modelled
+                # here; inserting on that basis would be a guess.
+                if ($at -gt $Arguments.Count) {{ return ,$Arguments }}
 
                 $restored = [System.Collections.ArrayList]::new()
-                if ($index -gt 1) {{ [void]$restored.AddRange($Arguments[0..($index - 2)]) }}
+                if ($at -gt 0) {{ [void]$restored.AddRange($Arguments[0..($at - 1)]) }}
                 [void]$restored.Add('--')
-                if ($index - 1 -lt $Arguments.Count) {{
-                    [void]$restored.AddRange($Arguments[($index - 1)..($Arguments.Count - 1)])
+                if ($at -lt $Arguments.Count) {{
+                    [void]$restored.AddRange($Arguments[$at..($Arguments.Count - 1)])
                 }}
                 return ,$restored.ToArray()
             }}

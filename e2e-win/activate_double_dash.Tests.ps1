@@ -73,6 +73,31 @@ Describe 'mise activate pwsh double-dash separator' {
         $out | Should -Not -Match 'unexpected argument'
     }
 
+    # Only what stands before the separator fixes its position, so a splat after it expands
+    # freely and must not stop the repair. Counting the whole element list against $args did.
+    It 'repairs a separator followed by a splatted array' {
+        $body = @(
+            "`$childArgs = @('--version')"
+            "mise exec -- pwsh -NoProfile -File '$script:echoArgs' @childArgs"
+        ) -join "`n"
+        $out = Invoke-Activated $body $script:config
+
+        $out | Should -Match 'ARGS=--version'
+        $out | Should -Not -Match 'unexpected argument'
+    }
+
+    # A splat *before* the separator hides how many arguments precede it, so the position
+    # genuinely is not knowable and the repair has to stand down rather than guess.
+    It 'leaves a separator preceded by a splatted array alone' {
+        $body = @(
+            "`$pre = @('-C', '.')"
+            "mise exec @pre -- pwsh -NoProfile -File '$script:echoArgs' --version"
+        ) -join "`n"
+        $out = Invoke-Activated $body $script:config
+
+        $out | Should -Not -Match 'ARGS='
+    }
+
     # PowerShell unrolls an array on output, so a repair that hands the arguments back
     # without re-wrapping them returns a bare string for a single argument - and the
     # wrapper then indexes into that string a character at a time, running `mise -`.
