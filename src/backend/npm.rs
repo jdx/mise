@@ -62,6 +62,18 @@ enum AllowBuilds {
     Packages(Vec<String>),
 }
 
+/// How far a tool opts out of aube's non-registry-source gate.
+/// `Packages` is the scoped form and the one to prefer: it names the
+/// dependencies allowed an exotic source and leaves the rest of the graph
+/// gated. `All` drops the gate for everything the tool pulls in, now and
+/// after any future update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AllowExoticDeps {
+    None,
+    All,
+    Packages(Vec<String>),
+}
+
 impl<'a> NpmOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
@@ -103,12 +115,60 @@ impl<'a> NpmOptions<'a> {
         self.bool_option("allow_low_downloads")
     }
 
-    /// Whether dependencies in this tool's graph may come from non-registry
-    /// sources (`git+`, `file:`, or a direct tarball URL). aube blocks them by
-    /// default via `blockExoticSubdeps`; some packages legitimately depend on
-    /// one, e.g. a package the registry no longer carries a safe release of.
-    fn allow_exotic_deps(&self) -> eyre::Result<bool> {
-        self.bool_option("allow_exotic_deps")
+    /// Which dependencies in this tool's graph may come from non-registry
+    /// sources (`git+`, `file:`, `exec:`, or a direct tarball URL). aube
+    /// blocks them by default via `blockExoticSubdeps`; some packages
+    /// legitimately depend on one, e.g. a package the registry no longer
+    /// carries a safe release of.
+    ///
+    /// A list names the exempt packages and is what the docs steer people
+    /// to; `true` is the blunt form that exempts the whole graph.
+    fn allow_exotic_deps(&self) -> eyre::Result<AllowExoticDeps> {
+        let Some(value) = self.values.raw().opts.get("allow_exotic_deps") else {
+            return Ok(AllowExoticDeps::None);
+        };
+        match value {
+            toml::Value::Boolean(true) => Ok(AllowExoticDeps::All),
+            toml::Value::Boolean(false) => Ok(AllowExoticDeps::None),
+            toml::Value::String(value) if value.eq_ignore_ascii_case("true") => {
+                Ok(AllowExoticDeps::All)
+            }
+            toml::Value::String(value) if value.eq_ignore_ascii_case("false") => {
+                Ok(AllowExoticDeps::None)
+            }
+            toml::Value::String(value) => Ok(Self::canonical_exotic_packages(vec![value.clone()])),
+            toml::Value::Array(values) => {
+                let packages = values
+                    .iter()
+                    .map(|value| {
+                        value.as_str().map(str::to_string).ok_or_else(|| {
+                            eyre::eyre!("allow_exotic_deps array must contain only strings")
+                        })
+                    })
+                    .collect::<eyre::Result<Vec<_>>>()?;
+                Ok(Self::canonical_exotic_packages(packages))
+            }
+            value => Err(eyre::eyre!(
+                "allow_exotic_deps must be true, false, a string, or array, got {value}"
+            )),
+        }
+    }
+
+    fn canonical_exotic_packages(mut packages: Vec<String>) -> AllowExoticDeps {
+        Self::canonicalize_string_list(&mut packages);
+        if packages.is_empty() {
+            AllowExoticDeps::None
+        } else {
+            AllowExoticDeps::Packages(packages)
+        }
+    }
+
+    fn canonical_allow_exotic_deps_lockfile_value(&self) -> eyre::Result<Option<String>> {
+        Ok(match self.allow_exotic_deps()? {
+            AllowExoticDeps::None => None,
+            AllowExoticDeps::All => Some("true".into()),
+            AllowExoticDeps::Packages(packages) => Some(format!("{packages:?}")),
+        })
     }
 
     /// Parse a boolean tool option, accepting the TOML boolean and the string
@@ -258,6 +318,10 @@ impl<'a> NpmOptions<'a> {
                     self.canonical_allow_builds_lockfile_value().ok().flatten()
                 } else if key == "trust_policy_excludes" {
                     self.canonical_trust_policy_excludes_lockfile_value()
+                        .ok()
+                        .flatten()
+                } else if key == "allow_exotic_deps" {
+                    self.canonical_allow_exotic_deps_lockfile_value()
                         .ok()
                         .flatten()
                 } else {
@@ -1590,14 +1654,24 @@ impl NPMBackend {
                 toml::Value::Array(vec![toml::Value::String(self.tool_name())]),
             );
         }
-        if allow_exotic_deps {
-            // aube has no per-package form of this gate, so opting in trusts
-            // every non-registry specifier in the tool's graph. Only written
-            // when asked: leaving the key out keeps aube's default.
-            config.insert(
-                "blockExoticSubdeps".to_string(),
-                toml::Value::Boolean(false),
-            );
+        match allow_exotic_deps {
+            // Nothing written: aube's own default stays in charge, so a
+            // stricter org-managed config still wins.
+            AllowExoticDeps::None => {}
+            // Keep the gate on and name the exceptions, so a dependency
+            // added by a later update is still stopped.
+            AllowExoticDeps::Packages(packages) => {
+                config.insert(
+                    "blockExoticSubdepsExclude".to_string(),
+                    toml::Value::Array(packages.into_iter().map(toml::Value::String).collect()),
+                );
+            }
+            AllowExoticDeps::All => {
+                config.insert(
+                    "blockExoticSubdeps".to_string(),
+                    toml::Value::Boolean(false),
+                );
+            }
         }
         Ok(config)
     }
@@ -2146,10 +2220,12 @@ fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> St
              tarball URL rather than the npm registry, which aube blocks by default.\n\n  \
              Review where that dependency actually comes from before allowing it — an \
              attacker-controlled URL in a transitive dependency is a supply-chain foothold the \
-             registry's own protections never see. Then set `allow_exotic_deps` for this tool:\n  \
-             \"{tool_full}\" = {{ version = \"latest\", allow_exotic_deps = true }}\n\n  \
-             aube has no per-package form of this gate, so it trusts every non-registry \
-             specifier in this tool's graph."
+             registry's own protections never see. Then list it in `allow_exotic_deps` — the \
+             package name is in the error above:\n  \
+             \"{tool_full}\" = {{ version = \"latest\", allow_exotic_deps = [\"<package>\"] }}\n\n  \
+             Every other package in the graph stays gated, including one a later update adds. \
+             `allow_exotic_deps = true` exempts the whole graph instead and should be a last \
+             resort."
         ));
     } else if let Some(help) = err.help() {
         msg.push_str(&format!("\n  help: {help}"));
@@ -2465,7 +2541,8 @@ mod tests {
         let report = miette::Report::new(TopErr { source: Cause });
         let msg = build_aube_install_error_message(&report, "npm:@gmickel/gno");
         assert!(msg.contains("caused by: registry error for xlsx"));
-        assert!(msg.contains("allow_exotic_deps = true"));
+        // Steers to the scoped list, not the whole-graph switch.
+        assert!(msg.contains("allow_exotic_deps = [\"<package>\"]"));
         assert!(msg.contains("\"npm:@gmickel/gno\""));
         // aube's help names the config files mise generates and overwrites, so
         // it must not be the remedy the user is told to follow.
@@ -3347,69 +3424,144 @@ pkg@1.2.0 '1.2.0'
         assert!(!install_path.join(".config/aube/config.toml").exists());
     }
 
-    #[test]
-    fn test_write_aube_embed_project_unblocks_exotic_deps_when_asked() {
+    fn write_gno_project(raw_options: &ToolVersionOptions) -> toml::Table {
         let backend = create_npm_backend("@gmickel/gno");
         let tmp = tempfile::tempdir().unwrap();
         let install_path = tmp.path().join("npm-gno").join("1.0.0");
         crate::file::create_dir_all(&install_path).unwrap();
-        let mut raw_options = ToolVersionOptions::default();
-        raw_options
-            .opts
-            .insert("allow_exotic_deps".to_string(), toml::Value::Boolean(true));
-        let options = NpmOptions::new(&raw_options);
+        let options = NpmOptions::new(raw_options);
         let allow_builds = options.allow_builds().unwrap();
-
         backend
             .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
             .unwrap();
-
-        let config: toml::Table = toml::from_str(
+        toml::from_str(
             &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
         )
-        .unwrap();
-        assert_eq!(config["blockExoticSubdeps"], toml::Value::Boolean(false));
+        .unwrap()
     }
 
     #[test]
-    fn test_write_aube_embed_project_leaves_exotic_deps_blocked_by_default() {
-        let backend = create_npm_backend("@gmickel/gno");
-        let tmp = tempfile::tempdir().unwrap();
-        let install_path = tmp.path().join("npm-gno").join("1.0.0");
-        crate::file::create_dir_all(&install_path).unwrap();
-        let raw_options = ToolVersionOptions::default();
-        let options = NpmOptions::new(&raw_options);
-        let allow_builds = options.allow_builds().unwrap();
+    fn test_write_aube_embed_project_scopes_exotic_deps_to_listed_packages() {
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
+            "allow_exotic_deps".to_string(),
+            toml::Value::Array(vec![toml::Value::String("xlsx".into())]),
+        );
 
-        backend
-            .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
-            .unwrap();
+        let config = write_gno_project(&raw_options);
 
-        let config: toml::Table = toml::from_str(
-            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
-        )
-        .unwrap();
-        // Absent rather than `true`: aube's own default stays in charge, and a
-        // stricter org-managed config can still win.
+        // The gate itself stays on: only the named package is exempt, so a
+        // non-registry dependency a later update adds is still blocked.
+        assert_eq!(
+            config["blockExoticSubdepsExclude"],
+            toml::Value::Array(vec![toml::Value::String("xlsx".to_string())])
+        );
         assert!(!config.contains_key("blockExoticSubdeps"));
     }
 
     #[test]
-    fn test_allow_exotic_deps_defaults_off_and_rejects_non_bool() {
-        let empty = ToolVersionOptions::default();
-        assert!(!NpmOptions::new(&empty).allow_exotic_deps().unwrap());
-
-        let mut string_true = ToolVersionOptions::default();
-        string_true.opts.insert(
+    fn test_write_aube_embed_project_accepts_a_bare_exotic_package_string() {
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
             "allow_exotic_deps".to_string(),
-            toml::Value::String("true".into()),
+            toml::Value::String("xlsx".into()),
         );
-        assert!(NpmOptions::new(&string_true).allow_exotic_deps().unwrap());
 
-        let mut bad = ToolVersionOptions::default();
-        bad.opts
-            .insert("allow_exotic_deps".to_string(), toml::Value::Integer(1));
-        assert!(NpmOptions::new(&bad).allow_exotic_deps().is_err());
+        let config = write_gno_project(&raw_options);
+
+        // A bare string is the one-package list, matching `allow_builds`.
+        // `"true"`/`"false"` keep their boolean meaning and are covered by
+        // `test_allow_exotic_deps_parses_every_form`.
+        assert_eq!(
+            config["blockExoticSubdepsExclude"],
+            toml::Value::Array(vec![toml::Value::String("xlsx".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_unblocks_every_exotic_dep_when_asked() {
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options
+            .opts
+            .insert("allow_exotic_deps".to_string(), toml::Value::Boolean(true));
+
+        let config = write_gno_project(&raw_options);
+
+        assert_eq!(config["blockExoticSubdeps"], toml::Value::Boolean(false));
+        assert!(!config.contains_key("blockExoticSubdepsExclude"));
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_leaves_exotic_deps_blocked_by_default() {
+        let config = write_gno_project(&ToolVersionOptions::default());
+        // Neither key written: aube's own default stays in charge, and a
+        // stricter org-managed config can still win.
+        assert!(!config.contains_key("blockExoticSubdeps"));
+        assert!(!config.contains_key("blockExoticSubdepsExclude"));
+    }
+
+    #[test]
+    fn test_allow_exotic_deps_parses_every_form() {
+        fn parse(value: toml::Value) -> eyre::Result<AllowExoticDeps> {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts.insert("allow_exotic_deps".to_string(), value);
+            NpmOptions::new(&opts).allow_exotic_deps()
+        }
+
+        assert_eq!(
+            NpmOptions::new(&ToolVersionOptions::default())
+                .allow_exotic_deps()
+                .unwrap(),
+            AllowExoticDeps::None
+        );
+        assert_eq!(
+            parse(toml::Value::Boolean(true)).unwrap(),
+            AllowExoticDeps::All
+        );
+        assert_eq!(
+            parse(toml::Value::String("true".into())).unwrap(),
+            AllowExoticDeps::All
+        );
+        assert_eq!(
+            parse(toml::Value::String("false".into())).unwrap(),
+            AllowExoticDeps::None
+        );
+        // Duplicates collapse and order is canonical, so the value written to
+        // `mise.lock` doesn't churn on a reordered config.
+        assert_eq!(
+            parse(toml::Value::Array(vec![
+                toml::Value::String("xlsx".into()),
+                toml::Value::String("canvas".into()),
+                toml::Value::String("xlsx".into()),
+            ]))
+            .unwrap(),
+            AllowExoticDeps::Packages(vec!["canvas".into(), "xlsx".into()])
+        );
+        // An empty list is not a silent "allow everything".
+        assert_eq!(
+            parse(toml::Value::Array(vec![])).unwrap(),
+            AllowExoticDeps::None
+        );
+        assert!(parse(toml::Value::Integer(1)).is_err());
+        assert!(parse(toml::Value::Array(vec![toml::Value::Integer(1)])).is_err());
+    }
+
+    #[test]
+    fn test_allow_exotic_deps_lockfile_value_is_canonical() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "allow_exotic_deps".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("xlsx".into()),
+                toml::Value::String("canvas".into()),
+            ]),
+        );
+        assert_eq!(
+            NpmOptions::new(&opts)
+                .lockfile_options()
+                .get("allow_exotic_deps"),
+            Some(&"[\"canvas\", \"xlsx\"]".to_string())
+        );
     }
 
     #[test]
