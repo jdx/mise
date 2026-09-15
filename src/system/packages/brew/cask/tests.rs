@@ -6765,6 +6765,52 @@ fn app_sources_reject_case_only_target_collisions() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn app_sources_reject_unicode_equivalent_target_collisions() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let appdir = tmp.path().canonicalize()?.join("Applications");
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, &appdir);
+    let mut cask = test_cask("example", "1.0.0");
+    for (first, second) in [
+        ("Caf\u{e9}.app", "Cafe\u{301}.app"),
+        ("Cafe\u{301}.app", "Caf\u{e9}.app"),
+        ("CAF\u{c9}.app", "cafe\u{301}.app"),
+        ("\u{ac00}.app", "\u{1100}\u{1161}.app"),
+    ] {
+        for artifact in [
+            serde_json::json!({"app": [format!("two/{second}")]}),
+            serde_json::json!({"app": ["two/Other.app", {"target": second}]}),
+            serde_json::json!({"app": ["two/Other.app", {"target": appdir.join(second)}]}),
+            // Different app directories still collide in the shared Caskroom.
+            serde_json::json!({"app": ["two/Other.app", {"target": appdir.join("subdir").join(second)}]}),
+        ] {
+            cask.artifacts = vec![
+                serde_json::json!({"app": [format!("one/{first}")]}),
+                artifact,
+            ];
+            let error = cask_artifacts(&cask)?
+                .app_target_paths()
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("duplicate app target"), "{error}");
+            assert!(error.contains(second), "{error}");
+        }
+    }
+    // Preserve original spelling and do not strip accents from distinct names.
+    cask.artifacts = vec![
+        serde_json::json!({"app": ["one/Cafe\u{301}.app"]}),
+        serde_json::json!({"app": ["two/Cafe.app"]}),
+    ];
+    assert_eq!(
+        cask_artifacts(&cask)?.app_target_paths()?,
+        [appdir.join("Cafe\u{301}.app"), appdir.join("Cafe.app")]
+    );
+    assert!(!appdir.exists());
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn nested_app_source_installs_under_bundle_basename() -> Result<()> {

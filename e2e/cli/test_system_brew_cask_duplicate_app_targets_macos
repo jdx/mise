@@ -16,6 +16,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 root = Path(sys.argv[1]).resolve()
 prefix = root / "brew-prefix"
 requests = []
+cases = {
+    "case-only": ("Example.app", "example.app"),
+    "unicode": ("Caf\u00e9.app", "Cafe\u0301.app"),
+    "unicode-case": ("CAF\u00c9.app", "cafe\u0301.app"),
+}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -24,14 +29,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         requests.append(self.path)
-        if self.path != "/api/cask/duplicate-apps.json":
+        token = self.path.removeprefix("/api/cask/").removesuffix(".json")
+        if self.path != f"/api/cask/{token}.json" or token not in cases:
             self.send_error(500, "must reject duplicate targets before fetching dependencies or archive")
             return
+        first, second = cases[token]
         body = json.dumps({
-            "token": "duplicate-apps", "version": "1", "sha256": "no_check",
+            "token": token, "version": "1", "sha256": "no_check",
             "url": f"{base}/payload.zip",
             "depends_on": {"cask": ["must-not-install"]},
-            "artifacts": [{"app": ["one/Example.app"]}, {"app": ["two/example.app"]}],
+            "artifacts": [{"app": [f"one/{first}"]}, {"app": [f"two/{second}"]}],
         }).encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
@@ -41,26 +48,27 @@ class Handler(BaseHTTPRequestHandler):
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 base = f"http://127.0.0.1:{server.server_port}"
-(root / "mise.toml").write_text(
-    '[settings]\nexperimental = true\n[bootstrap.packages]\n"brew-cask:duplicate-apps" = "latest"\n'
-)
 env = dict(os.environ, MISE_SYSTEM_BREW_PREFIX=str(prefix),
            MISE_BREW_CASK_OPT_APPDIR=str(prefix / "Applications"),
            MISE_URL_REPLACEMENTS=json.dumps({"https://formulae.brew.sh": base}))
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
 try:
-    for options in [("--dry-run",), ()]:
-        command = ["mise", "bootstrap", "packages", "apply", "--yes", *options]
-        result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=30)
-        output = result.stdout + result.stderr
-        print("$ " + " ".join(command), flush=True)
-        print(output, end="", flush=True)
-        assert result.returncode != 0, output
-        assert "duplicate app target" in output, output
-        assert "example.app" in output, output
-        assert not prefix.exists(), "duplicate targets must fail before prefix or Caskroom creation"
-    assert requests and set(requests) == {"/api/cask/duplicate-apps.json"}, requests
+    for token, (_, second) in cases.items():
+        (root / "mise.toml").write_text(
+            f'[settings]\nexperimental = true\n[bootstrap.packages]\n"brew-cask:{token}" = "latest"\n'
+        )
+        for options in [("--dry-run",), ()]:
+            command = ["mise", "bootstrap", "packages", "apply", "--yes", *options]
+            result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=30)
+            output = result.stdout + result.stderr
+            print("$ " + " ".join(command), flush=True)
+            print(output, end="", flush=True)
+            assert result.returncode != 0, output
+            assert "duplicate app target" in output, output
+            assert second in output, output
+            assert not prefix.exists(), "duplicate targets must fail before prefix or Caskroom creation"
+    assert set(requests) == {f"/api/cask/{token}.json" for token in cases}, requests
 finally:
     server.shutdown()
     thread.join()

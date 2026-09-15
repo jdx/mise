@@ -12,6 +12,7 @@ use eyre::{WrapErr, bail, eyre};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
 
 use super::api::RubySourceChecksum;
@@ -342,9 +343,11 @@ impl CaskArtifacts {
             let bundle = app_bundle_name(name)?;
             // Explicit targets can differ in appdir but still overwrite the
             // same basename in the shared Caskroom staging directory. Reject
-            // case-only differences conservatively even on case-sensitive
-            // volumes: the appdir and Caskroom may use different filesystems.
-            if targets.contains(&target) || !bundle_names.insert(bundle.to_lowercase()) {
+            // case-only and canonically equivalent Unicode names conservatively:
+            // the appdir and Caskroom may use different filesystems. Normalize
+            // only the comparison key, preserving the original install paths.
+            let bundle_key = bundle.to_lowercase().nfd().collect::<String>();
+            if targets.contains(&target) || !bundle_names.insert(bundle_key) {
                 bail!(
                     "brew-cask: duplicate app target '{}' (Caskroom bundle '{bundle}')",
                     target.display()
