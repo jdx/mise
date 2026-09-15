@@ -92,7 +92,8 @@ assert_succeed 'mise dot save'
 assert_succeed 'mise dot sync'
 assert_succeed 'b dot sync --fetch-only'
 echo b-one-4 >"$second/.one"
-assert_fail 'b dot pull --keep-local-all --yes' 'before choosing --keep-local'
+assert_fail 'b dot pull --keep-local-all --yes' 'mise dot save'
+assert_fail 'b dot pull --keep-local-all --yes' 'it has unsaved changes'
 assert "cat $second/.one" b-one-4
 # the same unsaved conflict is still resolvable the other way
 assert_succeed 'b dot pull --take-remote-all --yes'

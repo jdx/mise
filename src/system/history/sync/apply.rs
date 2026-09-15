@@ -204,7 +204,19 @@ pub(crate) async fn apply_locked_with_scope(
             if keep_local.contains(&local)
                 && (live != saved || live_permissions(&local)? != saved_mode)
             {
-                bail!("save {} before choosing --keep-local", display_path(&local));
+                // Keeping the local side resolves the conflict by publishing
+                // this machine's *saved* version, so there must be one, and it
+                // must be the file as it stands now. A freshly adopted machine
+                // has no baseline at all; an edited file has a stale one.
+                let reason = if saved.is_none() {
+                    "it has no saved version on this machine yet"
+                } else {
+                    "it has unsaved changes"
+                };
+                bail!(
+                    "run `mise dot save {path}` first: --keep-local publishes this machine's saved version of {path}, and {reason}",
+                    path = display_path(&local)
+                );
             }
             let remote = match status.upstream_commit.as_deref() {
                 Some(head) => repo
