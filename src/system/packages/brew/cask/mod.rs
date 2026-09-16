@@ -538,7 +538,7 @@ impl BrewCaskManager {
         }
         let mpr = MultiProgressReport::get();
         mpr.init_footer(false, "install", pkgs.len());
-        prewarm_downloads(pkgs, mode).await;
+        prewarm_downloads(pkgs, mode, &mpr).await;
         for pkg in pkgs {
             let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
             match self
@@ -1075,8 +1075,7 @@ impl SystemPackageManager for BrewCaskManager {
 ///
 /// Every failure is swallowed. This is an optimisation, and the serial pass
 /// reports the real error with its proper context and progress reporting.
-#[allow(clippy::manual_async_fn)]
-async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode) {
+async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode, mpr: &MultiProgressReport) {
     let jobs = crate::jobs::normalize(crate::config::Settings::get().jobs);
     if jobs <= 1 || pkgs.len() <= 1 {
         return;
@@ -1102,6 +1101,20 @@ async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode) {
         let Ok(artifacts) = cask_artifacts(&cask) else {
             continue;
         };
+        // unsupported on this platform: the install path rejects it, so
+        // downloading would be pure waste
+        if validate_platform_support(&cask, &artifacts).is_err() {
+            continue;
+        }
+        // conflicts with something already installed: likewise rejected
+        if cask
+            .conflicts_with
+            .cask
+            .iter()
+            .any(|conflict| !installed_versions(conflict).is_empty())
+        {
+            continue;
+        }
         let installed = mise_installed_cask_version(&cask).ok().flatten();
         if matches!(
             installed_skip_reason(&cask, &artifacts, installed.as_deref(), mode),
@@ -1116,10 +1129,24 @@ async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode) {
         return;
     }
 
+    // Report each download. Without this the footer sits at 0/N for the whole
+    // pass with no byte progress, which on a cold multi-cask run looks stalled
+    // precisely when this optimisation is doing the most work.
+    let reports: Vec<Box<dyn SingleReport>> = candidates
+        .iter()
+        .map(|cask| mpr.add(&format!("brew-cask:{} (download)", cask.token)))
+        .collect();
+
     let futures: Vec<_> = candidates
         .iter()
-        .map(|cask| async move {
-            let _ = fetch_archive(cask, None).await;
+        .zip(reports.iter())
+        .map(|(cask, pr)| async move {
+            match fetch_archive(cask, Some(&**pr)).await {
+                Ok(_) => pr.finish_with_message("downloaded".to_string()),
+                // Swallowed on purpose: this is an optimisation, and the serial
+                // pass reports the real error with its full context.
+                Err(_) => pr.finish_with_message("deferred".to_string()),
+            }
         })
         .collect();
     let mut running = super::fetch::concurrently(futures, jobs);
