@@ -564,14 +564,19 @@ fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
     Some(ParsedContentRange::Bytes { start, end, total })
 }
 
-fn fetch_redirect_policy() -> reqwest::redirect::Policy {
+/// Follow redirects as reqwest normally would, but refuse to step down from
+/// HTTPS to HTTP part-way through.
+///
+/// `what` names the request in the error, since the two clients carry very
+/// different traffic.
+fn https_downgrade_policy(what: &'static str) -> reqwest::redirect::Policy {
     use reqwest::redirect::Policy;
 
-    Policy::custom(|attempt| {
+    Policy::custom(move |attempt| {
         if is_https_downgrade(attempt.previous(), attempt.url()) {
-            attempt.error(std::io::Error::other(
-                "refusing to redirect a remote version request from HTTPS to HTTP",
-            ))
+            attempt.error(std::io::Error::other(format!(
+                "refusing to redirect {what} from HTTPS to HTTP"
+            )))
         } else {
             Policy::default().redirect(attempt)
         }
@@ -618,8 +623,14 @@ impl Client {
     fn build(timeout: Duration, kind: ClientKind) -> Result<reqwest::Client> {
         let builder = Self::_new().read_timeout(timeout).connect_timeout(timeout);
         let builder = match kind {
-            ClientKind::Http => builder,
-            ClientKind::Fetch => builder.redirect(fetch_redirect_policy()),
+            // Downloads are checksum-verified where a checksum is known, but
+            // not every caller has one, and a silent downgrade is worth
+            // refusing on its own. Redirects are otherwise unchanged: this
+            // defers to the default policy, which is what this client used.
+            ClientKind::Http => builder.redirect(https_downgrade_policy("a download")),
+            ClientKind::Fetch => {
+                builder.redirect(https_downgrade_policy("a remote version request"))
+            }
         };
         Ok(builder.build()?)
     }
@@ -3726,8 +3737,11 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert_eq!(client.request_timeout(), Duration::from_secs(3));
     }
 
+    /// The predicate behind `https_downgrade_policy`, which both clients now
+    /// use. The rejection itself cannot be exercised here: it needs a real
+    /// HTTPS hop to redirect away from, and mockito serves plain HTTP.
     #[test]
-    fn test_fetch_redirect_policy_rejects_https_to_http_downgrades() {
+    fn test_https_downgrade_policy_rejects_https_to_http() {
         let https = Url::parse("https://example.com/versions").unwrap();
         let other_https = Url::parse("https://cdn.example.com/versions").unwrap();
         let http = Url::parse("http://cdn.example.com/versions").unwrap();
