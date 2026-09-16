@@ -188,9 +188,9 @@ Read as a schedule — a floor of _X_ requires everything below _X_ to be out of
 - **2.31 and 2.34** open up once RHEL 8 ends on **2029-05-31**.
 - **2.35 and above** wait for RHEL 9 on **2032-05-31**.
 
-This records when mise _may_ raise the floor, not when it will. The floor is 2.18 today
-and there is no plan to move it. Distros not listed here follow the same rule; if one
-ships an older glibc, use a `-musl` build.
+This records when raising the floor becomes defensible, not a schedule for doing so. The
+floor is 2.18. Distros not listed here follow the same rule; if one ships an older glibc,
+use a `-musl` build.
 
 :::
 
