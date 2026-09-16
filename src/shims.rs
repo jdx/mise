@@ -458,7 +458,7 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
             let shims = bins
                 .iter()
                 .flat_map(|bin| platform_shim_names(&mise_bin, bin))
-                .filter(|name| !shim_name_excluded(&excluded, name))
+                .filter(|name| !shim_name_excluded(excluded, name))
                 .collect::<BTreeSet<String>>();
             match write_bootstrap_shims(&mise_bin, &shims_dir, &shims, false)? {
                 None => {}
