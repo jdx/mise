@@ -636,6 +636,33 @@ mod lockfile_tests {
                 format!("ubuntu{DEFAULT_UBUNTU_VERSION}")
             )])
         );
-        assert!(url(&tv, &foreign).ends_with("-ubuntu24.04-riscv64.tar.gz"));
+        assert_eq!(
+            url(&tv, &foreign),
+            "https://download.swift.org/swift-6.3.1-release/ubuntu2404-riscv64/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04-riscv64.tar.gz"
+        );
+    }
+
+    /// The directory suffix follows the filename suffix for every architecture
+    /// that has one, not just aarch64. swift.org has only ever published
+    /// x86_64 and aarch64 Linux builds, so these URLs 404 either way — the
+    /// assertions exist so the two halves cannot drift apart unnoticed.
+    #[test]
+    fn every_suffixed_architecture_gets_a_matching_directory() {
+        let _guard = pin_platform(Some("ubuntu24.04"));
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.1");
+
+        for (platform, arch) in [
+            ("linux-x86", "x86"),
+            ("linux-riscv64", "riscv64"),
+            ("linux-loongarch64", "loongarch64"),
+        ] {
+            assert_eq!(
+                url(&tv, &target(platform)),
+                format!(
+                    "https://download.swift.org/swift-6.3.1-release/ubuntu2404-{arch}/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04-{arch}.tar.gz"
+                )
+            );
+        }
     }
 }
