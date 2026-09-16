@@ -506,6 +506,15 @@ pub(crate) fn validate_app_declaration<'a>(
     if version.trim().is_empty() {
         eyre::bail!("macos-app:{name}: 'version' must not be blank");
     }
+    // Rejected rather than trimmed: the version is interpolated into `url` and
+    // joined into install-record paths, so a value that validates must be
+    // exactly the value that gets used. Trimming here would let " latest "
+    // past the check below and put the padded form on disk.
+    if version != version.trim() {
+        eyre::bail!(
+            "macos-app:{name}: 'version' must not have leading or trailing whitespace; got '{version}'"
+        );
+    }
     if version == "latest" {
         eyre::bail!(
             "macos-app:{name}: 'url' requires an explicit 'version'; mise cannot discover versions for a direct download"
@@ -869,8 +878,10 @@ fn package_requests_from_config_files(
                 if mgr == "macos-app"
                     && let Some((url, sha256, artifact, declared_version)) = app_declaration
                 {
-                    // Validated on every platform; only the spec itself, which
-                    // nothing off unix consumes, is gated.
+                    // Validated on every platform, exactly once: AppSpec::parse
+                    // runs the same checks, so off unix — where no spec is built
+                    // — the validator is called directly instead.
+                    #[cfg(not(unix))]
                     if let Err(err) =
                         validate_app_declaration(&name, url, sha256, artifact, declared_version)
                     {
@@ -2513,6 +2524,17 @@ mod tests {
         // Presence is not enough: a whitespace-only value is not a declaration.
         assert!(validate_app_declaration("n", url, Some(digest), Some("   "), "1.0.0").is_err());
         assert!(validate_app_declaration("n", url, Some(digest), Some("N.app"), "  ").is_err());
+
+        // Padded values are rejected, not trimmed: the version is interpolated
+        // into `url` and joined into install-record paths, so " latest " must
+        // not slip past the latest check and land on disk in padded form.
+        assert!(
+            validate_app_declaration("n", url, Some(digest), Some("N.app"), " latest ").is_err()
+        );
+        assert!(
+            validate_app_declaration("n", url, Some(digest), Some("N.app"), " 1.0.0 ").is_err()
+        );
+        assert!(validate_app_declaration("n", url, Some(digest), Some("N.app"), "1.0.0").is_ok());
 
         // A blank url reads as no declaration at all, so the entry gets the
         // "needs url, sha256, artifact and version" diagnosis rather than
