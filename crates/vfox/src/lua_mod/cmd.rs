@@ -1,12 +1,15 @@
 use mlua::Table;
 use mlua::prelude::*;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 pub(crate) fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
-    let cmd = lua.create_table_from(vec![("exec", lua.create_function(exec)?)])?;
+    let cmd = lua.create_table_from(vec![
+        ("exec", lua.create_function(exec)?),
+        ("stream", lua.create_function(stream)?),
+    ])?;
     loaded.set("cmd", cmd.clone())?;
     loaded.set("vfox.cmd", cmd)?;
 
@@ -36,24 +39,44 @@ pub(crate) fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     Ok(())
 }
 
-fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
-    let (command, options) = match args.len() {
+/// Parse the shared `(command)` / `(command, options)` signature.
+fn parse_command_args(args: mlua::MultiValue, fn_name: &str) -> LuaResult<(String, Option<Table>)> {
+    match args.len() {
         1 => {
             let command: String = args.into_iter().next().unwrap().to_string()?;
-            (command, None)
+            Ok((command, None))
         }
         2 => {
             let mut iter = args.into_iter();
             let command: String = iter.next().unwrap().to_string()?;
             let options: Table = iter.next().unwrap().as_table().unwrap().clone();
-            (command, Some(options))
+            Ok((command, Some(options)))
         }
-        _ => {
-            return Err(mlua::Error::RuntimeError(
-                "cmd.exec takes 1 or 2 arguments: (command) or (command, options)".to_string(),
-            ));
-        }
+        _ => Err(mlua::Error::RuntimeError(format!(
+            "{fn_name} takes 1 or 2 arguments: (command) or (command, options)"
+        ))),
+    }
+}
+
+/// Apply the `cwd` and `env` options. Explicit env vars override the mise env.
+fn apply_options(cmd: &mut Command, options: Option<&Table>) -> LuaResult<()> {
+    let Some(options) = options else {
+        return Ok(());
     };
+    if let Ok(cwd) = options.get::<String>("cwd") {
+        cmd.current_dir(Path::new(&cwd));
+    }
+    if let Ok(env) = options.get::<Table>("env") {
+        for pair in env.pairs::<String, String>() {
+            let (key, value) = pair?;
+            cmd.env(key, value);
+        }
+    }
+    Ok(())
+}
+
+fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
+    let (command, options) = parse_command_args(args, "cmd.exec")?;
 
     let shell = cmd_shell(lua)?;
     let mut cmd = command_from_shell(&shell, &command)?;
@@ -63,27 +86,11 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
     let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[cmd.exec] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
 
-    // Apply options if provided (explicit env vars override mise env)
-    if let Some(options) = options {
-        // Set working directory if specified
-        if let Ok(cwd) = options.get::<String>("cwd") {
-            cmd.current_dir(Path::new(&cwd));
-        }
+    apply_options(&mut cmd, options.as_ref())?;
 
-        // Set environment variables if specified
-        if let Ok(env) = options.get::<Table>("env") {
-            for pair in env.pairs::<String, String>() {
-                let (key, value) = pair?;
-                cmd.env(key, value);
-            }
-        }
-
-        // Set timeout if specified (future feature)
-        if let Ok(_timeout) = options.get::<u64>("timeout") {
-            // TODO: Implement timeout functionality
-            // For now, just ignore the timeout option
-        }
-    }
+    // `Command::output()` defaults stdin to null, but an explicitly configured
+    // stdin takes precedence over that default, so `raw` can still connect it.
+    cmd.stdin(stdin_for(lua));
 
     let output = cmd
         .output()
@@ -99,6 +106,56 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
             "Command failed with status {}: {}",
             output.status, stderr
         )))
+    }
+}
+
+/// `cmd.stream` — run a command that owns the terminal: stdin connected, stdout and
+/// stderr streamed rather than captured, returning the exit status.
+///
+/// This is the supported way for a hook to run something interactive. `cmd.exec` and
+/// `os.execute` deliberately detach stdin because installs run in parallel and no
+/// single child owns the terminal (see [`stdin_for`]). `cmd.stream` resolves that by
+/// taking exclusivity instead: mise pauses the progress renderer and takes the same
+/// exclusive lock `--raw` uses, so no other mise command — and no other plugin's
+/// `os.execute` — runs while the child has the terminal.
+fn stream(lua: &Lua, args: mlua::MultiValue) -> LuaResult<i64> {
+    let (command, options) = parse_command_args(args, "cmd.stream")?;
+    let shell = cmd_shell(lua)?;
+    let mut cmd = command_from_shell(&shell, &command)?;
+    let has_mise_env = apply_mise_env(lua, &mut cmd)?;
+    debug!("[cmd.stream] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
+    apply_options(&mut cmd, options.as_ref())?;
+
+    // Interactive by definition, so all three descriptors go to the terminal.
+    cmd.stdin(Stdio::inherit());
+    cmd.stdout(Stdio::inherit());
+    cmd.stderr(Stdio::inherit());
+
+    run_under_terminal_lock(lua, cmd, true)
+}
+
+/// Run `cmd` to completion under mise's terminal lock, returning its exit status.
+///
+/// The child is moved into a Lua function so mise can run it inside its own guards
+/// and drop them deterministically when it returns. `exclusive` asks for sole use of
+/// the terminal (`cmd.stream`) rather than merely not overlapping one (`os.execute`).
+/// Without the registry hook — standalone `vfox-cli`, or unit tests — nothing else is
+/// competing for the terminal, so the command simply runs.
+fn run_under_terminal_lock(lua: &Lua, cmd: Command, exclusive: bool) -> LuaResult<i64> {
+    let slot = std::sync::Mutex::new(Some(cmd));
+    let body = lua.create_function(move |_, ()| {
+        let mut cmd = slot.lock().unwrap().take().ok_or_else(|| {
+            mlua::Error::RuntimeError("terminal lock body invoked more than once".to_string())
+        })?;
+        let status = cmd
+            .status()
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
+        Ok(status.code().unwrap_or(-1) as i64)
+    })?;
+
+    match lua.named_registry_value::<mlua::Function>("mise_terminal_lock") {
+        Ok(lock) => lock.call::<i64>((exclusive, body)),
+        Err(_) => body.call::<i64>(()),
     }
 }
 
@@ -119,10 +176,32 @@ fn apply_mise_env(lua: &Lua, cmd: &mut Command) -> LuaResult<bool> {
     }
 }
 
+/// Whether mise's `raw` setting is on, as published by `Plugin::set_raw_stdio`.
+fn raw_stdio(lua: &Lua) -> bool {
+    lua.named_registry_value::<bool>("mise_raw_stdio")
+        .unwrap_or(false)
+}
+
+/// Stdin for a hook child. Children get `/dev/null` by default: `mise install`
+/// runs tools in parallel (`jobs`, default 8), so a child reading stdin would race
+/// its siblings for the same descriptor, and its prompt would appear under progress
+/// bars where the user cannot see it. The `raw` setting is the opt-in for connecting
+/// stdio, and it serializes installs (`jobs = 1` plus an exclusive lock), which makes
+/// inheriting meaningful again. Mirrors the asdf backend, which has nulled stdin
+/// unless `raw` since it was written (`src/plugins/script_manager.rs`). (#13254)
+fn stdin_for(lua: &Lua) -> Stdio {
+    if raw_stdio(lua) {
+        Stdio::inherit()
+    } else {
+        Stdio::null()
+    }
+}
+
 /// Drop-in replacement for Lua's `os.execute` that applies mise's sanitized env
 /// (see [`apply_mise_env`]) and runs through the same shell as cmd.exec, while
-/// keeping `os.execute`'s streaming stdio (output goes to the terminal rather
-/// than being captured). Returns the process exit code (Lua 5.1 convention:
+/// keeping `os.execute`'s streaming output (stdout/stderr go to the terminal
+/// rather than being captured). Stdin follows [`stdin_for`] like `cmd.exec`:
+/// `/dev/null` unless `raw` is set. Returns the process exit code (Lua 5.1 convention:
 /// `0` on success); `os.execute()` with no argument reports shell availability.
 /// (#10282)
 fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
@@ -134,10 +213,11 @@ fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
     let mut cmd = command_from_shell(&shell, &command)?;
     let has_mise_env = apply_mise_env(lua, &mut cmd)?;
     debug!("[os.execute] command={command:?} shell={shell:?} has_mise_env={has_mise_env}");
-    let status = cmd
-        .status()
-        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
-    Ok(status.code().unwrap_or(-1) as i64)
+    cmd.stdin(stdin_for(lua));
+    // Shared, not exclusive: concurrent `os.execute` calls may overlap each other
+    // as they always have, but none of them may overlap a `cmd.stream` child that
+    // owns the terminal.
+    run_under_terminal_lock(lua, cmd, false)
 }
 
 /// Drop-in replacement for Lua's `os.getenv` that reads from the same
@@ -378,6 +458,109 @@ mod tests {
         )
         .exec()
         .unwrap();
+    }
+
+    // Hook children must not inherit stdin unless `raw` is set: installs run in
+    // parallel, so a child reading stdin would race its siblings for it. (#13254)
+    #[test]
+    #[cfg(unix)]
+    fn test_cmd_exec_nulls_stdin_by_default() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            -- `read` exits non-zero on immediate EOF, which cmd.exec raises.
+            local ok = pcall(cmd.exec, "read line")
+            assert(not ok, "expected cmd.exec child to see EOF on stdin")
+        "#,
+        )
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_os_execute_nulls_stdin_by_default() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        lua.load(
+            r#"
+            local code = os.execute("read line")
+            assert(code ~= 0, "expected os.execute child to see EOF on stdin, got " .. tostring(code))
+        "#,
+        )
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_raw_stdio_follows_registry_flag() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        // An absent flag means non-raw, so stdin is detached.
+        assert!(!raw_stdio(&lua));
+        lua.set_named_registry_value("mise_raw_stdio", true)
+            .unwrap();
+        assert!(raw_stdio(&lua));
+        lua.set_named_registry_value("mise_raw_stdio", false)
+            .unwrap();
+        assert!(!raw_stdio(&lua));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_cmd_stream_returns_exit_status() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            assert(cmd.stream("exit 0") == 0, "expected 0")
+            assert(cmd.stream("exit 7") == 7, "expected 7")
+        "#,
+        )
+        .exec()
+        .unwrap();
+    }
+
+    // When mise registers a terminal lock, both cmd.stream and os.execute must run
+    // their child through it rather than spawning directly — that runner is what
+    // holds the progress pause and the lock. (#13254)
+    #[test]
+    #[cfg(unix)]
+    fn test_terminal_lock_is_used_and_exclusivity_differs() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counter = calls.clone();
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = seen.clone();
+        let runner = lua
+            .create_function(move |_, (exclusive, body): (bool, mlua::Function)| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                recorded.lock().unwrap().push(exclusive);
+                body.call::<i64>(())
+            })
+            .unwrap();
+        lua.set_named_registry_value("mise_terminal_lock", runner)
+            .unwrap();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            assert(cmd.stream("exit 3") == 3, "expected 3")
+            assert(os.execute("exit 4") == 4, "expected 4")
+        "#,
+        )
+        .exec()
+        .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        // cmd.stream needs the terminal to itself; os.execute only needs to not
+        // overlap one that does.
+        assert_eq!(*seen.lock().unwrap(), vec![true, false]);
     }
 
     #[test]
