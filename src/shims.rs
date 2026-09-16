@@ -439,22 +439,26 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
         } else {
             dirs::shims()
         };
-        // Bootstrap shims are written outside the reshim path, so they need the same
-        // exclusion filter get_desired_shims applies. Without it a `mise env`/`x`/`run`
-        // for a missing lazy tool would restore a name reshim had just removed.
-        bins_by_dir.entry(shims_dir).or_default().extend(
-            bins.into_iter()
-                .filter(|bin| !shim_name_excluded(&Settings::get().shims.exclude, bin)),
-        );
+        bins_by_dir.entry(shims_dir).or_default().extend(bins);
     }
     if !bins_by_dir.is_empty() {
         // Locating the mise binary walks PATH, so defer it until a declaration
         // actually needs a shim.
         let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+        let excluded = &Settings::get().shims.exclude;
         for (shims_dir, bins) in bins_by_dir {
+            // Bootstrap shims are written outside the reshim path, so they need the
+            // same exclusion filter get_desired_shims applies, or a `mise env`/`x`/`run`
+            // for a missing lazy tool restores a name reshim had just removed. Filter
+            // after platform expansion, exactly as get_desired_shims does: on Windows
+            // `platform_shim_names` goes through `Path::with_extension`, which treats a
+            // version-qualified bin like `python3.12` as having extension `.12` and
+            // rewrites it to `python3.exe`. Filtering the pre-expansion name would let
+            // that unversioned shim through.
             let shims = bins
                 .iter()
                 .flat_map(|bin| platform_shim_names(&mise_bin, bin))
+                .filter(|name| !shim_name_excluded(&excluded, name))
                 .collect::<BTreeSet<String>>();
             match write_bootstrap_shims(&mise_bin, &shims_dir, &shims, false)? {
                 None => {}
