@@ -1975,13 +1975,23 @@ impl Drop for RawWriterWaiting {
 /// Async counterpart of [`raw_read_lock_blocking`].
 ///
 /// Awaiting `RAW_LOCK` directly would queue behind an *async* writer but not a sync
-/// one, whose `try_write` polls tokio never sees. Waiting out the counter first makes
-/// both kinds of writer visible to both kinds of reader.
+/// one, whose `try_write` polls tokio never sees. Consulting the counter makes both
+/// kinds of writer visible to both kinds of reader.
+///
+/// Acquires first and re-checks, rather than checking then acquiring: a writer that
+/// registers during the gap between those two steps would otherwise be bypassed by a
+/// reader that had already passed the check. Releasing the guard on that path leaves
+/// only the case where the reader held the lock before the writer arrived, which no
+/// amount of gating can avoid — an `RwLock` writer always waits for current readers.
 pub(crate) async fn raw_read_lock() -> tokio::sync::RwLockReadGuard<'static, ()> {
-    while RAW_WRITERS_WAITING.load(Ordering::Acquire) > 0 {
+    loop {
+        let guard = RAW_LOCK.read().await;
+        if RAW_WRITERS_WAITING.load(Ordering::Acquire) == 0 {
+            return guard;
+        }
+        drop(guard);
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    RAW_LOCK.read().await
 }
 
 /// Async counterpart of [`raw_write_lock_blocking`]. Registers as a waiting writer so
@@ -1997,10 +2007,12 @@ pub(crate) async fn raw_write_lock() -> tokio::sync::RwLockWriteGuard<'static, (
 /// Yields to a writer already waiting, so exclusive acquisition cannot be starved.
 pub(crate) fn raw_read_lock_blocking() -> tokio::sync::RwLockReadGuard<'static, ()> {
     loop {
-        if RAW_WRITERS_WAITING.load(Ordering::Acquire) == 0
-            && let Ok(guard) = RAW_LOCK.try_read()
-        {
-            return guard;
+        if let Ok(guard) = RAW_LOCK.try_read() {
+            // Acquire-then-verify, for the reason given on `raw_read_lock`.
+            if RAW_WRITERS_WAITING.load(Ordering::Acquire) == 0 {
+                return guard;
+            }
+            drop(guard);
         }
         thread::sleep(Duration::from_millis(10));
     }
@@ -2214,6 +2226,46 @@ mod tests {
         drop(waiting);
         reader.await.unwrap();
         assert!(acquired.load(Ordering::SeqCst));
+    }
+
+    // Readers acquire then verify, so a writer registering mid-acquisition is not
+    // bypassed. Exercising that interleaving deterministically would need a test-only
+    // injection point between the two steps; this covers the property it protects —
+    // continuous reader churn must not keep a writer out. (#13254)
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn raw_write_lock_is_not_starved_by_reader_churn() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::{Duration, Instant};
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let churn: Vec<_> = (0..4)
+            .map(|_| {
+                let stop = stop.clone();
+                tokio::spawn(async move {
+                    while !stop.load(Ordering::SeqCst) {
+                        let guard = super::raw_read_lock().await;
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                        drop(guard);
+                    }
+                })
+            })
+            .collect();
+
+        // Let the readers get going so the writer arrives mid-churn.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let started = Instant::now();
+        drop(super::raw_write_lock().await);
+        let waited = started.elapsed();
+
+        stop.store(true, Ordering::SeqCst);
+        for task in churn {
+            task.await.unwrap();
+        }
+        assert!(
+            waited < Duration::from_secs(5),
+            "writer waited {waited:?} behind churning readers"
+        );
     }
 
     #[derive(Debug, Default)]
