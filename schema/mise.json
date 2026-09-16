@@ -4773,9 +4773,8 @@
                   },
                   "sha256": {
                     "type": "string",
-                    "minLength": 1,
-                    "pattern": ".*\\S.*",
-                    "description": "macos-app only: expected sha256 of the download; required with url"
+                    "pattern": "^[0-9a-fA-F]{64}$",
+                    "description": "macos-app only: expected sha256 of the download as 64 hex characters; required with url. Homebrew's no_check sentinel is not accepted"
                   },
                   "artifact": {
                     "type": "string",
@@ -4789,6 +4788,9 @@
                     "enum": ["present", "absent"],
                     "default": "present"
                   }
+                },
+                "dependentRequired": {
+                  "url": ["sha256", "artifact", "version"]
                 },
                 "additionalProperties": false
               }

@@ -1293,8 +1293,15 @@ fn install_app(
     // Content is the only signal available here. Transaction state cannot
     // answer it: a journal is written before the bundle exists, and the window
     // between placing one and recording it can never be closed.
+    // Measure the target through the verified directory descriptor rather than
+    // by pathname, so a component replaced after `ensure_trusted_appdir` cannot
+    // make us fingerprint a different file from the one `exists_at` found. On
+    // linux this resolves via /proc/self/fd and is fully bound; on macOS
+    // F_GETPATH yields the directory's current path, so the binding is weaker
+    // there. `logical_target` stays the path shown to the user.
+    let bound_target = parent.path()?.join(&name);
     if require_unowned && !adopt && exists_at(&parent.fd, &name)? {
-        if cask_target_fingerprint(&source)? != cask_target_fingerprint(&logical_target)? {
+        if cask_target_fingerprint(&source)? != cask_target_fingerprint(&bound_target)? {
             return Err(unowned_target_error(manager, &logical_target));
         }
         info!(
@@ -1309,7 +1316,7 @@ fn install_app(
     if adopt && exists_at(&parent.fd, &name)? {
         if verify_adopt {
             let source_fingerprint = cask_target_fingerprint(&source)?;
-            let target_fingerprint = cask_target_fingerprint(&logical_target)?;
+            let target_fingerprint = cask_target_fingerprint(&bound_target)?;
             if source_fingerprint != target_fingerprint {
                 bail!(
                     "{}: cannot adopt '{}': existing artifact is not identical to the declared artifact",
