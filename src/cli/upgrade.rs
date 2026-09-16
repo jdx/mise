@@ -35,7 +35,9 @@ const MAX_OUT_OF_RANGE_UPDATES: usize = 5;
 #[derive(Debug, Clone)]
 struct ExplicitConfigBump {
     path: PathBuf,
+    // Keep the original selector for matching successful resolutions even when pinning.
     request: ToolRequest,
+    persisted_request: ToolRequest,
 }
 
 /// Upgrade outdated tools
@@ -204,7 +206,7 @@ impl Upgrade {
                 .with_scope(scope)
                 .build(&config)
                 .await?;
-            for tool in &mut self.tool {
+            for tool in &self.tool {
                 let Some(request) = tool.tvr.as_ref() else {
                     continue;
                 };
@@ -214,27 +216,22 @@ impl Upgrade {
                     continue;
                 };
 
-                if request.version() == "latest" {
-                    // `--bump` already resolves the configured request to the latest release.
-                    // Keeping an explicit `@latest` would replace its config source with
-                    // ToolSource::Argument, preventing the resolved version from being saved.
-                    tool.tvr = None;
-                    tool.ba = configured_ba.clone();
-                    tool.short.clone_from(&configured_ba.short);
-                } else {
-                    let path = configured_request
-                        .source()
-                        .path()
-                        .expect("persistable request must have a path")
-                        .to_path_buf();
-                    let request = ToolRequest::new_with_options(
-                        configured_ba.clone(),
-                        &request.version(),
-                        configured_request.options(),
-                        configured_request.source().clone(),
-                    )?;
-                    explicit_config_bumps.push(ExplicitConfigBump { path, request });
-                }
+                let path = configured_request
+                    .source()
+                    .path()
+                    .expect("persistable request must have a path")
+                    .to_path_buf();
+                let request = ToolRequest::new_with_options(
+                    configured_ba.clone(),
+                    &request.version(),
+                    configured_request.options(),
+                    configured_request.source().clone(),
+                )?;
+                explicit_config_bumps.push(ExplicitConfigBump {
+                    path,
+                    persisted_request: request.clone(),
+                    request,
+                });
             }
         }
         if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
@@ -282,6 +279,29 @@ impl Upgrade {
                 !self.is_dry_run() && !self.raw,
             )
             .await;
+        if Settings::get().pin {
+            for bump in &mut explicit_config_bumps {
+                let resolved = outdated
+                    .iter()
+                    .find(|o| {
+                        backend_args_match(o.tool_version.ba(), bump.request.ba())
+                            && o.tool_version.request.version() == bump.request.version()
+                    })
+                    .map(|o| o.latest.clone())
+                    .or_else(|| {
+                        ts.list_current_versions().into_iter().find_map(|(_, tv)| {
+                            (backend_args_match(tv.ba(), bump.request.ba())
+                                && tv.request.version() == bump.request.version())
+                            .then_some(tv.version)
+                        })
+                    });
+                if let Some(resolved) = resolved
+                    && let ToolRequest::Version { version, .. } = &mut bump.persisted_request
+                {
+                    *version = resolved;
+                }
+            }
+        }
         self.warn_if_newer_versions_hidden_by_minimum_release_age(
             &config,
             &ts,
@@ -1180,7 +1200,7 @@ fn print_explicit_config_bumps(bumps: &[ExplicitConfigBump]) -> Result<()> {
         miseprintln!(
             "Would bump {}@{} in {}",
             bump.request.ba().short,
-            bump.request.version(),
+            bump.persisted_request.version(),
             display_path(&bump.path)
         );
     }
@@ -1190,7 +1210,7 @@ fn print_explicit_config_bumps(bumps: &[ExplicitConfigBump]) -> Result<()> {
 async fn apply_explicit_config_bumps(bumps: &[ExplicitConfigBump]) -> Result<()> {
     for bump in bumps {
         let cf = config_file::parse(&bump.path).await?;
-        cf.replace_versions(bump.request.ba(), vec![bump.request.clone()])?;
+        cf.replace_versions(bump.request.ba(), vec![bump.persisted_request.clone()])?;
         cf.save()?;
     }
     Ok(())
