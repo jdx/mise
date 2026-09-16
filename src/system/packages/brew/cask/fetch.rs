@@ -230,7 +230,7 @@ pub(super) fn git_only_path_source(
 
 pub(super) async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
     let filename = archive_filename(&cask.url)
-        .ok_or_else(|| eyre!("brew-cask:{}: URL has no file name", cask.token))?;
+        .ok_or_else(|| eyre!("{}:{}: URL has no file name", cask.label(), cask.token))?;
     let cache_dir = crate::dirs::CACHE.join("system-brew").join("casks");
     file::create_dir_all(&cache_dir)?;
     let url_hash = &hash::hash_sha256_to_str(&cask.url)[..12];
@@ -251,7 +251,11 @@ pub(super) async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) ->
     match cask.sha256.as_deref() {
         Some("no_check") => {}
         Some(sha256) => hash::ensure_checksum(&archive, sha256, pr, "sha256")?,
-        None => bail!("brew-cask:{}: cask metadata has no sha256", cask.token),
+        None => bail!(
+            "{}:{}: no sha256 to verify the download against",
+            cask.label(),
+            cask.token
+        ),
     }
     Ok(archive)
 }
@@ -288,7 +292,8 @@ pub(super) fn extract_archive(
             }
         } else if !format.is_archive() {
             bail!(
-                "brew-cask:{}: unsupported archive type for {}",
+                "{}:{}: unsupported archive type for {}",
+                cask.label(),
                 cask.token,
                 filename
             );

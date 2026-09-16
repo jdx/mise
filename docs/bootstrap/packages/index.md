@@ -56,6 +56,35 @@ to make adoption the default for all casks, with per-cask `adopt = false`
 overrides. See the
 [brew cask documentation](/bootstrap/packages/brew.html#casks).
 
+### macOS apps without a cask
+
+`macos-app` installs a macOS `.app` bundle straight from a URL, for apps that
+have no Homebrew cask — vendor-direct downloads and internal builds. Declare
+what a cask would carry:
+
+```toml
+[bootstrap.packages]
+"macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}-arm64.dmg", sha256 = "e3b0c442...", artifact = "Nuvio.app" }
+```
+
+`url`, `sha256`, `artifact`, and an explicit `version` are all required. mise
+downloads the archive, verifies the checksum, and installs `Nuvio.app` into
+`/Applications` — the same installer `brew-cask` uses, so `.dmg` and `.zip`
+archives, the app directory, and `adopt = true` all behave identically.
+`{{version}}` in `url` is replaced with `version`, so a release bump is a
+two-field edit.
+
+::: warning These entries do not upgrade themselves
+mise has no way to learn that a newer version exists behind a plain URL, so
+`mise bootstrap packages upgrade` does nothing for a `macos-app` entry. You bump
+`version` and `sha256` by hand for each release. Prefer `brew-cask` whenever a
+cask exists — it tracks versions for you.
+:::
+
+`macos-app` records ownership under mise's own state directory rather than
+Homebrew's Caskroom, so `macos-app:<name>` and `brew-cask:<name>` are
+independent and never contend for the same install record.
+
 ## Host packages or mise tools
 
 Host package declarations can include version constraints where the manager
@@ -79,6 +108,7 @@ for host-owned state such as editor extensions and other applications' plugins.
 | `pacman`       | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)           |
 | `brew`         | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)               |
 | `brew-cask`    | macOS; Linux (font casks) — **no Homebrew required**           | [brew](/bootstrap/packages/brew.html)               |
+| `macos-app`    | macOS — installs an `.app` bundle from a declared URL          | [packages](/bootstrap/packages/#macos-apps-without-a-cask) |
 | `flatpak`      | Linux with the `flatpak` CLI on `PATH` (system scope)          | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `flatpak-user` | Linux with the `flatpak` CLI on `PATH` (user scope)            | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `nix`          | Linux and macOS with the `nix` CLI on `PATH` (user profile)    | [Nix](/bootstrap/packages/nix.html)                 |

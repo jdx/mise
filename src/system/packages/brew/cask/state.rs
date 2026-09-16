@@ -1,22 +1,25 @@
 use super::*;
 
-pub(super) fn installed_version(token: &str) -> Option<String> {
-    let versions = installed_versions(token);
+pub(super) fn installed_version(manager: CaskManager, token: &str) -> Option<String> {
+    let versions = installed_versions(manager, token);
     match versions.as_slice() {
         [version] => Some(version.clone()),
         [] => None,
         _ => {
-            warn!("brew-cask:{token}: multiple Caskroom versions found; reinstall to reconcile");
+            warn!(
+                "{}:{token}: multiple install records found; reinstall to reconcile",
+                manager.label()
+            );
             None
         }
     }
 }
 
-pub(super) fn installed_versions(token: &str) -> Vec<String> {
+pub(super) fn installed_versions(manager: CaskManager, token: &str) -> Vec<String> {
     // Version discovery excludes mise's transaction directories. Cleanup is
     // intentionally broader: remove_stale_versions removes those stale temp
     // and backup directories after replace_caskroom completes.
-    let dir = caskroom_token_dir(token);
+    let dir = caskroom_token_dir(manager, token);
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -34,7 +37,7 @@ pub(super) fn installed_versions(token: &str) -> Vec<String> {
 }
 
 pub(super) fn homebrew_installed_versions(token: &str) -> Result<Vec<String>> {
-    let dir = caskroom_token_dir(token);
+    let dir = caskroom_token_dir(CaskManager::BrewCask, token);
     let entries = std::fs::read_dir(&dir).wrap_err_with(|| {
         format!(
             "brew-cask:{token}: failed to read Homebrew Caskroom directory '{}'",
@@ -113,7 +116,7 @@ pub(super) fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) 
 }
 
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {
-    let path = caskroom_token_dir(token).join(".metadata");
+    let path = caskroom_token_dir(CaskManager::BrewCask, token).join(".metadata");
     match path.symlink_metadata() {
         Ok(_) => Ok(true),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -209,7 +212,7 @@ pub(super) fn remove_obsolete_binary_links(
     previous_targets: &[PathBuf],
     current_targets: &[PathBuf],
 ) -> Result<()> {
-    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
+    let token_dir = file::desymlink_path(&caskroom_token_dir(cask.manager, &cask.token));
     for target in previous_targets {
         if current_targets.contains(target) {
             continue;
@@ -1182,31 +1185,41 @@ pub(super) fn symlink_resolves_below(path: &Path, root: &Path) -> bool {
     path_starts_with_resolved_root(&target, root)
 }
 
-/// Root holding mise's per-token cask install records.
+/// Root holding `manager`'s per-token install records.
 ///
-/// This is Homebrew's Caskroom: mise writes its own `.mise-cask.toml` receipt
-/// beside the versioned bundle so an installed Homebrew and mise observe the
-/// same records and can arbitrate ownership of a token.
-pub(super) fn cask_state_root() -> PathBuf {
-    prefix::prefix().join("Caskroom")
+/// `brew-cask` uses Homebrew's Caskroom: mise writes its own `.mise-cask.toml`
+/// receipt beside the versioned bundle so an installed Homebrew and mise
+/// observe the same records and can arbitrate ownership of a token.
+///
+/// `macos-app` installs nothing through Homebrew, so its records live under
+/// mise's own state directory. That keeps a Homebrew-shaped path free of
+/// non-Homebrew state, and keeps `macos-app:<token>` from colliding with
+/// `brew-cask:<token>` over one directory.
+pub(super) fn cask_state_root(manager: CaskManager) -> PathBuf {
+    match manager {
+        CaskManager::BrewCask => prefix::prefix().join("Caskroom"),
+        CaskManager::MacosApp => crate::dirs::STATE.join("macos-apps"),
+    }
 }
 
-pub(super) fn caskroom_token_dir(token: &str) -> PathBuf {
-    cask_state_root().join(token)
+pub(super) fn caskroom_token_dir(manager: CaskManager, token: &str) -> PathBuf {
+    cask_state_root(manager).join(token)
 }
 
-pub(super) fn caskroom_version_dir(token: &str, version: &str) -> PathBuf {
-    caskroom_token_dir(token).join(version)
+pub(super) fn caskroom_version_dir(manager: CaskManager, token: &str, version: &str) -> PathBuf {
+    caskroom_token_dir(manager, token).join(version)
 }
 
 pub(super) fn caskroom_tmp_dir(cask: &Cask) -> PathBuf {
     let key = format!("{}-{}", cask.token, cask.version);
-    caskroom_token_dir(&cask.token).join(format!(".mise-tmp-{}", hash::hash_to_str(&key)))
+    caskroom_token_dir(cask.manager, &cask.token)
+        .join(format!(".mise-tmp-{}", hash::hash_to_str(&key)))
 }
 
 pub(super) fn caskroom_backup_dir(cask: &Cask) -> PathBuf {
     let key = format!("{}-{}", cask.token, cask.version);
-    caskroom_token_dir(&cask.token).join(format!(".mise-backup-{}", hash::hash_to_str(&key)))
+    caskroom_token_dir(cask.manager, &cask.token)
+        .join(format!(".mise-backup-{}", hash::hash_to_str(&key)))
 }
 
 #[derive(Debug)]

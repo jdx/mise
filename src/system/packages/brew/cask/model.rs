@@ -40,6 +40,46 @@ pub(in crate::system::packages::brew) struct Cask {
     pub(super) tap_git_head: Option<String>,
     #[serde(skip)]
     pub(super) raw_base: Option<String>,
+    /// Which manager is installing this cask. Never deserialized: API and tap
+    /// metadata is always `brew-cask`, and inline declarations set it directly.
+    #[serde(skip)]
+    pub(super) manager: CaskManager,
+}
+
+impl Cask {
+    /// User-facing manager label for diagnostics.
+    pub(in crate::system::packages::brew) fn label(&self) -> &'static str {
+        self.manager.label()
+    }
+}
+
+/// Which package manager is driving the shared cask install pipeline.
+///
+/// `brew-cask` and `macos-app` run the same installer — download, verify,
+/// extract, then swap an app bundle into the app directory — and differ only in
+/// where the metadata came from and where mise records ownership.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(in crate::system::packages::brew) enum CaskManager {
+    /// Metadata resolved from the Homebrew cask API or a tap.
+    #[default]
+    BrewCask,
+    /// Metadata declared inline in `[bootstrap.packages]`.
+    MacosApp,
+}
+
+impl CaskManager {
+    pub(in crate::system::packages::brew) fn label(self) -> &'static str {
+        match self {
+            Self::BrewCask => "brew-cask",
+            Self::MacosApp => "macos-app",
+        }
+    }
+
+    /// True when this manager shares Homebrew's Caskroom and must therefore
+    /// arbitrate token ownership with an installed Homebrew.
+    pub(in crate::system::packages::brew) fn uses_homebrew_caskroom(self) -> bool {
+        matches!(self, Self::BrewCask)
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

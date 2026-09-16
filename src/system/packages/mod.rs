@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, mas, winget) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, macos-app, mas, winget) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -257,6 +257,8 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(brew::BrewManager::new()),
         #[cfg(unix)]
         Arc::new(brew::BrewCaskManager::new()),
+        #[cfg(unix)]
+        Arc::new(brew::BrewCaskManager::new_macos_app()),
         Arc::new(dnf::DnfManager::new()),
         Arc::new(flatpak::FlatpakManager::new()),
         Arc::new(flatpak::FlatpakManager::new_user()),

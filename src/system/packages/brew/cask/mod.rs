@@ -45,7 +45,7 @@ use app_version::*;
 use artifacts::*;
 use fetch::*;
 use flight::*;
-pub(super) use model::Cask;
+pub(super) use model::{Cask, CaskManager};
 use paths::*;
 use running::*;
 use state::*;
@@ -62,7 +62,16 @@ const DEFAULT_APP_DIR: &str = "/Applications";
 const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
 const MAX_NESTED_CASK_ARCHIVES: usize = 16;
 
-pub(crate) struct BrewCaskManager {}
+/// Drives the cask install pipeline for one of two managers.
+///
+/// `brew-cask` resolves metadata from Homebrew and shares its Caskroom;
+/// `macos-app` takes an inline declaration and records ownership under mise's
+/// own state directory. Everything between those two ends — download, checksum,
+/// extraction, adoption, and the app swap — is identical, so both are the same
+/// manager configured differently, as with `flatpak` and `flatpak-user`.
+pub(crate) struct BrewCaskManager {
+    manager: CaskManager,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InstallMode {
@@ -512,7 +521,15 @@ impl CaskPrunePlan {
 
 impl BrewCaskManager {
     pub(crate) fn new() -> Self {
-        Self {}
+        Self {
+            manager: CaskManager::BrewCask,
+        }
+    }
+
+    pub(crate) fn new_macos_app() -> Self {
+        Self {
+            manager: CaskManager::MacosApp,
+        }
     }
 
     /// Processes current-version cask requests in the selected install mode.
@@ -525,7 +542,9 @@ impl BrewCaskManager {
         manager_options: &ManagerPackageOptions,
         mode: InstallMode,
     ) -> Result<()> {
-        if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
+        if self.manager.uses_homebrew_caskroom()
+            && let Some(p) = pkgs.iter().find(|p| p.version.is_some())
+        {
             bail!("brew casks are installed at their current version ('{p}')");
         }
         if opts.dry_run {
@@ -539,7 +558,8 @@ impl BrewCaskManager {
         let mpr = MultiProgressReport::get();
         mpr.init_footer(false, "install", pkgs.len());
         for pkg in pkgs {
-            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
+            let pr: Box<dyn SingleReport> =
+                mpr.add(&format!("{}:{}", self.manager.label(), pkg.name));
             match self
                 .install_one(pkg, opts, Some(&*pr), manager_options, mode)
                 .await
@@ -585,13 +605,20 @@ impl BrewCaskManager {
         manager_options: &ManagerPackageOptions,
         mode: InstallMode,
     ) -> Result<String> {
-        let cask = fetch_cask(req, !opts.dry_run).await?;
+        let cask = match manager_options.macos_app_spec(&req.name) {
+            Some(spec) => declared_app_cask(&req.name, spec)?,
+            None => fetch_cask(req, !opts.dry_run).await?,
+        };
         if ancestors.contains(&cask.token) {
             bail!("brew-cask:{}: dependency cycle detected", cask.token);
         }
         let mut ancestors = ancestors.clone();
         ancestors.insert(cask.token.clone());
-        if let Some(version) = homebrew_installed_version(&cask.token)? {
+        // Only the Homebrew-backed manager shares the Caskroom, so only it can
+        // find a token that Homebrew itself owns.
+        if cask.manager.uses_homebrew_caskroom()
+            && let Some(version) = homebrew_installed_version(&cask.token)?
+        {
             info!(
                 "brew-cask:{}: installed and managed by Homebrew; leaving unchanged",
                 cask.token
@@ -611,7 +638,7 @@ impl BrewCaskManager {
             return Ok(reason.to_string());
         }
         for conflict in &cask.conflicts_with.cask {
-            if !installed_versions(conflict).is_empty() {
+            if !installed_versions(cask.manager, conflict).is_empty() {
                 bail!(
                     "brew-cask:{}: conflicts with installed cask {}",
                     cask.token,
@@ -666,7 +693,7 @@ impl BrewCaskManager {
         // different taps that share a token.
         let adopt = manager_options.brew_cask_adopt(&req.name) && installed_version.is_none();
         if adopt && !cask.auto_updates {
-            validate_adoptable_apps(&stage, &artifacts.apps)?;
+            validate_adoptable_apps(cask.manager, &stage, &artifacts.apps)?;
         }
         let _caskroom_lock = lock_caskroom()?;
         recover_flight_backups()?;
@@ -687,8 +714,8 @@ impl BrewCaskManager {
         let previous_flight_symlinks = previous_flight_symlink_targets(&cask)?;
         let previous_flight_directories = previous_flight_directory_targets(&cask)?;
         let previous_generic = previous_generic_targets(&cask)?;
-        let caskroom_token = caskroom_token_dir(&cask.token);
-        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        let caskroom_token = caskroom_token_dir(cask.manager, &cask.token);
+        let caskroom = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
         let tmp_caskroom = caskroom_tmp_dir(&cask);
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
@@ -756,6 +783,7 @@ impl BrewCaskManager {
                 &tmp_caskroom,
                 app,
                 AppInstallOptions {
+                    manager: cask.manager,
                     keep_caskroom_copy: !cask.auto_updates,
                     adopt,
                     verify_adopt: !cask.auto_updates,
@@ -1002,19 +1030,29 @@ impl GeneratedCompletionArtifact {
 #[async_trait(?Send)]
 impl SystemPackageManager for BrewCaskManager {
     fn name(&self) -> &str {
-        "brew-cask"
+        self.manager.label()
     }
 
     fn is_available(&self) -> bool {
-        cfg!(any(target_os = "macos", target_os = "linux"))
+        match self.manager {
+            // Linux gets font casks; an .app bundle is macOS-only.
+            CaskManager::BrewCask => cfg!(any(target_os = "macos", target_os = "linux")),
+            CaskManager::MacosApp => cfg!(target_os = "macos"),
+        }
     }
 
     fn unavailable_reason(&self) -> String {
-        "only available on macos and linux".to_string()
+        match self.manager {
+            CaskManager::BrewCask => "only available on macos and linux".to_string(),
+            CaskManager::MacosApp => "only available on macos".to_string(),
+        }
     }
 
     fn supports_version_pins(&self) -> bool {
-        false
+        // A cask exists only at its current version, so a pin cannot be
+        // installed. An inline declaration names its own URL and checksum, so
+        // the pin is the only thing it can install.
+        !self.manager.uses_homebrew_caskroom()
     }
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
@@ -1063,6 +1101,36 @@ impl SystemPackageManager for BrewCaskManager {
     }
 }
 
+/// Build a `Cask` from an inline `macos-app` declaration.
+///
+/// This stands in for `fetch_cask`: the rest of the pipeline consumes a `Cask`
+/// and does not care whether the metadata came from Homebrew or from config.
+/// Only the fields an app install reads are populated — there is no Ruby source,
+/// no tap, no dependencies, and no lifecycle hooks to evaluate.
+fn declared_app_cask(name: &str, spec: &crate::system::AppSpec) -> Result<Cask> {
+    validate_cask_path_component("package name", name)?;
+    Ok(Cask {
+        token: name.to_string(),
+        aliases: Vec::new(),
+        old_tokens: Vec::new(),
+        version: spec.version.clone(),
+        // An inline declaration pins one artifact, so mise always owns the
+        // installed bundle and never defers to an app's own updater.
+        auto_updates: false,
+        url: spec.url.clone(),
+        url_specs: Default::default(),
+        sha256: Some(spec.sha256.clone()),
+        artifacts: vec![serde_json::json!({ "app": [spec.artifact.clone()] })],
+        depends_on: Default::default(),
+        conflicts_with: Default::default(),
+        ruby_source_path: None,
+        ruby_source_checksum: None,
+        tap_git_head: None,
+        raw_base: None,
+        manager: CaskManager::MacosApp,
+    })
+}
+
 /// Abandons an upgrade whose self-updating app is running. Failing instead
 /// would leave a pending journal, and the next apply would replace the app.
 fn leave_running_app(
@@ -1092,6 +1160,8 @@ enum AppInstall {
 /// How a single app bundle should be swapped into the app directory.
 #[derive(Debug, Clone, Copy)]
 struct AppInstallOptions {
+    /// Manager driving this install, for diagnostics.
+    manager: CaskManager,
     /// Keep the durable staged copy beside the install record rather than
     /// replacing it with a symlink to the installed bundle.
     keep_caskroom_copy: bool,
@@ -1112,13 +1182,19 @@ fn install_app(
     opts: AppInstallOptions,
 ) -> Result<AppInstall> {
     let AppInstallOptions {
+        manager,
         keep_caskroom_copy,
         adopt,
         verify_adopt,
         defer_if_running,
     } = opts;
-    let source = find_app(stage, &app.source)
-        .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
+    let source = find_app(stage, &app.source).ok_or_else(|| {
+        eyre!(
+            "{}: app artifact '{}' was not found",
+            manager.label(),
+            app.source
+        )
+    })?;
     let caskroom_app = caskroom.join(app_bundle_name(app.target_name()?)?);
     file::remove_all(&caskroom_app)?;
     let logical_target = app_target_path(app.target_name()?)?;
@@ -1130,11 +1206,11 @@ fn install_app(
     let parent = ensure_trusted_appdir(
         logical_target
             .parent()
-            .ok_or_else(|| eyre!("brew-cask: app target has no parent directory"))?,
+            .ok_or_else(|| eyre!("{}: app target has no parent directory", manager.label()))?,
     )?;
     let name = logical_target
         .file_name()
-        .ok_or_else(|| eyre!("brew-cask: app target has no filename"))?
+        .ok_or_else(|| eyre!("{}: app target has no filename", manager.label()))?
         .to_owned();
     if adopt && exists_at(&parent.fd, &name)? {
         if verify_adopt {
@@ -1142,7 +1218,8 @@ fn install_app(
             let target_fingerprint = cask_target_fingerprint(&logical_target)?;
             if source_fingerprint != target_fingerprint {
                 bail!(
-                    "brew-cask: cannot adopt '{}': existing artifact is not identical to the cask artifact",
+                    "{}: cannot adopt '{}': existing artifact is not identical to the declared artifact",
+                    manager.label(),
                     logical_target.display()
                 );
             }
@@ -1190,17 +1267,23 @@ fn install_app(
     })
 }
 
-fn validate_adoptable_apps(stage: &Path, apps: &[AppArtifact]) -> Result<()> {
+fn validate_adoptable_apps(manager: CaskManager, stage: &Path, apps: &[AppArtifact]) -> Result<()> {
     for app in apps {
         let target = app_target_path(app.target_name()?)?;
         if target.symlink_metadata().is_err() {
             continue;
         }
-        let source = find_app(stage, &app.source)
-            .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
+        let source = find_app(stage, &app.source).ok_or_else(|| {
+            eyre!(
+                "{}: app artifact '{}' was not found",
+                manager.label(),
+                app.source
+            )
+        })?;
         if cask_target_fingerprint(&source)? != cask_target_fingerprint(&target)? {
             bail!(
-                "brew-cask: cannot adopt '{}': existing artifact is not identical to the cask artifact",
+                "{}: cannot adopt '{}': existing artifact is not identical to the declared artifact",
+                manager.label(),
                 target.display()
             );
         }
@@ -2364,10 +2447,10 @@ fn generic_artifact_target_path(target: &str) -> Result<PathBuf> {
 
 /// The receipt of the currently installed version, if there is one.
 fn previous_receipt(cask: &Cask) -> Result<Option<CaskReceipt>> {
-    let Some(version) = installed_version(&cask.token) else {
+    let Some(version) = installed_version(cask.manager, &cask.token) else {
         return Ok(None);
     };
-    read_receipt(&caskroom_version_dir(&cask.token, &version))
+    read_receipt(&caskroom_version_dir(cask.manager, &cask.token, &version))
 }
 
 fn previous_generic_targets(cask: &Cask) -> Result<Vec<CaskTargetRecord>> {
@@ -2683,7 +2766,7 @@ fn remove_obsolete_fonts(
     previous_targets: &[PathBuf],
     current_targets: &[PathBuf],
 ) -> Result<()> {
-    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
+    let token_dir = file::desymlink_path(&caskroom_token_dir(cask.manager, &cask.token));
     for target in previous_targets {
         if current_targets.contains(target) {
             continue;
@@ -2826,7 +2909,7 @@ fn ensure_completion_target_replaceable(
     }
     let link_target = std::fs::read_link(target)?;
     let resolved = resolve_symlink_target(target, link_target);
-    let token_dir = caskroom_token_dir(&cask.token);
+    let token_dir = caskroom_token_dir(cask.manager, &cask.token);
     if path_starts_with_resolved_root(&resolved, &token_dir) {
         return Ok(());
     }
@@ -3185,7 +3268,7 @@ fn remove_obsolete_completions(
     previous_targets: &[PathBuf],
     current_targets: &[PathBuf],
 ) -> Result<()> {
-    let token_dir = caskroom_token_dir(&cask.token);
+    let token_dir = caskroom_token_dir(cask.manager, &cask.token);
     let prefix = prefix::prefix();
     for target in previous_targets {
         if current_targets.contains(target) || !target.starts_with(&prefix) {
@@ -3407,7 +3490,7 @@ fn expand_command_wrapper_content(value: &str, appdir: &Path) -> String {
 }
 
 fn expand_command_wrapper_value(value: &str, appdir: &Path, cask: &Cask) -> String {
-    let staged_path = caskroom_version_dir(&cask.token, &cask.version);
+    let staged_path = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
     expand_cask_template(value, &staged_path, appdir, Some(&cask.version))
 }
 
@@ -3476,7 +3559,7 @@ fn generated_caskroom_artifact(root: &Path, cask: &Cask, source: &str) -> Option
     let prefix = prefix::prefix();
     let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
     let source = PathBuf::from(source);
-    let final_caskroom = caskroom_version_dir(&cask.token, &cask.version);
+    let final_caskroom = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
     let relative = source.strip_prefix(final_caskroom).ok()?;
     if relative
         .components()

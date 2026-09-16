@@ -4763,7 +4763,25 @@
                   },
                   "adopt": {
                     "type": "boolean",
-                    "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
+                    "description": "adopt an existing identical app artifact instead of replacing it (brew-cask and macos-app)"
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "macos-app only: download URL for the app archive; {{version}} is replaced with the declared version"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "macos-app only: expected sha256 of the download; required with url"
+                  },
+                  "artifact": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "macos-app only: app bundle to install from the archive, e.g. Nuvio.app; required with url"
                   },
                   "state": {
                     "type": "string",

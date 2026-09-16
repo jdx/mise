@@ -3744,6 +3744,9 @@ mod tests {
                         env: vec![],
                         adopt: None,
                         state: crate::system::PackageDesiredStateTomlConfig::Present,
+                        url: None,
+                        sha256: None,
+                        artifact: None,
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",

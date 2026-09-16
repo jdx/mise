@@ -1162,7 +1162,7 @@ pub(super) fn expand_flight_template(
     staged_path: &Path,
     appdir: &Path,
 ) -> String {
-    let caskroom_path = caskroom_token_dir(&cask.token);
+    let caskroom_path = caskroom_token_dir(cask.manager, &cask.token);
     let version_major = cask
         .version
         .split(['.', ','])

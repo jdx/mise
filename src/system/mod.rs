@@ -19,7 +19,7 @@
 //! machine-global settings and resources, not mise's per-project toolset.
 
 #[cfg(unix)]
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -162,6 +162,15 @@ pub(crate) struct PackageOptionsTomlConfig {
     /// Adopt an identical existing cask artifact instead of replacing it.
     #[serde(default)]
     pub adopt: Option<bool>,
+    /// `macos-app` only: direct download URL for the app archive.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// `macos-app` only: expected sha256 of the download.
+    #[serde(default)]
+    pub sha256: Option<String>,
+    /// `macos-app` only: bundle to install out of the archive, e.g. "Nuvio.app".
+    #[serde(default)]
+    pub artifact: Option<String>,
     #[serde(default)]
     pub state: PackageDesiredStateTomlConfig,
 }
@@ -185,6 +194,24 @@ impl PackageTomlConfig {
     fn adopt(&self) -> Option<bool> {
         match self {
             Self::Options(options) => options.adopt,
+            Self::Version(_) => None,
+        }
+    }
+
+    /// The inline app declaration on this entry, if it carries one.
+    ///
+    /// `url` is what marks an entry as inline-declared; the other fields are
+    /// validated against it by [`AppSpec::parse`].
+    fn app_fields(&self) -> Option<(&str, Option<&str>, Option<&str>, &str)> {
+        match self {
+            Self::Options(options) => options.url.as_deref().map(|url| {
+                (
+                    url,
+                    options.sha256.as_deref(),
+                    options.artifact.as_deref(),
+                    options.version.as_str(),
+                )
+            }),
             Self::Version(_) => None,
         }
     }
@@ -392,12 +419,73 @@ pub(crate) enum ManagerPackageOptions {
     None,
     #[cfg(unix)]
     BrewCask { adopt: BTreeSet<String> },
+    /// Inline app declarations, keyed by package name. `macos-app` resolves no
+    /// metadata of its own, so the declaration reaches the installer here.
+    #[cfg(unix)]
+    MacosApp {
+        specs: BTreeMap<String, AppSpec>,
+        adopt: BTreeSet<String>,
+    },
 }
 
 impl ManagerPackageOptions {
     #[cfg(unix)]
     pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
-        matches!(self, Self::BrewCask { adopt } if adopt.contains(name))
+        match self {
+            Self::BrewCask { adopt } | Self::MacosApp { adopt, .. } => adopt.contains(name),
+            Self::None => false,
+        }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn macos_app_spec(&self, name: &str) -> Option<&AppSpec> {
+        match self {
+            Self::MacosApp { specs, .. } => specs.get(name),
+            _ => None,
+        }
+    }
+}
+
+/// An app bundle declared inline in `[bootstrap.packages]`, standing in for the
+/// cask definition that `brew-cask` would have fetched.
+#[cfg(unix)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AppSpec {
+    pub url: String,
+    pub sha256: String,
+    pub artifact: String,
+    pub version: String,
+}
+
+#[cfg(unix)]
+impl AppSpec {
+    /// Validate an inline declaration. Every field is required: without a
+    /// checksum there is nothing to verify the download against, and without an
+    /// artifact name mise cannot tell which bundle in the archive to install.
+    pub(crate) fn parse(
+        name: &str,
+        url: &str,
+        sha256: Option<&str>,
+        artifact: Option<&str>,
+        version: &str,
+    ) -> eyre::Result<Self> {
+        let Some(sha256) = sha256 else {
+            eyre::bail!("macos-app:{name}: 'url' requires 'sha256'");
+        };
+        let Some(artifact) = artifact else {
+            eyre::bail!("macos-app:{name}: 'url' requires 'artifact' naming the bundle to install");
+        };
+        if version == "latest" {
+            eyre::bail!(
+                "macos-app:{name}: 'url' requires an explicit 'version'; mise cannot discover versions for a direct download"
+            );
+        }
+        Ok(Self {
+            url: url.replace("{{version}}", version),
+            sha256: sha256.to_string(),
+            artifact: artifact.to_string(),
+            version: version.to_string(),
+        })
     }
 }
 
@@ -682,6 +770,10 @@ fn package_requests_from_config_files(
     let brew_adopt = brew_adopt_from_config_files(config_files);
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
+    #[cfg(unix)]
+    let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
+    #[cfg(unix)]
+    let mut app_adopt = BTreeSet::new();
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
@@ -705,14 +797,40 @@ fn package_requests_from_config_files(
                     None
                 };
                 let adopt_requested = package.adopt();
-                if adopt_requested.is_some() && mgr != "brew-cask" {
+                if adopt_requested.is_some() && mgr != "brew-cask" && mgr != "macos-app" {
                     warn!(
-                        "[bootstrap.packages]: adopt is only supported for brew-cask entries; ignoring it for '{spec}'"
+                        "[bootstrap.packages]: adopt is only supported for brew-cask and macos-app entries; ignoring it for '{spec}'"
                     );
                 }
                 #[cfg(unix)]
                 if mgr == "brew-cask" && adopt_requested.unwrap_or(brew_adopt) {
                     cask_adopt.insert(name.clone());
+                }
+                #[cfg(unix)]
+                if let Some((url, sha256, artifact, declared_version)) = package.app_fields() {
+                    if mgr != "macos-app" {
+                        warn!(
+                            "[bootstrap.packages]: url/sha256/artifact are only supported for macos-app entries; ignoring them for '{spec}'"
+                        );
+                    } else {
+                        match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
+                            Ok(spec) => {
+                                app_specs.insert(name.clone(), spec);
+                                if adopt_requested.unwrap_or(false) {
+                                    app_adopt.insert(name.clone());
+                                }
+                            }
+                            Err(err) => {
+                                warn!("[bootstrap.packages]: {err}");
+                                continue;
+                            }
+                        }
+                    }
+                } else if mgr == "macos-app" {
+                    warn!(
+                        "[bootstrap.packages]: macos-app entry '{spec}' needs 'url', 'sha256', 'artifact', and 'version'"
+                    );
+                    continue;
                 }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
@@ -725,13 +843,24 @@ fn package_requests_from_config_files(
         }
     }
     #[cfg(unix)]
-    let options = if cask_adopt.is_empty() {
-        IndexMap::new()
-    } else {
-        IndexMap::from([(
-            "brew-cask".to_string(),
-            ManagerPackageOptions::BrewCask { adopt: cask_adopt },
-        )])
+    let options = {
+        let mut options = IndexMap::new();
+        if !cask_adopt.is_empty() {
+            options.insert(
+                "brew-cask".to_string(),
+                ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+            );
+        }
+        if !app_specs.is_empty() {
+            options.insert(
+                "macos-app".to_string(),
+                ManagerPackageOptions::MacosApp {
+                    specs: app_specs,
+                    adopt: app_adopt,
+                },
+            );
+        }
+        options
     };
     #[cfg(not(unix))]
     let options = IndexMap::new();
@@ -2153,6 +2282,98 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn macos_app_declaration_reaches_manager_options() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}-arm64.dmg", sha256 = "abc123", artifact = "Nuvio.app", adopt = true }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files);
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app")
+            .unwrap();
+        assert_eq!(apps.requests.len(), 1);
+        let spec = apps.options.macos_app_spec("nuvio").unwrap();
+        // {{version}} is interpolated so a release bump is a one-field edit.
+        assert_eq!(spec.url, "https://example.com/Nuvio-1.1.20-arm64.dmg");
+        assert_eq!(spec.sha256, "abc123");
+        assert_eq!(spec.artifact, "Nuvio.app");
+        assert_eq!(spec.version, "1.1.20");
+        assert!(apps.options.brew_cask_adopt("nuvio"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_declaration_requires_every_field() {
+        let missing_sha = AppSpec::parse(
+            "nuvio",
+            "https://example.com/a.dmg",
+            None,
+            Some("Nuvio.app"),
+            "1.0.0",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(missing_sha.contains("requires 'sha256'"), "{missing_sha}");
+
+        let missing_artifact = AppSpec::parse(
+            "nuvio",
+            "https://example.com/a.dmg",
+            Some("abc"),
+            None,
+            "1.0.0",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            missing_artifact.contains("requires 'artifact'"),
+            "{missing_artifact}"
+        );
+
+        // mise cannot discover versions for a direct download, so "latest" has
+        // no meaning here and must be rejected rather than silently pinned.
+        let latest = AppSpec::parse(
+            "nuvio",
+            "https://example.com/a.dmg",
+            Some("abc"),
+            Some("Nuvio.app"),
+            "latest",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(latest.contains("explicit 'version'"), "{latest}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_rejects_inline_url_on_other_managers() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio.dmg", sha256 = "abc", artifact = "Nuvio.app" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files);
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        // The entry still installs as an ordinary cask; the inline fields are
+        // ignored with a warning rather than silently changing its source.
+        assert_eq!(casks.requests.len(), 1);
+        assert!(casks.options.macos_app_spec("nuvio").is_none());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn test_brew_cask_adopt_option_reaches_explicit_cli_specs() -> Result<()> {
         let (_dir, config_files) = config_map_from_toml(&[(
             "mise.toml",
@@ -2365,6 +2586,9 @@ mod tests {
             env: vec!["desktop".to_string(), "work".to_string()],
             adopt: None,
             state: PackageDesiredStateTomlConfig::Present,
+            url: None,
+            sha256: None,
+            artifact: None,
         });
 
         assert!(package.is_env_supported(&["work".to_string()]));
