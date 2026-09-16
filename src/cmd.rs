@@ -1069,11 +1069,11 @@ impl<'a> CmdLineRunner<'a> {
         if is_cancelled() {
             return Err(crate::errors::Error::TaskInterrupted.into());
         }
-        let read_lock = RAW_LOCK.read().await;
+        let read_lock = raw_read_lock().await;
         debug!("$ {self}");
         if Settings::get().raw || self.raw {
             drop(read_lock);
-            let _write_lock = RAW_LOCK.write().await;
+            let _write_lock = raw_write_lock().await;
             return self.execute_raw_async_with_cancel_check(is_cancelled).await;
         }
         #[cfg(unix)]
@@ -1298,7 +1298,7 @@ impl<'a> CmdLineRunner<'a> {
         max_output_bytes: usize,
         pipe_drain_timeout: Duration,
     ) -> Result<(String, String)> {
-        let _read_lock = RAW_LOCK.read().await;
+        let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
         // These commands are non-interactive probes: nothing reads stdin and
@@ -1479,7 +1479,7 @@ impl<'a> CmdLineRunner<'a> {
 
     /// Run the command and return stdout, even when raw mode is enabled.
     pub(crate) async fn read(mut self) -> Result<String> {
-        let _read_lock = RAW_LOCK.read().await;
+        let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
         #[cfg(unix)]
@@ -1539,7 +1539,7 @@ impl<'a> CmdLineRunner<'a> {
 
     #[cfg(unix)]
     pub(crate) async fn read_bounded(mut self, max_output_bytes: usize) -> Result<String> {
-        let _read_lock = RAW_LOCK.read().await;
+        let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
         #[cfg(unix)]
@@ -1972,6 +1972,25 @@ impl Drop for RawWriterWaiting {
     }
 }
 
+/// Async counterpart of [`raw_read_lock_blocking`].
+///
+/// Awaiting `RAW_LOCK` directly would queue behind an *async* writer but not a sync
+/// one, whose `try_write` polls tokio never sees. Waiting out the counter first makes
+/// both kinds of writer visible to both kinds of reader.
+pub(crate) async fn raw_read_lock() -> tokio::sync::RwLockReadGuard<'static, ()> {
+    while RAW_WRITERS_WAITING.load(Ordering::Acquire) > 0 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    RAW_LOCK.read().await
+}
+
+/// Async counterpart of [`raw_write_lock_blocking`]. Registers as a waiting writer so
+/// sync readers yield to it, then queues on the lock as usual.
+pub(crate) async fn raw_write_lock() -> tokio::sync::RwLockWriteGuard<'static, ()> {
+    let _waiting = RawWriterWaiting::new();
+    RAW_LOCK.write().await
+}
+
 /// Take the shared side of [`RAW_LOCK`]. Held while an ordinary command runs, so a
 /// `--raw` command (or vfox's `cmd.stream`) waits for it before taking the terminal.
 ///
@@ -2167,6 +2186,33 @@ mod tests {
 
         drop(waiting);
         reader.join().unwrap();
+        assert!(acquired.load(Ordering::SeqCst));
+    }
+
+    // The counter must govern the async path too: mise's own installs acquire the
+    // shared side with `RAW_LOCK.read().await`, which queues behind an async writer
+    // but cannot see a sync one polling `try_write`. (#13254)
+    #[tokio::test]
+    async fn raw_read_lock_async_yields_to_a_waiting_writer() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+
+        let waiting = super::RawWriterWaiting::new();
+        let acquired = Arc::new(AtomicBool::new(false));
+        let flag = acquired.clone();
+        let reader = tokio::spawn(async move {
+            let _guard = super::raw_read_lock().await;
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !acquired.load(Ordering::SeqCst),
+            "async reader acquired the shared lock while a writer was waiting"
+        );
+
+        drop(waiting);
+        reader.await.unwrap();
         assert!(acquired.load(Ordering::SeqCst));
     }
 
