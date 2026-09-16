@@ -856,6 +856,7 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
             &app,
             AppInstallOptions {
                 manager: CaskManager::BrewCask,
+                require_unowned: false,
                 keep_caskroom_copy: true,
                 adopt: true,
                 verify_adopt: true,
@@ -875,6 +876,7 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
         &app,
         AppInstallOptions {
             manager: CaskManager::BrewCask,
+            require_unowned: false,
             keep_caskroom_copy: true,
             adopt: true,
             verify_adopt: true,
@@ -912,6 +914,7 @@ fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
             &app,
             AppInstallOptions {
                 manager: CaskManager::BrewCask,
+                require_unowned: false,
                 keep_caskroom_copy: false,
                 adopt: true,
                 verify_adopt: false,
@@ -6936,6 +6939,7 @@ fn nested_app_source_installs_under_bundle_basename() -> Result<()> {
             &app,
             AppInstallOptions {
                 manager: CaskManager::BrewCask,
+                require_unowned: false,
                 keep_caskroom_copy: true,
                 adopt: false,
                 verify_adopt: false,
@@ -8238,6 +8242,7 @@ fn defers_a_running_self_updating_app_at_the_swap() -> Result<()> {
         &app,
         AppInstallOptions {
             manager: CaskManager::BrewCask,
+            require_unowned: false,
             keep_caskroom_copy: false,
             adopt: false,
             verify_adopt: false,
@@ -8264,6 +8269,7 @@ fn defers_a_running_self_updating_app_at_the_swap() -> Result<()> {
             &app,
             AppInstallOptions {
                 manager: CaskManager::BrewCask,
+                require_unowned: false,
                 keep_caskroom_copy: false,
                 adopt: false,
                 verify_adopt: false,
@@ -8560,5 +8566,46 @@ fn macos_app_refuses_to_replace_an_app_it_does_not_own() -> Result<()> {
     assert!(err.contains("already exists"), "{err}");
     assert!(err.contains("adopt = true"), "{err}");
     assert!(err.starts_with("macos-app:"), "{err}");
+    Ok(())
+}
+
+#[test]
+fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let stage = root.join("stage");
+    let caskroom = root.join("Caskroom/example/1.0.0");
+    file::create_dir_all(stage.join("Example.app/Contents"))?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+    };
+    let opts = AppInstallOptions {
+        manager: CaskManager::MacosApp,
+        require_unowned: true,
+        keep_caskroom_copy: true,
+        adopt: false,
+        verify_adopt: false,
+        defer_if_running: false,
+    };
+
+    // The early check passed (nothing at the target), then something else
+    // created the bundle while the archive was downloading.
+    file::create_dir_all(root.join("Applications/Example.app/Contents"))?;
+    crate::file::write(root.join("Applications/Example.app/Contents/app"), "theirs")?;
+
+    let err = install_app(&stage, &caskroom, &app, opts)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("already exists"), "{err}");
+    assert!(err.starts_with("macos-app:"), "{err}");
+
+    // The bundle that appeared is left exactly as it was.
+    assert_eq!(
+        crate::file::read_to_string(root.join("Applications/Example.app/Contents/app"))?,
+        "theirs"
+    );
     Ok(())
 }

@@ -704,10 +704,9 @@ impl BrewCaskManager {
         // brew-cask defers to Homebrew by token, which macos-app cannot do.
         // Checked before the download so a conflict costs nothing, and before
         // the dry-run return so a plan reports it.
-        if !cask.manager.uses_homebrew_caskroom()
-            && !manager_options.brew_cask_adopt(&req.name)
-            && installed_version.is_none()
-        {
+        let require_unowned_targets =
+            !cask.manager.uses_homebrew_caskroom() && installed_version.is_none();
+        if require_unowned_targets && !manager_options.brew_cask_adopt(&req.name) {
             ensure_app_targets_are_unowned(cask.manager, &artifacts.apps)?;
         }
         if opts.dry_run {
@@ -817,6 +816,7 @@ impl BrewCaskManager {
                 app,
                 AppInstallOptions {
                     manager: cask.manager,
+                    require_unowned: require_unowned_targets,
                     keep_caskroom_copy: !cask.auto_updates,
                     adopt,
                     verify_adopt: !cask.auto_updates,
@@ -1231,6 +1231,11 @@ struct AppInstallOptions {
     verify_adopt: bool,
     /// Abandon the swap when the installed app is running, leaving it alone.
     defer_if_running: bool,
+    /// Refuse to replace a bundle that appears at the target. Checked again
+    /// here because the early check runs before the download, and the target is
+    /// shared — Homebrew, another declaration, or a person can create it while
+    /// the archive is in flight.
+    require_unowned: bool,
 }
 
 fn install_app(
@@ -1241,6 +1246,7 @@ fn install_app(
 ) -> Result<AppInstall> {
     let AppInstallOptions {
         manager,
+        require_unowned,
         keep_caskroom_copy,
         adopt,
         verify_adopt,
@@ -1270,6 +1276,12 @@ fn install_app(
         .file_name()
         .ok_or_else(|| eyre!("{}: app target has no filename", manager.label()))?
         .to_owned();
+    // Re-checked at the last possible moment, against the verified directory
+    // descriptor rather than a pathname, so nothing that appears during the
+    // download is silently replaced.
+    if require_unowned && !adopt && exists_at(&parent.fd, &name)? {
+        return Err(unowned_target_error(manager, &logical_target));
+    }
     if adopt && exists_at(&parent.fd, &name)? {
         if verify_adopt {
             let source_fingerprint = cask_target_fingerprint(&source)?;
@@ -1325,6 +1337,17 @@ fn install_app(
     })
 }
 
+fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
+    eyre!(
+        "{}: '{}' already exists and is not managed by this entry; \
+         set adopt = true to take it over in place. Replacing it would \
+         revoke the app's macOS Privacy & Security grants (Accessibility, \
+         Screen Recording, Full Disk Access, etc.)",
+        manager.label(),
+        target.display()
+    )
+}
+
 /// Refuse to replace an app bundle this entry does not already own.
 ///
 /// `brew-cask` avoids clobbering Homebrew by checking whether Homebrew owns the
@@ -1340,14 +1363,7 @@ fn ensure_app_targets_are_unowned(manager: CaskManager, apps: &[AppArtifact]) ->
     for app in apps {
         let target = app_target_path(app.target_name()?)?;
         if target.symlink_metadata().is_ok() {
-            bail!(
-                "{}: '{}' already exists and is not managed by this entry; \
-                 set adopt = true to take it over in place. Replacing it would \
-                 revoke the app's macOS Privacy & Security grants (Accessibility, \
-                 Screen Recording, Full Disk Access, etc.)",
-                manager.label(),
-                target.display()
-            );
+            return Err(unowned_target_error(manager, &target));
         }
     }
     Ok(())
