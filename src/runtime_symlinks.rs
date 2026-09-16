@@ -310,16 +310,21 @@ fn configured_alias_names(
 /// pointing into the half-installed directory.
 ///
 /// A link is removed only when all of these hold:
-/// - its name is one mise generates for a real install here, so configured
-///   aliases and hand-picked names are left alone,
+/// - its name is one mise generates for a real install here,
 /// - this rebuild did not ask for that name, and
 /// - its target is not an install that is currently eligible for links.
 ///
-/// Only relative `./`-style links count as mise's own, so an absolute symlink a
-/// user dropped in here is never a candidate. The one other writer of links
-/// here, a `Sub` request, is named `sub-{sub}-{orig_version}` and so never
-/// occupies a generated name, which keeps another directory's pin out of reach
-/// of a rebuild that does not know about it.
+/// A generated name holding a relative `./` link is mise's to manage, whoever
+/// wrote it. There is no ownership marker, and none is implied: the rebuild
+/// loop above already removes and repoints any such link whose target no longer
+/// matches, without asking who put it there. What survives a prune is therefore
+/// what survives a rewrite — a name mise does not generate (a configured alias,
+/// `next`, any hand-picked label) or a link that is not in `./` form.
+///
+/// The one other writer of links here, a `Sub` request, is named
+/// `sub-{sub}-{orig_version}` and so never occupies a generated name, which
+/// keeps another directory's pin out of reach of a rebuild that does not know
+/// about it.
 fn prune_stale_generated_symlinks(
     installs_dir: &Path,
     desired: &IndexMap<String, PathBuf>,
@@ -599,6 +604,31 @@ mod tests {
         assert!(namespace.contains("2"));
         assert!(namespace.contains("2.1"));
         assert!(namespace.contains("latest"));
+        Ok(())
+    }
+
+    /// A relative link in a generated name is mise's to manage whoever wrote
+    /// it, matching what `rebuild_symlinks_in_dir` already does when it
+    /// repoints one. A name mise does not generate, or a link that is not in
+    /// `./` form, is left alone.
+    #[test]
+    fn prune_stale_generated_symlinks_claims_generated_names_whoever_wrote_them() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        fs::create_dir_all(installs_dir.join("2.1.0"))?;
+        fs::write(installs_dir.join("2.1.0").join("incomplete"), "")?;
+        // hand-made, but occupying a name mise generates
+        make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
+        // hand-made, name mise never generates
+        make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("mine"))?;
+        // generated name, but not a `./` link, so not mise's to touch
+        make_symlink_or_file(&temp_dir.path().join("elsewhere"), &installs_dir.join("2"))?;
+
+        prune_stale_generated_symlinks(&installs_dir, &IndexMap::new(), &HashSet::new())?;
+
+        assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
+        assert!(is_runtime_symlink(&installs_dir.join("mine")));
+        assert!(fs::symlink_metadata(installs_dir.join("2")).is_ok());
         Ok(())
     }
 
