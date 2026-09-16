@@ -1,7 +1,12 @@
 use mlua::Table;
 use mlua::prelude::*;
+use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 pub(crate) fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     let package: Table = lua.globals().get("package")?;
@@ -58,6 +63,200 @@ fn parse_command_args(args: mlua::MultiValue, fn_name: &str) -> LuaResult<(Strin
     }
 }
 
+/// How often a timed command is checked for exit.
+const TIMEOUT_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Read the `timeout` option, a positive number of seconds. Fractions are allowed.
+fn timeout_from_options(options: Option<&Table>) -> LuaResult<Option<Duration>> {
+    let Some(options) = options else {
+        return Ok(None);
+    };
+    let Some(secs) = options.get::<Option<f64>>("timeout")? else {
+        return Ok(None);
+    };
+    if !secs.is_finite() || secs <= 0.0 {
+        return Err(mlua::Error::RuntimeError(format!(
+            "timeout must be a positive number of seconds, got {secs}"
+        )));
+    }
+    // `Duration::from_secs_f64` panics outside `Duration`'s range, and a plugin can
+    // pass any finite Lua number, so the conversion has to be checked.
+    Duration::try_from_secs_f64(secs).map(Some).map_err(|e| {
+        mlua::Error::RuntimeError(format!("timeout of {secs} seconds is out of range: {e}"))
+    })
+}
+
+/// `Instant::now() + timeout`, which panics on overflow for a large enough timeout.
+fn deadline_from(timeout: Duration) -> LuaResult<Instant> {
+    Instant::now().checked_add(timeout).ok_or_else(|| {
+        mlua::Error::RuntimeError(format!(
+            "timeout of {} seconds is too far in the future",
+            timeout.as_secs_f64()
+        ))
+    })
+}
+
+fn timed_out_error(command: &str, timeout: Duration) -> mlua::Error {
+    mlua::Error::RuntimeError(format!(
+        "Command timed out after {:.3}s: {command}",
+        timeout.as_secs_f64()
+    ))
+}
+
+/// Kill a timed-out child and reap it.
+///
+/// A `kill` failure is only benign when the child had already exited between the last
+/// poll and the signal; otherwise it is reported rather than followed by a `wait` that
+/// would block until the still-live child exits, past the deadline.
+fn kill_child(child: &mut Child) -> LuaResult<()> {
+    if let Err(kill_err) = child.kill() {
+        return match child.try_wait() {
+            Ok(Some(_)) => Ok(()),
+            _ => Err(mlua::Error::RuntimeError(format!(
+                "Failed to kill timed-out command: {kill_err}"
+            ))),
+        };
+    }
+    child
+        .wait()
+        .map(|_| ())
+        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to reap timed-out command: {e}")))
+}
+
+/// Wait for `child` until `deadline`, killing it if that passes first. `Ok(None)` means
+/// it was killed on timeout.
+///
+/// Only the direct child is killed — the shell mise spawned. A command that forks its
+/// own background processes can leave them running; mise's own timeouts signal the
+/// whole process tree, which needs platform APIs this crate does not depend on.
+fn wait_with_timeout(child: &mut Child, deadline: Instant) -> LuaResult<Option<ExitStatus>> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(Some(status)),
+            Ok(None) => {}
+            Err(e) => {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "Failed to wait for command: {e}"
+                )));
+            }
+        }
+        if Instant::now() >= deadline {
+            kill_child(child)?;
+            return Ok(None);
+        }
+        std::thread::sleep(TIMEOUT_POLL_INTERVAL);
+    }
+}
+
+/// A thread draining one of the child's pipes, whose result is collected under the
+/// command's deadline rather than by an unconditional join.
+struct Drain {
+    rx: mpsc::Receiver<Vec<u8>>,
+    abandoned: Arc<AtomicBool>,
+}
+
+impl Drain {
+    fn new<R: Read + Send + 'static>(reader: Option<R>, abandoned: Arc<AtomicBool>) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let flag = abandoned.clone();
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut reader) = reader {
+                let mut chunk = [0u8; 8192];
+                loop {
+                    match reader.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            // Stop accumulating once the call has given up: a surviving
+                            // descendant that keeps writing would otherwise grow this
+                            // buffer without bound long after the caller saw its error.
+                            if flag.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            buf.extend_from_slice(&chunk[..n]);
+                        }
+                    }
+                }
+            }
+            let _ = tx.send(buf);
+        });
+        Self { rx, abandoned }
+    }
+
+    /// What the reader captured, or `None` if `deadline` passed first.
+    fn collect(&self, deadline: Instant) -> Option<Vec<u8>> {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        self.rx.recv_timeout(remaining).ok()
+    }
+}
+
+/// Abandoning on drop rather than at each failure site means every way out of
+/// [`output_with_timeout`] stops the readers accumulating — including an error from
+/// the wait path, where a child that survived `kill` may still be writing. By the time
+/// a successful collection drops these, the reader has already sent and exited.
+impl Drop for Drain {
+    fn drop(&mut self) {
+        self.abandoned.store(true, Ordering::Relaxed);
+    }
+}
+
+/// `Command::output()`, with an optional deadline.
+///
+/// stdout and stderr are drained on their own threads: a timed command that fills a
+/// pipe would otherwise block forever instead of timing out. Collecting from those
+/// threads is bounded by the same deadline, because the shell exiting does not close
+/// the pipes if a descendant it forked still holds them open.
+fn output_with_timeout(
+    cmd: &mut Command,
+    timeout: Option<Duration>,
+    command: &str,
+) -> LuaResult<Output> {
+    let Some(timeout) = timeout else {
+        return cmd
+            .output()
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")));
+    };
+    let deadline = deadline_from(timeout)?;
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
+    let abandoned = Arc::new(AtomicBool::new(false));
+    let stdout = Drain::new(child.stdout.take(), abandoned.clone());
+    let stderr = Drain::new(child.stderr.take(), abandoned.clone());
+
+    let Some(status) = wait_with_timeout(&mut child, deadline)? else {
+        return Err(timed_out_error(command, timeout));
+    };
+    let (Some(stdout), Some(stderr)) = (stdout.collect(deadline), stderr.collect(deadline)) else {
+        return Err(timed_out_error(command, timeout));
+    };
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+/// `Command::status()`, with an optional deadline.
+fn status_with_timeout(
+    cmd: &mut Command,
+    timeout: Option<Duration>,
+    command: &str,
+) -> LuaResult<ExitStatus> {
+    let Some(timeout) = timeout else {
+        return cmd
+            .status()
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")));
+    };
+    let deadline = deadline_from(timeout)?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
+    wait_with_timeout(&mut child, deadline)?.ok_or_else(|| timed_out_error(command, timeout))
+}
+
 /// Apply the `cwd` and `env` options. Explicit env vars override the mise env.
 fn apply_options(cmd: &mut Command, options: Option<&Table>) -> LuaResult<()> {
     let Some(options) = options else {
@@ -92,9 +291,7 @@ fn exec(lua: &Lua, args: mlua::MultiValue) -> LuaResult<String> {
     // stdin takes precedence over that default, so `raw` can still connect it.
     cmd.stdin(stdin_for(lua));
 
-    let output = cmd
-        .output()
-        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
+    let output = output_with_timeout(&mut cmd, timeout_from_options(options.as_ref())?, &command)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -131,7 +328,13 @@ fn stream(lua: &Lua, args: mlua::MultiValue) -> LuaResult<i64> {
     cmd.stdout(Stdio::inherit());
     cmd.stderr(Stdio::inherit());
 
-    run_under_terminal_lock(lua, cmd, true)
+    run_under_terminal_lock(
+        lua,
+        cmd,
+        true,
+        timeout_from_options(options.as_ref())?,
+        &command,
+    )
 }
 
 /// Run `cmd` to completion under mise's terminal lock, returning its exit status.
@@ -141,15 +344,20 @@ fn stream(lua: &Lua, args: mlua::MultiValue) -> LuaResult<i64> {
 /// the terminal (`cmd.stream`) rather than merely not overlapping one (`os.execute`).
 /// Without the registry hook — standalone `vfox-cli`, or unit tests — nothing else is
 /// competing for the terminal, so the command simply runs.
-fn run_under_terminal_lock(lua: &Lua, cmd: Command, exclusive: bool) -> LuaResult<i64> {
+fn run_under_terminal_lock(
+    lua: &Lua,
+    cmd: Command,
+    exclusive: bool,
+    timeout: Option<Duration>,
+    command: &str,
+) -> LuaResult<i64> {
     let slot = std::sync::Mutex::new(Some(cmd));
+    let command = command.to_string();
     let body = lua.create_function(move |_, ()| {
         let mut cmd = slot.lock().unwrap().take().ok_or_else(|| {
             mlua::Error::RuntimeError("terminal lock body invoked more than once".to_string())
         })?;
-        let status = cmd
-            .status()
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
+        let status = status_with_timeout(&mut cmd, timeout, &command)?;
         Ok(status.code().unwrap_or(-1) as i64)
     })?;
 
@@ -217,7 +425,7 @@ fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
     // Shared, not exclusive: concurrent `os.execute` calls may overlap each other
     // as they always have, but none of them may overlap a `cmd.stream` child that
     // owns the terminal.
-    run_under_terminal_lock(lua, cmd, false)
+    run_under_terminal_lock(lua, cmd, false, None, &command)
 }
 
 /// Drop-in replacement for Lua's `os.getenv` that reads from the same
@@ -561,6 +769,200 @@ mod tests {
         // cmd.stream needs the terminal to itself; os.execute only needs to not
         // overlap one that does.
         assert_eq!(*seen.lock().unwrap(), vec![true, false]);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_cmd_exec_times_out() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let started = Instant::now();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            local ok, err = pcall(cmd.exec, "sleep 8", { timeout = 0.2 })
+            assert(not ok, "expected cmd.exec to raise on timeout")
+            assert(tostring(err):find("timed out"), "unexpected error: " .. tostring(err))
+        "#,
+        )
+        .exec()
+        .unwrap();
+        // The child must actually be killed rather than waited out.
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_cmd_exec_under_timeout_returns_output() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            local out = cmd.exec("echo hi", { timeout = 30 })
+            assert(out:find("hi"), "expected output, got " .. tostring(out))
+        "#,
+        )
+        .exec()
+        .unwrap();
+    }
+
+    // A command that outfills the pipe buffer must still time out rather than
+    // blocking forever on an undrained pipe.
+    #[test]
+    #[cfg(unix)]
+    fn test_cmd_exec_timeout_with_noisy_child() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let started = Instant::now();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            -- 2MB is far past the pipe buffer, without the CPU cost of a larger burst.
+            local ok = pcall(cmd.exec, "yes 2>/dev/null | head -c 2000000; sleep 8", { timeout = 0.3 })
+            assert(not ok, "expected timeout")
+        "#,
+        )
+        .exec()
+        .unwrap();
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_cmd_stream_times_out() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let started = Instant::now();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            local ok, err = pcall(cmd.stream, "sleep 8", { timeout = 0.2 })
+            assert(not ok, "expected cmd.stream to raise on timeout")
+            assert(tostring(err):find("timed out"), "unexpected error: " .. tostring(err))
+        "#,
+        )
+        .exec()
+        .unwrap();
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
+
+    #[test]
+    fn test_timeout_from_options_rejects_nonpositive() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let opts = lua.create_table().unwrap();
+        assert_eq!(timeout_from_options(Some(&opts)).unwrap(), None);
+        opts.set("timeout", 1.5).unwrap();
+        assert_eq!(
+            timeout_from_options(Some(&opts)).unwrap(),
+            Some(Duration::from_millis(1500))
+        );
+        opts.set("timeout", 0).unwrap();
+        assert!(timeout_from_options(Some(&opts)).is_err());
+        opts.set("timeout", -1).unwrap();
+        assert!(timeout_from_options(Some(&opts)).is_err());
+    }
+
+    // A finite Lua number can still be outside `Duration`'s range; converting it
+    // unchecked panicked the host. (#13263)
+    #[test]
+    fn test_timeout_out_of_range_is_an_error_not_a_panic() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let options = lua.create_table().unwrap();
+
+        // Past `Duration::MAX` (~1.8e19 seconds) on every platform.
+        for bad in [1e300_f64, 1e30_f64] {
+            options.set("timeout", bad).unwrap();
+            let err = timeout_from_options(Some(&options))
+                .expect_err("expected a rejection")
+                .to_string();
+            assert!(
+                err.contains("out of range"),
+                "unexpected error for {bad}: {err}"
+            );
+        }
+
+        // Representable as a `Duration`, so whether `Instant` can hold the deadline is
+        // platform-specific — it overflows on Linux but not on Windows. Either answer
+        // is fine; what matters is that neither one panics.
+        options.set("timeout", 2f64.powi(63)).unwrap();
+        if let Some(timeout) = timeout_from_options(Some(&options)).unwrap() {
+            let _ = deadline_from(timeout);
+        }
+    }
+
+    // The shell can exit inside the deadline while a process it forked keeps the
+    // pipes open. Collecting output has to be bounded too, or the call blocks for as
+    // long as that descendant runs — 20s under a 0.3s timeout, before this. (#13263)
+    #[test]
+    #[cfg(unix)]
+    fn test_timeout_bounds_a_descendant_holding_the_pipes() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let started = Instant::now();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            local ok, err = pcall(cmd.exec, "sleep 8 &", { timeout = 0.3 })
+            assert(not ok, "expected a timeout")
+            assert(tostring(err):find("timed out"), "unexpected error: " .. tostring(err))
+        "#,
+        )
+        .exec()
+        .unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "call outlived its timeout: {:?}",
+            started.elapsed()
+        );
+    }
+
+    // A descendant that keeps writing after the timeout must not keep the abandoned
+    // reader appending to an unbounded buffer. (#13263)
+    #[test]
+    #[cfg(unix)]
+    fn test_timeout_abandons_a_noisy_descendant() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let started = Instant::now();
+        lua.load(
+            r#"
+            local cmd = require("cmd")
+            -- A descendant that writes steadily well past the deadline, but a bounded
+            -- number of times: an unbounded writer would outlive the test as an
+            -- orphan, since killing the shell does not kill what it forked.
+            local writer = "(i=0; while [ $i -lt 60 ]; do echo abcdefghijklmnopqrstuvwxyz;"
+                .. " i=$((i+1)); sleep 0.05; done) &"
+            local ok = pcall(cmd.exec, writer .. " sleep 5", { timeout = 0.3 })
+            assert(not ok, "expected a timeout")
+        "#,
+        )
+        .exec()
+        .unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "call outlived its timeout: {:?}",
+            started.elapsed()
+        );
+    }
+
+    // Every exit from output_with_timeout must stop the readers accumulating, not
+    // just the two timeout branches: an error from the wait path (a child that
+    // survived `kill`) returns via `?` and would otherwise leave them running. Drop
+    // is what makes that hold for every path. (#13263)
+    #[test]
+    fn test_drain_abandons_its_reader_on_drop() {
+        let abandoned = Arc::new(AtomicBool::new(false));
+        {
+            let _drain = Drain::new(None::<std::io::Empty>, abandoned.clone());
+            assert!(!abandoned.load(Ordering::Relaxed));
+        }
+        assert!(
+            abandoned.load(Ordering::Relaxed),
+            "dropping a Drain must signal its reader to stop accumulating"
+        );
     }
 
     #[test]

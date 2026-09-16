@@ -715,7 +715,34 @@ The options table supports the following keys:
 
 - **`cwd`** (string): Set the working directory for the command
 - **`env`** (table): Set environment variables for the command. These are merged on top of the inherited environment (see below).
-- **`timeout`**: Currently ignored. Do not rely on it to terminate a command.
+- **`timeout`** (number): Seconds to allow the command to run before it is killed and an
+  error is raised. Must be greater than zero; fractions are allowed. Supported by
+  `cmd.exec` and `cmd.stream`; `os.execute` takes no options table.
+
+### Timeouts
+
+Without `timeout` a command runs as long as it likes, which is usually what an install
+step wants. Pass it when a command could hang indefinitely — reaching a network service
+that may not answer, or an interactive child nobody is there to answer:
+
+```lua
+local cmd = require("cmd")
+
+local ok, err = pcall(cmd.exec, "some-tool sync", { timeout = 30 })
+if not ok then
+    error("sync did not finish: " .. tostring(err))
+end
+```
+
+On expiry the command is killed and the call raises, so a timeout can be caught with
+`pcall` but never mistaken for a normal non-zero exit. `cmd.exec` discards whatever the
+command had produced so far.
+
+Only the shell mise spawned is killed. A command that starts its own background
+processes can leave them running after the timeout fires, so prefer a tool's own
+timeout flag when it has one. `cmd.exec` stops collecting output at the deadline in
+that case, so the call still returns on time, but output those processes had already
+written may be discarded along with the error.
 
 ### Environment Inheritance in Env Module Hooks
 

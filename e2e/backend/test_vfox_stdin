@@ -57,6 +57,9 @@ function PLUGIN:PostInstall(ctx)
 	local code = os.execute("$CHILD")
 	print("OSEXECUTE:" .. tostring(code))
 	print("STREAM:" .. tostring(cmd.stream("$CHILD")))
+	local t0 = os.time()
+	local ok = pcall(cmd.exec, "sleep 60", { timeout = 0.5 })
+	print("TIMEOUT:" .. tostring(ok) .. ":" .. tostring(os.time() - t0 < 30))
 end
 LUA
 
@@ -69,6 +72,8 @@ assert_contains "echo '$out'" "CHILD-EOF"
 assert_contains "echo '$out'" "OSEXECUTE:3"
 assert_contains "echo '$out'" "CHILD-READ:hello"
 assert_contains "echo '$out'" "STREAM:0"
+# A timeout kills the command and raises rather than waiting it out.
+assert_contains "echo '$out'" "TIMEOUT:false:true"
 
 # With raw, stdin is connected and each child consumes a line. This covers
 # cmd.exec too, which detached stdin unconditionally before #13254.
@@ -77,3 +82,5 @@ assert_contains "echo '$out'" "CHILD-READ:first"
 assert_contains "echo '$out'" "CHILD-READ:second"
 assert_contains "echo '$out'" "OSEXECUTE:0"
 assert_contains "echo '$out'" "STREAM:0"
+# A timeout kills the command and raises rather than waiting it out.
+assert_contains "echo '$out'" "TIMEOUT:false:true"
