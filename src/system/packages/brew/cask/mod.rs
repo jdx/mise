@@ -538,6 +538,7 @@ impl BrewCaskManager {
         }
         let mpr = MultiProgressReport::get();
         mpr.init_footer(false, "install", pkgs.len());
+        prewarm_downloads(pkgs, mode).await;
         for pkg in pkgs {
             let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
             match self
@@ -1053,6 +1054,76 @@ impl SystemPackageManager for BrewCaskManager {
         )
         .await
     }
+}
+
+/// Download cask archives concurrently before the serial install loop runs.
+///
+/// Placement cannot be parallelised: it mounts DMGs, writes into the app
+/// directory, and holds the caskroom lock. Downloading can be, and
+/// `fetch_archive` writes to a content-addressed cache keyed on the URL, so
+/// warming it first lets the serial pass find every artifact already present.
+/// This mirrors what the formula path does with bottles (see
+/// `super::fetch::concurrently` in brew/mod.rs) and what Homebrew's own
+/// `DownloadQueue` does: downloads in parallel, installs consuming them in
+/// order.
+///
+/// The same gates the install path applies are applied here, so an up-to-date
+/// cask is not downloaded just to be skipped a moment later. They are called
+/// rather than reimplemented; if a future gate is added and this pass misses
+/// it, the cost is a wasted download, never a wrong install, because the serial
+/// pass still decides what actually happens.
+///
+/// Every failure is swallowed. This is an optimisation, and the serial pass
+/// reports the real error with its proper context and progress reporting.
+#[allow(clippy::manual_async_fn)]
+async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode) {
+    let jobs = crate::jobs::normalize(crate::config::Settings::get().jobs);
+    if jobs <= 1 || pkgs.len() <= 1 {
+        return;
+    }
+
+    // Resolve metadata first. `fetch_cask` reads a cached JSON document, and
+    // `provision_ruby: false` keeps this pass free of side effects: a
+    // third-party tap cask simply resolves to nothing here and falls through to
+    // the serial path, which provisions properly.
+    let mut candidates = Vec::new();
+    for pkg in pkgs {
+        let Ok(cask) = fetch_cask(pkg, false).await else {
+            continue;
+        };
+        // git-backed casks clone instead of downloading an archive
+        if cask.url.ends_with(".git") {
+            continue;
+        }
+        // owned by Homebrew: the install path leaves it alone
+        if matches!(homebrew_installed_version(&cask.token), Ok(Some(_))) {
+            continue;
+        }
+        let Ok(artifacts) = cask_artifacts(&cask) else {
+            continue;
+        };
+        let installed = mise_installed_cask_version(&cask).ok().flatten();
+        if matches!(
+            installed_skip_reason(&cask, &artifacts, installed.as_deref(), mode),
+            Ok(Some(_))
+        ) {
+            continue;
+        }
+        candidates.push(cask);
+    }
+
+    if candidates.len() <= 1 {
+        return;
+    }
+
+    let futures: Vec<_> = candidates
+        .iter()
+        .map(|cask| async move {
+            let _ = fetch_archive(cask, None).await;
+        })
+        .collect();
+    let mut running = super::fetch::concurrently(futures, jobs);
+    while running.next().await.is_some() {}
 }
 
 /// Abandons an upgrade whose self-updating app is running. Failing instead
