@@ -1856,6 +1856,20 @@
             "type": "string"
           }
         },
+        "shims": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "exclude": {
+              "default": [],
+              "description": "Command names mise should never create shims for, leaving them to the system.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "shims_dir": {
           "description": "Directory containing user shims.",
           "type": "string"
