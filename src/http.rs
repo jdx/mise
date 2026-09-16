@@ -596,10 +596,21 @@ pub(crate) struct Client {
     kind: ClientKind,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ClientKind {
     Http,
     Fetch,
+}
+
+impl ClientKind {
+    /// Names this client's traffic in the redirect error. Exhaustive, so a new
+    /// kind cannot be added without deciding what to call it.
+    fn redirect_subject(self) -> &'static str {
+        match self {
+            Self::Http => "a download",
+            Self::Fetch => "a remote version request",
+        }
+    }
 }
 
 impl Client {
@@ -622,16 +633,13 @@ impl Client {
 
     fn build(timeout: Duration, kind: ClientKind) -> Result<reqwest::Client> {
         let builder = Self::_new().read_timeout(timeout).connect_timeout(timeout);
-        let builder = match kind {
-            // Downloads are checksum-verified where a checksum is known, but
-            // not every caller has one, and a silent downgrade is worth
-            // refusing on its own. Redirects are otherwise unchanged: this
-            // defers to the default policy, which is what this client used.
-            ClientKind::Http => builder.redirect(https_downgrade_policy("a download")),
-            ClientKind::Fetch => {
-                builder.redirect(https_downgrade_policy("a remote version request"))
-            }
-        };
+        // Applied to every kind rather than per match arm, so no client can be
+        // added — or edited back — into existence without it. Downloads are
+        // checksum-verified where a checksum is known, but not every caller has
+        // one, and a silent downgrade is worth refusing on its own. Redirects
+        // are otherwise unchanged: the policy defers to the default for
+        // anything that is not a downgrade.
+        let builder = builder.redirect(https_downgrade_policy(kind.redirect_subject()));
         Ok(builder.build()?)
     }
 
@@ -3737,9 +3745,21 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         assert_eq!(client.request_timeout(), Duration::from_secs(3));
     }
 
-    /// The predicate behind `https_downgrade_policy`, which both clients now
-    /// use. The rejection itself cannot be exercised here: it needs a real
-    /// HTTPS hop to redirect away from, and mockito serves plain HTTP.
+    /// Every client kind names its traffic, which is also what proves each one
+    /// reaches `https_downgrade_policy`: `Client::build` applies the policy
+    /// unconditionally using this, so there is no arm that can lack it.
+    #[test]
+    fn test_every_client_kind_has_a_redirect_subject() {
+        let subjects = [ClientKind::Http, ClientKind::Fetch].map(ClientKind::redirect_subject);
+        assert!(subjects.iter().all(|subject| !subject.is_empty()));
+        assert_ne!(subjects[0], subjects[1]);
+    }
+
+    /// The predicate behind `https_downgrade_policy`, which every client uses.
+    /// The rejection itself cannot be exercised here: it needs a real HTTPS hop
+    /// to redirect away from, and mockito serves plain HTTP. Trusting a
+    /// self-signed cert would mean adding a test-only trust bypass to the
+    /// client, which is a worse trade than the gap it closes.
     #[test]
     fn test_https_downgrade_policy_rejects_https_to_http() {
         let https = Url::parse("https://example.com/versions").unwrap();
