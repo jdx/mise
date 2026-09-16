@@ -1744,7 +1744,32 @@ pub(crate) fn packages_from_specs_with_config(
     specs: &[String],
     config: Option<&Config>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    let brew_taps = config.map(brew_taps_from_config).unwrap_or_default();
+    let empty = ConfigMap::default();
+    packages_from_specs_with_config_files(
+        specs,
+        config.map_or(&empty, |config| &config.config_files),
+    )
+}
+
+/// `packages_from_specs_with_config` against a specific set of config files.
+///
+/// An explicit spec is not filtered by `os`/`env` — naming a package on the
+/// command line is the decision — but brew-cask options still come from the
+/// config so that `mise bootstrap packages apply brew-cask:firefox` adopts
+/// exactly what a full `mise bootstrap` would. Adoption is the documented way
+/// to migrate an app bundle without replacing it, and replacing it is what
+/// puts macOS Privacy & Security grants at risk.
+fn packages_from_specs_with_config_files(
+    specs: &[String],
+    config_files: &ConfigMap,
+) -> eyre::Result<Vec<ManagerPackages>> {
+    let brew_taps = brew_taps_from_config_files(config_files);
+    #[cfg(unix)]
+    let brew_adopt = brew_adopt_from_config_files(config_files);
+    #[cfg(unix)]
+    let package_configs = package_configs_from_config_files(config_files);
+    #[cfg(unix)]
+    let mut cask_adopt = BTreeSet::new();
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
@@ -1754,6 +1779,15 @@ pub(crate) fn packages_from_specs_with_config(
         } else {
             None
         };
+        #[cfg(unix)]
+        if mgr == "brew-cask" {
+            let configured = package_configs
+                .get(&format!("{mgr}:{name}"))
+                .and_then(|package| package.adopt());
+            if configured.unwrap_or(brew_adopt) {
+                cask_adopt.insert(name.clone());
+            }
+        }
         let requests = by_mgr.entry(mgr).or_default();
         let request = PackageRequest {
             name,
@@ -1765,7 +1799,18 @@ pub(crate) fn packages_from_specs_with_config(
             requests.push(request);
         }
     }
-    resolve_managers(by_mgr, IndexMap::new(), true)
+    #[cfg(unix)]
+    let options = if cask_adopt.is_empty() {
+        IndexMap::new()
+    } else {
+        IndexMap::from([(
+            "brew-cask".to_string(),
+            ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+        )])
+    };
+    #[cfg(not(unix))]
+    let options = IndexMap::new();
+    resolve_managers(by_mgr, options, true)
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -2075,6 +2120,60 @@ mod tests {
         assert_eq!(casks.requests.len(), 2);
         assert!(casks.options.brew_cask_adopt("textmate"));
         assert!(!casks.options.brew_cask_adopt("replace-me"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_brew_cask_adopt_option_reaches_explicit_cli_specs() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.brew]
+                adopt = true
+
+                [bootstrap.packages]
+                "brew-cask:textmate" = "latest"
+                "brew-cask:replace-me" = { adopt = false }
+            "#,
+        )])?;
+
+        let specs = [
+            "brew-cask:textmate".to_string(),
+            "brew-cask:replace-me".to_string(),
+            "brew-cask:unconfigured".to_string(),
+        ];
+        let packages = packages_from_specs_with_config_files(&specs, &config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(casks.requests.len(), 3);
+        assert!(casks.options.brew_cask_adopt("textmate"));
+        assert!(!casks.options.brew_cask_adopt("replace-me"));
+        // a spec absent from the config still follows the [bootstrap.brew] default
+        assert!(casks.options.brew_cask_adopt("unconfigured"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_explicit_cli_specs_do_not_adopt_without_config() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:textmate" = "latest"
+            "#,
+        )])?;
+
+        let specs = ["brew-cask:textmate".to_string()];
+        let packages = packages_from_specs_with_config_files(&specs, &config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert!(!casks.options.brew_cask_adopt("textmate"));
         Ok(())
     }
 

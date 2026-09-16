@@ -201,6 +201,10 @@ Or adopt selectively:
 "brew-cask:firefox" = { version = "latest", adopt = true }
 ```
 
+Adoption applies whether the run covers everything in `[bootstrap.packages]`
+or names casks explicitly, so migrating one app at a time with
+`mise bootstrap packages apply brew-cask:firefox` honors the same settings.
+
 mise prints a warning whenever it replaces an existing `.app`. Version
 upgrades still replace the bundle when upstream publishes a new cask version —
 expect to re-confirm TCC prompts after those upgrades, just as with Homebrew.
