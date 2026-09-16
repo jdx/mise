@@ -593,6 +593,17 @@ colon-separated string to PATH in code that also runs on Windows.
 
 ## Command Module
 
+Three functions run a command, differing in what they do with its output:
+
+| Function     | Output                   | Returns                               | Use when                                                                |
+| ------------ | ------------------------ | ------------------------------------- | ----------------------------------------------------------------------- |
+| `cmd.exec`   | captured                 | stdout as a string; raises on failure | you need the output, or want a failure to stop the hook                 |
+| `os.execute` | streamed to the terminal | exit status                           | you want the user to see the output and will handle the status yourself |
+| `cmd.stream` | streamed to the terminal | exit status                           | the child needs to interact with the user                               |
+
+`cmd.exec` and `os.execute` both detach stdin; only `cmd.stream` connects it. See
+[Hooks and stdin](#hooks-and-stdin) below.
+
 `cmd.exec` runs a command through mise's configured default inline shell. It returns stdout
 on success and raises an error containing stderr on failure. Successful stderr is not part
 of the returned string. `pcall(cmd.exec, ...)` can intercept the error.
