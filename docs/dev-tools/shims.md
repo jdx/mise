@@ -207,13 +207,13 @@ alongside `not_found_auto_install = false`, if you'd rather an unresolvable shim
 ### Excluding command names
 
 Some commands are also provided by the OS, and other software on the machine depends on getting the
-system one. [`shims_exclude`](/configuration/settings.html#shims_exclude) keeps those names out of
+system one. [`shims.exclude`](/configuration/settings.html#shims.exclude) keeps those names out of
 the shim directory entirely — mise still installs and manages the tool, it just never puts that
 command on `PATH`:
 
 ```toml
-[settings]
-shims_exclude = ["python", "python3", "pip", "pip3"]
+[settings.shims]
+exclude = ["python", "python3", "pip", "pip3"]
 ```
 
 On Arch Linux, for example, `/usr/bin/python` is the distro interpreter and its modules live in a

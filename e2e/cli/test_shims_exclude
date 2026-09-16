@@ -25,8 +25,8 @@ assert_contains "dummy" "This is Dummy 1.0.0!"
 
 # excluding the name removes the existing shim and stops it from being regenerated
 cat >mise.toml <<'EOF'
-[settings]
-shims_exclude = ["dummy"]
+[settings.shims]
+exclude = ["dummy"]
 
 [tools]
 dummy = "1.0.0"

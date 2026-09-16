@@ -1722,14 +1722,14 @@ async fn get_desired_shims(
             Err(err) => warn!("Skipping invalid lazy shim declaration: {err:#}"),
         }
     }
-    let excluded = &Settings::get().shims_exclude;
+    let excluded = &Settings::get().shims.exclude;
     if !excluded.is_empty() {
         shims.retain(|name| !shim_name_excluded(excluded, name));
     }
     Ok(shims)
 }
 
-/// Whether `shims_exclude` covers this shim name. Both sides are compared without the
+/// Whether `shims.exclude` covers this shim name. Both sides are compared without the
 /// platform executable suffix so a single `python` entry also matches `python.exe`, and
 /// through [`command_names_eq`] so macOS stays case-insensitive like the filesystem.
 fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {

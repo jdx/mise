@@ -2914,21 +2914,7 @@ parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
-[shims_dir]
-description = "Directory containing user shims."
-docs = """
-The user shim farm. Lazy tools declared in user config publish their bootstrap shims here.
-The directory must be absolute after `~` expansion.
-`mise reshim` may publish into a shared executable directory such as `~/.local/bin`; it only
-replaces or removes entries it recognizes as mise shims. Other mise features filter this directory
-as one PATH entry, so use a dedicated directory with activation and internal dependency lookups.
-"""
-env = "MISE_SHIMS_DIR"
-global_only = true
-optional = true
-type = "Path"
-
-[shims_exclude]
+[shims.exclude]
 default = []
 description = "Command names mise should never create shims for, leaving them to the system."
 docs = """
@@ -2942,7 +2928,7 @@ depends on getting the system one. On Arch Linux, for example, `/usr/bin/python`
 interpreter and its modules live in a matching `site-packages` directory, so a project that pins
 `python` also changes which interpreter a `#!/usr/bin/env python` script gets:
 
-    mise settings shims_exclude=python,python3,pip,pip3
+    mise settings shims.exclude=python,python3,pip,pip3
 
 With that set, `python` and `python3` always resolve to the system interpreter, while a
 version-qualified shim such as `python3.12` still resolves to the version a config selects.
@@ -2958,6 +2944,20 @@ env = "MISE_SHIMS_EXCLUDE"
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[shims_dir]
+description = "Directory containing user shims."
+docs = """
+The user shim farm. Lazy tools declared in user config publish their bootstrap shims here.
+The directory must be absolute after `~` expansion.
+`mise reshim` may publish into a shared executable directory such as `~/.local/bin`; it only
+replaces or removes entries it recognizes as mise shims. Other mise features filter this directory
+as one PATH entry, so use a dedicated directory with activation and internal dependency lookups.
+"""
+env = "MISE_SHIMS_DIR"
+global_only = true
+optional = true
+type = "Path"
 
 [shorthands_file]
 deprecated = "Use [plugins] in mise.toml or ~/.config/mise/config.toml instead (same shortname = \"backend-or-url\" rows; see https://mise.jdx.dev/configuration.html#plugins)."
