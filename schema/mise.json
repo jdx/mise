@@ -1738,13 +1738,17 @@
               "description": "Override architecture identifier for precompiled Ruby binaries.",
               "type": "string"
             },
+            "precompiled_api_url": {
+              "description": "Override the GitLab API URL for a `gitlab:owner/repo` precompiled_url (self-hosted GitLab).",
+              "type": "string"
+            },
             "precompiled_os": {
               "description": "Override OS identifier for precompiled Ruby binaries.",
               "type": "string"
             },
             "precompiled_url": {
               "default": "jdx/ruby",
-              "description": "URL template or GitHub repo for precompiled Ruby binaries.",
+              "description": "URL template, GitHub repo, or GitLab repo for precompiled Ruby binaries.",
               "type": "string"
             },
             "ruby_build_cli_opts": {

@@ -2716,9 +2716,9 @@ description = "Override the GitLab API URL for a `gitlab:owner/repo` precompiled
 docs = """
 Only consulted when `ruby.precompiled_url` is a `gitlab:owner/repo` shorthand. Set this to
 a self-hosted GitLab instance's API URL, e.g. `https://gitlab.example.com/api/v4`, to
-resolve releases and (if enabled) attestations from there instead of gitlab.com.
-Authentication follows the normal GitLab token resolution (`MISE_GITLAB_ENTERPRISE_TOKEN`
-for non-gitlab.com hosts).
+resolve releases from there instead of gitlab.com. Must be `https://` — a plaintext URL
+is rejected, since matching-origin requests attach GitLab credentials
+(`MISE_GITLAB_ENTERPRISE_TOKEN` for non-gitlab.com hosts).
 
 Has no effect for GitHub sources or full URL templates.
 """
