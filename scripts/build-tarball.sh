@@ -94,11 +94,11 @@ if [[ $os == "macos" ]]; then
 	export MISE_NOTIFICATION_SIGN_IDENTITY="Developer ID Application: Jeffrey Dickey (4993Y37DX6)"
 fi
 
-if [[ -n "${MISE_BOLT:-}" ]] && [[ -z "${MISE_PGO:-}" ]]; then
+if [[ -n ${MISE_BOLT:-} ]] && [[ -z ${MISE_PGO:-} ]]; then
 	error "MISE_BOLT requires MISE_PGO so BOLT optimizes the PGO release binary"
 fi
 
-if [[ -n "${MISE_PGO:-}" ]]; then
+if [[ -n ${MISE_PGO:-} ]]; then
 	# Profile-guided optimization: instrument, train against the hermetic
 	# offline workload in scripts/pgo.bash, rebuild with the profile.
 	# Only valid for targets whose binaries can execute on this machine.
@@ -118,7 +118,7 @@ fi
 target_dir="${CARGO_TARGET_DIR:-target}"
 binary_path="$target_dir/$RUST_TRIPLE/serious/mise"
 
-if [[ -n "${MISE_BOLT:-}" ]]; then
+if [[ -n ${MISE_BOLT:-} ]]; then
 	case "$RUST_TRIPLE" in
 	x86_64-unknown-linux-gnu)
 		bash scripts/bolt.bash "$binary_path"
@@ -129,14 +129,27 @@ if [[ -n "${MISE_BOLT:-}" ]]; then
 	esac
 fi
 
+# mise's dynamically-linked Linux builds target glibc 2.18 or newer.
+#
+# This is a deliberate number, not a property of whichever distro was topical
+# when it was written. The previous thresholds were justified as "whatever
+# Amazon Linux 2 ships" (2.26) and "whatever Amazon Linux 2023 ships" (2.34);
+# AL2 reached EOL on 2026-06-30, which left those numbers meaning nothing in
+# particular. They were also inert: the pinned cross images are glibc 2.23, so
+# a binary built in them can never reference a 2.26+ symbol, and neither
+# assertion could fire.
+#
+# 2.18 is what every gnu target actually requires today, so asserting it moves
+# no floor -- it just makes the check able to fail. Raising it drops users and
+# is a deliberate compatibility decision; this guard exists so that decision
+# cannot be made by accident, e.g. by bumping a cross image. Systems below it
+# should use the musl builds, which are static and carry no glibc requirement.
+GLIBC_FLOOR=2.18
+
 case "$RUST_TRIPLE" in
-x86_64-unknown-linux-gnu)
-	echo "Checking glibc compatibility for Amazon Linux 2..."
-	scripts/check-glibc.sh "$binary_path" "2.26" "Amazon Linux 2"
-	;;
-aarch64-unknown-linux-gnu)
-	echo "Checking glibc compatibility for Amazon Linux 2023..."
-	scripts/check-glibc.sh "$binary_path" "2.34" "Amazon Linux 2023"
+*-linux-gnu | *-linux-gnueabihf)
+	echo "Checking glibc compatibility (floor: $GLIBC_FLOOR)..."
+	scripts/check-glibc.sh "$binary_path" "$GLIBC_FLOOR" "$RUST_TRIPLE"
 	;;
 esac
 mkdir -p dist/mise/bin

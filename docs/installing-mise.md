@@ -151,6 +151,11 @@ Supported OS/arch:
 - `linux-armv7`
 - `linux-armv7-musl`
 
+The `linux-x64`, `linux-arm64`, and `linux-armv7` builds are dynamically linked and
+require **glibc 2.18 or newer**. On systems with an older glibc, or with a different
+libc such as Alpine's musl, use the matching `-musl` build instead: those are static
+and have no libc requirement.
+
 If you need something else, compile it with `cargo install mise` (see below).
 
 ### apk
@@ -375,7 +380,7 @@ change. To keep compiling from source, set
 [`all_compile = true`](/configuration/settings.html#all_compile) explicitly.
 :::
 
-### yum (RHEL 8, CentOS Stream 8, Amazon Linux 2)
+### yum (RHEL 8, CentOS Stream 8)
 
 ```sh
 sudo yum install -y yum-utils
