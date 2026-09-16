@@ -377,11 +377,8 @@ impl Backend for NPMBackend {
         BackendType::Npm
     }
 
-    /// Installed npm versions are registry versions, which are strict semver,
-    /// so this mirrors node-semver's `prerelease()` rather than mise's
-    /// channel-tag pattern.
     fn is_prerelease_version(&self, version: &str) -> bool {
-        semver::Version::parse(version).is_ok_and(|version| !version.pre.is_empty())
+        is_semver_prerelease(version)
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
@@ -2254,6 +2251,27 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
     ]
 }
 
+/// A distinct `short` per tool keeps the install-state memo, which is
+/// process-wide, from mixing versions between tests.
+#[cfg(test)]
+pub(crate) fn test_backend(
+    tool: &str,
+    installs_path: Option<PathBuf>,
+    opts: Option<ToolVersionOptions>,
+) -> NPMBackend {
+    let mut ba = BackendArg::new_raw(
+        format!("npm:{tool}"),
+        Some(tool.to_string()),
+        tool.to_string(),
+        opts,
+        crate::cli::args::BackendResolution::new(true),
+    );
+    if let Some(installs_path) = installs_path {
+        ba.installs_path = installs_path;
+    }
+    NPMBackend::from_arg(ba)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2284,30 +2302,6 @@ mod tests {
     }
 
     #[test]
-    fn is_prerelease_version_recognises_numeric_semver_prereleases() {
-        let backend = create_npm_backend("happy");
-        assert!(backend.is_prerelease_version("1.3.1-3"));
-        assert!(backend.is_prerelease_version("1.2.5-beta.1"));
-        assert!(!backend.is_prerelease_version("1.2.4"));
-        assert!(!backend.is_prerelease_version("1.2.4+build.7"));
-        assert!(!backend.is_prerelease_version("1.2.4+build-7"));
-    }
-
-    /// A distinct `short` per tool keeps the install-state memo, which is
-    /// process-wide, from mixing versions between tests.
-    fn create_npm_backend_with_installs(tool: &str, installs_path: PathBuf) -> NPMBackend {
-        let mut ba = BackendArg::new_raw(
-            format!("npm:{tool}"),
-            Some(tool.to_string()),
-            tool.to_string(),
-            None,
-            BackendResolution::new(true),
-        );
-        ba.installs_path = installs_path;
-        NPMBackend::from_arg(ba)
-    }
-
-    #[test]
     fn latest_installed_version_ignores_latest_symlink_into_prerelease() {
         let tmp = tempfile::tempdir().unwrap();
         let installs_path = tmp.path().join("installs/npm-happy-latest-link");
@@ -2315,7 +2309,7 @@ mod tests {
         std::fs::create_dir_all(installs_path.join("1.3.1-3")).unwrap();
         crate::file::make_symlink_or_file(Path::new("./1.3.1-3"), &installs_path.join("latest"))
             .unwrap();
-        let backend = create_npm_backend_with_installs("happy-latest-link", installs_path);
+        let backend = test_backend("happy-latest-link", Some(installs_path), None);
 
         assert_eq!(
             backend.latest_installed_version(None).unwrap().as_deref(),
@@ -2324,10 +2318,37 @@ mod tests {
     }
 
     #[test]
+    fn latest_installed_version_keeps_prereleases_when_enabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-prerelease-enabled");
+        std::fs::create_dir_all(installs_path.join("1.3.1-3")).unwrap();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        let backend = test_backend(
+            "happy-prerelease-enabled",
+            Some(installs_path.clone()),
+            Some(opts),
+        );
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("1.3.1-3")
+        );
+
+        crate::file::make_symlink_or_file(Path::new("./1.3.1-3"), &installs_path.join("latest"))
+            .unwrap();
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("1.3.1-3")
+        );
+    }
+
+    #[test]
     fn installed_versions_matching_skips_numeric_prereleases_unless_requested() {
         let tmp = tempfile::tempdir().unwrap();
         let installs_path = tmp.path().join("installs/npm-happy-matching");
-        let backend = create_npm_backend_with_installs("happy-matching", installs_path.clone());
+        let backend = test_backend("happy-matching", Some(installs_path.clone()), None);
         for version in ["1.2.4", "1.3.1-3"] {
             let install_path = installs_path.join(version);
             std::fs::create_dir_all(&install_path).unwrap();
@@ -3857,6 +3878,7 @@ pkg@1.2.0 '1.2.0'
         assert!(is_semver_prerelease("3.0.0-foo"));
         // Maintainer-invented tag mise's regex doesn't know about — still flagged.
         assert!(is_semver_prerelease("4.0.0-internal-build-7"));
+        assert!(is_semver_prerelease("1.3.1-3"));
     }
 
     #[test]

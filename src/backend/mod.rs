@@ -2814,14 +2814,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
         None
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
+        let versions = self.list_installed_versions();
         // No async config lookup available here; fall back to inline/registry
         // opts, which is the best we have for a sync path.
         let filter = !self.include_prereleases(&self.ba().opts());
-        let versions = self
-            .list_installed_versions()
-            .into_iter()
-            .filter(|v| !filter || v == query || !self.is_prerelease_version(v))
-            .collect();
         self.fuzzy_match_filter(versions, query, filter)
     }
     async fn list_versions_matching(
@@ -3109,6 +3105,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 let installs_path = install_state::get_tool(&self.ba().short)
                     .and_then(|tool| tool.installs_path)
                     .unwrap_or_else(|| self.ba().installs_path.clone());
+                let filter = !self.include_prereleases(&self.ba().opts());
                 let installed_symlink = installs_path.join("latest");
                 if installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
@@ -3120,7 +3117,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .to_string();
                     // A `latest` link written before the backend could tell this
                     // version is a pre-release must not keep winning.
-                    if !self.is_prerelease_version(&version) {
+                    if !filter || !self.is_prerelease_version(&version) {
                         return Ok(Some(version));
                     }
                 }
@@ -3131,7 +3128,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
                     .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
-                    .filter(|v| !self.is_prerelease_version(v))
+                    .filter(|v| !filter || !self.is_prerelease_version(v))
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
             }
@@ -4194,6 +4191,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
+        // Same exact-match bypass as `fuzzy_match_versions`, applied with the
+        // backend's own notion of a pre-release rather than the channel-tag regex.
+        let versions = versions
+            .into_iter()
+            .filter(|v| !filter_prereleases || v == query || !self.is_prerelease_version(v))
+            .collect();
         fuzzy_match_versions(versions, query, filter_prereleases)
     }
 

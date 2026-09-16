@@ -93,13 +93,14 @@ fn rebuild_symlinks_in_dir(
         .filter(|v| is_concrete_install(v))
         .collect::<std::collections::HashSet<_>>();
     let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
-    for (from, to) in &symlinks {
+    remove_stale_prerelease_symlinks(backend, installs_dir, &symlinks)?;
+    for (from, to) in symlinks {
         let from_name = from.clone();
         let from = installs_dir.join(from);
         if from.exists() {
             if is_runtime_symlink(&from) {
                 // Existing runtime symlink: only rewrite if the target changed.
-                if file::resolve_symlink(&from)?.unwrap_or_default() == *to {
+                if file::resolve_symlink(&from)?.unwrap_or_default() == to {
                     continue;
                 }
                 trace!("Removing existing symlink: {}", from.display());
@@ -118,9 +119,8 @@ fn rebuild_symlinks_in_dir(
                 continue;
             }
         }
-        make_symlink_or_file(to, &from)?;
+        make_symlink_or_file(&to, &from)?;
     }
-    remove_stale_prerelease_symlinks(backend, installs_dir, &symlinks)?;
     remove_missing_symlinks_in_dir(installs_dir)?;
     Ok(())
 }
@@ -128,29 +128,23 @@ fn rebuild_symlinks_in_dir(
 /// Runtime symlinks written before the backend could tell their target is a
 /// pre-release (`latest` or `1.3` pointing at npm's `1.3.1-3`) are not in the
 /// rebuilt set, and their target still exists, so nothing else removes them.
+/// Only names mise generates are touched: a configured alias or hand-made link
+/// into a pre-release is deliberate.
 fn remove_stale_prerelease_symlinks(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
     symlinks: &IndexMap<String, PathBuf>,
 ) -> Result<()> {
-    if !installs_dir.is_dir() {
-        return Ok(());
-    }
-    for entry in std::fs::read_dir(installs_dir)? {
-        let path = entry?.path();
-        let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string()) else {
-            continue;
-        };
-        if symlinks.contains_key(&name) {
+    for path in file::ls(installs_dir)? {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if symlinks.contains_key(name.as_ref()) {
             continue;
         }
-        let Some(target) = runtime_symlink_target(&path) else {
-            continue;
-        };
-        let Some(target) = target.file_name().map(|n| n.to_string_lossy().to_string()) else {
-            continue;
-        };
-        if backend.is_prerelease_version(&target) {
+        if let Some(target) = runtime_symlink_target(&path)
+            && let Some(target) = target.file_name().map(|t| t.to_string_lossy().to_string())
+            && is_generated_symlink_name(&name, &target)
+            && backend.is_prerelease_version(&target)
+        {
             trace!("Removing stale pre-release symlink: {}", path.display());
             file::remove_file(&path)?;
         }
@@ -267,6 +261,13 @@ fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) ->
         .collect()
 }
 
+/// `list_symlinks_for_dir` generates `{prefix}latest` and dotted prefixes of the
+/// target (`1`, `1.3` for `1.3.1-3`); anything else was configured or hand-made.
+fn is_generated_symlink_name(name: &str, target: &str) -> bool {
+    let (prefix, _) = split_version_prefix(target);
+    name == format!("{prefix}latest") || target.starts_with(&format!("{name}."))
+}
+
 fn is_concrete_install(v: &str) -> bool {
     let (_, version) = split_version_prefix(v);
     version.chars().any(|c| c.is_ascii_digit()) && Versioning::new(version).is_some()
@@ -334,14 +335,7 @@ mod tests {
     use std::fs;
 
     fn npm_test_backend() -> Arc<dyn Backend> {
-        let ba = crate::cli::args::BackendArg::new_raw(
-            "npm".to_string(),
-            Some("happy".to_string()),
-            "happy".to_string(),
-            None,
-            crate::cli::args::BackendResolution::new(true),
-        );
-        Arc::new(crate::backend::npm::NPMBackend::from_arg(ba))
+        Arc::new(crate::backend::npm::test_backend("happy", None, None))
     }
 
     #[test]
@@ -419,6 +413,22 @@ mod tests {
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
         assert!(is_runtime_symlink(&installs_dir.join("1.2")));
         assert!(installs_dir.join("1.3.1-3").is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn remove_stale_prerelease_symlinks_keeps_links_it_did_not_generate() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("npm-happy");
+        fs::create_dir_all(installs_dir.join("1.3.1-3"))?;
+        make_symlink_or_file(Path::new("./1.3.1-3"), &installs_dir.join("next"))?;
+        make_symlink_or_file(Path::new("./1.3.1-3"), &installs_dir.join("latest"))?;
+        let backend = npm_test_backend();
+
+        remove_stale_prerelease_symlinks(&backend, &installs_dir, &IndexMap::new())?;
+
+        assert!(is_runtime_symlink(&installs_dir.join("next")));
+        assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
         Ok(())
     }
 
