@@ -433,6 +433,11 @@ This also applies when your global config is a symlink into a dotfiles repo, for
 both paths and treats it as the global config, so `mise lock` run from the repo reports that
 nothing is configured in project scope. Run `mise lock --global` instead; the lockfile is
 written next to the symlink target (`~/dotfiles/mise.lock`).
+
+If `mise.lock` itself is a symlink, native dependency sidecar paths are resolved
+relative to the target lockfile, and updates keep sidecars beside that target.
+This also supports deployments that symlink each file individually: new sidecars
+are stored in the dotfiles repository and do not need separate global symlinks.
 :::
 
 ## Local Lockfiles

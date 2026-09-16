@@ -1179,6 +1179,13 @@ impl Lockfile {
             return Ok(Lockfile::default());
         }
         trace!("reading lockfile {}", path.display_user());
+        // Sidecars belong to the lockfile target, including when only the
+        // lockfile (and not its sidecar files) has been symlinked elsewhere.
+        let target = path
+            .is_symlink()
+            .then(|| fs::canonicalize(path))
+            .transpose()?;
+        let path = target.as_deref().unwrap_or(path);
         let content = file::read_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
         let mut table: toml::Table = toml::from_str(&content)?;
@@ -1284,6 +1291,41 @@ impl Lockfile {
     }
 
     pub(crate) fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
+        // Resolve the lockfile target before choosing sidecar locations and pointers.
+        let target = if path.is_symlink() {
+            // If the existing lockfile is a symlink, resolve it and update the target instead
+            // of replacing the symlink
+            trace!(
+                "lockfile {} is a symlink, updating target instead of replacing",
+                display_path(path)
+            );
+
+            match fs::canonicalize(path) {
+                Ok(link_target) => {
+                    trace!(
+                        "resolved lockfile symlink {} to {}",
+                        display_path(path),
+                        display_path(&link_target)
+                    );
+                    link_target
+                }
+                Err(e) => {
+                    // Dangling symlink – fall back to overwriting the symlink itself
+                    // TODO: Maybe instead of overwriting, we should create the new lockfile at
+                    // the symlink's target path?
+                    warn!(
+                        "lockfile {} is a dangling symlink ({}), overwriting the symlink itself",
+                        display_path(path),
+                        e
+                    );
+                    path.to_path_buf()
+                }
+            }
+        } else {
+            path.to_path_buf()
+        };
+        let path = target.as_path();
+
         let mut lockfile = toml::Table::new();
 
         if self.lockfile_version > 0 {
@@ -1425,39 +1467,6 @@ impl Lockfile {
             }));
         }
 
-        // Resolve the symlink target first, before writing the temp file
-        let target = if path.is_symlink() {
-            // If the existing lockfile is a symlink, resolve it and update the target instead
-            // of replacing the symlink
-            trace!(
-                "lockfile {} is a symlink, updating target instead of replacing",
-                display_path(path)
-            );
-
-            match fs::canonicalize(path) {
-                Ok(link_target) => {
-                    trace!(
-                        "resolved lockfile symlink {} to {}",
-                        display_path(path),
-                        display_path(&link_target)
-                    );
-                    link_target
-                }
-                Err(e) => {
-                    // Dangling symlink – fall back to overwriting the symlink itself
-                    // TODO: Maybe instead of overwriting, we should create the new lockfile at
-                    // the symlink's target path?
-                    warn!(
-                        "lockfile {} is a dangling symlink ({}), overwriting the symlink itself",
-                        display_path(path),
-                        e
-                    );
-                    path.to_path_buf()
-                }
-            }
-        } else {
-            path.to_path_buf()
-        };
         // Use atomic write: write to a uniquely-named temp file, then persist.
         // - Prevents partial writes from corrupting the lockfile.
         // - Unique temp name prevents races when multiple mise processes update
