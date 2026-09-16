@@ -8388,7 +8388,7 @@ fn macos_app_records_state_outside_the_homebrew_caskroom() {
 fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<()> {
     let spec = crate::system::AppSpec {
         url: "https://example.com/Nuvio-1.1.20-arm64.dmg".to_string(),
-        sha256: "abc123".to_string(),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "Nuvio.app".to_string(),
         version: "1.1.20".to_string(),
     };
@@ -8397,7 +8397,10 @@ fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<
     assert_eq!(cask.token, "nuvio");
     assert_eq!(cask.version, "1.1.20");
     assert_eq!(cask.url, spec.url);
-    assert_eq!(cask.sha256.as_deref(), Some("abc123"));
+    assert_eq!(
+        cask.sha256.as_deref(),
+        Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    );
     assert_eq!(cask.manager, CaskManager::MacosApp);
     assert_eq!(cask.label(), "macos-app");
     // An inline declaration pins one artifact, so mise always owns the bundle.
@@ -8419,7 +8422,7 @@ fn declared_app_cask_populates_only_the_fields_an_app_install_reads() -> Result<
 fn declared_app_cask_rejects_a_traversing_package_name() {
     let spec = crate::system::AppSpec {
         url: "https://example.com/a.dmg".to_string(),
-        sha256: "abc".to_string(),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "A.app".to_string(),
         version: "1.0.0".to_string(),
     };
@@ -8449,7 +8452,7 @@ fn declared_app_cask_rejects_a_traversing_version() {
     // unvalidated one could place records outside the manager's state root.
     let spec = crate::system::AppSpec {
         url: "https://example.com/a.dmg".to_string(),
-        sha256: "abc".to_string(),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
         artifact: "A.app".to_string(),
         version: "../../escape".to_string(),
     };

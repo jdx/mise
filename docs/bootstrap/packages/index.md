@@ -64,11 +64,14 @@ what a cask would carry:
 
 ```toml
 [bootstrap.packages]
-"macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}-arm64.dmg", sha256 = "e3b0c442...", artifact = "Nuvio.app" }
+"macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}-arm64.dmg", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app" }
 ```
 
-`url`, `sha256`, `artifact`, and an explicit `version` are all required. mise
-downloads the archive, verifies the checksum, and installs `Nuvio.app` into
+`url`, `sha256`, `artifact`, and an explicit `version` are all required.
+`sha256` must be a real 64-character hex digest — unlike a cask, `macos-app`
+does not accept Homebrew's `no_check` sentinel, because an inline declaration
+names one pinned artifact and there is nothing to verify against without it.
+mise downloads the archive, verifies the checksum, and installs `Nuvio.app` into
 `/Applications` — the same installer `brew-cask` uses, so `.dmg` and `.zip`
 archives, the app directory, and `adopt = true` all behave identically.
 `{{version}}` in `url` is replaced with `version`, so a release bump is a

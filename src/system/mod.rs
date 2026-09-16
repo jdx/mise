@@ -472,6 +472,17 @@ impl AppSpec {
         let Some(sha256) = sha256 else {
             eyre::bail!("macos-app:{name}: 'url' requires 'sha256'");
         };
+        // `no_check` is a Homebrew sentinel that makes the shared fetcher skip
+        // verification. It exists for casks whose URL serves a moving target,
+        // which an inline declaration never is — accepting it here would
+        // silently drop the verification this manager requires. Demanding a
+        // well-formed digest also catches a truncated or mistyped one before
+        // the download rather than after.
+        if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            eyre::bail!(
+                "macos-app:{name}: 'sha256' must be a 64-character hex digest; got '{sha256}'"
+            );
+        }
         let Some(artifact) = artifact else {
             eyre::bail!("macos-app:{name}: 'url' requires 'artifact' naming the bundle to install");
         };
@@ -2333,7 +2344,7 @@ mod tests {
             "mise.toml",
             r#"
                 [bootstrap.packages]
-                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}-arm64.dmg", sha256 = "abc123", artifact = "Nuvio.app", adopt = true }
+                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}-arm64.dmg", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app", adopt = true }
             "#,
         )])?;
 
@@ -2346,7 +2357,10 @@ mod tests {
         let spec = apps.options.macos_app_spec("nuvio").unwrap();
         // {{version}} is interpolated so a release bump is a one-field edit.
         assert_eq!(spec.url, "https://example.com/Nuvio-1.1.20-arm64.dmg");
-        assert_eq!(spec.sha256, "abc123");
+        assert_eq!(
+            spec.sha256,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
         assert_eq!(spec.artifact, "Nuvio.app");
         assert_eq!(spec.version, "1.1.20");
         assert!(apps.options.brew_cask_adopt("nuvio"));
@@ -2360,7 +2374,7 @@ mod tests {
             "mise.toml",
             r#"
                 [bootstrap.packages]
-                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}.dmg", sha256 = "abc123", artifact = "Nuvio.app", adopt = true }
+                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}.dmg", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app", adopt = true }
             "#,
         )])?;
 
@@ -2417,7 +2431,7 @@ mod tests {
         let missing_artifact = AppSpec::parse(
             "nuvio",
             "https://example.com/a.dmg",
-            Some("abc"),
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
             None,
             "1.0.0",
         )
@@ -2433,13 +2447,39 @@ mod tests {
         let latest = AppSpec::parse(
             "nuvio",
             "https://example.com/a.dmg",
-            Some("abc"),
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
             Some("Nuvio.app"),
             "latest",
         )
         .unwrap_err()
         .to_string();
         assert!(latest.contains("explicit 'version'"), "{latest}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_requires_a_real_digest() {
+        let url = "https://example.com/a.dmg";
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+        // `no_check` makes the shared fetcher skip verification entirely, which
+        // would defeat the integrity guarantee this manager promises.
+        let no_check = AppSpec::parse("nuvio", url, Some("no_check"), Some("N.app"), "1.0.0")
+            .unwrap_err()
+            .to_string();
+        assert!(no_check.contains("64-character hex digest"), "{no_check}");
+
+        // A truncated or mistyped digest is caught before the download.
+        let truncated = AppSpec::parse("nuvio", url, Some(&digest[..32]), Some("N.app"), "1.0.0")
+            .unwrap_err()
+            .to_string();
+        assert!(truncated.contains("64-character hex digest"), "{truncated}");
+
+        let not_hex = format!("{}zz", &digest[..62]);
+        assert!(AppSpec::parse("nuvio", url, Some(&not_hex), Some("N.app"), "1.0.0").is_err());
+
+        let spec = AppSpec::parse("nuvio", url, Some(digest), Some("N.app"), "1.0.0").unwrap();
+        assert_eq!(spec.sha256, digest);
     }
 
     #[cfg(unix)]
