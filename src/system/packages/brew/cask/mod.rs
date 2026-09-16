@@ -12,6 +12,7 @@ use eyre::{WrapErr, bail, eyre};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use unicode_normalization::UnicodeNormalization;
 use walkdir::WalkDir;
 
 use super::api::RubySourceChecksum;
@@ -106,7 +107,7 @@ fn installed_skip_reason(
     let [app] = artifacts.apps.as_slice() else {
         return Ok(Some("skipped: requires a single owned app"));
     };
-    let app_path = app_target_path(app.target_name())?;
+    let app_path = app_target_path(app.target_name()?)?;
     if receipt.apps.as_slice() != [app_path.clone()] {
         return Ok(Some("skipped: app target differs from ownership record"));
     }
@@ -300,7 +301,7 @@ impl CaskArtifacts {
     fn print_install_plan(&self, cask: &Cask) -> Result<()> {
         miseprintln!("install cask {}/{}", cask.token, cask.version);
         for app in &self.apps {
-            miseprintln!("link app {}", app.target_name());
+            miseprintln!("link app {}", app.target_name()?);
         }
         for binary in &self.binaries {
             miseprintln!("link binary {}", binary.target_name()?);
@@ -334,10 +335,31 @@ impl CaskArtifacts {
     }
 
     fn app_target_paths(&self) -> Result<Vec<PathBuf>> {
-        self.apps
-            .iter()
-            .map(|app| app_target_path(app.target_name()))
-            .collect()
+        let mut targets = Vec::with_capacity(self.apps.len());
+        let mut bundle_names = BTreeSet::new();
+        for app in &self.apps {
+            let name = app.target_name()?;
+            let target = app_target_path(name)?;
+            let bundle = app_bundle_name(name)?;
+            // Explicit targets can differ in appdir but still overwrite the
+            // same basename in the shared Caskroom staging directory. Reject
+            // Unicode caseless matches conservatively: the appdir and Caskroom
+            // may use different filesystems. Canonical caseless matching needs
+            // NFD before and after case folding (lowercasing misses e.g. ϐ/β).
+            // Normalize only the key, preserving the original install paths.
+            let bundle_key = unicase::UniCase::new(bundle.nfd().collect::<String>())
+                .to_folded_case()
+                .nfd()
+                .collect::<String>();
+            if targets.contains(&target) || !bundle_names.insert(bundle_key) {
+                bail!(
+                    "brew-cask: duplicate app target '{}' (Caskroom bundle '{bundle}')",
+                    target.display()
+                );
+            }
+            targets.push(target);
+        }
+        Ok(targets)
     }
 
     fn binary_targets(&self) -> Result<Vec<PathBuf>> {
@@ -578,6 +600,9 @@ impl BrewCaskManager {
         }
         let artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
+        // Validate the whole app batch before dependencies, downloads, or hooks
+        // can mutate anything, including when producing a dry-run plan.
+        artifacts.app_target_paths()?;
         let installed_version = mise_installed_cask_version(&cask)?;
         if let Some(reason) =
             installed_skip_reason(&cask, &artifacts, installed_version.as_deref(), mode)?
@@ -713,7 +738,7 @@ impl BrewCaskManager {
         let defer_running = mode == InstallMode::Upgrade && cask.auto_updates;
         if defer_running {
             for app in &artifacts.apps {
-                if app_is_running(&app_target_path(app.target_name())?) {
+                if app_is_running(&app_target_path(app.target_name()?)?) {
                     return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
                 }
             }
@@ -731,7 +756,7 @@ impl BrewCaskManager {
             )? {
                 AppInstall::Installed {
                     metadata_only: true,
-                } => metadata_only_apps.push(app_target_path(app.target_name())?),
+                } => metadata_only_apps.push(app_target_path(app.target_name()?)?),
                 AppInstall::Installed {
                     metadata_only: false,
                 } => {}
@@ -854,8 +879,19 @@ impl BrewCaskManager {
 }
 
 impl AppArtifact {
-    fn target_name(&self) -> &str {
-        self.target.as_deref().unwrap_or(&self.source)
+    fn target_name(&self) -> Result<&str> {
+        if let Some(target) = &self.target {
+            return Ok(target);
+        }
+        // A nested archive source still installs as its bundle basename. Check
+        // the source before taking that basename so traversal cannot be hidden.
+        if self.source.contains(['\0', '\\'])
+            || self.source.ends_with('/')
+            || relative_artifact_path(Path::new(""), Path::new(&self.source)).is_none()
+        {
+            bail!("brew-cask: invalid app source '{}'", self.source);
+        }
+        file_name_str(Path::new(&self.source), "app source")
     }
 }
 
@@ -1056,9 +1092,9 @@ fn install_app(
 ) -> Result<AppInstall> {
     let source = find_app(stage, &app.source)
         .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
-    let caskroom_app = caskroom.join(app_bundle_name(app.target_name())?);
+    let caskroom_app = caskroom.join(app_bundle_name(app.target_name()?)?);
     file::remove_all(&caskroom_app)?;
-    let logical_target = app_target_path(app.target_name())?;
+    let logical_target = app_target_path(app.target_name()?)?;
     // Hold the verified appdir open for the whole mutation and address the app
     // only by name relative to that descriptor. Nothing below resolves a
     // pathname for the application directory, so a post-validation replacement
@@ -1129,7 +1165,7 @@ fn install_app(
 
 fn validate_adoptable_apps(stage: &Path, apps: &[AppArtifact]) -> Result<()> {
     for app in apps {
-        let target = app_target_path(app.target_name())?;
+        let target = app_target_path(app.target_name()?)?;
         if target.symlink_metadata().is_err() {
             continue;
         }
@@ -2864,7 +2900,7 @@ fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<P
     let suffix = relative.components().skip(1).collect::<PathBuf>();
     let mut matches = Vec::new();
     for app in apps {
-        let target = app_target_path(app.target_name())?;
+        let target = app_target_path(app.target_name()?)?;
         let bundle = Path::new(bundle);
         if !path_ends_with_ignore_ascii_case(Path::new(&app.source), bundle)
             && !path_ends_with_ignore_ascii_case(&target, bundle)
@@ -3538,7 +3574,7 @@ fn path_with_resolved_existing_ancestor(path: &Path) -> PathBuf {
 fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
     let prefix_app_dir = prefix::prefix().join("Applications");
     for app in apps {
-        if app_target_path(app.target_name())?.starts_with(&prefix_app_dir) {
+        if app_target_path(app.target_name()?)?.starts_with(&prefix_app_dir) {
             return Ok(prefix_app_dir);
         }
     }
