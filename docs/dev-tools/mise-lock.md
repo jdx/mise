@@ -438,6 +438,9 @@ If `mise.lock` itself is a symlink, native dependency sidecar paths are resolved
 relative to the target lockfile, and updates keep sidecars beside that target.
 This also supports deployments that symlink each file individually: new sidecars
 are stored in the dotfiles repository and do not need separate global symlinks.
+Before publishing an update, mise checks that the symlink still resolves to the
+same target and aborts if it does not. Rerun the command after the deployment is
+stable.
 :::
 
 ## Local Lockfiles

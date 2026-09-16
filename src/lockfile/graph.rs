@@ -644,6 +644,72 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn changed_lockfile_symlink_aborts_before_publication() {
+        use std::os::unix::fs::symlink;
+
+        for replacement in [Some("b/mise.lock"), Some("missing.lock"), None] {
+            for sidecar_only in [false, true] {
+                let temp = tempfile::tempdir().unwrap();
+                let a = temp.path().join("a/mise.lock");
+                let b = temp.path().join("b/mise.lock");
+                let link = temp.path().join("mise.lock");
+                let mut lock = Lockfile::default();
+                let mut tool = entry("pypi:fixture");
+                tool.uv = Some(uv().into());
+                lock.tools.insert("pypi:fixture".into(), vec![tool]);
+                for path in [&a, &b] {
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    lock.save(path).unwrap();
+                }
+                symlink("a/mise.lock", &link).unwrap();
+
+                if sidecar_only {
+                    // Repairing graph bytes can publish sidecars even when the
+                    // serialized lockfile is unchanged (PreparedWrite.tmp=None).
+                    std::fs::write(
+                        sidecar_root(&a).join("pypi-fixture/1.0.0/uv.lock"),
+                        "needs repair\n",
+                    )
+                    .unwrap();
+                } else {
+                    lock.tools.get_mut("pypi:fixture").unwrap()[0].version = "2.0.0".into();
+                }
+                let mut before = Vec::new();
+                for path in [&a, &b] {
+                    for file in [
+                        "mise.lock",
+                        ".mise/locks/pypi-fixture/1.0.0/uv.lock",
+                        ".mise/locks/pypi-fixture/1.0.0/pyproject.toml",
+                    ] {
+                        let path = path.parent().unwrap().join(file);
+                        before.push((path.clone(), std::fs::read(path).unwrap()));
+                    }
+                }
+                let prepared = lock.prepare_write(&link).unwrap().unwrap();
+                assert_eq!(prepared.tmp.is_none(), sidecar_only);
+                std::fs::remove_file(&link).unwrap();
+                if let Some(replacement) = replacement {
+                    symlink(replacement, &link).unwrap();
+                }
+
+                let error = prepared.publish().unwrap_err();
+                assert!(error.to_string().contains("changed during preparation"));
+                for (path, bytes) in before {
+                    assert_eq!(std::fs::read(path).unwrap(), bytes);
+                }
+                for path in [&a, &b] {
+                    assert!(!sidecar_root(path).join("pypi-fixture/2.0.0").exists());
+                }
+                assert_eq!(
+                    std::fs::read_link(&link).ok(),
+                    replacement.map(PathBuf::from)
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn writes_still_reject_symlinked_sidecar_directories() {
         for ancestor in [
             ".mise/locks",

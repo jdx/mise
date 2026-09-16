@@ -1292,6 +1292,7 @@ impl Lockfile {
 
     pub(crate) fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
         // Resolve the lockfile target before choosing sidecar locations and pointers.
+        let mut source_symlink = None;
         let target = if path.is_symlink() {
             // If the existing lockfile is a symlink, resolve it and update the target instead
             // of replacing the symlink
@@ -1302,6 +1303,7 @@ impl Lockfile {
 
             match fs::canonicalize(path) {
                 Ok(link_target) => {
+                    source_symlink = Some(graph::absolute(path));
                     trace!(
                         "resolved lockfile symlink {} to {}",
                         display_path(path),
@@ -1463,6 +1465,7 @@ impl Lockfile {
             return Ok(Some(PreparedWrite {
                 tmp: None,
                 target: path.to_path_buf(),
+                source_symlink,
                 sidecars,
             }));
         }
@@ -1484,6 +1487,7 @@ impl Lockfile {
         Ok(Some(PreparedWrite {
             tmp: Some(tmp),
             target,
+            source_symlink,
             sidecars,
         }))
     }
@@ -1947,6 +1951,7 @@ fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
 pub(crate) struct PreparedWrite {
     tmp: Option<tempfile::NamedTempFile>,
     target: PathBuf,
+    source_symlink: Option<PathBuf>,
     sidecars: graph::SidecarWrites,
 }
 
@@ -1961,6 +1966,17 @@ impl PreparedWrite {
         self.sidecars.files.iter().map(|(path, _)| path)
     }
     pub(crate) fn publish_deferred(self) -> Result<GraphCleanup> {
+        // Detect a deployment switch during preparation before publishing any
+        // sidecars. This is a recheck, not a lock against external symlink edits.
+        if let Some(path) = &self.source_symlink
+            && (!path.is_symlink()
+                || !fs::canonicalize(path).is_ok_and(|target| target == self.target))
+        {
+            bail!(
+                "lockfile symlink {} changed during preparation; retry the command",
+                display_path(path)
+            );
+        }
         self.sidecars.publish_files()?;
         if let Some(tmp) = self.tmp {
             persist_lockfile_tmp(tmp, &self.target)?;
