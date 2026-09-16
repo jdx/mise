@@ -849,53 +849,53 @@ url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellche
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
 
 [[tools.shfmt]]
-version = "3.14.0"
+version = "3.14.1"
 backend = "aqua:mvdan/sh"
 
 [tools.shfmt."platforms.linux-arm64"]
-checksum = "sha256:8029959a945b5c6f2bc92ce53fca5cf0384c811cc0884b25b196a093a005657a"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_linux_arm64"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534119958"
+checksum = "sha256:5f2db09dae91fca848f7adbdd014632e921a383863a2ad7e0450ad3aba0c6489"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_arm64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320869"
 
 [tools.shfmt."platforms.linux-arm64-musl"]
-checksum = "sha256:8029959a945b5c6f2bc92ce53fca5cf0384c811cc0884b25b196a093a005657a"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_linux_arm64"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534119958"
+checksum = "sha256:5f2db09dae91fca848f7adbdd014632e921a383863a2ad7e0450ad3aba0c6489"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_arm64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320869"
 
 [tools.shfmt."platforms.linux-x64"]
-checksum = "sha256:fe42021c7272ef2d67ea36cbc3031683c625d0badec733ef3a57b567246a0b66"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_linux_amd64"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534119985"
+checksum = "sha256:76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320883"
 
 [tools.shfmt."platforms.linux-x64-baseline"]
-checksum = "sha256:fe42021c7272ef2d67ea36cbc3031683c625d0badec733ef3a57b567246a0b66"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_linux_amd64"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534119985"
+checksum = "sha256:76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320883"
 
 [tools.shfmt."platforms.linux-x64-musl"]
-checksum = "sha256:fe42021c7272ef2d67ea36cbc3031683c625d0badec733ef3a57b567246a0b66"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_linux_amd64"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534119985"
+checksum = "sha256:76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320883"
 
 [tools.shfmt."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:fe42021c7272ef2d67ea36cbc3031683c625d0badec733ef3a57b567246a0b66"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_linux_amd64"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534119985"
+checksum = "sha256:76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320883"
 
 [tools.shfmt."platforms.macos-arm64"]
-checksum = "sha256:4710ba8074a74334069719d5b82f8cb97532e5623bfe43ef7cdb3442101b9cb2"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_darwin_arm64"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534120008"
+checksum = "sha256:b7c872db63553ccffc7253aba3ed7d4885a27d83f1ba567b1138c6315a5847e5"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_darwin_arm64"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320930"
 
 [tools.shfmt."platforms.windows-x64"]
-checksum = "sha256:6738a3e155fbfec3bedc70962f9cd1610197587a43b5d7100f405239d8e11375"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_windows_amd64.exe"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534119909"
+checksum = "sha256:13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_windows_amd64.exe"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320827"
 
 [tools.shfmt."platforms.windows-x64-baseline"]
-checksum = "sha256:6738a3e155fbfec3bedc70962f9cd1610197587a43b5d7100f405239d8e11375"
-url = "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_windows_amd64.exe"
-url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/534119909"
+checksum = "sha256:13629ce28442ca80b6b5a819f7574ab39e1c28c6e26734ca816c9714e04851df"
+url = "https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_windows_amd64.exe"
+url_api = "https://api.github.com/repos/mvdan/sh/releases/assets/547320827"
 
 [[tools.sops]]
 version = "3.13.3"
