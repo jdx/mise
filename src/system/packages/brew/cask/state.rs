@@ -244,24 +244,55 @@ pub(super) fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>>
     installed_cask_version_in(cask, &prefix::prefix().join(".mise-test-state"))
 }
 
-/// Whether this entry has an install transaction that never completed.
+#[derive(Deserialize)]
+struct JournalCompletion {
+    #[serde(default)]
+    completed: Vec<String>,
+}
+
+/// Whether an interrupted transaction got as far as placing an app bundle.
 ///
-/// A pending journal blanks [`mise_installed_cask_version`], so callers that
-/// treat "no recorded version" as "mise does not own this" need to ask this too
-/// — otherwise an interrupted install looks indistinguishable from someone
-/// else's.
+/// A *pending* journal is not enough to claim the app target: it is written
+/// before `install_app`, so an interruption during staging or preflight leaves
+/// one behind having created nothing. Treating that as ownership would let a
+/// retry replace an app that appeared in the meantime — the exact outcome the
+/// unowned-target guard exists to prevent.
+///
+/// The `app[..]` action is recorded only after `install_app` returns, so it is
+/// positive evidence that this entry put the bundle there.
 #[cfg(not(test))]
-pub(super) fn mise_install_pending(cask: &Cask) -> bool {
-    cask_journal_pending_in(&crate::dirs::STATE, cask.manager, &cask.token)
+pub(super) fn mise_install_placed_app(cask: &Cask) -> bool {
+    journal_recorded_app_install_in(&crate::dirs::STATE, cask.manager, &cask.token)
 }
 
 #[cfg(test)]
-pub(super) fn mise_install_pending(cask: &Cask) -> bool {
-    cask_journal_pending_in(
+pub(super) fn mise_install_placed_app(cask: &Cask) -> bool {
+    journal_recorded_app_install_in(
         &prefix::prefix().join(".mise-test-state"),
         cask.manager,
         &cask.token,
     )
+}
+
+pub(super) fn journal_recorded_app_install_in(
+    state_dir: &Path,
+    manager: CaskManager,
+    token: &str,
+) -> bool {
+    let Ok(entries) = std::fs::read_dir(cask_journal_dir_in(state_dir, manager, token)) else {
+        return false;
+    };
+    entries.filter_map(|entry| entry.ok()).any(|entry| {
+        std::fs::read(entry.path())
+            .ok()
+            .and_then(|body| serde_json::from_slice::<JournalCompletion>(&body).ok())
+            .is_some_and(|journal| {
+                journal
+                    .completed
+                    .iter()
+                    .any(|action| action.starts_with("app["))
+            })
+    })
 }
 
 pub(super) fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<String>> {

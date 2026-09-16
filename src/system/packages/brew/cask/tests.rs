@@ -8631,25 +8631,34 @@ fn an_interrupted_macos_app_install_can_be_retried() -> Result<()> {
     // Already installed by this entry: replacing on upgrade is fine.
     assert!(!requires_unowned_targets(&cask, Some("1.1.19")));
 
-    // Interrupted part-way through — a journal is pending and the receipt was
-    // never written. The bundle at the target is this entry's own leftover, so
-    // the retry must not treat it as foreign and demand adopt = true.
-    let journal = CaskTransactionJournal {
+    let state_dir = tmp.path().join(".mise-test-state");
+
+    // Interrupted before the bundle was placed: the journal exists but records
+    // no app action. It proves only that an attempt started, so it must NOT
+    // claim the target — an app that appeared while the first attempt was
+    // staging would otherwise be replaced.
+    let mut journal = CaskTransactionJournal {
         schema_version: 1,
         token: "nuvio",
         version: "1.1.20",
         completed: Vec::new(),
     };
-    let state_dir = tmp.path().join(".mise-test-state");
     write_cask_journal_in(&state_dir, CaskManager::MacosApp, &journal)?;
-    assert!(mise_install_pending(&cask));
+    assert!(!mise_install_placed_app(&cask));
+    assert!(requires_unowned_targets(&cask, None));
+
+    // Interrupted after install_app placed the bundle and recorded it. That
+    // leftover is this entry's own, so the retry must not demand adopt = true.
+    journal.completed.push("app[0]".to_string());
+    write_cask_journal_in(&state_dir, CaskManager::MacosApp, &journal)?;
+    assert!(mise_install_placed_app(&cask));
     assert!(!requires_unowned_targets(&cask, None));
 
-    // A pending brew-cask journal for the same token is a different install and
-    // must not excuse the macos-app entry.
+    // The same record under brew-cask is a different install and must not
+    // excuse the macos-app entry.
     remove_cask_journals_in(&state_dir, CaskManager::MacosApp, "nuvio")?;
     write_cask_journal_in(&state_dir, CaskManager::BrewCask, &journal)?;
-    assert!(!mise_install_pending(&cask));
+    assert!(!mise_install_placed_app(&cask));
     assert!(requires_unowned_targets(&cask, None));
     Ok(())
 }

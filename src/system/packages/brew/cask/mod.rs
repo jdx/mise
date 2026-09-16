@@ -1339,14 +1339,18 @@ fn install_app(
 /// Whether this entry must refuse to replace whatever is at its app target.
 ///
 /// Only for managers that do not share Homebrew's Caskroom, and only when mise
-/// has no sign of already owning the install. A pending journal is such a sign:
-/// it means this entry was interrupted part-way through, so a bundle at the
-/// target is its own leftover. Treating that as another owner's would make an
-/// interrupted install unretryable without deleting the app by hand.
+/// has no sign of already owning the install.
+///
+/// An interrupted transaction that recorded an `app[..]` action is such a sign:
+/// this entry placed that bundle, so a retry may replace it, and refusing would
+/// make an interrupted install unretryable without deleting the app by hand.
+/// A merely *pending* journal is not — it is written before the bundle exists,
+/// so claiming the target on that basis would let a retry replace an app that
+/// appeared while the first attempt was staging.
 fn requires_unowned_targets(cask: &Cask, installed_version: Option<&str>) -> bool {
     !cask.manager.uses_homebrew_caskroom()
         && installed_version.is_none()
-        && !mise_install_pending(cask)
+        && !mise_install_placed_app(cask)
 }
 
 fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
