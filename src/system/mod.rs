@@ -397,7 +397,7 @@ pub(crate) enum ManagerPackageOptions {
 impl ManagerPackageOptions {
     #[cfg(unix)]
     pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
-        matches!(self, Self::BrewCask { adopt } if adopt.contains(brew_cask_token(name)))
+        matches!(self, Self::BrewCask { adopt } if adopt.contains(name))
     }
 }
 
@@ -643,7 +643,7 @@ fn merge_manager_packages(
                                     adopt: BTreeSet::new(),
                                 });
                         if let ManagerPackageOptions::BrewCask { adopt } = options {
-                            adopt.insert(brew_cask_token(&request.name).to_string());
+                            adopt.insert(request.name.clone());
                         }
                     }
                     requests.push(request);
@@ -712,7 +712,7 @@ fn package_requests_from_config_files(
                 }
                 #[cfg(unix)]
                 if mgr == "brew-cask" && adopt_requested.unwrap_or(brew_adopt) {
-                    cask_adopt.insert(brew_cask_token(&name).to_string());
+                    cask_adopt.insert(name.clone());
                 }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
@@ -1781,16 +1781,14 @@ fn packages_from_specs_with_config_files(
         };
         #[cfg(unix)]
         if mgr == "brew-cask" {
-            // A spec may name a cask by its tap-qualified form while the config
-            // entry uses the bare token, or the other way around. Consult both
-            // spellings so an explicit `adopt = false` is not bypassed.
-            let token = brew_cask_token(&name);
+            // Keyed by the spec exactly as written, matching the config key
+            // exactly, the way every other per-package option resolves. A spec
+            // that matches no config entry gets the `[bootstrap.brew]` default.
             let configured = package_configs
                 .get(&format!("{mgr}:{name}"))
-                .or_else(|| package_configs.get(&format!("{mgr}:{token}")))
                 .and_then(|package| package.adopt());
             if configured.unwrap_or(brew_adopt) {
-                cask_adopt.insert(token.to_string());
+                cask_adopt.insert(name.clone());
             }
         }
         let requests = by_mgr.entry(mgr).or_default();
@@ -1830,25 +1828,6 @@ pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
         None
     } else {
         name.rsplit_once('/').map(|(tap, _)| tap)
-    }
-}
-
-/// A cask name without its `owner/tap/` qualifier.
-///
-/// Cask metadata reports the bare token, so anything keyed by cask identity —
-/// adoption, today — has to normalize before it compares. This does not resolve
-/// aliases or old tokens; only the cask API knows those, and callers that hold a
-/// fetched cask compare against its token as well.
-#[cfg(unix)]
-fn brew_cask_token(name: &str) -> &str {
-    let mut parts = name.split('/');
-    match (parts.next(), parts.next(), parts.next(), parts.next()) {
-        (Some(owner), Some(tap), Some(token), None)
-            if !owner.is_empty() && !tap.is_empty() && !token.is_empty() =>
-        {
-            token
-        }
-        _ => name,
     }
 }
 
@@ -2203,57 +2182,56 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn test_brew_cask_adopt_is_keyed_by_bare_token() -> Result<()> {
+    fn test_brew_cask_adopt_is_keyed_by_the_requested_name() -> Result<()> {
+        // The installer looks adoption up by the name on the request, so a
+        // tap-qualified entry has to be recorded under that same spelling.
         let (_dir, config_files) = config_map_from_toml(&[(
             "mise.toml",
             r#"
                 [bootstrap.packages]
                 "brew-cask:homebrew/cask/textmate" = { adopt = true }
-                "brew-cask:acme/tools/replace-me" = { adopt = false }
             "#,
         )])?;
 
-        // the cask API reports the bare token, which is what the installer looks up
         let packages = packages_from_config_files(&config_files);
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
             .unwrap();
-        assert!(casks.options.brew_cask_adopt("textmate"));
-        assert!(casks.options.brew_cask_adopt("homebrew/cask/textmate"));
-        assert!(!casks.options.brew_cask_adopt("replace-me"));
-
-        // and an explicit tap-qualified spec finds the bare-token config entry
-        let specs = ["brew-cask:acme/tools/replace-me".to_string()];
-        let (_dir, config_files) = config_map_from_toml(&[(
-            "mise.toml",
-            r#"
-                [bootstrap.brew]
-                adopt = true
-
-                [bootstrap.packages]
-                "brew-cask:replace-me" = { adopt = false }
-            "#,
-        )])?;
-        let packages = packages_from_specs_with_config_files(&specs, &config_files)?;
-        let casks = packages
-            .into_iter()
-            .find(|packages| packages.manager.name() == "brew-cask")
+        let request = casks
+            .requests
+            .iter()
+            .find(|request| request.name == "homebrew/cask/textmate")
             .unwrap();
-        assert!(!casks.options.brew_cask_adopt("replace-me"));
+        assert!(casks.options.brew_cask_adopt(&request.name));
         Ok(())
     }
 
     #[cfg(unix)]
     #[test]
-    fn test_brew_cask_token_strips_only_a_tap_qualifier() {
-        assert_eq!(brew_cask_token("homebrew/cask/firefox"), "firefox");
-        assert_eq!(brew_cask_token("acme/tools/firefox"), "firefox");
-        assert_eq!(brew_cask_token("firefox"), "firefox");
-        // not the three-component tap form: left alone rather than guessed at
-        assert_eq!(brew_cask_token("acme/firefox"), "acme/firefox");
-        assert_eq!(brew_cask_token("a/b/c/d"), "a/b/c/d");
-        assert_eq!(brew_cask_token("//firefox"), "//firefox");
+    fn test_brew_cask_adopt_does_not_leak_between_taps_sharing_a_token() -> Result<()> {
+        // Two taps can ship a cask with the same bare token. Adopting one must
+        // not adopt the other, which explicitly asked to be replaced.
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:acme/tools/textmate" = { adopt = true }
+                "brew-cask:other/tap/textmate" = { adopt = false }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files);
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(casks.requests.len(), 2);
+        assert!(casks.options.brew_cask_adopt("acme/tools/textmate"));
+        assert!(!casks.options.brew_cask_adopt("other/tap/textmate"));
+        // and neither is reachable through the shared bare token
+        assert!(!casks.options.brew_cask_adopt("textmate"));
+        Ok(())
     }
 
     #[cfg(unix)]
