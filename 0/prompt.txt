@@ -1,5 +1,1 @@
-fix the prose in [https://github.com/jdx/mise/pull/13296](https://github.com/jdx/mise/pull/13296)
-
----
-
 update the pr contents prose too
