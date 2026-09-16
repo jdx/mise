@@ -318,7 +318,10 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
             ..
         } => {
             ensure!(
-                crate::file::is_plain_file_name(&tool) && crate::file::is_plain_file_name(&version),
+                crate::file::is_plain_file_name(&tool)
+                    && crate::file::is_plain_file_name(&version)
+                    && !tool.starts_with('.')
+                    && !version.starts_with('.'),
                 "invalid tool or version directory"
             );
             let tool_dir = directory.join(&tool);
@@ -524,6 +527,19 @@ mod tests {
         assert!(root.join("uv/.mise.backend.toml").is_file());
         assert!(apply_for_owner(&input[..], owner).is_err());
         assert_eq!(fs::read_to_string(root.join("uv/1/tool"))?, "binary");
+        let reserved = Request::Install {
+            directory: root.clone(),
+            tool: "uv".into(),
+            version: ".mise.backend.toml".into(),
+            manifest: "[uv]\nshort = 'uv'\n".into(),
+            replace: true,
+        };
+        let mut reserved = serde_json::to_vec(&reserved)?;
+        reserved.push(b'\n');
+        reserved.extend(&bytes);
+        assert!(apply_for_owner(&reserved[..], owner).is_err());
+        assert!(root.join("uv/.mise.backend.toml").is_file());
+
         // A malformed replacement must leave the previous installation intact.
         let request = Request::Install {
             directory: root.clone(),

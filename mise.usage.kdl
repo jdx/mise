@@ -3643,7 +3643,8 @@ May require elevated permissions depending on the path.
 Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
-May require elevated permissions (e.g. sudo).
+On Unix, binary-download backends invoke sudo to publish into protected
+system directories. Run mise as your user, without sudo.
 """#
     }
     flag "-h --help" help="Print help" action=help builtin=#true
