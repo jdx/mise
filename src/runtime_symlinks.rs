@@ -316,10 +316,10 @@ fn configured_alias_names(
 /// - its target is not an install that is currently eligible for links.
 ///
 /// Only relative `./`-style links count as mise's own, so an absolute symlink a
-/// user dropped in here is never a candidate. A `Sub`/`Prefix` request pins a
-/// link for a version that is otherwise ineligible; rebuilding from a directory
-/// that does not request it drops the link, and the requesting directory
-/// recreates it on its next rebuild.
+/// user dropped in here is never a candidate. The one other writer of links
+/// here, a `Sub` request, is named `sub-{sub}-{orig_version}` and so never
+/// occupies a generated name, which keeps another directory's pin out of reach
+/// of a rebuild that does not know about it.
 fn prune_stale_generated_symlinks(
     installs_dir: &Path,
     desired: &IndexMap<String, PathBuf>,
@@ -600,6 +600,39 @@ mod tests {
         assert!(namespace.contains("2.1"));
         assert!(namespace.contains("latest"));
         Ok(())
+    }
+
+    /// A `Sub` request is the only other writer of links in this directory, and
+    /// it is only in `desired` while the toolset that asked for it is loaded.
+    /// Its `sub-…` name is outside the generated namespace, so a rebuild from
+    /// an unrelated directory cannot drop another directory's pin.
+    #[test]
+    fn prune_stale_generated_symlinks_keeps_sub_request_pins() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("dummy");
+        fs::create_dir_all(installs_dir.join("19.0.0"))?;
+        fs::write(installs_dir.join("19.0.0").join("incomplete"), "")?;
+        // `node@sub-1:20` resolving to 19.0.0, pinned from some other directory
+        make_symlink_or_file(Path::new("./19.0.0"), &installs_dir.join("sub-1-20"))?;
+        make_symlink_or_file(Path::new("./19.0.0"), &installs_dir.join("latest"))?;
+
+        prune_stale_generated_symlinks(&installs_dir, &IndexMap::new(), &HashSet::new())?;
+
+        assert!(is_runtime_symlink(&installs_dir.join("sub-1-20")));
+        assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn generated_names_for_never_produces_a_sub_request_pathname() {
+        // `ToolRequest::Sub::version()` is always `sub-{sub}:{orig_version}`,
+        // which `runtime_pathname` turns into `sub-{sub}-{orig_version}`.
+        for v in ["19.0.0", "20.1.0", "temurin-21.0.1"] {
+            assert!(
+                !generated_names_for(v).iter().any(|n| n.starts_with("sub-")),
+                "{v} generated a name that could collide with a Sub pin"
+            );
+        }
     }
 
     #[test]
