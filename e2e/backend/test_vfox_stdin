@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Hook children must not inherit stdin unless `raw` is set. mise installs tools in
+# parallel, so an inherited stdin would be shared by racing siblings and a prompt
+# would land under the progress bars. `raw` serializes installs, so it is the
+# documented opt-in for connecting stdio. (#13254)
+
+PLUGIN_DIR="$PWD/vfox-stdin"
+CHILD="$PWD/read-stdin"
+
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$CHILD" <<'SH'
+#!/bin/sh
+if IFS= read -r line; then
+	echo "CHILD-READ:$line"
+else
+	echo "CHILD-EOF"
+	exit 3
+fi
+SH
+chmod +x "$CHILD"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "stdin-test"
+PLUGIN.version = "0.1.0"
+PLUGIN.description = "stdin handling test plugin"
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return {
+		{ version = "1.0.0" },
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	return {
+		version = ctx.version,
+	}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+	return {}
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
+function PLUGIN:PostInstall(ctx)
+	local cmd = require("cmd")
+	local ok, res = pcall(cmd.exec, "$CHILD")
+	print("CMDEXEC:" .. tostring(ok) .. ":" .. tostring(res))
+	local code = os.execute("$CHILD")
+	print("OSEXECUTE:" .. tostring(code))
+	print("STREAM:" .. tostring(cmd.stream("$CHILD")))
+end
+LUA
+
+mise plugins link stdin-test "$PLUGIN_DIR"
+
+# Without raw, cmd.exec and os.execute detach stdin: the child sees EOF and exits 3.
+# cmd.stream is the opt-in for an interactive child, so it still gets the line.
+out="$(echo "hello" | mise install stdin-test@1.0.0 --force 2>&1)"
+assert_contains "echo '$out'" "CHILD-EOF"
+assert_contains "echo '$out'" "OSEXECUTE:3"
+assert_contains "echo '$out'" "CHILD-READ:hello"
+assert_contains "echo '$out'" "STREAM:0"
+
+# With raw, stdin is connected and each child consumes a line. This covers
+# cmd.exec too, which detached stdin unconditionally before #13254.
+out="$(printf 'first\nsecond\nthird\n' | mise install stdin-test@1.0.0 --force --raw 2>&1)"
+assert_contains "echo '$out'" "CHILD-READ:first"
+assert_contains "echo '$out'" "CHILD-READ:second"
+assert_contains "echo '$out'" "OSEXECUTE:0"
+assert_contains "echo '$out'" "STREAM:0"

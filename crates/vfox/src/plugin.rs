@@ -16,7 +16,7 @@ use crate::http::HttpHeadersResolver;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
 use crate::sdk_info::SdkInfo;
-use crate::vfox::UrlRewriter;
+use crate::vfox::{TerminalLock, UrlRewriter};
 use crate::{VfoxError, config, error, lua_mod};
 
 #[derive(Debug)]
@@ -118,6 +118,33 @@ impl Plugin {
             table.set(idx + 1, arg.as_str())?;
         }
         self.lua.set_named_registry_value("mise_cmd_shell", table)?;
+        Ok(())
+    }
+
+    /// Store whether child stdio may be connected to the terminal (the `raw`
+    /// setting). Controls stdin for `cmd.exec` and `os.execute`; see `stdin_for`
+    /// in `lua_mod::cmd`.
+    pub(crate) fn set_raw_stdio(&self, raw: bool) -> Result<()> {
+        self.lua.set_named_registry_value("mise_raw_stdio", raw)?;
+        Ok(())
+    }
+
+    /// Register the terminal lock used by Lua `cmd.stream` and `os.execute`.
+    ///
+    /// mise supplies a runner that takes the lock `--raw` uses — exclusively for
+    /// `cmd.stream`, which also pauses the progress renderer, and shared for
+    /// `os.execute`, whose output streams to the terminal. The runner is handed a
+    /// callback rather than a command so its guards are scoped to the child and
+    /// released when it exits. (#13254)
+    pub(crate) fn set_terminal_lock(&self, runner: TerminalLock) -> Result<()> {
+        let func =
+            self.lua
+                .create_function(move |_, (exclusive, body): (bool, mlua::Function)| {
+                    let mut call = || body.call::<i64>(()).map_err(|e| e.to_string());
+                    runner(exclusive, &mut call).map_err(mlua::Error::RuntimeError)
+                })?;
+        self.lua
+            .set_named_registry_value("mise_terminal_lock", func)?;
         Ok(())
     }
 

@@ -602,6 +602,48 @@ quote external values for that shell; interpolating tool options into shell text
 unintended commands. `os.execute` streams output and returns the exit status using Lua 5.1
 conventions (`0` for success), with the same mise-constructed environment.
 
+### Hooks and stdin
+
+Prefer non-interactive hooks. mise installs tools in parallel, so no single child owns the
+terminal: a prompt written from a hook appears underneath the progress bars of the other
+installs, where the user cannot see or answer it. Take what you need from the tool options,
+the environment, or the lockfile rather than prompting, and pass children their own
+non-interactive flag (`--yes`, `--non-interactive`, `-n`) where they have one.
+
+Because of that, `cmd.exec` and `os.execute` both give children `/dev/null` on stdin. A child
+that reads stdin under either one sees EOF immediately rather than hanging or stealing input
+from a sibling install.
+
+### Interactive children with `cmd.stream`
+
+When a hook genuinely must be interactive — entering a credential, accepting a license — use
+`cmd.stream`, which connects stdin and streams stdout and stderr to the terminal instead of
+capturing them, and returns the exit status:
+
+```lua
+local cmd = require("cmd")
+
+local code = cmd.stream("some-tool login")
+if code ~= 0 then
+    error("login failed with status " .. tostring(code))
+end
+```
+
+`cmd.stream` accepts the same `cwd` and `env` options as `cmd.exec` and uses the same
+mise-constructed environment.
+
+While the child runs, mise pauses the progress display and holds an exclusive lock, so no
+other mise command runs alongside it. Other installs continue but wait to run commands of
+their own until the child exits. That is the point — an interactive child needs the terminal
+to itself — but it means a long-running `cmd.stream` call stalls everything else. Reach for
+it only when the interaction is genuinely required, and prefer a non-interactive path when
+the tool offers one.
+
+Users can also connect stdio for every child with [`raw`](/configuration/settings.html#raw)
+(`mise install --raw`, `MISE_RAW=1`), which serializes installs. That is a user-side escape
+hatch, not a way to build a plugin: a hook that only works under `--raw` is broken for
+everyone who does not set it. Use `cmd.stream` instead.
+
 ### Basic Command Execution
 
 ```lua

@@ -1946,7 +1946,9 @@ impl<'a> CmdLineRunner<'a> {
     }
 }
 
-fn raw_read_lock_blocking() -> tokio::sync::RwLockReadGuard<'static, ()> {
+/// Take the shared side of [`RAW_LOCK`]. Held while an ordinary command runs, so a
+/// `--raw` command (or vfox's `cmd.stream`) waits for it before taking the terminal.
+pub(crate) fn raw_read_lock_blocking() -> tokio::sync::RwLockReadGuard<'static, ()> {
     loop {
         if let Ok(guard) = RAW_LOCK.try_read() {
             return guard;
@@ -1955,7 +1957,10 @@ fn raw_read_lock_blocking() -> tokio::sync::RwLockReadGuard<'static, ()> {
     }
 }
 
-fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static, ()> {
+/// Take the exclusive side of [`RAW_LOCK`], blocking until no other command holds
+/// it. Used by `--raw` commands and by vfox's `cmd.stream`, which needs the same
+/// exclusivity so an interactive plugin child owns the terminal. (#13254)
+pub(crate) fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static, ()> {
     loop {
         if let Ok(guard) = RAW_LOCK.try_write() {
             return guard;
