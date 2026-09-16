@@ -1094,8 +1094,10 @@ async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode, mpr: &Mul
         if cask.url.ends_with(".git") {
             continue;
         }
-        // owned by Homebrew: the install path leaves it alone
-        if matches!(homebrew_installed_version(&cask.token), Ok(Some(_))) {
+        // Only a definite "not installed by Homebrew" is worth downloading for.
+        // An error here (ambiguous Homebrew metadata, say) means the serial pass
+        // is about to report a repair, so downloading first would be waste.
+        if !matches!(homebrew_installed_version(&cask.token), Ok(None)) {
             continue;
         }
         let Ok(artifacts) = cask_artifacts(&cask) else {
@@ -1115,10 +1117,15 @@ async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode, mpr: &Mul
         {
             continue;
         }
-        let installed = mise_installed_cask_version(&cask).ok().flatten();
-        if matches!(
+        // Same again: defer to the serial pass on any error rather than guessing.
+        // `.ok()` here would turn a real failure into "not installed" and feed
+        // the wrong input to the skip check below.
+        let Ok(installed) = mise_installed_cask_version(&cask) else {
+            continue;
+        };
+        if !matches!(
             installed_skip_reason(&cask, &artifacts, installed.as_deref(), mode),
-            Ok(Some(_))
+            Ok(None)
         ) {
             continue;
         }
