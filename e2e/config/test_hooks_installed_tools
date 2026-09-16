@@ -11,7 +11,7 @@ postinstall = "echo INSTALLED_TOOLS=\$MISE_INSTALLED_TOOLS"
 EOF
 
 # Remove any existing dummy installation to force reinstall
-rm -rf ~/.mise/installs/dummy
+rm -rf "$MISE_DATA_DIR/installs/dummy"
 
 # Run install and capture output
 output=$(mise install dummy 2>&1)
@@ -50,7 +50,7 @@ if [[ $output == *'"version":"latest"'* ]]; then
 fi
 
 # A version prefix resolves to a concrete version but is reported verbatim
-rm -rf ~/.mise/installs/dummy
+rm -rf "$MISE_DATA_DIR/installs/dummy"
 output3=$(mise install dummy@1 2>&1)
 if [[ $output3 == *'"version":"1.1.0","requested_version":"1"'* ]]; then
   echo "✓ MISE_INSTALLED_TOOLS reports a version prefix verbatim"
@@ -61,7 +61,7 @@ else
 fi
 
 # An alias is reported by its alias name, not the version it points at
-rm -rf ~/.mise/installs/dummy
+rm -rf "$MISE_DATA_DIR/installs/dummy"
 cat <<EOF >mise.toml
 [alias.dummy]
 myalias = "1.0.0"
@@ -82,7 +82,7 @@ else
 fi
 
 # Restore the original `latest` config for the no-op check below
-rm -rf ~/.mise/installs/dummy
+rm -rf "$MISE_DATA_DIR/installs/dummy"
 cat <<EOF >mise.toml
 [tools]
 dummy = "latest"

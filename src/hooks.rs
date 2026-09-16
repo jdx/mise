@@ -18,9 +18,10 @@ use tokio::sync::OnceCell;
 pub(crate) struct InstalledToolInfo {
     pub name: String,
     pub version: String,
-    /// The selector the tool was requested with, before resolution (e.g.
-    /// `latest`, `prefix:1.2`, `ref:main`). Hooks cannot recover this from
-    /// `version` alone, and the install is not yet visible to `mise ls`.
+    /// The canonical form of the selector the tool was requested with, before
+    /// resolution (e.g. `latest`, `prefix:1.2`, `ref:main`). Hooks cannot
+    /// recover this from `version` alone, and the install is not yet visible
+    /// to `mise ls`.
     pub requested_version: String,
 }
 

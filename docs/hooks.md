@@ -99,10 +99,12 @@ Each entry has three fields:
 
 - `name`: the tool's short name, e.g. `node`.
 - `version`: the concrete version that was installed, e.g. `20.10.0`.
-- `requested_version`: the selector the tool was requested with, before resolution.
-  This is the string as written in the config or on the command line — `latest`, a
-  version prefix such as `20`, an alias such as `lts`, or a ref request such as
-  `ref:main`. For a fully-pinned request it is the same as `version`.
+- `requested_version`: the canonical form of the selector the tool was requested
+  with, before resolution — `latest`, a version prefix such as `20`, an alias such
+  as `lts`, or a ref request such as `ref:main`. For a fully-pinned request it is
+  the same as `version`. This is normally the string as written in the config or on
+  the command line, but ref selectors are normalized to their `:` form, so a request
+  written as `ref-main` is reported as `ref:main`.
 
 `requested_version` lets a hook branch on how the tool was selected without re-reading
 config files, which a `postinstall` hook cannot reliably do for the install that just
