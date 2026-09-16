@@ -870,19 +870,27 @@ mod tests {
     fn test_timeout_out_of_range_is_an_error_not_a_panic() {
         let lua = Lua::new();
         mod_cmd(&lua).unwrap();
-        lua.load(
-            r#"
-            local cmd = require("cmd")
-            for _, bad in ipairs({ 1e300, 1e30, 2^63 }) do
-                local ok, err = pcall(cmd.exec, "true", { timeout = bad })
-                assert(not ok, "expected " .. tostring(bad) .. " to be rejected")
-                assert(tostring(err):find("out of range") or tostring(err):find("too far"),
-                    "unexpected error for " .. tostring(bad) .. ": " .. tostring(err))
-            end
-        "#,
-        )
-        .exec()
-        .unwrap();
+        let options = lua.create_table().unwrap();
+
+        // Past `Duration::MAX` (~1.8e19 seconds) on every platform.
+        for bad in [1e300_f64, 1e30_f64] {
+            options.set("timeout", bad).unwrap();
+            let err = timeout_from_options(Some(&options))
+                .expect_err("expected a rejection")
+                .to_string();
+            assert!(
+                err.contains("out of range"),
+                "unexpected error for {bad}: {err}"
+            );
+        }
+
+        // Representable as a `Duration`, so whether `Instant` can hold the deadline is
+        // platform-specific — it overflows on Linux but not on Windows. Either answer
+        // is fine; what matters is that neither one panics.
+        options.set("timeout", 2f64.powi(63)).unwrap();
+        if let Some(timeout) = timeout_from_options(Some(&options)).unwrap() {
+            let _ = deadline_from(timeout);
+        }
     }
 
     // The shell can exit inside the deadline while a process it forked keeps the
