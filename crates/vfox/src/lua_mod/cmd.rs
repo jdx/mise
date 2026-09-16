@@ -188,8 +188,14 @@ impl Drain {
         let remaining = deadline.saturating_duration_since(Instant::now());
         self.rx.recv_timeout(remaining).ok()
     }
+}
 
-    fn abandon(&self) {
+/// Abandoning on drop rather than at each failure site means every way out of
+/// [`output_with_timeout`] stops the readers accumulating — including an error from
+/// the wait path, where a child that survived `kill` may still be writing. By the time
+/// a successful collection drops these, the reader has already sent and exited.
+impl Drop for Drain {
+    fn drop(&mut self) {
         self.abandoned.store(true, Ordering::Relaxed);
     }
 }
@@ -220,17 +226,11 @@ fn output_with_timeout(
     let stdout = Drain::new(child.stdout.take(), abandoned.clone());
     let stderr = Drain::new(child.stderr.take(), abandoned.clone());
 
-    let give_up = || {
-        stdout.abandon();
-        stderr.abandon();
-        timed_out_error(command, timeout)
-    };
-
     let Some(status) = wait_with_timeout(&mut child, deadline)? else {
-        return Err(give_up());
+        return Err(timed_out_error(command, timeout));
     };
     let (Some(stdout), Some(stderr)) = (stdout.collect(deadline), stderr.collect(deadline)) else {
-        return Err(give_up());
+        return Err(timed_out_error(command, timeout));
     };
     Ok(Output {
         status,
@@ -931,6 +931,23 @@ mod tests {
             started.elapsed() < Duration::from_secs(10),
             "call outlived its timeout: {:?}",
             started.elapsed()
+        );
+    }
+
+    // Every exit from output_with_timeout must stop the readers accumulating, not
+    // just the two timeout branches: an error from the wait path (a child that
+    // survived `kill`) returns via `?` and would otherwise leave them running. Drop
+    // is what makes that hold for every path. (#13263)
+    #[test]
+    fn test_drain_abandons_its_reader_on_drop() {
+        let abandoned = Arc::new(AtomicBool::new(false));
+        {
+            let _drain = Drain::new(None::<std::io::Empty>, abandoned.clone());
+            assert!(!abandoned.load(Ordering::Relaxed));
+        }
+        assert!(
+            abandoned.load(Ordering::Relaxed),
+            "dropping a Drain must signal its reader to stop accumulating"
         );
     }
 
