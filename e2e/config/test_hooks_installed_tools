@@ -34,6 +34,64 @@ else
   exit 1
 fi
 
+# Check that it reports the unresolved selector alongside the resolved version
+# so the hook can tell a floating request from a pin (#13270)
+if [[ $output == *'"requested_version":"latest"'* ]]; then
+  echo "✓ MISE_INSTALLED_TOOLS includes requested_version for a latest request"
+else
+  echo "✗ MISE_INSTALLED_TOOLS does NOT include requested_version"
+  echo "Output: $output"
+  exit 1
+fi
+if [[ $output == *'"version":"latest"'* ]]; then
+  echo "✗ version should be the resolved version, not the selector"
+  echo "Output: $output"
+  exit 1
+fi
+
+# A version prefix resolves to a concrete version but is reported verbatim
+rm -rf ~/.mise/installs/dummy
+output3=$(mise install dummy@1 2>&1)
+if [[ $output3 == *'"version":"1.1.0","requested_version":"1"'* ]]; then
+  echo "✓ MISE_INSTALLED_TOOLS reports a version prefix verbatim"
+else
+  echo "✗ MISE_INSTALLED_TOOLS did NOT report the version prefix"
+  echo "Output: $output3"
+  exit 1
+fi
+
+# An alias is reported by its alias name, not the version it points at
+rm -rf ~/.mise/installs/dummy
+cat <<EOF >mise.toml
+[alias.dummy]
+myalias = "1.0.0"
+
+[tools]
+dummy = "myalias"
+
+[hooks]
+postinstall = "echo INSTALLED_TOOLS=\$MISE_INSTALLED_TOOLS"
+EOF
+output4=$(mise install 2>&1)
+if [[ $output4 == *'"version":"1.0.0","requested_version":"myalias"'* ]]; then
+  echo "✓ MISE_INSTALLED_TOOLS reports an alias verbatim"
+else
+  echo "✗ MISE_INSTALLED_TOOLS did NOT report the alias"
+  echo "Output: $output4"
+  exit 1
+fi
+
+# Restore the original `latest` config for the no-op check below
+rm -rf ~/.mise/installs/dummy
+cat <<EOF >mise.toml
+[tools]
+dummy = "latest"
+
+[hooks]
+postinstall = "echo INSTALLED_TOOLS=\$MISE_INSTALLED_TOOLS"
+EOF
+mise install >/dev/null 2>&1
+
 # A no-op `mise install` (everything already installed) still runs postinstall,
 # now with an empty JSON array rather than an unset variable (#10574)
 output2=$(mise install 2>&1)

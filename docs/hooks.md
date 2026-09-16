@@ -91,7 +91,28 @@ The `postinstall` hook receives a `MISE_INSTALLED_TOOLS` environment variable co
 [hooks]
 postinstall = '''
 echo "Installed: $MISE_INSTALLED_TOOLS"
-# Example output: [{"name":"node","version":"20.10.0"},{"name":"python","version":"3.12.0"}]
+# Example output: [{"name":"node","version":"20.10.0","requested_version":"20"}]
+'''
+```
+
+Each entry has three fields:
+
+- `name`: the tool's short name, e.g. `node`.
+- `version`: the concrete version that was installed, e.g. `20.10.0`.
+- `requested_version`: the selector the tool was requested with, before resolution.
+  This is the string as written in the config or on the command line — `latest`, a
+  version prefix such as `20`, an alias such as `lts`, or a ref request such as
+  `ref:main`. For a fully-pinned request it is the same as `version`.
+
+`requested_version` lets a hook branch on how the tool was selected without re-reading
+config files, which a `postinstall` hook cannot reliably do for the install that just
+finished:
+
+```toml
+[hooks]
+postinstall = '''
+echo "$MISE_INSTALLED_TOOLS" | jq -r '
+  .[] | select(.requested_version == "latest") | "\(.name) floats on latest, got \(.version)"'
 '''
 ```
 
@@ -194,7 +215,7 @@ Hooks are executed with the following environment variables set:
 - `MISE_PROJECT_ROOT`: The root directory of the project.
 - `MISE_CONFIG_ROOT`: The root directory of the config that defines the hook.
 - `MISE_PREVIOUS_DIR`: The directory that the user was in before the directory change (only if a directory change occurred).
-- `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed (only for `postinstall` hooks).
+- `MISE_INSTALLED_TOOLS`: A JSON array of tools that were installed, each with `name`, `version` and `requested_version` (only for `postinstall` hooks).
 
 Global hooks use the active project's root for `MISE_PROJECT_ROOT` and the global config root for
 `MISE_CONFIG_ROOT`. For global-only operations such as `mise use --global`, both variables use the

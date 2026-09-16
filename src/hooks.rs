@@ -18,6 +18,10 @@ use tokio::sync::OnceCell;
 pub(crate) struct InstalledToolInfo {
     pub name: String,
     pub version: String,
+    /// The selector the tool was requested with, before resolution (e.g.
+    /// `latest`, `prefix:1.2`, `ref:main`). Hooks cannot recover this from
+    /// `version` alone, and the install is not yet visible to `mise ls`.
+    pub requested_version: String,
 }
 
 impl From<&ToolVersion> for InstalledToolInfo {
@@ -25,6 +29,7 @@ impl From<&ToolVersion> for InstalledToolInfo {
         Self {
             name: tv.ba().short.clone(),
             version: tv.version.clone(),
+            requested_version: tv.request.version(),
         }
     }
 }
