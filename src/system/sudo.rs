@@ -213,6 +213,15 @@ pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) 
 /// Unlike [`run`], the payload is never included in argv, logs, or the manual
 /// fallback. This is the transport used for typed privileged bootstrap plans.
 pub(crate) fn run_with_input(program: &str, args: &[String], input: &[u8]) -> Result<()> {
+    run_with_reader(program, args, input)
+}
+
+/// Stream a prepared payload without keeping tool archives in memory.
+pub(crate) fn run_with_reader(
+    program: &str,
+    args: &[String],
+    mut input: impl std::io::Read,
+) -> Result<()> {
     let argv = argv(program, args);
     let manual_cmd = std::iter::once("sudo".to_string())
         .chain(std::iter::once(program.to_string()))
@@ -228,11 +237,10 @@ pub(crate) fn run_with_input(program: &str, args: &[String], input: &[u8]) -> Re
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()?;
-    child
-        .stdin
-        .take()
-        .expect("piped stdin is available")
-        .write_all(input)?;
+    std::io::copy(
+        &mut input,
+        &mut child.stdin.take().expect("piped stdin is available"),
+    )?;
     let status = child.wait()?;
     if !status.success() {
         bail!("elevated bootstrap helper failed with {status}");

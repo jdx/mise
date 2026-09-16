@@ -94,6 +94,12 @@ fn rebuild_symlinks_in_dir(
         .filter(|v| is_concrete_install(v))
         .collect::<std::collections::HashSet<_>>();
     let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
+    #[cfg(unix)]
+    if installs_dir.parent() == Some(crate::config::Settings::get().system_installs_dir())
+        && crate::system_install::needs_elevation(installs_dir)
+    {
+        return crate::system_install::links(installs_dir, symlinks.into_iter().collect());
+    }
     for (from, to) in symlinks {
         let from_name = from.clone();
         let from = installs_dir.join(from);

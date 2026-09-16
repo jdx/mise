@@ -396,3 +396,24 @@ If you type a command in your shell (e.g., `node`) and it is not found, mise can
 ::: tip
 Disable auto_install for specific tools by setting [`auto_install_disable_tools`](/configuration/settings.html#auto_install_disable_tools) to a list of tool names.
 :::
+
+## System installations
+
+Run `mise install --system uv` as your normal user. On Unix, mise invokes sudo
+when it needs to publish a tool into a protected system directory. Downloads,
+verification, caches, configuration, and project lockfiles remain unprivileged.
+Running `sudo mise ...` is rejected before configuration is loaded. Direct root
+execution (for example, in containers) continues to work.
+
+Automatic elevation initially supports the `aqua`, `github`, `gitlab`, `forgejo`,
+`http`, and `s3` binary-download backends. Tools must be relocatable and cannot use
+a `postinstall` hook. Backends that build environments with embedded installation
+paths, such as Python virtualenvs, must use a user-writable installation directory.
+
+The system destination must have root-owned ancestors that other users cannot
+modify. Root-owned sticky directories, such as `/tmp`, are permitted. Mise stages
+the complete installation before publishing it; `--force` replaces an existing
+version. Internal absolute symlinks are rebased, and external symlinks are rejected.
+
+Elevation honors `system_packages.sudo = false`. Noninteractive installation
+requires passwordless sudo; interactive installation prompts on the terminal.

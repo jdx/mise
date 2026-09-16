@@ -624,6 +624,19 @@ pub(crate) async fn reshim_for(
         shim_version_stale(prev.as_deref(), shim_version, &shim_mode)
     };
     let full_rebuild = force || shim_mode_changed || shim_version_changed;
+    #[cfg(unix)]
+    if matches!(requested_scope, ShimScope::System)
+        && crate::system_install::needs_elevation(&shims_dir)
+    {
+        let desired = get_desired_shims(config, &mise_bin, ts, scope, force).await?;
+        return crate::system_install::links(
+            &shims_dir,
+            desired
+                .into_iter()
+                .map(|name| (name, mise_bin.to_path_buf()))
+                .collect(),
+        );
+    }
     file::create_dir_all(&shims_dir)?;
 
     let dedicated = is_dedicated_shims_dir(&shims_dir);
