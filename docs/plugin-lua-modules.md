@@ -716,8 +716,8 @@ The options table supports the following keys:
 - **`cwd`** (string): Set the working directory for the command
 - **`env`** (table): Set environment variables for the command. These are merged on top of the inherited environment (see below).
 - **`timeout`** (number): Seconds to allow the command to run before it is killed and an
-  error is raised. Fractions are allowed. Supported by `cmd.exec` and `cmd.stream`;
-  `os.execute` takes no options table.
+  error is raised. Must be greater than zero; fractions are allowed. Supported by
+  `cmd.exec` and `cmd.stream`; `os.execute` takes no options table.
 
 ### Timeouts
 
@@ -740,7 +740,9 @@ command had produced so far.
 
 Only the shell mise spawned is killed. A command that starts its own background
 processes can leave them running after the timeout fires, so prefer a tool's own
-timeout flag when it has one.
+timeout flag when it has one. `cmd.exec` stops collecting output at the deadline in
+that case, so the call still returns on time, but output those processes had already
+written may be discarded along with the error.
 
 ### Environment Inheritance in Env Module Hooks
 
