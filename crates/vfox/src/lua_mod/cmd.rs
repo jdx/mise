@@ -780,7 +780,7 @@ mod tests {
         lua.load(
             r#"
             local cmd = require("cmd")
-            local ok, err = pcall(cmd.exec, "sleep 30", { timeout = 0.2 })
+            local ok, err = pcall(cmd.exec, "sleep 8", { timeout = 0.2 })
             assert(not ok, "expected cmd.exec to raise on timeout")
             assert(tostring(err):find("timed out"), "unexpected error: " .. tostring(err))
         "#,
@@ -788,7 +788,7 @@ mod tests {
         .exec()
         .unwrap();
         // The child must actually be killed rather than waited out.
-        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(started.elapsed() < Duration::from_secs(4));
     }
 
     #[test]
@@ -818,13 +818,14 @@ mod tests {
         lua.load(
             r#"
             local cmd = require("cmd")
-            local ok = pcall(cmd.exec, "yes 2>/dev/null | head -c 100000000; sleep 30", { timeout = 0.3 })
+            -- 2MB is far past the pipe buffer, without the CPU cost of a larger burst.
+            local ok = pcall(cmd.exec, "yes 2>/dev/null | head -c 2000000; sleep 8", { timeout = 0.3 })
             assert(not ok, "expected timeout")
         "#,
         )
         .exec()
         .unwrap();
-        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(started.elapsed() < Duration::from_secs(4));
     }
 
     #[test]
@@ -836,14 +837,14 @@ mod tests {
         lua.load(
             r#"
             local cmd = require("cmd")
-            local ok, err = pcall(cmd.stream, "sleep 30", { timeout = 0.2 })
+            local ok, err = pcall(cmd.stream, "sleep 8", { timeout = 0.2 })
             assert(not ok, "expected cmd.stream to raise on timeout")
             assert(tostring(err):find("timed out"), "unexpected error: " .. tostring(err))
         "#,
         )
         .exec()
         .unwrap();
-        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(started.elapsed() < Duration::from_secs(4));
     }
 
     #[test]
@@ -896,7 +897,7 @@ mod tests {
         lua.load(
             r#"
             local cmd = require("cmd")
-            local ok, err = pcall(cmd.exec, "sleep 20 &", { timeout = 0.3 })
+            local ok, err = pcall(cmd.exec, "sleep 8 &", { timeout = 0.3 })
             assert(not ok, "expected a timeout")
             assert(tostring(err):find("timed out"), "unexpected error: " .. tostring(err))
         "#,
@@ -904,7 +905,7 @@ mod tests {
         .exec()
         .unwrap();
         assert!(
-            started.elapsed() < Duration::from_secs(10),
+            started.elapsed() < Duration::from_secs(4),
             "call outlived its timeout: {:?}",
             started.elapsed()
         );
@@ -921,14 +922,19 @@ mod tests {
         lua.load(
             r#"
             local cmd = require("cmd")
-            local ok = pcall(cmd.exec, "yes > /dev/null & yes & sleep 20", { timeout = 0.3 })
+            -- A descendant that writes steadily well past the deadline, but a bounded
+            -- number of times: an unbounded writer would outlive the test as an
+            -- orphan, since killing the shell does not kill what it forked.
+            local writer = "(i=0; while [ $i -lt 60 ]; do echo abcdefghijklmnopqrstuvwxyz;"
+                .. " i=$((i+1)); sleep 0.05; done) &"
+            local ok = pcall(cmd.exec, writer .. " sleep 5", { timeout = 0.3 })
             assert(not ok, "expected a timeout")
         "#,
         )
         .exec()
         .unwrap();
         assert!(
-            started.elapsed() < Duration::from_secs(10),
+            started.elapsed() < Duration::from_secs(4),
             "call outlived its timeout: {:?}",
             started.elapsed()
         );
