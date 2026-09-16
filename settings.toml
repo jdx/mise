@@ -2919,9 +2919,9 @@ default = []
 description = "Command names mise should never create shims for, leaving them to the system."
 docs = """
 Names listed here are skipped when mise generates shims, and any existing shims with those names
-are removed on the next reshim. mise still installs and manages the tool — it just never puts that
-command name on `PATH`, so the command resolves to whatever else `PATH` provides and mise stays out
-of its execution path entirely.
+are removed on the next reshim. mise still installs and manages the tool — it just never generates a
+shim for that name, so nothing in the shim directory intercepts the command and it resolves to
+whatever else `PATH` provides.
 
 This is useful when a tool's unversioned command is also provided by the OS and other software
 depends on getting the system one. On Arch Linux, for example, `/usr/bin/python` is the distro
@@ -2937,8 +2937,11 @@ Excluding `python3` means `python3 -m venv` builds a virtualenv from the system 
 than the configured one. Use the version-qualified command (for example `python3.12 -m venv`) when
 you want the mise-managed version.
 
-This only affects the shims mise generates. Under `mise activate` without `--shims`, a tool's bin
-directory joins `PATH` as a whole, so excluded names are still visible there.
+This only affects the shims mise generates, including lazy-tool bootstrap shims and
+plugin-provided shims. Two things are deliberately not covered: under `mise activate` without
+`--shims` a tool's bin directory joins `PATH` as a whole, so excluded names are still visible
+there; and command wrappers publish to their own directory from an explicit declaration, so an
+excluded name you also declare as a wrapper still resolves to the wrapper.
 """
 env = "MISE_SHIMS_EXCLUDE"
 parse_env = "set_by_comma"

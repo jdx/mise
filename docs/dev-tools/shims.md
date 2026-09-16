@@ -208,8 +208,8 @@ alongside `not_found_auto_install = false`, if you'd rather an unresolvable shim
 
 Some commands are also provided by the OS, and other software on the machine depends on getting the
 system one. [`shims.exclude`](/configuration/settings.html#shims.exclude) keeps those names out of
-the shim directory entirely — mise still installs and manages the tool, it just never puts that
-command on `PATH`:
+the shim directory — mise still installs and manages the tool, it just never generates a shim for
+that name:
 
 ```toml
 [settings.shims]
@@ -221,10 +221,11 @@ matching `site-packages` directory. Without this setting, entering a project tha
 changes which interpreter a `#!/usr/bin/env python` script gets, and a `PKGBUILD` that calls
 `python` during a build picks up the pinned version rather than the system one.
 
-Excluded names are removed from the shim directory on the next `mise reshim`. Version-qualified
+Excluded names are removed from the shim directory on the next `mise reshim`, and are skipped by
+the other shim producers too: lazy-tool bootstrap shims and plugin-provided shims. Version-qualified
 shims are unaffected, so `python3.12` still resolves to whatever version a config selects. Because
-no shim exists, mise is also out of that command's execution path entirely and no longer loads
-configuration on each invocation.
+no shim exists, mise is out of that command's execution path and no longer loads configuration on
+each invocation of it.
 
 ::: warning
 Excluding `python3` means `python3 -m venv` builds a virtualenv from the system interpreter rather

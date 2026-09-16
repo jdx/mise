@@ -439,7 +439,13 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
         } else {
             dirs::shims()
         };
-        bins_by_dir.entry(shims_dir).or_default().extend(bins);
+        // Bootstrap shims are written outside the reshim path, so they need the same
+        // exclusion filter get_desired_shims applies. Without it a `mise env`/`x`/`run`
+        // for a missing lazy tool would restore a name reshim had just removed.
+        bins_by_dir.entry(shims_dir).or_default().extend(
+            bins.into_iter()
+                .filter(|bin| !shim_name_excluded(&Settings::get().shims.exclude, bin)),
+        );
     }
     if !bins_by_dir.is_empty() {
         // Locating the mise binary walks PATH, so defer it until a declaration
@@ -703,13 +709,20 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
         return Ok(());
     }
     let mut jset = JoinSet::new();
+    let excluded = Settings::get().shims.exclude.clone();
     for plugin in backend::list() {
         let shims_dir = shims_dir.to_path_buf();
+        let excluded = excluded.clone();
         jset.spawn(async move {
             if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
                 for bin in files {
                     let bin = bin?;
                     let bin_name = bin.file_name().into_string().unwrap();
+                    // Plugins publish straight into the shim farm without going through
+                    // get_desired_shims, so an excluded name would reappear on reshim.
+                    if shim_name_excluded(&excluded, &bin_name) {
+                        continue;
+                    }
                     let symlink_path = shims_dir.join(bin_name);
                     make_shim(&bin.path(), &symlink_path).await?;
                 }
@@ -1729,14 +1742,29 @@ async fn get_desired_shims(
     Ok(shims)
 }
 
-/// Whether `shims.exclude` covers this shim name. Both sides are compared without the
-/// platform executable suffix so a single `python` entry also matches `python.exe`, and
-/// through [`command_names_eq`] so macOS stays case-insensitive like the filesystem.
-fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {
-    let name = command_name_without_exe_suffix(name);
-    excluded
-        .iter()
-        .any(|e| command_names_eq(command_name_without_exe_suffix(e), name))
+/// Normalize a shim name so every variant [`platform_shim_names`] can generate for a
+/// single command compares equal. Windows "file" mode emits both an extensionless shim
+/// and a `.cmd` shim, so stripping only `EXE_SUFFIX` would leave `python.cmd` behind
+/// when `python` is excluded. Case is folded where the filesystem is case-insensitive.
+fn shim_name_key(name: &str) -> String {
+    let mut name = command_name_without_exe_suffix(name);
+    if cfg!(windows)
+        && let Some((stem, ext)) = name.rsplit_once('.')
+        && ext.eq_ignore_ascii_case("cmd")
+    {
+        name = stem;
+    }
+    if cfg!(windows) || cfg!(macos) {
+        name.to_lowercase()
+    } else {
+        name.to_string()
+    }
+}
+
+/// Whether `shims.exclude` covers this shim name.
+pub(crate) fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {
+    let key = shim_name_key(name);
+    excluded.iter().any(|e| shim_name_key(e) == key)
 }
 
 fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
@@ -2008,6 +2036,22 @@ mod tests {
         let with_suffix: BTreeSet<String> =
             [format!("python{}", std::env::consts::EXE_SUFFIX)].into();
         assert!(shim_name_excluded(&with_suffix, "python"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shims_exclude_covers_windows_cmd_and_exe_variants() {
+        let excluded: BTreeSet<String> = ["python"].iter().map(|s| s.to_string()).collect();
+        // "file" shim mode generates both of these for one command
+        assert!(shim_name_excluded(&excluded, "python"));
+        assert!(shim_name_excluded(&excluded, "python.cmd"));
+        assert!(shim_name_excluded(&excluded, "python.exe"));
+        // Windows command lookup is case-insensitive, so matching must be too
+        assert!(shim_name_excluded(&excluded, "Python.CMD"));
+        let upper: BTreeSet<String> = ["PYTHON.cmd"].iter().map(|s| s.to_string()).collect();
+        assert!(shim_name_excluded(&upper, "python"));
+        // a different command that merely shares a prefix is untouched
+        assert!(!shim_name_excluded(&excluded, "python3.cmd"));
     }
 
     #[test]
