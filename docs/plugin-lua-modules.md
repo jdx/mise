@@ -596,17 +596,23 @@ colon-separated string to PATH in code that also runs on Windows.
 Three functions run a command. **Prefer `cmd.exec`.** It is the only one that does not
 compete for the terminal, so it never holds up the tools installing alongside it.
 
-| Function     | Output                                    | Returns                               | Cost to other installs                                                     |
-| ------------ | ----------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------- |
-| `cmd.exec`   | captured                                  | stdout as a string; raises on failure | none                                                                       |
-| `os.execute` | streamed to the terminal                  | exit status                           | holds mise's terminal lock while it runs                                   |
-| `cmd.stream` | streamed to the terminal, stdin connected | exit status                           | holds that lock exclusively — every other install waits to run any command |
+| Function     | Output                                    | Returns                               | Cost to other installs                   |
+| ------------ | ----------------------------------------- | ------------------------------------- | ---------------------------------------- |
+| `cmd.exec`   | captured                                  | stdout as a string; raises on failure | none                                     |
+| `os.execute` | streamed to the terminal                  | exit status                           | holds mise's terminal lock while it runs |
+| `cmd.stream` | streamed to the terminal, stdin connected | exit status                           | holds that lock exclusively              |
 
 Reach for `os.execute` only when the user should watch output as it happens, and for
 `cmd.stream` only when the child genuinely has to interact with the user. Because mise
 installs tools in parallel, only one child can own the terminal at a time, so both take
-mise's terminal lock: a hook that shells out through them repeatedly slows every install
-running beside it, and a long `cmd.stream` call stalls all of them.
+mise's terminal lock.
+
+What waits on that lock is everything that writes to the terminal: any command mise runs
+itself, such as a core tool's build or an asdf plugin's script, plus `os.execute` and
+`cmd.stream` in any other plugin. `cmd.exec` does not take the lock at all — it captures
+its output, so it can never collide with a child that owns the terminal. That is why a
+hook that shells out through the streaming functions repeatedly slows the installs running
+beside it, and a long `cmd.stream` call stalls them until it exits.
 
 Preferring `cmd.exec` costs nothing in visibility. A plugin's own `print()` output is
 routed to that tool's progress line, so progress reporting belongs in `print()` rather
