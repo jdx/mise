@@ -117,6 +117,7 @@ Options:
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
 - `MISE_VERSION=v2025.12.0` – install a specific version
 - `MISE_INSTALL_SKIP_IF_EXISTS=1` – skip the download/install if the mise binary at the install path already matches the requested version
+- `MISE_INSTALL_MUSL=1` – force the static musl build, for systems whose glibc is older than mise requires
 
 To verify the install script hasn't been tampered with:
 
@@ -155,6 +156,14 @@ The `linux-x64`, `linux-arm64`, and `linux-armv7` builds are dynamically linked 
 require **glibc 2.18 or newer**. On systems with an older glibc, or with a different
 libc such as Alpine's musl, use the matching `-musl` build instead: those are static
 and have no libc requirement.
+
+`mise.run` detects a musl system automatically, but it checks which libc you have, not
+which version — on a glibc older than 2.18 it still picks the gnu build, which won't
+run. Force the static build instead:
+
+```sh
+curl -fsSL https://mise.run | MISE_INSTALL_MUSL=1 sh
+```
 
 ::: details When this floor may change
 
