@@ -117,7 +117,7 @@ Options:
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
 - `MISE_VERSION=v2025.12.0` – install a specific version
 - `MISE_INSTALL_SKIP_IF_EXISTS=1` – skip the download/install if the mise binary at the install path already matches the requested version
-- `MISE_INSTALL_MUSL=1` – force the static musl build, for systems whose glibc is older than mise requires
+- `MISE_INSTALL_MUSL=1` – use the static musl build on systems with older glibc
 
 To verify the install script hasn't been tampered with:
 
@@ -153,24 +153,26 @@ Supported OS/arch:
 - `linux-armv7-musl`
 
 The `linux-x64`, `linux-arm64`, and `linux-armv7` builds are dynamically linked and
-require **glibc 2.18 or newer**. On systems with an older glibc, or with a different
-libc such as Alpine's musl, use the matching `-musl` build instead: those are static
-and have no libc requirement.
+require **glibc 2.18 or newer**. For systems with older glibc or a different
+libc, such as musl on Alpine Linux, use the matching static `-musl` build. These
+builds do not require glibc.
 
-`mise.run` detects a musl system automatically, but it checks which libc you have, not
-which version — on a glibc older than 2.18 it still picks the gnu build, which won't
-run. Force the static build instead:
+The installer at `mise.run` selects musl builds automatically on musl systems.
+On glibc systems, it selects a GNU build without checking the glibc version. If
+your glibc is older than 2.18, select the musl build explicitly:
 
 ```sh
 curl -fsSL https://mise.run | MISE_INSTALL_MUSL=1 sh
 ```
 
-::: details When this floor may change
+::: details Policy for raising the glibc minimum
 
-mise raises the floor only after every distro below the new one has reached the end of
-its vendor's **standard** support. Paid extended-support programs (Ubuntu ESM, RHEL ELS,
-SUSE LTSS) don't count toward this — those users can switch to a `-musl` build, which has
-no glibc requirement at all.
+Before mise raises its glibc minimum, every distribution with an older version
+must have reached the end of standard vendor support. Extended-support programs,
+such as Ubuntu ESM, RHEL ELS, and SUSE LTSS, do not extend this period. Users of
+those systems can use static musl builds.
+
+The following table lists standard support end dates for several distributions:
 
 | glibc  | Distros                                                | Standard support ends                    |
 | ------ | ------------------------------------------------------ | ---------------------------------------- |
@@ -182,15 +184,9 @@ no glibc requirement at all.
 | 2.34   | RHEL 9, Rocky 9, AlmaLinux 9                           | 2032-05-31                               |
 | 2.35   | Ubuntu 22.04                                           | 2027-06-01                               |
 
-Read as a schedule — a floor of _X_ requires everything below _X_ to be out of support:
-
-- **2.28** is already clear; nothing still in standard support sits below it.
-- **2.31 and 2.34** open up once RHEL 8 ends on **2029-05-31**.
-- **2.35 and above** wait for RHEL 9 on **2032-05-31**.
-
-This records when raising the floor becomes defensible, not a schedule for doing so. The
-floor is 2.18. Distros not listed here follow the same rule; if one ships an older glibc,
-use a `-musl` build.
+The minimum remains **glibc 2.18**. These dates inform future compatibility
+changes; they do not set a release schedule. The same support policy applies to
+distributions omitted from the table.
 
 :::
 

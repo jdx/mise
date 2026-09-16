@@ -129,24 +129,11 @@ if [[ -n ${MISE_BOLT:-} ]]; then
 	esac
 fi
 
-# mise's dynamically-linked Linux builds target glibc 2.18 or newer.
-#
-# This is a deliberate number, not a property of whichever distro was topical
-# when it was written. The previous thresholds were justified as "whatever
-# Amazon Linux 2 ships" (2.26) and "whatever Amazon Linux 2023 ships" (2.34);
-# AL2 reached EOL on 2026-06-30, which left those numbers meaning nothing in
-# particular. They were also inert: the pinned cross images are glibc 2.23, so
-# a binary built in them can never reference a 2.26+ symbol, and neither
-# assertion could fire.
-#
-# 2.18 is what every gnu target actually requires today, so asserting it moves
-# no floor -- it just makes the check able to fail. Raising it drops users and
-# is a deliberate compatibility decision; this guard exists so that decision
-# cannot be made by accident, e.g. by bumping a cross image. Systems below it
-# should use the musl builds, which are static and carry no glibc requirement.
-#
-# docs/installing-mise.md records which distros this floor covers and when each
-# one leaves standard support, i.e. when raising it becomes defensible.
+# GNU/Linux release binaries require glibc 2.18 or newer, matching the
+# published v2026.9.10 binaries. Reject builds that require a newer version
+# so toolchain and dependency updates cannot silently reduce compatibility.
+# See docs/installing-mise.md for the policy on raising this minimum and
+# instructions for using static musl builds on systems with older glibc.
 GLIBC_FLOOR=2.18
 
 case "$RUST_TRIPLE" in
