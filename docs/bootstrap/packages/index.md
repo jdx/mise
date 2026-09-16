@@ -89,19 +89,30 @@ Homebrew's Caskroom, so `macos-app:<name>` and `brew-cask:<name>` are
 independent and never contend for the same install record.
 
 They can still contend for the same *app*, though: `/Applications` is shared,
-and a declaration may name any bundle. So `macos-app` refuses to install over an
-app it does not already own — whether that app came from Homebrew, another
-declaration, or a manual install:
+and a declaration may name any bundle. So `macos-app` never swaps a bundle it
+holds no receipt for — whether that app came from Homebrew, another declaration,
+or a manual install. It compares what is already there against what it
+downloaded:
 
-```
-macos-app:nuvio: '/Applications/Nuvio.app' already exists and is not managed by
-this entry; set adopt = true to take it over in place.
-```
+- **Identical** — taken over in place. The bundle is not moved or replaced, so
+  the app keeps its Privacy & Security grants. This is what completes an install
+  interrupted before its receipt was written.
+- **Different** — refused, with the path and what to do about it:
 
-Set `adopt = true` to take it over without replacing the bundle. This is
-deliberately stricter than `brew-cask`, which warns and replaces: replacing a
-bundle strands the other owner's install record and makes macOS revoke the
-app's Privacy & Security grants.
+  ```
+  macos-app:nuvio: '/Applications/Nuvio.app' already exists and is not managed
+  by this entry; set adopt = true to take it over in place.
+  ```
+
+Set `adopt = true` to take an app over either way. This is deliberately stricter
+than `brew-cask`, which warns and replaces: a swap strands the other owner's
+install record, and macOS revokes the app's Privacy & Security grants on any
+swap — even to a byte-identical bundle, because the grants follow the bundle's
+identity at that path rather than its contents.
+
+`mise bootstrap packages apply --dry-run` cannot tell these two apart, since it
+has not downloaded anything to compare against; it warns that an app is already
+at the target and names both outcomes.
 
 ## Host packages or mise tools
 

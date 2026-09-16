@@ -8622,10 +8622,8 @@ fn macos_app_refuses_a_target_whose_content_is_not_ours() -> Result<()> {
     Ok(())
 }
 
-// The accept path copies the bundle, which needs `ditto`; macOS only.
-#[cfg(target_os = "macos")]
 #[test]
-fn macos_app_accepts_a_target_identical_to_what_it_installs() -> Result<()> {
+fn macos_app_adopts_an_identical_target_in_place() -> Result<()> {
     let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
@@ -8642,11 +8640,10 @@ fn macos_app_accepts_a_target_identical_to_what_it_installs() -> Result<()> {
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
 
-    // An identical bundle is this entry's own work: an attempt interrupted
-    // after placing it but before its receipt landed. The retry proceeds, and
-    // does not depend on whether the journal happened to be written first —
-    // that window can never be closed.
-    assert!(matches!(
+    // An identical bundle is taken over in place, never swapped: a swap would
+    // revoke the app's TCC grants even though the content matches, and would
+    // strand another owner's record if the bundle turns out to be theirs.
+    assert_eq!(
         install_app(
             &stage,
             &caskroom,
@@ -8660,7 +8657,12 @@ fn macos_app_accepts_a_target_identical_to_what_it_installs() -> Result<()> {
                 defer_if_running: false,
             },
         )?,
-        AppInstall::Installed { .. }
-    ));
+        AppInstall::Installed {
+            metadata_only: true
+        }
+    );
+    // The bundle on disk is untouched — no copy was made beside it either.
+    assert_eq!(crate::file::read_to_string(target.join("app"))?, "ours");
+    assert!(!caskroom.join("Example.app").exists());
     Ok(())
 }

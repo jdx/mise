@@ -706,6 +706,9 @@ impl BrewCaskManager {
         // install_app, where the staged bundle is available to compare against.
         let require_unowned_targets = requires_unowned_targets(&cask, installed_version.as_deref());
         if opts.dry_run {
+            if require_unowned_targets {
+                warn_existing_app_targets(cask.manager, &artifacts.apps)?;
+            }
             artifacts.print_install_plan(&cask)?;
             return Ok(cask.version);
         }
@@ -1276,19 +1279,32 @@ fn install_app(
     // descriptor rather than a pathname, so nothing that appears during the
     // download is silently replaced.
     //
-    // A bundle identical to the one being installed is this entry's own work —
-    // an attempt interrupted after placing it, before its receipt was written —
-    // so a retry may proceed. Anything else belongs to someone: Homebrew,
-    // another declaration, or a person. Comparing content rather than consulting
-    // transaction state is what makes a retry safe: the journal is written
-    // before the bundle exists, and the window between placing one and
-    // recording it can never be closed.
-    if require_unowned
-        && !adopt
-        && exists_at(&parent.fd, &name)?
-        && cask_target_fingerprint(&source)? != cask_target_fingerprint(&logical_target)?
-    {
-        return Err(unowned_target_error(manager, &logical_target));
+    // Nothing here may swap a bundle that this entry has no receipt for. A swap
+    // revokes the app's TCC grants even when the replacement is byte-identical,
+    // because the grants are keyed to the bundle's identity at the path rather
+    // than to its content (see `activate_app_at`).
+    //
+    // A differing bundle belongs to someone — Homebrew, another declaration, or
+    // a person — so refuse and point at adoption. An identical one is taken
+    // over in place: that completes an attempt interrupted before its receipt
+    // landed, and stays safe if the bundle turns out to be someone else's copy
+    // of the same release, because nothing is moved, replaced or deleted.
+    //
+    // Content is the only signal available here. Transaction state cannot
+    // answer it: a journal is written before the bundle exists, and the window
+    // between placing one and recording it can never be closed.
+    if require_unowned && !adopt && exists_at(&parent.fd, &name)? {
+        if cask_target_fingerprint(&source)? != cask_target_fingerprint(&logical_target)? {
+            return Err(unowned_target_error(manager, &logical_target));
+        }
+        info!(
+            "{}: adopting the identical bundle already at {}",
+            manager.label(),
+            logical_target.display()
+        );
+        return Ok(AppInstall::Installed {
+            metadata_only: true,
+        });
     }
     if adopt && exists_at(&parent.fd, &name)? {
         if verify_adopt {
@@ -1357,6 +1373,27 @@ fn install_app(
 /// the window between placing one and recording it is never zero.
 fn requires_unowned_targets(cask: &Cask, installed_version: Option<&str>) -> bool {
     !cask.manager.uses_homebrew_caskroom() && installed_version.is_none()
+}
+
+/// Flag app targets a plan cannot predict the outcome for.
+///
+/// Whether apply adopts the bundle in place or refuses depends on comparing it
+/// against the staged artifact, which a dry run has not downloaded. Say that,
+/// rather than let the plan imply a clean install.
+fn warn_existing_app_targets(manager: CaskManager, apps: &[AppArtifact]) -> Result<()> {
+    for app in apps {
+        let target = app_target_path(app.target_name()?)?;
+        if target.symlink_metadata().is_ok() {
+            warn!(
+                "{}: an app already exists at {}; apply will adopt it in place if it \
+                 is identical to the download, and refuse otherwise — set adopt = true \
+                 to take it over either way",
+                manager.label(),
+                target.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
