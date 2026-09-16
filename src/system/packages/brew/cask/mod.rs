@@ -579,6 +579,29 @@ impl BrewCaskManager {
         Ok(())
     }
 
+    /// Resolve the metadata for one request.
+    ///
+    /// An inline declaration short-circuits the Homebrew lookup entirely. A
+    /// `macos-app` request without one is a config error, not a reason to go
+    /// asking Homebrew about a token it has never heard of.
+    async fn resolve_cask(
+        &self,
+        req: &PackageRequest,
+        manager_options: &ManagerPackageOptions,
+        provision_ruby: bool,
+    ) -> Result<Cask> {
+        if let Some(spec) = manager_options.macos_app_spec(&req.name) {
+            return declared_app_cask(&req.name, spec);
+        }
+        if !self.manager.uses_homebrew_caskroom() {
+            bail!(
+                "macos-app:{}: no inline declaration found; macos-app entries require url, sha256, artifact, and an explicit version",
+                req.name
+            );
+        }
+        fetch_cask(req, provision_ruby).await
+    }
+
     /// Starts a top-level cask operation with an empty dependency ancestry.
     /// Returns the installed version or a message explaining why it was skipped.
     async fn install_one(
@@ -605,10 +628,9 @@ impl BrewCaskManager {
         manager_options: &ManagerPackageOptions,
         mode: InstallMode,
     ) -> Result<String> {
-        let cask = match manager_options.macos_app_spec(&req.name) {
-            Some(spec) => declared_app_cask(&req.name, spec)?,
-            None => fetch_cask(req, !opts.dry_run).await?,
-        };
+        let cask = self
+            .resolve_cask(req, manager_options, !opts.dry_run)
+            .await?;
         if ancestors.contains(&cask.token) {
             bail!("brew-cask:{}: dependency cycle detected", cask.token);
         }
@@ -697,7 +719,9 @@ impl BrewCaskManager {
         }
         let _caskroom_lock = lock_caskroom()?;
         recover_flight_backups()?;
-        ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
+        if cask.manager.uses_homebrew_caskroom() {
+            ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
+        }
         if let Some(reason) = installed_skip_reason(
             &cask,
             &artifacts,
@@ -730,7 +754,7 @@ impl BrewCaskManager {
         flight_targets.receipt_caskroom = Some(caskroom.clone());
         flight_targets.previous_symlinks = previous_flight_symlinks.iter().cloned().collect();
         flight_targets.previous_directories = previous_flight_directories.into_iter().collect();
-        write_cask_journal(&journal)?;
+        write_cask_journal(cask.manager, &journal)?;
         let current_completions = artifacts.completion_target_paths(&cask)?;
         for target in &current_completions {
             ensure_completion_target_replaceable(&cask, &artifacts, target)?;
@@ -748,7 +772,7 @@ impl BrewCaskManager {
         )?;
         execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         if has_lifecycle_hook(&cask, "preflight") {
-            record_cask_action(&mut journal, "preflight_hook")?;
+            record_cask_action(cask.manager, &mut journal, "preflight_hook")?;
         }
         // Homebrew leaves artifacts from the installed version available to
         // preflight. Back them up only after preflight so guards and commands
@@ -762,7 +786,7 @@ impl BrewCaskManager {
             &tmp_caskroom,
             &artifacts.installers,
             &mut flight_targets,
-            |index| record_cask_action(&mut journal, &format!("installer[{index}]")),
+            |index| record_cask_action(cask.manager, &mut journal, &format!("installer[{index}]")),
         )?;
         // Preflight, hooks, and installers may have launched a self-updating
         // app since the last skip check. Check before copying and again at the
@@ -800,23 +824,27 @@ impl BrewCaskManager {
                     return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
                 }
             }
-            record_cask_action(&mut journal, &format!("app[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("app[{index}]"))?;
         }
         for (index, pkg) in artifacts.pkgs.iter().enumerate() {
             install_pkg(&stage, pkg)?;
-            record_cask_action(&mut journal, &format!("pkg[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("pkg[{index}]"))?;
         }
         for (index, font) in artifacts.fonts.iter().enumerate() {
             stage_font(&stage, &tmp_caskroom, font)?;
-            record_cask_action(&mut journal, &format!("font[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("font[{index}]"))?;
         }
         for (index, wrapper) in artifacts.command_wrappers.iter().enumerate() {
             stage_command_wrapper(&tmp_caskroom, &appdir, &cask, wrapper)?;
-            record_cask_action(&mut journal, &format!("command_wrapper[{index}]"))?;
+            record_cask_action(
+                cask.manager,
+                &mut journal,
+                &format!("command_wrapper[{index}]"),
+            )?;
         }
         for (index, artifact) in artifacts.generic.iter().enumerate() {
             install_generic_artifact(&stage, &tmp_caskroom, artifact, &mut flight_targets)?;
-            record_cask_action(&mut journal, &format!("artifact[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("artifact[{index}]"))?;
         }
         execute_flight_steps_recording(
             &cask,
@@ -829,7 +857,7 @@ impl BrewCaskManager {
         )?;
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         if has_lifecycle_hook(&cask, "postflight") {
-            record_cask_action(&mut journal, "postflight_hook")?;
+            record_cask_action(cask.manager, &mut journal, "postflight_hook")?;
         }
         if artifacts
             .binaries
@@ -840,15 +868,19 @@ impl BrewCaskManager {
         }
         for (index, binary) in artifacts.binaries.iter().enumerate() {
             stage_binary(&stage, &tmp_caskroom, &cask, &artifacts.apps, binary)?;
-            record_cask_action(&mut journal, &format!("binary[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("binary[{index}]"))?;
         }
         for (index, completion) in artifacts.completions.iter().enumerate() {
             stage_completion(&stage, &tmp_caskroom, &cask, &artifacts.apps, completion)?;
-            record_cask_action(&mut journal, &format!("completion[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("completion[{index}]"))?;
         }
         for (index, generated) in artifacts.generated_completions.iter().enumerate() {
             stage_generated_completions(&stage, &tmp_caskroom, &cask, &artifacts.apps, generated)?;
-            record_cask_action(&mut journal, &format!("generated_completion[{index}]"))?;
+            record_cask_action(
+                cask.manager,
+                &mut journal,
+                &format!("generated_completion[{index}]"),
+            )?;
         }
         let current_binaries = artifacts.binary_targets()?;
         let current_fonts = artifacts.font_target_paths()?;
@@ -895,7 +927,7 @@ impl BrewCaskManager {
         if let Err(err) = link_transaction.commit() {
             warn!("brew-cask: failed to remove artifact link backups: {err:#}");
         }
-        record_cask_action(&mut journal, "activated")?;
+        record_cask_action(cask.manager, &mut journal, "activated")?;
         remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
         remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
         remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
@@ -908,7 +940,7 @@ impl BrewCaskManager {
             flight_targets.installed_directories(),
         )?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
-        remove_cask_journals(&cask.token)?;
+        remove_cask_journals(cask.manager, &cask.token)?;
         file::remove_all(stage)?;
         Ok(cask.version)
     }
@@ -1056,9 +1088,18 @@ impl SystemPackageManager for BrewCaskManager {
     }
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
+        self.installed_with_options(pkgs, &ManagerPackageOptions::None)
+            .await
+    }
+
+    async fn installed_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<Vec<PackageStatus>> {
         let mut statuses = Vec::with_capacity(pkgs.len());
         for req in pkgs {
-            let cask = fetch_cask(req, false).await?;
+            let cask = self.resolve_cask(req, manager_options, false).await?;
             statuses.push(PackageStatus {
                 request: req.clone(),
                 state: package_state(req, &cask)?,
@@ -1091,13 +1132,18 @@ impl SystemPackageManager for BrewCaskManager {
 
     /// Explicitly upgrades casks, assessing live versions for owned self-updating apps.
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        self.install_with_manager_options(
-            pkgs,
-            opts,
-            &ManagerPackageOptions::None,
-            InstallMode::Upgrade,
-        )
-        .await
+        self.upgrade_with_options(pkgs, opts, &ManagerPackageOptions::None)
+            .await
+    }
+
+    async fn upgrade_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        self.install_with_manager_options(pkgs, opts, manager_options, InstallMode::Upgrade)
+            .await
     }
 }
 
@@ -1109,6 +1155,9 @@ impl SystemPackageManager for BrewCaskManager {
 /// no tap, no dependencies, and no lifecycle hooks to evaluate.
 fn declared_app_cask(name: &str, spec: &crate::system::AppSpec) -> Result<Cask> {
     validate_cask_path_component("package name", name)?;
+    // `version` is joined into the install-record and journal paths, so it is
+    // validated exactly as fetched cask metadata is by `validate_cask_identity`.
+    validate_cask_path_component("version", &spec.version)?;
     Ok(Cask {
         token: name.to_string(),
         aliases: Vec::new(),
@@ -1140,7 +1189,7 @@ fn leave_running_app(
     stage: &Path,
 ) -> Result<String> {
     flight_targets.rollback()?;
-    remove_cask_journals(&cask.token)?;
+    remove_cask_journals(cask.manager, &cask.token)?;
     file::remove_all(tmp_caskroom)?;
     file::remove_all(stage)?;
     let reason = "skipped: installed app started running during the upgrade and updates itself";

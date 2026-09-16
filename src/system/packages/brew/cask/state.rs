@@ -245,7 +245,7 @@ pub(super) fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>>
 }
 
 pub(super) fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<String>> {
-    if cask_journal_pending_in(state_dir, &cask.token) {
+    if cask_journal_pending_in(state_dir, cask.manager, &cask.token) {
         return Ok(None);
     }
     match previous_receipt(cask)? {
@@ -502,56 +502,74 @@ pub(super) fn hash_digest_field(digest: &mut Sha256, value: &[u8]) {
     digest.update(value);
 }
 
-pub(super) fn cask_journal_path_in(state_dir: &Path, token: &str, version: &str) -> PathBuf {
-    state_dir
-        .join("brew-cask")
-        .join(token)
-        .join(format!("{version}.json"))
+/// Transaction journals are per-manager, like the install records they guard.
+/// Sharing them across managers would let one manager's pending or failed
+/// transaction hide or clean up the other's install of the same token.
+/// `brew-cask`'s label is unchanged, so its existing journals stay in place.
+pub(super) fn cask_journal_dir_in(state_dir: &Path, manager: CaskManager, token: &str) -> PathBuf {
+    state_dir.join(manager.label()).join(token)
 }
 
-pub(super) fn cask_journal_pending_in(state_dir: &Path, token: &str) -> bool {
-    state_dir
-        .join("brew-cask")
-        .join(token)
+pub(super) fn cask_journal_path_in(
+    state_dir: &Path,
+    manager: CaskManager,
+    token: &str,
+    version: &str,
+) -> PathBuf {
+    cask_journal_dir_in(state_dir, manager, token).join(format!("{version}.json"))
+}
+
+pub(super) fn cask_journal_pending_in(state_dir: &Path, manager: CaskManager, token: &str) -> bool {
+    cask_journal_dir_in(state_dir, manager, token)
         .read_dir()
         .is_ok_and(|mut entries| entries.next().is_some())
 }
 
-pub(super) fn write_cask_journal(journal: &CaskTransactionJournal<'_>) -> Result<()> {
-    write_cask_journal_in(&crate::dirs::STATE, journal)
+pub(super) fn write_cask_journal(
+    manager: CaskManager,
+    journal: &CaskTransactionJournal<'_>,
+) -> Result<()> {
+    write_cask_journal_in(&crate::dirs::STATE, manager, journal)
 }
 
 pub(super) fn write_cask_journal_in(
     state_dir: &Path,
+    manager: CaskManager,
     journal: &CaskTransactionJournal<'_>,
 ) -> Result<()> {
-    let path = cask_journal_path_in(state_dir, journal.token, journal.version);
+    let path = cask_journal_path_in(state_dir, manager, journal.token, journal.version);
     let body = serde_json::to_vec_pretty(journal)?;
     write_durable_file(&path, &body)
 }
 
 pub(super) fn record_cask_action(
+    manager: CaskManager,
     journal: &mut CaskTransactionJournal<'_>,
     action: &str,
 ) -> Result<()> {
-    record_cask_action_in(&crate::dirs::STATE, journal, action)
+    record_cask_action_in(&crate::dirs::STATE, manager, journal, action)
 }
 
 pub(super) fn record_cask_action_in(
     state_dir: &Path,
+    manager: CaskManager,
     journal: &mut CaskTransactionJournal<'_>,
     action: &str,
 ) -> Result<()> {
     journal.completed.push(action.to_string());
-    write_cask_journal_in(state_dir, journal)
+    write_cask_journal_in(state_dir, manager, journal)
 }
 
-pub(super) fn remove_cask_journals(token: &str) -> Result<()> {
-    remove_cask_journals_in(&crate::dirs::STATE, token)
+pub(super) fn remove_cask_journals(manager: CaskManager, token: &str) -> Result<()> {
+    remove_cask_journals_in(&crate::dirs::STATE, manager, token)
 }
 
-pub(super) fn remove_cask_journals_in(state_dir: &Path, token: &str) -> Result<()> {
-    let path = state_dir.join("brew-cask").join(token);
+pub(super) fn remove_cask_journals_in(
+    state_dir: &Path,
+    manager: CaskManager,
+    token: &str,
+) -> Result<()> {
+    let path = cask_journal_dir_in(state_dir, manager, token);
     if path.symlink_metadata().is_ok() {
         file::remove_all(&path)?;
         if let Some(parent) = path.parent() {
@@ -838,7 +856,7 @@ pub(super) fn cask_prune_plan_from_tokens(
         if configured {
             continue;
         }
-        if cask_journal_pending_in(state_dir, &token) {
+        if cask_journal_pending_in(state_dir, CaskManager::BrewCask, &token) {
             plan.skipped.push(CaskPruneSkip {
                 token,
                 reason: "an incomplete cask transaction is pending".to_string(),
@@ -953,13 +971,23 @@ pub(super) fn apply_cask_prune_plan_in(
                 version: &candidate.version,
                 completed: Vec::new(),
             };
-            write_cask_journal_in(state_dir, &journal)?;
+            write_cask_journal_in(state_dir, CaskManager::BrewCask, &journal)?;
             for (index, target) in candidate.receipt.targets.iter().enumerate() {
                 remove_artifact_target_elevating(&target.path)?;
-                record_cask_action_in(state_dir, &mut journal, &format!("prune_target[{index}]"))?;
+                record_cask_action_in(
+                    state_dir,
+                    CaskManager::BrewCask,
+                    &mut journal,
+                    &format!("prune_target[{index}]"),
+                )?;
             }
             file::remove_all(&candidate.version_dir)?;
-            record_cask_action_in(state_dir, &mut journal, "prune_caskroom")?;
+            record_cask_action_in(
+                state_dir,
+                CaskManager::BrewCask,
+                &mut journal,
+                "prune_caskroom",
+            )?;
             if let Some(token_dir) = candidate.version_dir.parent()
                 && let Err(err) = file::remove_dir(token_dir)
             {
@@ -968,7 +996,7 @@ pub(super) fn apply_cask_prune_plan_in(
                     candidate.token
                 );
             }
-            remove_cask_journals_in(state_dir, &candidate.token)
+            remove_cask_journals_in(state_dir, CaskManager::BrewCask, &candidate.token)
         };
         match remove() {
             Ok(()) => removed += 1,

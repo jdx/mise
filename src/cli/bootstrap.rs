@@ -3565,7 +3565,10 @@ impl BootstrapStatus {
                 );
                 continue;
             }
-            let statuses = mp.manager.installed(&mp.requests).await?;
+            let statuses = mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await?;
             let mut json_pkgs = vec![];
             for s in statuses {
                 let auto_updates = s.state.auto_updates();

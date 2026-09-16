@@ -1899,10 +1899,41 @@ fn packages_from_specs_with_config_files(
     let package_configs = package_configs_from_config_files(config_files);
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
+    #[cfg(unix)]
+    let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
+    #[cfg(unix)]
+    let mut app_adopt = BTreeSet::new();
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
         validate_package_name(&mgr, &name)?;
+        // An explicit `macos-app:<name>` still needs its declaration, which
+        // only the config carries. Without it there is no URL to install from,
+        // and no Homebrew cask to fall back to.
+        #[cfg(unix)]
+        let mut app_version = None;
+        #[cfg(unix)]
+        if mgr == "macos-app" {
+            let configured = package_configs
+                .get(&format!("{mgr}:{name}"))
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "macos-app:{name} is not declared in [bootstrap.packages]; it needs url, sha256, artifact, and an explicit version"
+                    )
+                })?;
+            let (url, sha256, artifact, version) =
+                configured.app_fields().ok_or_else(|| {
+                    eyre::eyre!(
+                        "macos-app:{name} is missing 'url'; macos-app entries need url, sha256, artifact, and an explicit version"
+                    )
+                })?;
+            let parsed = AppSpec::parse(&name, url, sha256, artifact, version)?;
+            app_version = Some(parsed.version.clone());
+            app_specs.insert(name.clone(), parsed);
+            if configured.adopt().unwrap_or(false) {
+                app_adopt.insert(name.clone());
+            }
+        }
         let tap_url = if is_brew_manager(&mgr) {
             brew_tap_name(&name).and_then(|tap| brew_taps.get(tap).cloned())
         } else {
@@ -1928,10 +1959,14 @@ fn packages_from_specs_with_config_files(
                 cask_adopt.insert(name.clone());
             }
         }
+        #[cfg(unix)]
+        let version = app_version;
+        #[cfg(not(unix))]
+        let version = None;
         let requests = by_mgr.entry(mgr).or_default();
         let request = PackageRequest {
             name,
-            version: None,
+            version,
             tap_url,
             desired: packages::PackageDesiredState::Present,
         };
@@ -1940,13 +1975,24 @@ fn packages_from_specs_with_config_files(
         }
     }
     #[cfg(unix)]
-    let options = if cask_adopt.is_empty() {
-        IndexMap::new()
-    } else {
-        IndexMap::from([(
-            "brew-cask".to_string(),
-            ManagerPackageOptions::BrewCask { adopt: cask_adopt },
-        )])
+    let options = {
+        let mut options = IndexMap::new();
+        if !cask_adopt.is_empty() {
+            options.insert(
+                "brew-cask".to_string(),
+                ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+            );
+        }
+        if !app_specs.is_empty() {
+            options.insert(
+                "macos-app".to_string(),
+                ManagerPackageOptions::MacosApp {
+                    specs: app_specs,
+                    adopt: app_adopt,
+                },
+            );
+        }
+        options
     };
     #[cfg(not(unix))]
     let options = IndexMap::new();
@@ -2304,6 +2350,53 @@ mod tests {
         assert_eq!(spec.artifact, "Nuvio.app");
         assert_eq!(spec.version, "1.1.20");
         assert!(apps.options.brew_cask_adopt("nuvio"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_explicit_cli_spec_carries_its_declaration() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}.dmg", sha256 = "abc123", artifact = "Nuvio.app", adopt = true }
+            "#,
+        )])?;
+
+        // `mise bootstrap packages apply macos-app:nuvio` must resolve the same
+        // declaration a full bootstrap would; there is no Homebrew fallback.
+        let packages =
+            packages_from_specs_with_config_files(&["macos-app:nuvio".to_string()], &config_files)?;
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app")
+            .unwrap();
+        let spec = apps.options.macos_app_spec("nuvio").unwrap();
+        assert_eq!(spec.url, "https://example.com/Nuvio-1.1.20.dmg");
+        assert_eq!(spec.version, "1.1.20");
+        assert!(apps.options.brew_cask_adopt("nuvio"));
+        // The pinned version must reach the request, or status compares
+        // against nothing.
+        assert_eq!(apps.requests[0].version.as_deref(), Some("1.1.20"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_explicit_cli_spec_without_a_declaration_is_an_error() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[("mise.toml", "[tools]\n")])?;
+        let err = match packages_from_specs_with_config_files(
+            &["macos-app:nuvio".to_string()],
+            &config_files,
+        ) {
+            Ok(_) => panic!("expected an error for an undeclared macos-app spec"),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            err.contains("not declared in [bootstrap.packages]"),
+            "{err}"
+        );
         Ok(())
     }
 

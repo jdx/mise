@@ -590,7 +590,11 @@ impl Doctor {
                 );
                 continue;
             }
-            match mp.manager.installed(&mp.requests).await {
+            match mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await
+            {
                 Ok(statuses) => {
                     let missing = statuses
                         .iter()
@@ -1029,7 +1033,11 @@ impl Doctor {
                 ));
                 continue;
             }
-            match mp.manager.installed(&mp.requests).await {
+            match mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await
+            {
                 Ok(statuses) => {
                     let missing = statuses
                         .iter()

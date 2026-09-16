@@ -5850,7 +5850,11 @@ fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
     assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 1);
     assert!(!target.exists());
     assert!(!caskroom_token_dir(CaskManager::BrewCask, &cask.token).exists());
-    assert!(!cask_journal_pending_in(&state_dir, &cask.token));
+    assert!(!cask_journal_pending_in(
+        &state_dir,
+        CaskManager::BrewCask,
+        &cask.token
+    ));
     Ok(())
 }
 
@@ -5873,8 +5877,16 @@ fn cask_prune_keeps_nonempty_token_directory_and_continues() -> Result<()> {
     assert!(!clean_target.exists());
     assert!(staged_token_dir.join(".mise-tmp-interrupted").is_dir());
     assert!(!caskroom_token_dir(CaskManager::BrewCask, "b-clean").exists());
-    assert!(!cask_journal_pending_in(&state_dir, "a-staged"));
-    assert!(!cask_journal_pending_in(&state_dir, "b-clean"));
+    assert!(!cask_journal_pending_in(
+        &state_dir,
+        CaskManager::BrewCask,
+        "a-staged"
+    ));
+    assert!(!cask_journal_pending_in(
+        &state_dir,
+        CaskManager::BrewCask,
+        "b-clean"
+    ));
     Ok(())
 }
 
@@ -6159,10 +6171,22 @@ fn any_version_journal_marks_token_pending() -> Result<()> {
     file::write(journal_dir.join("0.9.0.json"), "{}")?;
     file::write(journal_dir.join("1.0.0.json"), "{}")?;
 
-    assert!(cask_journal_pending_in(tmp.path(), "example"));
-    assert!(!cask_journal_pending_in(tmp.path(), "other"));
-    remove_cask_journals_in(tmp.path(), "example")?;
-    assert!(!cask_journal_pending_in(tmp.path(), "example"));
+    assert!(cask_journal_pending_in(
+        tmp.path(),
+        CaskManager::BrewCask,
+        "example"
+    ));
+    assert!(!cask_journal_pending_in(
+        tmp.path(),
+        CaskManager::BrewCask,
+        "other"
+    ));
+    remove_cask_journals_in(tmp.path(), CaskManager::BrewCask, "example")?;
+    assert!(!cask_journal_pending_in(
+        tmp.path(),
+        CaskManager::BrewCask,
+        "example"
+    ));
     Ok(())
 }
 
@@ -8417,4 +8441,40 @@ fn macos_app_and_brew_cask_differ_in_platform_and_pin_support() {
 
     // brew-cask serves Linux font casks; an .app bundle is macOS-only.
     assert_eq!(app.is_available(), cfg!(target_os = "macos"));
+}
+
+#[test]
+fn declared_app_cask_rejects_a_traversing_version() {
+    // `version` is joined into the install-record and journal paths, so an
+    // unvalidated one could place records outside the manager's state root.
+    let spec = crate::system::AppSpec {
+        url: "https://example.com/a.dmg".to_string(),
+        sha256: "abc".to_string(),
+        artifact: "A.app".to_string(),
+        version: "../../escape".to_string(),
+    };
+    assert!(declared_app_cask("nuvio", &spec).is_err());
+}
+
+#[test]
+fn install_journals_are_scoped_per_manager() {
+    let state = Path::new("/tmp/mise-test-state");
+    let cask = cask_journal_path_in(state, CaskManager::BrewCask, "nuvio", "1.0.0");
+    let app = cask_journal_path_in(state, CaskManager::MacosApp, "nuvio", "1.0.0");
+
+    // A shared journal would let one manager's pending or failed transaction
+    // hide or clean up the other's install of the same token.
+    assert_ne!(cask, app);
+    // brew-cask keeps its existing location, so journals written by older
+    // versions are still found.
+    assert_eq!(
+        cask,
+        state.join("brew-cask").join("nuvio").join("1.0.0.json")
+    );
+
+    assert!(!cask_journal_pending_in(
+        state,
+        CaskManager::MacosApp,
+        "nuvio"
+    ));
 }
