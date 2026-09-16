@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# shims_exclude keeps a command name out of the shim farm entirely so it resolves to
+# whatever else is on PATH, without disabling mise's management of the tool itself.
+
+eval "$(mise activate bash --shims)"
+
+shim_dir="$MISE_DATA_DIR/shims"
+
+fake_bin="$PWD/fake-bin"
+mkdir -p "$fake_bin"
+printf '#!/bin/sh\necho fake-system-dummy\n' >"$fake_bin/dummy"
+chmod +x "$fake_bin/dummy"
+export PATH="$shim_dir:$fake_bin:$PATH"
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+mise install
+assert_succeed "test -f '$shim_dir/dummy'"
+assert_succeed "test -f '$shim_dir/dummy-exec-tiny'"
+assert_contains "dummy" "This is Dummy 1.0.0!"
+
+# excluding the name removes the existing shim and stops it from being regenerated
+cat >mise.toml <<'EOF'
+[settings]
+shims_exclude = ["dummy"]
+
+[tools]
+dummy = "1.0.0"
+EOF
+
+mise reshim
+assert_fail "test -f '$shim_dir/dummy'"
+# other bins from the same tool are untouched
+assert_succeed "test -f '$shim_dir/dummy-exec-tiny'"
+# with no shim in the way the command resolves to the system binary
+assert "dummy" "fake-system-dummy"
+# and the tool is still installed and usable through mise
+assert_contains "mise x -- dummy" "This is Dummy 1.0.0!"
+
+# the setting also works as an env var
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+MISE_SHIMS_EXCLUDE=dummy mise reshim
+assert_fail "test -f '$shim_dir/dummy'"
+
+# removing the exclusion restores the shim
+mise reshim
+assert_succeed "test -f '$shim_dir/dummy'"
+assert_contains "dummy" "This is Dummy 1.0.0!"

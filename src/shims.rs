@@ -1722,7 +1722,21 @@ async fn get_desired_shims(
             Err(err) => warn!("Skipping invalid lazy shim declaration: {err:#}"),
         }
     }
+    let excluded = &Settings::get().shims_exclude;
+    if !excluded.is_empty() {
+        shims.retain(|name| !shim_name_excluded(excluded, name));
+    }
     Ok(shims)
+}
+
+/// Whether `shims_exclude` covers this shim name. Both sides are compared without the
+/// platform executable suffix so a single `python` entry also matches `python.exe`, and
+/// through [`command_names_eq`] so macOS stays case-insensitive like the filesystem.
+fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {
+    let name = command_name_without_exe_suffix(name);
+    excluded
+        .iter()
+        .any(|e| command_names_eq(command_name_without_exe_suffix(e), name))
 }
 
 fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
@@ -1979,6 +1993,35 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn shims_exclude_matches_regardless_of_exe_suffix() {
+        let excluded: BTreeSet<String> = ["python", "pip3"].iter().map(|s| s.to_string()).collect();
+        assert!(shim_name_excluded(&excluded, "python"));
+        assert!(shim_name_excluded(&excluded, "pip3"));
+        // the generated name carries the platform suffix on Windows; a bare entry still covers it
+        assert!(shim_name_excluded(
+            &excluded,
+            &format!("python{}", std::env::consts::EXE_SUFFIX)
+        ));
+        // and an entry written with the suffix covers the bare name
+        let with_suffix: BTreeSet<String> =
+            [format!("python{}", std::env::consts::EXE_SUFFIX)].into();
+        assert!(shim_name_excluded(&with_suffix, "python"));
+    }
+
+    #[test]
+    fn shims_exclude_does_not_match_version_qualified_names() {
+        let excluded: BTreeSet<String> = ["python", "python3"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        // excluding the unversioned commands must leave python3.12 dispatching normally,
+        // which is the whole point of the setting
+        assert!(!shim_name_excluded(&excluded, "python3.12"));
+        assert!(!shim_name_excluded(&excluded, "python3.12-config"));
+        assert!(!shim_name_excluded(&excluded, "pythonx"));
+    }
 
     #[test]
     fn locked_windows_shims_get_distinct_old_paths() {

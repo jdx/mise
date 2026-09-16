@@ -204,6 +204,37 @@ Set [`not_found_system_fallback`](/configuration/settings.html#not_found_system_
 alongside `not_found_auto_install = false`, if you'd rather an unresolvable shim fail outright.
 :::
 
+### Excluding command names
+
+Some commands are also provided by the OS, and other software on the machine depends on getting the
+system one. [`shims_exclude`](/configuration/settings.html#shims_exclude) keeps those names out of
+the shim directory entirely — mise still installs and manages the tool, it just never puts that
+command on `PATH`:
+
+```toml
+[settings]
+shims_exclude = ["python", "python3", "pip", "pip3"]
+```
+
+On Arch Linux, for example, `/usr/bin/python` is the distro interpreter and its modules live in a
+matching `site-packages` directory. Without this setting, entering a project that pins `python`
+changes which interpreter a `#!/usr/bin/env python` script gets, and a `PKGBUILD` that calls
+`python` during a build picks up the pinned version rather than the system one.
+
+Excluded names are removed from the shim directory on the next `mise reshim`. Version-qualified
+shims are unaffected, so `python3.12` still resolves to whatever version a config selects. Because
+no shim exists, mise is also out of that command's execution path entirely and no longer loads
+configuration on each invocation.
+
+::: warning
+Excluding `python3` means `python3 -m venv` builds a virtualenv from the system interpreter rather
+than the configured one, silently. Use the version-qualified command (`python3.12 -m venv`) when you
+want the mise-managed version.
+
+This setting only affects generated shims. Under `mise activate` without `--shims`, a tool's `bin`
+directory joins `PATH` as a whole, so excluded names remain visible there.
+:::
+
 - You can also decide to use only `shims` if you prefer, though this comes with some [limitations](/dev-tools/shims.html#shims-vs-path).
 - An alternative to [`mise activate --shims`](/cli/activate.html#flags) is to use `export PATH="$HOME/.local/share/mise/shims:$PATH"`. This can be helpful if `mise` is not yet available at that point.
 

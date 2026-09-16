@@ -1860,6 +1860,14 @@
           "description": "Directory containing user shims.",
           "type": "string"
         },
+        "shims_exclude": {
+          "default": [],
+          "description": "Command names mise should never create shims for, leaving them to the system.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "shorthands_file": {
           "description": "[deprecated] Path to a file containing custom tool shorthands.",
           "type": "string",

@@ -2928,6 +2928,37 @@ global_only = true
 optional = true
 type = "Path"
 
+[shims_exclude]
+default = []
+description = "Command names mise should never create shims for, leaving them to the system."
+docs = """
+Names listed here are skipped when mise generates shims, and any existing shims with those names
+are removed on the next reshim. mise still installs and manages the tool — it just never puts that
+command name on `PATH`, so the command resolves to whatever else `PATH` provides and mise stays out
+of its execution path entirely.
+
+This is useful when a tool's unversioned command is also provided by the OS and other software
+depends on getting the system one. On Arch Linux, for example, `/usr/bin/python` is the distro
+interpreter and its modules live in a matching `site-packages` directory, so a project that pins
+`python` also changes which interpreter a `#!/usr/bin/env python` script gets:
+
+    mise settings shims_exclude=python,python3,pip,pip3
+
+With that set, `python` and `python3` always resolve to the system interpreter, while a
+version-qualified shim such as `python3.12` still resolves to the version a config selects.
+
+Excluding `python3` means `python3 -m venv` builds a virtualenv from the system interpreter rather
+than the configured one. Use the version-qualified command (for example `python3.12 -m venv`) when
+you want the mise-managed version.
+
+This only affects the shims mise generates. Under `mise activate` without `--shims`, a tool's bin
+directory joins `PATH` as a whole, so excluded names are still visible there.
+"""
+env = "MISE_SHIMS_EXCLUDE"
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
 [shorthands_file]
 deprecated = "Use [plugins] in mise.toml or ~/.config/mise/config.toml instead (same shortname = \"backend-or-url\" rows; see https://mise.jdx.dev/configuration.html#plugins)."
 deprecated_remove_at = "2026.12.0"
