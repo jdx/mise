@@ -1386,8 +1386,8 @@ fn warn_existing_app_targets(manager: CaskManager, apps: &[AppArtifact]) -> Resu
         if target.symlink_metadata().is_ok() {
             warn!(
                 "{}: an app already exists at {}; apply will adopt it in place if it \
-                 is identical to the download, and refuse otherwise — set adopt = true \
-                 to take it over either way",
+                 is identical to the download, and refuse otherwise — remove it first \
+                 to install a different build",
                 manager.label(),
                 target.display()
             );
@@ -1398,10 +1398,10 @@ fn warn_existing_app_targets(manager: CaskManager, apps: &[AppArtifact]) -> Resu
 
 fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
     eyre!(
-        "{}: '{}' already exists and is not managed by this entry; \
-         set adopt = true to take it over in place. Replacing it would \
-         revoke the app's macOS Privacy & Security grants (Accessibility, \
-         Screen Recording, Full Disk Access, etc.)",
+        "{}: '{}' already exists and differs from the declared artifact, so it \
+         belongs to something else; remove it to install this one. mise will not \
+         replace it, because swapping a bundle revokes the app's macOS Privacy & \
+         Security grants (Accessibility, Screen Recording, Full Disk Access, etc.)",
         manager.label(),
         target.display()
     )

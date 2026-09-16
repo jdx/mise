@@ -8571,6 +8571,7 @@ fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()>
         .unwrap_err()
         .to_string();
     assert!(err.contains("already exists"), "{err}");
+    assert!(err.contains("remove it to install this one"), "{err}");
     assert!(err.starts_with("macos-app:"), "{err}");
 
     // The bundle that appeared is left exactly as it was.
@@ -8617,6 +8618,7 @@ fn macos_app_refuses_a_target_whose_content_is_not_ours() -> Result<()> {
     .unwrap_err()
     .to_string();
     assert!(err.contains("already exists"), "{err}");
+    assert!(err.contains("remove it to install this one"), "{err}");
     assert!(err.starts_with("macos-app:"), "{err}");
     assert_eq!(crate::file::read_to_string(target.join("app"))?, "theirs");
     Ok(())

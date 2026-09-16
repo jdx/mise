@@ -201,7 +201,7 @@ impl PackageTomlConfig {
     /// The inline app declaration on this entry, if it carries one.
     ///
     /// `url` is what marks an entry as inline-declared; the other fields are
-    /// validated against it by [`AppSpec::parse`].
+    /// validated against it by `AppSpec::parse`.
     fn app_fields(&self) -> Option<(&str, Option<&str>, Option<&str>, &str)> {
         match self {
             Self::Options(options) => options.url.as_deref().map(|url| {
@@ -817,31 +817,36 @@ fn package_requests_from_config_files(
                 if mgr == "brew-cask" && adopt_requested.unwrap_or(brew_adopt) {
                     cask_adopt.insert(name.clone());
                 }
-                #[cfg(unix)]
-                if let Some((url, sha256, artifact, declared_version)) = package.app_fields() {
-                    if mgr != "macos-app" {
-                        warn!(
-                            "[bootstrap.packages]: url/sha256/artifact are only supported for macos-app entries; ignoring them for '{spec}'"
-                        );
-                    } else {
-                        match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
-                            Ok(spec) => {
-                                app_specs.insert(name.clone(), spec);
-                                if adopt_requested.unwrap_or(false) {
-                                    app_adopt.insert(name.clone());
-                                }
-                            }
-                            Err(err) => {
-                                warn!("[bootstrap.packages]: {err}");
-                                continue;
-                            }
-                        }
-                    }
-                } else if mgr == "macos-app" {
+                // Shape is validated on every platform: a config shared across
+                // machines should report a misplaced or incomplete declaration
+                // wherever it is read, not only where macos-app can run.
+                let app_declaration = package.app_fields();
+                if app_declaration.is_some() && mgr != "macos-app" {
+                    warn!(
+                        "[bootstrap.packages]: url/sha256/artifact are only supported for macos-app entries; ignoring them for '{spec}'"
+                    );
+                } else if app_declaration.is_none() && mgr == "macos-app" {
                     warn!(
                         "[bootstrap.packages]: macos-app entry '{spec}' needs 'url', 'sha256', 'artifact', and 'version'"
                     );
                     continue;
+                }
+                #[cfg(unix)]
+                if mgr == "macos-app"
+                    && let Some((url, sha256, artifact, declared_version)) = app_declaration
+                {
+                    match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
+                        Ok(spec) => {
+                            app_specs.insert(name.clone(), spec);
+                            if adopt_requested.unwrap_or(false) {
+                                app_adopt.insert(name.clone());
+                            }
+                        }
+                        Err(err) => {
+                            warn!("[bootstrap.packages]: {err}");
+                            continue;
+                        }
+                    }
                 }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
