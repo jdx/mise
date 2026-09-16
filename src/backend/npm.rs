@@ -377,6 +377,13 @@ impl Backend for NPMBackend {
         BackendType::Npm
     }
 
+    /// Installed npm versions are registry versions, which are strict semver,
+    /// so this mirrors node-semver's `prerelease()` rather than mise's
+    /// channel-tag pattern.
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        semver::Version::parse(version).is_ok_and(|version| !version.pre.is_empty())
+    }
+
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
     }
@@ -2274,6 +2281,16 @@ mod tests {
             BackendResolution::new(true),
         );
         NPMBackend::from_arg(ba)
+    }
+
+    #[test]
+    fn is_prerelease_version_recognises_numeric_semver_prereleases() {
+        let backend = create_npm_backend("happy");
+        assert!(backend.is_prerelease_version("1.3.1-3"));
+        assert!(backend.is_prerelease_version("1.2.5-beta.1"));
+        assert!(!backend.is_prerelease_version("1.2.4"));
+        assert!(!backend.is_prerelease_version("1.2.4+build.7"));
+        assert!(!backend.is_prerelease_version("1.2.4+build-7"));
     }
 
     #[tokio::test]

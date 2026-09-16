@@ -4,7 +4,6 @@ use std::sync::Arc;
 use crate::backend::Backend;
 use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
-use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
 use crate::toolset::{ToolRequest, Toolset};
 use crate::{backend, env, file};
@@ -89,7 +88,7 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(installs_dir)
+    let concrete_installs = installed_versions_in_dir(backend, installs_dir)
         .into_iter()
         .filter(|v| is_concrete_install(v))
         .collect::<std::collections::HashSet<_>>();
@@ -130,7 +129,7 @@ fn migrate_real_dirs_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(installs_dir)
+    let concrete_installs = installed_versions_in_dir(backend, installs_dir)
         .into_iter()
         .filter(|v| is_concrete_install(v))
         .collect::<std::collections::HashSet<_>>();
@@ -157,7 +156,7 @@ fn list_symlinks_for_dir(
 ) -> IndexMap<String, PathBuf> {
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    for v in installed_versions_in_dir(installs_dir) {
+    for v in installed_versions_in_dir(backend, installs_dir) {
         if is_temporary_runtime_label(&v) {
             continue;
         }
@@ -219,7 +218,7 @@ fn list_symlinks_for_dir(
 }
 
 /// List real (non-symlink) installed versions in a specific directory.
-fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
+fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> Vec<String> {
     if !installs_dir.is_dir() {
         return vec![];
     }
@@ -229,7 +228,7 @@ fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
         .filter(|v| !v.starts_with('.'))
         .filter(|v| !is_runtime_symlink(&installs_dir.join(v)))
         .filter(|v| !installs_dir.join(v).join("incomplete").exists())
-        .filter(|v| !VERSION_REGEX.is_match(v))
+        .filter(|v| !backend.is_prerelease_version(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
 }
@@ -339,6 +338,28 @@ mod tests {
         // concrete install and valid pointer retained
         assert!(installs_dir.join("1.0.0").is_dir());
         assert!(is_runtime_symlink(&installs_dir.join("1")));
+        Ok(())
+    }
+
+    #[test]
+    fn installed_versions_in_dir_skips_backend_prereleases() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("npm-happy");
+        fs::create_dir_all(installs_dir.join("1.2.4"))?;
+        fs::create_dir_all(installs_dir.join("1.3.1-3"))?;
+        let ba = crate::cli::args::BackendArg::new_raw(
+            "npm".to_string(),
+            Some("happy".to_string()),
+            "happy".to_string(),
+            None,
+            crate::cli::args::BackendResolution::new(true),
+        );
+        let backend: Arc<dyn Backend> = Arc::new(crate::backend::npm::NPMBackend::from_arg(ba));
+
+        assert_eq!(
+            installed_versions_in_dir(&backend, &installs_dir),
+            ["1.2.4"]
+        );
         Ok(())
     }
 

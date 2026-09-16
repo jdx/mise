@@ -2150,6 +2150,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Whether an installed version string names a pre-release. The pattern
+    /// only knows channel tags (`-rc1`, `-beta`); backends with strict semver
+    /// versions also recognise bare numeric pre-releases such as `1.3.1-3`.
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        VERSION_REGEX.is_match(version)
+    }
+
     /// Whether pre-release versions should be included for this backend and
     /// current tool options. Backends can override this only for compatibility
     /// with deprecated backend-specific prerelease settings.
@@ -3116,6 +3123,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
                     .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
+                    .filter(|v| !self.is_prerelease_version(v))
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
             }
