@@ -7,7 +7,6 @@ pub(crate) use settings::{CompilePurpose, Settings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
-use std::iter::once;
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
@@ -41,8 +40,8 @@ use crate::task::{
 use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder, ToolSource,
-    ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolveOptions, ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
+    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -606,10 +605,18 @@ impl Config {
     }
 
     pub(crate) async fn get_toolset(self: &Arc<Self>) -> Result<&Toolset> {
+        self.get_toolset_with_opts(&ResolveOptions::default()).await
+    }
+
+    pub(crate) async fn get_toolset_with_opts(
+        self: &Arc<Self>,
+        opts: &ResolveOptions,
+    ) -> Result<&Toolset> {
+        let opts = opts.clone();
         self.toolset
             .get_or_try_init(|| async {
                 let mut ts = Toolset::from(self.get_tool_request_set().await?.clone());
-                ts.resolve(self).await?;
+                ts.resolve_with_opts(self, &opts).await?;
                 Ok(ts)
             })
             .await
@@ -1010,18 +1017,20 @@ impl Config {
         self.tasks_with_context(ctx).await
     }
 
+    /// Tasks keyed by both their name and their aliases. A task's own name
+    /// always wins over another task's alias, so a `tests` task aliased to
+    /// `test` in a parent config cannot shadow a `test` task defined closer to
+    /// the current directory (#13219).
     pub(crate) async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
         let tasks = self.tasks().await?;
-        Ok(tasks
+        let mut map: BTreeMap<String, Task> = tasks
             .values()
-            .flat_map(|t| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect())
+            .flat_map(|t| t.aliases.iter().map(|a| (a.to_string(), t.clone())))
+            .collect();
+        for t in tasks.values() {
+            map.insert(t.name.clone(), t.clone());
+        }
+        Ok(map)
     }
 
     pub(crate) async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {

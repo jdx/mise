@@ -88,6 +88,46 @@ assert_succeed "find .mise/locks/pipx-mise-lock-cli -maxdepth 1 -name '1.0.0~*' 
 cp original.toml mise.toml
 mise lock
 assert_fail "find .mise/locks/pipx-mise-lock-cli -maxdepth 1 -name '1.0.0~*' | grep -q ."
+# Semantic uv options participate in dependency locking and executable exposure.
+python3 - <<'PY_SEMANTIC_OPTIONS'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace(
+    '"pipx:mise-lock-cli" = "1.0.0"',
+    '''"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], expose = ["mise-exposed==1.0.0", "mise-inactive; python_version < '3'"], dependency_prereleases = "allow" }'''))
+PY_SEMANTIC_OPTIONS
+mise lock --bump pipx:mise-lock-cli
+assert_contains 'mise x --locked -- exposed-cli' 'exposed'
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name pyproject.toml -exec cat {} +" 'mise-lock-extra==1.0.0'
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name pyproject.toml -exec cat {} +" 'mise-exposed==1.0.0'
+assert_contains 'cat mise.lock' 'dependency_prereleases = "allow"'
+assert_contains 'cat mise.lock' "with = '[\"mise-lock-extra==1.0.0\"]'"
+assert_contains 'cat mise.lock' "expose = \"\"\"[\"mise-exposed==1.0.0\",\"mise-inactive; python_version < '3'\"]\"\"\""
+# An injected requirement pinned to one release narrows the sidecar's interpreter
+# range; otherwise the universal resolution forks below its floor and fails.
+python3 - <<'PY_STRICT_INJECTION'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace(
+    '''"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-extra==1.0.0"], expose = ["mise-exposed==1.0.0", "mise-inactive; python_version < '3'"], dependency_prereleases = "allow" }''',
+    '''"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-strict==1.0.0"] }'''))
+PY_STRICT_INJECTION
+mise lock --bump pipx:mise-lock-cli
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name pyproject.toml -exec cat {} +" 'requires-python = ">=3.12"'
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name uv.lock -exec cat {} +" 'mise-lock-strict'
+# Wheel data scripts owned by the root distribution are exposed even when the
+# package does not declare a console_scripts entry point.
+python3 - <<'PY_DATA_SCRIPT'
+from pathlib import Path
+p = Path('mise.toml')
+p.write_text(p.read_text().replace(
+    '''"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-strict==1.0.0"] }''',
+    '"pipx:mise-data-cli" = "1.0.0"'))
+PY_DATA_SCRIPT
+mise lock --bump pipx:mise-data-cli
+assert_contains 'mise x --locked -- data-cli' 'data-script'
+cp original.toml mise.toml
+mise lock
 # Return to the first graph and reinstall with an empty artifact cache.
 cp first.lock mise.lock
 cp first-sidecars/pipx-mise-lock-cli/1.0.0/* .mise/locks/pipx-mise-lock-cli/1.0.0/
@@ -105,10 +145,48 @@ cp first-sidecars/pipx-mise-lock-cli/1.0.0/* .mise/locks/pipx-mise-lock-cli/1.0.
 python3 - <<'PY_OPTIONS'
 from pathlib import Path
 p = Path('mise.toml')
-p.write_text(p.read_text().replace('"pipx:mise-lock-cli" = "1.0.0"', '"pipx:mise-lock-cli" = { version = "1.0.0", uvx_args = "--prerelease allow" }'))
+text = p.read_text()
+index = text.split('pypi.registry_url = "', 1)[1].split('/pypi/', 1)[0] + '/simple'
+p.write_text(text.replace(
+    '"pipx:mise-lock-cli" = "1.0.0"',
+    f'"pipx:mise-lock-cli" = {{ version = "1.0.0", uvx_args = "--index-url {index}" }}').replace(
+    '[settings]\n', '[settings]\nlockfile = true\n'))
 PY_OPTIONS
 assert_fail 'mise lock --bump pipx:mise-lock-cli' 'dependency locking does not support'
+
+# Ordinary installs preserve legacy uv behavior when custom arguments prevent
+# dependency locking. Explicit lock generation remains strict.
+args_output=$(mise install pipx:mise-lock-cli 2>&1)
+assert_contains_text "$args_output" 'dependency graph skipped because uvx_args or pipx_args are configured'
+args_path=$(mise where pipx:mise-lock-cli)
+assert_not_contains "echo '$args_path'" '~uv~'
+assert_contains 'mise install pipx:mise-lock-cli 2>&1' 'already installed'
+assert_fail 'mise lock --bump pipx:mise-lock-cli' 'dependency locking does not support'
+
+# A source-only package cannot produce a portable uv graph, but an ordinary
+# install may still build it. Repeated installs reuse the version-only path.
+python3 - <<'PY_SOURCE'
+from pathlib import Path
+p = Path('mise.toml')
+text = p.read_text()
+index = text.split('pypi.registry_url = "', 1)[1].split('/pypi/', 1)[0] + '/simple'
+start = next(line for line in text.splitlines() if line.startswith('"pipx:mise-lock-cli"'))
+p.write_text(text.replace(
+    start,
+    f'"pipx:mise-source-cli" = {{ version = "1.0.0", install_env = {{ UV_DEFAULT_INDEX = "{index}" }} }}'))
+PY_SOURCE
+source_output=$(mise install 2>&1)
+assert_contains_text "$source_output" 'dependency graph unavailable; installing with version-only resolution'
+assert_contains "mise x -- source-cli" 'source-built'
+source_path=$(mise where pipx:mise-source-cli)
+assert_not_contains "echo '$source_path'" '~uv~'
+assert_contains 'mise install 2>&1' 'already installed'
+assert "mise where pipx:mise-source-cli" "$source_path"
+assert_fail 'mise lock --bump pipx:mise-source-cli' 'no usable wheels'
+
 cp original.toml mise.toml
+cp first.lock mise.lock
+cp first-sidecars/pipx-mise-lock-cli/1.0.0/* .mise/locks/pipx-mise-lock-cli/1.0.0/
 mise uninstall --all pipx:mise-lock-cli
 export UV_CACHE_DIR="$PWD/corrupt-cache"
 touch index/corrupt

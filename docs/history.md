@@ -232,6 +232,15 @@ mise dot origin set https://github.com/you/setup.git --sync sync
 mise dot status
 ```
 
+Any Git URL works, including a self-hosted host:
+
+```sh
+mise dot origin set git@gitea.example.com:you/setup.git --sync sync
+```
+
+The URL must not contain credentials, a query string, or a fragment.
+Authenticate with an SSH agent, or with a Git credential helper for HTTPS.
+
 Review the connection preview before confirming. With `--sync sync`, the
 watcher pushes saved changes and periodically fetches and applies changes
 from other machines. To bring another machine into this workflow, follow
@@ -306,6 +315,18 @@ Choose the remote version of a file, or keep the local version:
 mise dot pull --take-remote ~/.zshrc
 mise dot pull --keep-local ~/.zshrc
 ```
+
+To decide every conflict the same way in one command, use the blanket form.
+`--keep-local` and `--take-remote` still name the exceptions:
+
+```sh
+mise dot pull --take-remote-all
+mise dot pull --take-remote-all --keep-local ~/.zshrc
+mise dot pull --keep-local-all
+```
+
+`--keep-local-all` requires every file it keeps to be saved already, so run
+`mise dot save` first if you have unsaved edits.
 
 To combine both sides, use the conflict diff to edit the live file, explicitly
 save the merged path (also capturing files tracked with `--no-autosave`), then
@@ -499,9 +520,117 @@ recipients = ["<age-or-plugin-public-recipient>", "<recovery-public-recipient>"]
 
 Replace the placeholders with public recipients for your machines and an
 independent recovery key. Keep private decryption keys outside tracking.
-Configure local identities with `settings.age.identity_files`,
-`settings.age.key_file`, or the supported SSH identity settings. Public
-recipients travel with the repository.
+Public recipients travel with the repository.
+
+### Choose recipients
+
+A recipient is a **public** key. mise encrypts each saved version to every
+recipient in the list, so every machine that must read the history needs its
+own recipient entry. These forms are accepted:
+
+| Recipient      | Example                    | Notes                                       |
+| -------------- | -------------------------- | ------------------------------------------- |
+| age x25519     | `age1qyqszq...`            | From `age-keygen`. Works unattended.        |
+| SSH public key | `ssh-ed25519 AAAAC3Nza...` | Your existing key, if it has no passphrase. |
+| Tagged age     | `age1tag1...`              | Works unattended.                           |
+| age plugin     | `age1yubikey1...`          | Interactive only; see the warning below.    |
+
+The matching **private** key is the identity mise decrypts with. It finds
+identities automatically at `~/.config/mise/age.txt` and at `~/.ssh/id_ed25519`
+or `~/.ssh/id_rsa`. Point it elsewhere with `settings.age.key_file`,
+`settings.age.identity_files`, or `settings.age.ssh_identity_files`.
+
+#### Use an existing SSH key
+
+If your SSH private key has no passphrase, its public key works as a recipient
+and needs no new tooling. Add the contents of the `.pub` file:
+
+```sh
+cat ~/.ssh/id_ed25519.pub
+```
+
+```toml
+[history.encryption]
+recipients = ["ssh-ed25519 AAAAC3Nza... you@desktop"]
+```
+
+mise then decrypts with `~/.ssh/id_ed25519` automatically.
+
+::: warning
+mise does not prompt for SSH key passphrases. A passphrase-protected private
+key cannot decrypt history at all; the failure names the file and the reason
+when mise first needs it. Generate a dedicated age key instead. This is
+separate from Git authentication, where a passphrase-protected key in an SSH
+agent is the recommended choice — an agent does not help age decryption.
+:::
+
+#### Generate a dedicated age key
+
+Install the age CLI and create an identity:
+
+```sh
+mise use -g age
+mkdir -p ~/.config/mise
+mise exec -- age-keygen -o ~/.config/mise/age.txt
+# Public key: age1qyqszq...
+```
+
+`age.txt` holds the private identity; mise reads it from that default path. The
+printed `age1...` line is the recipient. Keep the file out of tracking, and
+restrict it with `chmod 600 ~/.config/mise/age.txt`.
+
+Repeat this on each machine and add every public key to `recipients`. A machine
+whose recipient is missing can still transfer the encrypted history, but it
+cannot read those files: a pull that has to inspect or apply one fails with
+`cannot unlock <path>` rather than skipping it.
+
+#### Add a recovery recipient
+
+If you lose the only machine holding an identity, the encrypted history becomes
+unreadable — re-encrypting requires decrypting first. Generate a second
+identity that lives nowhere on your machines:
+
+```sh
+(umask 077 && mise exec -- age-keygen -o ~/recovery-key.txt)
+cat ~/recovery-key.txt
+```
+
+Add its public key to `recipients`, store the file's contents in a password
+manager or another offline location, then remove the local copy:
+
+```sh
+rm ~/recovery-key.txt
+```
+
+Treat it like a backup code: it decrypts everything encrypted after you add it.
+Do not leave it in a tracked path, and do not write it somewhere the watcher
+saves.
+
+A complete configuration for one machine plus recovery:
+
+```toml
+[history.encryption]
+recipients = [
+  "age1qyqszq...",  # desktop
+  "age1ljx8w2...",  # laptop
+  "age1v9zm4f...",  # recovery, stored in the password manager
+]
+```
+
+Changing the list re-encrypts each file the next time it is saved. Commits
+already in history keep the recipients they were written with, so a machine
+added later reads versions saved after the change, not the ones before it. Add
+every machine's recipient before saving private contents you expect all of them
+to read.
+
+::: warning
+Plugin recipients such as `age1yubikey1...` require an interactive terminal,
+and encryption parses the whole list at once. The history watcher runs in the
+background, so a list containing **any** plugin recipient stops automatic
+saving with `plugin-dependent age recipients require interactive
+synchronization` — adding a native recipient alongside it does not help. For
+files the watcher saves, use only the age, tagged, and SSH forms above.
+:::
 
 mise encrypts contents before storing them in Git. Filenames and public
 metadata remain visible. The files you edit or restore stay unencrypted.
@@ -523,8 +652,125 @@ Adding encryption later leaves earlier plaintext versions in Git. Before a
 push, mise checks all reachable commits, including intermediate saves and
 merge parents, for violations of encrypted-path settings. An earlier
 plaintext version blocks the push even if the newest version is encrypted.
-You must explicitly rewrite or replace that history. This checks encryption
-settings; it does not scan arbitrary unencrypted files for secrets.
+To push, remove that history or explicitly allow it as shown below. This check
+uses encryption settings; it does not scan other files for secrets.
+
+### Allow plaintext history
+
+To publish the older unencrypted versions anyway, bypass the check for one sync:
+
+```sh
+mise dot sync --allow-plaintext-history
+```
+
+To allow this for all syncs and pulls, including the watcher, add to your
+global config:
+
+```toml
+[settings.history]
+allow_plaintext_history = true
+```
+
+Both options publish the old plaintext to the origin. New saves still use the
+file's encryption policy. The setting defaults to `false` and is ignored in
+project configs.
+
+### Remove plaintext from history
+
+If you saved credentials before enabling encryption, rotate them first.
+Encryption does not protect copies in older commits, even in a private repo.
+
+Stop the supervising history watcher service and back up the repository. Keep
+the backup secure: it contains the plaintext too. If the service uses the
+documented `mise-history` name, stop and remove its installed definition with:
+
+```sh
+mise bootstrap services remove mise-history
+```
+
+This uses the configured user service manager on Linux, macOS, and Windows and
+prevents it from restarting the watcher during the repair. If you used another
+service name, replace `mise-history` with that name.
+
+If the plaintext was never pushed, you can drop the affected checkpoints and
+save the current file again with encryption enabled. This drops **all
+checkpoints after the last safe commit**, including changes to other files.
+Find that commit with `mise dot history`, or inspect the bare repository with
+the `git log` command below.
+
+Replace `safe` and the credentials path below with your commit and tracked
+file. Make sure encryption is configured for that path before saving.
+History uses a bare Git repository, so use `git update-ref` to move the branch:
+
+```sh
+repo="${MISE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mise}/history/repo.git"
+git --git-dir="$repo" log --all -- home/.config/app/credentials
+old="$(git --git-dir="$repo" rev-parse refs/heads/main)"
+safe="<commit before plaintext was saved>"
+
+if git --git-dir="$repo" merge-base --is-ancestor "$safe" "$old"; then
+  git --git-dir="$repo" update-ref -m "remove plaintext history" \
+    refs/heads/main "$safe" "$old" &&
+    mise dot save ~/.config/app/credentials \
+      --description "save encrypted credentials" &&
+    mise dot sync
+fi
+```
+
+The ancestry check rejects commits outside the current history. Passing `old`
+to `update-ref` makes it fail if another process has moved the branch. The save
+records the live file with encryption and rebuilds mise's checkpoint index.
+Moving the branch makes the discarded commits unreachable but does not
+immediately erase their plaintext objects from the active repository. After
+verifying the repaired history and deciding that you no longer need those
+objects for recovery, remove them from the active repository with:
+
+```sh
+git --git-dir="$repo" reflog expire --expire=now --all
+git --git-dir="$repo" gc --prune=now
+```
+
+The secure backup still contains the discarded history. Delete it only when
+you no longer need it for recovery.
+
+To keep later checkpoints, use a tool such as
+[git-filter-repo](https://github.com/newren/git-filter-repo) on a separate,
+secure copy. Check that no reachable commit contains plaintext for the
+protected path before replacing the local `refs/heads/main`. Do not filter
+mise's active repository in place.
+
+If the plaintext was already pushed, pause history on every machine using the
+repo. Repair the history, then push the replacement branch with Git's
+`--force-with-lease`; mise does not force-push. On every other machine, move
+its existing history store to a secure backup and run
+`mise bootstrap --adopt <url>` to initialize a fresh store from the reviewed
+replacement. A fresh adoption compares any existing declared files with the
+incoming setup before creating local ancestry; identical files are accepted,
+while differences still wait for a decision.
+
+If the machine still has unrelated local history that you intentionally want
+to discard, replace it in one operation:
+
+```sh
+mise bootstrap --adopt <url> --replace-history --yes
+```
+
+This takes the history-operation and synchronization locks, so a running
+watcher cannot create another checkpoint during replacement. The remote must
+be a valid mise setup repository. Existing files that differ still stop the
+operation, and a failure restores the previous local branch and synchronization
+state. The option replaces history only for this adoption; there is no
+persistent setting that lets the watcher discard divergent history.
+
+Ordinary `mise dot sync` does not replace existing history. Do not restart any
+watcher until every machine uses the replacement, or an old store can bring the
+plaintext back. The Git host may still retain old objects or backups.
+
+Restart the declared watcher once the repair is complete:
+
+```sh
+mise bootstrap services apply
+```
 
 ## Checking watcher health {#health}
 
@@ -542,6 +788,11 @@ they change constantly. It includes the command to start a stopped watcher.
 `status` gives more detail: whether the watcher is running, declared but
 stopped, or not declared; the latest save and full scan; the last failure;
 and each busy file's save interval, last save, and pending edits.
+
+Both also report a watcher service whose process is running but is not
+watching this store, which happens when that process comes from an older
+mise or uses a different `MISE_STATE_DIR`. `mise bootstrap services apply`
+restarts it.
 
 These commands read the watcher's saved health report without starting
 synchronization or changing files. The report lives in `health.json` in the

@@ -138,6 +138,19 @@ pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
         .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
 }
 
+/// mise-versions publishes one version list per registry short name, generated from the
+/// entry's first backend. Every other backend of the same entry lists different versions:
+/// a `min_version` boundary routes older requests to a later backend, and platform or
+/// settings filtering can select one too. Compare against the declared first backend
+/// rather than the filtered `RegistryTool::backends()` list, so a client-side filter
+/// promoting another backend does not make it inherit the published list.
+pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool {
+    let full = ba.full_without_opts();
+    REGISTRY
+        .get(ba.short.as_str())
+        .is_some_and(|rt| rt.backends.first().is_some_and(|b| b.full == full))
+}
+
 pub(crate) fn toolset_semver_version(ts: &Toolset, tool: &str) -> Option<String> {
     let tvl = ts
         .versions
@@ -1435,6 +1448,31 @@ mod tests {
     }
 
     #[test]
+    fn test_only_the_preferred_registry_backend_may_use_the_versions_host() {
+        // mise-versions publishes one list per short name, built from the preferred
+        // backend. A `min_version` boundary routes older requests to a later backend
+        // whose versions that list does not describe.
+        let preferred = BackendArg::new(
+            "hk".to_string(),
+            Some("packslip:github.com/jdx/hk".to_string()),
+        );
+        let fallback = BackendArg::new("hk".to_string(), Some("aqua:jdx/hk".to_string()));
+
+        assert!(backend_arg_matches_registry_backend(&preferred));
+        assert!(backend_arg_matches_registry_backend(&fallback));
+
+        assert!(backend_arg_is_preferred_registry_backend(&preferred));
+        assert!(!backend_arg_is_preferred_registry_backend(&fallback));
+
+        // Inline options still describe the preferred backend.
+        let with_opts = BackendArg::new(
+            "hk".to_string(),
+            Some("packslip:github.com/jdx/hk[bin=hk]".to_string()),
+        );
+        assert!(backend_arg_is_preferred_registry_backend(&with_opts));
+    }
+
+    #[test]
     fn test_runtime_path_for_install_path_remaps_install_subpath() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let short = format!(
@@ -2087,6 +2125,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
 
+    /// Install-time dependencies for a specific tool request.
+    ///
+    /// Most backends have fixed dependencies and inherit the default implementation.
+    /// Backends whose installer is selected by tool options can override this so the
+    /// dependency graph matches the installer that will actually run.
+    fn get_dependencies_for(&self, _opts: &ToolVersionOptions) -> Result<Vec<&str>> {
+        self.get_dependencies()
+    }
+
     /// Plugin-declared system prerequisites (build tools, libraries, ...) that
     /// must be present on the machine before this tool can install. Distinct
     /// from [`Backend::get_dependencies`], which returns other *mise tools*.
@@ -2140,13 +2187,20 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
     fn get_all_dependencies(&self, optional: bool) -> Result<IndexSet<BackendArg>> {
+        self.get_all_dependencies_for(&self.ba().opts(), optional)
+    }
+    fn get_all_dependencies_for(
+        &self,
+        opts: &ToolVersionOptions,
+        optional: bool,
+    ) -> Result<IndexSet<BackendArg>> {
         let all_fulls = self.ba().all_fulls();
         if all_fulls.is_empty() {
             // this can happen on windows where we won't be able to install this os/arch so
             // the fact there might be dependencies is meaningless
             return Ok(Default::default());
         }
-        let mut deps: Vec<&str> = self.get_dependencies()?;
+        let mut deps: Vec<&str> = self.get_dependencies_for(opts)?;
         if optional {
             deps.extend(self.get_optional_dependencies()?);
         }
@@ -2383,19 +2437,21 @@ pub(crate) trait Backend: Debug + Send + Sync {
             }
             matches
         } else {
-            // For non-plugin backends (e.g. github:, cargo:), check if the backend matches
-            // the registry's default. When a user aliases a tool to a different backend
-            // (e.g. `php = "github:verzly/php"`), the versions host would return versions
-            // from the registry's default backend which may not match the aliased backend.
+            // For non-plugin backends (e.g. github:, cargo:), check if the backend is the
+            // registry's preferred one. When a user aliases a tool to a different backend
+            // (e.g. `php = "github:verzly/php"`), or a `min_version` boundary routes an
+            // older request to a later backend, the versions host would return the
+            // preferred backend's versions, which do not describe the resolved backend.
             if REGISTRY.contains_key(ba.short.as_str()) {
-                if !backend_arg_matches_registry_backend(&ba) {
+                let is_preferred = backend_arg_is_preferred_registry_backend(&ba);
+                if !is_preferred {
                     trace!(
                         "Skipping versions host for {} because backend {} is not the registry default",
                         ba.short,
                         ba.full()
                     );
                 }
-                backend_arg_matches_registry_backend(&ba)
+                is_preferred
             } else {
                 trace!(
                     "Skipping versions host for {} because it is not in the registry",

@@ -15,6 +15,8 @@ You can define and use templates in the following locations:
 
 - Most `mise.toml` configuration values
   - The `mise.toml` file itself is not templated and must be valid TOML
+  - `[bootstrap]` is the exception: only some of it is templated — see
+    [which bootstrap values are rendered](/bootstrap.html#templates)
 - `.tool-versions` files
 - `.miserc.toml` files (limited context — see [Template Support in .miserc.toml](#miserc-template-support))
 

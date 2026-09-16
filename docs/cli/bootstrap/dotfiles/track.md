@@ -27,6 +27,7 @@ Linux box can share the same live path with different contents.
 - **`--os <OS>`** — Declare a variant for this platform (macos, linux, linux/arm64, …)
 - **`--profile <PROFILE>`** — Declare a variant for this mise environment
 - **`--no-autosave`** — Save only on `mise dot save <path>`, never automatically
+- **`--encrypt`** — Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
 - **`-y --yes`** — Accept without prompting
 - **`-h --help`** — Print help
 
@@ -35,6 +36,7 @@ Examples:
 ```
 mise dot track ~/.zshrc ~/.config/hypr
 mise dot track ~/.zshrc --os macos
+mise dot track ~/.config/app/credentials --encrypt
 mise dot track ~/.config/app/state.json --no-autosave
 ```
 

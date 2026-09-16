@@ -13,3 +13,45 @@ retries = 0
 [[profile.ci.overrides]]
 filter = 'test(/cli::(command_effects|mcp|usage)::tests::/)'
 slow-timeout = { period = "500ms", terminate-after = 4 }
+
+# This binary-level integration test performs a network-backed, first-run
+# node-gyp bootstrap, so keep a bounded but realistic cold-cache ceiling.
+[[profile.ci.overrides]]
+filter = 'test(mise_binary_services_aube_node_gyp_bootstrap_trampoline)'
+slow-timeout = { period = "5s", terminate-after = 6 }
+
+# This test parses the whole vendored aqua registry, so its cost grows with that
+# file rather than with anything the test does. It runs in ~0.6s on the fastest
+# runner available, leaving under 2x margin against the ordinary ceiling — the
+# tightest in the suite, and why it was the first to die on slower hosts.
+[[profile.ci.overrides]]
+filter = 'test(aqua::aqua_registry_wrapper::tests::parses_bundled_registry_from_local_source)'
+slow-timeout = { period = "1s", terminate-after = 4 }
+
+# These tests compose trees, repositories and package state by shelling out,
+# so their cost is a few hundred git (or apt) subprocesses rather than anything
+# this process computes, and it tracks the host's fork/exec speed. The spread is
+# wide: the slowest runs in 0.24s on the dedicated CI runner and 3.2s in a local
+# dev container, so the default ceiling fails it off-CI while catching nothing.
+# Give the whole family a budget that reflects that without letting a genuine
+# hang through. This covers 181 of ~4090 tests; everything else keeps the strict
+# ceiling above.
+[[profile.ci.overrides]]
+filter = 'test(/^(system::history::|system::remote_repository::|git::tests::|system::packages::apt::)/)'
+slow-timeout = { period = "2s", terminate-after = 4 }
+
+# unit-macos runs on two very different machines: a dedicated Namespace runner
+# for trusted pushes and PRs, and a shared GitHub-hosted `macos-14` for everyone
+# else. The same suite takes 121s on the former and 263s on the latter, so the
+# ceilings above — calibrated on the dedicated runner — killed tests that were
+# merely running on a slower host, and every outside contributor's PR failed.
+#
+# This profile keeps the reporting but drops `terminate-after`, so a slow test is
+# logged and not killed. The period is the trusted ceiling (250ms x 4), which
+# makes the first SLOW line mark exactly the tests that would have failed there.
+# Per-test overrides are deliberately not repeated: nextest does not inherit
+# `overrides`, and without `terminate-after` they would only shift log lines.
+# A genuine hang is still bounded by the job's `timeout-minutes`.
+[profile.ci-shared]
+inherits = "ci"
+slow-timeout = { period = "1s" }

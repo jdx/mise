@@ -7,6 +7,7 @@ use duct::IntoExecutablePath;
 use eyre::{Result, bail};
 #[cfg(any(test, windows))]
 use eyre::{Result, eyre};
+use itertools::Itertools;
 
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
@@ -346,11 +347,21 @@ impl Exec {
             }
             // TODO: env is being calculated twice with final_env and env_with_path
             let (_, env_results) = ts.final_env(&config).await?;
-            for p in ts.list_final_paths(&config, env_results).await? {
-                cmd.push(format!(
-                    "fish_add_path -gm {}",
-                    shell_escape::escape(p.to_string_lossy())
-                ));
+            let paths = ts.list_final_paths(&config, env_results).await?;
+            if !paths.is_empty() {
+                // One call with every path, not one call per path. fish's own
+                // config.fish installs an `--on-variable fish_user_paths` handler
+                // (`__fish_reconstruct_path`) that rebuilds PATH with a linear
+                // scan, so N separate calls cost O(N^2) — over a second of shell
+                // startup for a large toolset. Batching also preserves precedence:
+                // each call prepends, so sequential calls reversed the order
+                // `list_final_paths` returns, pushing `env._.path` entries and
+                // command wrappers behind every tool directory.
+                let paths = paths
+                    .iter()
+                    .map(|p| shell_escape::escape(p.to_string_lossy()))
+                    .join(" ");
+                cmd.push(format!("fish_add_path -gm {paths}"));
             }
             args.insert(0, cmd.join("\n"));
             args.insert(0, "-C".into());

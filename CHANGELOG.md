@@ -1,5 +1,88 @@
 # Changelog
 
+## [2026.9.9](https://github.com/jdx/mise/compare/v2026.9.8..v2026.9.9) - 2026-09-15
+
+### 🚀 Features
+
+- **(dotfiles)** add encryption flag to track by @jdx in [#13180](https://github.com/jdx/mise/pull/13180)
+- **(dotfiles)** add safe history replacement during adoption by @jdx in [#13182](https://github.com/jdx/mise/pull/13182)
+- **(pypi)** add semantic uv install options by @jdx in [#13181](https://github.com/jdx/mise/pull/13181)
+
+### 🐛 Bug Fixes
+
+- **(activate)** restore the `--` separator PowerShell drops in an activated pwsh session by @jdx in [#13202](https://github.com/jdx/mise/pull/13202)
+- **(dotfiles)** restart a history watcher that is not watching this store by @jdx in [#13190](https://github.com/jdx/mise/pull/13190)
+- **(dotfiles)** stop concurrent snapshots from recording false deletions by @jdx in [#13195](https://github.com/jdx/mise/pull/13195)
+- **(npm)** keep global tools satisfied when lockfiles are enabled by @jdx in [#13186](https://github.com/jdx/mise/pull/13186)
+- **(packslip)** install from private GitHub repositories by @jdx in [#13188](https://github.com/jdx/mise/pull/13188)
+
+### 📚 Documentation
+
+- show the GitHub star count in the nav overflow menu by @jdx in [#13193](https://github.com/jdx/mise/pull/13193)
+
+### 🧪 Testing
+
+- **(bootstrap)** pin what an apply ends and runs for a scheduled task by @jdx in [#13192](https://github.com/jdx/mise/pull/13192)
+- **(vfox)** remove the cmake alias e2e test by @jdx in [0e85b7d](https://github.com/jdx/mise/commit/0e85b7dced5100477bd5e1db7efb517e1629668c)
+- extend timeout for aube node-gyp bootstrap by @jdx in [e43170f](https://github.com/jdx/mise/commit/e43170fd0710324de6a7f51e692c7e575a04494a)
+
+### 📦️ Dependency Updates
+
+- bump mbx to 1.11.1 by @jdx in [6769682](https://github.com/jdx/mise/commit/6769682a3206bfbea22bf740e0d2101a021c5cda)
+
+### 📦 Registry
+
+- add nubr by @colinhacks in [#13191](https://github.com/jdx/mise/pull/13191)
+- fix dbt-fusion version test for renamed binary output by @jdx in [873c400](https://github.com/jdx/mise/commit/873c4009ebb92a34cbaffd88e1304bcac203784b)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (1)
+
+- [`Byron/dua-cli`](https://github.com/Byron/dua-cli)
+
+## [2026.9.8](https://github.com/jdx/mise/compare/v2026.9.7..v2026.9.8) - 2026-09-14
+
+### 🚀 Features
+
+- **(dotfiles)** add top-level dot command alias by @jdx in [#13158](https://github.com/jdx/mise/pull/13158)
+- **(dotfiles)** allow opting out of plaintext history checks by @jdx in [#13175](https://github.com/jdx/mise/pull/13175)
+
+### 🐛 Bug Fixes
+
+- **(backend)** ignore disabled backends from lockfile discovery by @jdx in [#13178](https://github.com/jdx/mise/pull/13178)
+- **(npm)** report aube safety checks and honor --yes by @jdx in [#13123](https://github.com/jdx/mise/pull/13123)
+- **(pypi)** fall back when dependency graphs are unsupported by @jdx in [#13170](https://github.com/jdx/mise/pull/13170)
+- suppress missing warnings for lazy tools by @jdx in [#13169](https://github.com/jdx/mise/pull/13169)
+
+### 📚 Documentation
+
+- clarify npm, pypi, and lockfile workflows by @jdx in [#13149](https://github.com/jdx/mise/pull/13149)
+
+### ⚡ Performance
+
+- **(bootstrap)** fetch brew metadata concurrently by @jdx in [#13151](https://github.com/jdx/mise/pull/13151)
+- **(bootstrap)** prepare brew bottles concurrently by @jdx in [#13152](https://github.com/jdx/mise/pull/13152)
+- **(bootstrap)** pipeline brew bottle installs by @jdx in [#13155](https://github.com/jdx/mise/pull/13155)
+- **(ci)** enforce warnings in Windows unit tests by @jdx in [#13148](https://github.com/jdx/mise/pull/13148)
+
+### 🧪 Testing
+
+- extend timeout for CLI graph tests by @jdx in [#13160](https://github.com/jdx/mise/pull/13160)
+
+### 📦️ Dependency Updates
+
+- update usage to 6.9.1 by @jdx in [#13172](https://github.com/jdx/mise/pull/13172)
+
+### 📦 Registry
+
+- add poppler (conda:poppler) by @i-api in [#13133](https://github.com/jdx/mise/pull/13133)
+
+### Ci
+
+- **(docs)** publish documentation only for releases by @jdx in [#13176](https://github.com/jdx/mise/pull/13176)
+- retry only failing e2e tests by @jdx in [#13177](https://github.com/jdx/mise/pull/13177)
+
 ## [2026.9.7](https://github.com/jdx/mise/compare/v2026.9.6..v2026.9.7) - 2026-09-13
 
 ### 🚀 Features

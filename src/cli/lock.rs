@@ -761,6 +761,7 @@ impl Lock {
                 &mut lockfile,
                 &tools,
                 self.bump,
+                installed.is_some(),
             ))
             .await?;
             if !generate || self.bump || format_changed {

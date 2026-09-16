@@ -191,7 +191,7 @@ nothing to install. Run the checks explicitly before committing.
 ### Available Linters in hk
 
 The configured steps include Prettier, Markdown linting, Cargo formatting/checking,
-ShellCheck, shfmt, Pkl, TOML/schema validation, and Lua checks. The Clippy block
+ShellCheck, shfmt, TOML/schema validation, and Lua checks. The Clippy block
 in `hk.pkl` is disabled; CI runs Clippy separately. Read the current configuration rather
 than assuming a successful hk run includes every Rust lint.
 

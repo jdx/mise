@@ -19,7 +19,7 @@ use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
-use eyre::{Result, bail};
+use eyre::Result;
 use indexmap::IndexMap;
 use jiff::Timestamp;
 #[cfg(windows)]
@@ -211,6 +211,34 @@ impl ToolVersion {
 
     pub(crate) fn resolved_from_lockfile(&self) -> bool {
         self.resolved_from_lockfile
+    }
+
+    /// Whether the request named this exact release, e.g. `hk = "2.0.1"` in
+    /// `mise.toml` or `mise install hk@2.0.1`. Release-age policy governs which
+    /// version a fuzzy request may select; naming one release is that selection,
+    /// so callers use this to avoid re-applying the cutoff to a choice the user
+    /// already made.
+    ///
+    /// Version strings are opaque: this compares the request against the
+    /// resolved version byte for byte and never parses or orders them. A fuzzy
+    /// request (`"2"`), an alias (`"lts"`), a ref, or a prefix leaves the two
+    /// strings different, so only a literal pin matches.
+    pub(crate) fn request_pinned_this_version(&self) -> bool {
+        let ToolRequest::Version { version, .. } = &self.request else {
+            return false;
+        };
+        if version != &self.version {
+            return false;
+        }
+        // `latest` and rolling channels are moving pointers. A backend may list
+        // one as a literal version, which would make the strings match, but the
+        // request commits to the pointer, not to whichever release it names today.
+        if version == "latest" {
+            return false;
+        }
+        !self
+            .backend()
+            .is_ok_and(|backend| backend.is_rolling_channel(version))
     }
 
     pub(crate) fn ba(&self) -> &BackendArg {
@@ -414,6 +442,7 @@ impl ToolVersion {
             offline: base_opts.offline,
             refresh_remote_versions: base_opts.refresh_remote_versions,
             inactive: base_opts.inactive,
+            warn_not_in_lockfile: base_opts.warn_not_in_lockfile,
         };
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
@@ -512,11 +541,12 @@ impl ToolVersion {
             } else {
                 "Run `mise install` without --locked to update the lockfile"
             };
-            bail!(
-                "{}@{} is not in the lockfile\nhint: {hint}",
-                request.ba().short,
-                request.version()
-            );
+            return Err(crate::errors::Error::NotInLockfile {
+                tool: request.ba().short.clone(),
+                version: request.version().to_string(),
+                hint: hint.to_string(),
+            }
+            .into());
         }
         Ok(())
     }
@@ -1011,6 +1041,8 @@ pub(crate) struct ResolveOptions {
     /// (for example `ToolSource::Unknown`) when resolving tools for flows like
     /// outdated/upgrade checks.
     pub inactive: bool,
+    /// If false, missing lockfile entries log at debug instead of warn.
+    pub warn_not_in_lockfile: bool,
 }
 
 impl Default for ResolveOptions {
@@ -1026,11 +1058,20 @@ impl Default for ResolveOptions {
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
+            warn_not_in_lockfile: true,
         }
     }
 }
 
 impl ResolveOptions {
+    /// Full-toolset resolve used as a side effect of another operation.
+    pub(crate) fn without_lockfile_warnings() -> Self {
+        Self {
+            warn_not_in_lockfile: false,
+            ..Default::default()
+        }
+    }
+
     /// Merge the effective release-age cutoff for a tool into these options.
     /// A cutoff pre-resolved by the caller keeps its provenance flag; cutoffs
     /// resolved here are flagged by source so installed-version fast paths
@@ -1144,6 +1185,9 @@ impl Display for ResolveOptions {
         if self.refresh_remote_versions {
             opts.push("refresh_remote_versions".to_string());
         }
+        if !self.warn_not_in_lockfile {
+            opts.push("no_lockfile_warnings".to_string());
+        }
         write!(f, "({})", opts.join(", "))
     }
 }
@@ -1211,6 +1255,37 @@ mod tests {
         assert_eq!(
             ToolVersion::new(request, version.into()).display_version(),
             "release"
+        );
+    }
+
+    #[test]
+    fn request_pinned_this_version_only_matches_a_literal_pin() {
+        let backend = Arc::new(BackendArg::from("packslip:github.com/jdx/hk"));
+        let pinned = |requested: &str, resolved: &str| {
+            let request =
+                ToolRequest::new(backend.clone(), requested, ToolSource::Argument).unwrap();
+            ToolVersion::new(request, resolved.to_string()).request_pinned_this_version()
+        };
+
+        // The request names the release that was installed.
+        assert!(pinned("2.0.1", "2.0.1"));
+        // Non-semver versions are just as pinnable — the check is a string
+        // comparison, not a version parse.
+        assert!(pinned("2026.9.9", "2026.9.9"));
+        assert!(pinned("nightly-2026-09-15", "nightly-2026-09-15"));
+
+        // Fuzzy requests let release age pick the version, so it still governs.
+        assert!(!pinned("2", "2.0.1"));
+        assert!(!pinned("2.0", "2.0.1"));
+        assert!(!pinned("latest", "2.0.1"));
+        // A moving pointer stays unpinned even when it names itself.
+        assert!(!pinned("latest", "latest"));
+
+        // A ref is not a version request at all.
+        let request = ToolRequest::new(backend, "ref:main", ToolSource::Argument).unwrap();
+        assert!(
+            !ToolVersion::new(request, "ref:main".to_string()).request_pinned_this_version(),
+            "a ref names a moving target, not a release"
         );
     }
 

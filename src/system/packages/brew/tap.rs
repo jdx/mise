@@ -625,6 +625,9 @@ class Widget < Formula
   depends_on "libfoo"
   depends_on "cmake" => :build
   depends_on(**{"ninja" => :build})
+  depends_on :macos
+  depends_on :xcode => :build
+  depends_on macos: :sequoia
   on_sequoia :or_older do
     depends_on "release-boundary"
   end
@@ -659,6 +662,9 @@ end
             formula.urls["stable"].url,
             "https://example.com/café/widget-1.2.3.tar.gz"
         );
+        // Requirement symbols (`depends_on :macos`, `:xcode`, `macos: :sequoia`) name
+        // platform constraints, not formulae. Recording them would make the resolver
+        // fetch a formula called "macos" and fail the run on a 404.
         assert_eq!(
             formula.dependencies,
             ["libfoo", "release-boundary", "system-release-boundary"]
@@ -697,9 +703,9 @@ cask "widget" do
     url "https://example.com/also-wrong-platform.zip"
   end
   app "Widget.app"
-  binary "Widget.app/Contents/MacOS/widget", target: "widget"
+  binary "#{appdir}/Widget.app/Contents/MacOS/widget", target: "widget"
   preflight_steps do
-    run "Widget.app/Contents/MacOS/widget", base: :appdir, args: ["#{version}"]
+    run "#{appdir}/Widget.app/Contents/MacOS/widget", base: :appdir, args: ["#{version}"]
     run "bin/widget", base: :staged_path
   end
   postflight_steps do
@@ -732,6 +738,10 @@ end
         assert_eq!(metadata["sha256"], "no_check");
         assert_eq!(metadata["url"], "https://example.com/café/widget-1.2.3.zip");
         assert_eq!(metadata["depends_on"]["formula"][0], "libfoo");
+        assert_eq!(
+            metadata["artifacts"][1]["binary"][0],
+            "$APPDIR/Widget.app/Contents/MacOS/widget"
+        );
         assert_eq!(metadata["artifacts"].as_array().unwrap().len(), 4);
         assert_eq!(
             metadata["artifacts"][2]["preflight_steps"][0]["steps"][0],
@@ -748,6 +758,51 @@ end
                 {"type": "run", "command": {"path": "/usr/bin/xattr"}, "args": ["-d", "com.apple.quarantine", "{{appdir}}/Widget.app"], "must_succeed": false}
             ])
         );
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn extracts_cask_homebrew_prefix_as_relocatable_metadata() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        for arch in ["aarch64", "x86_64"] {
+            let mut runner = CmdLineRunner::new(&ruby)
+                .with_on_stderr(|line| eprintln!("{line}"))
+                .arg("--disable-gems")
+                .arg("-e")
+                .arg(CASK_METADATA_SHIM_RB)
+                .stdin_string(
+                    r##"cask "widget" do
+  version "1.2.3"
+  url "https://example.invalid/widget-#{version}.zip"
+  binary "completions/_widget", target: "#{HOMEBREW_PREFIX}/share/zsh/site-functions/_widget"
+  binary "completions/widget.bash", target: "#{HOMEBREW_PREFIX}/etc/bash_completion.d/widget"
+  binary "completions/widget.fish", target: "#{HOMEBREW_PREFIX}/share/fish/vendor_completions.d/widget.fish"
+end"##,
+                )
+                .env("MISE_BREW_TOKEN", "widget")
+                .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
+                .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+                .env("MISE_BREW_TAP_COMMIT", "fixture")
+                .env("MISE_BREW_MACOS_VERSION", "26")
+                .env("MISE_BREW_OS", "macos")
+                .env("MISE_BREW_ARCH", arch)
+                .with_sandbox(metadata_sandbox()?);
+            runner.apply_sandbox().await?;
+            let output = runner.read().await?;
+            let _: Cask = serde_json::from_str(&output)?;
+            let metadata: serde_json::Value = serde_json::from_str(&output)?;
+            assert_eq!(
+                metadata["artifacts"],
+                serde_json::json!([
+                    {"binary": ["completions/_widget", {"target": "$HOMEBREW_PREFIX/share/zsh/site-functions/_widget"}]},
+                    {"binary": ["completions/widget.bash", {"target": "$HOMEBREW_PREFIX/etc/bash_completion.d/widget"}]},
+                    {"binary": ["completions/widget.fish", {"target": "$HOMEBREW_PREFIX/share/fish/vendor_completions.d/widget.fish"}]},
+                ])
+            );
+        }
         Ok(())
     }
 

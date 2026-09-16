@@ -7,6 +7,36 @@ use std::path::PathBuf;
 
 const MIN_UV_VERSION: &str = "0.12.10";
 const PROJECT_NAME: &str = "mise-pypi-tool-environment";
+const DISCOVER_SCRIPTS: &str = r#"
+import importlib.metadata
+import json
+import os
+from pathlib import Path
+import sys
+
+packages = json.loads(sys.argv[1])
+scripts = Path(sys.argv[2]).resolve()
+names = set()
+for package in packages:
+    try:
+        distribution = importlib.metadata.distribution(package)
+    except importlib.metadata.PackageNotFoundError:
+        # Requirements with inactive environment markers are part of the
+        # portable lock but are intentionally absent from this environment.
+        continue
+    names.update(
+        f"{entry.name}.exe" if os.name == "nt" else entry.name
+        for entry in distribution.entry_points
+        if entry.group in ("console_scripts", "gui_scripts")
+    )
+    names.update(
+        path.name
+        for file in distribution.files or []
+        if (path := Path(distribution.locate_file(file)).resolve()).parent == scripts
+        and path.is_file()
+    )
+print(json.dumps(sorted(names)))
+"#;
 
 impl PIPXBackend {
     pub(crate) fn uv_lock_allowed(&self, tv: &ToolVersion) -> bool {
@@ -18,14 +48,17 @@ impl PIPXBackend {
             )
     }
 
-    fn validate_lock_options(&self, tv: &ToolVersion) -> Result<()> {
+    pub(super) fn uv_lock_options_supported(&self, tv: &ToolVersion) -> bool {
         let raw = tv.request.options();
         let opts = PipxOptions::new(&raw);
-        if [opts.uvx_args(), opts.pipx_args()]
+        [opts.uvx_args(), opts.pipx_args()]
             .into_iter()
             .flatten()
-            .any(|s| !s.trim().is_empty())
-        {
+            .all(|s| s.trim().is_empty())
+    }
+
+    pub(super) fn validate_lock_options(&self, tv: &ToolVersion) -> Result<()> {
+        if !self.uv_lock_options_supported(tv) {
             bail!(
                 "{} dependency locking does not support uvx_args or pipx_args",
                 self.ba.short
@@ -141,6 +174,15 @@ impl PIPXBackend {
         ))
     }
 
+    fn lock_requirements(&self, tv: &ToolVersion) -> Result<Vec<String>> {
+        let raw = tv.request.options();
+        let opts = PipxOptions::new(&raw);
+        let mut requirements = vec![self.lock_requirement(tv)?];
+        requirements.extend(opts.with()?);
+        requirements.extend(opts.expose()?);
+        Ok(requirements)
+    }
+
     async fn uv_lock_command(
         &self,
         config: &Arc<Config>,
@@ -161,6 +203,30 @@ impl PIPXBackend {
             .env_remove("VIRTUAL_ENV"))
     }
 
+    /// The Python range a published release declares, or an empty string when it
+    /// declares none.
+    async fn release_python_requirement(
+        &self,
+        registry: &str,
+        package: &str,
+        version: &str,
+    ) -> Result<String> {
+        // JSON release metadata supplies the Python constraint without running a
+        // build backend. Simple-only indexes expose it on wheel links.
+        if registry.ends_with("/json") {
+            let url = registry.replace("{}", &format!("{package}/{version}"));
+            let metadata: Value = HTTP_FETCH.json(&url).await?;
+            Ok(metadata
+                .pointer("/info/requires_python")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned())
+        } else {
+            let html = HTTP_FETCH.get_html(registry.replace("{}", package)).await?;
+            simple_index_python_requirement(package, version, &html)
+        }
+    }
+
     pub(crate) async fn resolve_uv_lock(
         &self,
         config: &Arc<Config>,
@@ -169,29 +235,33 @@ impl PIPXBackend {
         self.validate_lock_options(tv)?;
         let uv = self.lock_uv_program(config).await?;
         let registry = self.get_registry_url(config).await?;
-        // JSON release metadata supplies the root's Python constraint without
-        // running a build backend. Simple-only indexes expose it on wheel links.
-        let requires_python = if registry.ends_with("/json") {
-            let url = registry.replace("{}", &format!("{}/{}", self.tool_name(), tv.version));
-            let metadata: Value = HTTP_FETCH.json(&url).await?;
-            metadata
-                .pointer("/info/requires_python")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_owned()
-        } else {
-            let html = HTTP_FETCH
-                .get_html(registry.replace("{}", &self.tool_name()))
-                .await?;
-            simple_index_python_requirement(&self.tool_name(), &tv.version, &html)
-                .wrap_err_with(|| format!("failed to lock {}", self.ba.short))?
-        };
-        let requires_python = if requires_python.trim().is_empty() {
-            ">=3.8".to_string()
-        } else {
-            format!(">=3.8,{requires_python}")
-        };
-        let requirement = self.lock_requirement(tv)?;
+        let requirements = self.lock_requirements(tv)?;
+        let root = self
+            .release_python_requirement(&registry, &self.tool_name(), &tv.version)
+            .await
+            .wrap_err_with(|| format!("failed to lock {}", self.ba.short))?;
+        let mut constraints = vec![">=3.8".to_string()];
+        constraints.extend(python_constraint(&root));
+        // Everything in `with` and `expose` shares the sidecar's interpreter, so a
+        // pinned injection with a narrower floor narrows the whole project. uv
+        // spreads an unpinned requirement across the range by itself, and a marker
+        // can switch a requirement off for part of it, so neither one applies here.
+        for requirement in requirements.iter().skip(1) {
+            let Some((package, version)) = pinned_requirement(requirement) else {
+                continue;
+            };
+            match self
+                .release_python_requirement(&registry, package, version)
+                .await
+            {
+                Ok(value) => constraints.extend(python_constraint(&value)),
+                // uv reports an unusable requirement far better than a partial
+                // lookup can, so an unreadable release just leaves the range alone.
+                Err(err) => debug!("no Python metadata for {requirement}: {err:#}"),
+            }
+        }
+        constraints.dedup();
+        let requires_python = constraints.join(",");
         let mut project = toml::Table::new();
         project.insert(
             "project".into(),
@@ -199,7 +269,7 @@ impl PIPXBackend {
                 name = PROJECT_NAME
                 version = "0.0.0"
                 requires-python = requires_python
-                dependencies = [requirement]
+                dependencies = requirements
             }
             .into(),
         );
@@ -208,11 +278,16 @@ impl PIPXBackend {
             temp.path().join("pyproject.toml"),
             toml::to_string(&project)?,
         )?;
-        self.uv_lock_command(config, tv, &uv, temp.path())
+        let mut cmd = self
+            .uv_lock_command(config, tv, &uv, temp.path())
             .await?
             .args(["lock", "--no-build", "--no-config", "--no-python-downloads"])
-            .args(Self::uv_exclude_newer_args(tv.before_date))
-            .execute()?;
+            .args(Self::uv_exclude_newer_args(tv.before_date));
+        let raw = tv.request.options();
+        if let Some(value) = PipxOptions::new(&raw).dependency_prereleases()? {
+            cmd = cmd.args(["--prerelease", value]);
+        }
+        cmd.execute()?;
         let graph_text = crate::file::read_to_string(temp.path().join("uv.lock"))?;
         let graph: toml::Table = graph_text.parse()?;
         if let Some(requires_python) = graph.get("requires-python") {
@@ -239,7 +314,11 @@ impl PIPXBackend {
             .get("project")
             .and_then(toml::Value::as_table)
             .ok_or_else(|| eyre!("missing uv project"))?;
-        let expected = vec![toml::Value::String(self.lock_requirement(tv)?)];
+        let expected = self
+            .lock_requirements(tv)?
+            .into_iter()
+            .map(toml::Value::String)
+            .collect::<Vec<_>>();
         if project.get("dependencies").and_then(toml::Value::as_array) != Some(&expected)
             || project.get("name").and_then(toml::Value::as_str) != Some(PROJECT_NAME)
             || project.get("requires-python") != lock.graph.get("requires-python")
@@ -276,9 +355,6 @@ impl PIPXBackend {
                     .and_then(|m| m.get("requires-dist"))
                     .and_then(toml::Value::as_array)
                     .ok_or_else(|| eyre!("missing uv root requirements"))?;
-                let requirement = requirements
-                    .first()
-                    .ok_or_else(|| eyre!("empty uv root requirements"))?;
                 let raw = tv.request.options();
                 let extras = PipxOptions::new(&raw)
                     .extras()
@@ -288,19 +364,24 @@ impl PIPXBackend {
                     .filter(|s| !s.is_empty())
                     .map(Self::normalize_package_name)
                     .collect::<std::collections::BTreeSet<_>>();
-                let locked_extras = requirement
-                    .get("extras")
+                let root_name = Self::normalize_package_name(&self.tool_name());
+                let root_specifier = format!("=={}", tv.version);
+                let root_requirement = requirements.iter().find(|requirement| {
+                    requirement.get("name").and_then(toml::Value::as_str)
+                        == Some(root_name.as_str())
+                        && requirement.get("specifier").and_then(toml::Value::as_str)
+                            == Some(root_specifier.as_str())
+                });
+                let locked_extras = root_requirement
+                    .and_then(|requirement| requirement.get("extras"))
                     .and_then(toml::Value::as_array)
                     .into_iter()
                     .flatten()
                     .filter_map(toml::Value::as_str)
                     .map(|extra| Self::normalize_package_name(extra.trim()))
                     .collect::<std::collections::BTreeSet<_>>();
-                if requirements.len() != 1
-                    || requirement.get("name").and_then(toml::Value::as_str)
-                        != Some(Self::normalize_package_name(&self.tool_name()).as_str())
-                    || requirement.get("specifier").and_then(toml::Value::as_str)
-                        != Some(format!("=={}", tv.version).as_str())
+                if requirements.len() != expected.len()
+                    || root_requirement.is_none()
                     || extras != locked_extras
                 {
                     bail!(
@@ -401,7 +482,13 @@ impl PIPXBackend {
         } else {
             "python"
         });
-        let names = CmdLineRunner::new(python).args(["-I", "-c", "import importlib.metadata, json, sys; print(json.dumps([e.name for e in importlib.metadata.distribution(sys.argv[1]).entry_points if e.group in ('console_scripts', 'gui_scripts')]))", &self.tool_name()]).read().await?;
+        let packages = self.locked_entry_point_packages(tv, lock)?;
+        let packages = serde_json::to_string(&packages)?;
+        let names = CmdLineRunner::new(python)
+            .args(["-I", "-c", DISCOVER_SCRIPTS, &packages])
+            .arg(&scripts)
+            .read()
+            .await?;
         let names: Vec<String> = serde_json::from_str(names.trim())?;
         if names.is_empty() {
             bail!("{} exposes no executable scripts", self.ba.short);
@@ -412,15 +499,75 @@ impl PIPXBackend {
             if !crate::file::is_plain_file_name(&name) {
                 bail!("invalid Python entry point name");
             }
-            let name = if cfg!(windows) {
-                format!("{name}.exe")
-            } else {
-                name
-            };
             crate::file::make_symlink_or_copy(&scripts.join(&name), &bin.join(&name))?;
         }
         Ok(())
     }
+
+    fn locked_entry_point_packages(&self, tv: &ToolVersion, lock: &UvLock) -> Result<Vec<String>> {
+        let root_requirement = lock
+            .project
+            .get("project")
+            .and_then(toml::Value::as_table)
+            .and_then(|project| project.get("dependencies"))
+            .and_then(toml::Value::as_array)
+            .and_then(|dependencies| dependencies.first())
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| eyre!("missing locked Python root requirement"))?;
+        let root = PipxOptions::requirement_package_name(root_requirement)
+            .ok_or_else(|| eyre!("invalid locked Python root requirement"))?;
+        let raw = tv.request.options();
+        let mut packages = vec![root.to_string()];
+        packages.extend(PipxOptions::new(&raw).exposed_package_names()?);
+        Ok(packages)
+    }
+}
+
+/// The package and exact version of a requirement that pins one release across the
+/// whole interpreter range, or `None` when the requirement cannot narrow it.
+fn pinned_requirement(requirement: &str) -> Option<(&str, &str)> {
+    let requirement = requirement.trim();
+    // A direct URL reference has no index entry to read metadata from.
+    if requirement.contains('@') {
+        return None;
+    }
+    let (specifier, marker) = requirement.split_once(';').unwrap_or((requirement, ""));
+    // A marker that tests the interpreter drops the requirement below its own
+    // floor, so the release cannot constrain the project. Every other marker
+    // leaves the requirement in place across the whole range.
+    if [
+        "python_version",
+        "python_full_version",
+        "implementation_version",
+    ]
+    .iter()
+    .any(|variable| marker.contains(variable))
+    {
+        return None;
+    }
+    let specifier = specifier.trim();
+    let package = PipxOptions::requirement_package_name(specifier)?;
+    let mut rest = specifier[package.len()..].trim_start();
+    if let Some(extras) = rest.strip_prefix('[') {
+        rest = extras.split_once(']')?.1.trim_start();
+    }
+    // One `==` clause pins the release whatever the surrounding clauses allow.
+    rest.split(',')
+        .filter_map(|clause| clause.trim().strip_prefix("=="))
+        .map(str::trim)
+        // `===` is arbitrary equality and a wildcard spans releases.
+        .find(|version| {
+            !version.is_empty()
+                && !version.starts_with('=')
+                && !version.contains('*')
+                && !version.contains(char::is_whitespace)
+        })
+        .map(|version| (package, version))
+}
+
+fn python_constraint(requires_python: &str) -> Option<String> {
+    let requires_python = requires_python.trim();
+    (!requires_python.is_empty()).then(|| requires_python.to_string())
 }
 
 fn simple_index_python_requirement(package: &str, version: &str, html: &str) -> Result<String> {
@@ -631,6 +778,41 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
     }
 
     #[test]
+    fn only_exact_pins_outside_interpreter_markers_narrow_the_range() {
+        for (requirement, pinned) in [
+            ("demo==1.0.0", Some(("demo", "1.0.0"))),
+            ("demo == 1.0.0", Some(("demo", "1.0.0"))),
+            ("demo[extra,other]==1.0.0", Some(("demo", "1.0.0"))),
+            ("  demo==1.0+local  ", Some(("demo", "1.0+local"))),
+            // A surrounding clause cannot widen what `==` already pinned.
+            ("demo==1.0.0,!=1.0.1", Some(("demo", "1.0.0"))),
+            ("demo>=1.0.0,==1.0.0", Some(("demo", "1.0.0"))),
+            // A marker on anything but the interpreter keeps the requirement
+            // active across the whole range.
+            (
+                "demo==1.0.0; sys_platform == 'linux'",
+                Some(("demo", "1.0.0")),
+            ),
+            // uv resolves these across the range on its own.
+            ("demo", None),
+            ("demo>=1.0.0", None),
+            ("demo==1.0.*", None),
+            ("demo===1.0.0", None),
+            // The interpreter marker drops this below its own floor, so the
+            // release's requirement is not the project's.
+            ("demo==1.0.0; python_version < '3.10'", None),
+            ("demo==1.0.0; python_full_version >= '3.12.1'", None),
+            // There is no index entry to read metadata from.
+            (
+                "demo @ https://example.org/demo-1.0.0-py3-none-any.whl",
+                None,
+            ),
+        ] {
+            assert_eq!(pinned_requirement(requirement), pinned, "{requirement}");
+        }
+    }
+
+    #[test]
     fn simple_index_python_requirement_preserves_quoted_angle_brackets() {
         for requirement in [">=3.10", "&gt;=3.10"] {
             for quote in ['"', '\''] {
@@ -700,6 +882,17 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
             .unwrap()
             .remove("wheels");
         assert!(backend.validate_uv_lock(&tv, &source_only).is_err());
+    }
+
+    #[test]
+    fn locked_entry_points_use_the_distribution_name() {
+        let (backend, tv, mut lock) = fixture();
+        lock.project["project"]["dependencies"] =
+            toml::Value::Array(vec!["azure-cli==1.0.0".into()]);
+        assert_eq!(
+            backend.locked_entry_point_packages(&tv, &lock).unwrap(),
+            ["azure-cli"]
+        );
     }
 
     #[test]

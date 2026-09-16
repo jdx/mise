@@ -60,6 +60,7 @@ use crate::ui::table::MiseTable;
     example(r###"mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
 mise bootstrap --adopt git@github.com:example/mise-config.git --yes
+mise bootstrap --adopt git@github.com:example/mise-config.git --replace-history --yes
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
@@ -85,6 +86,10 @@ pub(crate) struct Bootstrap {
     /// Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
     #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = "from")]
     adopt: Option<String>,
+
+    /// Replace local dotfile history while adopting a setup repository
+    #[usage(long, requires = "adopt")]
+    replace_history: bool,
 
     // Kept separately from `adopt` so only the legacy spelling emits a warning.
     /// Deprecated alias for --adopt
@@ -1852,8 +1857,13 @@ impl Bootstrap {
         // its files are written by the same recoverable pull as any other
         // incoming change; the ordinary bootstrap then runs from them
         if let Some(url) = expanded.as_deref()
-            && let Some(outcome) =
-                system::history::sync::onboard::from_git(url, self.yes, self.dry_run).await?
+            && let Some(outcome) = system::history::sync::onboard::from_git(
+                url,
+                self.yes,
+                self.dry_run,
+                self.replace_history,
+            )
+            .await?
         {
             if self.dry_run {
                 if let Some(preview) = outcome.preview_config.as_ref() {
@@ -1867,7 +1877,7 @@ impl Bootstrap {
             // installations are not what was asked for
             if outcome.setup_held {
                 bail!(
-                    "the setup from {url} is paused; nothing was bootstrapped. `mise dot status` lists the paths that need attention; resolve them with `mise dot pull`, then run `mise bootstrap`"
+                    "the setup from {url} is paused; nothing was bootstrapped. `mise dot status` lists the paths that need attention. Existing files that differ are kept until you decide: `mise dot pull --take-remote-all` chooses the repository's version for every conflict, or `mise dot pull --take-remote <path>` and `mise dot pull --keep-local <path>` decide one at a time. A path held for another reason, such as a directory where the repository has a file, says so in `mise dot status` and needs that fix instead. Then run `mise bootstrap`"
                 );
             }
             let config_dir = system::history::tracked::global_config_dir();
@@ -2086,6 +2096,7 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
     let mut args = args.iter().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--replace-history" => {}
             "--from" | "--adopt" | "--from-git" | "--from-dir" | "--cd" | "-C" => {
                 args.next();
             }
@@ -5154,6 +5165,7 @@ mod tests {
                 } else {
                     args.extend([flag, "jdx/dotfiles"].map(String::from));
                 }
+                args.push("--replace-history".to_string());
                 args.push("--yes".to_string());
                 assert_eq!(
                     bootstrap_from_child_args(Path::new("/checkout"), &args),

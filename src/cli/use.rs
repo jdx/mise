@@ -286,6 +286,7 @@ impl Use {
             offline: false,
             refresh_remote_versions: false,
             inactive: false,
+            warn_not_in_lockfile: true,
         };
         let versions: Vec<_> = self
             .tools

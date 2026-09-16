@@ -22,6 +22,12 @@ pub(crate) enum Error {
         backend: Box<BackendArg>,
         version: String,
     },
+    #[error("{tool}@{version} is not in the lockfile\nhint: {hint}")]
+    NotInLockfile {
+        tool: String,
+        version: String,
+        hint: String,
+    },
     #[error("[{0}] plugin not installed")]
     PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
@@ -149,7 +155,24 @@ impl Error {
         })
     }
 
-    #[cfg(not(unix))]
+    /// Windows has no signals. A process ended by a console control event
+    /// exits with `STATUS_CONTROL_C_EXIT`, which reports what
+    /// `signal() == SIGINT` reports on Unix: the terminal interrupted this
+    /// child, so its task stops without that counting as a failure.
+    #[cfg(windows)]
+    pub(crate) fn is_sigint(err: &Report) -> bool {
+        use windows_sys::Win32::Foundation::STATUS_CONTROL_C_EXIT;
+
+        err.downcast_ref::<Error>().is_some_and(|err| {
+            matches!(
+                err,
+                Error::ScriptFailed(_, Some(status))
+                    if status.code() == Some(STATUS_CONTROL_C_EXIT)
+            )
+        })
+    }
+
+    #[cfg(not(any(unix, windows)))]
     pub(crate) fn is_sigint(_err: &Report) -> bool {
         false
     }
@@ -179,6 +202,38 @@ impl Error {
                 Some(Error::RequiredChannelResolution { .. })
             )
         })
+    }
+
+    pub(crate) fn is_not_in_lockfile(err: &Report) -> bool {
+        err.chain().any(|source| {
+            matches!(
+                source.downcast_ref::<Error>(),
+                Some(Error::NotInLockfile { .. })
+            )
+        })
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use std::os::windows::process::ExitStatusExt;
+    use windows_sys::Win32::Foundation::STATUS_CONTROL_C_EXIT;
+
+    #[test]
+    fn detects_a_console_interrupt() {
+        let status = ExitStatus::from_raw(STATUS_CONTROL_C_EXIT as u32);
+        let err = Report::new(Error::ScriptFailed("cmd".into(), Some(status)));
+
+        assert!(Error::is_sigint(&err));
+    }
+
+    #[test]
+    fn does_not_treat_an_ordinary_failure_as_an_interrupt() {
+        let status = ExitStatus::from_raw(1);
+        let err = Report::new(Error::ScriptFailed("cmd".into(), Some(status)));
+
+        assert!(!Error::is_sigint(&err));
     }
 }
 
@@ -225,5 +280,17 @@ mod tests {
         let err = Report::new(Error::TaskInterrupted);
 
         assert!(Error::is_task_interrupted_before_start(&err));
+    }
+
+    #[test]
+    fn detects_not_in_lockfile() {
+        let err = Report::new(Error::NotInLockfile {
+            tool: "usage".into(),
+            version: "latest".into(),
+            hint: "Run `mise install` without --locked to update the lockfile".into(),
+        });
+
+        assert!(Error::is_not_in_lockfile(&err));
+        assert!(!Error::is_required_channel_resolution_err(&err));
     }
 }

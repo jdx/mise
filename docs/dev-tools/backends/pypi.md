@@ -97,22 +97,37 @@ Run `mise lock` after editing a sidecar to accept its updated digest before usin
 
 ### Requirements and limitations
 
-- **Wheels only:** every dependency needs a published wheel for the target Python
-  version and platform. Locked installs do not build source distributions.
+- **Wheels only for dependency graphs:** every dependency needs a published wheel
+  for the target Python version and platform. Explicit `mise lock` and locked
+  installs do not build source distributions. An ordinary `mise install` falls
+  back to a version-only uv installation when it cannot produce a wheel-only graph.
 - **PyPI packages with uv:** Git sources and standalone pipx installs use
   version-only locking. pipx cannot replay a uv dependency graph.
-- **No free-form installer arguments:** `uvx_args` and `pipx_args` are unsupported
-  with dependency graphs. Configure [Python](#choosing-python) and the
-  [registry URL](#registry-url) directly instead.
+- **No free-form installer arguments in dependency graphs:** `uvx_args` and
+  `pipx_args` use version-only installation during ordinary installs. Explicit
+  dependency locking rejects them because mise cannot safely translate arbitrary
+  installer arguments into a reproducible graph. Use the semantic options instead
+  when dependency locking is required: [`with`](#with) injects additional
+  requirements into the tool environment, [`expose`](#expose) also exposes their
+  executables, and [`dependency_prereleases`](#dependency_prereleases) sets uv's
+  prerelease policy. These are locked together with the tool, so the graph covers
+  the injected packages. Configure [Python](#choosing-python) and the
+  [registry URL](#registry-url) directly as well.
 - **Installed Python required:** lock generation needs an interpreter discoverable
   by uv, though it need not match the tool's configured Python version. Graph
   installs use the selected mise Python and do not download a replacement.
 - **Complete lockfiles required:** revision-2 locked uv installs fail if their
   dependency graph is missing. Run `mise lock` to generate it.
 
-The graph covers the package's supported Python range, starting at Python 3.8,
-and retains all published wheel targets for portability. This can make sidecars
-large. Frozen installs reuse uv's artifact cache.
+The graph covers the Python range that every locked requirement supports,
+starting at Python 3.8, and retains all published wheel targets for portability.
+Requirements injected with [`with`](#with) or [`expose`](#expose) are part of
+that calculation: one pinned to an exact version raises the range's floor to the
+release's own `requires-python`, because a single release cannot span the wider
+range the way uv resolves an unpinned requirement. A pin carrying an environment
+marker that tests the interpreter, such as `python_version < "3.12"`, is left
+out, since it is simply absent from the versions it excludes. This can make
+sidecars large. Frozen installs reuse uv's artifact cache.
 
 Different dependency graphs and configured Python interpreters get separate
 installations; `mise ls` still shows the package version. For system Python,
@@ -170,7 +185,7 @@ mise use python@3.14 pipx
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [], pipx_args = "--include-deps" }
 ```
 
 This uses version-only locking. An existing uv dependency graph cannot be
@@ -265,7 +280,44 @@ using pipx and are unsupported with dependency graphs.
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [], pipx_args = "--include-deps" }
+```
+
+### `with`
+
+Install additional Python requirements in the tool environment. This option
+requires uv and participates in dependency locking.
+
+```toml
+[tools]
+"pypi:azure-cli" = { version = "latest", with = ["pip"] }
+```
+
+A requirement pinned to an exact version narrows the locked Python range to the
+versions that release supports, so the tool may end up needing a newer
+interpreter than it declares on its own. Guard the pin with an interpreter
+marker, such as `"legacy==1.0.0; python_version < '3.12'"`, to keep the wider
+range when the requirement is only needed on some versions.
+
+### `expose`
+
+Install additional Python requirements and expose their executable entry points.
+This option requires uv 0.8.5 or newer and participates in dependency locking.
+
+```toml
+[tools]
+"pypi:ansible" = { version = "latest", expose = ["ansible-core"] }
+```
+
+### `dependency_prereleases`
+
+Set uv's prerelease policy for dependency resolution. Supported values are
+`disallow`, `allow`, `if-necessary`, and `explicit`. This option requires uv and
+is applied both when generating dependency graphs and during version-only installs.
+
+```toml
+[tools]
+"pypi:azure-cli" = { version = "latest", dependency_prereleases = "allow" }
 ```
 
 ### `uvx`
@@ -275,8 +327,11 @@ dependency graph locking and requires pipx to be installed.
 
 ```toml
 [tools]
-"pypi:ansible" = { version = "latest", uvx = false, pipx_args = "--include-deps" }
+"pypi:ansible" = { version = "latest", uvx = false, expose = [] }
 ```
+
+The empty `expose` list clears Ansible's uv-backed registry default. Clear any
+other semantic defaults the same way when overriding a registry tool to use pipx.
 
 ### `uvx_args`
 
@@ -285,7 +340,12 @@ are unsupported with dependency graphs; `pipx_args` applies only to pipx.
 
 ```toml
 [tools]
-"pypi:ansible-core" = { version = "latest", uvx_args = "--with ansible" }
+"pypi:ansible-core" = { version = "latest", uvx_args = "--resolution lowest" }
 ```
+
+Prefer the semantic [`with`](#with), [`expose`](#expose), and
+[`dependency_prereleases`](#dependency_prereleases) options when they cover the
+desired behavior. Unlike arbitrary arguments, those options support dependency
+graphs.
 
 Implementation: [`src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).

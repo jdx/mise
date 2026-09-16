@@ -483,6 +483,7 @@ repeated or comma-separated parts and cannot be combined.
     flag --adopt help="Adopt global configuration or shared dotfile history from a Git repository, then bootstrap" conflicts=--from {
         arg "<GIT_URL|OWNER/REPO>"
     }
+    flag --replace-history help="Replace local dotfile history while adopting a setup repository" requires=--adopt
     flag --from-git help="Deprecated alias for --adopt" hide=#true {
         conflicts "--from" "--adopt"
         arg <GIT_URL>
@@ -938,7 +939,7 @@ own; this command writes what is pending right now and decides
 conflicts. When an incoming configuration declares more tracked files,
 their shared versions follow in the same run.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all --keep-local ~/.zshrc\u{1b}[22m\n"
             flag "-n --dry-run" help="Show the plan without changing anything"
             flag "-y --yes" help="Pull without prompting"
             flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
@@ -946,6 +947,20 @@ their shared versions follow in the same run.
             }
             flag --keep-local help="Resolve a conflict by keeping this machine's version (published next)" var=#true {
                 arg <PATH>
+            }
+            flag --take-remote-all help="Resolve every remaining conflict with the repository's version" conflicts=--keep-local-all {
+                long_help #"""
+Resolve every remaining conflict with the repository's version
+
+Paths named by --keep-local keep this machine's version; every other conflict takes the repository's. Useful on a newly adopted machine, where each pre-existing file that differs is a separate conflict.
+"""#
+            }
+            flag --keep-local-all help="Resolve every remaining conflict by keeping this machine's version" conflicts=--take-remote-all {
+                long_help #"""
+Resolve every remaining conflict by keeping this machine's version
+
+Paths named by --take-remote take the repository's version; every other conflict keeps this machine's. Each kept path must already be saved.
+"""#
             }
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PATH]…" help="Partial pulls are unsupported; omit PATH and apply the complete setup" required=#false var=#true
@@ -1054,6 +1069,7 @@ The history watcher does this on its own in `sync` and `fetch-only` mode
 (`settings.history.sync`); this command is for right now.
 """#
             flag --fetch-only help="Fetch without publishing"
+            flag --allow-plaintext-history help="Allow publishing older unencrypted versions of encrypted files"
             flag --best-effort help="Warn instead of failing when the origin is unreachable"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
@@ -1070,7 +1086,7 @@ saved automatically; without it, `mise dot save` saves them.
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
             flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
                 arg <OS>
             }
@@ -1078,6 +1094,7 @@ Linux box can share the same live path with different contents.
                 arg <PROFILE>
             }
             flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
+            flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
             flag "-y --yes" help="Accept without prompting"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true
@@ -1889,6 +1906,7 @@ shell affects future sessions, not the shell running this command.
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
 mise bootstrap --adopt git@github.com:example/mise-config.git --yes
+mise bootstrap --adopt git@github.com:example/mise-config.git --replace-history --yes
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
@@ -2563,7 +2581,7 @@ own; this command writes what is pending right now and decides
 conflicts. When an incoming configuration declares more tracked files,
 their shared versions follow in the same run.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot pull --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --yes\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --keep-local ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all\u{1b}[22m\n    $ \u{1b}[1mmise dot pull --take-remote-all --keep-local ~/.zshrc\u{1b}[22m\n"
         flag "-n --dry-run" help="Show the plan without changing anything"
         flag "-y --yes" help="Pull without prompting"
         flag --take-remote help="Resolve a conflict with the repository's version" var=#true {
@@ -2571,6 +2589,20 @@ their shared versions follow in the same run.
         }
         flag --keep-local help="Resolve a conflict by keeping this machine's version (published next)" var=#true {
             arg <PATH>
+        }
+        flag --take-remote-all help="Resolve every remaining conflict with the repository's version" conflicts=--keep-local-all {
+            long_help #"""
+Resolve every remaining conflict with the repository's version
+
+Paths named by --keep-local keep this machine's version; every other conflict takes the repository's. Useful on a newly adopted machine, where each pre-existing file that differs is a separate conflict.
+"""#
+        }
+        flag --keep-local-all help="Resolve every remaining conflict by keeping this machine's version" conflicts=--take-remote-all {
+            long_help #"""
+Resolve every remaining conflict by keeping this machine's version
+
+Paths named by --take-remote take the repository's version; every other conflict keeps this machine's. Each kept path must already be saved.
+"""#
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[PATH]…" help="Partial pulls are unsupported; omit PATH and apply the complete setup" required=#false var=#true
@@ -2679,6 +2711,7 @@ The history watcher does this on its own in `sync` and `fetch-only` mode
 (`settings.history.sync`); this command is for right now.
 """#
         flag --fetch-only help="Fetch without publishing"
+        flag --allow-plaintext-history help="Allow publishing older unencrypted versions of encrypted files"
         flag --best-effort help="Warn instead of failing when the origin is unreachable"
         flag "-h --help" help="Print help" action=help builtin=#true
     }
@@ -2695,7 +2728,7 @@ saved automatically; without it, `mise dot save` saves them.
 machines matching that platform or mise environment, so a Mac and a
 Linux box can share the same live path with different contents.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot track ~/.zshrc ~/.config/hypr\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.zshrc --os macos\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/credentials --encrypt\u{1b}[22m\n    $ \u{1b}[1mmise dot track ~/.config/app/state.json --no-autosave\u{1b}[22m\n"
         flag --os help="Declare a variant for this platform (macos, linux, linux/arm64, …)" {
             arg <OS>
         }
@@ -2703,6 +2736,7 @@ Linux box can share the same live path with different contents.
             arg <PROFILE>
         }
         flag --no-autosave help="Save only on `mise dot save <path>`, never automatically"
+        flag --encrypt help="Encrypt contents before saving them to history (requires `[history.encryption].recipients`)"
         flag "-y --yes" help="Accept without prompting"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <PATH>… help="Paths to track (absolute or starting with ~/)" var=#true

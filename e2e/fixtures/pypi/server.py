@@ -5,6 +5,7 @@ import io
 import json
 import pathlib
 import sys
+import tarfile
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -12,18 +13,24 @@ root = pathlib.Path(sys.argv[1])
 root.mkdir(exist_ok=True)
 
 
-def wheel(name, version, requires=(), script=False):
+python_requirements = {}
+
+
+def wheel(name, version, requires=(), script=False, data_script=False, command='lock-cli', output=None, requires_python='>=3.10'):
     module = name.replace('-', '_')
+    python_requirements[module] = requires_python
     dist = f'{module}-{version}.dist-info'
     files = {
-        f'{dist}/METADATA': f'Metadata-Version: 2.1\nName: {name}\nVersion: {version}\nRequires-Python: >=3.10\n'
+        f'{dist}/METADATA': f'Metadata-Version: 2.1\nName: {name}\nVersion: {version}\nRequires-Python: {requires_python}\n'
         + ('Provides-Extra: feature\n' if script else '')
         + ''.join(f'Requires-Dist: {req}\n' for req in requires),
         f'{dist}/WHEEL': 'Wheel-Version: 1.0\nGenerator: mise-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
     }
     if script:
-        files[f'{module}.py'] = "import importlib.metadata\ndef main():\n    print('dependency=' + importlib.metadata.version('mise-lock-dep'))\n    try:\n        print('extra=' + importlib.metadata.version('mise-lock-extra'))\n    except importlib.metadata.PackageNotFoundError:\n        pass\n"
-        files[f'{dist}/entry_points.txt'] = f'[console_scripts]\nlock-cli = {module}:main\n'
+        files[f'{module}.py'] = (f"def main():\n    print({output!r})\n" if output else "import importlib.metadata\ndef main():\n    print('dependency=' + importlib.metadata.version('mise-lock-dep'))\n    try:\n        print('extra=' + importlib.metadata.version('mise-lock-extra'))\n    except importlib.metadata.PackageNotFoundError:\n        pass\n")
+        files[f'{dist}/entry_points.txt'] = f'[console_scripts]\n{command} = {module}:main\n'
+    if data_script:
+        files[f'{module}-{version}.data/scripts/{command}'] = f'#!/bin/sh\necho {output}\n'
     record = ''.join(
         f'{path},sha256={base64.urlsafe_b64encode(hashlib.sha256(text.encode()).digest()).decode().rstrip("=")},{len(text.encode())}\n'
         for path, text in files.items()
@@ -32,9 +39,50 @@ def wheel(name, version, requires=(), script=False):
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, 'w') as z:
         for path, text in files.items():
-            z.writestr(path, text)
+            info = zipfile.ZipInfo(path)
+            if '.data/scripts/' in path:
+                info.external_attr = 0o755 << 16
+            z.writestr(info, text)
     filename = f'{module}-{version}-py3-none-any.whl'
     return filename, archive.getvalue()
+
+
+def sdist(name, version):
+    module = name.replace('-', '_')
+    python_requirements[module] = '>=3.10'
+    root_name = f'{module}-{version}'
+    backend = f'''import pathlib
+import zipfile
+
+def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
+    filename = "{module}-{version}-py3-none-any.whl"
+    dist = "{module}-{version}.dist-info"
+    files = {{
+        "{module}.py": "def main():\\n    print('source-built')\\n",
+        f"{{dist}}/METADATA": "Metadata-Version: 2.1\\nName: {name}\\nVersion: {version}\\nRequires-Python: >=3.10\\n",
+        f"{{dist}}/WHEEL": "Wheel-Version: 1.0\\nGenerator: mise-test\\nRoot-Is-Purelib: true\\nTag: py3-none-any\\n",
+        f"{{dist}}/entry_points.txt": "[console_scripts]\\nsource-cli = {module}:main\\n",
+    }}
+    files[f"{{dist}}/RECORD"] = "".join(f"{{path}},,\\n" for path in files) + f"{{dist}}/RECORD,,\\n"
+    target = pathlib.Path(wheel_directory, filename)
+    with zipfile.ZipFile(target, "w") as archive:
+        for path, text in files.items():
+            archive.writestr(path, text)
+    return filename
+'''
+    files = {
+        'pyproject.toml': '[build-system]\nrequires = []\nbuild-backend = "backend"\nbackend-path = ["."]\n',
+        'backend.py': backend,
+        'PKG-INFO': f'Metadata-Version: 2.1\nName: {name}\nVersion: {version}\nRequires-Python: >=3.10\n',
+    }
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode='w:gz') as tar:
+        for path, text in files.items():
+            data = text.encode()
+            info = tarfile.TarInfo(f'{root_name}/{path}')
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return f'{root_name}.tar.gz', archive.getvalue()
 
 
 wheels = dict([
@@ -43,6 +91,10 @@ wheels = dict([
     wheel('mise-lock-dep', '2.0.0'),
     wheel('mise-lock-marker', '1.0.0'),
     wheel('mise-lock-extra', '1.0.0'),
+    wheel('mise-lock-strict', '1.0.0', requires_python='>=3.12'),
+    wheel('mise-exposed', '1.0.0', script=True, command='exposed-cli', output='exposed'),
+    wheel('mise-data-cli', '1.0.0', data_script=True, command='data-cli', output='data-script'),
+    sdist('mise-source-cli', '1.0.0'),
 ])
 
 
@@ -56,12 +108,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split('?')[0]
         if path.startswith('/pypi/') and path.endswith('/json'):
-            body = json.dumps({'info': {'requires_python': '>=3.10'}, 'releases': {'1.0.0': [{}]}}).encode()
+            package = path.strip('/').split('/')[1].replace('-', '_')
+            requires_python = python_requirements.get(package, '>=3.10')
+            body = json.dumps({'info': {'requires_python': requires_python}, 'releases': {'1.0.0': [{}]}}).encode()
             content_type = 'application/json'
         elif path.startswith(('/simple/', '/pypi/simple/')):
             package = path.strip('/').split('/')[-1].replace('-', '_')
+            requires_python = python_requirements.get(package, '>=3.10').replace('<', '&lt;').replace('>', '&gt;')
             body = ''.join(
-                f'<a href="/files/{name}#sha256={hashlib.sha256(data).hexdigest()}" data-requires-python="&gt;=3.10">{name}</a>\n'
+                f'<a href="/files/{name}#sha256={hashlib.sha256(data).hexdigest()}" data-requires-python="{requires_python}">{name}</a>\n'
                 for name, data in wheels.items()
                 if name.startswith(package + '-') and ('-2.0.0-' not in name or (root / 'publish').exists())
             ).encode()

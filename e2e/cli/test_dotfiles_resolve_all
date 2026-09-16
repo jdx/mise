@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# Blanket conflict resolution: `--take-remote-all` decides every conflict at
+# once, and an explicit `--keep-local` names the exceptions it does not cover.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+
+echo base-one >~/.one
+echo base-two >~/.two
+assert_succeed 'mise dot track ~/.one ~/.two'
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+
+second="$(dirname "$HOME")/resolve-all-b"
+mkdir -p "$second"
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" mise "$@"
+  )
+}
+export second
+export -f b
+assert_succeed "b bootstrap --from-git file://$origin --yes"
+
+# ---- both files conflict at once: one command decides them
+echo a-one >~/.one
+echo a-two >~/.two
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-one >"$second/.one"
+echo b-two >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+# without a decision the whole setup stays paused, and the failure names the
+# blanket flag rather than only the per-path form
+assert_fail 'b dot pull --yes' paused
+assert_fail 'b dot pull --yes' '--take-remote-all'
+assert "cat $second/.one" b-one
+assert "cat $second/.two" b-two
+assert_succeed 'b dot pull --take-remote-all --yes'
+assert "cat $second/.one" a-one
+assert "cat $second/.two" a-two
+
+# ---- an explicit --keep-local is the exception the blanket choice leaves alone
+assert_succeed 'b dot sync'
+assert_succeed 'mise dot sync --fetch-only'
+assert_succeed 'mise dot pull --yes'
+echo a-one-again >~/.one
+echo a-two-again >~/.two
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-one-again >"$second/.one"
+echo b-two-again >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+assert_succeed "b dot pull --take-remote-all --keep-local $second/.one --yes"
+assert "cat $second/.one" b-one-again
+assert "cat $second/.two" a-two-again
+
+# ---- the two blanket choices are mutually exclusive
+assert_fail 'b dot pull --take-remote-all --keep-local-all --yes'
+
+# ---- --keep-local-all keeps every saved local version, and publishes them
+assert_succeed 'b dot sync'
+assert_succeed 'mise dot sync --fetch-only'
+assert_succeed 'mise dot pull --yes'
+assert 'cat ~/.one' b-one-again
+echo a-one-3 >~/.one
+echo a-two-3 >~/.two
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-one-3 >"$second/.one"
+echo b-two-3 >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+assert_succeed 'b dot pull --keep-local-all --yes'
+assert "cat $second/.one" b-one-3
+assert "cat $second/.two" b-two-3
+# the kept versions are the ones that reach the origin next
+assert_succeed 'b dot sync'
+assert_succeed 'mise dot sync --fetch-only'
+assert_succeed 'mise dot pull --yes'
+assert 'cat ~/.one' b-one-3
+assert 'cat ~/.two' b-two-3
+
+# ---- --keep-local-all refuses a conflict whose local version is not saved
+echo a-one-4 >~/.one
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+assert_succeed 'b dot sync --fetch-only'
+echo b-one-4 >"$second/.one"
+assert_fail 'b dot pull --keep-local-all --yes' 'mise dot save'
+assert_fail 'b dot pull --keep-local-all --yes' 'has unsaved changes'
+# naming the path is asking for that path in particular, so the refusal is
+# the pass's own failure rather than a held path
+assert_fail "b dot pull --keep-local $second/.one --yes" 'it has unsaved changes'
+assert "cat $second/.one" b-one-4
+# the same unsaved conflict is still resolvable the other way
+assert_succeed 'b dot pull --take-remote-all --yes'
+assert "cat $second/.one" a-one-4
+
+# ---- a blanket choice with nothing to decide is not an error
+assert_succeed 'b dot pull --take-remote-all --yes'
+assert_succeed 'b dot pull --keep-local-all --yes'
+
+# ---- a path whose live side is a directory holds only itself: the blanket
+# choice still decides every other conflict, and says what it could not decide
+echo a-one-5 >~/.one
+echo a-two-5 >~/.two
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-two-5 >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+rm -f "$second/.one"
+mkdir -p "$second/.one"
+# the failure names the path it could not decide and why, rather than the
+# blanket flag that just ran, and nothing is half-applied
+assert_fail 'b dot pull --take-remote-all --yes' 'not a regular file or symlink'
+assert_fail 'b dot pull --take-remote-all --yes' 'Fix each of those paths'
+assert "cat $second/.two" b-two-5
+assert_succeed "test -d $second/.one"
+# a preview carries on rather than failing, so it says the reason itself
+assert_contains "b dot pull --take-remote-all --dry-run 2>&1" 'not a regular file or symlink'
+# with the directory gone, deciding only that path finishes the setup: the
+# choice those blanket commands recorded for ~/.two is still on file
+rm -rf "$second/.one"
+echo b-one-5 >"$second/.one"
+assert_succeed "b dot pull --take-remote $second/.one --yes"
+assert "cat $second/.one" a-one-5
+assert "cat $second/.two" a-two-5
+
+# ---- a path with unsaved changes holds only itself: --keep-local-all still
+# decides every other conflict rather than discarding the whole pass
+echo a-one-6 >~/.one
+echo a-two-6 >~/.two
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-one-6 >"$second/.one"
+echo b-two-6 >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+# only ~/.one drifts from its saved version, so only it cannot be kept
+echo b-one-6-edited >"$second/.one"
+assert_fail 'b dot pull --keep-local-all --yes' 'has unsaved changes'
+assert_fail 'b dot pull --keep-local-all --yes' 'mise dot save'
+assert_fail 'b dot pull --keep-local-all --yes' 'Fix each of those paths'
+assert "cat $second/.one" b-one-6-edited
+assert "cat $second/.two" b-two-6
+# a preview carries on rather than failing, so it says the reason itself
+assert_contains "b dot pull --keep-local-all --dry-run 2>&1" 'has unsaved changes'
+# deciding only the held path finishes the setup: the choice --keep-local-all
+# recorded for ~/.two is still on file, so ~/.two keeps this machine's version
+assert_succeed "b dot pull --take-remote $second/.one --yes"
+assert "cat $second/.one" a-one-6
+assert "cat $second/.two" b-two-6
+
+# ---- the other reason a local version cannot be kept -- this machine has no
+# saved version of the path at all -- holds exactly the same way
+echo b-three-own >"$second/.three"
+echo a-two-7 >~/.two
+# ~/.three arrives as a newly tracked path that b already has its own copy of
+# and has never saved, so b cannot publish a saved version of it
+echo a-three >~/.three
+assert_succeed 'mise dot track ~/.three'
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+echo b-two-7 >"$second/.two"
+assert_succeed 'b dot save'
+assert_succeed 'b dot sync --fetch-only'
+assert_fail 'b dot pull --keep-local-all --yes' 'no saved version on this machine yet'
+assert_fail 'b dot pull --keep-local-all --yes' 'Fix each of those paths'
+assert "cat $second/.three" b-three-own
+assert "cat $second/.two" b-two-7
+# again only the held path needs deciding, and ~/.two keeps the local version
+# --keep-local-all chose for it
+assert_succeed "b dot pull --take-remote $second/.three --yes"
+assert "cat $second/.three" a-three
+assert "cat $second/.two" b-two-7
