@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M2P90HW4SN4KEH6C7RYW62NB",
+  "session_id": "01a0ac8b-7993-72c1-a43f-9d8ba2d6845b",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-16T23:32:12.110451Z",
+  "branch": "codex/glibc-prose",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Cross.toml",
+    "docs/installing-mise.md",
+    "scripts/build-tarball.sh"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "ba36442be4a2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 113183,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 667776,
+    "output_tokens": 2693,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-16T23:32:12.087291Z",
+    "agent_lines": 56,
+    "agent_removed": 13,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 56,
+    "total_lines_changed": 69,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
