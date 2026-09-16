@@ -593,15 +593,27 @@ colon-separated string to PATH in code that also runs on Windows.
 
 ## Command Module
 
-Three functions run a command, differing in what they do with its output:
+Three functions run a command. **Prefer `cmd.exec`.** It is the only one that does not
+compete for the terminal, so it never holds up the tools installing alongside it.
 
-| Function     | Output                   | Returns                               | Use when                                                                |
-| ------------ | ------------------------ | ------------------------------------- | ----------------------------------------------------------------------- |
-| `cmd.exec`   | captured                 | stdout as a string; raises on failure | you need the output, or want a failure to stop the hook                 |
-| `os.execute` | streamed to the terminal | exit status                           | you want the user to see the output and will handle the status yourself |
-| `cmd.stream` | streamed to the terminal | exit status                           | the child needs to interact with the user                               |
+| Function     | Output                                    | Returns                               | Cost to other installs                                                     |
+| ------------ | ----------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| `cmd.exec`   | captured                                  | stdout as a string; raises on failure | none                                                                       |
+| `os.execute` | streamed to the terminal                  | exit status                           | holds mise's terminal lock while it runs                                   |
+| `cmd.stream` | streamed to the terminal, stdin connected | exit status                           | holds that lock exclusively — every other install waits to run any command |
 
-`cmd.exec` and `os.execute` both detach stdin; only `cmd.stream` connects it. See
+Reach for `os.execute` only when the user should watch output as it happens, and for
+`cmd.stream` only when the child genuinely has to interact with the user. Because mise
+installs tools in parallel, only one child can own the terminal at a time, so both take
+mise's terminal lock: a hook that shells out through them repeatedly slows every install
+running beside it, and a long `cmd.stream` call stalls all of them.
+
+Preferring `cmd.exec` costs nothing in visibility. A plugin's own `print()` output is
+routed to that tool's progress line, so progress reporting belongs in `print()` rather
+than in a child's streamed output.
+
+Unless the user enables [`raw`](/configuration/settings.html#raw), `cmd.exec` and
+`os.execute` give children `/dev/null` on stdin; `cmd.stream` always connects it. See
 [Hooks and stdin](#hooks-and-stdin) below.
 
 `cmd.exec` runs a command through mise's configured default inline shell. It returns stdout
@@ -621,7 +633,8 @@ installs, where the user cannot see or answer it. Take what you need from the to
 the environment, or the lockfile rather than prompting, and pass children their own
 non-interactive flag (`--yes`, `--non-interactive`, `-n`) where they have one.
 
-Because of that, `cmd.exec` and `os.execute` both give children `/dev/null` on stdin. A child
+Because of that, `cmd.exec` and `os.execute` give children `/dev/null` on stdin unless the
+user enables [`raw`](/configuration/settings.html#raw) (see below). A child
 that reads stdin under either one sees EOF immediately rather than hanging or stealing input
 from a sibling install.
 

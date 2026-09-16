@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 #[cfg(panic = "abort")]
 use std::sync::TryLockError;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
@@ -1946,11 +1946,41 @@ impl<'a> CmdLineRunner<'a> {
     }
 }
 
+/// Number of threads spinning in [`raw_write_lock_blocking`].
+///
+/// These helpers poll `try_write`/`try_read` rather than awaiting, because their
+/// callers are sync. `try_write` never registers as a waiting writer, so without
+/// this counter a steady stream of readers starves them: `try_read` succeeds
+/// whenever no writer *currently holds* the lock, which is every time the writer
+/// is between polls. Readers check this first and yield to a pending writer, which
+/// is what makes an exclusive acquisition finish in bounded time.
+static RAW_WRITERS_WAITING: AtomicUsize = AtomicUsize::new(0);
+
+/// Decrements [`RAW_WRITERS_WAITING`] however the writer leaves its loop.
+struct RawWriterWaiting;
+
+impl RawWriterWaiting {
+    fn new() -> Self {
+        RAW_WRITERS_WAITING.fetch_add(1, Ordering::AcqRel);
+        Self
+    }
+}
+
+impl Drop for RawWriterWaiting {
+    fn drop(&mut self) {
+        RAW_WRITERS_WAITING.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 /// Take the shared side of [`RAW_LOCK`]. Held while an ordinary command runs, so a
 /// `--raw` command (or vfox's `cmd.stream`) waits for it before taking the terminal.
+///
+/// Yields to a writer already waiting, so exclusive acquisition cannot be starved.
 pub(crate) fn raw_read_lock_blocking() -> tokio::sync::RwLockReadGuard<'static, ()> {
     loop {
-        if let Ok(guard) = RAW_LOCK.try_read() {
+        if RAW_WRITERS_WAITING.load(Ordering::Acquire) == 0
+            && let Ok(guard) = RAW_LOCK.try_read()
+        {
             return guard;
         }
         thread::sleep(Duration::from_millis(10));
@@ -1961,6 +1991,7 @@ pub(crate) fn raw_read_lock_blocking() -> tokio::sync::RwLockReadGuard<'static, 
 /// it. Used by `--raw` commands and by vfox's `cmd.stream`, which needs the same
 /// exclusivity so an interactive plugin child owns the terminal. (#13254)
 pub(crate) fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static, ()> {
+    let _waiting = RawWriterWaiting::new();
     loop {
         if let Ok(guard) = RAW_LOCK.try_write() {
             return guard;
@@ -2110,6 +2141,34 @@ mod tests {
 
     use crate::config::Config;
     use crate::ui::progress_report::SingleReport;
+
+    // `cmd.stream` takes the exclusive side of RAW_LOCK while `os.execute` takes the
+    // shared side. Because both poll rather than await, a steady stream of readers
+    // starved the writer: a trivial `cmd.stream` child waited 8s behind three
+    // plugins looping on `os.execute`. Readers must yield to a pending writer. (#13254)
+    #[test]
+    fn raw_read_lock_yields_to_a_waiting_writer() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+
+        let waiting = super::RawWriterWaiting::new();
+        let acquired = Arc::new(AtomicBool::new(false));
+        let flag = acquired.clone();
+        let reader = std::thread::spawn(move || {
+            let _guard = super::raw_read_lock_blocking();
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !acquired.load(Ordering::SeqCst),
+            "reader acquired the shared lock while a writer was waiting"
+        );
+
+        drop(waiting);
+        reader.join().unwrap();
+        assert!(acquired.load(Ordering::SeqCst));
+    }
 
     #[derive(Debug, Default)]
     struct RecordingReport {
