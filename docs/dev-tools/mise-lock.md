@@ -439,8 +439,10 @@ relative to the target lockfile, and updates keep sidecars beside that target.
 This also supports deployments that symlink each file individually: new sidecars
 are stored in the dotfiles repository and do not need separate global symlinks.
 Before publishing an update, mise checks that the symlink still resolves to the
-same target and aborts if it does not. Rerun the command after the deployment is
-stable.
+same target and aborts if it does not. A deployment switch can still occur after
+this recheck and before publication completes, causing mise to finish writing to
+the previously selected target. Keep the deployment stable while mise writes,
+and rerun the command if it aborts because the target changed.
 :::
 
 ## Local Lockfiles
