@@ -204,14 +204,19 @@ impl PackageTomlConfig {
     /// validated against it by `AppSpec::parse`.
     fn app_fields(&self) -> Option<(&str, Option<&str>, Option<&str>, &str)> {
         match self {
-            Self::Options(options) => options.url.as_deref().map(|url| {
-                (
-                    url,
-                    options.sha256.as_deref(),
-                    options.artifact.as_deref(),
-                    options.version.as_str(),
-                )
-            }),
+            Self::Options(options) => options
+                .url
+                .as_deref()
+                .map(str::trim)
+                .filter(|url| !url.is_empty())
+                .map(|url| {
+                    (
+                        url,
+                        options.sha256.as_deref(),
+                        options.artifact.as_deref(),
+                        options.version.as_str(),
+                    )
+                }),
             Self::Version(_) => None,
         }
     }
@@ -469,10 +474,21 @@ pub(crate) struct AppSpec {
 /// diagnoses the wrong thing.
 pub(crate) fn validate_app_declaration<'a>(
     name: &str,
+    url: &str,
     sha256: Option<&'a str>,
     artifact: Option<&'a str>,
     version: &str,
 ) -> eyre::Result<(&'a str, &'a str)> {
+    // A plain http download is still integrity-checked, because `sha256` is
+    // mandatory and verified, so this warns rather than refuses — an internal
+    // mirror over http is a real case for this manager. It does not cover a
+    // redirect from https to http: mise's download client applies no redirect
+    // policy, which is shared behaviour well outside this manager.
+    if !url.starts_with("https://") {
+        warn!(
+            "macos-app:{name}: '{url}' is not https; the download is verified by its sha256, but prefer https where the host offers it"
+        );
+    }
     let Some(sha256) = sha256 else {
         eyre::bail!("macos-app:{name}: 'url' requires 'sha256'");
     };
@@ -484,9 +500,12 @@ pub(crate) fn validate_app_declaration<'a>(
     if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
         eyre::bail!("macos-app:{name}: 'sha256' must be a 64-character hex digest; got '{sha256}'");
     }
-    let Some(artifact) = artifact else {
+    let Some(artifact) = artifact.map(str::trim).filter(|a| !a.is_empty()) else {
         eyre::bail!("macos-app:{name}: 'url' requires 'artifact' naming the bundle to install");
     };
+    if version.trim().is_empty() {
+        eyre::bail!("macos-app:{name}: 'version' must not be blank");
+    }
     if version == "latest" {
         eyre::bail!(
             "macos-app:{name}: 'url' requires an explicit 'version'; mise cannot discover versions for a direct download"
@@ -506,7 +525,7 @@ impl AppSpec {
         artifact: Option<&str>,
         version: &str,
     ) -> eyre::Result<Self> {
-        let (sha256, artifact) = validate_app_declaration(name, sha256, artifact, version)?;
+        let (sha256, artifact) = validate_app_declaration(name, url, sha256, artifact, version)?;
         Ok(Self {
             url: url.replace("{{version}}", version),
             sha256: sha256.to_string(),
@@ -853,13 +872,11 @@ fn package_requests_from_config_files(
                     // Validated on every platform; only the spec itself, which
                     // nothing off unix consumes, is gated.
                     if let Err(err) =
-                        validate_app_declaration(&name, sha256, artifact, declared_version)
+                        validate_app_declaration(&name, url, sha256, artifact, declared_version)
                     {
                         warn!("[bootstrap.packages]: {err}");
                         continue;
                     }
-                    #[cfg(not(unix))]
-                    let _ = url;
                     #[cfg(unix)]
                     match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
                         Ok(spec) => {
@@ -2487,6 +2504,34 @@ mod tests {
         assert!(latest.contains("explicit 'version'"), "{latest}");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_rejects_blank_declaration_fields() -> Result<()> {
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let url = "https://example.com/a.dmg";
+
+        // Presence is not enough: a whitespace-only value is not a declaration.
+        assert!(validate_app_declaration("n", url, Some(digest), Some("   "), "1.0.0").is_err());
+        assert!(validate_app_declaration("n", url, Some(digest), Some("N.app"), "  ").is_err());
+
+        // A blank url reads as no declaration at all, so the entry gets the
+        // "needs url, sha256, artifact and version" diagnosis rather than
+        // being accepted and failing later at download time.
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:nuvio" = { version = "1.1.20", url = "   ", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app" }
+            "#,
+        )])?;
+        let packages = packages_from_config_files(&config_files);
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app");
+        assert!(apps.is_none_or(|apps| apps.requests.is_empty()));
+        Ok(())
+    }
+
     #[test]
     fn macos_app_declaration_is_validated_on_every_platform() {
         let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -2494,18 +2539,66 @@ mod tests {
         // Not gated on unix: a config shared across machines must report a
         // malformed declaration wherever it is read. Otherwise a bad checksum
         // surfaces on Windows as a generic unknown-manager warning.
-        assert!(validate_app_declaration("nuvio", None, Some("N.app"), "1.0.0").is_err());
         assert!(
-            validate_app_declaration("nuvio", Some("no_check"), Some("N.app"), "1.0.0").is_err()
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                None,
+                Some("N.app"),
+                "1.0.0"
+            )
+            .is_err()
         );
         assert!(
-            validate_app_declaration("nuvio", Some(&digest[..32]), Some("N.app"), "1.0.0").is_err()
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some("no_check"),
+                Some("N.app"),
+                "1.0.0"
+            )
+            .is_err()
         );
-        assert!(validate_app_declaration("nuvio", Some(digest), None, "1.0.0").is_err());
-        assert!(validate_app_declaration("nuvio", Some(digest), Some("N.app"), "latest").is_err());
+        assert!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some(&digest[..32]),
+                Some("N.app"),
+                "1.0.0"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some(digest),
+                None,
+                "1.0.0"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some(digest),
+                Some("N.app"),
+                "latest"
+            )
+            .is_err()
+        );
 
         assert_eq!(
-            validate_app_declaration("nuvio", Some(digest), Some("N.app"), "1.0.0").unwrap(),
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some(digest),
+                Some("N.app"),
+                "1.0.0"
+            )
+            .unwrap(),
             (digest, "N.app")
         );
     }
