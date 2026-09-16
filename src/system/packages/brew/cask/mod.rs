@@ -310,7 +310,13 @@ impl CaskArtifacts {
     fn print_install_plan(&self, cask: &Cask) -> Result<()> {
         miseprintln!("install cask {}/{}", cask.token, cask.version);
         for app in &self.apps {
-            miseprintln!("link app {}", app.target_name()?);
+            // Resolved, not raw: an absolute target in cask metadata is
+            // relocated into the app directory override, so printing the
+            // declared name would name a path the install never touches.
+            miseprintln!(
+                "link app {}",
+                app_target_path(app.target_name()?)?.display()
+            );
         }
         for binary in &self.binaries {
             miseprintln!("link binary {}", binary.target_name()?);
@@ -809,7 +815,7 @@ impl BrewCaskManager {
         }
         let mut metadata_only_apps = Vec::new();
         for (index, app) in artifacts.apps.iter().enumerate() {
-            match install_app(
+            let installed = install_app(
                 &stage,
                 &tmp_caskroom,
                 app,
@@ -821,7 +827,16 @@ impl BrewCaskManager {
                     verify_adopt: !cask.auto_updates,
                     defer_if_running: defer_running,
                 },
-            )? {
+            )
+            .inspect_err(|_| {
+                // A refusal happens before anything is staged, so the
+                // transaction directory is still empty and should not be left
+                // behind. `remove_dir` fails on a non-empty directory, which
+                // preserves the partial state a genuine mid-install failure
+                // leaves for recovery.
+                let _ = file::remove_dir(&tmp_caskroom);
+            })?;
+            match installed {
                 AppInstall::Installed {
                     metadata_only: true,
                 } => metadata_only_apps.push(app_target_path(app.target_name()?)?),
