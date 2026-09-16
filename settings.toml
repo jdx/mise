@@ -2711,6 +2711,21 @@ env = "MISE_RUBY_PRECOMPILED_ARCH"
 optional = true
 type = "String"
 
+[ruby.precompiled_api_url]
+description = "Override the GitLab API URL for a `gitlab:owner/repo` precompiled_url (self-hosted GitLab)."
+docs = """
+Only consulted when `ruby.precompiled_url` is a `gitlab:owner/repo` shorthand. Set this to
+a self-hosted GitLab instance's API URL, e.g. `https://gitlab.example.com/api/v4`, to
+resolve releases and (if enabled) attestations from there instead of gitlab.com.
+Authentication follows the normal GitLab token resolution (`MISE_GITLAB_ENTERPRISE_TOKEN`
+for non-gitlab.com hosts).
+
+Has no effect for GitHub sources or full URL templates.
+"""
+env = "MISE_RUBY_PRECOMPILED_API_URL"
+optional = true
+type = "String"
+
 [ruby.precompiled_os]
 description = "Override OS identifier for precompiled Ruby binaries."
 env = "MISE_RUBY_PRECOMPILED_OS"
@@ -2719,17 +2734,26 @@ type = "String"
 
 [ruby.precompiled_url]
 default = "jdx/ruby"
-description = "URL template or GitHub repo for precompiled Ruby binaries."
+description = "URL template, GitHub repo, or GitLab repo for precompiled Ruby binaries."
 docs = """
 Can be either:
 - A GitHub repo shorthand: `"jdx/ruby"` or `"yourorg/ruby"`
+- A GitLab repo shorthand: `"gitlab:owner/repo"` (opt-in; bare `owner/repo` always means
+  GitHub, for backward compatibility). Self-hosted GitLab is supported via
+  `ruby.precompiled_api_url`.
 - A full URL template with variables: `{version}`, `{platform}`, `{os}`, `{arch}`
+
+GitLab-hosted release assets have no published digest, so precompiled binaries from a
+`gitlab:` source have no checksum verification.
 
 Examples:
 ```toml
 [settings.ruby]
 # Use a different GitHub repo
 precompiled_url = "yourorg/ruby"
+
+# Use a GitLab repo instead
+precompiled_url = "gitlab:yourorg/ruby"
 
 # Or use a custom URL template
 precompiled_url = "https://my-mirror.example.com/ruby-{version}.{platform}.tar.gz"

@@ -242,6 +242,73 @@ pub(crate) async fn get_release_for_url(
         .clone())
 }
 
+/// Find the latest build revision for a version among a GitLab repo's releases.
+///
+/// Mirrors [`crate::github::get_release_with_build_revision_status`]; see its docs for the
+/// `{version}-{N}` tag convention. Currently only used by Ruby's `gitlab:` precompiled
+/// source, which (unlike the default GitHub `jdx/ruby` source) never *requires* a build
+/// revision to exist — this just prefers the highest one when a custom source happens to
+/// use the same tag convention.
+pub(crate) async fn get_release_with_build_revision_status(
+    api_url: &str,
+    repo: &str,
+    version: &str,
+) -> Result<(GitlabRelease, bool)> {
+    let releases = list_releases_from_url(api_url, repo).await?;
+    match pick_best_numeric_build_revision(releases.clone(), version) {
+        Some(release) => Ok((release, true)),
+        None => match pick_best_build_revision(releases, version) {
+            Some(release) => Ok((release, false)),
+            None => Ok((get_release_for_url(api_url, repo, version).await?, false)),
+        },
+    }
+}
+
+/// Select the highest numeric build revision for a given version.
+///
+/// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the
+/// highest numeric `-N` suffix and ignores the base version.
+fn pick_best_numeric_build_revision(
+    releases: Vec<GitlabRelease>,
+    version: &str,
+) -> Option<GitlabRelease> {
+    let prefix = format!("{version}-");
+    releases
+        .into_iter()
+        .filter_map(|r| {
+            let revision = r
+                .tag_name
+                .strip_prefix(&prefix)
+                .and_then(|suffix| suffix.parse::<u32>().ok())?;
+            Some((revision, r))
+        })
+        .max_by_key(|(revision, _)| *revision)
+        .map(|(_, release)| release)
+}
+
+/// Select the release with the highest build revision for a given version.
+///
+/// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the one
+/// with the highest numeric `-N` suffix. The base version (no suffix) is treated as
+/// revision 0.
+fn pick_best_build_revision(releases: Vec<GitlabRelease>, version: &str) -> Option<GitlabRelease> {
+    let prefix = format!("{version}-");
+    releases
+        .into_iter()
+        .filter(|r| {
+            r.tag_name == version
+                || r.tag_name
+                    .strip_prefix(&prefix)
+                    .is_some_and(|suffix| suffix.parse::<u32>().is_ok())
+        })
+        .max_by_key(|r| {
+            r.tag_name
+                .strip_prefix(&prefix)
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0)
+        })
+}
+
 async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
     let url = format!(
         "{}/projects/{}/releases/{}",
