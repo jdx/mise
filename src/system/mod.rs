@@ -1740,6 +1740,11 @@ pub(crate) fn hooks_from_config_files(config_files: &ConfigMap) -> Vec<hooks::Bo
 ///
 /// Unlike the config path, malformed specs and unknown managers are hard
 /// errors. CLI specs carry no version pin — pins live in the config value.
+/// Resolve explicitly named `manager:package` specs against loaded configuration.
+///
+/// Used when packages are named on the command line rather than taken wholesale
+/// from `[bootstrap.packages]`. Naming a package scopes the run; it does not opt
+/// out of that package's configuration, so declared options still apply.
 pub(crate) fn packages_from_specs_with_config(
     specs: &[String],
     config: Option<&Config>,
@@ -1750,6 +1755,8 @@ pub(crate) fn packages_from_specs_with_config(
     }
 }
 
+/// Spec resolution against an explicit [`ConfigMap`], so the option plumbing can
+/// be tested the same way `packages_from_config_files` already is.
 fn packages_from_specs_with_config_files(
     specs: &[String],
     config_files: &ConfigMap,
@@ -1803,9 +1810,18 @@ fn packages_from_specs_with_config_files(
     resolve_managers(by_mgr, options, true)
 }
 
-/// Per-package `adopt` for an explicitly named spec. A CLI argument is usually
-/// written exactly as the config key (`brew-cask:foo`), but may omit a tap
-/// qualifier the config carries, so fall back to matching on the package name.
+/// Per-package `adopt` for an explicitly named spec.
+///
+/// A CLI argument is usually written exactly as the config key, so an exact
+/// lookup wins and a tap-qualified argument always resolves against the entry
+/// that declares it. An unqualified argument (`brew-cask:foo`) may still refer
+/// to a tap-qualified entry (`brew-cask:owner/tap/foo`), so fall back to
+/// comparing the cask token after the final `/`.
+///
+/// That fallback applies only when it identifies exactly one configured entry.
+/// An unqualified argument cannot distinguish two tap-qualified entries sharing
+/// a token, and guessing between them would silently apply the wrong `adopt`
+/// value, so ambiguity defers to the global default instead.
 #[cfg(unix)]
 fn declared_cask_adopt(
     declared: &IndexMap<String, PackageTomlConfig>,
@@ -1815,12 +1831,23 @@ fn declared_cask_adopt(
     if let Some(package) = declared.get(spec) {
         return package.adopt();
     }
-    declared.iter().find_map(|(key, package)| {
-        let (mgr, declared_name) = key.split_once(':')?;
-        (mgr == "brew-cask" && declared_name == name)
-            .then(|| package.adopt())
-            .flatten()
-    })
+    let cask_token = |declared_name: &str| -> bool {
+        declared_name == name
+            || declared_name
+                .rsplit_once('/')
+                .is_some_and(|(_, token)| token == name)
+    };
+    let mut matches = declared.iter().filter(|(key, _)| {
+        key.split_once(':')
+            .is_some_and(|(mgr, declared_name)| mgr == "brew-cask" && cask_token(declared_name))
+    });
+    let (_, package) = matches.next()?;
+    // More than one configured entry answers to this token: ambiguous, so the
+    // caller falls back to `[bootstrap.brew] adopt`.
+    if matches.next().is_some() {
+        return None;
+    }
+    package.adopt()
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -2169,6 +2196,63 @@ mod tests {
         assert!(!casks.options.brew_cask_adopt("replace-me"));
         // not declared at all, so it falls back to the global default
         assert!(casks.options.brew_cask_adopt("not-declared"));
+        Ok(())
+    }
+
+    /// An unqualified CLI spec must still find a tap-qualified config entry,
+    /// otherwise the per-package override is skipped and the global default
+    /// silently replaces an app the config asked to adopt.
+    #[cfg(unix)]
+    #[test]
+    fn test_unqualified_spec_matches_tap_qualified_config_entry() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.brew]
+                adopt = true
+
+                [bootstrap.packages]
+                "brew-cask:owner/tap/replace-me" = { adopt = false }
+            "#,
+        )])?;
+
+        let specs = ["brew-cask:replace-me".to_string()];
+        let packages = packages_from_specs_with_config_files(&specs, &config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        // the per-package `adopt = false` must win over `[bootstrap.brew] adopt`
+        assert!(!casks.options.brew_cask_adopt("replace-me"));
+        Ok(())
+    }
+
+    /// Two tap-qualified entries sharing a token cannot be told apart from an
+    /// unqualified spec. Guessing would apply the wrong `adopt` value, so the
+    /// global default is used instead.
+    #[cfg(unix)]
+    #[test]
+    fn test_ambiguous_tap_qualified_entries_fall_back_to_global() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.brew]
+                adopt = true
+
+                [bootstrap.packages]
+                "brew-cask:one/tap/shared" = { adopt = false }
+                "brew-cask:two/tap/shared" = { adopt = false }
+            "#,
+        )])?;
+
+        let specs = ["brew-cask:shared".to_string()];
+        let packages = packages_from_specs_with_config_files(&specs, &config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        // ambiguous, so neither override applies and the global default stands
+        assert!(casks.options.brew_cask_adopt("shared"));
         Ok(())
     }
 
