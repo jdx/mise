@@ -49,6 +49,14 @@ pub(crate) fn usage_spec_request(argv: &[OsString]) -> Option<Result<String>> {
     })())
 }
 
+/// Answer one completion request from `spec`, in the shape `request`'s shell reads.
+///
+/// Rendered with [`usage_rs::complete::render_request`] rather than plain `render`, because the
+/// answer has to carry more than its candidates. Bash's default `COMP_WORDBREAKS` contains `:`,
+/// so Readline replaces only the fragment after the last colon and keeps what precedes it;
+/// `render_request` names that preserved prefix so the generated wrapper can trim it from full
+/// candidates. Task names are the reason this matters here: `update:deps:no-cooldown` completed
+/// after `update:deps:` is otherwise inserted whole, behind the prefix Readline kept.
 fn complete_spec(
     spec: &usage::Spec,
     request: &usage_rs::complete::CompletionRequest,
