@@ -1750,13 +1750,25 @@ async fn get_desired_shims(
 /// single command compares equal. Windows "file" mode emits both an extensionless shim
 /// and a `.cmd` shim, so stripping only `EXE_SUFFIX` would leave `python.cmd` behind
 /// when `python` is excluded. Case is folded where the filesystem is case-insensitive.
+///
+/// Suffixes are stripped repeatedly. `platform_shim_names` cannot produce a compound
+/// name (`Path::with_extension` replaces rather than appends), but plugin farms
+/// contribute arbitrary filenames from disk, so `python.exe.cmd` still normalizes.
 fn shim_name_key(name: &str) -> String {
-    let mut name = command_name_without_exe_suffix(name);
-    if cfg!(windows)
-        && let Some((stem, ext)) = name.rsplit_once('.')
-        && ext.eq_ignore_ascii_case("cmd")
-    {
-        name = stem;
+    let mut name = name;
+    loop {
+        let mut stripped = command_name_without_exe_suffix(name);
+        if cfg!(windows)
+            && let Some((stem, ext)) = stripped.rsplit_once('.')
+            && ext.eq_ignore_ascii_case("cmd")
+        {
+            stripped = stem;
+        }
+        // each pass strictly shortens the name or changes nothing, so this terminates
+        if stripped == name {
+            break;
+        }
+        name = stripped;
     }
     if cfg!(windows) || cfg!(macos) {
         name.to_lowercase()
@@ -2054,6 +2066,10 @@ mod tests {
         assert!(shim_name_excluded(&excluded, "Python.CMD"));
         let upper: BTreeSet<String> = ["PYTHON.cmd"].iter().map(|s| s.to_string()).collect();
         assert!(shim_name_excluded(&upper, "python"));
+        // compound suffixes normalize too; only a plugin farm can produce one, since
+        // platform_shim_names replaces extensions rather than appending them
+        assert!(shim_name_excluded(&excluded, "python.exe.cmd"));
+        assert!(shim_name_excluded(&excluded, "python.cmd.exe"));
         // a different command that merely shares a prefix is untouched
         assert!(!shim_name_excluded(&excluded, "python3.cmd"));
     }
