@@ -477,7 +477,42 @@ impl Upgrade {
                     display_path(cf.get_path())
                 );
             }
-            print_explicit_config_bumps(explicit_config_bumps)?;
+            let resolve_options = ResolveOptions {
+                use_locked_version: false,
+                latest_versions: true,
+                before_date,
+                inactive: self.inactive,
+                ..Default::default()
+            };
+            let mut planned_explicit_config_bumps = Vec::new();
+            for bump in explicit_config_bumps {
+                let pending = outdated.iter().find(|outdated| {
+                    backend_args_match(outdated.tool_version.ba(), bump.request.ba())
+                        && outdated.tool_version.request.version() == bump.request.version()
+                });
+                let eligible = if let Some(pending) = pending {
+                    // Outdated entries can include requests that failed initial resolution.
+                    // Validate the actual install request before advertising its config update.
+                    pending
+                        .tool_request
+                        .resolve(config, &resolve_options)
+                        .await
+                        .is_ok_and(|version| {
+                            // Path requests resolve syntactically, but cannot be installed
+                            // unless their target already exists.
+                            !matches!(version.request, ToolRequest::Path { .. })
+                                || version.backend().is_ok_and(|backend| {
+                                    backend.is_version_installed(config, &version, true)
+                                })
+                        })
+                } else {
+                    explicit_bump_is_installed(&ts, config, bump)
+                };
+                if eligible {
+                    planned_explicit_config_bumps.push(bump.clone());
+                }
+            }
+            print_explicit_config_bumps(&planned_explicit_config_bumps)?;
             if !self.bump {
                 use crate::toolset::outdated_info::compute_config_bumps;
                 let tool_versions: Vec<(String, String)> = self

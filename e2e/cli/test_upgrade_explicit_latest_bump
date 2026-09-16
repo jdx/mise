@@ -60,6 +60,17 @@ dummy = "1.0.0"
 tiny-local = "1.0.0"
 EOF
 mise install tiny-local@1.0.0
+
+# Dry runs omit failed selectors, including when another selector for the same
+# backend succeeds, but retain installed selectors and pending explicit installs.
+mise uninstall tiny-local@3.1.0
+output=$(mise up --bump dummy@path:/does-not-exist dummy@3 tiny-local@3.1 --dry-run 2>&1)
+assert_not_contains_text "$output" "Would bump dummy@path:/does-not-exist"
+assert_contains_text "$output" "Would bump dummy@3"
+assert_contains_text "$output" "Would bump tiny-local@3.1"
+assert_contains "cat mise.toml" 'dummy = "1.0.0"'
+assert_contains "cat mise.toml" 'tiny-local = "1.0.0"'
+
 mise up --bump dummy@path:/does-not-exist tiny-local --prune >/dev/null 2>&1 || :
 assert_contains "cat mise.toml" 'dummy = "1.0.0"'
 assert_contains "cat mise.toml" 'tiny-local = "3.1.0"'
