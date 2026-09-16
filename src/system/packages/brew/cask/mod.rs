@@ -704,8 +704,7 @@ impl BrewCaskManager {
         // brew-cask defers to Homebrew by token, which macos-app cannot do.
         // Checked before the download so a conflict costs nothing, and before
         // the dry-run return so a plan reports it.
-        let require_unowned_targets =
-            !cask.manager.uses_homebrew_caskroom() && installed_version.is_none();
+        let require_unowned_targets = requires_unowned_targets(&cask, installed_version.as_deref());
         if require_unowned_targets && !manager_options.brew_cask_adopt(&req.name) {
             ensure_app_targets_are_unowned(cask.manager, &artifacts.apps)?;
         }
@@ -1335,6 +1334,19 @@ fn install_app(
     Ok(AppInstall::Installed {
         metadata_only: !keep_caskroom_copy,
     })
+}
+
+/// Whether this entry must refuse to replace whatever is at its app target.
+///
+/// Only for managers that do not share Homebrew's Caskroom, and only when mise
+/// has no sign of already owning the install. A pending journal is such a sign:
+/// it means this entry was interrupted part-way through, so a bundle at the
+/// target is its own leftover. Treating that as another owner's would make an
+/// interrupted install unretryable without deleting the app by hand.
+fn requires_unowned_targets(cask: &Cask, installed_version: Option<&str>) -> bool {
+    !cask.manager.uses_homebrew_caskroom()
+        && installed_version.is_none()
+        && !mise_install_pending(cask)
 }
 
 fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {

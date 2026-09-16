@@ -8609,3 +8609,47 @@ fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()>
     );
     Ok(())
 }
+
+#[test]
+fn an_interrupted_macos_app_install_can_be_retried() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+
+    let spec = crate::system::AppSpec {
+        url: "https://example.com/Nuvio.dmg".to_string(),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+        artifact: "Nuvio.app".to_string(),
+        version: "1.1.20".to_string(),
+    };
+    let cask = declared_app_cask("nuvio", &spec)?;
+
+    // Nothing recorded and nothing pending: a bundle at the target belongs to
+    // someone else, so refuse to replace it.
+    assert!(requires_unowned_targets(&cask, None));
+
+    // Already installed by this entry: replacing on upgrade is fine.
+    assert!(!requires_unowned_targets(&cask, Some("1.1.19")));
+
+    // Interrupted part-way through — a journal is pending and the receipt was
+    // never written. The bundle at the target is this entry's own leftover, so
+    // the retry must not treat it as foreign and demand adopt = true.
+    let journal = CaskTransactionJournal {
+        schema_version: 1,
+        token: "nuvio",
+        version: "1.1.20",
+        completed: Vec::new(),
+    };
+    let state_dir = tmp.path().join(".mise-test-state");
+    write_cask_journal_in(&state_dir, CaskManager::MacosApp, &journal)?;
+    assert!(mise_install_pending(&cask));
+    assert!(!requires_unowned_targets(&cask, None));
+
+    // A pending brew-cask journal for the same token is a different install and
+    // must not excuse the macos-app entry.
+    remove_cask_journals_in(&state_dir, CaskManager::MacosApp, "nuvio")?;
+    write_cask_journal_in(&state_dir, CaskManager::BrewCask, &journal)?;
+    assert!(!mise_install_pending(&cask));
+    assert!(requires_unowned_targets(&cask, None));
+    Ok(())
+}

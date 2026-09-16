@@ -244,6 +244,26 @@ pub(super) fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>>
     installed_cask_version_in(cask, &prefix::prefix().join(".mise-test-state"))
 }
 
+/// Whether this entry has an install transaction that never completed.
+///
+/// A pending journal blanks [`mise_installed_cask_version`], so callers that
+/// treat "no recorded version" as "mise does not own this" need to ask this too
+/// — otherwise an interrupted install looks indistinguishable from someone
+/// else's.
+#[cfg(not(test))]
+pub(super) fn mise_install_pending(cask: &Cask) -> bool {
+    cask_journal_pending_in(&crate::dirs::STATE, cask.manager, &cask.token)
+}
+
+#[cfg(test)]
+pub(super) fn mise_install_pending(cask: &Cask) -> bool {
+    cask_journal_pending_in(
+        &prefix::prefix().join(".mise-test-state"),
+        cask.manager,
+        &cask.token,
+    )
+}
+
 pub(super) fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<String>> {
     if cask_journal_pending_in(state_dir, cask.manager, &cask.token) {
         return Ok(None);
