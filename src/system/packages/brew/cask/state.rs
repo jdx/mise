@@ -288,7 +288,14 @@ pub(super) fn state_for_version(
 }
 
 pub(super) fn package_state(req: &PackageRequest, cask: &Cask) -> Result<PackageState> {
-    if let Some(version) = homebrew_installed_version(&cask.token)? {
+    // Only the Homebrew-backed manager shares the Caskroom. For macos-app a
+    // same-named Homebrew cask is a different install in a different state
+    // root, so consulting it here would report Homebrew's version as this
+    // package's state — or fail the whole status query with a brew-cask
+    // error raised from leftover Caskroom metadata.
+    if cask.manager.uses_homebrew_caskroom()
+        && let Some(version) = homebrew_installed_version(&cask.token)?
+    {
         return Ok(state_for_version(req, cask, version));
     }
     let artifacts = cask_artifacts(cask)?;

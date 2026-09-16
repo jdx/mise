@@ -8481,3 +8481,55 @@ fn install_journals_are_scoped_per_manager() {
         "nuvio"
     ));
 }
+
+#[test]
+fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+
+    // Homebrew owns a cask called "nuvio" in its Caskroom.
+    let token_dir = caskroom_token_dir(CaskManager::BrewCask, "nuvio");
+    file::create_dir_all(token_dir.join(".metadata"))?;
+    file::create_dir_all(token_dir.join("9.9.9"))?;
+
+    let spec = crate::system::AppSpec {
+        url: "https://example.com/Nuvio.dmg".to_string(),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+        artifact: "Nuvio.app".to_string(),
+        version: "1.1.20".to_string(),
+    };
+    let app_cask = declared_app_cask("nuvio", &spec)?;
+    let req = PackageRequest {
+        name: "nuvio".to_string(),
+        version: Some("1.1.20".to_string()),
+        tap_url: None,
+        desired: crate::system::packages::PackageDesiredState::Present,
+    };
+
+    // The macos-app entry is a different install in a different state root, so
+    // Homebrew's 9.9.9 must not be reported as its state. On linux an .app is
+    // unavailable, which is also proof the Homebrew probe was skipped — that
+    // probe returns before the platform check.
+    let state = package_state(&req, &app_cask)?;
+    if cfg!(target_os = "macos") {
+        assert_eq!(state, PackageState::Missing);
+    } else {
+        assert!(state.is_unavailable(), "{state:?}");
+        assert!(
+            state
+                .unavailable_reason()
+                .is_some_and(|r| r.starts_with("macos-app:")),
+            "{state:?}"
+        );
+    }
+
+    // The same token under brew-cask still sees Homebrew as the owner.
+    let mut cask_cask = app_cask.clone();
+    cask_cask.manager = CaskManager::BrewCask;
+    assert!(matches!(
+        package_state(&req, &cask_cask)?,
+        PackageState::VersionMismatch { installed } if installed == "9.9.9"
+    ));
+    Ok(())
+}
