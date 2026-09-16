@@ -144,6 +144,9 @@ fi
 # is a deliberate compatibility decision; this guard exists so that decision
 # cannot be made by accident, e.g. by bumping a cross image. Systems below it
 # should use the musl builds, which are static and carry no glibc requirement.
+#
+# docs/installing-mise.md records which distros this floor covers and when each
+# one leaves standard support, i.e. when raising it becomes defensible.
 GLIBC_FLOOR=2.18
 
 case "$RUST_TRIPLE" in

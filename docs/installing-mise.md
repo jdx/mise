@@ -156,6 +156,35 @@ require **glibc 2.18 or newer**. On systems with an older glibc, or with a diffe
 libc such as Alpine's musl, use the matching `-musl` build instead: those are static
 and have no libc requirement.
 
+::: details When this floor may change
+
+mise raises the floor only after every distro below the new one has reached the end of
+its vendor's **standard** support. Paid extended-support programs (Ubuntu ESM, RHEL ELS,
+SUSE LTSS) don't count toward this — those users can switch to a `-musl` build, which has
+no glibc requirement at all.
+
+| glibc  | Distros                                                | Standard support ends                    |
+| ------ | ------------------------------------------------------ | ---------------------------------------- |
+| ≤ 2.27 | RHEL 7, Ubuntu 16.04 / 18.04, Debian 9, Amazon Linux 2 | ended (last: Amazon Linux 2, 2026-06-30) |
+| 2.28   | Debian 10                                              | ended 2024-06-30                         |
+| 2.28   | RHEL 8, Rocky 8, AlmaLinux 8                           | 2029-05-31                               |
+| 2.31   | Ubuntu 20.04, Debian 11                                | ended (last: Debian 11, 2026-08-31)      |
+| 2.34   | Amazon Linux 2023                                      | 2029-06-30                               |
+| 2.34   | RHEL 9, Rocky 9, AlmaLinux 9                           | 2032-05-31                               |
+| 2.35   | Ubuntu 22.04                                           | 2027-06-01                               |
+
+Read as a schedule — a floor of _X_ requires everything below _X_ to be out of support:
+
+- **2.28** is already clear; nothing still in standard support sits below it.
+- **2.31 and 2.34** open up once RHEL 8 ends on **2029-05-31**.
+- **2.35 and above** wait for RHEL 9 on **2032-05-31**.
+
+This records when mise _may_ raise the floor, not when it will. The floor is 2.18 today
+and there is no plan to move it. Distros not listed here follow the same rule; if one
+ships an older glibc, use a `-musl` build.
+
+:::
+
 If you need something else, compile it with `cargo install mise` (see below).
 
 ### apk
