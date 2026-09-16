@@ -7,7 +7,8 @@ use std::path::{Component, Path, PathBuf};
 use eyre::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::backend::{Backend, BackendType};
+use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::install_context::InstallContext;
 use crate::system::sudo;
 use crate::toolset::{ToolVersion, install_state};
@@ -18,6 +19,7 @@ const HELPER: &str = "__publish-system-install";
 pub(crate) fn early_main() -> Option<std::process::ExitCode> {
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new(HELPER)) {
         let result = if sudo::is_root() {
+            nix::sys::stat::umask(nix::sys::stat::Mode::from_bits_truncate(0o022));
             apply(BufReader::new(std::io::stdin().lock()))
         } else {
             Err(eyre::eyre!("the system installation helper requires root"))
@@ -153,6 +155,7 @@ fn publish(input: impl Read) -> Result<()> {
 
 /// Serialize as the user: root never opens a user-controlled source path.
 fn archive(source: &Path, output: impl Write) -> Result<()> {
+    let source = &fs::canonicalize(source)?;
     let mut archive = jdx_tar::Builder::new(output);
     for entry in walkdir::WalkDir::new(source)
         .min_depth(1)
@@ -164,6 +167,7 @@ fn archive(source: &Path, output: impl Write) -> Result<()> {
         if entry.file_type().is_symlink() {
             let mut target = fs::read_link(path)?;
             if target.is_absolute() {
+                target = fs::canonicalize(&target).unwrap_or(target);
                 let within = target.strip_prefix(source).map_err(|_| {
                     eyre::eyre!("cannot relocate external symlink {}", path.display())
                 })?;
@@ -231,8 +235,14 @@ fn validate_directory(path: &Path, owner: u32) -> Result<()> {
         "system destination must be an absolute non-root directory"
     );
     for ancestor in path.ancestors() {
-        match fs::metadata(ancestor) {
-            Ok(metadata) => {
+        match fs::symlink_metadata(ancestor) {
+            Ok(link_metadata) => {
+                ensure!(
+                    link_metadata.uid() == owner || link_metadata.uid() == 0,
+                    "refusing system installation through a user-owned path: {}",
+                    ancestor.display()
+                );
+                let metadata = fs::metadata(ancestor)?;
                 ensure!(
                     metadata.is_dir()
                         && (metadata.uid() == owner || metadata.uid() == 0)
@@ -262,6 +272,23 @@ fn validate_directory(path: &Path, owner: u32) -> Result<()> {
     Ok(())
 }
 
+fn create_directory(path: &Path, owner: u32) -> Result<()> {
+    validate_directory(path, owner)?;
+    let missing = path
+        .ancestors()
+        .take_while(|p| !p.exists())
+        .collect::<Vec<_>>();
+    for directory in missing.into_iter().rev() {
+        match fs::create_dir(directory) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(err) => return Err(err.into()),
+        }
+        validate_directory(directory, owner)?;
+    }
+    Ok(())
+}
+
 fn apply(input: impl BufRead) -> Result<()> {
     apply_for_owner(input, 0)
 }
@@ -273,8 +300,7 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
     let directory = match &request {
         Request::Install { directory, .. } | Request::Links { directory, .. } => directory,
     };
-    validate_directory(directory, owner)?;
-    fs::create_dir_all(directory)?;
+    create_directory(directory, owner)?;
     let directory = fs::canonicalize(directory)?;
     let lock_path = directory.join(".mise-publish.lock");
     ensure!(
@@ -296,8 +322,7 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
                 "invalid tool or version directory"
             );
             let tool_dir = directory.join(&tool);
-            validate_directory(&tool_dir, owner)?;
-            fs::create_dir_all(&tool_dir)?;
+            create_directory(&tool_dir, owner)?;
             let stage = tempfile::tempdir_in(&tool_dir)?;
             let tree = stage.path().join("new");
             fs::create_dir(&tree)?;
@@ -341,16 +366,30 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
                 fs::rename(&destination, &backup)?;
             }
             if let Err(err) = fs::rename(&tree, &destination) {
-                if exists {
-                    fs::rename(&backup, &destination)?;
+                if exists && let Err(rollback) = fs::rename(&backup, &destination) {
+                    let recovery = stage.keep();
+                    bail!(
+                        "publication failed: {err}; rollback failed: {rollback}; previous installation retained in {}",
+                        recovery.display()
+                    );
                 }
                 return Err(err.into());
             }
             if let Err(err) = tool_metadata.commit().and_then(|()| metadata.commit()) {
                 // Keep the previous tool usable when metadata publication fails.
-                fs::rename(&destination, &tree)?;
-                if exists {
-                    fs::rename(&backup, &destination)?;
+                let rollback = fs::rename(&destination, &tree).and_then(|()| {
+                    if exists {
+                        fs::rename(&backup, &destination)
+                    } else {
+                        Ok(())
+                    }
+                });
+                if let Err(rollback) = rollback {
+                    let recovery = stage.keep();
+                    bail!(
+                        "metadata publication failed: {err}; rollback failed: {rollback}; recovery files retained in {}",
+                        recovery.display()
+                    );
                 }
                 return Err(err);
             }
@@ -446,6 +485,11 @@ mod tests {
         assert!(safe_link(Path::new("bin/tool"), Path::new("/etc/passwd")).is_err());
         let source = tempfile::tempdir()?;
         fs::write(source.path().join("tool"), "binary")?;
+        fs::set_permissions(
+            source.path().join("tool"),
+            fs::Permissions::from_mode(0o6755),
+        )?;
+        fs::create_dir(source.path().join("empty"))?;
         symlink(source.path().join("tool"), source.path().join("alias"))?;
         let mut bytes = Vec::new();
         archive(source.path(), &mut bytes)?;
@@ -455,6 +499,11 @@ mod tests {
         assert_eq!(
             fs::read_link(output.path().join("alias"))?,
             Path::new("tool")
+        );
+        assert!(output.path().join("empty").is_dir());
+        assert_eq!(
+            fs::metadata(output.path().join("tool"))?.mode() & 0o7777,
+            0o755
         );
         let destination = tempfile::tempdir()?;
         let root = destination.path().join("installs");
@@ -492,6 +541,15 @@ mod tests {
         drop(archive);
         assert!(apply_for_owner(&malicious[..], owner).is_err());
         assert_eq!(fs::read_to_string(root.join("uv/1/tool"))?, "binary");
+        let request = Request::Links {
+            directory: root.join("uv"),
+            links: vec![("latest".into(), PathBuf::from("./1"))],
+        };
+        let mut links = serde_json::to_vec(&request)?;
+        links.push(b'\n');
+        apply_for_owner(&links[..], owner)?;
+        apply_for_owner(&links[..], owner)?;
+        assert_eq!(fs::read_to_string(root.join("uv/latest/tool"))?, "binary");
         fs::set_permissions(&root, fs::Permissions::from_mode(0o777))?;
         assert!(validate_directory(&root, owner).is_err());
         Ok(())
