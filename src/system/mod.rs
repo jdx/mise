@@ -1744,7 +1744,27 @@ pub(crate) fn packages_from_specs_with_config(
     specs: &[String],
     config: Option<&Config>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    let brew_taps = config.map(brew_taps_from_config).unwrap_or_default();
+    match config {
+        Some(config) => packages_from_specs_with_config_files(specs, &config.config_files),
+        None => packages_from_specs_with_config_files(specs, &ConfigMap::default()),
+    }
+}
+
+fn packages_from_specs_with_config_files(
+    specs: &[String],
+    config_files: &ConfigMap,
+) -> eyre::Result<Vec<ManagerPackages>> {
+    let brew_taps = brew_taps_from_config_files(config_files);
+    // Naming a package explicitly scopes the run; it does not opt out of that
+    // package's configuration. Without this, `mise bootstrap packages apply
+    // brew-cask:foo` dropped the adopt options and replaced the app bundle,
+    // which is the one outcome `adopt` exists to avoid.
+    #[cfg(unix)]
+    let brew_adopt = brew_adopt_from_config_files(config_files);
+    #[cfg(unix)]
+    let declared = package_configs_from_config_files(config_files);
+    #[cfg(unix)]
+    let mut cask_adopt = BTreeSet::new();
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
@@ -1754,6 +1774,10 @@ pub(crate) fn packages_from_specs_with_config(
         } else {
             None
         };
+        #[cfg(unix)]
+        if mgr == "brew-cask" && declared_cask_adopt(&declared, spec, &name).unwrap_or(brew_adopt) {
+            cask_adopt.insert(name.clone());
+        }
         let requests = by_mgr.entry(mgr).or_default();
         let request = PackageRequest {
             name,
@@ -1765,7 +1789,38 @@ pub(crate) fn packages_from_specs_with_config(
             requests.push(request);
         }
     }
-    resolve_managers(by_mgr, IndexMap::new(), true)
+    #[cfg(unix)]
+    let options = if cask_adopt.is_empty() {
+        IndexMap::new()
+    } else {
+        IndexMap::from([(
+            "brew-cask".to_string(),
+            ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+        )])
+    };
+    #[cfg(not(unix))]
+    let options = IndexMap::new();
+    resolve_managers(by_mgr, options, true)
+}
+
+/// Per-package `adopt` for an explicitly named spec. A CLI argument is usually
+/// written exactly as the config key (`brew-cask:foo`), but may omit a tap
+/// qualifier the config carries, so fall back to matching on the package name.
+#[cfg(unix)]
+fn declared_cask_adopt(
+    declared: &IndexMap<String, PackageTomlConfig>,
+    spec: &str,
+    name: &str,
+) -> Option<bool> {
+    if let Some(package) = declared.get(spec) {
+        return package.adopt();
+    }
+    declared.iter().find_map(|(key, package)| {
+        let (mgr, declared_name) = key.split_once(':')?;
+        (mgr == "brew-cask" && declared_name == name)
+            .then(|| package.adopt())
+            .flatten()
+    })
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -2075,6 +2130,68 @@ mod tests {
         assert_eq!(casks.requests.len(), 2);
         assert!(casks.options.brew_cask_adopt("textmate"));
         assert!(!casks.options.brew_cask_adopt("replace-me"));
+        Ok(())
+    }
+
+    /// Explicitly named specs must carry the same adopt options the config
+    /// declares. They previously resolved with an empty option map, so
+    /// `mise bootstrap packages apply brew-cask:foo` replaced the app bundle
+    /// even with `adopt = true` set.
+    #[cfg(unix)]
+    #[test]
+    fn test_brew_cask_adopt_option_reaches_explicit_specs() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.brew]
+                adopt = true
+
+                [bootstrap.packages]
+                "brew-cask:textmate" = "latest"
+                "brew-cask:replace-me" = { adopt = false }
+            "#,
+        )])?;
+
+        let specs = [
+            "brew-cask:textmate".to_string(),
+            "brew-cask:replace-me".to_string(),
+            "brew-cask:not-declared".to_string(),
+        ];
+        let packages = packages_from_specs_with_config_files(&specs, &config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(casks.requests.len(), 3);
+        // declared, inherits [bootstrap.brew] adopt
+        assert!(casks.options.brew_cask_adopt("textmate"));
+        // declared with an explicit override, which must win over the global
+        assert!(!casks.options.brew_cask_adopt("replace-me"));
+        // not declared at all, so it falls back to the global default
+        assert!(casks.options.brew_cask_adopt("not-declared"));
+        Ok(())
+    }
+
+    /// Without any adopt configuration, explicit specs carry no options, which
+    /// keeps the default "replace" behaviour for anyone not opting in.
+    #[cfg(unix)]
+    #[test]
+    fn test_explicit_specs_without_adopt_config_carry_no_options() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:textmate" = "latest"
+            "#,
+        )])?;
+
+        let specs = ["brew-cask:textmate".to_string()];
+        let packages = packages_from_specs_with_config_files(&specs, &config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert!(!casks.options.brew_cask_adopt("textmate"));
         Ok(())
     }
 
