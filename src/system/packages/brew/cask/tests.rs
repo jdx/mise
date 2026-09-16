@@ -5553,6 +5553,19 @@ fn binary_targets_default_to_prefix_bin() -> Result<()> {
         binary_target_path("$HOMEBREW_PREFIX/bin/op", Path::new("/Applications"))?,
         tmp.path().join("bin/op")
     );
+    for relative in [
+        "share/zsh/site-functions/_widget",
+        "etc/bash_completion.d/widget",
+        "share/fish/vendor_completions.d/widget.fish",
+    ] {
+        assert_eq!(
+            binary_target_path(
+                &format!("$HOMEBREW_PREFIX/{relative}"),
+                Path::new("/Applications")
+            )?,
+            tmp.path().join(relative)
+        );
+    }
     Ok(())
 }
 
