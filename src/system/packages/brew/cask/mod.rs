@@ -701,13 +701,10 @@ impl BrewCaskManager {
             ))
             .await?;
         }
-        // brew-cask defers to Homebrew by token, which macos-app cannot do.
-        // Checked before the download so a conflict costs nothing, and before
-        // the dry-run return so a plan reports it.
+        // brew-cask defers to Homebrew by token, which macos-app cannot do: the
+        // conflict is at the shared app directory, not the token. Decided in
+        // install_app, where the staged bundle is available to compare against.
         let require_unowned_targets = requires_unowned_targets(&cask, installed_version.as_deref());
-        if require_unowned_targets && !manager_options.brew_cask_adopt(&req.name) {
-            ensure_app_targets_are_unowned(cask.manager, &artifacts.apps)?;
-        }
         if opts.dry_run {
             artifacts.print_install_plan(&cask)?;
             return Ok(cask.version);
@@ -1278,7 +1275,19 @@ fn install_app(
     // Re-checked at the last possible moment, against the verified directory
     // descriptor rather than a pathname, so nothing that appears during the
     // download is silently replaced.
-    if require_unowned && !adopt && exists_at(&parent.fd, &name)? {
+    //
+    // A bundle identical to the one being installed is this entry's own work —
+    // an attempt interrupted after placing it, before its receipt was written —
+    // so a retry may proceed. Anything else belongs to someone: Homebrew,
+    // another declaration, or a person. Comparing content rather than consulting
+    // transaction state is what makes a retry safe: the journal is written
+    // before the bundle exists, and the window between placing one and
+    // recording it can never be closed.
+    if require_unowned
+        && !adopt
+        && exists_at(&parent.fd, &name)?
+        && cask_target_fingerprint(&source)? != cask_target_fingerprint(&logical_target)?
+    {
         return Err(unowned_target_error(manager, &logical_target));
     }
     if adopt && exists_at(&parent.fd, &name)? {
@@ -1339,18 +1348,15 @@ fn install_app(
 /// Whether this entry must refuse to replace whatever is at its app target.
 ///
 /// Only for managers that do not share Homebrew's Caskroom, and only when mise
-/// has no sign of already owning the install.
+/// holds no receipt for the install — a receipt means this entry owns what is
+/// at the target and an upgrade may replace it.
 ///
-/// An interrupted transaction that recorded an `app[..]` action is such a sign:
-/// this entry placed that bundle, so a retry may replace it, and refusing would
-/// make an interrupted install unretryable without deleting the app by hand.
-/// A merely *pending* journal is not — it is written before the bundle exists,
-/// so claiming the target on that basis would let a retry replace an app that
-/// appeared while the first attempt was staging.
+/// Without a receipt, whether the bundle at the target is ours is decided by
+/// comparing it against what we are installing, in [`install_app`]. Transaction
+/// state cannot answer it: a journal is written before the bundle exists, and
+/// the window between placing one and recording it is never zero.
 fn requires_unowned_targets(cask: &Cask, installed_version: Option<&str>) -> bool {
-    !cask.manager.uses_homebrew_caskroom()
-        && installed_version.is_none()
-        && !mise_install_placed_app(cask)
+    !cask.manager.uses_homebrew_caskroom() && installed_version.is_none()
 }
 
 fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
@@ -1362,27 +1368,6 @@ fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
         manager.label(),
         target.display()
     )
-}
-
-/// Refuse to replace an app bundle this entry does not already own.
-///
-/// `brew-cask` avoids clobbering Homebrew by checking whether Homebrew owns the
-/// token. `macos-app` cannot: the conflict is at the shared app directory, not
-/// the token, and a declaration may name any bundle — `macos-app:nuvio` can
-/// target an app that a cask called something else installed.
-///
-/// Whoever the other owner is — Homebrew, another declaration, or a hand
-/// install — replacing the bundle leaves their record pointing at an app they
-/// no longer control, and costs the app its macOS TCC grants. Adoption is the
-/// documented way to take one over, so require it explicitly.
-fn ensure_app_targets_are_unowned(manager: CaskManager, apps: &[AppArtifact]) -> Result<()> {
-    for app in apps {
-        let target = app_target_path(app.target_name()?)?;
-        if target.symlink_metadata().is_ok() {
-            return Err(unowned_target_error(manager, &target));
-        }
-    }
-    Ok(())
 }
 
 fn validate_adoptable_apps(manager: CaskManager, stage: &Path, apps: &[AppArtifact]) -> Result<()> {

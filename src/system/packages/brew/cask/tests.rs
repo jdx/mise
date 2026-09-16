@@ -8541,35 +8541,6 @@ fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
 }
 
 #[test]
-fn macos_app_refuses_to_replace_an_app_it_does_not_own() -> Result<()> {
-    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
-    let appdir = tempfile::tempdir()?;
-    let mut guard = EnvVarGuard::new();
-    guard.set(APP_DIR_ENV, appdir.path());
-
-    let apps = vec![AppArtifact {
-        source: "Nuvio.app".to_string(),
-        target: None,
-    }];
-
-    // Nothing at the target: a fresh install is fine.
-    ensure_app_targets_are_unowned(CaskManager::MacosApp, &apps)?;
-
-    // Something else already owns /Applications/Nuvio.app — Homebrew, another
-    // declaration, or a hand install. Separate receipt roots do not make this
-    // safe: replacing it strands the other owner's record and costs the app
-    // its TCC grants.
-    file::create_dir_all(appdir.path().join("Nuvio.app"))?;
-    let err = ensure_app_targets_are_unowned(CaskManager::MacosApp, &apps)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("already exists"), "{err}");
-    assert!(err.contains("adopt = true"), "{err}");
-    assert!(err.starts_with("macos-app:"), "{err}");
-    Ok(())
-}
-
-#[test]
 fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()> {
     let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
@@ -8611,54 +8582,85 @@ fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()>
 }
 
 #[test]
-fn an_interrupted_macos_app_install_can_be_retried() -> Result<()> {
+fn macos_app_refuses_a_target_whose_content_is_not_ours() -> Result<()> {
     let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
-    let tmp = tempfile::tempdir()?;
-    let _guard = BrewPrefixGuard::set(tmp.path());
-
-    let spec = crate::system::AppSpec {
-        url: "https://example.com/Nuvio.dmg".to_string(),
-        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
-        artifact: "Nuvio.app".to_string(),
-        version: "1.1.20".to_string(),
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let stage = root.join("stage");
+    let caskroom = root.join("Caskroom/example/1.0.0");
+    file::create_dir_all(stage.join("Example.app/Contents"))?;
+    crate::file::write(stage.join("Example.app/Contents/app"), "ours")?;
+    let target = root.join("Applications/Example.app/Contents");
+    file::create_dir_all(&target)?;
+    crate::file::write(target.join("app"), "theirs")?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
-    let cask = declared_app_cask("nuvio", &spec)?;
 
-    // Nothing recorded and nothing pending: a bundle at the target belongs to
-    // someone else, so refuse to replace it.
-    assert!(requires_unowned_targets(&cask, None));
+    // A bundle that differs from the one being installed belongs to someone:
+    // Homebrew, another declaration, or a person. Refuse and leave it alone.
+    let err = install_app(
+        &stage,
+        &caskroom,
+        &app,
+        AppInstallOptions {
+            manager: CaskManager::MacosApp,
+            require_unowned: true,
+            keep_caskroom_copy: true,
+            adopt: false,
+            verify_adopt: false,
+            defer_if_running: false,
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("already exists"), "{err}");
+    assert!(err.starts_with("macos-app:"), "{err}");
+    assert_eq!(crate::file::read_to_string(target.join("app"))?, "theirs");
+    Ok(())
+}
 
-    // Already installed by this entry: replacing on upgrade is fine.
-    assert!(!requires_unowned_targets(&cask, Some("1.1.19")));
-
-    let state_dir = tmp.path().join(".mise-test-state");
-
-    // Interrupted before the bundle was placed: the journal exists but records
-    // no app action. It proves only that an attempt started, so it must NOT
-    // claim the target — an app that appeared while the first attempt was
-    // staging would otherwise be replaced.
-    let mut journal = CaskTransactionJournal {
-        schema_version: 1,
-        token: "nuvio",
-        version: "1.1.20",
-        completed: Vec::new(),
+// The accept path copies the bundle, which needs `ditto`; macOS only.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_app_accepts_a_target_identical_to_what_it_installs() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let stage = root.join("stage");
+    let caskroom = root.join("Caskroom/example/1.0.0");
+    file::create_dir_all(stage.join("Example.app/Contents"))?;
+    crate::file::write(stage.join("Example.app/Contents/app"), "ours")?;
+    let target = root.join("Applications/Example.app/Contents");
+    file::create_dir_all(&target)?;
+    crate::file::write(target.join("app"), "ours")?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
-    write_cask_journal_in(&state_dir, CaskManager::MacosApp, &journal)?;
-    assert!(!mise_install_placed_app(&cask));
-    assert!(requires_unowned_targets(&cask, None));
 
-    // Interrupted after install_app placed the bundle and recorded it. That
-    // leftover is this entry's own, so the retry must not demand adopt = true.
-    journal.completed.push("app[0]".to_string());
-    write_cask_journal_in(&state_dir, CaskManager::MacosApp, &journal)?;
-    assert!(mise_install_placed_app(&cask));
-    assert!(!requires_unowned_targets(&cask, None));
-
-    // The same record under brew-cask is a different install and must not
-    // excuse the macos-app entry.
-    remove_cask_journals_in(&state_dir, CaskManager::MacosApp, "nuvio")?;
-    write_cask_journal_in(&state_dir, CaskManager::BrewCask, &journal)?;
-    assert!(!mise_install_placed_app(&cask));
-    assert!(requires_unowned_targets(&cask, None));
+    // An identical bundle is this entry's own work: an attempt interrupted
+    // after placing it but before its receipt landed. The retry proceeds, and
+    // does not depend on whether the journal happened to be written first —
+    // that window can never be closed.
+    assert!(matches!(
+        install_app(
+            &stage,
+            &caskroom,
+            &app,
+            AppInstallOptions {
+                manager: CaskManager::MacosApp,
+                require_unowned: true,
+                keep_caskroom_copy: true,
+                adopt: false,
+                verify_adopt: false,
+                defer_if_running: false,
+            },
+        )?,
+        AppInstall::Installed { .. }
+    ));
     Ok(())
 }
