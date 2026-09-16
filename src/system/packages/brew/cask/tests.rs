@@ -8533,3 +8533,32 @@ fn macos_app_status_ignores_a_same_named_homebrew_cask() -> Result<()> {
     ));
     Ok(())
 }
+
+#[test]
+fn macos_app_refuses_to_replace_an_app_it_does_not_own() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let appdir = tempfile::tempdir()?;
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, appdir.path());
+
+    let apps = vec![AppArtifact {
+        source: "Nuvio.app".to_string(),
+        target: None,
+    }];
+
+    // Nothing at the target: a fresh install is fine.
+    ensure_app_targets_are_unowned(CaskManager::MacosApp, &apps)?;
+
+    // Something else already owns /Applications/Nuvio.app — Homebrew, another
+    // declaration, or a hand install. Separate receipt roots do not make this
+    // safe: replacing it strands the other owner's record and costs the app
+    // its TCC grants.
+    file::create_dir_all(appdir.path().join("Nuvio.app"))?;
+    let err = ensure_app_targets_are_unowned(CaskManager::MacosApp, &apps)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("already exists"), "{err}");
+    assert!(err.contains("adopt = true"), "{err}");
+    assert!(err.starts_with("macos-app:"), "{err}");
+    Ok(())
+}

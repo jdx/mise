@@ -701,6 +701,15 @@ impl BrewCaskManager {
             ))
             .await?;
         }
+        // brew-cask defers to Homebrew by token, which macos-app cannot do.
+        // Checked before the download so a conflict costs nothing, and before
+        // the dry-run return so a plan reports it.
+        if !cask.manager.uses_homebrew_caskroom()
+            && !manager_options.brew_cask_adopt(&req.name)
+            && installed_version.is_none()
+        {
+            ensure_app_targets_are_unowned(cask.manager, &artifacts.apps)?;
+        }
         if opts.dry_run {
             artifacts.print_install_plan(&cask)?;
             return Ok(cask.version);
@@ -1314,6 +1323,34 @@ fn install_app(
     Ok(AppInstall::Installed {
         metadata_only: !keep_caskroom_copy,
     })
+}
+
+/// Refuse to replace an app bundle this entry does not already own.
+///
+/// `brew-cask` avoids clobbering Homebrew by checking whether Homebrew owns the
+/// token. `macos-app` cannot: the conflict is at the shared app directory, not
+/// the token, and a declaration may name any bundle — `macos-app:nuvio` can
+/// target an app that a cask called something else installed.
+///
+/// Whoever the other owner is — Homebrew, another declaration, or a hand
+/// install — replacing the bundle leaves their record pointing at an app they
+/// no longer control, and costs the app its macOS TCC grants. Adoption is the
+/// documented way to take one over, so require it explicitly.
+fn ensure_app_targets_are_unowned(manager: CaskManager, apps: &[AppArtifact]) -> Result<()> {
+    for app in apps {
+        let target = app_target_path(app.target_name()?)?;
+        if target.symlink_metadata().is_ok() {
+            bail!(
+                "{}: '{}' already exists and is not managed by this entry; \
+                 set adopt = true to take it over in place. Replacing it would \
+                 revoke the app's macOS Privacy & Security grants (Accessibility, \
+                 Screen Recording, Full Disk Access, etc.)",
+                manager.label(),
+                target.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn validate_adoptable_apps(manager: CaskManager, stage: &Path, apps: &[AppArtifact]) -> Result<()> {

@@ -88,6 +88,21 @@ cask exists — it tracks versions for you.
 Homebrew's Caskroom, so `macos-app:<name>` and `brew-cask:<name>` are
 independent and never contend for the same install record.
 
+They can still contend for the same *app*, though: `/Applications` is shared,
+and a declaration may name any bundle. So `macos-app` refuses to install over an
+app it does not already own — whether that app came from Homebrew, another
+declaration, or a manual install:
+
+```
+macos-app:nuvio: '/Applications/Nuvio.app' already exists and is not managed by
+this entry; set adopt = true to take it over in place.
+```
+
+Set `adopt = true` to take it over without replacing the bundle. This is
+deliberately stricter than `brew-cask`, which warns and replaces: replacing a
+bundle strands the other owner's install record and makes macOS revoke the
+app's Privacy & Security grants.
+
 ## Host packages or mise tools
 
 Host package declarations can include version constraints where the manager
