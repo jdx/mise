@@ -79,7 +79,7 @@ fn complete_spec(
         candidates,
         files: answer.files.then_some(usage_rs::complete::Files::Any),
     };
-    Ok(usage_rs::complete::render(&answer, request.shell))
+    Ok(usage_rs::complete::render_request(&answer, request))
 }
 
 /// Generate shell completions
@@ -309,6 +309,40 @@ mod shell_name_tests {
         .collect();
         let answer = usage_spec_request(&argv).unwrap().unwrap();
         assert!(answer.contains("--from-spec"), "{answer}");
+    }
+
+    #[test]
+    fn a_bash_answer_reports_the_colon_prefix_readline_keeps() {
+        // Bash's default COMP_WORDBREAKS contains `:`, so Readline replaces only `no` in
+        // `mise update:deps:no<TAB>`. The answer has to name the `update:deps:` prefix it
+        // keeps, or the generated wrapper inserts the full candidate after it and produces
+        // `update:deps:update:deps:no-cooldown`.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tasks.kdl");
+        std::fs::write(
+            &path,
+            "name \"mise\"\ncmd \"update:deps\"\ncmd \"update:deps:no-cooldown\"\n",
+        )
+        .unwrap();
+        let encoded = crate::packslip::completions::encode_spec_path(&path);
+        let argv: Vec<OsString> = [
+            "__usage_complete_word",
+            &encoded,
+            "--shell",
+            "bash",
+            "--line",
+            "mise update:deps:no",
+            "--bash-word",
+            "no",
+            "--bash-wordbreaks",
+            " \t\n\"'><=;|&(:",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = usage_spec_request(&argv).unwrap().unwrap();
+        assert!(answer.contains("update:deps:no-cooldown"), "{answer}");
+        assert!(answer.contains("\u{1}prefix\tupdate:deps:\n"), "{answer:?}");
     }
 
     #[test]
