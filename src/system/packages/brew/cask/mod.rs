@@ -633,7 +633,13 @@ impl BrewCaskManager {
         }
         prefix::bootstrap(false)?;
         let stage = fetch_and_stage(&cask, pr).await?;
-        let adopt = manager_options.brew_cask_adopt(&cask.token) && installed_version.is_none();
+        // Requests carry the name the user wrote; `cask.token` is what the cask
+        // metadata calls itself. Those differ for a trusted alias or an old
+        // token, so an adoption opt-in under either spelling counts. Missing it
+        // would replace the bundle and cost the app its macOS TCC grants.
+        let adopt = (manager_options.brew_cask_adopt(&req.name)
+            || manager_options.brew_cask_adopt(&cask.token))
+            && installed_version.is_none();
         if adopt && !cask.auto_updates {
             validate_adoptable_apps(&stage, &artifacts.apps)?;
         }
