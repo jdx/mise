@@ -244,7 +244,7 @@ impl Backend for SwiftPlugin {
         if target.libc() == Some("musl") {
             bail!("swift does not publish musl builds");
         }
-        let url = url(tv, target, &resolve_platform(tv, target).await);
+        let url = url(tv, target, &resolve_platform(tv, target).await?);
         // Which distros are published changes from release to release —
         // `debian12` first appears in 5.10, `ubuntu20.04` is gone by 6.3 — so
         // ask rather than encode a matrix that would go stale. This keeps a
@@ -304,7 +304,7 @@ impl Backend for SwiftPlugin {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let target = PlatformTarget::from_current();
-        let url = url(&tv, &target, &resolve_platform(&tv, &target).await);
+        let url = url(&tv, &target, &resolve_platform(&tv, &target).await?);
         let tarball_path = self.download(&tv, &url, ctx.pr.as_ref()).await?;
         if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
             self.verify_gpg(ctx, &url, &tarball_path).await?;
@@ -343,17 +343,18 @@ fn platform_directory(target: &PlatformTarget, platform: &str) -> String {
 /// targets. Letting it through for every target would build URLs like
 /// `.../ubi9/swift-6.3.1-RELEASE-ubi9.pkg` for macOS as soon as the setting is
 /// configured repo-wide.
-async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> String {
+async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> Result<String> {
     match target.os_name() {
-        "macos" => "osx".to_string(),
-        "windows" => "windows10".to_string(),
+        "macos" => Ok("osx".to_string()),
+        "windows" => Ok("windows10".to_string()),
         _ => {
             if let Some(pinned) = &Settings::get().swift.platform {
-                return pinned.clone();
+                return Ok(pinned.clone());
             }
+            let arch = api_arch(target);
             let host = host_distro(target);
             match fetch_linux_builds(&tv.version).await {
-                Ok(builds) => match select_build(&builds, &host, api_arch(target)) {
+                Ok(builds) => match select_build(&builds, &host, arch) {
                     Some((build, fit)) => {
                         // Only warn about the host actually being installed to;
                         // `mise lock` resolves other platforms on assumptions
@@ -361,9 +362,15 @@ async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> String {
                         if target.is_current() {
                             warn_about_fit(&tv.version, &host, build, fit);
                         }
-                        build.token.clone()
+                        Ok(build.token.clone())
                     }
-                    None => host.label(),
+                    // The index lists the release and it has nothing for this
+                    // architecture — swift.org has only ever built Linux
+                    // x86_64 and aarch64. Say so instead of downloading a URL
+                    // that cannot exist; the direct install path has no HEAD
+                    // check to catch it, so otherwise this surfaces as a 404
+                    // against swift.org's error page.
+                    None => bail!("swift {} publishes no Linux build for {arch}", tv.version),
                 },
                 // Offline, or a release the index does not list. The host label
                 // is what the distro calls itself, which is the right guess
@@ -371,7 +378,7 @@ async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> String {
                 // already downloaded still succeeds.
                 Err(err) => {
                     debug!("swift: could not read the release index: {err:#}");
-                    host.label()
+                    Ok(host.label())
                 }
             }
         }
@@ -1012,6 +1019,25 @@ mod platform_selection_tests {
         );
     }
 
+    /// swift.org has only ever built Linux x86_64 and aarch64, so nothing is
+    /// selected for any other architecture. `resolve_platform` turns that into
+    /// an error naming the architecture, rather than a 404 against swift.org's
+    /// error page.
+    #[test]
+    fn an_unsupported_architecture_selects_nothing() {
+        for arch in ["riscv64", "loongarch64", "x86"] {
+            assert!(
+                select_build(
+                    &builds("6.3.3"),
+                    &host("ID=ubuntu\nVERSION_ID=\"24.04\"\n"),
+                    arch
+                )
+                .is_none(),
+                "{arch} should select nothing"
+            );
+        }
+    }
+
     /// The lockfile label names the machine, not the artifact, so it stays put
     /// as swift.org's published set moves underneath it.
     #[test]
@@ -1197,9 +1223,12 @@ mod lockfile_tests {
         let backend = SwiftPlugin::new();
         let tv = tool_version(&backend, "6.3.1");
 
-        assert_eq!(resolve_platform(&tv, &target("macos-arm64")).await, "osx");
         assert_eq!(
-            resolve_platform(&tv, &target("windows-x64")).await,
+            resolve_platform(&tv, &target("macos-arm64")).await.unwrap(),
+            "osx"
+        );
+        assert_eq!(
+            resolve_platform(&tv, &target("windows-x64")).await.unwrap(),
             "windows10"
         );
     }
