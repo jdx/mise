@@ -351,6 +351,13 @@ async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> Result<S
             if let Some(pinned) = &Settings::get().swift.platform {
                 return Ok(pinned.clone());
             }
+            // Every published Linux build links against glibc. `mise lock`
+            // already refuses musl targets; without the same check here an
+            // Alpine host resolves to a real UBI URL and downloads ~1GB of a
+            // toolchain that cannot run.
+            if target.libc() == Some("musl") {
+                bail!("swift does not publish musl builds");
+            }
             let arch = api_arch(target);
             let host = host_distro(target);
             match fetch_linux_builds(&tv.version).await {
@@ -372,13 +379,14 @@ async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> Result<S
                     // against swift.org's error page.
                     None => bail!("swift {} publishes no Linux build for {arch}", tv.version),
                 },
-                // Offline, or a release the index does not list. The host label
-                // is what the distro calls itself, which is the right guess
-                // often enough to be worth trying, and an install that is
-                // already downloaded still succeeds.
+                // Offline, or a release the index does not list. Fall back to
+                // the family's last known build: it may be stale, but it is a
+                // token swift.org has really published, so a tarball already in
+                // the download cache is still found. A host label is not —
+                // an unrecognized distro labels itself `ubi`, which is nothing.
                 Err(err) => {
                     debug!("swift: could not read the release index: {err:#}");
-                    Ok(host.label())
+                    Ok(host.family.offline_token().to_string())
                 }
             }
         }
@@ -395,11 +403,16 @@ fn host_distro(target: &PlatformTarget) -> HostDistro {
             family: Family::Ubuntu,
             version: Some(DistroVersion::new(DEFAULT_UBUNTU_VERSION)),
             family_is_fallback: false,
+            id: format!("ubuntu {DEFAULT_UBUNTU_VERSION}"),
         };
     }
-    linux_os_release()
+    let os_release = linux_os_release();
+    os_release
         .and_then(HostDistro::from_os_release)
-        .unwrap_or_else(HostDistro::unrecognized)
+        .unwrap_or_else(|| {
+            let id = os_release.map(os_release_id).unwrap_or_default();
+            HostDistro::unrecognized(id)
+        })
 }
 
 /// swift.org's machine-readable index of what each release ships: which
@@ -462,6 +475,20 @@ impl Family {
             "amzn" => Some(Family::AmazonLinux),
             "rhel" | "ubi" | "centos" | "rocky" | "almalinux" | "ol" => Some(Family::Ubi),
             _ => None,
+        }
+    }
+
+    /// The newest build this family had when this was written, used only when
+    /// the release index cannot be read. It may be stale — that is the point
+    /// of reading the index — but it is a token swift.org has really
+    /// published, which a host label is not.
+    fn offline_token(self) -> &'static str {
+        match self {
+            Family::Ubuntu => "ubuntu24.04",
+            Family::Debian => "debian12",
+            Family::Fedora => "fedora41",
+            Family::AmazonLinux => "amazonlinux2023",
+            Family::Ubi => "ubi9",
         }
     }
 
@@ -562,16 +589,30 @@ struct HostDistro {
     /// True when `family` is a stand-in because this distro is not one
     /// swift.org builds for, which makes the choice worth reporting.
     family_is_fallback: bool,
+    /// How the machine names itself, for messages. The family and version are
+    /// normalized for matching; this is not, so a warning can say `omarchy
+    /// 4.0.1rc2` rather than the family it was bucketed into.
+    id: String,
 }
 
 impl HostDistro {
     /// A distro swift.org has never heard of: Arch, Gentoo, openSUSE, NixOS.
-    fn unrecognized() -> Self {
+    fn unrecognized(id: String) -> Self {
         Self {
             family: FALLBACK_FAMILY,
             version: None,
             family_is_fallback: true,
+            id,
         }
+    }
+}
+
+/// How a machine names itself, e.g. `ubuntu 24.04` or `omarchy 4.0.1rc2`.
+fn os_release_id(os_release: &crate::platform::LinuxOsRelease) -> String {
+    if os_release.version_id.is_empty() {
+        os_release.id.clone()
+    } else {
+        format!("{} {}", os_release.id, os_release.version_id)
     }
 }
 
@@ -592,6 +633,7 @@ impl HostDistro {
                 family,
                 version,
                 family_is_fallback: false,
+                id: os_release_id(os_release),
             });
         }
         // An unrecognized ID: fall back on the families it claims to be like.
@@ -599,6 +641,7 @@ impl HostDistro {
             family,
             version: None,
             family_is_fallback: false,
+            id: os_release_id(os_release),
         })
     }
 
@@ -630,6 +673,10 @@ enum Fit {
     /// An older build than the host, which is fine: a binary linked against an
     /// older glibc runs on a newer one.
     OlderThanHost,
+    /// The right family, but nothing said which version to take — a
+    /// derivative's `VERSION_ID` is its own, not its base's. The family's
+    /// oldest build is a guess, not a match.
+    UnknownVersion,
     /// Everything published is newer than the host. Nothing here can be
     /// expected to run, but it is still the closest thing available.
     NewerThanHost,
@@ -663,9 +710,12 @@ fn select_build<'a>(
     let pick = |family: Family, version: Option<&DistroVersion>| -> Option<(&'a LinuxBuild, Fit)> {
         let matching = candidates(family);
         let Some(version) = version else {
-            // No usable host version: the oldest build is the safest guess, and
-            // there is nothing to compare it against to say more.
-            return matching.first().copied().map(|build| (build, Fit::Exact));
+            // No usable host version: the oldest build is the safest guess, but
+            // it is still a guess and must not be reported as a match.
+            return matching
+                .first()
+                .copied()
+                .map(|build| (build, Fit::UnknownVersion));
         };
         if let Some(exact) = matching.iter().find(|build| &build.version == version) {
             return Some((exact, Fit::Exact));
@@ -705,15 +755,19 @@ fn select_build<'a>(
 fn warn_about_fit(version: &str, host: &HostDistro, build: &LinuxBuild, fit: Fit) {
     match fit {
         Fit::Exact | Fit::OlderThanHost => {}
+        Fit::UnknownVersion => warn!(
+            "swift {version}: {} does not say which {} release it is based on; using {}",
+            host.id,
+            build.family.token_prefix(),
+            build.token
+        ),
         Fit::NewerThanHost => warn!(
             "swift {version} publishes no build for {} or anything older; using {} and it may not run here",
-            host.label(),
-            build.token
+            host.id, build.token
         ),
         Fit::OtherFamily => warn!(
             "swift {version} publishes no build for {}; using {}",
-            host.label(),
-            build.token
+            host.id, build.token
         ),
     }
 }
@@ -833,7 +887,8 @@ mod platform_selection_tests {
 
     fn host(os_release: &str) -> HostDistro {
         let release = LinuxOsRelease::parse(os_release).expect("valid os-release");
-        HostDistro::from_os_release(&release).unwrap_or_else(HostDistro::unrecognized)
+        HostDistro::from_os_release(&release)
+            .unwrap_or_else(|| HostDistro::unrecognized(os_release_id(&release)))
     }
 
     fn chosen(version: &str, os_release: &str, arch: &str) -> String {
@@ -1034,6 +1089,52 @@ mod platform_selection_tests {
                 )
                 .is_none(),
                 "{arch} should select nothing"
+            );
+        }
+    }
+
+    /// A derivative is served by its base family, but nothing said which base
+    /// version: Linux Mint 22 is built on Ubuntu 24.04, and the oldest Ubuntu
+    /// build is a guess. Reporting that as an exact match would suppress the
+    /// warning the guess deserves.
+    #[test]
+    fn a_guessed_base_version_is_not_reported_as_exact() {
+        assert_eq!(
+            select(
+                "6.3.3",
+                "ID=linuxmint\nID_LIKE=\"ubuntu debian\"\nVERSION_ID=22\n",
+                "x86_64"
+            ),
+            ("ubuntu22.04".to_string(), Fit::UnknownVersion)
+        );
+    }
+
+    /// The offline fallback has to name a build swift.org really published.
+    /// A host label does not: an unrecognized distro labels itself `ubi`,
+    /// which is not an artifact token at all.
+    #[test]
+    fn offline_tokens_are_real_published_builds() {
+        let published: Vec<String> = ["6.3.3", "6.4.0"]
+            .iter()
+            .flat_map(|version| builds(version))
+            .map(|build| build.token)
+            .collect();
+        for family in [
+            Family::Ubuntu,
+            Family::Debian,
+            Family::Fedora,
+            Family::AmazonLinux,
+            Family::Ubi,
+        ] {
+            let token = family.offline_token();
+            assert!(
+                published.contains(&token.to_string()),
+                "{token} is not a published build"
+            );
+            assert_ne!(
+                token,
+                family.token_prefix(),
+                "{token} is a family name, not a build"
             );
         }
     }
@@ -1246,6 +1347,22 @@ mod lockfile_tests {
         assert_eq!(
             url(&tv, &target("windows-x64"), "windows10"),
             "https://download.swift.org/swift-6.3.1-release/windows10/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-windows10.exe"
+        );
+    }
+
+    /// Every published Linux build links against glibc. Resolution has to
+    /// refuse musl before it picks anything, or an Alpine host resolves to a
+    /// real UBI URL and downloads ~1GB that cannot run.
+    #[tokio::test]
+    async fn musl_targets_are_refused_before_any_build_is_chosen() {
+        let _guard = pin_platform(None);
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.1");
+
+        assert!(
+            resolve_platform(&tv, &target("linux-x64-musl"))
+                .await
+                .is_err()
         );
     }
 
