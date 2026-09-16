@@ -457,11 +457,48 @@ pub(crate) struct AppSpec {
     pub version: String,
 }
 
+/// Validate an inline app declaration, returning its checksum and artifact.
+///
+/// Every field is required: without a checksum there is nothing to verify the
+/// download against, and without an artifact name mise cannot tell which bundle
+/// in the archive to install.
+///
+/// Platform-independent on purpose. A config shared across machines should
+/// report a malformed declaration wherever it is read — otherwise a bad
+/// checksum surfaces on Windows as a generic unknown-manager warning, which
+/// diagnoses the wrong thing.
+pub(crate) fn validate_app_declaration<'a>(
+    name: &str,
+    sha256: Option<&'a str>,
+    artifact: Option<&'a str>,
+    version: &str,
+) -> eyre::Result<(&'a str, &'a str)> {
+    let Some(sha256) = sha256 else {
+        eyre::bail!("macos-app:{name}: 'url' requires 'sha256'");
+    };
+    // `no_check` is a Homebrew sentinel that makes the shared fetcher skip
+    // verification. It exists for casks whose URL serves a moving target, which
+    // an inline declaration never is — accepting it here would silently drop
+    // the verification this manager requires. Demanding a well-formed digest
+    // also catches a truncated or mistyped one before the download, not after.
+    if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        eyre::bail!("macos-app:{name}: 'sha256' must be a 64-character hex digest; got '{sha256}'");
+    }
+    let Some(artifact) = artifact else {
+        eyre::bail!("macos-app:{name}: 'url' requires 'artifact' naming the bundle to install");
+    };
+    if version == "latest" {
+        eyre::bail!(
+            "macos-app:{name}: 'url' requires an explicit 'version'; mise cannot discover versions for a direct download"
+        );
+    }
+    Ok((sha256, artifact))
+}
+
 #[cfg(unix)]
 impl AppSpec {
-    /// Validate an inline declaration. Every field is required: without a
-    /// checksum there is nothing to verify the download against, and without an
-    /// artifact name mise cannot tell which bundle in the archive to install.
+    /// Build a validated declaration. See [`validate_app_declaration`] for the
+    /// rules and why every field is required.
     pub(crate) fn parse(
         name: &str,
         url: &str,
@@ -469,28 +506,7 @@ impl AppSpec {
         artifact: Option<&str>,
         version: &str,
     ) -> eyre::Result<Self> {
-        let Some(sha256) = sha256 else {
-            eyre::bail!("macos-app:{name}: 'url' requires 'sha256'");
-        };
-        // `no_check` is a Homebrew sentinel that makes the shared fetcher skip
-        // verification. It exists for casks whose URL serves a moving target,
-        // which an inline declaration never is — accepting it here would
-        // silently drop the verification this manager requires. Demanding a
-        // well-formed digest also catches a truncated or mistyped one before
-        // the download rather than after.
-        if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
-            eyre::bail!(
-                "macos-app:{name}: 'sha256' must be a 64-character hex digest; got '{sha256}'"
-            );
-        }
-        let Some(artifact) = artifact else {
-            eyre::bail!("macos-app:{name}: 'url' requires 'artifact' naming the bundle to install");
-        };
-        if version == "latest" {
-            eyre::bail!(
-                "macos-app:{name}: 'url' requires an explicit 'version'; mise cannot discover versions for a direct download"
-            );
-        }
+        let (sha256, artifact) = validate_app_declaration(name, sha256, artifact, version)?;
         Ok(Self {
             url: url.replace("{{version}}", version),
             sha256: sha256.to_string(),
@@ -831,10 +847,20 @@ fn package_requests_from_config_files(
                     );
                     continue;
                 }
-                #[cfg(unix)]
                 if mgr == "macos-app"
                     && let Some((url, sha256, artifact, declared_version)) = app_declaration
                 {
+                    // Validated on every platform; only the spec itself, which
+                    // nothing off unix consumes, is gated.
+                    if let Err(err) =
+                        validate_app_declaration(&name, sha256, artifact, declared_version)
+                    {
+                        warn!("[bootstrap.packages]: {err}");
+                        continue;
+                    }
+                    #[cfg(not(unix))]
+                    let _ = url;
+                    #[cfg(unix)]
                     match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
                         Ok(spec) => {
                             app_specs.insert(name.clone(), spec);
@@ -2459,6 +2485,29 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(latest.contains("explicit 'version'"), "{latest}");
+    }
+
+    #[test]
+    fn macos_app_declaration_is_validated_on_every_platform() {
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+        // Not gated on unix: a config shared across machines must report a
+        // malformed declaration wherever it is read. Otherwise a bad checksum
+        // surfaces on Windows as a generic unknown-manager warning.
+        assert!(validate_app_declaration("nuvio", None, Some("N.app"), "1.0.0").is_err());
+        assert!(
+            validate_app_declaration("nuvio", Some("no_check"), Some("N.app"), "1.0.0").is_err()
+        );
+        assert!(
+            validate_app_declaration("nuvio", Some(&digest[..32]), Some("N.app"), "1.0.0").is_err()
+        );
+        assert!(validate_app_declaration("nuvio", Some(digest), None, "1.0.0").is_err());
+        assert!(validate_app_declaration("nuvio", Some(digest), Some("N.app"), "latest").is_err());
+
+        assert_eq!(
+            validate_app_declaration("nuvio", Some(digest), Some("N.app"), "1.0.0").unwrap(),
+            (digest, "N.app")
+        );
     }
 
     #[cfg(unix)]
