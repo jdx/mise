@@ -1182,8 +1182,17 @@ pub(super) fn symlink_resolves_below(path: &Path, root: &Path) -> bool {
     path_starts_with_resolved_root(&target, root)
 }
 
+/// Root holding mise's per-token cask install records.
+///
+/// This is Homebrew's Caskroom: mise writes its own `.mise-cask.toml` receipt
+/// beside the versioned bundle so an installed Homebrew and mise observe the
+/// same records and can arbitrate ownership of a token.
+pub(super) fn cask_state_root() -> PathBuf {
+    prefix::prefix().join("Caskroom")
+}
+
 pub(super) fn caskroom_token_dir(token: &str) -> PathBuf {
-    prefix::prefix().join("Caskroom").join(token)
+    cask_state_root().join(token)
 }
 
 pub(super) fn caskroom_version_dir(token: &str, version: &str) -> PathBuf {

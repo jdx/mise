@@ -755,10 +755,12 @@ impl BrewCaskManager {
                 &stage,
                 &tmp_caskroom,
                 app,
-                !cask.auto_updates,
-                adopt,
-                !cask.auto_updates,
-                defer_running,
+                AppInstallOptions {
+                    keep_caskroom_copy: !cask.auto_updates,
+                    adopt,
+                    verify_adopt: !cask.auto_updates,
+                    defer_if_running: defer_running,
+                },
             )? {
                 AppInstall::Installed {
                     metadata_only: true,
@@ -1087,15 +1089,34 @@ enum AppInstall {
     Running,
 }
 
+/// How a single app bundle should be swapped into the app directory.
+#[derive(Debug, Clone, Copy)]
+struct AppInstallOptions {
+    /// Keep the durable staged copy beside the install record rather than
+    /// replacing it with a symlink to the installed bundle.
+    keep_caskroom_copy: bool,
+    /// Take over an identical bundle already at the target instead of
+    /// replacing it, preserving the TCC grants keyed to its path.
+    adopt: bool,
+    /// Compare fingerprints before adopting. Skipped for self-updating apps,
+    /// whose on-disk bundle legitimately differs from the declared artifact.
+    verify_adopt: bool,
+    /// Abandon the swap when the installed app is running, leaving it alone.
+    defer_if_running: bool,
+}
+
 fn install_app(
     stage: &Path,
     caskroom: &Path,
     app: &AppArtifact,
-    keep_caskroom_copy: bool,
-    adopt: bool,
-    verify_adopt: bool,
-    defer_if_running: bool,
+    opts: AppInstallOptions,
 ) -> Result<AppInstall> {
+    let AppInstallOptions {
+        keep_caskroom_copy,
+        adopt,
+        verify_adopt,
+        defer_if_running,
+    } = opts;
     let source = find_app(stage, &app.source)
         .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
     let caskroom_app = caskroom.join(app_bundle_name(app.target_name()?)?);
