@@ -2814,10 +2814,14 @@ pub(crate) trait Backend: Debug + Send + Sync {
         None
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
-        let versions = self.list_installed_versions();
         // No async config lookup available here; fall back to inline/registry
         // opts, which is the best we have for a sync path.
         let filter = !self.include_prereleases(&self.ba().opts());
+        let versions = self
+            .list_installed_versions()
+            .into_iter()
+            .filter(|v| !filter || v == query || !self.is_prerelease_version(v))
+            .collect();
         self.fuzzy_match_filter(versions, query, filter)
     }
     async fn list_versions_matching(
@@ -3114,7 +3118,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
                         .to_string_lossy()
                         .to_string();
-                    return Ok(Some(version));
+                    // A `latest` link written before the backend could tell this
+                    // version is a pre-release must not keep winning.
+                    if !self.is_prerelease_version(&version) {
+                        return Ok(Some(version));
+                    }
                 }
                 Ok(file::dir_subdirs(&installs_path)
                     .unwrap_or_default()

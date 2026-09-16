@@ -2293,6 +2293,58 @@ mod tests {
         assert!(!backend.is_prerelease_version("1.2.4+build-7"));
     }
 
+    /// A distinct `short` per tool keeps the install-state memo, which is
+    /// process-wide, from mixing versions between tests.
+    fn create_npm_backend_with_installs(tool: &str, installs_path: PathBuf) -> NPMBackend {
+        let mut ba = BackendArg::new_raw(
+            format!("npm:{tool}"),
+            Some(tool.to_string()),
+            tool.to_string(),
+            None,
+            BackendResolution::new(true),
+        );
+        ba.installs_path = installs_path;
+        NPMBackend::from_arg(ba)
+    }
+
+    #[test]
+    fn latest_installed_version_ignores_latest_symlink_into_prerelease() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-latest-link");
+        std::fs::create_dir_all(installs_path.join("1.2.4")).unwrap();
+        std::fs::create_dir_all(installs_path.join("1.3.1-3")).unwrap();
+        crate::file::make_symlink_or_file(Path::new("./1.3.1-3"), &installs_path.join("latest"))
+            .unwrap();
+        let backend = create_npm_backend_with_installs("happy-latest-link", installs_path);
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("1.2.4")
+        );
+    }
+
+    #[test]
+    fn installed_versions_matching_skips_numeric_prereleases_unless_requested() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-matching");
+        let backend = create_npm_backend_with_installs("happy-matching", installs_path.clone());
+        for version in ["1.2.4", "1.3.1-3"] {
+            let install_path = installs_path.join(version);
+            std::fs::create_dir_all(&install_path).unwrap();
+            crate::toolset::install_state::add_tool_version(backend.ba(), &install_path, version);
+        }
+
+        assert_eq!(backend.list_installed_versions_matching("1"), ["1.2.4"]);
+        assert_eq!(
+            backend.list_installed_versions_matching("1.3"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            backend.list_installed_versions_matching("1.3.1-3"),
+            ["1.3.1-3"]
+        );
+    }
+
     #[tokio::test]
     async fn exact_semver_versions_resolve_without_remote_discovery() {
         let config = crate::config::Config::get().await.unwrap();
