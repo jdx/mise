@@ -40,8 +40,8 @@ use crate::task::{
 use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder, ToolSource,
-    ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolveOptions, ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
+    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -605,10 +605,18 @@ impl Config {
     }
 
     pub(crate) async fn get_toolset(self: &Arc<Self>) -> Result<&Toolset> {
+        self.get_toolset_with_opts(&ResolveOptions::default()).await
+    }
+
+    pub(crate) async fn get_toolset_with_opts(
+        self: &Arc<Self>,
+        opts: &ResolveOptions,
+    ) -> Result<&Toolset> {
+        let opts = opts.clone();
         self.toolset
             .get_or_try_init(|| async {
                 let mut ts = Toolset::from(self.get_tool_request_set().await?.clone());
-                ts.resolve(self).await?;
+                ts.resolve_with_opts(self, &opts).await?;
                 Ok(ts)
             })
             .await

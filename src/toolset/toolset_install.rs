@@ -143,7 +143,9 @@ impl Toolset {
                 )
             })?;
         if !installed.is_empty() {
-            let ts = config.get_toolset().await?;
+            let ts = config
+                .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                .await?;
             config::rebuild_shims_and_runtime_symlinks(
                 config,
                 ts,
@@ -234,7 +236,9 @@ impl Toolset {
             return Ok((installed, missing));
         }
         if !installed.is_empty() {
-            let ts = config.get_toolset().await?;
+            let ts = config
+                .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                .await?;
             config::rebuild_shims_and_runtime_symlinks(
                 config,
                 ts,
@@ -901,7 +905,9 @@ impl Toolset {
                     .install_all_versions(config, versions.clone(), &InstallOptions::default())
                     .await?;
                 if !versions.is_empty() {
-                    let ts = config.get_toolset().await?;
+                    let ts = config
+                        .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                        .await?;
                     config::rebuild_shims_and_runtime_symlinks(
                         config,
                         ts,

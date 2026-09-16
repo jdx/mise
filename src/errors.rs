@@ -22,6 +22,12 @@ pub(crate) enum Error {
         backend: Box<BackendArg>,
         version: String,
     },
+    #[error("{tool}@{version} is not in the lockfile\nhint: {hint}")]
+    NotInLockfile {
+        tool: String,
+        version: String,
+        hint: String,
+    },
     #[error("[{0}] plugin not installed")]
     PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
@@ -197,6 +203,15 @@ impl Error {
             )
         })
     }
+
+    pub(crate) fn is_not_in_lockfile(err: &Report) -> bool {
+        err.chain().any(|source| {
+            matches!(
+                source.downcast_ref::<Error>(),
+                Some(Error::NotInLockfile { .. })
+            )
+        })
+    }
 }
 
 #[cfg(all(test, windows))]
@@ -265,5 +280,17 @@ mod tests {
         let err = Report::new(Error::TaskInterrupted);
 
         assert!(Error::is_task_interrupted_before_start(&err));
+    }
+
+    #[test]
+    fn detects_not_in_lockfile() {
+        let err = Report::new(Error::NotInLockfile {
+            tool: "usage".into(),
+            version: "latest".into(),
+            hint: "Run `mise install` without --locked to update the lockfile".into(),
+        });
+
+        assert!(Error::is_not_in_lockfile(&err));
+        assert!(!Error::is_required_channel_resolution_err(&err));
     }
 }
