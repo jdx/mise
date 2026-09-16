@@ -49,6 +49,14 @@ pub(crate) fn usage_spec_request(argv: &[OsString]) -> Option<Result<String>> {
     })())
 }
 
+/// Answer one completion request from `spec`, in the shape `request`'s shell reads.
+///
+/// Rendered with [`usage_rs::complete::render_request`] rather than plain `render`, because the
+/// answer has to carry more than its candidates. Bash's default `COMP_WORDBREAKS` contains `:`,
+/// so Readline replaces only the fragment after the last colon and keeps what precedes it;
+/// `render_request` names that preserved prefix so the generated wrapper can trim it from full
+/// candidates. Task names are the reason this matters here: `update:deps:no-cooldown` completed
+/// after `update:deps:` is otherwise inserted whole, behind the prefix Readline kept.
 fn complete_spec(
     spec: &usage::Spec,
     request: &usage_rs::complete::CompletionRequest,
@@ -79,7 +87,7 @@ fn complete_spec(
         candidates,
         files: answer.files.then_some(usage_rs::complete::Files::Any),
     };
-    Ok(usage_rs::complete::render(&answer, request.shell))
+    Ok(usage_rs::complete::render_request(&answer, request))
 }
 
 /// Generate shell completions
@@ -309,6 +317,40 @@ mod shell_name_tests {
         .collect();
         let answer = usage_spec_request(&argv).unwrap().unwrap();
         assert!(answer.contains("--from-spec"), "{answer}");
+    }
+
+    #[test]
+    fn a_bash_answer_reports_the_colon_prefix_readline_keeps() {
+        // Bash's default COMP_WORDBREAKS contains `:`, so Readline replaces only `no` in
+        // `mise update:deps:no<TAB>`. The answer has to name the `update:deps:` prefix it
+        // keeps, or the generated wrapper inserts the full candidate after it and produces
+        // `update:deps:update:deps:no-cooldown`.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tasks.kdl");
+        std::fs::write(
+            &path,
+            "name \"mise\"\ncmd \"update:deps\"\ncmd \"update:deps:no-cooldown\"\n",
+        )
+        .unwrap();
+        let encoded = crate::packslip::completions::encode_spec_path(&path);
+        let argv: Vec<OsString> = [
+            "__usage_complete_word",
+            &encoded,
+            "--shell",
+            "bash",
+            "--line",
+            "mise update:deps:no",
+            "--bash-word",
+            "no",
+            "--bash-wordbreaks",
+            " \t\n\"'><=;|&(:",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let answer = usage_spec_request(&argv).unwrap().unwrap();
+        assert!(answer.contains("update:deps:no-cooldown"), "{answer}");
+        assert!(answer.contains("\u{1}prefix\tupdate:deps:\n"), "{answer:?}");
     }
 
     #[test]
