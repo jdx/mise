@@ -1781,11 +1781,19 @@ fn packages_from_specs_with_config_files(
         };
         #[cfg(unix)]
         if mgr == "brew-cask" {
-            // Keyed by the spec exactly as written, matching the config key
-            // exactly, the way every other per-package option resolves. A spec
-            // that matches no config entry gets the `[bootstrap.brew]` default.
+            // The config key as written wins. Failing that, the one other
+            // spelling that provably names the same cask is consulted, so a
+            // spec and a config entry that disagree only about the official
+            // tap prefix still line up. A spec matching neither gets the
+            // `[bootstrap.brew]` default.
+            let alias = official_cask_alias(&name);
             let configured = package_configs
                 .get(&format!("{mgr}:{name}"))
+                .or_else(|| {
+                    alias
+                        .as_deref()
+                        .and_then(|alias| package_configs.get(&format!("{mgr}:{alias}")))
+                })
                 .and_then(|package| package.adopt());
             if configured.unwrap_or(brew_adopt) {
                 cask_adopt.insert(name.clone());
@@ -1828,6 +1836,23 @@ pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
         None
     } else {
         name.rsplit_once('/').map(|(tap, _)| tap)
+    }
+}
+
+/// The equivalent spelling of a cask from the official tap, if it has one.
+///
+/// `brew_tap_name` reports no tap for `homebrew/cask/<token>`, so it and the
+/// bare `<token>` resolve to the same cask from the same API URL, and a
+/// per-package option written against either applies to both. No other tap
+/// has that property: two taps can ship the same token, and each is a
+/// different cask from a different source, so their names are not
+/// interchangeable.
+#[cfg(unix)]
+fn official_cask_alias(name: &str) -> Option<String> {
+    match name.split('/').collect::<Vec<_>>()[..] {
+        ["homebrew", "cask", token] if !token.is_empty() => Some(token.to_string()),
+        [token] if !token.is_empty() => Some(format!("homebrew/cask/{token}")),
+        _ => None,
     }
 }
 
@@ -2231,6 +2256,60 @@ mod tests {
         assert!(!casks.options.brew_cask_adopt("other/tap/textmate"));
         // and neither is reachable through the shared bare token
         assert!(!casks.options.brew_cask_adopt("textmate"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_official_cask_alias_covers_only_the_official_tap() {
+        assert_eq!(
+            official_cask_alias("homebrew/cask/firefox").as_deref(),
+            Some("firefox")
+        );
+        assert_eq!(
+            official_cask_alias("firefox").as_deref(),
+            Some("homebrew/cask/firefox")
+        );
+        // another tap's cask is a different cask; no spelling is equivalent
+        assert_eq!(official_cask_alias("acme/tools/firefox"), None);
+        assert_eq!(official_cask_alias("acme/firefox"), None);
+        assert_eq!(official_cask_alias("a/b/c/d"), None);
+        assert_eq!(official_cask_alias(""), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_explicit_spec_matches_the_official_tap_spelling() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:homebrew/cask/textmate" = { adopt = true }
+                "brew-cask:homebrew/cask/replace-me" = { adopt = false }
+                "brew-cask:acme/tools/elsewhere" = { adopt = true }
+            "#,
+        )])?;
+
+        // a bare spec finds the officially-qualified entry, and vice versa
+        let specs = [
+            "brew-cask:textmate".to_string(),
+            "brew-cask:replace-me".to_string(),
+            "brew-cask:acme/tools/elsewhere".to_string(),
+            "brew-cask:elsewhere".to_string(),
+        ];
+        let packages = packages_from_specs_with_config_files(&specs, &config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert!(casks.options.brew_cask_adopt("textmate"));
+        // an explicit opt-out still reaches the bare spec
+        assert!(!casks.options.brew_cask_adopt("replace-me"));
+        // the tap cask matches itself
+        assert!(casks.options.brew_cask_adopt("acme/tools/elsewhere"));
+        // but a bare spec is a different cask from the official tap, so the
+        // tap entry's adopt does not carry over to it
+        assert!(!casks.options.brew_cask_adopt("elsewhere"));
         Ok(())
     }
 
