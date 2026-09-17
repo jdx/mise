@@ -49,5 +49,6 @@ other platform's bootstrap.
 
 This support is local to the Windows machine running `mise bootstrap`.
 [`mise bootstrap remote`](/bootstrap/remote.html) still requires a POSIX-shell
-target; native Windows SSH/PowerShell targets are not supported yet. Scoop and
-Chocolatey are also outside this first implementation.
+target; native Windows SSH/PowerShell targets are not supported yet. Scoop
+packages have their own manager, [`scoop`](/bootstrap/packages/scoop.html);
+Chocolatey is not supported.

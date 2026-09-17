@@ -64,6 +64,7 @@ explains its prerequisites, package names, and version support.
 | `flatpak-user`  | Linux with `flatpak` on `PATH`; user scope                         | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `nix`           | Linux and macOS with `nix` on `PATH`; user profile                 | [Nix](/bootstrap/packages/nix.html)                 |
 | `mas`           | macOS with `mas` on `PATH`                                         | [Mac App Store](/bootstrap/packages/mas.html)       |
+| `scoop`         | Windows with Scoop's `scoop` shim on `PATH`                        | [Scoop](/bootstrap/packages/scoop.html)             |
 | `winget`        | Windows with `winget` on `PATH`                                    | [WinGet](/bootstrap/packages/winget.html)           |
 | Package plugins | Defined by each plugin                                             | [Package plugins](/bootstrap/packages/plugins.html) |
 
@@ -103,11 +104,12 @@ for a machine-wide selection.
 
 ### Remove a package declaratively
 
-`pacman` supports `state = "absent"`:
+`pacman` and `scoop` support `state = "absent"`:
 
 ```toml
 [bootstrap.packages]
 "pacman:libreoffice-fresh" = { state = "absent" }
+"scoop:neovim" = { state = "absent" }
 ```
 
 If the package is installed, `status --missing` reports drift and `apply`
@@ -192,7 +194,8 @@ The manager determines which version is available and how it is installed.
 Version pins remain subject to the manager's capabilities. For example, apk,
 apt, and dnf honor configured pins. AUR, pacman, brew, brew-cask, flatpak,
 flatpak-user, and mas cannot install pins, so pinned entries are skipped with a
-warning. See the manager's guide for details.
+warning. [`scoop`](/bootstrap/packages/scoop.html) installs pins but cannot hold
+them, so `upgrade` skips its pinned entries. See the manager's guide for details.
 
 For `macos-app`, there is no version discovery: update the declaration yourself
 before applying or upgrading it. See [Update a declared app](#update-a-declared-app).

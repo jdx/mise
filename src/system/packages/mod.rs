@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, macos-app, mas, winget) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, macos-app, mas, scoop, winget) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -21,6 +21,7 @@ pub(crate) mod mas;
 pub(crate) mod nix;
 pub(crate) mod pacman;
 pub(crate) mod plugin;
+pub(crate) mod scoop;
 pub(crate) mod winget;
 
 /// A single package entry from `[bootstrap.packages]` — the part after the
@@ -73,7 +74,6 @@ pub(crate) enum PackageState {
     },
     Missing,
     /// installed, but a manager-owned record needs local repair
-    #[cfg_attr(windows, allow(dead_code))]
     NeedsRepair {
         installed: String,
     },
@@ -289,6 +289,7 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(mas::MasManager::new()),
         Arc::new(nix::NixManager),
         Arc::new(pacman::PacmanManager::new()),
+        Arc::new(scoop::ScoopManager::new()),
         Arc::new(winget::WingetManager::new()),
     ]
 }
