@@ -1184,7 +1184,8 @@ pub(super) fn apply_cask_prune_plan_in(
         return Ok(0);
     }
 
-    let _caskroom_lock = lock_caskroom()?;
+    // Prune is brew-cask only; macos-app reports that it does not support it.
+    let _caskroom_lock = lock_caskroom(CaskManager::BrewCask)?;
     let mut removed = 0;
     for candidate in &plan.remove {
         if let Err(reason) = validate_cask_prune_candidate(candidate)
@@ -1241,10 +1242,15 @@ pub(super) fn apply_cask_prune_plan_in(
     Ok(removed)
 }
 
-pub(super) fn lock_caskroom() -> Result<fslock::LockFile> {
-    let caskroom = prefix::prefix().join("Caskroom");
-    file::create_dir_all(&caskroom)?;
-    let path = caskroom.join(".mise.lock");
+/// Serialize installs within a manager, in that manager's own state root.
+///
+/// `macos-app` records nothing under Homebrew's prefix, so locking there would
+/// create — and on a machine without Homebrew, need to elevate to create — a
+/// Caskroom this manager never writes to.
+pub(super) fn lock_caskroom(manager: CaskManager) -> Result<fslock::LockFile> {
+    let root = cask_state_root(manager);
+    file::create_dir_all(&root)?;
+    let path = root.join(".mise.lock");
     let mut lock = fslock::LockFile::open(&path)?;
     if !lock.try_lock()? {
         debug!("waiting for brew-cask lock on {}", path.display());
