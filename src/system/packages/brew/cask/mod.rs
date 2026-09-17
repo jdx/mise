@@ -1373,14 +1373,23 @@ fn install_app(
         file::remove_all(&caskroom_app)?;
         return Ok(AppInstall::Running);
     }
-    activate_app_at(
+    // The earlier checks concluded this entry may put a bundle here. Only an
+    // entry that owns the target may replace what is at it; otherwise the swap
+    // must refuse anything that appeared while the copies ran.
+    if let Err(err) = activate_app_at(
         &parent,
         &name,
         &tmp_name,
         &old_name,
         &caskroom_app,
         &logical_target,
-    )?;
+        !require_unowned,
+    ) {
+        // Leave nothing staged behind a refusal.
+        let _ = remove_all_at(&parent.fd, &tmp_name);
+        let _ = file::remove_all(&caskroom_app);
+        return Err(err.wrap_err(unowned_target_error(manager, &logical_target)));
+    }
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
     let relative = Path::new(".").join(&name);
     let _ = run_in_trusted_dir(
@@ -1523,6 +1532,7 @@ fn activate_app_at(
     old_name: &std::ffi::OsStr,
     caskroom_app: &Path,
     logical_target: &Path,
+    allow_replace: bool,
 ) -> Result<()> {
     if exists_at(&parent.fd, name)? {
         // Same class of pain as `brew reinstall --cask`: TCC is keyed to the
@@ -1536,7 +1546,7 @@ fn activate_app_at(
             logical_target.display()
         );
     }
-    swap_app_at(parent, name, tmp_name, old_name)?;
+    swap_app_at(parent, name, tmp_name, old_name, allow_replace)?;
     replace_caskroom_app_with_symlink(caskroom_app, logical_target)
 }
 
@@ -1572,7 +1582,41 @@ fn swap_app_at(
     name: &std::ffi::OsStr,
     tmp_name: &std::ffi::OsStr,
     old_name: &std::ffi::OsStr,
+    allow_replace: bool,
 ) -> Result<()> {
+    if !allow_replace {
+        // This entry does not own the target, so the checks above concluded
+        // nothing was there. Copying the bundle takes long enough for Homebrew
+        // or a person to create one since, and the swap below would move it
+        // aside and then delete it.
+        //
+        // `mkdirat` claims the name atomically: it either creates the directory
+        // or fails with EEXIST, with no window between testing and taking. The
+        // rename that follows replaces only this empty directory, which POSIX
+        // allows for an empty target. A platform no-replace rename
+        // (`RENAME_NOREPLACE`, `RENAME_EXCL`) would express this in one step,
+        // but neither is portable across the targets mise ships.
+        match nix::sys::stat::mkdirat(
+            &parent.fd,
+            name,
+            nix::sys::stat::Mode::from_bits_truncate(0o755),
+        ) {
+            Ok(()) => {}
+            Err(nix::errno::Errno::EEXIST) => {
+                return Err(eyre!(
+                    "an app appeared at '{}' while this one was being staged; it was left untouched",
+                    Path::new(name).display()
+                ));
+            }
+            Err(err) => return Err(err.into()),
+        }
+        return nix::fcntl::renameat(&parent.fd, tmp_name, &parent.fd, name).wrap_err_with(|| {
+            format!(
+                "brew-cask: failed to activate {}",
+                Path::new(name).display()
+            )
+        });
+    }
     // Atomic swap: rename the existing target aside before putting the new one
     // in place so a failure leaves the old app intact rather than nothing.
     remove_app_at(parent, old_name)?;

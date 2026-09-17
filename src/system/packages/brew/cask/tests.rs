@@ -7495,6 +7495,7 @@ fn failed_app_activation_preserves_caskroom_copy() -> Result<()> {
         std::ffi::OsStr::new("Example.mise-old-test"),
         &caskroom_app,
         &target,
+        true,
     );
 
     assert!(result.is_err());
@@ -8826,6 +8827,65 @@ fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
             InstallMode::Install
         )?,
         Some("already installed")
+    );
+    Ok(())
+}
+
+/// An app that appears after the ownership check but before activation must
+/// survive. The bundle copies take long enough for Homebrew or a person to
+/// create one, and the ordinary swap would move it aside and then delete it.
+#[test]
+fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let parent = open_trusted_directory(&root, Path::new(""), true, false)?;
+
+    // mise's staged replacement, ready to activate.
+    let staged = root.join("Example.mise-tmp-test");
+    file::create_dir_all(staged.join("Contents"))?;
+    crate::file::write(staged.join("Contents/marker"), "ours")?;
+
+    // Someone else's app lands at the target while the copies were running.
+    let target = root.join("Example.app");
+    file::create_dir_all(target.join("Contents"))?;
+    crate::file::write(target.join("Contents/marker"), "theirs")?;
+    let before = target.symlink_metadata()?;
+
+    let err = swap_app_at(
+        &parent,
+        std::ffi::OsStr::new("Example.app"),
+        std::ffi::OsStr::new("Example.mise-tmp-test"),
+        std::ffi::OsStr::new("Example.mise-old-test"),
+        false,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("appeared at"), "{err}");
+
+    // Untouched: same contents, same inode, not moved aside.
+    assert_eq!(
+        crate::file::read_to_string(target.join("Contents/marker"))?,
+        "theirs"
+    );
+    assert_eq!(
+        std::os::unix::fs::MetadataExt::ino(&target.symlink_metadata()?),
+        std::os::unix::fs::MetadataExt::ino(&before),
+        "the foreign app was replaced rather than left alone"
+    );
+    assert!(!root.join("Example.mise-old-test").exists());
+
+    // With ownership, replacement is still what happens.
+    swap_app_at(
+        &parent,
+        std::ffi::OsStr::new("Example.app"),
+        std::ffi::OsStr::new("Example.mise-tmp-test"),
+        std::ffi::OsStr::new("Example.mise-old-test"),
+        true,
+    )?;
+    assert_eq!(
+        crate::file::read_to_string(target.join("Contents/marker"))?,
+        "ours"
     );
     Ok(())
 }
