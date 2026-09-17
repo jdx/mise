@@ -183,6 +183,11 @@ cat <<EOF >"$root_b/mise.toml"
 "$shared_tree" = { source = "tree", mode = "symlink-each" }
 EOF
 assert_succeed "mise bootstrap dotfiles status --json | jq -e '[.files[] | select(.target == \"$shared_tree\")] | length == 2'"
+# nothing says which contributor an edit means, so name them instead of
+# opening whichever composed first
+assert_fail "mise bootstrap dotfiles edit '$shared_tree'" "multiple [dotfiles] entries deploy this target"
+assert_fail "mise bootstrap dotfiles edit '$shared_tree'" "roots/a/tree"
+assert_fail "mise bootstrap dotfiles edit '$shared_tree'" "roots/b/tree"
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "readlink $shared_tree/conf.d/a.toml" "$root_a/tree/conf.d/a.toml"
 assert "readlink $shared_tree/conf.d/b.toml" "$root_b/tree/conf.d/b.toml"

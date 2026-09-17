@@ -128,9 +128,24 @@ fn source_for_target(
     // first. editing the source is what converges a deployed target — and
     // what `--apply` would otherwise write back over — so the deployment
     // entry wins; the tracked file is edited only when nothing deploys it.
-    let selected = matching_files
+    let deployments = matching_files
         .iter()
-        .find(|req| req.mode != FileMode::Track)
+        .filter(|req| req.mode != FileMode::Track)
+        .collect::<Vec<_>>();
+    // composed roots may each deploy into one target (symlink-each entries
+    // whose leaves do not collide), and nothing says which source the edit
+    // means — name them instead of opening whichever composed first
+    if deployments.len() > 1 {
+        let sources = deployments
+            .iter()
+            .map(|req| req.source.display_user())
+            .collect::<Vec<_>>()
+            .join(", ");
+        bail!("{raw}: multiple [dotfiles] entries deploy this target; edit one of: {sources}");
+    }
+    let selected = deployments
+        .into_iter()
+        .next()
         .or_else(|| matching_files.first());
     if let Some(req) = selected {
         // a tracked file has no source: it stays where it is, so that is
