@@ -129,7 +129,9 @@ cannot read, such as one on an unplugged volume or an unreachable network mount,
 rather than treated as deleted. A directory that reappears between the prompt and the
 deletion is kept. If stopping a daemon or unregistering its configuration fails, that
 state is kept for a later run rather than deleted while a process may still be writing
-to it. Each case reports why it was kept.
+to it. Pruning also needs pitchfork itself: without it nothing can be stopped or
+unregistered, and deleting the directory would destroy the record a later run needs.
+Each case reports why it was kept.
 
 ## Automatic start and stop
 

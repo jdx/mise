@@ -132,9 +132,10 @@ pub(crate) fn describe(entries: &[(Entry, u64)]) -> Vec<String> {
 /// Every step that cannot be confirmed keeps the state. A pitchfork call that
 /// times out or errors may leave a daemon alive on top of the very data this
 /// would delete, so the entry is left for a later run rather than deleted on an
-/// unverified assumption. `runtime` is `None` only when pitchfork cannot be
-/// located at all; that state can never be cleaned up by any later run, so it
-/// is removed with a warning that the registration may outlive it.
+/// unverified assumption. The same applies when pitchfork cannot be located at
+/// all (`runtime` is `None`): deleting the directory would take `state.json`
+/// and the generated configuration with it, which is the only record of the
+/// registration a later run could act on.
 pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<Outcome> {
     // The root is gone, so pitchfork runs from the state directory instead.
     let cwd = &entry.dir;
@@ -200,17 +201,26 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         }
     } else {
         warn!(
-            "pitchfork not found; {} may remain registered until it is removed with `pitchfork config remove`",
+            "keeping {}: pitchfork is required to stop its daemons and unregister {}; run `mise use pitchfork`",
+            display_path(cwd),
             display_path(entry.config_file())
         );
+        return Ok(Outcome::Kept);
     }
-    // The lock file lives inside the directory being deleted. Windows refuses
-    // to remove a file another handle still holds open, so empty the directory
-    // under the lock, release it, and only then drop the directory itself.
-    remove_contents_except_lock(cwd)?;
-    drop(lock);
-    crate::file::remove_all(cwd)?;
+    delete_locked_state_dir(cwd, lock)?;
     Ok(Outcome::Removed)
+}
+
+/// Deletes a state directory whose `project.lock` the caller holds.
+///
+/// The lock file lives inside the directory being deleted, and Windows refuses
+/// to remove a file another handle still holds open. Emptying the directory
+/// under the lock, releasing it, and only then dropping the directory keeps the
+/// lock meaningful for as long as there is state left to protect.
+fn delete_locked_state_dir(dir: &Path, lock: fslock::LockFile) -> Result<()> {
+    remove_contents_except_lock(dir)?;
+    drop(lock);
+    crate::file::remove_all(dir)
 }
 
 /// Deletes everything in `dir` except the `project.lock` the caller holds.
@@ -303,7 +313,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_without_pitchfork_deletes_state_and_respects_lock() {
+    async fn state_survives_a_held_lock_and_a_missing_pitchfork() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
         let gone = tmp.path().join("gone");
@@ -318,7 +328,22 @@ mod tests {
         assert!(dir.join("state.json").exists(), "locked state must survive");
         drop(held);
 
-        assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Removed);
+        // Without pitchfork nothing can be stopped or unregistered, and
+        // deleting state.json would destroy the record a later run needs.
+        assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
+        assert!(dir.join("state.json").exists());
+    }
+
+    #[test]
+    fn deleting_state_releases_its_lock_before_removing_the_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
+        let lock = crate::lock_file::LockFile::at(&dir.join("project.lock"))
+            .try_lock()
+            .unwrap()
+            .unwrap();
+        delete_locked_state_dir(&dir, lock).unwrap();
         assert!(!dir.exists());
     }
 
