@@ -114,3 +114,16 @@ done
 # 8.x reaching the backend would warn about an unsupported semver range on every command
 echo "8.x" >.bazelversion
 assert_not_contains "mise tool bazel 2>&1" "semver range"
+
+# bazelisk reads one line and ignores the rest of the file, so only the first line is a
+# version request. Reading further would ask for two versions of one tool at once...
+printf '7.2.1\n8.0.0\n' >.bazelversion
+assert "mise tool bazel --requested" "7.2.1"
+
+# ...or read past a first line that is deliberately not a release.
+printf 'latest\n8.0.0\n' >.bazelversion
+assert "mise tool bazel --requested" "[none]"
+
+# a CRLF checkout still resolves -- registry parsers see the raw bytes, not normalized lines
+printf '7.2.1\r\n' >.bazelversion
+assert "mise tool bazel --requested" "7.2.1"
