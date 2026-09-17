@@ -718,7 +718,9 @@ impl BrewCaskManager {
             artifacts.print_install_plan(&cask)?;
             return Ok(cask.version);
         }
-        prefix::bootstrap(false)?;
+        if cask.manager.uses_homebrew_caskroom() {
+            prefix::bootstrap(false)?;
+        }
         let stage = fetch_and_stage(&cask, pr).await?;
         // Keyed by the requested name, not `cask.token`. The two differ for a
         // tap-qualified name, a trusted alias, or an old token, and the request
@@ -731,7 +733,7 @@ impl BrewCaskManager {
         if adopt && !cask.auto_updates {
             validate_adoptable_apps(cask.manager, &stage, &artifacts.apps)?;
         }
-        let _caskroom_lock = lock_caskroom()?;
+        let _caskroom_lock = lock_caskroom(cask.manager)?;
         recover_flight_backups()?;
         if cask.manager.uses_homebrew_caskroom() {
             ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
@@ -839,6 +841,9 @@ impl BrewCaskManager {
             } else {
                 adopt_requested && require_unowned
             };
+            // Nothing durable has happened yet if the journal is still empty,
+            // which is what makes the cleanup below safe.
+            let journal_empty = journal.completed.is_empty();
             let installed = install_app(
                 &stage,
                 &tmp_caskroom,
@@ -859,6 +864,13 @@ impl BrewCaskManager {
                 // preserves the partial state a genuine mid-install failure
                 // leaves for recovery.
                 let _ = file::remove_dir(&tmp_caskroom);
+                if journal_empty {
+                    // A pending journal makes the next apply report the package
+                    // as not installed, which skips the already-installed fast
+                    // path and replaces an identical bundle — revoking its TCC
+                    // grants for a refusal that changed nothing.
+                    let _ = remove_cask_journals(cask.manager, &cask.token);
+                }
             })?;
             match installed {
                 AppInstall::Installed {
