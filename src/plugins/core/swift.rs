@@ -246,10 +246,10 @@ impl Backend for SwiftPlugin {
             bail!("swift does not publish musl builds");
         }
         let url = url(tv, target);
-        // Not every distro/arch pair is published — `ubi9` has no aarch64 build,
-        // for instance — and which pairs exist changes per release, so ask rather
-        // than encode a matrix that would go stale. This keeps a lockfile from
-        // recording an artifact that isn't there.
+        // Which distros are published changes from release to release —
+        // `debian12` first appears in 5.10, `ubuntu20.04` is gone by 6.3 — so
+        // ask rather than encode a matrix that would go stale. This keeps a
+        // lockfile from recording an artifact that isn't there.
         if let Err(err) = HTTP.head(&url).await {
             bail!("swift does not publish {url}: {err}");
         }
@@ -322,19 +322,17 @@ fn swift_bin_name() -> &'static str {
 }
 
 fn platform_directory(target: &PlatformTarget) -> String {
-    match target.os_name() {
-        "macos" => "xcode".into(),
-        "windows" => "windows10".into(),
-        _ => {
-            let platform = platform(target);
-            // swift.org files the Linux arm64 builds under a separate
-            // `<distro>-aarch64` directory, but only for Ubuntu.
-            if platform.starts_with("ubuntu") && target.arch_name() == "arm64" {
-                format!("{platform}-aarch64").replace(".", "")
-            } else {
-                platform.replace(".", "")
-            }
-        }
+    let directory = match target.os_name() {
+        "macos" => "xcode".to_string(),
+        "windows" => "windows10".to_string(),
+        _ => platform(target).replace(".", ""),
+    };
+    // x86_64 builds live directly under the platform directory; every other
+    // architecture gets its own `<platform>-<arch>` directory — that holds for
+    // all the Linux distros, not just Ubuntu, and for Windows on arm64.
+    match architecture(target) {
+        Some(arch) => format!("{directory}-{arch}"),
+        None => directory,
     }
 }
 
@@ -355,9 +353,8 @@ fn platform(target: &PlatformTarget) -> String {
 
 /// The distro portion of a Linux artifact name. Only the current host's distro
 /// can be detected; cross-platform lock resolution has no way to know what
-/// distro another machine runs, so it falls back to Ubuntu — the only distro
-/// swift.org publishes Linux arm64 builds for, and the most broadly useful
-/// default for x64.
+/// distro another machine runs, so it falls back to Ubuntu — the most broadly
+/// useful default, and published for every architecture swift.org builds.
 fn linux_platform(target: &PlatformTarget) -> String {
     if !target.is_current() {
         return format!("ubuntu{}", DEFAULT_UBUNTU_VERSION);
@@ -533,6 +530,62 @@ mod lockfile_tests {
         );
     }
 
+    /// swift.org files every non-x86_64 build under its own
+    /// `<platform>-<arch>` directory. Treating that as an Ubuntu-only
+    /// convention 404s every other distro's arm64 build (#13291).
+    #[test]
+    fn arm64_urls_use_the_arch_directory_on_every_distro() {
+        for (pinned, directory, filename) in [
+            ("ubuntu24.04", "ubuntu2404-aarch64", "ubuntu24.04-aarch64"),
+            ("ubi9", "ubi9-aarch64", "ubi9-aarch64"),
+            ("fedora39", "fedora39-aarch64", "fedora39-aarch64"),
+            (
+                "amazonlinux2",
+                "amazonlinux2-aarch64",
+                "amazonlinux2-aarch64",
+            ),
+        ] {
+            let _guard = pin_platform(Some(pinned));
+            let backend = SwiftPlugin::new();
+            let tv = tool_version(&backend, "6.3.3");
+
+            assert_eq!(
+                url(&tv, &target("linux-arm64")),
+                format!(
+                    "https://download.swift.org/swift-6.3.3-release/{directory}/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-{filename}.tar.gz"
+                )
+            );
+        }
+    }
+
+    /// x86_64 builds sit directly under the platform directory — no arch
+    /// suffix on either the directory or the file.
+    #[test]
+    fn x64_urls_have_no_arch_suffix() {
+        let _guard = pin_platform(Some("ubi9"));
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.3");
+
+        assert_eq!(
+            url(&tv, &target("linux-x64")),
+            "https://download.swift.org/swift-6.3.3-release/ubi9/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-ubi9.tar.gz"
+        );
+    }
+
+    /// Windows follows the same layout: the arm64 build is under
+    /// `windows10-arm64`, while x64 stays in `windows10`.
+    #[test]
+    fn windows_arm64_uses_the_arch_directory() {
+        let _guard = pin_platform(None);
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.3");
+
+        assert_eq!(
+            url(&tv, &target("windows-arm64")),
+            "https://download.swift.org/swift-6.3.3-release/windows10-arm64/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-windows10-arm64.exe"
+        );
+    }
+
     /// `swift.platform` names a Linux distro build. A repo-wide pin must not
     /// leak into the macOS and Windows URLs.
     #[test]
@@ -583,6 +636,33 @@ mod lockfile_tests {
                 format!("ubuntu{DEFAULT_UBUNTU_VERSION}")
             )])
         );
-        assert!(url(&tv, &foreign).ends_with("-ubuntu24.04-riscv64.tar.gz"));
+        assert_eq!(
+            url(&tv, &foreign),
+            "https://download.swift.org/swift-6.3.1-release/ubuntu2404-riscv64/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04-riscv64.tar.gz"
+        );
+    }
+
+    /// The directory suffix follows the filename suffix for every architecture
+    /// that has one, not just aarch64. swift.org has only ever published
+    /// x86_64 and aarch64 Linux builds, so these URLs 404 either way — the
+    /// assertions exist so the two halves cannot drift apart unnoticed.
+    #[test]
+    fn every_suffixed_architecture_gets_a_matching_directory() {
+        let _guard = pin_platform(Some("ubuntu24.04"));
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.1");
+
+        for (platform, arch) in [
+            ("linux-x86", "x86"),
+            ("linux-riscv64", "riscv64"),
+            ("linux-loongarch64", "loongarch64"),
+        ] {
+            assert_eq!(
+                url(&tv, &target(platform)),
+                format!(
+                    "https://download.swift.org/swift-6.3.1-release/ubuntu2404-{arch}/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE-ubuntu24.04-{arch}.tar.gz"
+                )
+            );
+        }
     }
 }
