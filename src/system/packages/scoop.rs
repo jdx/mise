@@ -162,6 +162,11 @@ fn refresh_args() -> Vec<String> {
     vec!["update".to_string()]
 }
 
+/// Case-insensitive membership, the way Scoop and Windows compare names.
+fn contains_ignore_case(names: &[String], name: &str) -> bool {
+    names.iter().any(|known| known.eq_ignore_ascii_case(name))
+}
+
 /// Buckets named by `bucket/app` requests that Scoop does not have yet, in
 /// first-requested order.
 fn missing_buckets(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<String> {
@@ -173,7 +178,7 @@ fn missing_buckets(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<String>
     let mut wanted = Vec::new();
     for bucket in pkgs.iter().filter_map(|pkg| split_bucket(&pkg.name).0) {
         let key = bucket.to_ascii_lowercase();
-        if !present.contains(&key) && !wanted.iter().any(|b: &String| *b == bucket) {
+        if !present.contains(&key) && !contains_ignore_case(&wanted, bucket) {
             wanted.push(bucket.to_string());
         }
     }
@@ -201,9 +206,7 @@ fn pinned_reinstalls(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<Strin
         if entry.is_global() {
             continue;
         }
-        if entry.version.as_deref() != Some(pin.as_str())
-            && !apps.iter().any(|existing: &String| existing == app)
-        {
+        if entry.version.as_deref() != Some(pin.as_str()) && !contains_ignore_case(&apps, app) {
             apps.push(app.to_string());
         }
     }
@@ -212,10 +215,14 @@ fn pinned_reinstalls(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<Strin
 
 /// App names to act on, dropping any that exist only as a global install.
 fn user_scope_apps(pkgs: &[PackageRequest], global: &[String]) -> Vec<String> {
-    pkgs.iter()
-        .map(|pkg| app_name(&pkg.name).to_string())
-        .filter(|app| !global.contains(app))
-        .collect()
+    let mut apps = Vec::new();
+    for pkg in pkgs {
+        let app = app_name(&pkg.name);
+        if !contains_ignore_case(global, app) && !contains_ignore_case(&apps, app) {
+            apps.push(app.to_string());
+        }
+    }
+    apps
 }
 
 /// Whether any exported entry for `app` is a global install.
@@ -233,7 +240,7 @@ fn selected_apps(pkgs: &[PackageRequest], keep: impl Fn(&str) -> bool) -> Vec<St
     let mut apps = Vec::new();
     for pkg in pkgs {
         let app = app_name(&pkg.name);
-        if keep(app) && !apps.iter().any(|existing: &String| existing == app) {
+        if keep(app) && !contains_ignore_case(&apps, app) {
             apps.push(app.to_string());
         }
     }
@@ -687,6 +694,45 @@ mod tests {
         assert!(has_global(&export, "git") && has_local(&export, "git"));
         assert!(has_global(&export, "gh") && !has_local(&export, "gh"));
         assert!(!has_global(&export, "ripgrep") && has_local(&export, "ripgrep"));
+    }
+
+    #[test]
+    fn names_are_deduplicated_the_way_scoop_compares_them() {
+        // Scoop and Windows treat these names as one app and one bucket, so a
+        // config that spells them differently must not queue each twice.
+        let export = export_of(&[("git", Some("2.48.0"), "Global install")], &["main"]);
+        let pkgs = [
+            req("Extras/vscode", None),
+            req("extras/other", None),
+            req("Git", None),
+            req("git", None),
+        ];
+
+        assert_eq!(missing_buckets(&pkgs, &export), vec!["Extras"]);
+        assert_eq!(global_only(&pkgs, &export), vec!["Git"]);
+        assert_eq!(global_copies(&pkgs, &export), vec!["Git"]);
+        // Both spellings of the global-only app drop out, and the two
+        // bucket-qualified apps survive once each.
+        assert_eq!(
+            user_scope_apps(&pkgs, &global_only(&pkgs, &export)),
+            vec!["vscode", "other"]
+        );
+        assert_eq!(
+            user_scope_apps(&[req("Git", None)], &["git".to_string()]),
+            Vec::<String>::new()
+        );
+
+        let installed = export_of(&[("ripgrep", Some("14.1.1"), "")], &[]);
+        assert_eq!(
+            pinned_reinstalls(
+                &[
+                    req("RipGrep", Some("13.0.0")),
+                    req("ripgrep", Some("13.0.0"))
+                ],
+                &installed
+            ),
+            vec!["RipGrep"]
+        );
     }
 
     #[test]
