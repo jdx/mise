@@ -172,30 +172,31 @@ There are other ways to specify dependencies; see [wait_for](/tasks/task-configu
 
 ### Daemons <Badge type="warning" text="experimental" />
 
-A task can require [project daemons](/daemons.html) instead of a prerequisite task
-that starts a background process and polls it:
+Use `daemons` when a task needs a service that should keep running between task
+invocations. mise starts the service through pitchfork and waits for readiness
+before running the task.
 
 ```mise-toml
+[settings]
+experimental = true
+
 [daemons]
 postgres = "18"
 
-[daemons.nats]
-run = "exec nats-server"
-ready_port = 4222
-
-[tasks.dev]
-daemons = ["postgres", "nats"]
-run = "npm run dev"
+[tasks.test]
+daemons = "postgres"
+run = "npm test"
 ```
 
-`mise run dev` starts both daemons and waits until pitchfork reports them ready,
-then runs the task. Daemons that are already running are left alone, so repeated
-runs cost nothing. Use `daemons = true` to require every daemon declared in the
-project.
+`mise run test` starts PostgreSQL if needed, waits for it to be ready, and runs
+the test script. Later runs reuse the database. It stays running after the tests
+finish; stop it with `mise daemons stop postgres`.
 
-Daemons are part of the dependency phase, so `--skip-deps` and the
-`task.skip_depends` setting skip them, and `--dry-run` does not start anything.
-The name must match a `[daemons]` entry; an unknown name fails the run.
+Use a list such as `daemons = ["postgres", "redis"]` for multiple declared services,
+or `daemons = true` for all daemons in the task's project configuration.
+See the [daemon guide](/daemons.html) for prerequisites and service configuration,
+and the [`daemons` reference](/tasks/task-configuration.html#daemons) for name
+resolution and dependency flags.
 
 ### Environment variables
 

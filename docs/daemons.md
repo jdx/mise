@@ -10,17 +10,56 @@ Daemon management requires `experimental = true`. It requires
 for external configuration support.
 :::
 
-Declare custom background processes and managed databases in one section:
+Use daemons for processes that keep running between task invocations, such as a
+database, message broker, or development server. Declare them in `mise.toml`;
+mise provides the project configuration and tool environment, while
+[pitchfork](https://pitchfork.jdx.dev/) manages the processes and readiness checks.
+
+## Quick start
+
+This example gives a Node.js project a persistent PostgreSQL database. Add it to
+the project's `mise.toml`:
 
 ```toml
+[settings]
+experimental = true
+
+[tools]
+node = "24"
+
 [daemons]
 postgres = "18"
-redis = "8"
 
-[daemons.api]
+[tasks.dev]
+daemons = "postgres"
 run = "npm run dev"
+```
+
+Run `mise run dev` to install missing tools, start PostgreSQL, wait for it to be
+ready, and then run your application's `dev` script. The preset supplies connection
+variables, including `DATABASE_URL`, and keeps database data between runs.
+
+PostgreSQL stays running when the task exits. Later invocations reuse it.
+Run `mise daemons stop postgres` when you no longer need it, or configure
+[automatic start and stop](#automatic-start-and-stop) for shell sessions.
+
+## Declare a daemon
+
+Choose a declaration based on what you want to run:
+
+| Declaration                                | Use                                                      |
+| ------------------------------------------ | -------------------------------------------------------- |
+| `postgres = "18"` under `[daemons]`        | A built-in database preset whose name matches the entry. |
+| `preset = "postgres"` and `version = "18"` | A named instance of a preset, with optional overrides.   |
+| `run = "exec npm run dev"`                 | A custom shell command.                                  |
+| `task = "dev:core"`                        | An existing mise task, with optional `args`.             |
+
+For example, declare a development server and a second PostgreSQL instance:
+
+```toml
+[daemons.api]
+run = "exec npm run dev"
 ready_port = 3000
-auto = ["start", "stop"]
 
 [daemons.analytics]
 preset = "postgres"
@@ -28,20 +67,55 @@ version = "18"
 port = 5433
 ```
 
-A string selects a preset matching the entry name. A table with `run` defines a
-custom process. A table with `task` runs a mise task as the daemon. A table with `preset` and `version` selects a preset for any instance
-name, and remaining fields override its pitchfork daemon definition. For presets,
-`port` is an integer. Custom daemons accept the same integer shorthand or pitchfork's structured `port` configuration.
+Custom commands use the project's mise tool environment by default. Declare their
+tools in `[tools]`; presets add their own required tools. Use `exec` for the final
+long-running command so it receives stop signals directly.
+
+Fields such as `ready_port`, `ready_cmd`, and `auto` configure pitchfork's daemon
+behavior. Set a readiness check that reflects when your service can accept work;
+the example above waits for port 3000. For presets, `port` is an integer.
+Custom daemons also accept pitchfork's structured `port` configuration.
 User-provided strings retain pitchfork template syntax; mise renders only the
 embedded preset templates.
 
+## Tasks that require daemons
+
+Add `daemons` to a task to start its services before any task body runs:
+
+```toml
+[daemons]
+postgres = "18"
+redis = "8"
+
+[tasks.test]
+daemons = ["postgres", "redis"]
+run = "npm test"
+```
+
+`mise run test` starts the requested daemons and waits for pitchfork to report them
+ready. Already-running daemons are reused. This replaces prerequisite tasks that
+launch background processes and poll for readiness.
+
+Use a string for one daemon, a list for several, or `true` for every daemon in the
+task's project configuration. Each name must match a `[daemons]` entry.
+In a monorepo, each task resolves daemon names in its own project's configuration
+hierarchy, including inherited declarations.
+
+Daemon startup is part of dependency handling: `--skip-deps` and the
+`task.skip_depends` setting skip it. `--dry-run` validates daemon names and the
+experimental setting, and reports what would start without starting anything.
+Safe mode blocks task daemon startup.
+
+See the [`daemons` task option](/tasks/task-configuration.html#daemons) for all
+accepted values. Use `mise tasks info <task>` to inspect a task's daemon requirements.
+
 ## Daemons that run a task
 
-A daemon can run a mise task instead of a shell command:
+Use `task` when the long-running command is already defined as a mise task:
 
 ```toml
 [tasks."dev:core"]
-run = "cargo run --bin core"
+run = "cargo run --bin core --"
 
 [daemons.core]
 task = "dev:core"
@@ -49,18 +123,25 @@ args = ["--verbose"]
 ready_port = 8080
 ```
 
-`task` and `run` are mutually exclusive, and neither combines with `preset`. mise
-runs the task with `mise run --skip-deps`, so the task's own dependencies and
-daemons are not started again from inside the daemon; declare anything the task
-needs as a separate daemon or start it before the task. `args` are passed to the
-task after `--`. Readiness fields such as `ready_port` and `ready_cmd` come from
-the daemon table as usual. The task must exist when daemons are registered; an
-unknown name fails before anything starts.
+Start it with `mise daemons start core`. The `args` array passes arguments to the
+task; in this example, Cargo forwards `--verbose` to the `core` application.
+The daemon's readiness check is configured on `[daemons.core]`, not on the task.
+
+A daemon's `task` cannot be combined with `run` or `preset`, and `args` requires
+`task`. The referenced task must exist when daemons are registered.
+
+::: warning Task dependencies are skipped
+A daemon invokes its task with `mise run --skip-deps`. This prevents recursive
+startup, but also skips that task's `depends` tasks and `daemons` requirements.
+Put setup commands in [`init`](#setup-before-the-process-starts), and arrange
+required services through pitchfork's daemon `depends` configuration or start
+them separately.
+:::
 
 ## Setup before the process starts
 
-`init` runs one or more setup commands before the long-running process, in the
-order given:
+Use `init` for setup that must finish before the daemon starts. It accepts one
+command or an ordered list, and works with `run`, `task`, and database presets:
 
 ```toml
 [daemons.api]
@@ -69,39 +150,24 @@ run = "exec npm start"
 ready_port = 3000
 ```
 
-Each step must succeed before the next one runs, and the daemon is not considered
-ready until the process itself is. The steps and the long-running process share one
-shell, so a step can export a variable or change directory for the ones after it.
-That shell runs inside the project's tool environment, so a setup command such as
-`npm ci` finds mise-installed tools. Setting `mise = false` on the daemon opts out
-of that environment for the setup steps as well as the process itself.
-**`init` must be idempotent**: it runs on every start and restart, including
-automatic ones. Prefer commands that converge on the
-desired state, such as `npm ci` or a migration tool, over commands that fail or
-duplicate work when the state is already correct.
+Each command must succeed before the next runs. The setup commands and the
+long-running command share a shell, so an exported variable or directory change
+carries through to subsequent commands. For task daemons, the task still applies
+its own environment and working-directory configuration. By default, setup runs
+in the project's mise tool environment, including for task daemons. Setting
+`mise = false` on the daemon disables that environment wrapper for both setup and
+the long-running command.
 
-Anything that waits on a daemon's readiness also waits for its `init` to finish,
-because readiness is only checked against the process that `init` leads to. That
-applies to `mise daemons start`, to tasks that declare `daemons`, and to pitchfork
-`depends` between daemons. A preset's own database initialization always runs
-first, before any `init` step.
+**Write setup commands that are safe to repeat.** `init` runs on every start and
+restart, including automatic restarts. Use commands such as `npm ci` or a migration
+tool that can handle an already-initialized project.
 
-## Tasks that require daemons
+Readiness checks apply after setup, so tasks and other daemons waiting for this
+daemon also wait for `init`. For a database preset, the preset's database
+initialization runs before your `init` commands. A preset may also override `run`;
+both initialization steps still precede that command.
 
-A task can declare the daemons it needs:
-
-```toml
-[tasks.dev]
-daemons = ["postgres", "nats"]
-run = "npm run dev"
-```
-
-`mise run dev` starts those daemons, waits until pitchfork reports them ready, and
-then runs the task. Use `daemons = true` to require every daemon in the project.
-Already-running daemons are left alone, so repeated runs are cheap. Daemons are
-part of the dependency phase: `--skip-deps` and the `task.skip_depends` setting
-skip them, and `--dry-run` starts nothing. See
-[task configuration](/tasks/task-configuration.html#daemons).
+## Manage running daemons
 
 ```sh
 mise daemons start
@@ -116,9 +182,10 @@ mise daemons tui
 Start and restart install missing tools. Without names, start, stop, and restart
 target mise-managed daemons. Listing and status do not register configuration or
 start a supervisor. The TUI opens pitchfork's dashboard.
-Lifecycle commands accept project daemon names; `--group` is rejected because
-pitchfork groups can include daemons outside the project. Use pitchfork directly
-for group operations.
+
+Lifecycle commands accept project daemon names. Use pitchfork directly for group
+operations: mise rejects `--group` because pitchfork groups can include daemons
+outside the project.
 
 ## Database presets
 
@@ -165,11 +232,6 @@ Higher-precedence declarations replace a same-name daemon completely. Inherited
 daemons retain their declaring project scope. One environment profile can be active
 per project: stop its daemons and leave its shell sessions before switching `MISE_ENV`.
 Changed definitions take effect on the next start or explicit restart.
-
-A preset `run` override still runs after database initialization. It follows
-pitchfork shell-command semantics: use `exec` for the final long-running process
-(for example, `setup-command && exec server`) so it receives stop signals directly. A
-`run` that needs setup first can use `init` instead of chaining commands by hand.
 
 ## Automatic start and stop
 

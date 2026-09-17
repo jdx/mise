@@ -281,23 +281,40 @@ Supports the same argument, environment variable, and optional dependency syntax
 
 - **Type**: `bool | string | string[]`
 
-[Project daemons](/daemons.html) that must be running and ready before this task's
-body starts. `true` requires every daemon declared in the project.
+[Project daemons](/daemons.html) that must be running and ready before task
+execution. Requires `experimental = true` and pitchfork 2.25.0 or later.
+
+| Value                   | Requirement                                      |
+| ----------------------- | ------------------------------------------------ |
+| `"postgres"`            | One named daemon.                                |
+| `["postgres", "redis"]` | Each named daemon.                               |
+| `true`                  | All daemons in the task's project configuration. |
+| `false` or omitted      | No daemon requirement.                           |
 
 ```mise-toml
-[tasks.dev]
-daemons = ["postgres", "nats"]
-run = "npm run dev"
+[daemons]
+postgres = "18"
+
+[tasks.test]
+daemons = "postgres"
+run = "npm test"
 ```
 
-mise starts the listed daemons through pitchfork and waits until pitchfork reports
-them ready, which replaces starting a background process in a prerequisite task and
-polling it by hand. Daemons that are already running are left alone.
+mise starts the requested daemons through pitchfork and waits for readiness before
+any task body runs. Already-running daemons are reused and remain running after
+the task exits; use `mise daemons stop` to stop them.
 
-Every name must match a `[daemons]` entry, including one declared in a monorepo
-subproject whose task this run selected; an unknown name fails the run. Daemons
-belong to the dependency phase, so `--skip-deps` and the `task.skip_depends` setting
-skip them, and `--dry-run` does not start anything.
+Names must match `[daemons]` entries in the task's own project configuration
+hierarchy, including inherited declarations. In a monorepo, a dependency task in
+another subproject resolves its names there, not in the calling project's config.
+An unknown name fails the run.
+
+`--skip-deps` and the `task.skip_depends` setting skip daemon requirements.
+`--dry-run` still validates names and the experimental setting, but starts nothing.
+Safe mode blocks task daemon startup.
+
+For setup, readiness checks, and daemon lifecycle details, see the
+[daemon guide](/daemons.html#tasks-that-require-daemons).
 
 ### `env`
 
