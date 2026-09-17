@@ -74,6 +74,16 @@ A `namespace` key in a project's own `pitchfork.toml` still wins over the defaul
 that `mise.toml` established. This differs from `[daemons]`, where a
 higher-precedence declaration replaces a same-name daemon completely.
 
+The table is inherited down a project tree: a project without one uses the
+nearest ancestor's. It is ignored in global and system configuration, with a
+warning, because a namespace there would be handed to every project on the
+machine, which defeats its purpose.
+
+Inheritance means sub-projects under the configuration that declares a namespace
+share it, so keep their daemon names distinct. Mise fails the load when two
+projects it can see claim one ID, but it only sees the projects reachable from
+where you run it.
+
 Changing the namespace of a project whose daemons are running fails; stop them
 first. Once nothing is running, mise adopts the new namespace and forgets IDs from
 the old one.

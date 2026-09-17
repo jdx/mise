@@ -125,12 +125,25 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         if Settings::safe_mode() && !crate::config::is_global_config(cf.get_path()) {
             continue;
         }
-        let root = cf.project_root().unwrap_or_else(|| cf.config_root());
+        let project_root = cf.project_root();
+        let root = project_root.clone().unwrap_or_else(|| cf.config_root());
         if let Some(file_settings) = file_settings {
-            settings
-                .entry(root.clone())
-                .or_default()
-                .merge(file_settings);
+            match &project_root {
+                // Settings are inherited down a project tree, and a global
+                // config's root is the home directory. Honouring one there would
+                // hand every project on the machine the same namespace, which is
+                // the one thing a namespace must never be. It would also be
+                // invisible to another project importing from here, which reads
+                // project configuration only.
+                None => warn_once!(
+                    "[daemons_settings] in {} is ignored; it belongs in a project configuration",
+                    crate::file::display_path(cf.get_path())
+                ),
+                Some(project_root) => settings
+                    .entry(project_root.clone())
+                    .or_default()
+                    .merge(file_settings),
+            }
         }
         for (name, declaration) in entries {
             declarations.insert(
@@ -165,6 +178,25 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     {
         let namespace = runtime::resolve_namespace(&root, Some(&settings_for(&settings, &root)))?;
         set.namespaces.insert(root, namespace);
+    }
+    // An inherited namespace is shared by every project beneath the config that
+    // declares it, so two of them can name the same daemon and resolve to one
+    // pitchfork ID. Say so instead of letting one silently shadow the other.
+    let mut claimed: IndexMap<String, PathBuf> = IndexMap::new();
+    for daemon in set.daemons.values() {
+        let Some(namespace) = set.namespaces.get(&daemon.root) else {
+            continue;
+        };
+        let id = format!("{namespace}/{}", daemon.name);
+        if let Some(other) = claimed.insert(id.clone(), daemon.root.clone())
+            && other != daemon.root
+        {
+            bail!(
+                "daemon {id} is declared in both {} and {}; they share a namespace, so give one of them a different name or its own [daemons_settings] namespace",
+                other.display(),
+                daemon.root.display()
+            );
+        }
     }
     if !imported_ids.is_empty() {
         for daemon in set.daemons.values_mut().filter(|d| !d.imported) {
@@ -811,6 +843,55 @@ mod tests {
             set.namespace_for(&group.canonicalize().unwrap()),
             Some("shared")
         );
+    }
+
+    #[test]
+    fn global_daemon_settings_do_not_capture_every_project() {
+        // A global config's root is the home directory, so honouring a namespace
+        // there would give every project on the machine the same one.
+        let tmp = tempfile::tempdir().unwrap();
+        let global = crate::dirs::HOME.join("config").join("config.toml");
+        let config = files(&[
+            (
+                global.to_str().unwrap(),
+                "[daemons_settings]\nnamespace = 'everything'\n",
+            ),
+            (
+                tmp.path().join("app").join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\n",
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        let root = set.daemons["api"].root.clone();
+        assert_ne!(set.namespace_for(&root), Some("everything"));
+        assert_eq!(
+            set.namespace_for(&root),
+            Some(runtime::namespace(&root).unwrap().as_str())
+        );
+    }
+
+    #[test]
+    fn two_projects_cannot_claim_one_daemon_id() {
+        // Fixed namespaces make this reachable: an import resolves to the same
+        // namespace as a daemon declared here, and both want the same ID.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'shared'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons_settings]\nnamespace = 'shared'\n[daemons.worker]\nrun = 'exec local'\n[daemons.pipeline]\nproject = {}\nname = 'worker'\n",
+                toml::Value::String(mirror.to_string_lossy().into_owned())
+            ),
+        )]);
+        let err = load(&config).unwrap_err().to_string();
+        assert!(err.contains("shared/worker"), "{err}");
+        assert!(err.contains("share a namespace"), "{err}");
     }
 
     #[test]
