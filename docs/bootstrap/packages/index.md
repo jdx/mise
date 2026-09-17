@@ -284,12 +284,12 @@ artifact = "Example.app"
 os = "macos/arm64"
 ```
 
-| Field      | Meaning                                                                                                         |
-| ---------- | --------------------------------------------------------------------------------------------------------------- |
-| `version`  | The explicit release to install. `latest` is not supported.                                                     |
-| `url`      | The archive download URL. `{{version}}` is replaced with the declared version.                                  |
-| `sha256`   | The archive's SHA-256 checksum: exactly 64 hexadecimal characters. Homebrew's `no_check` value is not accepted. |
-| `artifact` | The app bundle to install from the archive, such as `Example.app`.                                              |
+| Field      | Meaning                                                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version`  | The explicit release to install. `latest` is not supported.                                                                                           |
+| `url`      | The archive download URL. `{{version}}` is replaced with the declared version. A `.git` URL is rejected: a clone cannot be verified against `sha256`. |
+| `sha256`   | The archive's SHA-256 checksum: exactly 64 hexadecimal characters. Homebrew's `no_check` value is not accepted.                                       |
+| `artifact` | The app bundle to install from the archive, such as `Example.app`.                                                                                    |
 
 Choose a download for your Mac's architecture; the optional `os` selector above
 limits this example to Apple Silicon. Use HTTPS where possible. Non-HTTPS URLs
