@@ -5817,7 +5817,14 @@
             "type": "object",
             "required": ["run"],
             "not": {
-              "anyOf": [{ "required": ["preset"] }, { "required": ["project"] }]
+              "anyOf": [
+                {
+                  "required": ["preset"]
+                },
+                {
+                  "required": ["project"]
+                }
+              ]
             },
             "properties": {
               "run": {

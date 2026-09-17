@@ -241,11 +241,14 @@ fn hierarchy_config_paths(dir: &Path) -> Result<Vec<PathBuf>> {
         .rev()
     {
         // Within one directory this helper lists the highest-precedence file
-        // first, which is the opposite of the order wanted here.
+        // first, which is the opposite of the order wanted here. It also lists
+        // `.tool-versions`, which is not TOML and would fail to parse; only a
+        // TOML config can carry [daemons] anyway.
         paths.extend(
             crate::config::config_paths_in_dir(&ancestor)
                 .into_iter()
-                .rev(),
+                .rev()
+                .filter(|path| path.extension().is_some_and(|ext| ext == "toml")),
         );
     }
     Ok(paths)
@@ -766,6 +769,28 @@ mod tests {
             set.namespace_for(&group.canonicalize().unwrap()),
             Some("shared")
         );
+    }
+
+    #[test]
+    fn referenced_projects_with_tool_versions_files_still_import() {
+        // `.tool-versions` sits in the same config list but is not TOML; parsing
+        // it would fail before the project's mise config is ever read.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(&mirror, "[daemons.worker]\nrun = 'exec worker'\n");
+        std::fs::write(
+            mirror.join(&*crate::env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
+            "node 20.0.0\n",
+        )
+        .unwrap();
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.worker]\nproject = '../mirror'\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(set.find("worker").map(|d| d.imported), Some(true));
     }
 
     #[test]
