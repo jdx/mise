@@ -41,6 +41,14 @@ extends = "python:test"
 run = "uv run pytest --cov"  # Override run while keeping tools, depends
 ```
 
+[File tasks](/tasks/file-tasks) extend a template from their `#MISE` header:
+
+```bash [mise-tasks/build]
+#!/usr/bin/env bash
+#MISE extends="python:build"
+uv build
+```
+
 ## Template Naming
 
 Templates use colon (`:`) separators for namespacing, similar to task naming conventions in monorepos:
@@ -56,7 +64,7 @@ When a task extends a template, fields are merged according to these rules:
 
 | Field                                             | Behavior                                                          |
 | ------------------------------------------------- | ----------------------------------------------------------------- |
-| `run`, `run_windows`                              | Local overrides completely                                        |
+| `run`, `run_windows`                              | Local overrides completely; ignored when the task has a `file`    |
 | `tools`                                           | Deep merge (local tools add to or override the template's values) |
 | `env`                                             | Deep merge (local env adds to or overrides the template's values) |
 | `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                           |
@@ -73,6 +81,9 @@ empty local list currently inherits the template's value. In particular,
 `depends = []` does not clear template dependencies. Use a separate template when
 a task must omit those prerequisites. `outputs = []` is an explicit no-files
 output declaration; `cache = { enabled = false }` explicitly disables inherited caching.
+
+A task that sets `file` — including every file task — runs that script rather than
+any `run` script, so it never inherits `run` or `run_windows` from a template.
 
 ### Example: Deep Merge for Tools
 
