@@ -1293,7 +1293,7 @@ async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode, mpr: &Mul
             .conflicts_with
             .cask
             .iter()
-            .any(|conflict| !installed_versions(conflict).is_empty())
+            .any(|conflict| !installed_versions(cask.manager, conflict).is_empty())
         {
             continue;
         }
@@ -1303,8 +1303,20 @@ async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode, mpr: &Mul
         let Ok(installed) = mise_installed_cask_version(&cask) else {
             continue;
         };
+        // Ownership is per target, so the skip check needs the receipt as well
+        // as the version. An unreadable receipt defers to the serial pass for
+        // the same reason an unreadable version does.
+        let Ok(previous) = previous_receipt(&cask) else {
+            continue;
+        };
         if !matches!(
-            installed_skip_reason(&cask, &artifacts, installed.as_deref(), mode),
+            installed_skip_reason(
+                &cask,
+                &artifacts,
+                previous.as_ref(),
+                installed.as_deref(),
+                mode
+            ),
             Ok(None)
         ) {
             continue;
