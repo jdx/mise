@@ -670,6 +670,12 @@ impl CondaBackend {
                 if needs_launcher {
                     Self::create_bin_launcher(&install_path, &src, &dst)?;
                 } else {
+                    // A symlinked command is invoked as `<prefix>/.mise-bins/<name>` rather
+                    // than `<prefix>/bin/<name>`, so its `argv[0]` differs from the launcher's.
+                    // That is safe only because the two directories sit at the same depth:
+                    // `dirname(argv[0])/../share` reaches `<prefix>/share` either way, and a
+                    // sibling lookup finds the package's other commands, which this directory
+                    // holds in full whenever it is symlinked. See `mise_bins_dir_sits_beside_bin`.
                     file::make_symlink_or_copy(&src, &dst)?;
                 }
             }
@@ -1194,7 +1200,7 @@ fn cmd_escape_value(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CondaBackend, CondaOptions, rewrite_request_url};
+    use super::{CondaBackend, CondaOptions, MISE_BINS_DIR, rewrite_request_url};
     #[cfg(unix)]
     use crate::file;
     use crate::toolset::ToolVersionOptions;
@@ -1483,6 +1489,19 @@ mod tests {
                 "{0}\n{0}\n1\nactivated\ndependency-output\nforwarded argument\n",
                 prefix.display()
             )
+        );
+    }
+
+    /// A tool that resolves its resources relative to `argv[0]` without following the
+    /// symlink — `dirname(argv[0])/../share` is the common shape — keeps working through
+    /// `.mise-bins` only while that directory is as deep in the prefix as `bin` is. Moving
+    /// it deeper would send those lookups outside the package, and nothing about a compiled
+    /// binary would reveal the breakage at install time.
+    #[test]
+    fn mise_bins_dir_sits_beside_bin() {
+        assert_eq!(
+            Path::new(MISE_BINS_DIR).components().count(),
+            Path::new("bin").components().count()
         );
     }
 
