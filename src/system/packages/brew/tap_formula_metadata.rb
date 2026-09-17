@@ -242,12 +242,15 @@ def version_from_url_path(url)
   match && match[1]
 end
 
+# The version carried by the archive's own filename, e.g. wget-1.21.4.tar.gz.
 def version_from_basename(url)
   basename = File.basename(url.to_s).sub(/\.(tar\.(gz|xz|bz2|zst)|tgz|txz|zip|gz)\z/i, "")
   match = basename.match(/(?:^|[-_v])([0-9]+(?:\.[0-9A-Za-z]+)+(?:[-_.][0-9A-Za-z]+)*)/)
   match && match[1]
 end
 
+# Homebrew tries its URL parsers in a fixed order and takes the first that
+# matches; these are the two that cover the formulae mise builds from taps.
 def inferred_version(url)
   version_from_url_path(url) || version_from_basename(url)
 end
