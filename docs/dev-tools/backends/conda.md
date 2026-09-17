@@ -104,7 +104,7 @@ Override the conda channel for a specific package:
 ## Limitations
 
 - mise solves and installs transitive dependencies in an isolated prefix for each tool. It does not import or maintain a general-purpose `environment.yml`.
-- Only commands belonging to the requested package are exposed to your shell. Dependency executables remain available inside that tool's launcher environment.
+- Only commands belonging to the requested package are exposed to your shell. When a package ships activation scripts, dependency executables, or script entry points, its commands run through a launcher that activates the prefix for that command alone, so the dependency executables stay reachable from inside it. A package with none of those — a single-binary tool such as `conda:ripgrep` — is symlinked directly, so it starts without an extra shell and without its prefix on the `PATH` of anything it spawns.
 - The solver uses one channel per tool. Packages from channels such as bioconda may require dependencies from another channel that this configuration cannot supply.
 - Native requirements such as a compatible libc or GPU driver still belong to the host.
 
