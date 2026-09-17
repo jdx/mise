@@ -513,6 +513,222 @@ pub(super) fn cask_directory_digest(root: &Path) -> Result<String> {
     Ok(hex::encode(digest.finalize()))
 }
 
+/// What a directory entry contributes to the digest.
+enum DigestEntry {
+    Directory,
+    File(String),
+    Symlink(Vec<u8>),
+}
+
+/// Fingerprint a target through a directory descriptor.
+///
+/// Produces the same digest as [`cask_target_fingerprint`] — the receipts on
+/// disk record these, so the two must agree exactly — but resolves no pathname
+/// along the way. Every step is `fstatat`, `openat` or `readlinkat` relative to
+/// a descriptor, so a component replaced part-way through the walk cannot make
+/// this measure a different tree from the one the caller found and is about to
+/// act on. `cask_target_fingerprint` stays for callers that hold no descriptor.
+pub(super) fn cask_target_fingerprint_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<CaskTargetFingerprint> {
+    let stat = nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)
+        .wrap_err_with(|| format!("failed to fingerprint {}", Path::new(name).display()))?;
+    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+    if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
+        let target = read_link_verified_at(&parent, name, &stat)?;
+        return Ok(CaskTargetFingerprint {
+            kind: CaskTargetKind::Symlink,
+            digest: hex::encode(Sha256::digest(&target)),
+        });
+    }
+    if kind.contains(nix::sys::stat::SFlag::S_IFREG) {
+        return Ok(CaskTargetFingerprint {
+            kind: CaskTargetKind::File,
+            digest: file_digest_at(&parent, name, &stat)?,
+        });
+    }
+    if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+        let mut entries = Vec::new();
+        let dir = nix::dir::Dir::from_fd(open_verified_at(
+            &parent,
+            name,
+            &stat,
+            nix::fcntl::OFlag::O_DIRECTORY,
+        )?)?;
+        collect_digest_entries_at(dir, Path::new(""), &mut entries)?;
+        return Ok(CaskTargetFingerprint {
+            kind: CaskTargetKind::Directory,
+            digest: digest_from_entries(entries),
+        });
+    }
+    bail!(
+        "brew-cask: unsupported target type '{}'",
+        Path::new(name).display()
+    )
+}
+
+/// Open `name` under `parent` and confirm the descriptor is the entry that was
+/// just classified.
+///
+/// `O_NOFOLLOW` refuses a symlink, but not a directory or file swapped for
+/// another of the same kind between the `fstatat` that classified it and this
+/// open. Rechecking device and inode from the descriptor itself closes that,
+/// the same way `remove_staging_dir_at` guards the staging directory.
+pub(super) fn open_verified_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+    classified: &nix::sys::stat::FileStat,
+    flags: nix::fcntl::OFlag,
+) -> Result<std::os::fd::OwnedFd> {
+    let fd = nix::fcntl::openat(
+        parent,
+        name,
+        flags | nix::fcntl::OFlag::O_RDONLY | nix::fcntl::OFlag::O_NOFOLLOW,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let opened = nix::sys::stat::fstat(&fd)?;
+    if opened.st_dev != classified.st_dev || opened.st_ino != classified.st_ino {
+        bail!(
+            "brew-cask: '{}' was replaced while being fingerprinted",
+            Path::new(name).display()
+        );
+    }
+    Ok(fd)
+}
+
+/// Read a symlink's target and confirm the entry did not change around it.
+///
+/// A symlink cannot be pinned by a descriptor the way a directory or file can:
+/// there is no portable way to open the link itself — macOS has neither
+/// `O_PATH` nor `AT_EMPTY_PATH` — so `readlinkat` resolves the name again. This
+/// detects a replacement rather than preventing one, and the detection is
+/// defeatable: renaming the original aside, planting a substitute for the read,
+/// then renaming the original back preserves its inode, so the recheck passes.
+///
+/// Closing that would need per-entry atomicity a tree walk over a mutable
+/// directory cannot provide. What bounds it is the directory itself:
+/// `open_trusted_directory` refuses an app directory that is world-writable or
+/// owned by anyone but root or the invoking user, so an attacker able to run
+/// this race is already able to edit the bundle outright, before or after the
+/// walk. The check is kept because it costs nothing and catches the ordinary
+/// case — a concurrent install or an interrupted one — not because it is a
+/// boundary.
+pub(super) fn read_link_verified_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+    classified: &nix::sys::stat::FileStat,
+) -> Result<Vec<u8>> {
+    let target = nix::fcntl::readlinkat(&parent, name)?;
+    let after = nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    let kind = nix::sys::stat::SFlag::from_bits_truncate;
+    if after.st_dev != classified.st_dev
+        || after.st_ino != classified.st_ino
+        || kind(after.st_mode) != kind(classified.st_mode)
+    {
+        bail!(
+            "brew-cask: '{}' was replaced while being fingerprinted",
+            Path::new(name).display()
+        );
+    }
+    Ok(target.as_os_str().as_encoded_bytes().to_vec())
+}
+
+/// Hash a regular file opened relative to `parent`.
+///
+/// Always hashes in process, where the path-based form shells out to
+/// `sha256sum` above 50MB. The digest is identical either way; only the large
+/// file shortcut is lost, and it cannot be kept without naming a path.
+fn file_digest_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+    classified: &nix::sys::stat::FileStat,
+) -> Result<String> {
+    use std::io::Read;
+
+    let fd = open_verified_at(parent, name, classified, nix::fcntl::OFlag::empty())?;
+    let mut file = std::fs::File::from(fd);
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buf)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+/// Walk `dir` depth-first, recording each entry against its path relative to
+/// the fingerprint root. Descends only through descriptors.
+fn collect_digest_entries_at(
+    dir: nix::dir::Dir,
+    prefix: &Path,
+    out: &mut Vec<(PathBuf, DigestEntry)>,
+) -> Result<()> {
+    let mut dir = dir;
+    let names = dir
+        .iter()
+        .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for name in names {
+        if name.as_bytes() == b"." || name.as_bytes() == b".." {
+            continue;
+        }
+        let name = std::ffi::OsStr::from_bytes(name.to_bytes());
+        let relative = prefix.join(name);
+        let stat = nix::sys::stat::fstatat(&dir, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+        if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
+            out.push((
+                relative,
+                DigestEntry::Symlink(read_link_verified_at(&dir, name, &stat)?),
+            ));
+        } else if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+            let child = nix::dir::Dir::from_fd(open_verified_at(
+                &dir,
+                name,
+                &stat,
+                nix::fcntl::OFlag::O_DIRECTORY,
+            )?)?;
+            out.push((relative.clone(), DigestEntry::Directory));
+            collect_digest_entries_at(child, &relative, out)?;
+        } else if kind.contains(nix::sys::stat::SFlag::S_IFREG) {
+            out.push((
+                relative,
+                DigestEntry::File(file_digest_at(&dir, name, &stat)?),
+            ));
+        } else {
+            bail!(
+                "brew-cask: unsupported directory entry '{}'",
+                relative.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Emit the digest bytes in the order and shape [`cask_directory_digest`] uses.
+fn digest_from_entries(mut entries: Vec<(PathBuf, DigestEntry)>) -> String {
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut digest = Sha256::new();
+    for (relative, entry) in entries {
+        digest.update([match entry {
+            DigestEntry::Symlink(_) => b'l',
+            DigestEntry::Directory => b'd',
+            DigestEntry::File(_) => b'f',
+        }]);
+        hash_digest_field(&mut digest, relative.as_os_str().as_encoded_bytes());
+        match entry {
+            DigestEntry::Symlink(target) => hash_digest_field(&mut digest, &target),
+            DigestEntry::Directory => {}
+            DigestEntry::File(hash) => hash_digest_field(&mut digest, hash.as_bytes()),
+        }
+    }
+    hex::encode(digest.finalize())
+}
+
 pub(super) fn hash_digest_field(digest: &mut Sha256, value: &[u8]) {
     digest.update((value.len() as u64).to_le_bytes());
     digest.update(value);

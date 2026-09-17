@@ -1494,27 +1494,23 @@ fn install_app(
     // explicit consent, and the branch below verifies the bundle is identical
     // before recording anything.
     //
-    // Measure the target through the verified directory descriptor rather than
-    // by pathname, so a component replaced after `ensure_trusted_appdir` cannot
-    // make us fingerprint a different file from the one `exists_at` found. On
-    // linux this resolves via /proc/self/fd and is fully bound; on macOS
-    // F_GETPATH yields the directory's current path, so the binding is weaker
-    // there. `logical_target` stays the path shown to the user.
-    let bound_target = parent.path()?.join(&name);
+    // Measure the target through the verified directory descriptor. Every step
+    // of the walk is relative to `parent.fd`, so no pathname is resolved and a
+    // component replaced after `ensure_trusted_appdir` cannot make us
+    // fingerprint a different tree from the one `exists_at` found and the swap
+    // below will touch. `logical_target` stays the path shown to the user.
+    let source_fingerprint = || cask_target_fingerprint(&source);
+    let target_fingerprint = || cask_target_fingerprint_at(&parent.fd, &name);
     if require_unowned && !adopt && exists_at(&parent.fd, &name)? {
         return Err(unowned_target_error(manager, &logical_target));
     }
     if adopt && exists_at(&parent.fd, &name)? {
-        if verify_adopt {
-            let source_fingerprint = cask_target_fingerprint(&source)?;
-            let target_fingerprint = cask_target_fingerprint(&bound_target)?;
-            if source_fingerprint != target_fingerprint {
-                bail!(
-                    "{}: cannot adopt '{}': existing artifact is not identical to the declared artifact",
-                    manager.label(),
-                    logical_target.display()
-                );
-            }
+        if verify_adopt && source_fingerprint()? != target_fingerprint()? {
+            bail!(
+                "{}: cannot adopt '{}': existing artifact is not identical to the declared artifact",
+                manager.label(),
+                logical_target.display()
+            );
         }
         return Ok(AppInstall::Installed {
             metadata_only: true,
@@ -1535,22 +1531,22 @@ fn install_app(
     //
     // Scoped to managers that arbitrate by receipt. `brew-cask` owns its target
     // by token against Homebrew's Caskroom and keeps its existing behaviour.
-    if !manager.uses_homebrew_caskroom() && !require_unowned && exists_at(&parent.fd, &name)? {
-        let source_fingerprint = cask_target_fingerprint(&source)?;
-        let target_fingerprint = cask_target_fingerprint(&bound_target)?;
-        if source_fingerprint == target_fingerprint {
-            info!(
-                "{}: keeping the identical bundle already at {}",
-                manager.label(),
-                logical_target.display()
-            );
-            // `ditto` would have created this on the install path.
-            file::create_dir_all(caskroom)?;
-            file::make_symlink(&logical_target, &caskroom_app)?;
-            return Ok(AppInstall::Installed {
-                metadata_only: !keep_caskroom_copy,
-            });
-        }
+    if !manager.uses_homebrew_caskroom()
+        && !require_unowned
+        && exists_at(&parent.fd, &name)?
+        && source_fingerprint()? == target_fingerprint()?
+    {
+        info!(
+            "{}: keeping the identical bundle already at {}",
+            manager.label(),
+            logical_target.display()
+        );
+        // `ditto` would have created this on the install path.
+        file::create_dir_all(caskroom)?;
+        file::make_symlink(&logical_target, &caskroom_app)?;
+        return Ok(AppInstall::Installed {
+            metadata_only: !keep_caskroom_copy,
+        });
     }
 
     ditto(&source, &caskroom_app)?;

@@ -8902,6 +8902,165 @@ fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
     Ok(())
 }
 
+/// The descriptor-bound fingerprint must agree with the path-based one exactly.
+/// Receipts on disk store these digests, so any divergence would make every
+/// installed cask look modified.
+#[test]
+fn descriptor_bound_fingerprint_matches_the_path_based_one() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let bundle = root.join("Example.app");
+
+    // A tree with every entry kind the digest distinguishes, nested, plus
+    // names that sort differently as bytes than as path components.
+    file::create_dir_all(bundle.join("Contents/MacOS"))?;
+    file::create_dir_all(bundle.join("Contents/Resources/nested/deeper"))?;
+    file::create_dir_all(bundle.join("Contents/empty-dir"))?;
+    crate::file::write(bundle.join("Contents/Info.plist"), "plist")?;
+    crate::file::write(bundle.join("Contents/MacOS/Example"), "binary\0bytes")?;
+    crate::file::write(bundle.join("Contents/Resources/a.txt"), "")?;
+    crate::file::write(
+        bundle.join("Contents/Resources/a-b.txt"),
+        "dash sorts before /",
+    )?;
+    crate::file::write(
+        bundle.join("Contents/Resources/nested/deeper/leaf"),
+        "leaf contents",
+    )?;
+    std::os::unix::fs::symlink("MacOS/Example", bundle.join("Contents/link"))?;
+    std::os::unix::fs::symlink("../../nowhere", bundle.join("Contents/Resources/dangling"))?;
+
+    let parent = nix::dir::Dir::open(
+        root.as_path(),
+        nix::fcntl::OFlag::O_RDONLY | nix::fcntl::OFlag::O_DIRECTORY,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let name = std::ffi::OsStr::new("Example.app");
+
+    assert_eq!(
+        cask_target_fingerprint_at(&parent, name)?,
+        cask_target_fingerprint(&bundle)?,
+    );
+
+    // A missing entry is an error, not a digest of nothing.
+    assert!(cask_target_fingerprint_at(&parent, std::ffi::OsStr::new("file")).is_err());
+
+    // The other two kinds at the top level, not just inside a directory walk.
+    crate::file::write(root.join("file"), "top level file")?;
+    std::os::unix::fs::symlink("file", root.join("link"))?;
+    assert_eq!(
+        cask_target_fingerprint_at(&parent, std::ffi::OsStr::new("file"))?,
+        cask_target_fingerprint(&root.join("file"))?,
+    );
+    assert_eq!(
+        cask_target_fingerprint_at(&parent, std::ffi::OsStr::new("link"))?,
+        cask_target_fingerprint(&root.join("link"))?,
+    );
+
+    // A change anywhere in the tree must move the digest, or the comparison
+    // this protects would accept a modified bundle.
+    let before = cask_target_fingerprint_at(&parent, name)?;
+    crate::file::write(
+        bundle.join("Contents/Resources/nested/deeper/leaf"),
+        "changed",
+    )?;
+    assert_ne!(cask_target_fingerprint_at(&parent, name)?, before);
+    Ok(())
+}
+
+/// `O_NOFOLLOW` refuses a symlink, but not a directory swapped for another
+/// directory between the `fstatat` that classified it and the `openat` that
+/// reads it. The race cannot be run deterministically, so the swap is
+/// performed directly against a stale classification.
+#[test]
+fn fingerprint_refuses_an_entry_replaced_after_classification() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    file::create_dir_all(root.join("a"))?;
+    crate::file::write(root.join("a/marker"), "original")?;
+
+    let parent = nix::dir::Dir::open(
+        root.as_path(),
+        nix::fcntl::OFlag::O_RDONLY | nix::fcntl::OFlag::O_DIRECTORY,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let name = std::ffi::OsStr::new("a");
+    let classified =
+        nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+
+    // Unchanged: the descriptor is the entry that was classified.
+    assert!(open_verified_at(&parent, name, &classified, nix::fcntl::OFlag::O_DIRECTORY).is_ok());
+
+    // Replaced by a different directory — same kind, so O_NOFOLLOW and
+    // O_DIRECTORY both still succeed and only the identity check catches it.
+    file::create_dir_all(root.join("b"))?;
+    crate::file::write(root.join("b/marker"), "attacker")?;
+    file::remove_all(root.join("a"))?;
+    std::fs::rename(root.join("b"), root.join("a"))?;
+
+    let err = open_verified_at(&parent, name, &classified, nix::fcntl::OFlag::O_DIRECTORY)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("was replaced while being fingerprinted"),
+        "{err}"
+    );
+    Ok(())
+}
+
+/// A symlink cannot be pinned by a descriptor, so `readlinkat` resolves the
+/// name each time. The replacement is therefore detected rather than
+/// prevented, and the swap is performed directly against a stale
+/// classification because the race cannot be run deterministically.
+#[test]
+fn fingerprint_refuses_a_symlink_replaced_after_classification() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    std::os::unix::fs::symlink("original", root.join("s"))?;
+
+    let parent = nix::dir::Dir::open(
+        root.as_path(),
+        nix::fcntl::OFlag::O_RDONLY | nix::fcntl::OFlag::O_DIRECTORY,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let name = std::ffi::OsStr::new("s");
+    let classified =
+        nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+
+    // Unchanged: the target is read and returned verbatim.
+    assert_eq!(
+        read_link_verified_at(&parent, name, &classified)?,
+        b"original".to_vec()
+    );
+
+    // Repointed at something else. The link is still a link, so only the
+    // identity recheck distinguishes it.
+    //
+    // The substitute is created before the original is unlinked, so it cannot
+    // be handed the original's inode number by a filesystem that recycles
+    // them — which would make the recheck pass and this test flake.
+    std::os::unix::fs::symlink("attacker", root.join("t"))?;
+    file::remove_all(root.join("s"))?;
+    std::fs::rename(root.join("t"), root.join("s"))?;
+
+    let replaced =
+        nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    assert_ne!(
+        (replaced.st_dev, replaced.st_ino),
+        (classified.st_dev, classified.st_ino),
+        "the substitute reused the original identity, so the swap was not observable"
+    );
+
+    let err = read_link_verified_at(&parent, name, &classified)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("was replaced while being fingerprinted"),
+        "{err}"
+    );
+    Ok(())
+}
+
 /// A same-version retarget must not be reported installed. The recorded
 /// version still matches, but the declared app is not installed anywhere, so
 /// skipping would silently do nothing and the unowned-target policy would
