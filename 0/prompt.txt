@@ -1,0 +1,9 @@
+review [https://github.com/jdx/mise/pull/13321](https://github.com/jdx/mise/pull/13321)
+
+---
+
+ok but you're a smarter model, how would you write these prompts
+
+---
+
+ok modify the pr directly with these changes
