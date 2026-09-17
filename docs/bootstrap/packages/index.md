@@ -338,6 +338,14 @@ left an app without a completed ownership receipt. A pending transaction alone
 does not establish ownership. Changing `artifact` or the app directory also
 requires mise to assess ownership of the new destination.
 
+An app that appears at the destination while mise is staging its own bundle is
+refused the same way, and left untouched:
+
+```
+macos-app:example: an app appeared at '/Applications/Example.app' while this one
+was being staged; it was left untouched
+```
+
 A dry run warns about an existing unowned app, but cannot determine whether
 adoption will succeed: it has not downloaded the archive to compare contents.
 
