@@ -563,22 +563,10 @@ mise settings set idiomatic_version_file_ignore_minimum_versions true
 That setting is removed in 2026.11.0 along with the behavior it guards.
 :::
 
-For `package.json` (supported by `node`, `deno`, `bun`, `npm`, `pnpm`, and `yarn`):
-
-- Runtime tools (`node`, `deno`, and `bun`) read `devEngines.runtime` (both single object and array formats are supported).
-- Package managers (`npm`, `pnpm`, and `yarn`) read `devEngines.packageManager` or top-level `packageManager` (e.g. `pnpm@9.1.0` or `npm@10.0.0`).
-- For `bun`, mise checks `devEngines.runtime` first, falling back to `devEngines.packageManager` and top-level `packageManager` (e.g. `bun@1.2.0`).
-
-The `engines` field is **not** read, and this is the clearest case of the rule above. `engines`
-declares the range of Node versions a package is _compatible_ with — npm uses it to warn or fail
-when someone installs the package on an unsupported runtime. It is a statement about consumers, and
-it is routinely a wide range (`>=18`) that no one develops against. `devEngines`, added by npm
-precisely to fill this gap, states the version the project's own developers use, which is what mise
-needs. If you only have `engines`, pin the real version explicitly:
-
-```sh
-mise use node@22
-```
+For `package.json`, mise reads development runtime and package-manager declarations, not
+`engines` compatibility ranges. See the [Node.js](/lang/node.html#package-json),
+[Bun](/lang/bun.html#version-files), and [Deno](/lang/deno.html#version-files) guides for the
+supported fields and examples.
 
 For Go, mise reads the `toolchain goX.Y.Z` directive from `go.mod` or `go.work`.
 An active workspace takes precedence over the modules beneath it. See

@@ -29,6 +29,30 @@ plugin with the same name can change the behavior; use `mise plugins ls` to
 check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/deno.rs)
 for backend details.
 
+## Version files
+
+Enable [idiomatic version files](/configuration.html#idiomatic-version-files) to read
+`.deno-version` or a version declaration in `package.json`:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools deno
+```
+
+For example, this `package.json` selects Deno 2.2.0:
+
+```json [package.json]
+{
+  "devEngines": {
+    "runtime": { "name": "deno", "version": "2.2.0" }
+  }
+}
+```
+
+mise reads `devEngines.runtime` when its `name` is `deno`.
+
+`devEngines.runtime` accepts an object or an array; mise reads the first entry in an array.
+The `engines` compatibility fields are not used to select a version.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `deno` backend.
