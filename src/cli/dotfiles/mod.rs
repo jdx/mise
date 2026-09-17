@@ -5,6 +5,7 @@ mod add;
 mod apply;
 mod capture;
 pub(crate) mod capture_health;
+mod conflicts;
 mod diff;
 mod edit;
 mod exclude;
@@ -24,26 +25,7 @@ mod undo;
 mod untrack;
 mod watch;
 
-pub(crate) use add::DotfilesAdd;
 pub(crate) use apply::DotfilesApply;
-pub(crate) use capture::DotfilesCapture;
-pub(crate) use diff::DotfilesDiff;
-pub(crate) use edit::DotfilesEdit;
-pub(crate) use exclude::{DotfilesExclude, DotfilesInclude};
-pub(crate) use history::DotfilesHistory;
-pub(crate) use origin::DotfilesOrigin;
-pub(crate) use paths::DotfilesPaths;
-pub(crate) use pull::DotfilesPull;
-pub(crate) use recover::DotfilesRecover;
-pub(crate) use rollback::DotfilesRollback;
-pub(crate) use save::DotfilesSave;
-pub(crate) use status::DotfilesStatus;
-pub(crate) use sync::DotfilesSync;
-pub(crate) use track::DotfilesTrack;
-pub(crate) use unapply::DotfilesUnapply;
-pub(crate) use undo::DotfilesUndo;
-pub(crate) use untrack::DotfilesUntrack;
-pub(crate) use watch::DotfilesWatch;
 
 /// Load, validate, and filter whole-file and edit requests with the same
 /// target semantics for every command that acts on both kinds of entry.
@@ -77,11 +59,9 @@ fn select_requests(
     Ok((files, edits))
 }
 
-/// Manage dotfiles from `[dotfiles]` (deprecated)
-///
-/// Use `mise bootstrap dotfiles` instead.
+/// Manage dotfiles from `[dotfiles]`
 #[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment, hide = true)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct Dotfiles {
     #[usage(subcommand)]
     command: Commands,
@@ -89,35 +69,55 @@ pub(crate) struct Dotfiles {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    #[usage(hide = true)]
     Add(add::DotfilesAdd),
-    #[usage(hide = true)]
     Apply(apply::DotfilesApply),
-    #[usage(hide = true)]
+    Capture(capture::DotfilesCapture),
+    Conflicts(conflicts::DotfilesConflicts),
     Diff(diff::DotfilesDiff),
-    #[usage(hide = true)]
     Edit(edit::DotfilesEdit),
-    #[usage(hide = true)]
+    Exclude(exclude::DotfilesExclude),
+    History(history::DotfilesHistory),
+    Include(exclude::DotfilesInclude),
+    Origin(origin::DotfilesOrigin),
+    Paths(paths::DotfilesPaths),
+    Pull(pull::DotfilesPull),
+    Recover(recover::DotfilesRecover),
+    Rollback(rollback::DotfilesRollback),
+    Save(save::DotfilesSave),
     Status(status::DotfilesStatus),
-    #[usage(hide = true)]
+    Sync(sync::DotfilesSync),
+    Track(track::DotfilesTrack),
     Unapply(unapply::DotfilesUnapply),
+    Undo(undo::DotfilesUndo),
+    Untrack(untrack::DotfilesUntrack),
+    Watch(watch::DotfilesWatch),
 }
 
 impl Dotfiles {
     pub(crate) async fn run(self) -> Result<()> {
-        deprecated_at!(
-            "2027.2.0",
-            "2028.2.0",
-            "cli.dotfiles",
-            "`mise dotfiles ...` is deprecated. Use `mise bootstrap dotfiles ...` instead."
-        );
         match self.command {
             Commands::Add(cmd) => cmd.run().await,
-            Commands::Apply(cmd) => cmd.run().await.map(|_| ()),
+            Commands::Apply(cmd) => crate::cli::bootstrap::run_dotfiles_apply(cmd).await,
+            Commands::Capture(cmd) => cmd.run().await,
+            Commands::Conflicts(cmd) => cmd.run().await,
             Commands::Diff(cmd) => cmd.run().await,
             Commands::Edit(cmd) => cmd.run().await,
+            Commands::Exclude(cmd) => cmd.run().await,
+            Commands::History(cmd) => cmd.run().await,
+            Commands::Include(cmd) => cmd.run().await,
+            Commands::Origin(cmd) => cmd.run().await,
+            Commands::Paths(cmd) => cmd.run().await,
+            Commands::Pull(cmd) => cmd.run().await,
+            Commands::Recover(cmd) => cmd.run().await,
+            Commands::Rollback(cmd) => cmd.run().await,
+            Commands::Save(cmd) => cmd.run().await,
             Commands::Status(cmd) => cmd.run().await,
+            Commands::Sync(cmd) => cmd.run().await,
+            Commands::Track(cmd) => cmd.run().await,
             Commands::Unapply(cmd) => cmd.run().await,
+            Commands::Undo(cmd) => cmd.run().await,
+            Commands::Untrack(cmd) => cmd.run().await,
+            Commands::Watch(cmd) => cmd.run().await,
         }
     }
 }

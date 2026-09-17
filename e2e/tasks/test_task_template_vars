@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+# Vars a task declares are visible to vars its task template declares, whichever
+# order the two layers end up in. https://github.com/jdx/mise/discussions/13318
+
+cat <<'EOF' >mise.toml
+[task_templates.wrapper]
+vars = { wrap = "run --opt={{ vars.opt | default(value='none') }} --end" }
+run = "echo {{ vars.wrap }}"
+
+[tasks.with_opt]
+extends = "wrapper"
+vars = { opt = "from-task" }
+
+[tasks.without_opt]
+extends = "wrapper"
+EOF
+
+assert "mise run with_opt" "run --opt=from-task --end"
+assert "mise run without_opt" "run --opt=none --end"
+
+# A task overriding a literal the template also defines: the template's own copy must
+# not win back part way through resolution.
+cat <<'EOF' >mise.toml
+[task_templates.greeter]
+vars = { name = "template", greeting = "hello {{ vars.name }}" }
+run = "echo {{ vars.greeting }} name={{ vars.name }}"
+
+[tasks.inherited]
+extends = "greeter"
+
+[tasks.overridden]
+extends = "greeter"
+vars = { name = "task" }
+EOF
+
+assert "mise run inherited" "hello template name=template"
+assert "mise run overridden" "hello task name=task"
+
+# The other direction still resolves: a task var may read a var the template defines.
+cat <<'EOF' >mise.toml
+[task_templates.rooted]
+vars = { base = "/opt/app" }
+run = "echo {{ vars.path }}"
+
+[tasks.bin]
+extends = "rooted"
+vars = { path = "{{ vars.base }}/bin" }
+EOF
+
+assert "mise run bin" "/opt/app/bin"
+
+# Within a single task, a literal var is bound before a var that reads it, regardless
+# of which comes first in the table.
+cat <<'EOF' >mise.toml
+[tasks.solo]
+vars = { msg = "hi {{ vars.who }}", who = "world" }
+run = "echo {{ vars.msg }}"
+EOF
+
+assert "mise run solo" "hi world"
+
+# Config vars still lose to task-local vars for references the task writes itself.
+cat <<'EOF' >mise.toml
+[vars]
+mode = "config"
+
+[task_templates.moded]
+run = "echo {{ vars.mode }}"
+
+[tasks.uses_config]
+extends = "moded"
+
+[tasks.uses_task]
+extends = "moded"
+vars = { mode = "task" }
+EOF
+
+assert "mise run uses_config" "config"
+assert "mise run uses_task" "task"
+
+# A `tools = true` var is resolved in a separate pass and never reaches a task's vars, so
+# overriding a template's literal with one must leave the template's value in place rather
+# than delete it.
+cat <<'EOF' >mise.toml
+[task_templates.toolsy]
+vars = { mode = "template", cmd = "run --{{ vars.mode | default(value='MISSING') }}" }
+run = "echo {{ vars.cmd }}"
+
+[tasks.tools_override]
+extends = "toolsy"
+vars = { mode = { value = "task", tools = true } }
+EOF
+
+assert "mise run tools_override" "run --template"
+
+# The same filter cuts the other way: a `tools = true` value never runs, so it must not stop
+# a literal that does run from binding before the var that reads it.
+cat <<'EOF' >mise.toml
+[task_templates.toolsy2]
+vars = { mode = { value = "tool", tools = true }, cmd = "run --{{ vars.mode | default(value='MISSING') }}" }
+run = "echo {{ vars.cmd }}"
+
+[tasks.tools_ignored]
+extends = "toolsy2"
+vars = { mode = "task" }
+EOF
+
+assert "mise run tools_ignored" "run --task"

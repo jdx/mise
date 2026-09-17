@@ -26,7 +26,7 @@ use crate::system::history::tracked::TrackedSet;
 
 const PUSH_RETRIES: usize = 5;
 
-/// An incoming change waiting for `mise bootstrap dotfiles pull` (or automatic
+/// An incoming change waiting for `mise dot pull` (or automatic
 /// application in `sync` mode).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct PendingApplication {
@@ -180,6 +180,8 @@ pub(crate) struct SyncOutcome {
 
 pub(crate) struct SyncRequest {
     pub fetch_only: bool,
+    /// Skip the plaintext ancestry audit for this sync.
+    pub allow_plaintext_history: bool,
     /// Save the tracked set first, so what is published is what is on
     /// disk. The watcher passes `false`: it saves on its own schedule, and a
     /// throttled file's held version or a manual-save entry's unsaved edits
@@ -200,6 +202,7 @@ impl SyncRequest {
     pub(crate) fn new(fetch_only: bool) -> Self {
         Self {
             fetch_only,
+            allow_plaintext_history: false,
             capture: true,
             origin: None,
             offline: false,
@@ -221,9 +224,7 @@ pub(crate) fn origin() -> Result<OriginTomlConfig> {
     {
         return Ok(OriginTomlConfig::plain(url, branch));
     }
-    bail!(
-        "no setup repository is connected; `mise bootstrap dotfiles origin set <url>` connects one"
-    )
+    bail!("no setup repository is connected; `mise dot origin set <url>` connects one")
 }
 
 /// Runs one synchronization.
@@ -233,6 +234,15 @@ pub(crate) fn sync(
     request: &SyncRequest,
 ) -> Result<SyncOutcome> {
     let _sync_lock = lock(store)?;
+    sync_locked(store, tracked, request)
+}
+
+/// Runs one synchronization while the caller holds the sync lock.
+pub(crate) fn sync_locked(
+    store: &Store,
+    tracked: &TrackedSet,
+    request: &SyncRequest,
+) -> Result<SyncOutcome> {
     let origin = match &request.origin {
         Some(origin) => origin.clone(),
         None => origin()?,
@@ -241,6 +251,10 @@ pub(crate) fn sync(
         .repo()
         .ok_or_else(|| eyre::eyre!("synchronizing requires git"))?;
     let mode = SyncMode::current()?;
+    let allow_plaintext_history = request.allow_plaintext_history
+        || crate::config::Settings::get()
+            .history
+            .allow_plaintext_history;
     let state_dir = store.state_dir();
     let mut status = read_status(state_dir)?;
     let remote = Remote::new(repo, &origin.url);
@@ -254,7 +268,7 @@ pub(crate) fn sync(
             let found = remote.fetch(&origin.branch)?;
             if !found && status.upstream_commit.is_some() {
                 bail!(
-                    "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise bootstrap dotfiles origin set {} --branch <name>` follows a renamed branch",
+                    "the setup branch `{}` is not at {} any more (renamed, or deleted?); nothing was changed. `mise dot origin set {} --branch <name>` follows a renamed branch",
                     origin.branch,
                     origin.url,
                     origin.url
@@ -278,7 +292,7 @@ pub(crate) fn sync(
         repo_state.check()?;
         if repo_state == RepoState::Unmarked && !status.adopted {
             bail!(
-                "{} is an existing repository without the mise marker; `mise bootstrap dotfiles origin set {}` previews how it would be adopted",
+                "{} is an existing repository without the mise marker; `mise dot origin set {}` previews how it would be adopted",
                 origin.url,
                 origin.url
             );
@@ -298,6 +312,7 @@ pub(crate) fn sync(
         let unsaved = unsaved_paths(repo, tracked, &shared)?;
         let publish = mode.publishes() && !request.fetch_only && !request.offline;
         if publish
+            && !allow_plaintext_history
             && let Some(head) =
                 repo.ref_oid(crate::system::history::shadow::HistoryRepo::HISTORY_REF)?
         {
@@ -354,6 +369,7 @@ pub(crate) fn sync(
                 upstream_commit.as_deref(),
                 shared.checkpoint.as_deref(),
                 &accepted,
+                allow_plaintext_history,
             )?
             else {
                 break;
@@ -552,7 +568,7 @@ fn notify_conflicts_with(status: &mut SyncStatus, enabled: bool, send: impl FnOn
         send(
             "mise: dotfile sync paused",
             &format!(
-                "Conflicting changes in {body}.\nLocal saves still work. For resolution steps, run:\nmise bootstrap dotfiles status"
+                "Conflicting changes in {body}.\nLocal saves still work. For resolution steps, run:\nmise dot status"
             ),
         );
     }
@@ -909,7 +925,14 @@ fn apply_resolutions(
             {
                 kind = kind.or(Some(reconcile::ConflictKind::UnsavedEdits));
             }
-            Err(_) => kind = kind.or(Some(reconcile::ConflictKind::TypeChange)),
+            // Only the live path's own fault is a conflict: neither side of
+            // the repository changed type, so say what is really there. A
+            // repository or process failure is nobody's to fix by hand, so it
+            // stops the pass with its own error instead of posing as one.
+            Err(err) if err.downcast_ref::<super::apply::UnusableLive>().is_some() => {
+                kind = kind.or(Some(reconcile::ConflictKind::UnusableLive));
+            }
+            Err(err) => return Err(err),
             _ => {}
         }
         if !fresh
@@ -1157,6 +1180,38 @@ mod capture_tests {
     }
 
     #[test]
+    fn a_directory_in_the_way_is_not_reported_as_a_type_change() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let repo = store.repo().ok_or_else(|| eyre::eyre!("git required"))?;
+        let roots = Roots::current();
+        // The live side is a directory: nothing changed type on either side
+        // of the repository, so neither resolution applies until it is gone.
+        let live = tempfile::Builder::new()
+            .prefix(".mise-unusable-test-")
+            .tempdir_in(&roots.home)?;
+        let branch_path = roots
+            .branch_path(live.path(), None)
+            .ok_or_else(|| eyre::eyre!("path is not under a root"))?;
+        let saved = ("100644".into(), repo.hash_blob(b"saved")?);
+        let incoming = ("100644".into(), repo.hash_blob(b"incoming")?);
+        let shared = BTreeMap::from([(branch_path.clone(), saved.clone())]);
+        let upstream = reconcile::Upstream::default();
+        let mut status = SyncStatus::default();
+        let mut plans = vec![PathPlan {
+            branch_path,
+            apply: Some(Some(incoming)),
+            ..Default::default()
+        }];
+        apply_resolutions(repo, &mut status, &shared, &upstream, &mut plans)?;
+        assert_eq!(
+            plans[0].conflict.as_ref().map(|c| c.kind),
+            Some(reconcile::ConflictKind::UnusableLive)
+        );
+        Ok(())
+    }
+
+    #[test]
     fn sync_capture_does_not_observe_an_active_write_operation() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let store = Store::open_in(temp.path())?;
@@ -1244,7 +1299,7 @@ mod notification_tests {
         notify_conflicts_with(&mut status, true, |_, body| {
             assert!(body.contains("… and 1 other file"));
             assert!(body.contains("Local saves still work."));
-            assert!(body.ends_with("mise bootstrap dotfiles status"));
+            assert!(body.ends_with("mise dot status"));
             assert_eq!(body.lines().count(), 3);
             assert!(body.chars().count() < 250);
         });

@@ -25,8 +25,8 @@ Edit a managed dotfile source
 ## Examples
 
 ```
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles edit --apply ~/.config/starship.toml
+mise dot edit ~/.zshrc
+mise dot edit --apply ~/.config/starship.toml
 ```
 
 <!-- generated reference navigation -->

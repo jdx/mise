@@ -6,12 +6,12 @@ use crate::system::history::sync::apply::{self, ApplyRequest};
 
 /// Pull incoming shared changes into the live files
 ///
-/// Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
+/// Writes the changes the last `mise dot sync` recorded as pending
 /// (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
 /// what other machines shared),
 /// as one recoverable transaction: a protective checkpoint first, every
 /// file written and journaled one at a time, reload hooks only afterwards,
-/// and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
+/// and `mise dot undo` to reverse it. Configuration and the sources it
 /// references apply together; an incoming configuration file that does not
 /// parse, a path with unsaved local edits, staged git changes in your own
 /// checkout, or a genuine local edit pauses the complete application.
@@ -46,6 +46,22 @@ pub(crate) struct DotfilesPull {
     /// Resolve a conflict by keeping this machine's version (published next)
     #[usage(long, value_name = "PATH")]
     keep_local: Vec<PathBuf>,
+
+    /// Resolve every remaining conflict with the repository's version
+    ///
+    /// Paths named by --keep-local keep this machine's version; every other
+    /// conflict takes the repository's. Useful on a newly adopted machine,
+    /// where each pre-existing file that differs is a separate conflict.
+    #[usage(long, conflicts = "keep_local_all")]
+    take_remote_all: bool,
+
+    /// Resolve every remaining conflict by keeping this machine's version
+    ///
+    /// Paths named by --take-remote take the repository's version; every
+    /// other conflict keeps this machine's. Each kept path must already be
+    /// saved.
+    #[usage(long, conflicts = "take_remote_all")]
+    keep_local_all: bool,
 }
 
 impl DotfilesPull {
@@ -66,6 +82,8 @@ impl DotfilesPull {
                 yes: self.yes,
                 take_remote: self.take_remote.clone(),
                 keep_local: self.keep_local.clone(),
+                take_remote_all: self.take_remote_all,
+                keep_local_all: self.keep_local_all,
                 automatic: false,
                 plan_only: false,
             },
@@ -78,9 +96,11 @@ impl DotfilesPull {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles pull --dry-run</bold>
-    $ <bold>mise bootstrap dotfiles pull --yes</bold>
-    $ <bold>mise bootstrap dotfiles pull --take-remote ~/.zshrc</bold>
-    $ <bold>mise bootstrap dotfiles pull --keep-local ~/.zshrc</bold>
+    $ <bold>mise dot pull --dry-run</bold>
+    $ <bold>mise dot pull --yes</bold>
+    $ <bold>mise dot pull --take-remote ~/.zshrc</bold>
+    $ <bold>mise dot pull --keep-local ~/.zshrc</bold>
+    $ <bold>mise dot pull --take-remote-all</bold>
+    $ <bold>mise dot pull --take-remote-all --keep-local ~/.zshrc</bold>
 "#
 );

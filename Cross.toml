@@ -1,6 +1,7 @@
 # Cross configuration for mise
-# Use cross 0.2.5 images which are based on Ubuntu 16.04 (glibc 2.23)
-# This ensures compatibility with Amazon Linux 2 (glibc 2.26) and other older systems
+# cross 0.2.5 images use Ubuntu 16.04 (glibc 2.23).
+# Release builds enforce glibc 2.18 compatibility via GLIBC_FLOOR in
+# scripts/build-tarball.sh. Check that requirement when updating these images.
 
 [build.env]
 passthrough = [

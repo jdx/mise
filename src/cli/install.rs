@@ -145,6 +145,10 @@ impl Install {
         }
     }
 
+    pub(crate) fn inherit_root_yes(&mut self, yes: bool) {
+        self.yes |= yes;
+    }
+
     pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
@@ -236,7 +240,11 @@ impl Install {
             if !available.contains(mp.manager.name()) {
                 continue;
             }
-            match mp.manager.installed(&mp.requests).await {
+            match mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await
+            {
                 Ok(statuses) => {
                     missing += statuses
                         .iter()
@@ -396,11 +404,20 @@ impl Install {
                     Self::resolved_toolset_from_trs(&rebuild_config, base_trs.clone()).await?;
                 &ts_owned
             } else {
-                rebuild_config.get_toolset().await?
+                rebuild_config
+                    .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                    .await?
             };
             let current_versions = ts.list_current_versions();
-            // ensure that only current versions are sent to lockfile rebuild
-            versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
+            // Match the configured package and options, not graph identity: accepting
+            // an edited sidecar deliberately changes the installed graph identity.
+            versions.retain(|tv| {
+                current_versions.iter().any(|(_, cv)| {
+                    tv.ba() == cv.ba()
+                        && tv.version == cv.version
+                        && tv.request.options() == cv.request.options()
+                })
+            });
 
             config::rebuild_shims_and_runtime_symlinks(
                 &rebuild_config,
@@ -465,11 +482,13 @@ impl Install {
                 offline: false,
                 refresh_remote_versions: false,
                 inactive: false,
+                warn_not_in_lockfile: true,
             },
             dry_run: self.is_dry_run(),
             locked: Settings::get().locked,
             install_dir,
             yes: self.yes || Settings::get().yes,
+            explicit_yes: self.yes,
             ..Default::default()
         })
     }
@@ -632,7 +651,9 @@ impl Install {
                         Self::resolved_toolset_from_trs(&install_config, trs.clone()).await?;
                     &ts_owned
                 } else {
-                    install_config.get_toolset().await?
+                    install_config
+                        .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                        .await?
                 };
                 hooks::run_one_hook_with_context(
                     &install_config,
@@ -675,12 +696,20 @@ impl Install {
                         Self::resolved_toolset_from_trs(&rebuild_config, base_trs.clone()).await?;
                     &ts_owned
                 } else {
-                    rebuild_config.get_toolset().await?
+                    rebuild_config
+                        .get_toolset_with_opts(&ResolveOptions::without_lockfile_warnings())
+                        .await?
                 };
                 let current_versions = ts.list_current_versions();
                 let versions = versions
                     .iter()
-                    .filter(|tv| current_versions.iter().any(|(_, current)| *tv == current))
+                    .filter(|tv| {
+                        current_versions.iter().any(|(_, current)| {
+                            tv.ba() == current.ba()
+                                && tv.version == current.version
+                                && tv.request.options() == current.request.options()
+                        })
+                    })
                     .cloned()
                     .collect::<Vec<_>>();
                 config::rebuild_shims_and_runtime_symlinks(
@@ -716,7 +745,8 @@ impl Install {
         trs: ToolRequestSet,
     ) -> Result<Toolset> {
         let mut ts: Toolset = trs.into();
-        ts.resolve(config).await?;
+        ts.resolve_with_opts(config, &ResolveOptions::without_lockfile_warnings())
+            .await?;
         Ok(ts)
     }
 }
@@ -781,6 +811,16 @@ mod tests {
             source,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn root_yes_is_explicit_install_consent() {
+        let mut install = Install::default();
+        install.inherit_root_yes(true);
+
+        let options = install.install_opts().unwrap();
+        assert!(options.yes);
+        assert!(options.explicit_yes);
     }
 
     #[test]

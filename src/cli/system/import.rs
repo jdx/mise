@@ -284,6 +284,9 @@ mod tests {
             env: vec!["work".to_string()],
             adopt: None,
             state: crate::system::PackageDesiredStateTomlConfig::Present,
+            url: None,
+            sha256: None,
+            artifact: None,
         });
         assert_eq!(
             imported_package_value(None, Some(&inherited)).to_string(),
@@ -296,6 +299,9 @@ mod tests {
             env: vec![],
             adopt: Some(true),
             state: crate::system::PackageDesiredStateTomlConfig::Present,
+            url: None,
+            sha256: None,
+            artifact: None,
         });
         assert_eq!(
             imported_package_value(None, Some(&adopted)).to_string(),

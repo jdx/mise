@@ -470,6 +470,24 @@ impl ToolRequest {
     pub(crate) async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
             match self.resolve(config, &Default::default()).await {
+                Ok(tv) if tv.uv_lock.is_some() || tv.aube_lock.is_some() => {
+                    if self.tool_config_locked(config, true) {
+                        return false;
+                    }
+                    let satisfied = backend
+                        .is_install_satisfied(config, &tv, false)
+                        .await
+                        .unwrap_or(false);
+                    if satisfied {
+                        if let Some(graph) = &tv.uv_lock {
+                            graph.warn_if_missing();
+                        }
+                        if let Some(graph) = &tv.aube_lock {
+                            graph.warn_if_missing();
+                        }
+                    }
+                    satisfied
+                }
                 Ok(tv) => match backend.is_install_satisfied(config, &tv, false).await {
                     Ok(satisfied) => satisfied,
                     Err(e) => {

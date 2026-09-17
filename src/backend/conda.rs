@@ -30,7 +30,7 @@ use rattler_solve::{
 use rattler_virtual_packages::{VirtualPackageOverrides, VirtualPackages};
 use reqwest_middleware::{ClientBuilder as MiddlewareClientBuilder, Middleware, Next};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -617,16 +617,25 @@ impl CondaBackend {
         Ok(())
     }
 
-    /// Creates a `.mise-bins` directory with launchers only for binaries from the main package.
+    /// Creates a `.mise-bins` directory with entries only for binaries from the main package.
     /// Uses the PathsEntry list returned by rattler's link_package to identify which files
-    /// belong to the main package (excluding transitive dependency binaries). The launchers
-    /// activate the package prefix only for the command they start, so dependencies are
-    /// available to that command without exposing their binaries on the user's PATH.
+    /// belong to the main package (excluding transitive dependency binaries). Commands that
+    /// need the package prefix get a launcher that activates it only for the command they
+    /// start, so dependencies are available to that command without exposing their binaries
+    /// on the user's PATH; the rest are plain symlinks. See `package_needs_activation`.
     fn create_bin_launcher_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
-        let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
+        // `MISE_DATA_DIR` is only tilde-expanded, never absolutized, so `install_path()` can
+        // be relative. Neither entry kind survives that: a relative symlink target resolves
+        // against the link's own directory, and a relative path inside a launcher resolves
+        // against whatever cwd the caller happens to have. Pin both to an absolute prefix.
+        let install_path = std::path::absolute(tv.install_path()).wrap_err_with(|| {
+            format!(
+                "failed to resolve {}",
+                file::display_path(tv.install_path())
+            )
+        })?;
+        let symlink_dir = install_path.join(MISE_BINS_DIR);
         file::create_dir_all(&symlink_dir)?;
-
-        let install_path = tv.install_path();
         let bin_dirs: &[&std::path::Path] = if cfg!(windows) {
             &[
                 std::path::Path::new("Library/bin"),
@@ -636,6 +645,22 @@ impl CondaBackend {
         } else {
             &[std::path::Path::new("bin")]
         };
+
+        let main_bin_names: BTreeSet<std::ffi::OsString> = main_paths
+            .iter()
+            .filter(|entry| {
+                bin_dirs
+                    .iter()
+                    .any(|dir| entry.relative_path.starts_with(dir))
+            })
+            .filter_map(|entry| entry.relative_path.file_name().map(|name| name.to_owned()))
+            .collect();
+
+        // Windows always gets a launcher. There it does more than activate the prefix: the
+        // entries in this directory are copies rather than symlinks, and the `.cmd` is what
+        // keeps a copied `.exe` able to find the dependency DLLs brought along below.
+        let needs_launcher =
+            cfg!(windows) || Self::package_needs_activation(&install_path, &main_bin_names)?;
 
         for entry in main_paths {
             if !bin_dirs
@@ -650,7 +675,13 @@ impl CondaBackend {
             let src = install_path.join(&entry.relative_path);
             let dst = Self::bin_launcher_path(&symlink_dir, bin_name, cfg!(windows));
             if src.exists() && !dst.exists() {
-                Self::create_bin_launcher(&install_path, &src, &dst)?;
+                Self::place_bin_entry(
+                    &install_path,
+                    &src,
+                    &dst,
+                    needs_launcher,
+                    file::make_symlink_or_copy,
+                )?;
             }
         }
 
@@ -730,6 +761,155 @@ impl CondaBackend {
             }
         }
         Ok(())
+    }
+
+    /// Places one of the package's commands in `.mise-bins`.
+    ///
+    /// A command that needs the prefix activated gets a launcher; the rest are symlinked.
+    /// A symlinked command is invoked as `<prefix>/.mise-bins/<name>` rather than
+    /// `<prefix>/bin/<name>`, so its `argv[0]` differs from the launcher's. That is safe
+    /// only because the two directories sit at the same depth: `dirname(argv[0])/../share`
+    /// reaches `<prefix>/share` either way, and a sibling lookup finds the package's other
+    /// commands, which this directory holds in full whenever it is symlinked. See
+    /// `mise_bins_dir_sits_beside_bin`.
+    ///
+    /// `link` is the symlink step, taken as an argument so the fallback below can be tested.
+    fn place_bin_entry(
+        prefix: &Path,
+        src: &Path,
+        dst: &Path,
+        needs_launcher: bool,
+        link: impl FnOnce(&Path, &Path) -> Result<()>,
+    ) -> Result<()> {
+        if needs_launcher {
+            return Self::create_bin_launcher(prefix, src, dst);
+        }
+        if let Err(err) = link(src, dst) {
+            // A filesystem that refuses symlinks would otherwise fail an install that used
+            // to work, since every command was a written file before. Fall back to the
+            // launcher: for this package its activation is unnecessary rather than wrong,
+            // which is a better trade than no install at all.
+            debug!(
+                "conda: symlinking {} failed, falling back to a launcher: {err:#}",
+                file::display_path(dst)
+            );
+            return Self::create_bin_launcher(prefix, src, dst);
+        }
+        Ok(())
+    }
+
+    /// Whether the commands in this package have to run through an activation launcher
+    /// rather than a plain symlink in `.mise-bins`.
+    ///
+    /// The launcher activates the prefix for one command: it exports `CONDA_PREFIX`, sources
+    /// `etc/conda/activate.d`, and puts the prefix's `bin` ahead of the user's `PATH` so the
+    /// command can reach executables from its dependencies. Both of those carry a cost. The
+    /// `PATH` is exported, so it survives the `exec` into the command and is inherited by
+    /// everything the command spawns — a pager, an editor, a git hook — where the prefix's
+    /// binaries shadow the user's. And the shell that does it is another process on every
+    /// invocation.
+    ///
+    /// A package that ships no activation scripts, no dependency executables and no script
+    /// entry points has nothing for any of that to do, so its commands are symlinked instead.
+    /// That is the shape of a single-binary tool such as `conda:ripgrep` or `conda:onefetch`,
+    /// where the prefix's `bin` holds only the tool itself: a symlink still resolves the
+    /// package's own libraries, because `$ORIGIN` in an ELF RPATH is relative to the target.
+    fn package_needs_activation(
+        prefix: &Path,
+        main_bin_names: &BTreeSet<std::ffi::OsString>,
+    ) -> Result<bool> {
+        // An activate.d script can export anything, PATH included, so its mere presence
+        // means the command has to be started through the launcher.
+        let activate_d = prefix.join("etc").join("conda").join("activate.d");
+        match std::fs::read_dir(&activate_d) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = entry.wrap_err_with(|| {
+                        format!(
+                            "failed to read an entry in {}",
+                            file::display_path(&activate_d)
+                        )
+                    })?;
+                    if entry
+                        .path()
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("sh"))
+                    {
+                        return Ok(true);
+                    }
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err).wrap_err_with(|| {
+                    format!("failed to read {}", file::display_path(&activate_d))
+                });
+            }
+        }
+
+        let bin_dir = prefix.join("bin");
+        let entries = match std::fs::read_dir(&bin_dir) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(err) => {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed to read {}", file::display_path(&bin_dir)));
+            }
+        };
+        for entry in entries {
+            let entry = entry.wrap_err_with(|| {
+                format!(
+                    "failed to read an entry in {}",
+                    file::display_path(&bin_dir)
+                )
+            })?;
+            let file_type = entry.file_type().wrap_err_with(|| {
+                format!(
+                    "failed to stat {} in {}",
+                    entry.file_name().to_string_lossy(),
+                    file::display_path(&bin_dir)
+                )
+            })?;
+            if file_type.is_dir() {
+                continue;
+            }
+            if !main_bin_names.contains(&entry.file_name()) {
+                // A dependency's executable. The command may shell out to it, and it is
+                // reachable only while the launcher puts this directory on PATH.
+                return Ok(true);
+            }
+            if Self::is_script(&entry.path())? {
+                // A script entry point can expand `${CONDA_PREFIX}` (the bug `.mise-bins`
+                // was introduced for) or take its interpreter off PATH.
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Whether `path` begins with a `#!` line.
+    fn is_script(path: &Path) -> Result<bool> {
+        use std::io::Read;
+
+        let mut file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            // A dangling symlink is not a command anyone can run. Leave the decision to
+            // the other checks rather than failing an otherwise fine install over it.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(err) => {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed to open {}", file::display_path(path)));
+            }
+        };
+        let mut magic = [0u8; 2];
+        match file.read_exact(&mut magic) {
+            Ok(()) => Ok(&magic == b"#!"),
+            // Too short to carry a shebang.
+            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+            Err(err) => {
+                Err(err).wrap_err_with(|| format!("failed to read {}", file::display_path(path)))
+            }
+        }
     }
 
     fn bin_launcher_path(
@@ -1059,7 +1239,7 @@ fn cmd_escape_value(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CondaBackend, CondaOptions, rewrite_request_url};
+    use super::{CondaBackend, CondaOptions, MISE_BINS_DIR, rewrite_request_url};
     #[cfg(unix)]
     use crate::file;
     use crate::toolset::ToolVersionOptions;
@@ -1068,6 +1248,8 @@ mod tests {
         PackageName, PackageRecord, RepoDataRecord, Version, package::DistArchiveIdentifier,
     };
     use std::collections::BTreeMap;
+    #[cfg(unix)]
+    use std::collections::BTreeSet;
     use std::path::Path;
     #[cfg(unix)]
     use std::process::Command;
@@ -1347,6 +1529,140 @@ mod tests {
                 prefix.display()
             )
         );
+    }
+
+    /// Installing onto a filesystem that refuses symlinks must not fail a package that
+    /// would otherwise be symlinked — before this, every command was a written file.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_symlink_falls_back_to_a_launcher() {
+        let temp = tempfile::tempdir().unwrap();
+        let prefix = temp.path().join("prefix");
+        let target = prefix.join("bin/tool");
+        let dst = prefix.join(MISE_BINS_DIR).join("tool");
+        file::create_dir_all(target.parent().unwrap()).unwrap();
+        file::create_dir_all(dst.parent().unwrap()).unwrap();
+        file::write(&target, "\x7fELF-ish binary").unwrap();
+
+        CondaBackend::place_bin_entry(&prefix, &target, &dst, false, |_, _| {
+            Err(eyre::eyre!("read-only or symlink-hostile filesystem"))
+        })
+        .unwrap();
+
+        assert!(!dst.is_symlink());
+        let launcher = std::fs::read_to_string(&dst).unwrap();
+        assert!(launcher.contains("export CONDA_PREFIX"));
+        assert!(launcher.contains("exec '"));
+    }
+
+    /// A tool that resolves its resources relative to `argv[0]` without following the
+    /// symlink — `dirname(argv[0])/../share` is the common shape — keeps working through
+    /// `.mise-bins` only while that directory is as deep in the prefix as `bin` is. Moving
+    /// it deeper would send those lookups outside the package, and nothing about a compiled
+    /// binary would reveal the breakage at install time.
+    #[test]
+    fn mise_bins_dir_sits_beside_bin() {
+        assert_eq!(
+            Path::new(MISE_BINS_DIR).components().count(),
+            Path::new("bin").components().count()
+        );
+    }
+
+    /// Builds a prefix with `bin/tool` plus whatever extra files the case needs, and
+    /// reports whether its commands would be launchers or plain symlinks.
+    #[cfg(unix)]
+    fn needs_activation_for(
+        temp: &Path,
+        extra_bins: &[&str],
+        tool_contents: &str,
+        activate_scripts: &[&str],
+    ) -> bool {
+        let prefix = temp.join("prefix");
+        let bin_dir = prefix.join("bin");
+        file::create_dir_all(&bin_dir).unwrap();
+        file::write(bin_dir.join("tool"), tool_contents).unwrap();
+        for name in extra_bins {
+            file::write(bin_dir.join(name), "").unwrap();
+        }
+        if !activate_scripts.is_empty() {
+            let activate_dir = prefix.join("etc/conda/activate.d");
+            file::create_dir_all(&activate_dir).unwrap();
+            for name in activate_scripts {
+                file::write(activate_dir.join(name), "").unwrap();
+            }
+        }
+        let main_bin_names = BTreeSet::from([std::ffi::OsString::from("tool")]);
+        CondaBackend::package_needs_activation(&prefix, &main_bin_names).unwrap()
+    }
+
+    /// A single-binary package (`conda:ripgrep`, `conda:onefetch`) has nothing to activate:
+    /// no activate.d, no dependency executables, no script entry point.
+    #[cfg(unix)]
+    #[test]
+    fn self_contained_package_skips_the_launcher() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(!needs_activation_for(
+            temp.path(),
+            &[],
+            "\x7fELF-ish binary",
+            &[]
+        ));
+    }
+
+    /// `conda:curl` ships 54 dependency executables in the prefix's bin. The command may
+    /// shell out to one, and only the launcher's PATH makes them reachable.
+    #[cfg(unix)]
+    #[test]
+    fn dependency_executables_require_the_launcher() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(needs_activation_for(
+            temp.path(),
+            &["openssl"],
+            "\x7fELF-ish binary",
+            &[]
+        ));
+    }
+
+    /// The `conda:jdtls` case from https://github.com/jdx/mise/discussions/8576: the entry
+    /// point is a shell script that expands `${CONDA_PREFIX}`.
+    #[cfg(unix)]
+    #[test]
+    fn script_entry_point_requires_the_launcher() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(needs_activation_for(
+            temp.path(),
+            &[],
+            "#!/bin/sh\nexec ${CONDA_PREFIX}/libexec/tool \"$@\"\n",
+            &[]
+        ));
+    }
+
+    /// An activate.d script can export anything, including PATH, so its presence alone
+    /// means the command has to start through the launcher.
+    #[cfg(unix)]
+    #[test]
+    fn activate_scripts_require_the_launcher() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(needs_activation_for(
+            temp.path(),
+            &[],
+            "\x7fELF-ish binary",
+            &["libxml2-split_activate.sh"]
+        ));
+    }
+
+    /// Only `.sh` scripts are sourced by the unix launcher, so a stray `.bat` beside them
+    /// is not a reason to build one.
+    #[cfg(unix)]
+    #[test]
+    fn non_shell_activate_scripts_do_not_require_the_launcher() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(!needs_activation_for(
+            temp.path(),
+            &[],
+            "\x7fELF-ish binary",
+            &["windows_only.bat"]
+        ));
     }
 
     /// Regression test for https://github.com/jdx/mise/discussions/9829:

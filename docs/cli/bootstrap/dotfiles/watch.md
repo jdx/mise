@@ -48,9 +48,9 @@ is deferred.
 Examples:
 
 ```
-mise bootstrap dotfiles watch
-mise bootstrap dotfiles watch --once      # one reconcile, for a timer
-mise bootstrap dotfiles watch --json
+mise dot watch
+mise dot watch --once      # one reconcile, for a timer
+mise dot watch --json
 ```
 
 <!-- generated reference navigation -->

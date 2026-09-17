@@ -6,6 +6,28 @@ mod ls;
 mod set;
 mod unset;
 
+fn canonical_setting(key: &str) -> &str {
+    match key {
+        "pipx" => "pypi",
+        "pipx.uvx" => "pypi.uvx",
+        "pipx.registry_url" => "pypi.registry_url",
+        _ => key,
+    }
+}
+
+fn remove_legacy_pypi_setting(settings: &mut dyn toml_edit::TableLike, key: &str) -> bool {
+    let Some(leaf) = key.strip_prefix("pypi.") else {
+        return false;
+    };
+    if !matches!(leaf, "uvx" | "registry_url") {
+        return false;
+    }
+    settings
+        .get_mut("pipx")
+        .and_then(toml_edit::Item::as_table_like_mut)
+        .is_some_and(|legacy| legacy.remove(leaf).is_some())
+}
+
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     about = "Manage settings",
@@ -65,8 +87,14 @@ impl Commands {
     pub(crate) fn run(self) -> Result<()> {
         match self {
             Self::Add(cmd) => cmd.run(),
-            Self::Get(cmd) => cmd.run(),
-            Self::Ls(cmd) => cmd.run(),
+            Self::Get(mut cmd) => {
+                cmd.setting = canonical_setting(&cmd.setting).to_owned();
+                cmd.run()
+            }
+            Self::Ls(mut cmd) => {
+                cmd.setting = cmd.setting.map(|key| canonical_setting(&key).to_owned());
+                cmd.run()
+            }
             Self::Set(cmd) => cmd.run(),
             Self::Unset(cmd) => cmd.run(),
         }
@@ -74,6 +102,30 @@ impl Commands {
 }
 
 impl Settings {
+    /// Alias conflicts must not prevent editing the file that contains them.
+    pub(crate) fn is_pypi_repair(&self) -> bool {
+        let key = match &self.command {
+            Some(Commands::Set(cmd)) => Some(cmd.setting.as_str()),
+            Some(Commands::Unset(cmd)) => Some(cmd.key.as_str()),
+            None if self.value.is_some()
+                || self
+                    .ls
+                    .setting
+                    .as_ref()
+                    .is_some_and(|key| key.contains('=')) =>
+            {
+                self.ls.setting.as_deref()
+            }
+            _ => None,
+        };
+        key.is_some_and(|key| {
+            matches!(
+                canonical_setting(key.split('=').next().unwrap_or(key)),
+                "pypi.uvx" | "pypi.registry_url"
+            )
+        })
+    }
+
     pub(crate) async fn run(self) -> Result<()> {
         let parent_local = self.ls.local;
         let mut cmd = self.command.unwrap_or_else(|| {

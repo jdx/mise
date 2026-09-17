@@ -55,9 +55,7 @@ impl DotfilesRecover {
             })
             .collect::<Vec<_>>();
         if selected.is_empty() {
-            bail!(
-                "no matching interrupted operation; `mise bootstrap dotfiles history --pending` lists them"
-            );
+            bail!("no matching interrupted operation; `mise dot history --pending` lists them");
         }
         for (_, record) in &selected {
             miseprintln!("Interrupted operation {}", record.checkpoint.uuid);

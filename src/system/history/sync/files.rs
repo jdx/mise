@@ -129,7 +129,7 @@ fn audit_history_cached(
                 });
             if !valid {
                 bail!(
-                    "cannot publish: encrypted path {} has an unencrypted or invalid version in commit {commit}; encrypting the latest version does not erase earlier plaintext. Review and explicitly rewrite or replace that history before connecting it to origin; mise will not rewrite it automatically",
+                    "cannot publish: encrypted path {} has an unencrypted or invalid version in commit {commit}; encrypting the latest version does not erase earlier plaintext. Remove that history before pushing, or use `mise dot sync --allow-plaintext-history` to publish it anyway",
                     entry.path
                 );
             }
@@ -260,8 +260,11 @@ pub(crate) fn decrypt(
     if let Some(decrypted) = repo.decrypted_object(&object.1) {
         return Ok(decrypted);
     }
-    let bytes = agecrypt::decrypt_sync(&outer.ciphertext.0, interactive)
-        .wrap_err_with(|| format!("cannot unlock {path}; run mise bootstrap dotfiles pull interactively with a matching age identity"))?;
+    let bytes = agecrypt::decrypt_sync(&outer.ciphertext.0, interactive).wrap_err_with(|| {
+        format!(
+            "cannot unlock {path}; run mise dot pull interactively with a matching age identity"
+        )
+    })?;
     let inner: Plaintext =
         rmp_serde::from_slice(&bytes).wrap_err("invalid encrypted file payload")?;
     validate(path, &outer, &inner)?;

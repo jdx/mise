@@ -28,7 +28,7 @@ pub(crate) const DIR_SNAPSHOT_MAX: u64 = 256 * 1024 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum JournalEntry {
-    /// Context for someone reading `mise bootstrap dotfiles history show`.
+    /// Context for someone reading `mise dot history show`.
     Note { message: String },
     /// Written before `path` is mutated on behalf of `item` (a dotfile
     /// target, an edit key) in bootstrap part `part`.

@@ -30,6 +30,9 @@ pub(super) fn execute_flight_steps_recording(
     journal: &mut CaskTransactionJournal<'_>,
     targets: &mut FlightTargetTransaction,
 ) -> Result<()> {
+    // CaskManager is Copy, so capture it by value rather than borrowing `cask`
+    // again inside the closure.
+    let manager = cask.manager;
     execute_flight_steps_with_completion(
         cask,
         steps,
@@ -37,7 +40,13 @@ pub(super) fn execute_flight_steps_recording(
         appdir,
         kind,
         targets,
-        |index, step| record_cask_action(journal, &format!("{kind}[{index}]:{}", step.kind())),
+        |index, step| {
+            record_cask_action(
+                manager,
+                journal,
+                &format!("{kind}[{index}]:{}", step.kind()),
+            )
+        },
     )
 }
 
@@ -868,7 +877,7 @@ pub(super) fn execute_flight_step(
             if let Err(err) = result {
                 let exited = matches!(
                     err.downcast_ref::<crate::errors::Error>(),
-                    Some(crate::errors::Error::ScriptFailed(_, Some(status)))
+                    Some(crate::errors::Error::ScriptFailed(_, Some(status), _))
                         if status.code().is_some()
                 );
                 if *must_succeed || !exited {
@@ -1162,7 +1171,7 @@ pub(super) fn expand_flight_template(
     staged_path: &Path,
     appdir: &Path,
 ) -> String {
-    let caskroom_path = caskroom_token_dir(&cask.token);
+    let caskroom_path = caskroom_token_dir(cask.manager, &cask.token);
     let version_major = cask
         .version
         .split(['.', ','])

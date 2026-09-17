@@ -211,6 +211,6 @@ impl DotfilesUntrack {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles untrack ~/.zshrc</bold>
+    $ <bold>mise dot untrack ~/.zshrc</bold>
 "#
 );

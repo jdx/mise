@@ -315,7 +315,8 @@ impl Prune {
             // Defaults to no: the data is gone for good once this proceeds.
             match prompt::confirm_with_default(message, false)? {
                 Confirmation::Yes => {}
-                Confirmation::No => return Ok(()),
+                // An unanswered prompt is a refusal, not a decision to delete.
+                Confirmation::No | Confirmation::Unanswered => return Ok(()),
                 Confirmation::Unavailable => bail!(
                     "mise daemons prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
                 ),

@@ -273,6 +273,7 @@ pub(crate) enum Commands {
     Deactivate(deactivate::Deactivate),
     Daemons(daemons::Daemons),
     Direnv(direnv::Direnv),
+    #[usage(visible_alias = "dot")]
     Dotfiles(dotfiles::Dotfiles),
     Doctor(doctor::Doctor),
     En(en::En),
@@ -970,6 +971,9 @@ impl Cli {
         if let Some(Commands::Bootstrap(bootstrap)) = &mut cli.command {
             bootstrap.inherit_root_flags(cli.dry_run, cli.yes);
         }
+        if let Some(Commands::Install(install)) = &mut cli.command {
+            install.inherit_root_yes(cli.yes);
+        }
         config_file::set_implicitly_trust_active_config(
             cli.command
                 .as_ref()
@@ -982,6 +986,21 @@ impl Cli {
         measure!("add_cli_matches", {
             Settings::add_cli_matches_with(&cli, cli_truncate)
         });
+        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_pypi_repair()) {
+            // These file-only edits must remain available when alias values conflict.
+            // Honor directory selection without loading the conflicting settings.
+            if let Some(cd) = cli
+                .cd
+                .clone()
+                .or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from))
+            {
+                crate::env::set_current_dir(cd)?;
+            }
+            let Some(Commands::Settings(cmd)) = cli.command.take() else {
+                unreachable!("settings repair command was checked");
+            };
+            return cmd.run().await;
+        }
         // Propagated, not discarded: this is where `--cd` is actually applied, and a directory
         // that passed the checks above can still refuse the `chdir` — no execute permission, or a
         // path past the length `SetCurrentDirectory` accepts. Dropping the error here does not
@@ -1759,6 +1778,33 @@ mod tests {
         assert!(parse_cli(&["mise", "bootstrap", "status", "--json"]).is_ok());
     }
 
+    #[test]
+    fn test_dotfiles_command_and_alias_expose_the_full_command_tree() {
+        let cmd = Cli::command();
+        let dotfiles = cmd
+            .subcommands
+            .iter()
+            .find(|subcommand| subcommand.name == "dotfiles")
+            .unwrap();
+
+        assert_eq!(dotfiles.aliases, &["dot"]);
+        assert!(
+            dotfiles
+                .subcommands
+                .iter()
+                .any(|command| command.name == "track")
+        );
+        assert!(
+            dotfiles
+                .subcommands
+                .iter()
+                .any(|command| command.name == "history")
+        );
+        assert!(parse_cli(&["mise", "dotfiles", "track", "~/.zshrc"]).is_ok());
+        assert!(parse_cli(&["mise", "dot", "track", "~/.zshrc"]).is_ok());
+        assert!(parse_cli(&["mise", "bootstrap", "dotfiles", "track", "~/.zshrc"]).is_ok());
+    }
+
     /// Commands that name a config file to write to accept both spellings, so it
     /// does not matter which one you remember. See
     /// <https://github.com/jdx/mise/discussions/4881>.
@@ -1820,9 +1866,9 @@ mod tests {
     }
 
     /// A `--file`/`--path` alias whose natural short form belongs to a *different* argument
-    /// on the same command teaches the wrong flag. `mise dotfiles add` carried `--file` as an
+    /// on the same command teaches the wrong flag. `mise dot add` carried `--file` as an
     /// alias of `--path` while `-f` was `--force`, and because its targets accept any string,
-    /// `mise dotfiles add -f <path>` silently adopted that config file as a dotfile instead of
+    /// `mise dot add -f <path>` silently adopted that config file as a dotfile instead of
     /// writing to it — no error, and `--force` meant no prompt either.
     ///
     /// Walks the whole CLI rather than a fixed list, so re-adding the alias anywhere fails

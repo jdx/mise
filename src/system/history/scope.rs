@@ -100,7 +100,7 @@ impl OperationScope {
         command: &str,
         dry_run: bool,
     ) -> Result<Self> {
-        Self::begin_with_wait(kind, command, dry_run, OPERATION_LOCK_WAIT).await
+        Self::begin_with_wait(kind, command, dry_run, OPERATION_LOCK_WAIT, false).await
     }
 
     /// The watcher retries contention later rather than delaying its event loop.
@@ -110,6 +110,21 @@ impl OperationScope {
             "dotfiles pull",
             false,
             std::time::Duration::ZERO,
+            false,
+        )
+        .await
+    }
+
+    /// Holds the operation lock across a history replacement. The incoming
+    /// application is planned as a fresh adoption, so no local checkpoint may
+    /// be created before the old branch is detached.
+    pub(crate) async fn begin_replacement_apply() -> Result<Self> {
+        Self::begin_with_wait(
+            OperationKind::Apply,
+            "bootstrap --adopt --replace-history",
+            false,
+            OPERATION_LOCK_WAIT,
+            true,
         )
         .await
     }
@@ -119,6 +134,7 @@ impl OperationScope {
         command: &str,
         dry_run: bool,
         wait: std::time::Duration,
+        fresh_adoption: bool,
     ) -> Result<Self> {
         if dry_run {
             return Ok(Self(None));
@@ -141,7 +157,7 @@ impl OperationScope {
         let tracked = TrackedSet::effective().await?;
         let command = command.to_owned();
         let writer = tokio::task::spawn_blocking(move || {
-            Writer::begin(&dirs::STATE, kind, &command, tracked, wait)
+            Writer::begin(&dirs::STATE, kind, &command, tracked, wait, fresh_adoption)
         })
         .await??;
         let uuid = writer.pending.checkpoint.uuid.clone();
@@ -251,7 +267,7 @@ impl OperationScope {
         let mut writer = lock_unpoisoned(shared);
         // held across the reservation, the capture, and the removal: the
         // capture writes the index and a checkpoint ref, which a concurrent
-        // `mise bootstrap dotfiles save` must not interleave with
+        // `mise dot save` must not interleave with
         let _store_lock = writer.store.lock()?;
         let previous = writer.before.take();
         let id = writer.store.reserve_id()?;
@@ -334,6 +350,7 @@ impl Writer {
         command: &str,
         tracked: TrackedSet,
         wait: std::time::Duration,
+        fresh_adoption: bool,
     ) -> Result<Self> {
         let store = Store::open_in(state_dir)?;
         let lock = take_operation_lock_with_wait(&store, &tracked, wait)?;
@@ -347,11 +364,15 @@ impl Writer {
         };
         let uuid = store::new_uuid();
         let _store_lock = store.lock()?;
-        let starting_head = store
-            .repo()
-            .map(|repo| repo.ref_oid(super::shadow::HistoryRepo::HISTORY_REF))
-            .transpose()?
-            .flatten();
+        let starting_head = if fresh_adoption {
+            None
+        } else {
+            store
+                .repo()
+                .map(|repo| repo.ref_oid(super::shadow::HistoryRepo::HISTORY_REF))
+                .transpose()?
+                .flatten()
+        };
         let before_id = store.reserve_id()?;
         let outcome_id = store.reserve_id()?;
         store::write_marker_in(
@@ -925,6 +946,7 @@ mod tests {
             "bootstrap",
             TrackedSet::default(),
             std::time::Duration::ZERO,
+            false,
         )?;
         let mut pending = writer.pending.clone();
         let prior = PathSnapshot::capture_with(temp.path(), &live, Capture::Full);
@@ -987,6 +1009,7 @@ mod tests {
             "capture",
             TrackedSet::default(),
             std::time::Duration::ZERO,
+            false,
         )?;
         let pending = writer.pending.clone();
         writer.finish(None, None, true)?;
@@ -1021,6 +1044,7 @@ mod tests {
             "bootstrap",
             TrackedSet::default(),
             std::time::Duration::ZERO,
+            false,
         )?;
         assert!(
             writer
@@ -1061,6 +1085,7 @@ mod tests {
             "pull",
             TrackedSet::default(),
             std::time::Duration::ZERO,
+            false,
         )?;
         let scope = OperationScope(Some(Arc::new(Mutex::new(writer))));
         assert!(scope.validate_starting_head(Some(&planned)).is_err());

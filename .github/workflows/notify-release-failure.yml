@@ -1,0 +1,78 @@
+name: notify-release-failure
+
+# Release-triggered publish workflows have no reviewer and no PR check, so a
+# failure is silent: the release exists but the artifact, package, or docs it
+# was supposed to publish quietly never ships. Email on failure instead of
+# waiting for a user to report it.
+on: # zizmor: ignore[dangerous-triggers] no permissions, no checkout, and it only fires for release-triggered runs
+  workflow_run:
+    workflows:
+      - cloudflare-deploy
+      - copr-publish
+      - docs
+      - npm-publish
+      - ppa-publish
+      - publish-version
+      - release-alpine
+      - snapcraft-publish
+      - winget
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: notify
+    if: ${{ github.repository == 'jdx/mise' && github.event.workflow_run.event == 'release' && contains(fromJSON('["failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send failure email via Resend
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RESEND_API_KEY:-}" ] || [ -z "${NOTIFY_EMAIL:-}" ]; then
+            echo "::warning::RESEND_API_KEY or NOTIFY_EMAIL is unset; skipping notification for ${WORKFLOW} on ${TAG}"
+            exit 0
+          fi
+          # Build the payload with jq: --arg keeps a tag or workflow name from
+          # breaking out of the JSON string, @html keeps it from becoming markup
+          # once the mail client renders the body, and @uri keeps it from
+          # reshaping the release URL. A tag is author-controlled, so all three
+          # matter even though the values arrive from the GitHub API.
+          payload=$(jq -n \
+            --arg to "$NOTIFY_EMAIL" \
+            --arg workflow "$WORKFLOW" \
+            --arg conclusion "$CONCLUSION" \
+            --arg tag "$TAG" \
+            --arg run_url "$RUN_URL" \
+            --arg attempt "$ATTEMPT" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            '
+            ("https://github.com/\($repo)/releases/tag/\($tag | @uri)") as $release_url |
+            {
+              from: "mise Releases <mise@en.dev>",
+              to: [$to],
+              subject: "❌ mise \($tag): \($workflow) \($conclusion)",
+              html: (
+                "<p>The <strong>\($workflow | @html)</strong> workflow for <strong>\($tag | @html)</strong> finished with <strong>\($conclusion | @html)</strong> on attempt \($attempt | @html).</p>"
+                + "<p>The release is published but whatever this workflow ships did not go out. Re-run it once the cause is fixed.</p>"
+                + "<p><a href=\"\($run_url | @html)\">View workflow run</a> | <a href=\"\($release_url | @html)\">View release</a></p>"
+              )
+            }')
+          # This mail is the only signal that a release half-shipped, so a
+          # transient Resend failure must not swallow it. A retry can duplicate
+          # an alert whose response was lost; two alerts beat none.
+          curl --fail-with-body -sS \
+            --retry 3 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            -X POST 'https://api.resend.com/emails' \
+            -H "Authorization: Bearer ${RESEND_API_KEY}" \
+            -H 'Content-Type: application/json' \
+            -d "$payload"

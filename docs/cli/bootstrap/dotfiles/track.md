@@ -14,7 +14,7 @@ Track a file or directory in place
 Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 is, nothing is copied or linked, and history saves a checkpoint of it
 right away. With the history watcher service running, later edits are
-saved automatically; without it, `mise bootstrap dotfiles save` saves them.
+saved automatically; without it, `mise dot save` saves them.
 
 `--os` and `--profile` declare a variant: a separate shared stream for
 machines matching that platform or mise environment, so a Mac and a
@@ -26,16 +26,18 @@ Linux box can share the same live path with different contents.
 ## Flags
 - **`--os <OS>`** — Declare a variant for this platform (macos, linux, linux/arm64, …)
 - **`--profile <PROFILE>`** — Declare a variant for this mise environment
-- **`--no-autosave`** — Save only on `mise bootstrap dotfiles save <path>`, never automatically
+- **`--no-autosave`** — Save only on `mise dot save <path>`, never automatically
+- **`--encrypt`** — Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
 - **`-y --yes`** — Accept without prompting
 - **`-h --help`** — Print help
 
 Examples:
 
 ```
-mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr
-mise bootstrap dotfiles track ~/.zshrc --os macos
-mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
+mise dot track ~/.zshrc ~/.config/hypr
+mise dot track ~/.zshrc --os macos
+mise dot track ~/.config/app/credentials --encrypt
+mise dot track ~/.config/app/state.json --no-autosave
 ```
 
 <!-- generated reference navigation -->

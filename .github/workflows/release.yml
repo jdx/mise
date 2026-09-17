@@ -345,21 +345,20 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
       - name: Run e2e tests
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        timeout-minutes: 30
         env:
           TEST_TRANCHE: ${{matrix.tranche}}
           TEST_TRANCHE_COUNT: 8
           TEST_ALL: 1
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: ./e2e/run_all_tests
+          E2E_MAX_ATTEMPTS: 3
+          E2E_RETRY_WAIT_SECONDS: 30
+        run: ./e2e/run_all_tests
   rpm:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:ce5434e65d46d9892a2520249d938e7f7ba830cd3a120936f5a564ccc6fbe301
+    container: ghcr.io/jdx/mise:rpm@sha256:04e53714ee9a995bd0a985368eca65951051ef2d60d1673c4257e6617aaa8da1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -383,7 +382,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:b48bc6d79a789db8e83f5f9daad9ba1e8d7829b714a43032e21f78214388c977
+    container: ghcr.io/jdx/mise:deb@sha256:855570fc47c8a97e07190676a4c3a1178a7ed7e9363a6822132b49e5faaa812e
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -54,6 +54,7 @@ impl PluginsLink {
             }
         };
         let name = unalias_backend(&name);
+        let name = name.as_ref();
         let path = path.absolutize()?;
         let symlink = dirs::PLUGINS.join(name);
         if symlink.exists() {

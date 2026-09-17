@@ -101,10 +101,10 @@ impl SyncMode {
                 "sync: the watcher publishes saved commits and fetches periodically. Any conflict pauses publication and incoming application for the entire setup; local commits and fetching continue. Incoming changes are preflighted together and applied with a protective checkpoint and recovery journal. Applying never runs `mise bootstrap` or renders templates. Run `mise bootstrap` when the new declarations need to be applied."
             }
             Self::FetchOnly => {
-                "fetch-only: the watcher only fetches the origin branch. Nothing is ever published, and no live file changes unless you run `mise bootstrap dotfiles pull`."
+                "fetch-only: the watcher only fetches the origin branch. Nothing is ever published, and no live file changes unless you run `mise dot pull`."
             }
             Self::Manual => {
-                "manual: no automatic network activity. `mise bootstrap dotfiles sync` publishes and fetches, and `mise bootstrap dotfiles pull` applies, when you run them."
+                "manual: no automatic network activity. `mise dot sync` publishes and fetches, and `mise dot pull` applies, when you run them."
             }
         }
     }

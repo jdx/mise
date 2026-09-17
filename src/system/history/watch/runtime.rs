@@ -1,9 +1,9 @@
-//! The foreground watcher process behind `mise bootstrap dotfiles watch` and
+//! The foreground watcher process behind `mise dot watch` and
 //! the `history-watch` built-in service: installs filesystem watches for the
 //! tracked set, schedules each changed path on its own (a constantly
 //! rewritten file is saved ever more rarely, never floods the history, and
 //! never delays an ordinary edit), saves checkpoints, and persists its
-//! health for `mise doctor` and `mise bootstrap dotfiles status`. Captures
+//! health for `mise doctor` and `mise dot status`. Captures
 //! never wait on the network and never run while another history operation
 //! holds the operation lock; they are deferred and retried.
 
@@ -544,7 +544,7 @@ pub(crate) async fn run(opts: WatchOptions) -> Result<i32> {
                                     capture.out.emit(
                                         "throttled",
                                         &format!(
-                                            "{} keeps changing; saving it every {} now (up to {}). Exclude it with `mise bootstrap dotfiles exclude '{}'` if it is a log, cache, or database, or track it with `--no-autosave` and save it explicitly",
+                                            "{} keeps changing; saving it every {} now (up to {}). Exclude it with `mise dot exclude '{}'` if it is a log, cache, or database, or track it with `--no-autosave` and save it explicitly",
                                             display_path(path),
                                             humantime(interval),
                                             humantime(capture.schedule.limits().max),
@@ -1645,7 +1645,7 @@ impl Capture {
     }
 
     /// A sync failed: the next attempt after the backoff, recorded for
-    /// `mise doctor` and `mise bootstrap dotfiles status`.
+    /// `mise doctor` and `mise dot status`.
     fn sync_failed(&mut self, now: Instant) -> Duration {
         let Some(plan) = &mut self.sync else {
             return SYNC_BACKOFF_MIN;
@@ -1791,7 +1791,7 @@ impl Output {
     }
 }
 
-/// The lock a running watcher holds; `mise bootstrap dotfiles status` reads it.
+/// The lock a running watcher holds; `mise dot status` reads it.
 pub(crate) fn watch_lock_in(state_dir: &Path) -> PathBuf {
     store::store_dir_in(state_dir).join("watch.lock")
 }

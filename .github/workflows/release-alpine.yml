@@ -15,7 +15,9 @@ concurrency:
   group: release-alpine-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
 
 env:
-  DRY_RUN: ${{ github.event_name == 'release' && '0' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.dry_run && '1' || '0')) || '1' }}
+  # `github.event.inputs` values are always strings, so the string "false" was
+  # truthy and pinned this to dry-run. The `inputs` context honors `type: boolean`.
+  DRY_RUN: ${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)) && '0' || '1' }}
   GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   GH_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
@@ -23,7 +25,7 @@ env:
 jobs:
   bump-alpine:
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:alpine@sha256:1a4fe933142e4cfb2fa7843bbae9b2f10290ccab1a58e260d947ab41da359f40
+    container: ghcr.io/jdx/mise:alpine@sha256:a826df7e06cb73e66107f1a65c1da7c512f532430c6067e90b7633b8c39e893e
     timeout-minutes: 60
     if: |
       (github.event_name == 'release' && 

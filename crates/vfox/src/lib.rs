@@ -19,6 +19,7 @@ pub use hooks::pre_install::VerifiedAttestation;
 pub use metadata::{Metadata, SystemDependency};
 pub use plugin::Plugin;
 pub use vfox::InstallResult;
+pub use vfox::TerminalLock;
 pub use vfox::Vfox;
 
 pub use http::cancel_http_requests;

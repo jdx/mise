@@ -176,9 +176,13 @@ impl Toolset {
                     if Error::is_required_channel_resolution_err(&err) {
                         return Err(err);
                     }
-                    // warn_once: a command may resolve the same toolset more than
-                    // once, and repeating an identical failure adds no information.
-                    warn_once!("Failed to resolve tool version list for {ba}: {err}");
+                    if Error::is_not_in_lockfile(&err) && !opts.warn_not_in_lockfile {
+                        debug!("Failed to resolve tool version list for {ba}: {err}");
+                    } else {
+                        // warn_once: a command may resolve the same toolset more than
+                        // once, and repeating an identical failure adds no information.
+                        warn_once!("Failed to resolve tool version list for {ba}: {err}");
+                    }
                 }
                 Ok((ba, tvl))
             },
@@ -484,10 +488,12 @@ impl Toolset {
                 let result = crate::ui::resolve_progress::scope(
                     reporter.as_ref().map(|p| p.reporter()),
                     async {
-                        let mut outdated = HashSet::new();
+                        let mut outdated = Vec::new();
                         match t.outdated_info(&config, &tv, bump, &opts).await {
                             Ok(Some(oi)) => {
-                                outdated.insert(oi);
+                                if !outdated.contains(&oi) {
+                                    outdated.push(oi);
+                                }
                             }
                             Ok(None) => {}
                             Err(e) => {
@@ -507,7 +513,9 @@ impl Toolset {
                         }
                         match OutdatedInfo::resolve(&config, tv.clone(), bump, &opts).await {
                             Ok(Some(oi)) => {
-                                outdated.insert(oi);
+                                if !outdated.contains(&oi) {
+                                    outdated.push(oi);
+                                }
                             }
                             Ok(None) => {}
                             Err(e) => {
@@ -761,6 +769,10 @@ impl Toolset {
         }
         let mut missing = vec![];
         for tv in missing_versions.into_iter() {
+            // A missing lazy tool is the intended state until one of its commands is invoked.
+            if tv.request.options().lazy == Some(true) {
+                continue;
+            }
             if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always {
                 missing.push(tv);
                 continue;

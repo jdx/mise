@@ -396,7 +396,10 @@ pub(crate) async fn plan(
 
         let supports_version_pins = manager.supports_version_pins();
         let supports_remove = manager.supports_remove();
-        for status in manager.installed(&manager_packages.requests).await? {
+        for status in manager
+            .installed_with_options(&manager_packages.requests, &manager_packages.options)
+            .await?
+        {
             let id = ResourceId::new("package", format!("{manager_name}:{}", status.request.name));
             let desired = desired_package(&status.request);
             let (current, action) = package_resource_state(

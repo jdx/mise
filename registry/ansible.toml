@@ -19,5 +19,4 @@ bins = [
 full = "pipx:ansible"
 
 [backends.options]
-pipx_args = "--include-deps"
-uvx = false
+expose = ["ansible-core"]

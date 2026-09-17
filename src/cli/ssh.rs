@@ -103,6 +103,7 @@ impl Ssh {
                         branch,
                         yes: self.repository_yes,
                         dry_run: self.repository_dry_run,
+                        replace_history: false,
                     },
                 )
                 .await?;
@@ -123,7 +124,7 @@ impl Ssh {
                             .is_empty())
                 {
                     bail!(
-                        "setup has conflicts; nothing was bootstrapped; use `mise bootstrap dotfiles status` to resolve them"
+                        "setup has conflicts; nothing was bootstrapped; use `mise dot status` to resolve them"
                     );
                 }
                 return Ok(());

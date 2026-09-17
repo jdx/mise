@@ -110,6 +110,15 @@ pub(super) async fn build(
     let formula_rb = fetch_formula_rb(rf, pr).await?;
     let archive = fetch_source(formula, pr).await?;
 
+    // Formula builds share a build root and write directly into the final
+    // Cellar, so keep the commit lock until the child exits and linking is
+    // complete. Recheck after locking because another process may have
+    // installed this formula while the downloads above were in progress.
+    let _commit_lock = pour::commit_lock(pr)?;
+    if pour::keg_installed(name, &pkg_version) {
+        return Ok(());
+    }
+
     let build_root = crate::dirs::CACHE
         .join("system-brew")
         .join("build")
@@ -123,8 +132,8 @@ pub(super) async fn build(
     let shim_path = build_root.join("mise-brew-shim.rb");
     crate::file::write(&shim_path, SHIM_RB)?;
 
-    // formulae bake the final keg path into binaries, so the build installs
-    // straight into the Cellar (same as brew); a failed build removes the keg
+    // Formulae bake the final keg path into binaries, so the build installs
+    // straight into the Cellar (same as brew); a failed build removes the keg.
     let keg = pour::keg_path(name, &pkg_version);
     if keg.exists() {
         crate::file::remove_all(&keg)?;
@@ -142,7 +151,11 @@ pub(super) async fn build(
             &formula_rb,
         ))
         .with_pr(pr);
-    let built = cmd.execute_async().await;
+    // Keep the synchronous child wait inside this future so cancellation
+    // cannot drop the commit lock while the child is still mutating Cellar.
+    // run_blocking hands the Tokio worker core off on mise's multithreaded
+    // runtime while the build runs.
+    let built = crate::file::run_blocking(|| cmd.execute());
     if let Err(err) = built {
         let _ = crate::file::remove_all(&keg);
         return Err(err.wrap_err(format!("failed to build {name} {pkg_version} from source")));

@@ -24,7 +24,7 @@ existing checkpoints are left exactly as they are.
 Examples:
 
 ```
-mise bootstrap dotfiles untrack ~/.zshrc
+mise dot untrack ~/.zshrc
 ```
 
 <!-- generated reference navigation -->
