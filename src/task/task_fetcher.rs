@@ -136,6 +136,10 @@ impl TaskFetcher {
                 remote.name.clone_from(&original.name);
                 remote.display_name.clone_from(&original.display_name);
 
+                // Before rendering, matching where the local file-task loader resolves it: a
+                // template can contribute `env`, `vars`, and `dir`, which the render reads.
+                crate::config::resolve_template_for_late_task(config, &mut remote)?;
+
                 // Restore runtime render context before rendering remote headers.
                 // Templates in those headers may depend on task vars or env inherited
                 // from the invocation that selected this task.

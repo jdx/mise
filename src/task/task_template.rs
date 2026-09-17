@@ -135,13 +135,23 @@ impl Task {
     }
 
     fn merge_template_with(&mut self, template: &TaskTemplate, usage_merge: UsageMerge) {
+        // A task whose command is a script file does not also get a `run`. `file` wins over
+        // `run` in the executor, so a task holding both carries a script that can never
+        // execute and yet shows up wherever the task is described.
+        //
+        // Either side can supply the `file`: the task's own (every file task, which reaches a
+        // template through `#MISE extends=...` with `run` necessarily empty), or the
+        // template's, which is merged further down and would otherwise arrive *after* its own
+        // `run` had already been copied onto a task that had neither.
+        let command_is_a_file = self.file.is_some() || template.file.is_some();
+
         // run: only use template if local is empty
-        if self.run.is_empty() {
+        if self.run.is_empty() && !command_is_a_file {
             self.run = template.run.clone();
         }
 
         // run_windows: only use template if local is empty
-        if self.run_windows.is_empty() {
+        if self.run_windows.is_empty() && !command_is_a_file {
             self.run_windows = template.run_windows.clone();
         }
 
@@ -325,6 +335,47 @@ mod tests {
         // Template run should be used when local is empty
         assert_eq!(task.run.len(), 1);
         assert!(matches!(&task.run[0], RunEntry::Script(s) if s == "template command"));
+    }
+
+    #[test]
+    fn test_merge_template_run_not_inherited_by_file_task() {
+        let mut task = Task {
+            file: Some("mise-tasks/build".into()),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            run: vec![RunEntry::Script("template command".to_string())],
+            run_windows: vec![RunEntry::Script("template command".to_string())],
+            description: "template description".to_string(),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        // The script file is the command, so the template's `run` is not a second one.
+        assert!(task.run.is_empty());
+        assert!(task.run_windows.is_empty());
+        // Everything else still inherits.
+        assert_eq!(task.description, "template description");
+    }
+
+    #[test]
+    fn test_merge_template_run_not_inherited_when_template_has_a_file() {
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            file: Some("mise-tasks/build".to_string()),
+            run: vec![RunEntry::Script("template command".to_string())],
+            run_windows: vec![RunEntry::Script("template command".to_string())],
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        // The template's `file` is the command it contributes; its `run` would only ever be
+        // dead weight on the task, since `file` wins in the executor.
+        assert_eq!(task.file, Some("mise-tasks/build".into()));
+        assert!(task.run.is_empty());
+        assert!(task.run_windows.is_empty());
     }
 
     #[test]
