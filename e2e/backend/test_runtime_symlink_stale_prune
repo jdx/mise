@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# A runtime symlink whose target stops being eligible used to survive every
+# rebuild: an interrupted install leaves an `incomplete` marker, which drops
+# that version from the symlink set, but the directory is still on disk so the
+# link is not dangling and nothing removed it.
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/stalelink"
+mkdir -p "$PLUGIN_DIR/bin"
+
+cat <<'LISTALL' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "1.0.0 1.1.0"
+LISTALL
+chmod +x "$PLUGIN_DIR/bin/list-all"
+
+cat <<'INSTALL' >"$PLUGIN_DIR/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+printf '#!/usr/bin/env bash\necho "stalelink %s"\n' "$ASDF_INSTALL_VERSION" \
+  >"$ASDF_INSTALL_PATH/bin/stalelink"
+chmod +x "$ASDF_INSTALL_PATH/bin/stalelink"
+INSTALL
+chmod +x "$PLUGIN_DIR/bin/install"
+
+INSTALLS="$MISE_DATA_DIR/installs/stalelink"
+
+mise install stalelink@1.1.0
+assert "readlink $INSTALLS/1.1" "./1.1.0"
+
+# an install interrupted partway through
+touch "$INSTALLS/1.1.0/incomplete"
+
+mise install stalelink@1.0.0
+
+# nothing mise generated still points into the half-installed directory
+assert_fail "test -L $INSTALLS/1.1"
+# the directory itself is left alone for the installer to finish
+assert "test -d $INSTALLS/1.1.0"
+# links that still have an eligible target are repointed as usual
+assert "readlink $INSTALLS/latest" "./1.0.0"
+assert "readlink $INSTALLS/1" "./1.0.0"
