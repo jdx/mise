@@ -916,20 +916,42 @@ end
     /// already happened.
     #[test]
     fn language_mixin_definitions_match_across_shims() {
-        fn language_module(src: &str) -> &str {
-            let start = src
-                .find("\nmodule Language\n")
-                .expect("shim defines no Language module");
-            let rest = &src[start + 1..];
-            let end = rest
-                .find("\nend\n")
-                .expect("unterminated Language module");
-            &rest[..end + "\nend\n".len()]
+        // Track nesting depth rather than scanning for an unindented `end`, so
+        // the span cannot silently narrow if the block is ever reindented.
+        // Lines are trimmed so reindentation alone is not a difference either.
+        fn language_module(src: &str) -> Vec<&str> {
+            let mut depth = 0usize;
+            let mut out = Vec::new();
+            for line in src.lines().skip_while(|l| l.trim() != "module Language") {
+                let line = line.trim();
+                out.push(line);
+                if line.starts_with("module ") && !line.ends_with("; end") {
+                    depth += 1;
+                } else if line == "end" {
+                    depth -= 1;
+                    if depth == 0 {
+                        return out;
+                    }
+                }
+            }
+            panic!("shim has no complete `module Language` block");
         }
-        assert_eq!(
-            language_module(METADATA_SHIM_RB),
-            language_module(BUILD_SHIM_RB),
-        );
+        let metadata = language_module(METADATA_SHIM_RB);
+        assert_eq!(metadata, language_module(BUILD_SHIM_RB));
+        // Two identically-truncated spans would compare equal while covering
+        // nothing, so pin the contents as well as the agreement.
+        for expected in [
+            "module Java; end",
+            "module Perl",
+            "module PHP",
+            "module Python",
+            "module Virtualenv; end",
+        ] {
+            assert!(
+                metadata.contains(&expected),
+                "Language block is missing {expected:?}: {metadata:?}"
+            );
+        }
     }
 
     /// A formula pulls a Language mixin in from its class body. That is a
