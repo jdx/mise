@@ -20,6 +20,11 @@ installing, so a shared config does not depend on the machine having run that
 command already. A bucket Scoop does not know by name needs a one-time
 `scoop bucket add <name> <repo>`; mise does not manage bucket remotes.
 
+Declare the app name, not a manifest URL or local path. Scoop can install from
+one, but it records the app under the name the manifest declares, which mise
+cannot know — the entry would read as missing on every run. mise rejects those
+declarations instead.
+
 ## Commands
 
 ```sh
@@ -80,6 +85,11 @@ package entries; unavailable managers are reported as skipped and do not block
 the other platform's bootstrap.
 
 mise installs into the current user's Scoop installation. Global installs
-(`scoop install --global`) need administrator rights and are not managed here;
-an app already installed globally is reported as installed, and mise leaves it
-alone.
+(`scoop install --global`) need administrator rights and are not managed here.
+An app that exists only as a global install is reported as installed, and mise
+does not upgrade or reinstall it. Because `scoop uninstall` without `--global`
+exits successfully without touching a global install, `state = "absent"` on one
+fails with a message telling you to run `scoop uninstall --global <app>` from
+an elevated shell rather than reporting a removal that did not happen. A pinned
+entry whose only install is global gets the pinned version installed into the
+user scope, which then takes precedence for mise.

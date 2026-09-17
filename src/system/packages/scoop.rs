@@ -72,8 +72,9 @@ impl ScoopApp {
 
 /// Splits a `bucket/app` request name into its bucket and app parts.
 ///
-/// Scoop also accepts a manifest URL or local path in place of an app name;
-/// those keep their slashes and are passed through to Scoop untouched.
+/// Scoop also accepts a manifest URL or local path in place of an app name.
+/// Those are not buckets, so they come back whole and are rejected by
+/// [`unsupported_name`].
 fn split_bucket(name: &str) -> (Option<&str>, &str) {
     let Some((bucket, app)) = name.split_once('/') else {
         return (None, name);
@@ -94,6 +95,34 @@ fn split_bucket(name: &str) -> (Option<&str>, &str) {
 /// The app name Scoop records on disk, without any bucket qualifier.
 fn app_name(name: &str) -> &str {
     split_bucket(name).1
+}
+
+/// A request Scoop can install but mise cannot reconcile afterwards.
+///
+/// `scoop install` also takes a manifest URL or local path, but it records the
+/// app under the name the manifest declares. mise has no way to learn that
+/// name, so status would report the entry missing forever and every apply
+/// would reinstall it. Rejecting the declaration is better than that loop.
+fn unsupported_name(name: &str) -> bool {
+    let app = app_name(name);
+    app.contains('/') || app.contains('\\') || app.to_ascii_lowercase().ends_with(".json")
+}
+
+/// Rejects declarations mise cannot converge, naming every offending entry.
+fn check_supported(pkgs: &[PackageRequest]) -> Result<()> {
+    let unsupported = pkgs
+        .iter()
+        .filter(|pkg| unsupported_name(&pkg.name))
+        .map(|pkg| format!("'{}'", pkg.name))
+        .collect::<Vec<_>>();
+    if unsupported.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "scoop: {} names a manifest URL or path; declare the app name Scoop installs it as, \
+         optionally qualified with a bucket",
+        unsupported.join(", ")
+    );
 }
 
 /// Builds the operand that selects a package, keeping any bucket qualifier
@@ -156,6 +185,11 @@ fn missing_buckets(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<String>
 /// `scoop install <app>@<version>` skips an app that is already installed at
 /// a different version, so mise removes it first — the same uninstall the
 /// `scoop update` path performs internally when it moves an app's version.
+///
+/// A global-only install is left out: mise installs into the user scope, so
+/// there is nothing local to remove, and `scoop uninstall` without `--global`
+/// would exit successfully without touching it. The pinned install that
+/// follows creates the user-scope copy the declaration asks for.
 fn pinned_reinstalls(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<String> {
     let mut apps = Vec::new();
     for pkg in pkgs {
@@ -164,7 +198,28 @@ fn pinned_reinstalls(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<Strin
         let Some(entry) = find_app(export, app) else {
             continue;
         };
+        if entry.is_global() {
+            continue;
+        }
         if entry.version.as_deref() != Some(pin.as_str())
+            && !apps.iter().any(|existing: &String| existing == app)
+        {
+            apps.push(app.to_string());
+        }
+    }
+    apps
+}
+
+/// Requested apps that exist only as global installs, in request order.
+///
+/// `scoop uninstall` without `--global` reports that the app is not installed
+/// locally and still exits zero, so a removal targeting one of these would
+/// look like it succeeded while changing nothing.
+fn global_only(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<String> {
+    let mut apps = Vec::new();
+    for pkg in pkgs {
+        let app = app_name(&pkg.name);
+        if find_app(export, app).is_some_and(ScoopApp::is_global)
             && !apps.iter().any(|existing: &String| existing == app)
         {
             apps.push(app.to_string());
@@ -318,6 +373,7 @@ impl SystemPackageManager for ScoopManager {
         if pkgs.is_empty() {
             return Ok(vec![]);
         }
+        check_supported(pkgs)?;
         let export = export().await?;
         Ok(pkgs
             .iter()
@@ -347,6 +403,10 @@ impl SystemPackageManager for ScoopManager {
         if opts.update {
             self.refresh(opts.dry_run).await?;
         }
+        // Apps in `NeedsRepair` need no uninstall step here: `scoop install`
+        // runs `ensure_none_failed` first, which resets an app whose current
+        // version still resolves and purges one whose does not, before the
+        // install proceeds.
         let reinstall = pinned_reinstalls(pkgs, &export);
         if !reinstall.is_empty() {
             apply(&uninstall_args(&reinstall), "uninstall", opts.dry_run, &[]).await?;
@@ -381,6 +441,19 @@ impl SystemPackageManager for ScoopManager {
     async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if pkgs.is_empty() {
             return Ok(());
+        }
+        let global = global_only(pkgs, &export().await?);
+        if !global.is_empty() {
+            bail!(
+                "scoop: {} installed globally; mise manages the user scope only. \
+                 Remove it with `scoop uninstall --global {}` from an elevated shell.",
+                global
+                    .iter()
+                    .map(|app| format!("'{app}'"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                global.join(" ")
+            );
         }
         let apps = pkgs
             .iter()
@@ -461,6 +534,58 @@ mod tests {
         assert_eq!(split_bucket(url), (None, url));
         assert_eq!(split_bucket("extras/"), (None, "extras/"));
         assert_eq!(split_bucket("/vscode"), (None, "/vscode"));
+    }
+
+    #[test]
+    fn a_manifest_url_or_path_is_rejected_rather_than_reinstalled_forever() {
+        for name in [
+            "https://example.com/bucket/runat.json",
+            r"C:\\manifests\\runat.json",
+            "runat.JSON",
+        ] {
+            assert!(unsupported_name(name), "{name}");
+        }
+        for name in ["ripgrep", "extras/vscode", "nerd-fonts/FiraCode-NF"] {
+            assert!(!unsupported_name(name), "{name}");
+        }
+
+        let err = check_supported(&[
+            req("ripgrep", None),
+            req("https://example.com/bucket/runat.json", None),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "scoop: 'https://example.com/bucket/runat.json' names a manifest URL or path; \
+             declare the app name Scoop installs it as, optionally qualified with a bucket"
+        );
+        check_supported(&[req("extras/vscode", Some("1.99.0"))]).unwrap();
+    }
+
+    #[test]
+    fn a_global_only_install_is_never_uninstalled_from_the_user_scope() {
+        let export = export_of(
+            &[
+                ("git", Some("2.48.0"), "Global install"),
+                ("ripgrep", Some("14.1.1"), ""),
+            ],
+            &[],
+        );
+        // `scoop uninstall git` would exit zero without touching the global
+        // install, so it must not be part of a pin reconciliation...
+        assert_eq!(
+            pinned_reinstalls(
+                &[req("git", Some("2.51.0")), req("ripgrep", Some("13.0.0"))],
+                &export
+            ),
+            vec!["ripgrep"]
+        );
+        // ...and a removal targeting it has to say so instead of succeeding.
+        assert_eq!(
+            global_only(&[req("git", None), req("ripgrep", None)], &export),
+            vec!["git"]
+        );
+        assert!(global_only(&[req("ripgrep", None), req("gh", None)], &export).is_empty());
     }
 
     #[test]
