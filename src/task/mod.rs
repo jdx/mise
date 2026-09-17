@@ -1130,6 +1130,16 @@ pub(crate) fn parse_task_usage_field(task_name: &str, spec: &str) -> Result<usag
 fn parse_task_script_usage_or_warn(file: &Path) -> usage::Spec {
     match parse_task_script_usage(file) {
         Ok(spec) => spec,
+        // Reading the script is the first thing this does, and a script that was discovered
+        // and has since been deleted or made unreadable fails there. Calling that an invalid
+        // spec sends the reader to look at lines that are fine.
+        Err(usage::error::UsageErr::IO(err)) => {
+            warn!(
+                "could not read task file {}: {err}",
+                file::display_path(file)
+            );
+            usage::Spec::default()
+        }
         Err(err) => {
             warn!(
                 "invalid usage spec in task file {}\n{}",

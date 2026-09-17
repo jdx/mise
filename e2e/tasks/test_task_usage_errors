@@ -15,13 +15,15 @@ usage = 'flag "--x <v>"'
 run = 'echo "x=$usage_x"'
 EOF
 
-# The task is named, and so is the reason
-assert_fail "mise run bad" "invalid usage spec for task 'bad'"
-assert_fail "mise run bad" "unsupported flag key bogus_key"
+# One invocation names both the task and the reason
+output="$(quiet_assert_fail "mise run bad")"
+assert_contains_text "$output" "invalid usage spec for task 'bad'"
+assert_contains_text "$output" "unsupported flag key bogus_key"
 
 # Same for a spec that only becomes invalid after tera rendering
-assert_fail "mise run bad-templated" "invalid usage spec for task 'bad-templated'"
-assert_fail "mise run bad-templated" "unsupported flag key bogus_key"
+output="$(quiet_assert_fail "mise run bad-templated")"
+assert_contains_text "$output" "invalid usage spec for task 'bad-templated'"
+assert_contains_text "$output" "unsupported flag key bogus_key"
 
 # A valid spec is unaffected
 assert "mise run good --x 1" "x=1"
@@ -35,7 +37,21 @@ echo ran
 EOF
 chmod +x mise-tasks/ftbad
 
-assert_contains "mise run ftbad 2>&1" "invalid usage spec in task file"
-assert_contains "mise run ftbad 2>&1" "unsupported flag key bogus_key"
-assert_contains "mise run ftbad 2>&1" "ran"
+output="$(mise run ftbad 2>&1)"
+assert_contains_text "$output" "invalid usage spec in task file"
+assert_contains_text "$output" "unsupported flag key bogus_key"
+assert_contains_text "$output" "ran"
 assert "mise run good --x 2" "x=2"
+
+# A script that cannot be read is reported as such, not as a broken spec.
+# Starts from a clean project so the only diagnostic in the output is this one.
+rm -f mise-tasks/ftbad
+cat <<'EOF' >mise.toml
+[tasks.missing-file]
+file = "nope.sh"
+EOF
+
+output="$(mise tasks ls --usage 2>&1)"
+assert_contains_text "$output" "could not read task file"
+assert_contains_text "$output" "nope.sh"
+assert_not_contains_text "$output" "invalid usage spec"
