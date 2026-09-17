@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Test that a bad usage spec is reported with the task name and what was wrong
+
+cat <<'EOF' >mise.toml
+[tasks.bad]
+usage = 'flag "--x <v>" bogus_key="nope"'
+run = 'echo hi'
+
+[tasks.bad-templated]
+usage = 'flag "--{{ "x" }} <v>" bogus_key="nope"'
+run = 'echo hi'
+
+[tasks.good]
+usage = 'flag "--x <v>"'
+run = 'echo "x=$usage_x"'
+EOF
+
+# The task is named, and so is the reason
+assert_fail "mise run bad" 'invalid usage spec for task `bad`'
+assert_fail "mise run bad" "unsupported flag key bogus_key"
+
+# Same for a spec that only becomes invalid after tera rendering
+assert_fail "mise run bad-templated" 'invalid usage spec for task `bad-templated`'
+assert_fail "mise run bad-templated" "unsupported flag key bogus_key"
+
+# A valid spec is unaffected
+assert "mise run good --x 1" "x=1"
+
+# A file task warns with the same detail and keeps the rest of the project loadable
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/ftbad
+#!/usr/bin/env bash
+#USAGE flag "--x <v>" bogus_key="nope"
+echo ran
+EOF
+chmod +x mise-tasks/ftbad
+
+assert_contains "mise run ftbad 2>&1" "invalid usage spec in task file"
+assert_contains "mise run ftbad 2>&1" "unsupported flag key bogus_key"
+assert_contains "mise run ftbad 2>&1" "ran"
+assert "mise run good --x 2" "x=2"
