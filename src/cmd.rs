@@ -2090,10 +2090,12 @@ fn stderr_tail_for_error(output: &[(String, OutputSource)]) -> Option<String> {
         .rev()
         .find(|(line, source)| matches!(source, OutputSource::Stderr) && !line.trim().is_empty())
         .map(|(line, _)| line.trim())?;
-    let mut end = STDERR_TAIL_MAX_CHARS.min(line.len());
-    while !line.is_char_boundary(end) {
-        end -= 1;
-    }
+    // By character, not by byte: a diagnostic in a non-ASCII locale would
+    // otherwise lose two thirds of its length to UTF-8 encoding.
+    let end = line
+        .char_indices()
+        .nth(STDERR_TAIL_MAX_CHARS)
+        .map_or(line.len(), |(index, _)| index);
     if end < line.len() {
         Some(format!("{}…", &line[..end]))
     } else {
@@ -2442,13 +2444,28 @@ mod tests {
     }
 
     #[test]
-    fn test_stderr_tail_for_error_truncates_on_a_char_boundary() {
-        let line = "あ".repeat(super::STDERR_TAIL_MAX_CHARS);
+    fn test_stderr_tail_for_error_truncates_by_character_not_byte() {
+        let line = "あ".repeat(super::STDERR_TAIL_MAX_CHARS + 10);
         let output = vec![(line, super::OutputSource::Stderr)];
 
         let tail = super::stderr_tail_for_error(&output).unwrap();
         assert!(tail.ends_with('…'));
-        assert!(tail.len() <= super::STDERR_TAIL_MAX_CHARS + '…'.len_utf8());
+        // Counting bytes would have cut a diagnostic in a non-ASCII locale at a
+        // third of the documented limit.
+        assert_eq!(
+            tail.chars().count(),
+            super::STDERR_TAIL_MAX_CHARS + 1,
+            "expected {} characters plus the ellipsis",
+            super::STDERR_TAIL_MAX_CHARS
+        );
+    }
+
+    #[test]
+    fn test_stderr_tail_for_error_keeps_a_line_at_the_limit_whole() {
+        let line = "あ".repeat(super::STDERR_TAIL_MAX_CHARS);
+        let output = vec![(line.clone(), super::OutputSource::Stderr)];
+
+        assert_eq!(super::stderr_tail_for_error(&output), Some(line));
     }
 
     #[test]
