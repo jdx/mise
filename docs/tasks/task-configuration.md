@@ -306,6 +306,12 @@ vars = { mode = "headed" }
 run = "./scripts/test-e2e.sh --{{ vars.mode }}"
 ```
 
+A task-local var applies to the <span v-pre>`{{ vars.* }}`</span> references written in that task's
+own fields. Config vars are resolved once when the config loads, so a task cannot change a value a
+top-level `[vars]` entry already expanded — see
+[what a task-local var can change](/configuration/vars.html#what-a-task-local-var-can-change). To
+share a command that each task parameterizes, put it in a [task template](/tasks/templates).
+
 See [configuration variables](/configuration/vars.html) for supported directives,
 precedence, and redaction.
 

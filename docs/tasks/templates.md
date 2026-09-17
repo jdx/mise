@@ -67,6 +67,7 @@ When a task extends a template, fields are merged according to these rules:
 | `run`, `run_windows`                              | Local overrides completely; ignored when the task has a `file`    |
 | `tools`                                           | Deep merge (local tools add to or override the template's values) |
 | `env`                                             | Deep merge (local env adds to or overrides the template's values) |
+| `vars`                                            | Deep merge (local vars add to or override the template's values)  |
 | `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                           |
 | `dir`                                             | Local overrides; defaults to config_root if not in template       |
 | `sources`, `outputs`, `cache`                     | Local overrides completely                                        |
@@ -85,6 +86,31 @@ output declaration; `cache = { enabled = false }` explicitly disables inherited 
 
 A task that sets `file` — including every file task — runs that script rather than
 any `run` script, so it never inherits `run` or `run_windows` from a template.
+
+### Parameterizing a Template with Vars
+
+A template's `run` is merged into the task before the task is rendered, so it can read the vars
+the task declares. This is how several tasks share one command and each supplies its own values:
+
+```toml
+[task_templates.e2e]
+run = "./scripts/test-e2e.sh --mode={{ vars.mode | default(value='headless') }}"
+
+[tasks.test]
+extends = "e2e"
+vars = { mode = "headed" }
+
+[tasks."test:ci"]
+extends = "e2e"
+```
+
+`mise run test` runs `./scripts/test-e2e.sh --mode=headed`, and `mise run test:ci` falls back to
+`--mode=headless`.
+
+Write the fragment in the template rather than in a top-level `[vars]` entry: config vars are
+resolved once when the config loads, before any task-local var exists, so a task cannot change a
+value one of them already expanded. See
+[when vars are resolved](/configuration/vars.html#when-vars-are-resolved).
 
 ### Example: Deep Merge for Tools
 

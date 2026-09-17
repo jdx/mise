@@ -50,6 +50,24 @@ See the [`env._` directive reference](/environments/#env-directives) for the ava
 and plugin-provided directive forms. When used under `[vars]`, these directives populate `vars`
 instead of exporting the values as environment variables.
 
+## When vars are resolved
+
+Vars are resolved once, while mise loads the config. Each entry is rendered against the vars
+resolved before it, and its result is a plain string from then on:
+
+```mise-toml
+[vars]
+flavor = "vanilla"
+label = "{{ vars.flavor }} scoop"
+```
+
+`label` is the string `vanilla scoop`. mise never renders a var's value a second time, so
+nothing that happens afterwards changes it. Resolving vars once is what lets a single value
+serve `[tools]`, `[env]`, hooks, and tasks alike.
+
+A var is therefore a value, not a macro. To share a command fragment that each task fills in
+differently, write it in a [task template](/tasks/templates) instead of in `[vars]`.
+
 ## Configuration hierarchy
 
 Vars follow mise's [configuration hierarchy](/configuration.html#configuration-hierarchy). They can
@@ -86,3 +104,39 @@ run = "echo {{ vars.test_mode | quote }}"
 Here, `mise run test` prints `headed`; other tasks still see `headless` unless
 they define their own override. See [Task Configuration](/tasks/task-configuration.html#task-vars)
 for task-local vars.
+
+### What a task-local var can change
+
+A task-local var applies to the <span v-pre>`{{ vars.* }}`</span> references written in that
+task's own fields. It cannot reach back into a config var that was already resolved:
+
+```mise-toml
+[vars]
+args = "--mode={{ vars.mode | default(value='fast') }}"
+
+[tasks.test]
+vars = { mode = "slow" }
+run = "echo {{ vars.args }} / {{ vars.mode }}"
+```
+
+`mise run test` prints `--mode=fast / slow`. `args` was rendered while the config loaded, when
+`mode` had no value yet, so `default` applied and `args` was fixed at `--mode=fast`. The
+<span v-pre>`{{ vars.mode }}`</span> written in `run` is rendered when the task runs, and does
+see `slow`.
+
+Without the `default` filter, mise reports the missing var as an error while loading the
+config. Adding `default` is what turns that error into a value chosen earlier than intended,
+so reach for it only where a var genuinely may be absent.
+
+When several tasks share a command that each one parameterizes, put the command in a
+[task template](/tasks/templates) and let each task pass its own vars. A template's fields are
+merged into the task before the task renders, so they see the task's vars:
+
+```mise-toml
+[task_templates.e2e]
+run = "./scripts/test-e2e.sh --mode={{ vars.mode | default(value='headless') }}"
+
+[tasks.test]
+extends = "e2e"
+vars = { mode = "headed" }
+```
