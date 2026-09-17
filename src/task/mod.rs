@@ -1117,7 +1117,7 @@ pub(crate) fn render_usage_err(err: usage::error::UsageErr) -> String {
 pub(crate) fn parse_task_usage_field(task_name: &str, spec: &str) -> Result<usage::Spec> {
     spec.parse::<usage::Spec>().map_err(|err| {
         eyre!(
-            "invalid usage spec for task `{task_name}`\n{}",
+            "invalid usage spec for task '{task_name}'\n{}",
             render_usage_err(err)
         )
     })

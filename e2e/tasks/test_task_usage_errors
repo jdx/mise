@@ -16,11 +16,11 @@ run = 'echo "x=$usage_x"'
 EOF
 
 # The task is named, and so is the reason
-assert_fail "mise run bad" 'invalid usage spec for task `bad`'
+assert_fail "mise run bad" "invalid usage spec for task 'bad'"
 assert_fail "mise run bad" "unsupported flag key bogus_key"
 
 # Same for a spec that only becomes invalid after tera rendering
-assert_fail "mise run bad-templated" 'invalid usage spec for task `bad-templated`'
+assert_fail "mise run bad-templated" "invalid usage spec for task 'bad-templated'"
 assert_fail "mise run bad-templated" "unsupported flag key bogus_key"
 
 # A valid spec is unaffected
