@@ -1,0 +1,30 @@
+{
+  "id": "trail-summary",
+  "display_name": "Trail Summary",
+  "enabled": true,
+  "scope": "trail",
+  "runtime": {
+    "kind": "prompt_runner",
+    "agent": "claude",
+    "model": "haiku",
+    "timeout_ms": 300000,
+    "sandbox": {
+      "base_template": "claude",
+      "repo_token": "read"
+    }
+  },
+  "automation": {
+    "kind": "trail_prompt"
+  },
+  "prompt": {
+    "template": "You summarize code changes for reviewers of mise, a Rust CLI for dev tools, env vars, and tasks. Analyze branch \"{{branch}}\" compared to \"{{base_branch}}\".\n\nRun `git diff origin/{{base_branch}}...HEAD`, then write a short Problem -> Solution summary in Markdown. Start with the `**Problem:**` line and include a `**Solution:**` line.\n\nWrite for a mise user who has not read the diff: name the command, setting, backend, or task that behaves differently and what they can now do. For a fix, give the trigger and the before/after behavior. Include a short valid config or command example when a new setting or flag is added, and note new defaults, experimental status, or platform limits. Skip file-by-file narration.\n\nReturn Markdown only."
+  },
+  "select": {
+    "trigger_types": ["api", "push"]
+  },
+  "output": {
+    "adapter": "markdown",
+    "result_type": "trail_summary",
+    "trail_field": "body"
+  }
+}
