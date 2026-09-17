@@ -38,14 +38,14 @@ subcommand this lists them, newest first.
 Examples:
 
 ```
-mise bootstrap dotfiles history
-mise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua
-mise bootstrap dotfiles history show latest
-mise bootstrap dotfiles history diff          # the working tree against the latest checkpoint
-mise bootstrap dotfiles history diff 11 12 --patch
-mise bootstrap dotfiles save --description "before the theme change"
-mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua
-mise bootstrap dotfiles undo
+mise dot history
+mise dot history --path ~/.config/hypr/bindings.lua
+mise dot history show latest
+mise dot history diff          # the working tree against the latest checkpoint
+mise dot history diff 11 12 --patch
+mise dot save --description "before the theme change"
+mise dot rollback ~/.config/hypr/bindings.lua
+mise dot undo
 ```
 
 <!-- generated reference navigation -->

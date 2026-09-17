@@ -48,6 +48,11 @@ impl SkillsSync {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let skills = crate::packslip::active_skills(&config).await?;
+        for missing in &skills.missing {
+            warn!("{missing}");
+        }
+        let nothing_declared = skills.missing.is_empty();
+        let skills = skills.found;
         let settings = Settings::get();
         let dir = match (&self.dir, self.global) {
             (Some(dir), _) => dir.clone(),
@@ -62,7 +67,11 @@ impl SkillsSync {
         };
         let prune = self.prune || settings.skills.prune;
         if skills.is_empty() && !prune {
-            miseprintln!("no skills declared by the active tools; nothing to link");
+            if nothing_declared {
+                miseprintln!("no skills declared by the active tools; nothing to link");
+            } else {
+                miseprintln!("no skills installed; nothing to link");
+            }
             return Ok(());
         }
         let report = crate::packslip::sync_skills(&dir, &skills, &dirs::INSTALLS, prune)?;

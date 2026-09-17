@@ -69,7 +69,7 @@ jobs:
           fi
 
   build-ubuntu:
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -100,6 +100,7 @@ jobs:
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -D warnings
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
@@ -108,7 +109,7 @@ jobs:
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
       - shell: pwsh
         run: |
-          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
+          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
           cargo build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - parallel:
@@ -129,6 +130,9 @@ jobs:
     env:
       MISE_CARGO_BUILD_COMMAND: cargo build
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
+      # Untrusted runs land on a shared macos-14 runner that is roughly twice as
+      # slow, where the strict per-test ceilings only produce false failures.
+      NEXTEST_PROFILE: ${{ inputs.trusted && 'ci' || 'ci-shared' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -159,6 +163,7 @@ jobs:
           '^test_dotfiles_onboarding$' '^test_dotfiles_track$'
           '^test_dotfiles_history_policies$' '^test_dotfiles_rollback$'
           '^test_dotfiles_rollback_types$' '^test_bootstrap_user_services$'
+          '^test_bootstrap_unit_templates$'
           '^test_dotfiles_rollback_review$' '^test_dotfiles_sync_permissions$'
           '^test_dotfiles_managed_manual$' '^test_bootstrap_from_git_dumb_http$'
           '^test_dotfiles_alias_enrollment$'
@@ -210,6 +215,7 @@ jobs:
           - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
           - run: cargo machete --with-metadata
           - run: ./scripts/test-standalone.sh
+          - run: ./scripts/test-check-glibc.sh
           - run: mise run lint
             env:
               HK_SKIP_STEPS: cargo-check
@@ -259,14 +265,18 @@ jobs:
           - name: Pull e2e Docker image
             run: docker pull ghcr.io/jdx/mise:e2e
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
+      - name: Test e2e runner
+        run: python3 scripts/test-e2e-runner.py
       # Tests run in ephemeral containers and do not need host mise tools.
       # Four branches on a large runner; each handles two token-isolated
       # tranches sequentially, capped at eight containers total.
       - parallel:
           - name: Test tranches 0 and 4
-            uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+            timeout-minutes: 60
             env:
               E2E_JOBS: 2
+              E2E_MAX_ATTEMPTS: 2
+              E2E_RETRY_WAIT_SECONDS: 30
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
@@ -274,19 +284,17 @@ jobs:
               TRANCHE_B: 4
               TOKEN_A: ${{ steps.tokens.outputs.token_0 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.tokens.outputs.token_4 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-            with: &e2e-retry
-              timeout_minutes: 30
-              retry_wait_seconds: 30
-              max_attempts: 2
-              command: |
-                e2e_status=0
-                MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE="$TRANCHE_A" ./e2e/run_all_tests || e2e_status=$?
-                MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE="$TRANCHE_B" ./e2e/run_all_tests || e2e_status=$?
-                exit "$e2e_status"
+            run: &e2e-run |
+              e2e_status=0
+              MISE_GITHUB_TOKEN="$TOKEN_A" GITHUB_TOKEN="$TOKEN_A" TEST_TRANCHE="$TRANCHE_A" ./e2e/run_all_tests || e2e_status=$?
+              MISE_GITHUB_TOKEN="$TOKEN_B" GITHUB_TOKEN="$TOKEN_B" TEST_TRANCHE="$TRANCHE_B" ./e2e/run_all_tests || e2e_status=$?
+              exit "$e2e_status"
           - name: Test tranches 1 and 5
-            uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+            timeout-minutes: 60
             env:
               E2E_JOBS: 2
+              E2E_MAX_ATTEMPTS: 2
+              E2E_RETRY_WAIT_SECONDS: 30
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
@@ -294,11 +302,13 @@ jobs:
               TRANCHE_B: 5
               TOKEN_A: ${{ steps.tokens.outputs.token_1 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.tokens.outputs.token_5 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-            with: *e2e-retry
+            run: *e2e-run
           - name: Test tranches 2 and 6
-            uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+            timeout-minutes: 60
             env:
               E2E_JOBS: 2
+              E2E_MAX_ATTEMPTS: 2
+              E2E_RETRY_WAIT_SECONDS: 30
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
@@ -306,11 +316,13 @@ jobs:
               TRANCHE_B: 6
               TOKEN_A: ${{ steps.tokens.outputs.token_2 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.tokens.outputs.token_6 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-            with: *e2e-retry
+            run: *e2e-run
           - name: Test tranches 3 and 7
-            uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+            timeout-minutes: 60
             env:
               E2E_JOBS: 2
+              E2E_MAX_ATTEMPTS: 2
+              E2E_RETRY_WAIT_SECONDS: 30
               MISE_E2E_DOCKER: "1"
               TEST_ALL: ${{(github.head_ref == 'release' || github.ref == 'refs/heads/release') && '1' || '0'}}
               TEST_TRANCHE_COUNT: 8
@@ -318,7 +330,7 @@ jobs:
               TRANCHE_B: 7
               TOKEN_A: ${{ steps.tokens.outputs.token_3 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.tokens.outputs.token_7 || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
-            with: *e2e-retry
+            run: *e2e-run
 
   bootstrap-linux-host:
     permissions:
@@ -345,16 +357,13 @@ jobs:
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C link-arg=/STACK:8000000 -D warnings
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
         with:
           shared-key: windows-unit
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
-      - name: check unused code
-        run: cargo check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
-        env:
-          RUSTFLAGS: -D unused
       - name: cargo test
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:

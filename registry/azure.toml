@@ -33,4 +33,5 @@ asset_pattern = "azure-cli-{{ version }}-x64.zip"
 full = "pipx:azure-cli"
 
 [backends.options]
-uvx_args = "--prerelease=allow --with pip"
+dependency_prereleases = "allow"
+with = ["pip"]

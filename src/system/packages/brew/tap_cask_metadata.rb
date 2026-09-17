@@ -34,6 +34,9 @@ end
 
 CASK_FILE = ENV.fetch("MISE_BREW_SOURCE_PATH")
 
+# Preserve target interpolation for resolution against mise's configured prefix.
+HOMEBREW_PREFIX = "$HOMEBREW_PREFIX".freeze
+
 module OS
   def self.mac? = ENV.fetch("MISE_BREW_OS") == "macos"
   def self.linux? = ENV.fetch("MISE_BREW_OS") == "linux"
@@ -111,9 +114,16 @@ class CaskFlightSteps
 
   def version = @cask.version
   def arch = @cask.arch
+  def appdir = @cask.appdir
 
   def run(command, base: nil, **options)
     path = { path: command.to_s }
+    # `appdir` interpolates to the `$APPDIR` marker; the installer only
+    # accepts it on `base: :appdir` commands, as a path relative to that base.
+    if path[:path].start_with?("$APPDIR/")
+      base = :appdir if base.nil?
+      path[:path] = path[:path].delete_prefix("$APPDIR/") if base == :appdir
+    end
     path[:base] = base.to_s unless base.nil?
     @steps << options.merge(type: "run", command: path)
   end
@@ -161,6 +171,12 @@ class CaskMetadata
 
   def url(value = nil, **) = (@url = value.to_s unless value.nil?)
   def auto_updates(value = nil) = (@auto_updates = value unless value.nil?)
+
+  # Metadata extraction never knows the real install location, so interpolate
+  # the relocatable `$APPDIR` marker the Rust installer resolves against the
+  # actual appdir (honoring `MISE_BREW_CASK_OPT_APPDIR`); the install-time shim
+  # answers `appdir` with the real path directly.
+  def appdir = "$APPDIR"
 
   def depends_on(values = nil, **kwargs)
     values = kwargs if values.nil?

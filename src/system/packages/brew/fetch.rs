@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::path::PathBuf;
 
-use futures_util::stream::{self, StreamExt, TryStreamExt};
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 
 use super::api::BottleFile;
@@ -11,20 +11,48 @@ use crate::http::HTTP;
 use crate::result::Result;
 use crate::ui::progress_report::SingleReport;
 
-/// Drive independent downloads concurrently without requiring their futures
-/// to be `Send + 'static`. The brew install path may also contain source
-/// builds whose future is intentionally local to the package-manager driver.
-pub(super) async fn concurrently<T, E, F>(
-    futures: Vec<F>,
+/// Bounded concurrent jobs that can discard work not yet admitted to the
+/// active set while still draining active jobs after a failure.
+pub(super) struct ConcurrentJobs<F> {
+    pending: std::vec::IntoIter<F>,
+    active: FuturesUnordered<F>,
     limit: usize,
-) -> std::result::Result<Vec<T>, E>
+}
+
+impl<F> ConcurrentJobs<F>
 where
-    F: Future<Output = std::result::Result<T, E>>,
+    F: Future,
 {
-    stream::iter(futures)
-        .buffer_unordered(limit.max(1))
-        .try_collect()
-        .await
+    fn fill(&mut self) {
+        while self.active.len() < self.limit {
+            let Some(job) = self.pending.next() else {
+                break;
+            };
+            self.active.push(job);
+        }
+    }
+
+    pub(super) async fn next(&mut self) -> Option<F::Output> {
+        self.fill();
+        self.active.next().await
+    }
+
+    pub(super) fn cancel_pending(&mut self) {
+        self.pending = Vec::new().into_iter();
+    }
+}
+
+/// Drive independent jobs concurrently and yield each result as soon as it
+/// completes, without requiring the futures to be `Send + 'static`.
+pub(super) fn concurrently<F>(futures: Vec<F>, limit: usize) -> ConcurrentJobs<F>
+where
+    F: Future,
+{
+    ConcurrentJobs {
+        pending: futures.into_iter(),
+        active: FuturesUnordered::new(),
+        limit: limit.max(1),
+    }
 }
 
 /// Download a bottle to the mise cache (or reuse a verified cached copy).
@@ -75,25 +103,79 @@ mod tests {
                 let started = started.clone();
                 async move {
                     started.fetch_add(1, Ordering::SeqCst);
-                    pending::<std::result::Result<(), ()>>().await
+                    pending::<()>().await
                 }
             })
             .collect();
 
         assert!(
-            timeout(Duration::from_millis(10), concurrently(futures, 2))
-                .await
-                .is_err()
+            timeout(Duration::from_millis(10), async {
+                let mut jobs = concurrently(futures, 2);
+                while jobs.next().await.is_some() {}
+            },)
+            .await
+            .is_err()
         );
         assert_eq!(started.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
     async fn concurrent_downloads_collect_results() {
-        let futures = (0..4).map(|i| async move { Ok::<_, ()>(i) }).collect();
+        let futures = (0..4).map(|i| async move { i }).collect();
 
-        let mut completed = concurrently(futures, 2).await.unwrap();
+        let mut jobs = concurrently(futures, 2);
+        let mut completed = Vec::new();
+        while let Some(result) = jobs.next().await {
+            completed.push(result);
+        }
         completed.sort_unstable();
         assert_eq!(completed, vec![0, 1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn concurrent_jobs_yield_before_every_job_finishes() {
+        let futures = (0..2)
+            .map(|i| async move {
+                if i == 1 {
+                    pending::<()>().await;
+                }
+                i
+            })
+            .collect();
+        let mut jobs = concurrently(futures, 2);
+
+        assert_eq!(
+            timeout(Duration::from_millis(10), jobs.next()).await,
+            Ok(Some(0))
+        );
+        assert!(
+            timeout(Duration::from_millis(10), jobs.next())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_jobs_can_drop_pending_work_and_drain_active_work() {
+        let started = Arc::new(AtomicUsize::new(0));
+        let futures = (0..5)
+            .map(|i| {
+                let started = started.clone();
+                async move {
+                    started.fetch_add(1, Ordering::SeqCst);
+                    i
+                }
+            })
+            .collect();
+        let mut jobs = concurrently(futures, 2);
+
+        let first = jobs.next().await.unwrap();
+        jobs.cancel_pending();
+        let second = jobs.next().await.unwrap();
+        assert_eq!(jobs.next().await, None);
+        let mut completed = vec![first, second];
+        completed.sort_unstable();
+        assert_eq!(completed, vec![0, 1]);
+        assert_eq!(started.load(Ordering::SeqCst), 2);
     }
 }

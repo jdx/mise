@@ -29,9 +29,9 @@ mise doesn't otherwise own.
 ## Examples
 
 ```
-mise bootstrap dotfiles apply
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --force --yes
+mise dot apply
+mise dot apply --dry-run
+mise dot apply --force --yes
 ```
 
 <!-- generated reference navigation -->

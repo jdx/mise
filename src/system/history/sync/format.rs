@@ -18,7 +18,7 @@ struct Marker {
 
 pub(crate) fn marker_content() -> String {
     format!(
-        "# This repository is a mise setup repository (`mise bootstrap dotfiles origin set`).\n# Do not edit: mise reads this to recognize the layout it publishes.\nformat = {FORMAT}\n"
+        "# This repository is a mise setup repository (`mise dot origin set`).\n# Do not edit: mise reads this to recognize the layout it publishes.\nformat = {FORMAT}\n"
     )
 }
 

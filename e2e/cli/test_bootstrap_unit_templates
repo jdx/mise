@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# `[bootstrap.linux.systemd.units]` and `[bootstrap.macos.launchd.agents]`
+# values are Tera templates rendered against the declaring config's context.
+# shellcheck disable=SC2016
+
+cat <<'EOF' >mise.toml
+[vars]
+svc_root = "/opt/acme"
+
+[bootstrap.linux.systemd.units.templated]
+description = "templated unit"
+exec_start = "{{ vars.svc_root }}/bin/serve"
+working_directory = "{{ vars.svc_root }}"
+environment_file = ["{{ vars.svc_root }}/.env", "-%h/extra.env"]
+EOF
+
+# a templated unit is accepted, not reported as malformed
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "dev.mise.templated.service"
+assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "failed to render"
+
+# validation sees the rendered value, not the template: an umask that renders to
+# a path is rejected with the path it rendered to
+cat <<'EOF' >mise.toml
+[vars]
+svc_root = "/opt/acme"
+
+[bootstrap.linux.systemd.units.templated]
+exec_start = "/bin/true"
+umask = "{{ vars.svc_root }}"
+EOF
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "invalid \`umask\` value '/opt/acme'"
+
+# a unit whose template cannot render is reported by name and skipped; the
+# units around it still apply
+cat <<'EOF' >mise.toml
+[bootstrap.linux.systemd.units.broken]
+exec_start = "{{ unterminated"
+
+[bootstrap.linux.systemd.units.fine]
+exec_start = "/bin/true"
+EOF
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "[bootstrap.linux.systemd.units.broken]"
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "dev.mise.fine.service"
+assert_not_contains "mise bootstrap linux systemd-units status 2>&1" "dev.mise.broken.service"
+
+# a typo in a unit key is still reported, with the section and unit name
+cat <<'EOF' >mise.toml
+[bootstrap.linux.systemd.units.typo]
+exec_start = "/bin/true"
+exec_startt = "oops"
+EOF
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "bootstrap.linux.systemd.units.typo.exec_startt"
+
+# a typo in a declaration a more local config shadows is still reported: the
+# warning belongs to the file that declared it, not to the entry that wins
+cat <<'EOF' >mise.toml
+[bootstrap.linux.systemd.units.shadowed]
+exec_start = "/bin/true"
+exec_startt = "oops"
+EOF
+cat <<'EOF' >mise.local.toml
+[bootstrap.linux.systemd.units.shadowed]
+exec_start = "/bin/true"
+EOF
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "bootstrap.linux.systemd.units.shadowed.exec_startt"
+rm mise.local.toml
+
+# exec() is unavailable in unit values so status, plan, --dry-run, and apply all
+# render the same declaration and no read-only command can shell out
+cat <<EOF >mise.toml
+[bootstrap.linux.systemd.units.shellout]
+exec_start = "{{ exec(command='touch $PWD/side-effect') }}"
+EOF
+assert_contains "mise bootstrap linux systemd-units status 2>&1" "exec() is not available"
+assert_fail "test -e side-effect"
+
+# LaunchAgents render the same way, on every platform
+cat <<'EOF' >mise.toml
+[vars]
+svc_root = "/opt/acme"
+
+[bootstrap.macos.launchd.agents.templated]
+program = "{{ vars.svc_root }}/bin/sync"
+args = ["--root", "{{ vars.svc_root }}"]
+queue_directories = ["{{ vars.svc_root }}/queue"]
+EOF
+assert_contains "mise bootstrap macos launchd-agents status 2>&1" "dev.mise.templated"
+
+# a queue directory that renders to a relative path is rejected with the
+# rendered value, so the plist never sees the template
+cat <<'EOF' >mise.toml
+[vars]
+svc_root = "relative/acme"
+
+[bootstrap.macos.launchd.agents.templated]
+program = "/bin/true"
+queue_directories = ["{{ vars.svc_root }}/queue"]
+EOF
+assert_contains "mise bootstrap macos launchd-agents status 2>&1" "relative/acme/queue"

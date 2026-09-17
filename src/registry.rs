@@ -1446,7 +1446,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         let backends = BAKED_REGISTRY.get("pre-commit").unwrap().backends();
         assert_eq!(
             backends.first().copied(),
-            Some("pipx:pre-commit"),
+            Some("pypi:pre-commit"),
             "{backends:?}"
         );
     }

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# The canonical command is visible while the deprecated top-level alias is hidden.
-assert_not_contains "mise --help" "  dotfiles "
+# The top-level command is visible with its short alias.
+assert_contains "mise --help" "  dotfiles      Manage dotfiles from"
+assert_contains "mise --help" "[aliases: dot]"
 assert_contains "mise bootstrap dotfiles --help" "add"
 assert_contains "mise bootstrap dotfiles --help" "diff"
 assert_contains "mise bootstrap dotfiles --help" "edit"

@@ -104,7 +104,8 @@ pub(super) fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) 
             && !has_lifecycle_hook(cask, "postflight");
         if !font_only {
             bail!(
-                "brew-cask:{}: only font-only casks without lifecycle hooks are supported on linux",
+                "{}:{}: only font-only casks without lifecycle hooks are supported on linux",
+                cask.label(),
                 cask.token
             );
         }

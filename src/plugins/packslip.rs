@@ -117,6 +117,7 @@ pub(crate) async fn install(
         pr: Arc::new(QuietReport::new()),
         force: false,
         dry_run: false,
+        explicit_yes: false,
         locked: false,
         before_date: None,
         dependency_context: Default::default(),

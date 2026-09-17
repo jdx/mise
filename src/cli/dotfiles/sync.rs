@@ -7,7 +7,7 @@ use crate::system::history::sync::run::{self, SyncRequest};
 /// Fetches the origin branch and publishes the ordinary local commit history.
 /// A rejected push fetches again and reconciles without rewriting history.
 /// Records incoming changes to apply and conflicts to decide.
-/// Live files are never changed here: `mise bootstrap dotfiles pull` does
+/// Live files are never changed here: `mise dot pull` does
 /// that. In `fetch-only` mode nothing is published.
 ///
 /// The history watcher does this on its own in `sync` and `fetch-only` mode
@@ -18,6 +18,10 @@ pub(crate) struct DotfilesSync {
     /// Fetch without publishing
     #[usage(long)]
     fetch_only: bool,
+
+    /// Allow publishing older unencrypted versions of encrypted files
+    #[usage(long)]
+    allow_plaintext_history: bool,
 
     /// Warn instead of failing when the origin is unreachable
     #[usage(long)]
@@ -44,7 +48,9 @@ impl DotfilesSync {
         if let Some(reason) = store.unavailable() {
             bail!("cannot synchronize: {reason}");
         }
-        let outcome = run::sync(&store, &tracked, &SyncRequest::new(self.fetch_only))?;
+        let mut request = SyncRequest::new(self.fetch_only);
+        request.allow_plaintext_history = self.allow_plaintext_history;
+        let outcome = run::sync(&store, &tracked, &request)?;
         crate::system::history::sync::origin::report(&outcome);
         Ok(())
     }

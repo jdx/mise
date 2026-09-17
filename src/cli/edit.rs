@@ -138,7 +138,7 @@ pub(crate) struct Edit {
     // Rejected alongside a path rather than resolved in its favour: "edit the global config
     // file, namely ./custom.toml" has no meaning, and resolving it silently is how
     // `mise edit config --global` came to write a file called `config` into the current
-    // directory and report success. `mise bootstrap dotfiles add` states the same collision the
+    // directory and report success. `mise dot add` states the same collision the
     // same way, with `conflicts_with_all` between its own `--global` and `--path`.
     #[usage(long, short = 'g', conflicts = "path")]
     global: bool,

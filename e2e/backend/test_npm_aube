@@ -39,6 +39,18 @@ assert_succeed "test ! -e '$PWD/aube-lock.yaml'"
 assert_succeed "test -d '$MISE_CACHE_DIR/npm/aube/cache/packuments-full-v1'"
 assert_succeed "test -d '$MISE_CACHE_DIR/npm/aube/store/v1/files'"
 
+# The in-process installer gets the real process env, so a tool's install_env
+# never reaches it. Say so rather than dropping it silently.
+mkdir install-env
+cat >install-env/mise.toml <<'EOF'
+[tools]
+"npm:is-number" = { version = "7.0.0", install_env = { AUBE_BLOCK_EXOTIC_SUBDEPS = "false" } }
+EOF
+install_env_output="$(mise -C install-env install 2>&1)" ||
+  fail "install-env install failed:\n$install_env_output"
+assert_contains_text "$install_env_output" "install_env (AUBE_BLOCK_EXOTIC_SUBDEPS) is ignored for npm:is-number"
+assert_contains_text "$install_env_output" "allow_exotic_deps"
+
 # Aube warnings flow through mise's event renderer without suggesting an aube
 # subcommand that mise does not expose.
 deprecation_output="$(mise install npm:inflight@1.0.6 2>&1)"
@@ -72,7 +84,8 @@ specifiers = ["1.6.0"]
 EOF
 MISE_LOCKFILE_MODE=generate mise -C upgrade-lock lock --upgrade
 assert_contains "cat upgrade-lock/mise.lock" "lockfile_version = 2"
-assert_contains "cat upgrade-lock/mise.lock" 'tools."npm:cowsay".aube.graph.packages'
+assert_contains "cat upgrade-lock/mise.lock" 'path = ".mise/locks/npm-cowsay/1.6.0"'
+assert_contains "cat upgrade-lock/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml" 'packages:'
 
 # Lock generation resolves aube's complete graph without creating an install.
 cat >mise.toml <<'EOF'
@@ -82,14 +95,20 @@ node = "20.11.1"
 EOF
 mise lock
 assert_contains "cat mise.lock" "lockfile_version = 2"
-assert_contains "cat mise.lock" 'tools."npm:cowsay".aube.graph.packages'
+assert_contains "cat mise.lock" 'path = ".mise/locks/npm-cowsay/1.6.0"'
+assert_contains "cat .mise/locks/npm-cowsay/1.6.0/aube-lock.yaml" 'packages:'
+cp .mise/locks/npm-cowsay/1.6.0/aube-lock.yaml first-aube-lock.yaml
+mise lock
+assert_succeed 'cmp first-aube-lock.yaml .mise/locks/npm-cowsay/1.6.0/aube-lock.yaml'
 assert_fail "find '$MISE_DATA_DIR/installs/npm-cowsay' -maxdepth 1 -name '1.6.0~aube~*' | grep -q ."
 
 # Changing package managers removes retained embedded-aube metadata.
 mkdir package-manager-change
 cp mise.toml mise.lock package-manager-change/
+cp -R .mise package-manager-change/
 MISE_NPM_PACKAGE_MANAGER=npm mise -C package-manager-change lock
-assert_not_contains "cat package-manager-change/mise.lock" '.aube.graph.'
+assert_not_contains "cat package-manager-change/mise.lock" 'aube ='
+assert_fail 'test -d package-manager-change/.mise/locks/npm-cowsay/1.6.0'
 
 # Another npm installer must reject an embedded-aube graph instead of ignoring it.
 assert_fail "MISE_NPM_PACKAGE_MANAGER=npm MISE_LOCKFILE=1 mise install --locked"
@@ -123,3 +142,36 @@ EOF
 assert_fail "cd missing-graph && MISE_LOCKFILE=1 mise install --locked"
 missing_graph_output="$(cd missing-graph && MISE_LOCKFILE=1 mise install --locked 2>&1 || true)"
 assert_contains_text "$missing_graph_output" "has no embedded-aube dependency graph"
+
+# A project lockfile must not require dependency graphs for npm tools owned by
+# the global config, whose lockfile is only created explicitly with --global.
+global_only_npm="$HOME/global-only-npm"
+export MISE_DATA_DIR="$HOME/global-only-data"
+mkdir "$global_only_npm"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOF
+cat >"$global_only_npm/mise.toml" <<'EOF'
+[settings]
+lockfile = true
+EOF
+cat >"$global_only_npm/mise.lock" <<'EOF'
+lockfile_version = 0
+EOF
+MISE_LOCKFILE=0 mise -C "$global_only_npm" install
+global_dry_run="$(mise -C "$global_only_npm" install --dry-run 2>&1)"
+assert_contains_text "$global_dry_run" "all tools are installed"
+global_exec="$(mise -C "$global_only_npm" exec -- cowsay --version 2>&1)"
+assert_contains_text "$global_exec" "1.6.0"
+assert_not_contains_text "$global_exec" "missing: npm:cowsay@1.6.0"
+
+# An explicitly generated global lockfile still gives the global request a
+# graph-specific identity and replays that graph during installation.
+mise -C "$global_only_npm" lock --global
+assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" "lockfile_version = 2"
+assert_contains "cat '$MISE_CONFIG_DIR/mise.lock'" 'path = "locks/npm-cowsay/1.6.0"'
+assert_contains "cat '$MISE_CONFIG_DIR/locks/npm-cowsay/1.6.0/aube-lock.yaml'" "packages:"
+mise -C "$global_only_npm" install
+assert_succeed "find '$MISE_DATA_DIR/installs/npm-cowsay' -maxdepth 1 -name '1.6.0~aube~*' | grep -q ."
+assert_contains "mise -C '$global_only_npm' exec -- cowsay --version" "1.6.0"

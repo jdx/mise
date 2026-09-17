@@ -692,6 +692,16 @@ pub(crate) mod unix {
             "etag",
             "last-modified",
             "link",
+            // Rate-limit metadata. GitHub reports an exhausted limit as 403,
+            // so without these the caller cannot tell one from a refusal and
+            // retries nothing — see `is_github_rate_limited`. They describe
+            // the broker's own budget, which is what a caller needs in order
+            // to back off, and carry no credential.
+            "retry-after",
+            "x-ratelimit-limit",
+            "x-ratelimit-remaining",
+            "x-ratelimit-reset",
+            "x-ratelimit-resource",
         ] {
             if let Some(value) = response.headers().get(name) {
                 builder = builder.header(name, value);
@@ -1288,6 +1298,66 @@ pub(crate) mod unix {
             )
             .await;
             assert_eq!(response.status(), 403);
+        }
+        /// GitHub reports an exhausted limit as 403, so a caller that cannot
+        /// see the rate-limit headers cannot tell one from a refusal and
+        /// retries nothing (`is_github_rate_limited`). Dropping any of these
+        /// from the allowlist silently turns a relayed rate limit back into a
+        /// hard failure, which is the kind of regression nothing else catches.
+        #[tokio::test]
+        async fn broker_forwards_rate_limit_headers() {
+            let mut upstream = mockito::Server::new_async().await;
+            let api = upstream
+                .mock("GET", "/repos/jdx/mise/releases/latest")
+                .with_status(403)
+                .with_header("x-ratelimit-limit", "5000")
+                .with_header("x-ratelimit-remaining", "0")
+                .with_header("x-ratelimit-resource", "core")
+                .with_header("x-ratelimit-reset", "1789456621")
+                .with_header("retry-after", "60")
+                .with_body(r#"{"message":"API rate limit exceeded for installation."}"#)
+                .create_async()
+                .await;
+            let broker = Broker {
+                audit: Arc::new(Audit::new("test", Options::default())),
+                scope: Scope::from_flags(true, &["jdx/mise".into()], false)
+                    .unwrap()
+                    .unwrap(),
+                client: Client::builder()
+                    .no_proxy()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .unwrap(),
+                permits: Arc::new(Semaphore::new(8)),
+                cancel: CancellationToken::new(),
+                token: Arc::new("fake-local-token".into()),
+                test_upstream: Some(upstream.url()),
+            };
+            let response = handle(
+                State(broker),
+                Request::builder()
+                    .uri("/api/repos/jdx/mise/releases/latest")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+
+            assert_eq!(response.status(), 403);
+            for (name, expected) in [
+                ("x-ratelimit-limit", "5000"),
+                ("x-ratelimit-remaining", "0"),
+                ("x-ratelimit-resource", "core"),
+                ("x-ratelimit-reset", "1789456621"),
+                ("retry-after", "60"),
+            ] {
+                assert_eq!(
+                    response.headers().get(name).and_then(|v| v.to_str().ok()),
+                    Some(expected),
+                    "{name} was not forwarded"
+                );
+            }
+            assert!(response.headers().get("authorization").is_none());
+            api.assert_async().await;
         }
         #[test]
         fn redirects_are_exact_https_asset_hosts() {

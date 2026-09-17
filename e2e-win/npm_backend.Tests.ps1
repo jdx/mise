@@ -1,6 +1,11 @@
 Describe 'npm_backend' {
     It 'installs npm:prettier 3.6.2 with aube' {
-        mise x node@24.4.1 aube@1.1.0 npm:prettier@3.6.2 -- prettier --version | Should -be "3.6.2"
+        mise -C $TestDrive use node@24.4.1 aube@1.1.0 npm:prettier@3.6.2 | Out-Null
+        $node = mise -C $TestDrive which node
+        $prettierInstall = (mise ls npm:prettier --json | Out-String | ConvertFrom-Json |
+            Where-Object { $_.version -eq '3.6.2' }).install_path
+        $prettier = Join-Path $prettierInstall 'node_modules/prettier/bin/prettier.cjs'
+        & $node $prettier --version | Should -be "3.6.2"
     }
     It 'installs npm:cowsay 1.6.0 with bun' {
         $env:MISE_NPM_PACKAGE_MANAGER = "bun"

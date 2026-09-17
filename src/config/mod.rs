@@ -7,7 +7,6 @@ pub(crate) use settings::{CompilePurpose, Settings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
-use std::iter::once;
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
@@ -41,8 +40,8 @@ use crate::task::{
 use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder, ToolSource,
-    ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolveOptions, ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
+    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -574,6 +573,30 @@ impl Config {
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect())
     }
+    /// The tools-independent config env resolved now, bypassing every cache.
+    ///
+    /// [`Self::env`] memoizes into a process-wide `OnceCell`, which is right for
+    /// a command that resolves the env once and then runs. It is wrong for a
+    /// tool's `postinstall` hook: hooks run one after another inside a single
+    /// install batch, an `[env]` value can read a file or command output that an
+    /// earlier hook just changed, and the memo would hand every later hook the
+    /// first one's snapshot. Which hook fills that memo is not even fixed —
+    /// installs run in parallel, so it comes down to a race.
+    ///
+    /// So a hook resolves its own env and leaves the shared caches alone: it
+    /// neither reads nor writes the memo or the on-disk `CachedNonToolEnv`, and
+    /// a hook that changes an env input is visible to the hooks ordered after
+    /// it. The cost is one resolution per tool that declares a hook.
+    pub(crate) async fn env_uncached(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
+        Ok(self
+            .load_env(false)
+            .await?
+            .env
+            .into_iter()
+            .map(|(k, (v, _))| (k, v))
+            .collect())
+    }
+
     pub(crate) async fn env_with_sources(self: &Arc<Self>) -> eyre::Result<&EnvWithSources> {
         self.env_with_sources
             .get_or_try_init(async || Ok(self.env_results().await?.env.clone()))
@@ -581,7 +604,7 @@ impl Config {
     }
     pub(crate) async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
         self.env
-            .get_or_try_init(|| async { self.load_env().await })
+            .get_or_try_init(|| async { self.load_env(true).await })
             .await
     }
 
@@ -606,10 +629,18 @@ impl Config {
     }
 
     pub(crate) async fn get_toolset(self: &Arc<Self>) -> Result<&Toolset> {
+        self.get_toolset_with_opts(&ResolveOptions::default()).await
+    }
+
+    pub(crate) async fn get_toolset_with_opts(
+        self: &Arc<Self>,
+        opts: &ResolveOptions,
+    ) -> Result<&Toolset> {
+        let opts = opts.clone();
         self.toolset
             .get_or_try_init(|| async {
                 let mut ts = Toolset::from(self.get_tool_request_set().await?.clone());
-                ts.resolve(self).await?;
+                ts.resolve_with_opts(self, &opts).await?;
                 Ok(ts)
             })
             .await
@@ -656,6 +687,7 @@ impl Config {
             return None;
         }
         let short = backend::unalias_backend(&backend_arg.short);
+        let short = short.as_ref();
         self.all_aliases
             .get(short)
             .and_then(|alias| alias.backend.as_deref())
@@ -1009,18 +1041,20 @@ impl Config {
         self.tasks_with_context(ctx).await
     }
 
+    /// Tasks keyed by both their name and their aliases. A task's own name
+    /// always wins over another task's alias, so a `tests` task aliased to
+    /// `test` in a parent config cannot shadow a `test` task defined closer to
+    /// the current directory (#13219).
     pub(crate) async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
         let tasks = self.tasks().await?;
-        Ok(tasks
+        let mut map: BTreeMap<String, Task> = tasks
             .values()
-            .flat_map(|t| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect())
+            .flat_map(|t| t.aliases.iter().map(|a| (a.to_string(), t.clone())))
+            .collect();
+        for t in tasks.values() {
+            map.insert(t.name.clone(), t.clone());
+        }
+        Ok(map)
     }
 
     pub(crate) async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
@@ -1341,12 +1375,19 @@ impl Config {
         Ok(())
     }
 
-    async fn load_env(self: &Arc<Self>) -> Result<EnvResults> {
+    /// Resolve the tools-independent config env.
+    ///
+    /// `use_cache` is false for a caller that needs the env as it is *now*
+    /// rather than as it was when something else first asked — see
+    /// [`Self::env_uncached`]. It suppresses both the process-wide memo (the
+    /// caller reaches this directly, not through the `OnceCell`) and the
+    /// on-disk `CachedNonToolEnv`, in either direction.
+    async fn load_env(self: &Arc<Self>, use_cache: bool) -> Result<EnvResults> {
         if Settings::no_env() || Settings::get().no_env.unwrap_or(false) {
             return Ok(EnvResults::default());
         }
         time!("load_env start");
-        let cache_enabled = CachedNonToolEnv::is_enabled();
+        let cache_enabled = use_cache && CachedNonToolEnv::is_enabled();
         let cache_key = if cache_enabled {
             let config_files: Vec<(PathBuf, u64)> = self
                 .config_files
@@ -3246,7 +3287,7 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
 
     for config_file in config_files.values() {
         for (plugin, plugin_aliases) in config_file.aliases()? {
-            let alias = aliases.entry(plugin.clone()).or_default();
+            let alias = aliases.entry(plugin).or_default();
             if let Some(full) = plugin_aliases.backend {
                 alias.backend = Some(full);
             }
@@ -3591,8 +3632,17 @@ fn collect_task_definitions(
 /// template fills gaps first, then the workspace-root task default fills anything still unset.
 /// Explicit tasks replace matching provider-inferred tasks separately when the final task map is
 /// assembled.
-/// Returns an error if the template is not found.
+/// Returns an error if the named template is not found.
 fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Result<()> {
+    apply_named_template(task, definitions)?;
+    apply_workspace_task_default(task, definitions);
+    Ok(())
+}
+
+/// Apply the template the task named with `extends`, if any.
+///
+/// Returns an error if the template is not found.
+fn apply_named_template(task: &mut Task, definitions: &TaskDefinitions) -> Result<()> {
     if let Some(template_name) = &task.extends {
         let template = definitions.templates.get(template_name).ok_or_else(|| {
             eyre!(
@@ -3608,9 +3658,14 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
             )
         })?;
 
-        task.merge_template(&template.template);
+        task.merge_extended_template(&template.template);
         task.add_config_source(&template.source);
     }
+    Ok(())
+}
+
+/// Fill anything still unset from the workspace-root default for a task of this name.
+fn apply_workspace_task_default(task: &mut Task, definitions: &TaskDefinitions) {
     if let Some(defaults) = &definitions.workspace_defaults
         && !task.global
         && task
@@ -3629,7 +3684,6 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
             task.add_config_source(&default.source);
         }
     }
-    Ok(())
 }
 
 fn apply_task_config_cache_default(task: &mut Task, cache: &Option<TaskCacheConfig>) {
@@ -3947,6 +4001,26 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
         lockfile_update_mode,
     )
     .await?;
+    generate_lockfiles_after_changes(config, new_versions, lockfile_update_mode).await
+}
+
+/// Run complete lockfile generation once the shim farm reflects the change.
+///
+/// `rebuild_shims_and_runtime_symlinks_for_changes` skips the merge-mode
+/// lockfile update under `lockfile_mode = "generate"`, so every caller that can
+/// change what the lockfile should contain has to run generation itself.
+/// Without this, a config-only removal leaves the dropped tool's entry — and the
+/// dependency sidecar it references — behind until the next install regenerates.
+///
+/// Call this only when the configuration actually changed. Generation resolves
+/// and rewrites, so running it for a command that turned out to be a no-op would
+/// both rewrite an unrelated stale lockfile and let a resolution failure fail a
+/// command that had nothing to do.
+pub(crate) async fn generate_lockfiles_after_changes(
+    config: &Arc<Config>,
+    new_versions: &[ToolVersion],
+    lockfile_update_mode: lockfile::LockfileUpdateMode,
+) -> Result<()> {
     if Settings::get().generate_lockfiles()
         && Settings::get().lockfile_enabled()
         && (!Settings::get().locked
@@ -5386,6 +5460,33 @@ pub(crate) fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) ->
         return Ok(dir);
     }
     bail!("task includes do not contain an existing directory where a file task can be created")
+}
+
+/// Resolve `extends` on a task that was built outside the task-loading pass.
+///
+/// A remote file task is parsed from its downloaded script at run time, long after the
+/// loaders that resolve templates have finished, so it has to ask for the definitions
+/// itself. Without this its `#MISE extends=...` is parsed and then silently dropped.
+///
+/// Collecting the definitions is not free, so a task that names no template pays nothing.
+pub(crate) fn resolve_template_for_late_task(config: &Arc<Config>, task: &mut Task) -> Result<()> {
+    if task.extends.is_none() {
+        return Ok(());
+    }
+    let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
+        .then(|| config.workspace_project_graph_for_task_loading());
+    let definitions = collect_task_definitions(
+        &config.config_files,
+        workspace_graph
+            .as_ref()
+            .and_then(|graph| graph.as_ref().ok())
+            .map(Arc::as_ref),
+    );
+    // Only the named template. The workspace default was already applied to the toml task
+    // that pointed at this script, and `merge_toml_overlay` copies that task's fields onto
+    // the fetched one afterwards -- extending `depends` rather than replacing it, so applying
+    // the default a second time here would list its dependencies twice.
+    apply_named_template(task, &definitions)
 }
 
 pub(crate) async fn load_tasks_in_dir(
@@ -6902,6 +7003,60 @@ mod tests {
         let opts = config.get_tool_opts_with_overrides(&ba).await?;
 
         assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pipx_aliases_keep_their_tool_spelling() -> Result<()> {
+        crate::backend::load_tools().await?;
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("mise.toml");
+        fs::write(
+            &path,
+            r#"
+[alias."pipx:black"]
+versions = { stable = "24.10.0" }
+[alias.formatter]
+backend = "pipx:black"
+"#,
+        )?;
+        let mut files: ConfigMap = Default::default();
+        files.insert(
+            path.clone(),
+            Arc::new(config_file::mise_toml::MiseToml::from_file(&path)?),
+        );
+        let all_aliases = load_aliases(&files)?;
+        assert_eq!(
+            all_aliases["formatter"].backend.as_deref(),
+            Some("pipx:black")
+        );
+        let config = Config {
+            tera_ctx: BASE_CONTEXT.clone(),
+            config_files: Default::default(),
+            bootstrap_config_maps: vec![],
+            env: OnceCell::new(),
+            env_with_sources: OnceCell::new(),
+            shorthands: get_shorthands(&Settings::get()),
+            hooks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
+            workspace_project_graph_cache: Mutex::new(None),
+            daemons: Default::default(),
+            tool_request_set: OnceCell::new(),
+            toolset: OnceCell::new(),
+            all_aliases,
+            aliases: Default::default(),
+            project_root: Default::default(),
+            repo_urls: Default::default(),
+            shell_aliases: Default::default(),
+            tera_files: Default::default(),
+            vars: Default::default(),
+            vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
+        };
+        let legacy = crate::backend::get(&BackendArg::from("pipx:black")).unwrap();
+        let preferred = crate::backend::get(&BackendArg::from("pypi:black")).unwrap();
+        assert_eq!(config.resolve_alias(&legacy, "stable").await?, "24.10.0");
+        assert_eq!(config.resolve_alias(&preferred, "stable").await?, "stable");
         Ok(())
     }
 

@@ -1,5 +1,5 @@
 //! The persisted report of throttled paths, written by the watcher and
-//! listed by `mise bootstrap dotfiles paths --noisy`. A noisy path is never
+//! listed by `mise dot paths --noisy`. A noisy path is never
 //! excluded automatically and never switched to manual-save; the report
 //! says what the watcher stretched and lets the user decide.
 

@@ -19,7 +19,7 @@
 
 use async_trait::async_trait;
 use eyre::{WrapErr, bail};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -145,7 +145,7 @@ impl BrewManager {
             // a malformed version is an error, not "already poured"
             let pkg_version = rf.formula.pkg_version()?;
             if !pour::keg_installed(&rf.formula.name, &pkg_version) {
-                to_pour.push(rf);
+                to_pour.push(rf.clone());
             }
         }
         if to_pour.is_empty() {
@@ -226,77 +226,168 @@ impl BrewManager {
                 source::has_bottle(&rf.formula)
                     .then(|| rf.formula.bottle_files().and_then(tag::select))
                     .flatten()
+                    .map(|(tag, bottle)| (tag.to_string(), bottle.clone()))
             })
             .collect::<Vec<_>>();
-        let downloads = bottles
+        // Keep each bottle's download and preparation in one bounded job so
+        // extraction can begin as soon as that bottle arrives while other
+        // jobs are still downloading. The existing jobs limit bounds the
+        // whole pipeline rather than multiplying concurrency per phase.
+        let closure = Arc::new(closure);
+        let bottle_jobs = bottles
             .iter()
             .enumerate()
             .filter_map(|(index, bottle)| {
-                let (_, bottle) = bottle.as_ref()?;
-                let name = &to_pour[index].formula.name;
-                let pkg_version = &pkg_versions[index];
-                let pr = &reports[index];
+                let (tag, bottle) = bottle.as_ref()?.clone();
+                let rf = to_pour[index].clone();
+                let pkg_version = pkg_versions[index].clone();
+                let closure = closure.clone();
+                let pr = reports[index].clone();
                 Some(async move {
-                    fetch::fetch_bottle(name, pkg_version, bottle, Some(&**pr))
+                    let result = async {
+                        let tarball = fetch::fetch_bottle(
+                            &rf.formula.name,
+                            &pkg_version,
+                            &bottle,
+                            Some(&*pr),
+                        )
+                        .await?;
+                        tokio::task::spawn_blocking(move || {
+                            pour::prepare_bottle(&rf, &tag, &bottle, &tarball, &closure, &*pr)
+                        })
                         .await
-                        .map(|path| (index, path))
-                        .map_err(|err| (index, err))
+                        .wrap_err("brew bottle preparation task failed")?
+                    }
+                    .await;
+                    (index, result)
                 })
             })
             .collect::<Vec<_>>();
-        let mut tarballs: HashMap<usize, _> = match fetch::concurrently(
-            downloads,
-            crate::jobs::normalize(Settings::get().jobs),
-        )
-        .await
-        {
-            Ok(downloads) => downloads.into_iter().collect(),
-            Err((failed, err)) => {
-                for (index, pr) in reports.iter().enumerate() {
-                    if index == failed {
-                        pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
-                    } else {
-                        pr.abandon();
-                    }
-                }
-                mpr.footer_finish();
-                return Err(err);
-            }
-        };
-        // Pour and build in dependency order. Only network transfers above
-        // are concurrent; extraction and prefix linking mutate shared state.
+        let mut bottle_jobs =
+            fetch::concurrently(bottle_jobs, crate::jobs::normalize(Settings::get().jobs));
+        let mut prepared = HashMap::new();
+        let mut completed = HashSet::new();
+        let mut failure = None;
+
+        // Commit bottles and build source formulae in dependency order as
+        // soon as their preparation permits. Only these short commit steps
+        // mutate shared prefix links; out-of-order results wait in `prepared`.
         for (index, rf) in to_pour.iter().enumerate() {
             let pkg_version = &pkg_versions[index];
             let pr = &reports[index];
             let bottle = &bottles[index];
             let installed = match bottle {
-                Some((tag, bottle)) => {
-                    let tarball = tarballs
+                Some(_) => {
+                    while !prepared.contains_key(&index) && failure.is_none() {
+                        let Some((completed, result)) = bottle_jobs.next().await else {
+                            unreachable!("every selected bottle has a preparation job");
+                        };
+                        match result {
+                            Ok(bottle) => {
+                                prepared.insert(completed, bottle);
+                            }
+                            Err(err) => {
+                                reports[completed]
+                                    .finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                                failure = Some((completed, err));
+                            }
+                        }
+                    }
+                    if failure.is_some() {
+                        break;
+                    }
+                    let bottle = prepared
                         .remove(&index)
-                        .expect("every selected bottle was prefetched");
-                    pour::pour(rf, tag, bottle, &tarball, &closure, &**pr)
-                        .await
-                        .map(|()| pkg_version.clone())
+                        .expect("every selected bottle was prepared");
+                    pour::install_prepared(bottle, &**pr).map(|()| pkg_version.clone())
                 }
-                None => source::build(rf, &closure, &**pr)
-                    .await
-                    .map(|()| pkg_version.clone()),
+                None => {
+                    if failure.is_some() {
+                        break;
+                    }
+                    // Source builds must remain dependency ordered, but they
+                    // can safely run alongside bottle download/preparation,
+                    // which does not mutate active prefix links.
+                    let build = source::build(rf, &closure, &**pr);
+                    tokio::pin!(build);
+                    let mut jobs_open = true;
+                    loop {
+                        tokio::select! {
+                            // Record a ready bottle failure before a simultaneously
+                            // completed source build can advance the install loop.
+                            biased;
+                            job = bottle_jobs.next(), if jobs_open => match job {
+                                Some((completed, Ok(bottle))) => {
+                                    prepared.insert(completed, bottle);
+                                }
+                                Some((completed, Err(err))) => {
+                                    reports[completed].finish_with_icon(
+                                        "failed".to_string(),
+                                        ProgressIcon::Error,
+                                    );
+                                    if failure.is_none() {
+                                        failure = Some((completed, err));
+                                        bottle_jobs.cancel_pending();
+                                    }
+                                }
+                                None => jobs_open = false,
+                            },
+                            result = &mut build => break result.map(|()| pkg_version.clone()),
+                        }
+                    }
+                }
             };
             let version = match installed {
                 Ok(version) => version,
                 Err(err) => {
                     pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
-                    for pending in reports.iter().skip(index + 1) {
-                        pending.abandon();
+                    if failure.is_none() {
+                        failure = Some((index, err));
                     }
-                    // render the final progress state so the error that
-                    // propagates from here isn't masked by live jobs
-                    mpr.footer_finish();
-                    return Err(err);
+                    break;
                 }
             };
             pr.finish_with_message(version);
+            completed.insert(index);
             mpr.footer_inc(1);
+            // A bottle may have failed while this source build was already
+            // running. Let that in-flight build finish, but do not start any
+            // more prefix mutations after the earlier failure.
+            if failure.is_some() {
+                break;
+            }
+        }
+
+        // A failed download, preparation, source build, or prefix commit must
+        // not start any queued work or detach already-active blocking jobs.
+        // Drain only the active set so every staging guard has cleaned up
+        // before returning the first error.
+        if failure.is_some() {
+            bottle_jobs.cancel_pending();
+        }
+        while let Some((index, result)) = bottle_jobs.next().await {
+            if let Err(err) = result {
+                reports[index].finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                if failure.is_none() {
+                    failure = Some((index, err));
+                }
+            }
+        }
+        if let Some((failed, err)) = failure {
+            for (index, pending) in reports.iter().enumerate() {
+                if index != failed && !completed.contains(&index) {
+                    pending.abandon();
+                }
+            }
+            // Render the final progress state so the propagated error is not
+            // masked by live jobs.
+            mpr.footer_finish();
+            if let Err(runtime_err) = prefix::setup_linux_runtime() {
+                return Err(err.wrap_err(format!(
+                    "failed to finish Linux runtime setup after a partial brew install: {runtime_err:#}"
+                )));
+            }
+            return Err(err);
         }
         mpr.footer_finish();
         // a glibc poured in this run repoints <prefix>/lib/ld.so at it

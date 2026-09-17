@@ -687,7 +687,7 @@ async fn download_native_binstall_file(
 }
 
 async fn native_binstall_file_available(url: &str) -> bool {
-    if let Some((repo, tag, asset_name)) = github_release_asset_from_url(url) {
+    if let Some((repo, tag, asset_name)) = crate::github::release_asset_from_url(url) {
         return match crate::github::get_release(&repo, &tag).await {
             Ok(release) => release.assets.iter().any(|asset| asset.name == asset_name),
             Err(err) => {
@@ -718,39 +718,12 @@ async fn native_binstall_files_available(urls: &[String]) -> bool {
 }
 
 async fn resolve_native_binstall_download_url(url: &str) -> String {
-    let Some((repo, tag, asset_name)) = github_release_asset_from_url(url) else {
-        return url.to_string();
-    };
-
-    match crate::github::get_release(&repo, &tag).await {
-        Ok(release) => {
-            if let Some(asset) = release.assets.iter().find(|asset| asset.name == asset_name) {
-                crate::github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url)
-                    .await
-            } else {
-                debug!("GitHub release {repo}@{tag} did not include asset {asset_name}");
-                url.to_string()
-            }
-        }
-        Err(err) => {
-            debug!("failed to resolve GitHub release asset {repo}@{tag}/{asset_name}: {err:#}");
-            url.to_string()
-        }
+    // The versions host stays in play here: a cargo package's release is public
+    // by definition, so the cached copy is both usable and cheaper.
+    match crate::github::release_asset_api_url(url, true).await {
+        Some(api_url) => crate::github::pick_reachable_asset_url(url, &api_url).await,
+        None => url.to_string(),
     }
-}
-
-fn github_release_asset_from_url(url: &str) -> Option<(String, String, String)> {
-    let url = Url::parse(url).ok()?;
-    if url.host_str()? != "github.com" {
-        return None;
-    }
-    let segments = url.path_segments()?.collect::<Vec<_>>();
-    let [owner, repo, "releases", "download", tag, asset] = segments.as_slice() else {
-        return None;
-    };
-    let tag = urlencoding::decode(tag).ok()?.into_owned();
-    let asset = urlencoding::decode(asset).ok()?.into_owned();
-    Some((format!("{owner}/{repo}"), tag, asset))
 }
 
 #[derive(Debug)]
@@ -1306,50 +1279,6 @@ mod tests {
         );
 
         assert_eq!(rendered, "demo-1.2.3/demo-cli.exe");
-    }
-
-    #[test]
-    fn github_release_asset_from_url_parses_browser_download_urls() {
-        assert_eq!(
-            github_release_asset_from_url(
-                "https://github.com/owner/repo/releases/download/v1.2.3/tool-aarch64.tar.gz"
-            ),
-            Some((
-                "owner/repo".to_string(),
-                "v1.2.3".to_string(),
-                "tool-aarch64.tar.gz".to_string()
-            ))
-        );
-    }
-
-    #[test]
-    fn github_release_asset_from_url_decodes_tag_and_asset() {
-        assert_eq!(
-            github_release_asset_from_url(
-                "https://github.com/owner/repo/releases/download/v1%2Bmeta/tool%20name.tar.gz"
-            ),
-            Some((
-                "owner/repo".to_string(),
-                "v1+meta".to_string(),
-                "tool name.tar.gz".to_string()
-            ))
-        );
-    }
-
-    #[test]
-    fn github_release_asset_from_url_ignores_non_release_urls() {
-        assert_eq!(
-            github_release_asset_from_url(
-                "https://example.com/owner/repo/releases/download/v1/tool"
-            ),
-            None
-        );
-        assert_eq!(
-            github_release_asset_from_url(
-                "https://github.com/owner/repo/archive/refs/tags/v1.tar.gz"
-            ),
-            None
-        );
     }
 
     #[test]

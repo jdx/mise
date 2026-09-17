@@ -64,7 +64,7 @@ values. Prompted values remain in memory and are not exported:
 ```sh
 mise bootstrap --prompt-secrets --yes
 mise bootstrap files apply --prompt-secrets
-mise bootstrap dotfiles apply --prompt-secrets
+mise dot apply --prompt-secrets
 mise bootstrap plan --prompt-secrets
 ```
 

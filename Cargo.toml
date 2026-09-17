@@ -12,7 +12,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.9.6"
+version = "2026.9.11"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -176,7 +176,7 @@ notify = { version = "8", default-features = false, features = [
 notify-debouncer-full = { version = "0.7", default-features = false }
 num_cpus = "1"
 once_cell = "1"
-packslip = { version = "0.3", default-features = false }
+packslip = { version = "1.0", default-features = false }
 openssl = { version = "0.10", optional = true }
 path-absolutize = "4"
 petgraph = "0.8"
@@ -240,7 +240,7 @@ signal-hook = "0.4"
 siphasher = "1"
 strum = { version = "0.28", features = ["derive"] }
 supports-hyperlinks = "3"
-tabled = { version = "0.21", features = ["ansi"] }
+tabled = { version = "0.22", features = ["ansi"] }
 taplo = "0.14"
 tempfile = "3"
 tera = "2"
@@ -263,6 +263,8 @@ tokio-util = { version = "0.7", features = ["io", "rt"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.12", default-features = false }
+unicase = "2"
+unicode-normalization = "0.1"
 url = "2"
 urlencoding = "2"
 uuid = { version = "1", features = ["v7"] }
@@ -276,7 +278,7 @@ which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
-zstd = "0.13"
+zstd = "0.14"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
@@ -314,6 +316,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_Security",
   "Win32_Security_Authorization",
   "Win32_Storage_FileSystem",
+  "Win32_System_Console",
   "Win32_System_JobObjects",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_SystemServices",

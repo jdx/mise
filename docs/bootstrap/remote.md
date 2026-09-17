@@ -352,7 +352,7 @@ decrypted for this preview.
 copy-link settings. Explicit `--source`, `--copy-link`, `--copy-links`, and
 `--exclude` flags cannot be combined with it.
 
-A **setup repository** (one connected with `mise bootstrap dotfiles origin set`,
+A **setup repository** (one connected with `mise dot origin set`,
 carrying `.mise-history/format.toml`) is set up from rather than checked out:
 the remote host fetches the transferred branch into its own history store,
 writes this machine's explicitly enrolled files with a recoverable pull, and
@@ -374,7 +374,7 @@ host can fetch through it but never publish. When the setup succeeded but the
 host cannot reach the repository on its own afterwards, the bootstrap says
 so; give the host credentials of its own for ongoing synchronization
 (`mise x gh -- gh auth login` and `mise x gh -- gh auth setup-git` there, or
-an SSH url through `mise bootstrap dotfiles origin set`).
+an SSH url through `mise dot origin set`).
 
 The relay is separate from this initial transfer. Enable it when bootstrap needs
 additional private GitHub content, authorizing each required repository with a

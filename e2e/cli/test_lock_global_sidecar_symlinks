@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+
+mkdir -p repo/mise
+cat >repo/mise/config.toml <<'EOF'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOF
+mise -C repo/mise lock
+
+# Match a symlink-each dotfiles deployment: directories are ordinary directories
+# and the config, lockfile, and native graph files are individually symlinked.
+python3 - <<'PY'
+import os
+from pathlib import Path
+
+repo = Path('repo/mise').resolve()
+global_dir = Path(os.environ['MISE_CONFIG_DIR'])
+for source in repo.rglob('*'):
+    if source.is_file():
+        target = global_dir / source.relative_to(repo)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.symlink_to(source)
+PY
+
+cp repo/mise/mise.lock before.lock
+mise lock --global npm:cowsay
+assert_succeed 'cmp before.lock repo/mise/mise.lock'
+assert_succeed "test -L '$MISE_CONFIG_DIR/mise.lock'"
+assert_succeed "test -L '$MISE_CONFIG_DIR/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml'"
+assert_succeed "test ! -e '$MISE_CONFIG_DIR/locks'"
+
+# A checkout containing only the repository must retain a complete graph.
+cp -R repo fresh
+MISE_CONFIG_DIR="$PWD/empty-global" mise -C fresh/mise install --locked
+
+# A new version creates sidecars in the repository. Global reads must find
+# them through the lockfile target without another symlink-each deployment.
+sed 's/1.6.0/1.5.0/' repo/mise/config.toml >next.toml
+cp next.toml repo/mise/config.toml
+mise lock --global npm:cowsay
+assert_contains 'cat repo/mise/mise.lock' 'path = ".mise/locks/npm-cowsay/1.5.0"'
+assert_succeed 'test -f repo/mise/.mise/locks/npm-cowsay/1.5.0/aube-lock.yaml'
+assert_succeed "test ! -e '$MISE_CONFIG_DIR/.mise/locks/npm-cowsay/1.5.0'"
+mise install --locked npm:cowsay

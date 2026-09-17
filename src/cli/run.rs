@@ -814,13 +814,9 @@ impl Run {
             {
                 warn!("failed to create shims for lazy tools: {err:#}");
             }
-            if self.dry_run {
-                installed.into_iter().collect()
-            } else {
-                HashSet::new()
-            }
+            if self.dry_run { installed } else { Vec::new() }
         } else {
-            HashSet::new()
+            Vec::new()
         };
 
         // Run auto-enabled deps steps (unless --no-deps)
@@ -878,7 +874,7 @@ impl Run {
         mut self,
         mut config: Arc<Config>,
         tasks: Vec<Task>,
-        previewed_tools: HashSet<ToolVersion>,
+        previewed_tools: Vec<ToolVersion>,
     ) -> Result<()> {
         time!("parallelize_tasks start");
 
@@ -1039,12 +1035,7 @@ impl Run {
                 &this.context_builder,
                 &this.tool,
             )
-            .install_tasks(
-                &mut install_config,
-                vec![task.clone()],
-                this.dry_run,
-                &HashSet::new(),
-            )
+            .install_tasks(&mut install_config, vec![task.clone()], this.dry_run, &[])
             .await;
             if let Err(err) = install_result {
                 if Self::should_abort_while_stopping(
@@ -1391,7 +1382,7 @@ impl Run {
         &self,
         config: &mut Arc<Config>,
         tasks: &Deps,
-        previewed_tools: &HashSet<ToolVersion>,
+        previewed_tools: &[ToolVersion],
     ) -> Result<()> {
         let installer = crate::task::task_tool_installer::TaskToolInstaller::new(
             &self.context_builder,
