@@ -91,13 +91,16 @@ fn should_skip_installed(cask: &Cask, version: &str, mode: InstallMode) -> bool 
 fn installed_skip_reason(
     cask: &Cask,
     artifacts: &CaskArtifacts,
+    previous: Option<&CaskReceipt>,
     version: Option<&str>,
     mode: InstallMode,
 ) -> Result<Option<&'static str>> {
     if mode == InstallMode::Upgrade && cask.version == "latest" {
         return Ok(Some("skipped: cask version is latest"));
     }
-    if version.is_some_and(|version| should_skip_installed(cask, version, mode)) {
+    if version.is_some_and(|version| should_skip_installed(cask, version, mode))
+        && declared_apps_are_owned(cask, artifacts, previous)?
+    {
         return Ok(Some(if mode == InstallMode::Install {
             "already installed"
         } else {
@@ -107,7 +110,7 @@ fn installed_skip_reason(
     if mode != InstallMode::Upgrade || !cask.auto_updates {
         return Ok(None);
     }
-    let Some(receipt) = previous_receipt(cask)? else {
+    let Some(receipt) = previous else {
         return Ok(Some("skipped: no installed app ownership record"));
     };
     if receipt.version == cask.version {
@@ -659,9 +662,14 @@ impl BrewCaskManager {
         // can mutate anything, including when producing a dry-run plan.
         artifacts.app_target_paths()?;
         let installed_version = mise_installed_cask_version(&cask)?;
-        if let Some(reason) =
-            installed_skip_reason(&cask, &artifacts, installed_version.as_deref(), mode)?
-        {
+        let previous_ownership = previous_receipt(&cask)?;
+        if let Some(reason) = installed_skip_reason(
+            &cask,
+            &artifacts,
+            previous_ownership.as_ref(),
+            installed_version.as_deref(),
+            mode,
+        )? {
             info!("brew-cask:{}: {reason}", cask.token);
             return Ok(reason.to_string());
         }
@@ -709,7 +717,6 @@ impl BrewCaskManager {
         }
         // brew-cask defers to Homebrew by token, which macos-app cannot do: the
         // conflict is at the shared app directory, not the token.
-        let previous_ownership = previous_receipt(&cask)?;
         if opts.dry_run {
             warn_existing_app_targets(&cask, previous_ownership.as_ref(), &artifacts.apps)?;
             artifacts.print_install_plan(&cask)?;
@@ -733,9 +740,13 @@ impl BrewCaskManager {
         if cask.manager.uses_homebrew_caskroom() {
             ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
         }
+        // Re-read under the lock: another process may have installed or
+        // retargeted this token while the archive was downloading.
+        let locked_ownership = previous_receipt(&cask)?;
         if let Some(reason) = installed_skip_reason(
             &cask,
             &artifacts,
+            locked_ownership.as_ref(),
             mise_installed_cask_version(&cask)?.as_deref(),
             mode,
         )? {
@@ -1395,6 +1406,29 @@ fn app_target_is_owned(previous: Option<&CaskReceipt>, target: &Path) -> bool {
 /// Whether this entry must refuse to replace whatever is at `target`.
 fn requires_unowned_target(cask: &Cask, previous: Option<&CaskReceipt>, target: &Path) -> bool {
     !cask.manager.uses_homebrew_caskroom() && !app_target_is_owned(previous, target)
+}
+
+/// Whether every app this declaration installs is already recorded as owned.
+///
+/// A same-version change to `artifact`, or to the app directory, leaves the
+/// recorded version matching while pointing at a target no receipt covers. The
+/// package is then reported installed and skipped, so the new target is never
+/// installed and the unowned-target policy never runs. Treating that as not
+/// installed is what makes a retarget take effect.
+///
+/// Always true for `brew-cask`, which arbitrates by token against Homebrew's
+/// Caskroom; this changes nothing there.
+fn declared_apps_are_owned(
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    previous: Option<&CaskReceipt>,
+) -> Result<bool> {
+    for app in &artifacts.apps {
+        if requires_unowned_target(cask, previous, &app_target_path(app.target_name()?)?) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Flag app targets a plan cannot predict the outcome for.
