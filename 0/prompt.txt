@@ -1,0 +1,1 @@
+[https://github.com/jdx/mise/pull/13323/changes](https://github.com/jdx/mise/pull/13323/changes) rebase this, address pr feedbakc, and rewrite the docs prose/content/structure of the modified md files
