@@ -25,12 +25,39 @@ impl Entry {
 
     /// Whether the project this state belongs to no longer exists on disk.
     ///
-    /// Only a missing directory qualifies. A root that exists but declares no
-    /// daemons any more keeps its state: `prepare()` already unregisters its
-    /// configuration, and its data may still be wanted.
+    /// Only a filesystem `NotFound` qualifies. `Path::is_dir` would answer
+    /// false for every metadata error, so an unplugged volume, an NFS share
+    /// that is down, or a directory mise cannot stat would read as a deleted
+    /// project and cost the user a database. Anything that is not a definite
+    /// absence keeps its state, as does a root that still exists but declares
+    /// no daemons any more: `prepare()` already unregisters its configuration,
+    /// and its data may still be wanted.
     pub(crate) fn orphaned(&self) -> bool {
-        !self.state.root.as_os_str().is_empty() && !self.state.root.is_dir()
+        if self.state.root.as_os_str().is_empty() {
+            return false;
+        }
+        match std::fs::symlink_metadata(&self.state.root) {
+            Ok(_) => false,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+            Err(err) => {
+                warn!(
+                    "keeping {}: cannot read {}: {err}",
+                    display_path(&self.dir),
+                    display_path(&self.state.root)
+                );
+                false
+            }
+        }
     }
+}
+
+/// What [`remove`] did with one entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    /// The state directory and its data are gone.
+    Removed,
+    /// Left in place. A warning says why, and a later run can retry.
+    Kept,
 }
 
 /// The directory holding every project's daemon state.
@@ -102,33 +129,54 @@ pub(crate) fn describe(entries: &[(Entry, u64)]) -> Vec<String> {
 /// Stops the entry's daemons, unregisters its generated configuration, and
 /// deletes the state directory including data.
 ///
-/// `runtime` is `None` when pitchfork cannot be located; the directory is still
-/// removed because nothing can be running for a project whose supervisor
-/// binary is gone from every PATH mise knows about.
-///
-/// Returns false when another mise process holds the project lock, which leaves
-/// the state in place for a later run.
-pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<bool> {
+/// Every step that cannot be confirmed keeps the state. A pitchfork call that
+/// times out or errors may leave a daemon alive on top of the very data this
+/// would delete, so the entry is left for a later run rather than deleted on an
+/// unverified assumption. `runtime` is `None` only when pitchfork cannot be
+/// located at all; that state can never be cleaned up by any later run, so it
+/// is removed with a warning that the registration may outlive it.
+pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<Outcome> {
     // The root is gone, so pitchfork runs from the state directory instead.
     let cwd = &entry.dir;
     let Some(lock) = crate::lock_file::LockFile::at(&cwd.join("project.lock")).try_lock()? else {
         warn!(
-            "skipping {}: another mise process holds its daemon lock",
+            "keeping {}: another mise process holds its daemon lock",
             display_path(cwd)
         );
-        return Ok(false);
+        return Ok(Outcome::Kept);
     };
+    // Selection and confirmation both happen before this lock is held, and a
+    // project directory can come back in between (a restored worktree, a
+    // re-clone). Ask again now that nothing else can prepare this state.
+    if !entry.orphaned() {
+        warn!(
+            "keeping {}: {} exists again",
+            display_path(cwd),
+            display_path(&entry.state.root)
+        );
+        return Ok(Outcome::Kept);
+    }
     if let Some(runtime) = runtime {
         match runtime.supervisor_up(cwd).await {
             Ok(true) if !entry.state.ids.is_empty() => {
                 let mut args = vec!["stop".to_string()];
                 args.extend(entry.state.ids.iter().cloned());
                 if let Err(err) = runtime.output(cwd, &args).await {
-                    debug!("{err:#}");
+                    warn!(
+                        "keeping {}: cannot stop its daemons: {err:#}",
+                        display_path(cwd)
+                    );
+                    return Ok(Outcome::Kept);
                 }
             }
             Ok(_) => {}
-            Err(err) => debug!("{err:#}"),
+            Err(err) => {
+                warn!(
+                    "keeping {}: cannot establish supervisor status: {err:#}",
+                    display_path(cwd)
+                );
+                return Ok(Outcome::Kept);
+            }
         }
         let config = entry.config_file();
         if config.exists()
@@ -143,7 +191,12 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<b
                 )
                 .await
         {
-            warn!("{err:#}");
+            warn!(
+                "keeping {}: cannot unregister {}: {err:#}",
+                display_path(cwd),
+                display_path(config)
+            );
+            return Ok(Outcome::Kept);
         }
     } else {
         warn!(
@@ -151,9 +204,25 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<b
             display_path(entry.config_file())
         );
     }
-    crate::file::remove_all(cwd)?;
+    // The lock file lives inside the directory being deleted. Windows refuses
+    // to remove a file another handle still holds open, so empty the directory
+    // under the lock, release it, and only then drop the directory itself.
+    remove_contents_except_lock(cwd)?;
     drop(lock);
-    Ok(true)
+    crate::file::remove_all(cwd)?;
+    Ok(Outcome::Removed)
+}
+
+/// Deletes everything in `dir` except the `project.lock` the caller holds.
+fn remove_contents_except_lock(dir: &Path) -> Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.file_name().is_some_and(|name| name == "project.lock") {
+            continue;
+        }
+        crate::file::remove_all(path)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -245,11 +314,39 @@ mod tests {
             .try_lock()
             .unwrap()
             .unwrap();
-        assert!(!remove(&entry, None).await.unwrap());
+        assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
         assert!(dir.join("state.json").exists(), "locked state must survive");
         drop(held);
 
-        assert!(remove(&entry, None).await.unwrap());
+        assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Removed);
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn a_root_that_cannot_be_confirmed_missing_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        // A path that exists but is not a directory: `is_dir()` answers false
+        // for it exactly as it does for an unreadable one, and neither is the
+        // definite absence that makes state safe to delete.
+        let file_root = tmp.path().join("root-is-a-file");
+        std::fs::write(&file_root, "").unwrap();
+        write_state(&base, "file-root", &file_root, &[]);
+        assert!(orphans(&base).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_root_that_reappears_before_the_lock_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let root = tmp.path().join("restored");
+        let dir = write_state(&base, "restored", &root, &[]);
+        let entry = orphans(&base).unwrap().remove(0);
+
+        // Selection and the confirmation prompt both ran while the project was
+        // gone; a restored worktree between then and now must not be deleted.
+        std::fs::create_dir_all(&root).unwrap();
+        assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
+        assert!(dir.join("state.json").exists());
     }
 }

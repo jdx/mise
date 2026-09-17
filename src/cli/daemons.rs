@@ -330,7 +330,9 @@ impl Prune {
             let runtime = Runtime::from_toolset(&config, &ts, Some(&entry.state.bin))
                 .await
                 .ok();
-            if daemons::prune::remove(entry, runtime.as_ref()).await? {
+            if daemons::prune::remove(entry, runtime.as_ref()).await?
+                == daemons::prune::Outcome::Removed
+            {
                 info!(
                     "removed {} ({})",
                     display_path(&entry.dir),
