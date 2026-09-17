@@ -73,7 +73,7 @@
 - [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap applies the machine setup declared in your mise configuration: packages, files, services, repositories, shell setup, tools, and a final task.
 - [Set Up a Machine](https://mise.jdx.dev/bootstrap/setup.html): Keep editing your dotfiles where they are. This guide shows how to save local history, restore a file, and optionally share your setup through a Git repository.
 - [Remote Hosts](https://mise.jdx.dev/bootstrap/remote.html): mise bootstrap remote applies a bootstrap project to one or more machines through the locally installed OpenSSH client.
-- [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): Declare shared host packages in [bootstrap.packages], then apply them with mise bootstrap packages apply or the full bootstrap.
+- [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): Use [bootstrap.packages] to declare native libraries, build dependencies, and applications shared by the whole machine.
 - [apk](https://mise.jdx.dev/bootstrap/packages/apk.html): System packages for Alpine Linux.
 - [apt](https://mise.jdx.dev/bootstrap/packages/apt.html): System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
 - [AUR](https://mise.jdx.dev/bootstrap/packages/aur.html): The aur manager installs packages from the Arch User Repository with yay or paru.
