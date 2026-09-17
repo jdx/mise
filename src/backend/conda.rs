@@ -624,10 +624,18 @@ impl CondaBackend {
     /// start, so dependencies are available to that command without exposing their binaries
     /// on the user's PATH; the rest are plain symlinks. See `package_needs_activation`.
     fn create_bin_launcher_dir(&self, tv: &ToolVersion, main_paths: &[PathsEntry]) -> Result<()> {
-        let symlink_dir = tv.install_path().join(MISE_BINS_DIR);
+        // `MISE_DATA_DIR` is only tilde-expanded, never absolutized, so `install_path()` can
+        // be relative. Neither entry kind survives that: a relative symlink target resolves
+        // against the link's own directory, and a relative path inside a launcher resolves
+        // against whatever cwd the caller happens to have. Pin both to an absolute prefix.
+        let install_path = std::path::absolute(tv.install_path()).wrap_err_with(|| {
+            format!(
+                "failed to resolve {}",
+                file::display_path(tv.install_path())
+            )
+        })?;
+        let symlink_dir = install_path.join(MISE_BINS_DIR);
         file::create_dir_all(&symlink_dir)?;
-
-        let install_path = tv.install_path();
         let bin_dirs: &[&std::path::Path] = if cfg!(windows) {
             &[
                 std::path::Path::new("Library/bin"),

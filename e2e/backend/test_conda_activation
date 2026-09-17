@@ -151,3 +151,15 @@ assert_fail "mise exec -- fixture-solo -c 'echo \$PATH' | tr : '\n' | grep -qx '
 
 # Packages that do need activation keep their launcher.
 assert_fail "test -L '$one_prefix/.mise-bins/fixture-one'"
+
+# MISE_DATA_DIR is only tilde-expanded, never absolutized, so it can be relative. Both
+# entry kinds embed the install path and neither survives a relative one: a symlink target
+# resolves against the link's own directory, and a launcher's path against the caller's cwd.
+mkdir -p relative-root
+(cd relative-root && MISE_DATA_DIR=reldata MISE_LOCKFILE=0 \
+  MISE_CONDA_CHANNEL="http://127.0.0.1:$SERVER_PORT" \
+  mise install conda:fixture-solo@1.0.0 conda:fixture-one@1.0.0)
+rel_installs="$PWD/relative-root/reldata/installs"
+assert_succeed "test -e '$rel_installs/conda-fixture-solo/1.0.0/.mise-bins/fixture-solo'"
+assert_succeed "cd / && '$rel_installs/conda-fixture-solo/1.0.0/.mise-bins/fixture-solo' -c 'exit 0'"
+assert_contains "cd / && '$rel_installs/conda-fixture-one/1.0.0/.mise-bins/fixture-one'" "|activated|dependency-output"
