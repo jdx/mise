@@ -90,7 +90,7 @@ fn rebuild_symlinks_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(installs_dir)
+    let concrete_installs = installed_versions_in_dir(backend, installs_dir)
         .into_iter()
         .filter(|v| is_concrete_install(v))
         .collect::<HashSet<_>>();
@@ -129,6 +129,7 @@ fn rebuild_symlinks_in_dir(
         .unwrap_or(&default_alias)
         .versions;
     prune_stale_generated_symlinks(
+        backend,
         installs_dir,
         &symlinks,
         &configured_alias_names(aliases, installs_dir),
@@ -142,7 +143,7 @@ fn migrate_real_dirs_in_dir(
     backend: &Arc<dyn Backend>,
     installs_dir: &Path,
 ) -> Result<()> {
-    let concrete_installs = installed_versions_in_dir(installs_dir)
+    let concrete_installs = installed_versions_in_dir(backend, installs_dir)
         .into_iter()
         .filter(|v| is_concrete_install(v))
         .collect::<HashSet<_>>();
@@ -169,7 +170,7 @@ fn list_symlinks_for_dir(
 ) -> IndexMap<String, PathBuf> {
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    for v in installed_versions_in_dir(installs_dir) {
+    for v in installed_versions_in_dir(backend, installs_dir) {
         if is_temporary_runtime_label(&v) {
             continue;
         }
@@ -223,11 +224,11 @@ fn list_symlinks_for_dir(
 }
 
 /// List real (non-symlink) installed versions in a specific directory.
-fn installed_versions_in_dir(installs_dir: &Path) -> Vec<String> {
+fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) -> Vec<String> {
     real_installs_in_dir(installs_dir)
         .into_iter()
         .filter(|v| !installs_dir.join(v).join("incomplete").exists())
-        .filter(|v| !VERSION_REGEX.is_match(v))
+        .filter(|v| !VERSION_REGEX.is_match(v) && !backend.is_backend_prerelease(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
 }
@@ -326,6 +327,7 @@ fn configured_alias_names(
 /// keeps another directory's pin out of reach of a rebuild that does not know
 /// about it.
 fn prune_stale_generated_symlinks(
+    backend: &Arc<dyn Backend>,
     installs_dir: &Path,
     desired: &IndexMap<String, PathBuf>,
     alias_names: &HashSet<String>,
@@ -334,7 +336,7 @@ fn prune_stale_generated_symlinks(
     if namespace.is_empty() {
         return Ok(());
     }
-    let eligible = installed_versions_in_dir(installs_dir)
+    let eligible = installed_versions_in_dir(backend, installs_dir)
         .into_iter()
         .collect::<HashSet<_>>();
     for path in file::ls(installs_dir)? {
@@ -424,6 +426,10 @@ mod tests {
     use super::*;
     use std::fs;
 
+    fn npm_test_backend() -> Arc<dyn Backend> {
+        Arc::new(crate::backend::npm::test_backend("happy", None, None))
+    }
+
     #[test]
     fn run_all_rebuilds_attempts_every_item() {
         let mut attempted = vec![];
@@ -467,6 +473,21 @@ mod tests {
     }
 
     #[test]
+    fn installed_versions_in_dir_skips_backend_prereleases() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("npm-happy");
+        fs::create_dir_all(installs_dir.join("1.2.4"))?;
+        fs::create_dir_all(installs_dir.join("1.3.1-3"))?;
+        let backend = npm_test_backend();
+
+        assert_eq!(
+            installed_versions_in_dir(&backend, &installs_dir),
+            ["1.2.4"]
+        );
+        Ok(())
+    }
+
+    #[test]
     fn remove_missing_symlinks_in_dir_removes_dir_when_only_dangling_pointers_remain() -> Result<()>
     {
         let temp_dir = tempfile::tempdir()?;
@@ -496,13 +517,46 @@ mod tests {
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("2.1"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
 
-        prune_stale_generated_symlinks(&installs_dir, &IndexMap::new(), &HashSet::new())?;
+        prune_stale_generated_symlinks(
+            &npm_test_backend(),
+            &installs_dir,
+            &IndexMap::new(),
+            &HashSet::new(),
+        )?;
 
         assert!(fs::symlink_metadata(installs_dir.join("2")).is_err());
         assert!(fs::symlink_metadata(installs_dir.join("2.1")).is_err());
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
         // the install itself is never touched
         assert!(installs_dir.join("2.1.0").is_dir());
+        Ok(())
+    }
+
+    /// `1.3.1-3` carries no channel tag, so only the backend knows it is a
+    /// pre-release and that links an older mise wrote into it are stale.
+    #[test]
+    fn prune_stale_generated_symlinks_removes_links_into_backend_prereleases() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("npm-happy");
+        fs::create_dir_all(installs_dir.join("1.2.4"))?;
+        fs::create_dir_all(installs_dir.join("1.3.1-3"))?;
+        make_symlink_or_file(Path::new("./1.2.4"), &installs_dir.join("1.2"))?;
+        make_symlink_or_file(Path::new("./1.3.1-3"), &installs_dir.join("1.3"))?;
+        make_symlink_or_file(Path::new("./1.3.1-3"), &installs_dir.join("latest"))?;
+        make_symlink_or_file(Path::new("./1.3.1-3"), &installs_dir.join("next"))?;
+
+        prune_stale_generated_symlinks(
+            &npm_test_backend(),
+            &installs_dir,
+            &IndexMap::new(),
+            &HashSet::new(),
+        )?;
+
+        assert!(fs::symlink_metadata(installs_dir.join("1.3")).is_err());
+        assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
+        assert!(is_runtime_symlink(&installs_dir.join("1.2")));
+        assert!(is_runtime_symlink(&installs_dir.join("next")));
+        assert!(installs_dir.join("1.3.1-3").is_dir());
         Ok(())
     }
 
@@ -514,7 +568,12 @@ mod tests {
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("2"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
 
-        prune_stale_generated_symlinks(&installs_dir, &IndexMap::new(), &HashSet::new())?;
+        prune_stale_generated_symlinks(
+            &npm_test_backend(),
+            &installs_dir,
+            &IndexMap::new(),
+            &HashSet::new(),
+        )?;
 
         assert!(is_runtime_symlink(&installs_dir.join("2")));
         assert!(is_runtime_symlink(&installs_dir.join("latest")));
@@ -532,7 +591,12 @@ mod tests {
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("next"))?;
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
 
-        prune_stale_generated_symlinks(&installs_dir, &IndexMap::new(), &HashSet::new())?;
+        prune_stale_generated_symlinks(
+            &npm_test_backend(),
+            &installs_dir,
+            &IndexMap::new(),
+            &HashSet::new(),
+        )?;
 
         assert!(is_runtime_symlink(&installs_dir.join("next")));
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
@@ -548,7 +612,12 @@ mod tests {
         make_symlink_or_file(Path::new("./2.1.0"), &installs_dir.join("latest"))?;
         let desired = IndexMap::from([("latest".to_string(), PathBuf::from("./2.1.0"))]);
 
-        prune_stale_generated_symlinks(&installs_dir, &desired, &HashSet::new())?;
+        prune_stale_generated_symlinks(
+            &npm_test_backend(),
+            &installs_dir,
+            &desired,
+            &HashSet::new(),
+        )?;
 
         assert!(is_runtime_symlink(&installs_dir.join("latest")));
         Ok(())
@@ -565,6 +634,7 @@ mod tests {
         let aliases = IndexMap::from([("2".to_string(), "2.1.0".to_string())]);
 
         prune_stale_generated_symlinks(
+            &npm_test_backend(),
             &installs_dir,
             &IndexMap::new(),
             &configured_alias_names(&aliases, &installs_dir),
@@ -600,7 +670,7 @@ mod tests {
 
         let namespace = generated_symlink_namespace(&installs_dir);
 
-        assert!(installed_versions_in_dir(&installs_dir).is_empty());
+        assert!(installed_versions_in_dir(&npm_test_backend(), &installs_dir).is_empty());
         assert!(namespace.contains("2"));
         assert!(namespace.contains("2.1"));
         assert!(namespace.contains("latest"));
@@ -624,7 +694,12 @@ mod tests {
         // generated name, but not a `./` link, so not mise's to touch
         make_symlink_or_file(&temp_dir.path().join("elsewhere"), &installs_dir.join("2"))?;
 
-        prune_stale_generated_symlinks(&installs_dir, &IndexMap::new(), &HashSet::new())?;
+        prune_stale_generated_symlinks(
+            &npm_test_backend(),
+            &installs_dir,
+            &IndexMap::new(),
+            &HashSet::new(),
+        )?;
 
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
         assert!(is_runtime_symlink(&installs_dir.join("mine")));
@@ -646,7 +721,12 @@ mod tests {
         make_symlink_or_file(Path::new("./19.0.0"), &installs_dir.join("sub-1-20"))?;
         make_symlink_or_file(Path::new("./19.0.0"), &installs_dir.join("latest"))?;
 
-        prune_stale_generated_symlinks(&installs_dir, &IndexMap::new(), &HashSet::new())?;
+        prune_stale_generated_symlinks(
+            &npm_test_backend(),
+            &installs_dir,
+            &IndexMap::new(),
+            &HashSet::new(),
+        )?;
 
         assert!(is_runtime_symlink(&installs_dir.join("sub-1-20")));
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
