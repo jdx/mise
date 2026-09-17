@@ -236,17 +236,22 @@ where
 /// starts with the prefix, and re-prefixing it is the only way back to the tag
 /// it came from. Prefixing is therefore tried first even in that case, so a
 /// version mise listed always round-trips to its own tag; the version is still
-/// tried unprefixed afterwards for users who spell out a tag by hand.
+/// tried unprefixed afterwards for users who spell out a tag by hand, down to
+/// the bare version with every copy of the prefix removed.
 fn tag_candidates(version: &str, version_prefix: Option<&str>, repo: Option<&str>) -> Vec<String> {
     let mut candidates = if let Some(prefix) = version_prefix {
         // If a custom prefix is configured, try both prefixed and non-prefixed versions
         let mut candidates = vec![format!("{prefix}{version}"), version.to_string()];
-        // Strip one prefix, the inverse of how the version was listed. Never
-        // more than one: a `version_prefix` that appears twice in a tag is
-        // reached by the prefixed candidate above, not by stripping further.
+        // Strip one prefix, the inverse of how the version was listed: a
+        // `version_prefix` that appears twice in a tag is reached by stripping
+        // once, not by stripping everything.
         if let Some(stripped) = version.strip_prefix(prefix) {
             candidates.push(stripped.to_string());
         }
+        // Last resort: every copy of the prefix removed. Stripping once is the
+        // better guess, but a request written with the prefix repeated used to
+        // reach the bare tag this way, so keep it reachable.
+        candidates.push(version.trim_start_matches(prefix).to_string());
         candidates
     } else if version == "latest" {
         vec![version.to_string()]
@@ -2871,13 +2876,21 @@ bin = "tool.exe"
     }
 
     #[test]
-    fn test_tag_candidates_strips_the_version_prefix_only_once() {
-        // `trim_start_matches` would strip both prefixes here and skip the tag
-        // one level up, which is the tag a repeated-prefix version came from.
+    fn test_tag_candidates_strips_the_version_prefix_one_copy_at_a_time() {
+        // Stripping every prefix at once would skip the tag one level up, which
+        // is the tag a repeated-prefix version was listed from. The fully
+        // stripped version stays reachable, just last: it is what a request
+        // written with the prefix repeated used to fall back to.
         let candidates = tag_candidates("a-a-1.2.3", Some("a-"), None);
-        assert!(candidates.contains(&"a-a-1.2.3".to_string()));
-        assert!(candidates.contains(&"a-1.2.3".to_string()));
-        assert!(!candidates.contains(&"1.2.3".to_string()));
+        assert_eq!(
+            candidates,
+            vec![
+                "a-a-a-1.2.3".to_string(),
+                "a-a-1.2.3".to_string(),
+                "a-1.2.3".to_string(),
+                "1.2.3".to_string(),
+            ],
+        );
     }
 
     #[test]
