@@ -104,13 +104,20 @@ impl Task {
     /// - sources, outputs: Local overrides completely (if non-empty)
     /// - Other fields: Local overrides template (if set)
     pub(crate) fn merge_template(&mut self, template: &TaskTemplate) {
+        // A task that runs a script file already says what it does, so a template's `run` is
+        // not a second answer to that question. `file` wins over `run` in the executor, so
+        // inheriting one would leave a script on the task that never runs and yet shows up
+        // wherever the task is described. This matters most for file tasks, which reach a
+        // template through `#MISE extends=...` with `run` necessarily empty.
+        let has_own_command = self.file.is_some();
+
         // run: only use template if local is empty
-        if self.run.is_empty() {
+        if self.run.is_empty() && !has_own_command {
             self.run = template.run.clone();
         }
 
         // run_windows: only use template if local is empty
-        if self.run_windows.is_empty() {
+        if self.run_windows.is_empty() && !has_own_command {
             self.run_windows = template.run_windows.clone();
         }
 
@@ -284,6 +291,28 @@ mod tests {
         // Template run should be used when local is empty
         assert_eq!(task.run.len(), 1);
         assert!(matches!(&task.run[0], RunEntry::Script(s) if s == "template command"));
+    }
+
+    #[test]
+    fn test_merge_template_run_not_inherited_by_file_task() {
+        let mut task = Task {
+            file: Some("mise-tasks/build".into()),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            run: vec![RunEntry::Script("template command".to_string())],
+            run_windows: vec![RunEntry::Script("template command".to_string())],
+            description: "template description".to_string(),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        // The script file is the command, so the template's `run` is not a second one.
+        assert!(task.run.is_empty());
+        assert!(task.run_windows.is_empty());
+        // Everything else still inherits.
+        assert_eq!(task.description, "template description");
     }
 
     #[test]

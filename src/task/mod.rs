@@ -1405,6 +1405,11 @@ impl Task {
         // trace!("task info: {:#?}", info);
 
         task.description = p.parse_str("description").unwrap_or_default();
+        // The loaders that build file tasks call `resolve_task_template` on the result, so a
+        // template named here is applied the same way a `mise.toml` task's `extends` is. Only
+        // the header parser was missing the field, which made `#MISE extends="..."` an unknown
+        // key: warned about and dropped.
+        task.extends = p.parse_str("extends");
         // Check for multiple alias fields before parsing
         let alias_fields: Vec<&str> = ["alias", "aliases"]
             .iter()

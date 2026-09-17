@@ -87,6 +87,28 @@ avoids the surrounding braces entirely:
 #MISE tools.python="3.11"
 ```
 
+### Extending a task template
+
+`extends` names a [task template](/tasks/templates), so several file tasks can
+share one set of tools, env, and arguments:
+
+```toml [mise.toml]
+[task_templates.rust]
+tools = { rust = "1.90" }
+env = { RUST_BACKTRACE = "1" }
+```
+
+```bash [mise-tasks/build]
+#!/usr/bin/env bash
+#MISE extends="rust"
+#MISE description="Build the CLI"
+cargo build
+```
+
+The script file is the task's command, so a template's `run` is ignored for a
+file task; everything else is inherited by the
+[rules the template docs describe](/tasks/templates#inheritance-rules).
+
 mise provides file tasks with project context variables such as
 `MISE_PROJECT_ROOT`, which identifies the project root regardless of the
 directory from which the task is invoked. See [Tasks](/tasks/#environment-variables-passed-to-tasks)
