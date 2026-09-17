@@ -113,7 +113,12 @@ for a machine-wide selection.
 ```
 
 If the package is installed, `status --missing` reports drift and `apply`
-removes it. Other built-in managers currently support only the default
+removes it. One exception: an app installed only in Scoop's global scope is
+outside the user scope mise manages, so `apply` fails with the elevated
+`scoop uninstall --global` command to run instead of removing it. See
+[Scoop availability and scope](/bootstrap/packages/scoop.html#availability-and-scope).
+
+Other built-in managers currently support only the default
 `state = "present"`. Removing an entry from the configuration does not itself
 uninstall a package; see [Import and prune](#import-and-prune).
 
