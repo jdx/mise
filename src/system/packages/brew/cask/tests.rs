@@ -8571,7 +8571,7 @@ fn rejects_a_target_that_appears_after_the_early_ownership_check() -> Result<()>
         .unwrap_err()
         .to_string();
     assert!(err.contains("already exists"), "{err}");
-    assert!(err.contains("remove it to install this one"), "{err}");
+    assert!(err.contains("is not owned by this entry"), "{err}");
     assert!(err.starts_with("macos-app:"), "{err}");
 
     // The bundle that appeared is left exactly as it was.
@@ -8618,14 +8618,14 @@ fn macos_app_refuses_a_target_whose_content_is_not_ours() -> Result<()> {
     .unwrap_err()
     .to_string();
     assert!(err.contains("already exists"), "{err}");
-    assert!(err.contains("remove it to install this one"), "{err}");
+    assert!(err.contains("is not owned by this entry"), "{err}");
     assert!(err.starts_with("macos-app:"), "{err}");
     assert_eq!(crate::file::read_to_string(target.join("app"))?, "theirs");
     Ok(())
 }
 
 #[test]
-fn macos_app_adopts_an_identical_target_in_place() -> Result<()> {
+fn macos_app_adopts_an_identical_target_only_with_adopt() -> Result<()> {
     let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
     let tmp = trusted_tempdir()?;
     let root = tmp.path().canonicalize()?;
@@ -8642,9 +8642,29 @@ fn macos_app_adopts_an_identical_target_in_place() -> Result<()> {
         target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
     };
 
-    // An identical bundle is taken over in place, never swapped: a swap would
-    // revoke the app's TCC grants even though the content matches, and would
-    // strand another owner's record if the bundle turns out to be theirs.
+    // Without adopt, an identical bundle at an unowned target is still refused.
+    // Adoption records ownership and so authorizes every later replacement,
+    // which is not a claim to make implicitly on someone else's app.
+    let err = install_app(
+        &stage,
+        &caskroom,
+        &app,
+        AppInstallOptions {
+            manager: CaskManager::MacosApp,
+            require_unowned: true,
+            keep_caskroom_copy: true,
+            adopt: false,
+            verify_adopt: false,
+            defer_if_running: false,
+        },
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("is not owned by this entry"), "{err}");
+    assert!(err.contains("set adopt = true"), "{err}");
+
+    // With adopt, the identical bundle is taken over in place — never swapped,
+    // since a swap revokes the app's TCC grants even when content matches.
     assert_eq!(
         install_app(
             &stage,
@@ -8654,8 +8674,8 @@ fn macos_app_adopts_an_identical_target_in_place() -> Result<()> {
                 manager: CaskManager::MacosApp,
                 require_unowned: true,
                 keep_caskroom_copy: true,
-                adopt: false,
-                verify_adopt: false,
+                adopt: true,
+                verify_adopt: true,
                 defer_if_running: false,
             },
         )?,
@@ -8666,5 +8686,69 @@ fn macos_app_adopts_an_identical_target_in_place() -> Result<()> {
     // The bundle on disk is untouched — no copy was made beside it either.
     assert_eq!(crate::file::read_to_string(target.join("app"))?, "ours");
     assert!(!caskroom.join("Example.app").exists());
+    Ok(())
+}
+
+/// Ownership is per target, not per token. A receipt for one app must not
+/// authorize replacing a different app the declaration later points at — by
+/// renaming `artifact`, or by moving the app directory.
+#[test]
+fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
+    let spec = crate::system::AppSpec {
+        url: "https://example.com/Nuvio.dmg".to_string(),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+        artifact: "Nuvio.app".to_string(),
+        version: "1.1.20".to_string(),
+    };
+    let cask = declared_app_cask("nuvio", &spec)?;
+
+    let owned = Path::new("/Applications/Nuvio.app");
+    let renamed = Path::new("/Applications/Other.app");
+    let relocated = Path::new("/Users/someone/Applications/Nuvio.app");
+
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.1.20".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![owned.to_path_buf()],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: Vec::new(),
+        prune_safe: true,
+        prune_blocker: None,
+    };
+
+    // The recorded target may be replaced: that is an ordinary upgrade.
+    assert!(!requires_unowned_target(&cask, Some(&receipt), owned));
+
+    // A renamed artifact names a target the receipt never covered. Without
+    // this, changing `artifact` to an app someone else owns would replace it
+    // while the stale receipt made the token look installed.
+    assert!(requires_unowned_target(&cask, Some(&receipt), renamed));
+
+    // Same for the app directory moving out from under a valid receipt.
+    assert!(requires_unowned_target(&cask, Some(&receipt), relocated));
+
+    // No receipt at all means nothing is owned.
+    assert!(requires_unowned_target(&cask, None, owned));
+
+    // An adopted app is recorded in metadata_only_apps and is owned too.
+    let adopted = CaskReceipt {
+        apps: Vec::new(),
+        metadata_only_apps: vec![owned.to_path_buf()],
+        ..receipt
+    };
+    assert!(!requires_unowned_target(&cask, Some(&adopted), owned));
+    assert!(requires_unowned_target(&cask, Some(&adopted), renamed));
+
+    // brew-cask keeps arbitrating by token against Homebrew's Caskroom.
+    let mut brew = cask.clone();
+    brew.manager = CaskManager::BrewCask;
+    assert!(!requires_unowned_target(&brew, None, renamed));
     Ok(())
 }

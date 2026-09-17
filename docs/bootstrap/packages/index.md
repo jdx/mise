@@ -95,35 +95,40 @@ holds no receipt for — whether that app came from Homebrew, another declaratio
 or a manual install. It compares what is already there against what it
 downloaded:
 
-- **Identical** — taken over in place. The bundle is not moved or replaced, so
-  the app keeps its Privacy & Security grants. This is what completes an install
-  interrupted before its receipt was written.
-- **Different** — refused, with the path and what to do about it:
+- **Without `adopt = true`** — refused, whatever the contents:
 
   ```
-  macos-app:nuvio: '/Applications/Nuvio.app' already exists and differs from the
-  declared artifact, so it belongs to something else; remove it to install this
-  one.
+  macos-app:nuvio: '/Applications/Nuvio.app' already exists and is not owned by
+  this entry; set adopt = true to take it over if it is identical to the
+  download, or remove it to install a different build.
   ```
 
-  Remove the app to install a different build. `adopt = true` does not override
-  this — verification still applies, so it has no additional effect for
-  `macos-app`, where an identical app is adopted anyway.
+- **With `adopt = true`** — taken over in place when the app is identical to the
+  download. The bundle is not moved or replaced, so it keeps its Privacy &
+  Security grants. A _different_ build is still refused; remove it instead.
+
+Adoption is deliberately explicit. Recording ownership authorizes every later
+replacement by mise, so it is not a claim to make implicitly on an app Homebrew
+or another declaration still owns — a version bump would then replace a bundle
+the other manager still believes it controls. If you adopt an app another
+manager installed, reconcile that manager's record as well.
+
+The same applies after an interrupted install: a bundle left at the target with
+no completed ownership receipt needs `adopt = true` like any other, and a
+pending transaction alone never authorizes takeover.
+
+Ownership is recorded per target. Changing `artifact`, or changing the app
+directory, points the entry at a target the previous receipt never covered, so
+that target goes through this policy even though the package is installed.
 
 This is deliberately stricter than `brew-cask`, which warns and replaces: a swap
 strands the other owner's install record, and macOS revokes the app's Privacy &
 Security grants on any swap — even to a byte-identical bundle, because the
 grants follow the bundle's identity at that path rather than its contents.
 
-`mise bootstrap packages apply --dry-run` cannot tell these two apart, since it
-has not downloaded anything to compare against; it warns that an app is already
-at the target and names both outcomes.
-
-::: tip
-`adopt = true` is meaningful for `brew-cask`, where a cask may legitimately
-differ from its recorded version. A `macos-app` entry pins one artifact, so
-adoption is automatic when the app matches and verification is never skipped.
-:::
+`mise bootstrap packages apply --dry-run` warns when an app is already at a
+target this entry does not own. It cannot say whether `adopt = true` would
+succeed, since it has not downloaded anything to compare against.
 
 ## Host packages or mise tools
 

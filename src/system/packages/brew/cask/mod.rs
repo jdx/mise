@@ -708,13 +708,10 @@ impl BrewCaskManager {
             .await?;
         }
         // brew-cask defers to Homebrew by token, which macos-app cannot do: the
-        // conflict is at the shared app directory, not the token. Decided in
-        // install_app, where the staged bundle is available to compare against.
-        let require_unowned_targets = requires_unowned_targets(&cask, installed_version.as_deref());
+        // conflict is at the shared app directory, not the token.
+        let previous_ownership = previous_receipt(&cask)?;
         if opts.dry_run {
-            if require_unowned_targets {
-                warn_existing_app_targets(cask.manager, &artifacts.apps)?;
-            }
+            warn_existing_app_targets(&cask, previous_ownership.as_ref(), &artifacts.apps)?;
             artifacts.print_install_plan(&cask)?;
             return Ok(cask.version);
         }
@@ -726,7 +723,8 @@ impl BrewCaskManager {
         // token instead would miss the opt-in and replace the bundle, costing
         // the app its macOS TCC grants; it would also conflate two casks from
         // different taps that share a token.
-        let adopt = manager_options.brew_cask_adopt(&req.name) && installed_version.is_none();
+        let adopt_requested = manager_options.brew_cask_adopt(&req.name);
+        let adopt = adopt_requested && installed_version.is_none();
         if adopt && !cask.auto_updates {
             validate_adoptable_apps(cask.manager, &stage, &artifacts.apps)?;
         }
@@ -815,13 +813,28 @@ impl BrewCaskManager {
         }
         let mut metadata_only_apps = Vec::new();
         for (index, app) in artifacts.apps.iter().enumerate() {
+            // Resolved per app: one declaration can own one target and not
+            // another, and a changed artifact name points at a target that no
+            // receipt covers.
+            let require_unowned = requires_unowned_target(
+                &cask,
+                previous_ownership.as_ref(),
+                &app_target_path(app.target_name()?)?,
+            );
+            // Taking over an unowned target is opt-in. brew-cask keeps its own
+            // rule, keyed on the token having no installed version.
+            let adopt = if cask.manager.uses_homebrew_caskroom() {
+                adopt
+            } else {
+                adopt_requested && require_unowned
+            };
             let installed = install_app(
                 &stage,
                 &tmp_caskroom,
                 app,
                 AppInstallOptions {
                     manager: cask.manager,
-                    require_unowned: require_unowned_targets,
+                    require_unowned,
                     keep_caskroom_copy: !cask.auto_updates,
                     adopt,
                     verify_adopt: !cask.auto_updates,
@@ -1294,20 +1307,13 @@ fn install_app(
     // descriptor rather than a pathname, so nothing that appears during the
     // download is silently replaced.
     //
-    // Nothing here may swap a bundle that this entry has no receipt for. A swap
-    // revokes the app's TCC grants even when the replacement is byte-identical,
-    // because the grants are keyed to the bundle's identity at the path rather
-    // than to its content (see `activate_app_at`).
+    // An app at a target this entry does not own is never taken over
+    // implicitly, even when its contents match. Adoption records ownership and
+    // so authorizes every later replacement, which is not a claim to make on a
+    // bundle Homebrew or another declaration still owns. `adopt = true` is the
+    // explicit consent, and the branch below verifies the bundle is identical
+    // before recording anything.
     //
-    // A differing bundle belongs to someone — Homebrew, another declaration, or
-    // a person — so refuse and point at adoption. An identical one is taken
-    // over in place: that completes an attempt interrupted before its receipt
-    // landed, and stays safe if the bundle turns out to be someone else's copy
-    // of the same release, because nothing is moved, replaced or deleted.
-    //
-    // Content is the only signal available here. Transaction state cannot
-    // answer it: a journal is written before the bundle exists, and the window
-    // between placing one and recording it can never be closed.
     // Measure the target through the verified directory descriptor rather than
     // by pathname, so a component replaced after `ensure_trusted_appdir` cannot
     // make us fingerprint a different file from the one `exists_at` found. On
@@ -1316,17 +1322,7 @@ fn install_app(
     // there. `logical_target` stays the path shown to the user.
     let bound_target = parent.path()?.join(&name);
     if require_unowned && !adopt && exists_at(&parent.fd, &name)? {
-        if cask_target_fingerprint(&source)? != cask_target_fingerprint(&bound_target)? {
-            return Err(unowned_target_error(manager, &logical_target));
-        }
-        info!(
-            "{}: adopting the identical bundle already at {}",
-            manager.label(),
-            logical_target.display()
-        );
-        return Ok(AppInstall::Installed {
-            metadata_only: true,
-        });
+        return Err(unowned_target_error(manager, &logical_target));
     }
     if adopt && exists_at(&parent.fd, &name)? {
         if verify_adopt {
@@ -1383,18 +1379,26 @@ fn install_app(
     })
 }
 
-/// Whether this entry must refuse to replace whatever is at its app target.
+/// Whether the previous receipt records `target` as an app this entry owns.
 ///
-/// Only for managers that do not share Homebrew's Caskroom, and only when mise
-/// holds no receipt for the install — a receipt means this entry owns what is
-/// at the target and an upgrade may replace it.
-///
-/// Without a receipt, whether the bundle at the target is ours is decided by
-/// comparing it against what we are installing, in [`install_app`]. Transaction
-/// state cannot answer it: a journal is written before the bundle exists, and
-/// the window between placing one and recording it is never zero.
-fn requires_unowned_targets(cask: &Cask, installed_version: Option<&str>) -> bool {
-    !cask.manager.uses_homebrew_caskroom() && installed_version.is_none()
+/// Ownership is per target, not per token. A receipt proves this entry owns the
+/// paths that receipt records — not any path the declaration later points at.
+/// Changing `artifact`, or changing the app directory, names a target the
+/// receipt never covered; replacing it would clobber an app this entry has
+/// never owned, while the stale receipt makes the token look installed.
+fn app_target_is_owned(previous: Option<&CaskReceipt>, target: &Path) -> bool {
+    previous.is_some_and(|receipt| {
+        receipt
+            .apps
+            .iter()
+            .chain(&receipt.metadata_only_apps)
+            .any(|owned| owned == target)
+    })
+}
+
+/// Whether this entry must refuse to replace whatever is at `target`.
+fn requires_unowned_target(cask: &Cask, previous: Option<&CaskReceipt>, target: &Path) -> bool {
+    !cask.manager.uses_homebrew_caskroom() && !app_target_is_owned(previous, target)
 }
 
 /// Flag app targets a plan cannot predict the outcome for.
@@ -1402,14 +1406,19 @@ fn requires_unowned_targets(cask: &Cask, installed_version: Option<&str>) -> boo
 /// Whether apply adopts the bundle in place or refuses depends on comparing it
 /// against the staged artifact, which a dry run has not downloaded. Say that,
 /// rather than let the plan imply a clean install.
-fn warn_existing_app_targets(manager: CaskManager, apps: &[AppArtifact]) -> Result<()> {
+fn warn_existing_app_targets(
+    cask: &Cask,
+    previous: Option<&CaskReceipt>,
+    apps: &[AppArtifact],
+) -> Result<()> {
+    let manager = cask.manager;
     for app in apps {
         let target = app_target_path(app.target_name()?)?;
-        if target.symlink_metadata().is_ok() {
+        if requires_unowned_target(cask, previous, &target) && target.symlink_metadata().is_ok() {
             warn!(
-                "{}: an app already exists at {}; apply will adopt it in place if it \
-                 is identical to the download, and refuse otherwise — remove it first \
-                 to install a different build",
+                "{}: an app already exists at {} and is not owned by this entry; \
+                 apply will refuse unless adopt = true, which takes it over only \
+                 if it is identical to the download",
                 manager.label(),
                 target.display()
             );
@@ -1420,10 +1429,12 @@ fn warn_existing_app_targets(manager: CaskManager, apps: &[AppArtifact]) -> Resu
 
 fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
     eyre!(
-        "{}: '{}' already exists and differs from the declared artifact, so it \
-         belongs to something else; remove it to install this one. mise will not \
-         replace it, because swapping a bundle revokes the app's macOS Privacy & \
-         Security grants (Accessibility, Screen Recording, Full Disk Access, etc.)",
+        "{}: '{}' already exists and is not owned by this entry; set adopt = true \
+         to take it over if it is identical to the download, or remove it to \
+         install a different build. mise will not replace it silently, because \
+         swapping a bundle revokes the app's macOS Privacy & Security grants \
+         (Accessibility, Screen Recording, Full Disk Access, etc.) and strands \
+         any other manager's record of it",
         manager.label(),
         target.display()
     )
