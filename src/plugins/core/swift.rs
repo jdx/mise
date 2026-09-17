@@ -155,7 +155,7 @@ impl SwiftPlugin {
 /// See: <https://github.com/jdx/mise/discussions/13306>
 #[cfg(target_os = "linux")]
 fn explain_missing_libraries(tv: &ToolVersion, err: eyre::Report) -> eyre::Report {
-    let missing = missing_sonames(&tv.install_path());
+    let missing = missing_sonames(&tv.install_path(), &tv.install_env());
     if missing.is_empty() {
         return err;
     }
@@ -179,11 +179,20 @@ fn explain_missing_libraries(_tv: &ToolVersion, err: eyre::Report) -> eyre::Repo
 /// This runs only after `swift --version` has already failed, so the cost falls
 /// on an install that is broken either way.
 ///
+/// Each `ldd` gets the same `install_env` as the `swift --version` that failed.
+/// Without it a run whose `install_env` sets `LD_LIBRARY_PATH` — the documented
+/// way to point this build at compatible libraries — would report every soname
+/// that path already resolves, so the list would name libraries that are fine
+/// and bury whatever actually broke.
+///
 /// `ldd` runs the dynamic loader over each file. These are swift.org artifacts
 /// whose GPG signature mise verified before extracting, which is the same trust
 /// the install already extends by running one of them.
 #[cfg(target_os = "linux")]
-fn missing_sonames(install_path: &Path) -> Vec<String> {
+fn missing_sonames(
+    install_path: &Path,
+    install_env: &indexmap::IndexMap<String, crate::config::env_directive::EnvValue>,
+) -> Vec<String> {
     if file::which("ldd").is_none() {
         debug!("swift: no ldd on PATH, cannot name the missing libraries");
         return vec![];
@@ -204,11 +213,16 @@ fn missing_sonames(install_path: &Path) -> Vec<String> {
             // `unchecked`: ldd exits non-zero for a file that is not a dynamic
             // executable, which is an ordinary thing to meet in these
             // directories and not a reason to give up on the rest.
-            match crate::cmd::cmd("ldd", [entry.as_os_str()])
+            let mut ldd = crate::cmd::cmd("ldd", [entry.as_os_str()])
                 .unchecked()
-                .stderr_null()
-                .read()
-            {
+                .stderr_null();
+            for (key, value) in install_env.clone() {
+                ldd = match value.into_string() {
+                    Some(value) => ldd.env(key, value),
+                    None => ldd.env_remove(key),
+                };
+            }
+            match ldd.read() {
                 Ok(output) => missing.extend(parse_ldd_missing(&output)),
                 Err(err) => debug!("swift: ldd {}: {err:#}", file::display_path(&entry)),
             }
@@ -1559,7 +1573,7 @@ mod linux_tests {
         file::write(lib.join("libnotreally.so.1"), "not an ELF").unwrap();
         file::write(lib.join("swift.json"), "{}").unwrap();
 
-        assert!(missing_sonames(tmp.path()).is_empty());
+        assert!(missing_sonames(tmp.path(), &Default::default()).is_empty());
     }
 
     /// A tree without the toolchain layout is not an error, just nothing to say.
@@ -1567,6 +1581,6 @@ mod linux_tests {
     fn missing_sonames_is_empty_without_a_toolchain_layout() {
         let tmp = tempfile::tempdir().unwrap();
 
-        assert!(missing_sonames(tmp.path()).is_empty());
+        assert!(missing_sonames(tmp.path(), &Default::default()).is_empty());
     }
 }
