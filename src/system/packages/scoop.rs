@@ -218,32 +218,63 @@ fn user_scope_apps(pkgs: &[PackageRequest], global: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Requested apps that exist only as global installs, in request order.
-///
-/// `scoop uninstall` without `--global` reports that the app is not installed
-/// locally and still exits zero, so a removal targeting one of these would
-/// look like it succeeded while changing nothing.
-fn global_only(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<String> {
+/// Whether any exported entry for `app` is a global install.
+fn has_global(export: &ScoopExport, app: &str) -> bool {
+    matching(export, app).any(ScoopApp::is_global)
+}
+
+/// Whether any exported entry for `app` is a user-scope install.
+fn has_local(export: &ScoopExport, app: &str) -> bool {
+    matching(export, app).any(|entry| !entry.is_global())
+}
+
+/// The requested app names a predicate keeps, deduplicated, in request order.
+fn selected_apps(pkgs: &[PackageRequest], keep: impl Fn(&str) -> bool) -> Vec<String> {
     let mut apps = Vec::new();
     for pkg in pkgs {
         let app = app_name(&pkg.name);
-        if find_app(export, app).is_some_and(ScoopApp::is_global)
-            && !apps.iter().any(|existing: &String| existing == app)
-        {
+        if keep(app) && !apps.iter().any(|existing: &String| existing == app) {
             apps.push(app.to_string());
         }
     }
     apps
 }
 
+/// Requested apps whose only install is global, in request order.
+///
+/// `scoop uninstall` and `scoop update` without `--global` report that the app
+/// is not installed locally and still exit zero, so acting on one of these
+/// would look like it succeeded while changing nothing. An app that also has a
+/// user-scope copy is absent here, because that copy is mise's to act on.
+fn global_only(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<String> {
+    selected_apps(pkgs, |app| {
+        has_global(export, app) && !has_local(export, app)
+    })
+}
+
+/// Requested apps with a global install, whether or not a local copy exists.
+///
+/// Removal needs this wider set: uninstalling the user-scope copy of an app
+/// installed in both scopes leaves the global one behind, and the driver would
+/// otherwise report the app as removed.
+fn global_copies(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<String> {
+    selected_apps(pkgs, |app| has_global(export, app))
+}
+
+/// Every exported entry for `app`. Scoop keys apps by name, so a name can
+/// appear twice at most: once per scope.
+fn matching<'a>(export: &'a ScoopExport, app: &str) -> impl Iterator<Item = &'a ScoopApp> {
+    let app = app.to_string();
+    export
+        .apps
+        .iter()
+        .filter(move |entry| entry.name.eq_ignore_ascii_case(&app))
+}
+
 /// The exported entry for `app`, preferring a local install over a global one.
 fn find_app<'a>(export: &'a ScoopExport, app: &str) -> Option<&'a ScoopApp> {
     let mut global = None;
-    for entry in export
-        .apps
-        .iter()
-        .filter(|entry| entry.name.eq_ignore_ascii_case(app))
-    {
+    for entry in matching(export, app) {
         if !entry.is_global() {
             return Some(entry);
         }
@@ -468,15 +499,18 @@ impl SystemPackageManager for ScoopManager {
         if pkgs.is_empty() {
             return Ok(());
         }
-        let global = global_only(pkgs, &export().await?);
+        let export = export().await?;
         // Remove everything mise can reach before reporting the rest. Failing
         // first would strand every other removable app in the batch, and the
         // driver aborts the whole run on this error, so it would also skip the
         // managers queued behind scoop.
-        let apps = user_scope_apps(pkgs, &global);
+        let apps = user_scope_apps(pkgs, &global_only(pkgs, &export));
         if !apps.is_empty() {
             apply(&uninstall_args(&apps), "uninstall", opts.dry_run, &[]).await?;
         }
+        // Wider than the set held back above: an app installed in both scopes
+        // just lost its user-scope copy, and the global one is still there.
+        let global = global_copies(pkgs, &export);
         if !global.is_empty() {
             // Not a warning: the driver reports the batch it handed over as
             // removed, so anything mise did not remove has to fail the run
@@ -619,6 +653,40 @@ mod tests {
             vec!["git"]
         );
         assert!(global_only(&[req("ripgrep", None), req("gh", None)], &export).is_empty());
+    }
+
+    #[test]
+    fn an_app_in_both_scopes_loses_its_local_copy_and_still_reports_the_global_one() {
+        let export = export_of(
+            &[
+                ("git", Some("2.51.0"), ""),
+                ("git", Some("2.48.0"), "Global install"),
+                ("ripgrep", Some("14.1.1"), ""),
+                ("gh", Some("2.60.0"), "Global install"),
+            ],
+            &[],
+        );
+        let pkgs = [req("git", None), req("ripgrep", None), req("gh", None)];
+
+        // Only `gh` has nothing for mise to uninstall, so `git`'s user-scope
+        // copy is still removed...
+        assert_eq!(global_only(&pkgs, &export), vec!["gh"]);
+        assert_eq!(
+            user_scope_apps(&pkgs, &global_only(&pkgs, &export)),
+            vec!["git", "ripgrep"]
+        );
+        // ...and both `git` and `gh` are reported, because a global copy of
+        // `git` survives that uninstall.
+        assert_eq!(global_copies(&pkgs, &export), vec!["git", "gh"]);
+
+        // Upgrade keeps using the narrow set: git's local copy is upgradable.
+        assert_eq!(
+            user_scope_apps(&pkgs, &global_only(&pkgs, &export)),
+            vec!["git", "ripgrep"]
+        );
+        assert!(has_global(&export, "git") && has_local(&export, "git"));
+        assert!(has_global(&export, "gh") && !has_local(&export, "gh"));
+        assert!(!has_global(&export, "ripgrep") && has_local(&export, "ripgrep"));
     }
 
     #[test]
