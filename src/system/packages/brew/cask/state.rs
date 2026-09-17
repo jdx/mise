@@ -302,7 +302,16 @@ pub(super) fn package_state(req: &PackageRequest, cask: &Cask) -> Result<Package
     if let Some(state) = platform_unavailable_state(cask, &artifacts) {
         return Ok(state);
     }
-    Ok(mise_installed_cask_version(cask)?
+    let installed = mise_installed_cask_version(cask)?;
+    // A retarget leaves the recorded version matching while the declared app
+    // is not installed anywhere, so reporting it installed would hide work
+    // that apply still has to do.
+    if installed.is_some()
+        && !declared_apps_are_owned(cask, &artifacts, previous_receipt(cask)?.as_ref())?
+    {
+        return Ok(PackageState::Missing);
+    }
+    Ok(installed
         .map(|version| state_for_version(req, cask, version))
         .unwrap_or(PackageState::Missing))
 }

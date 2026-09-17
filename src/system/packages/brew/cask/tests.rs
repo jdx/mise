@@ -8752,3 +8752,80 @@ fn macos_app_ownership_does_not_follow_a_changed_target() -> Result<()> {
     assert!(!requires_unowned_target(&brew, None, renamed));
     Ok(())
 }
+
+/// A same-version retarget must not be reported installed. The recorded
+/// version still matches, but the declared app is not installed anywhere, so
+/// skipping would silently do nothing and the unowned-target policy would
+/// never run.
+#[test]
+fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let appdir = tempfile::tempdir()?;
+    let mut guard = EnvVarGuard::new();
+    guard.set(APP_DIR_ENV, appdir.path());
+
+    let spec = crate::system::AppSpec {
+        url: "https://example.com/Nuvio.dmg".to_string(),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+        artifact: "Other.app".to_string(),
+        version: "1.1.20".to_string(),
+    };
+    let cask = declared_app_cask("nuvio", &spec)?;
+    let artifacts = cask_artifacts(&cask)?;
+
+    // The receipt owns the previously declared app, at the same version.
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "1.1.20".to_string(),
+        auto_updates: false,
+        metadata_only_apps: Vec::new(),
+        apps: vec![appdir.path().join("Nuvio.app")],
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: Vec::new(),
+        targets: Vec::new(),
+        prune_safe: true,
+        prune_blocker: None,
+    };
+
+    // The declaration now names Other.app, which that receipt does not cover.
+    assert!(!declared_apps_are_owned(&cask, &artifacts, Some(&receipt))?);
+    assert_eq!(
+        installed_skip_reason(
+            &cask,
+            &artifacts,
+            Some(&receipt),
+            Some("1.1.20"),
+            InstallMode::Install
+        )?,
+        None,
+        "a retarget must not be skipped as already installed"
+    );
+
+    // Back to the recorded app: ordinary already-installed skip applies again.
+    let same = crate::system::AppSpec {
+        artifact: "Nuvio.app".to_string(),
+        ..spec
+    };
+    let same_cask = declared_app_cask("nuvio", &same)?;
+    let same_artifacts = cask_artifacts(&same_cask)?;
+    assert!(declared_apps_are_owned(
+        &same_cask,
+        &same_artifacts,
+        Some(&receipt)
+    )?);
+    assert_eq!(
+        installed_skip_reason(
+            &same_cask,
+            &same_artifacts,
+            Some(&receipt),
+            Some("1.1.20"),
+            InstallMode::Install
+        )?,
+        Some("already installed")
+    );
+    Ok(())
+}
