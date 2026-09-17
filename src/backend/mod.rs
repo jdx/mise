@@ -5,8 +5,8 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    Arc, LazyLock, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use tokio::sync::Mutex as TokioMutex;
 
@@ -48,7 +48,7 @@ use crate::{dirs, env, file, hash, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
 use eyre::{Result, WrapErr, bail, eyre};
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use platform_target::PlatformTarget;
 use regex::Regex;
@@ -3572,14 +3572,14 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // the promise held for `dummy` in the e2e test and for nothing else:
         // every other backend reached here with an empty config env.
         //
-        // `env_uncached` rather than `env`: hooks run one after another within an
-        // install batch and an `[env]` value can read a file an earlier hook just
-        // wrote, so each hook resolves its own env instead of sharing the first
-        // one's snapshot.
+        // `postinstall_config_env` rather than `Config::env`: hooks run one after
+        // another within an install batch and an `[env]` value can read a file an
+        // earlier hook just wrote, so the process-wide memo would hand every later
+        // hook the first one's snapshot.
         //
         // Best-effort: a `[env]` that cannot resolve is reported by the command
         // that needs it, and should not be what fails an otherwise good install.
-        match ctx.config.env_uncached().await {
+        match postinstall_config_env(&ctx.config).await {
             Ok(config_env) => {
                 for (k, v) in config_env {
                     env_vars.entry(k).or_insert(v);
@@ -3690,13 +3690,18 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 .env("MISE_PROJECT_ROOT", project_root);
         }
 
-        runner
+        let result = runner
             .optimize_inline(
                 &rendered_script,
                 &[],
                 Settings::get().implicit_inline_shell(),
             )
-            .execute()?;
+            .execute();
+        // Whether or not it succeeded: it may have changed a file or command
+        // output that an `[env]` value reads, and the hooks after it are entitled
+        // to see that.
+        invalidate_postinstall_env();
+        result?;
         Ok(())
     }
 
@@ -5722,8 +5727,55 @@ impl Ord for dyn Backend {
     }
 }
 
+/// The config `[env]` a tool's `postinstall` hook runs with.
+///
+/// A hook has to see an env input that a hook before it changed, which rules out
+/// the process-wide memo behind [`Config::env`]. Resolving unconditionally for
+/// every hook goes too far the other way: it re-runs each executable directive —
+/// an `_.source` script, an `exec()` value — once per hook, and with parallel
+/// installs runs them against each other at the same time.
+///
+/// So one resolution is shared by every hook that starts without a hook having
+/// completed in between, and two never resolve at once. A completed hook is the
+/// only thing during an install that can change an env input, so this is as few
+/// resolutions as freshness allows.
+struct SharedHookEnv {
+    /// What [`POSTINSTALL_ENV_GENERATION`] read when this was resolved. A hook
+    /// completing since then makes it stale.
+    generation: u64,
+    env: IndexMap<String, String>,
+}
+
+static POSTINSTALL_ENV: LazyLock<TokioMutex<Option<SharedHookEnv>>> =
+    LazyLock::new(Default::default);
+static POSTINSTALL_ENV_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+async fn postinstall_config_env(config: &Arc<Config>) -> Result<IndexMap<String, String>> {
+    let mut shared = POSTINSTALL_ENV.lock().await;
+    let generation = POSTINSTALL_ENV_GENERATION.load(Ordering::SeqCst);
+    if let Some(shared) = shared.as_ref()
+        && shared.generation == generation
+    {
+        return Ok(shared.env.clone());
+    }
+    let env = config.env_uncached().await?;
+    *shared = Some(SharedHookEnv {
+        generation,
+        env: env.clone(),
+    });
+    Ok(env)
+}
+
+/// Drop the shared resolution. Called after every hook, which may have changed a
+/// file or command output an `[env]` value reads, and on [`reset`], where the
+/// config it was resolved from is gone.
+fn invalidate_postinstall_env() {
+    POSTINSTALL_ENV_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
 pub(crate) async fn reset() -> Result<()> {
     install_state::reset();
+    invalidate_postinstall_env();
     {
         let mut tools = TOOLS.lock().unwrap();
         *tools = None;
