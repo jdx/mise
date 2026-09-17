@@ -1531,22 +1531,22 @@ fn install_app(
     //
     // Scoped to managers that arbitrate by receipt. `brew-cask` owns its target
     // by token against Homebrew's Caskroom and keeps its existing behaviour.
-    if !manager.uses_homebrew_caskroom() && !require_unowned && exists_at(&parent.fd, &name)? {
-        let source_fingerprint = cask_target_fingerprint(&source)?;
-        let target_fingerprint = cask_target_fingerprint(&bound_target)?;
-        if source_fingerprint == target_fingerprint {
-            info!(
-                "{}: keeping the identical bundle already at {}",
-                manager.label(),
-                logical_target.display()
-            );
-            // `ditto` would have created this on the install path.
-            file::create_dir_all(caskroom)?;
-            file::make_symlink(&logical_target, &caskroom_app)?;
-            return Ok(AppInstall::Installed {
-                metadata_only: !keep_caskroom_copy,
-            });
-        }
+    if !manager.uses_homebrew_caskroom()
+        && !require_unowned
+        && exists_at(&parent.fd, &name)?
+        && source_fingerprint()? == target_fingerprint()?
+    {
+        info!(
+            "{}: keeping the identical bundle already at {}",
+            manager.label(),
+            logical_target.display()
+        );
+        // `ditto` would have created this on the install path.
+        file::create_dir_all(caskroom)?;
+        file::make_symlink(&logical_target, &caskroom_app)?;
+        return Ok(AppInstall::Installed {
+            metadata_only: !keep_caskroom_copy,
+        });
     }
 
     ditto(&source, &caskroom_app)?;
