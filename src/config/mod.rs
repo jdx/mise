@@ -3601,8 +3601,17 @@ fn collect_task_definitions(
 /// template fills gaps first, then the workspace-root task default fills anything still unset.
 /// Explicit tasks replace matching provider-inferred tasks separately when the final task map is
 /// assembled.
-/// Returns an error if the template is not found.
+/// Returns an error if the named template is not found.
 fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Result<()> {
+    apply_named_template(task, definitions)?;
+    apply_workspace_task_default(task, definitions);
+    Ok(())
+}
+
+/// Apply the template the task named with `extends`, if any.
+///
+/// Returns an error if the template is not found.
+fn apply_named_template(task: &mut Task, definitions: &TaskDefinitions) -> Result<()> {
     if let Some(template_name) = &task.extends {
         let template = definitions.templates.get(template_name).ok_or_else(|| {
             eyre!(
@@ -3621,6 +3630,11 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
         task.merge_template(&template.template);
         task.add_config_source(&template.source);
     }
+    Ok(())
+}
+
+/// Fill anything still unset from the workspace-root default for a task of this name.
+fn apply_workspace_task_default(task: &mut Task, definitions: &TaskDefinitions) {
     if let Some(defaults) = &definitions.workspace_defaults
         && !task.global
         && task
@@ -3639,7 +3653,6 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
             task.add_config_source(&default.source);
         }
     }
-    Ok(())
 }
 
 fn apply_task_config_cache_default(task: &mut Task, cache: &Option<TaskCacheConfig>) {
@@ -5418,7 +5431,11 @@ pub(crate) fn resolve_template_for_late_task(config: &Arc<Config>, task: &mut Ta
             .and_then(|graph| graph.as_ref().ok())
             .map(Arc::as_ref),
     );
-    resolve_task_template(task, &definitions)
+    // Only the named template. The workspace default was already applied to the toml task
+    // that pointed at this script, and `merge_toml_overlay` copies that task's fields onto
+    // the fetched one afterwards -- extending `depends` rather than replacing it, so applying
+    // the default a second time here would list its dependencies twice.
+    apply_named_template(task, &definitions)
 }
 
 pub(crate) async fn load_tasks_in_dir(
