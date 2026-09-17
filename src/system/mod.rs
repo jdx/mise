@@ -622,7 +622,14 @@ pub(crate) fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest
 pub(crate) fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    resolve_managers(by_mgr, IndexMap::new(), true)
+    resolve_managers(
+        by_mgr,
+        IndexMap::new(),
+        ResolveOpts {
+            strict: true,
+            applies_together: true,
+        },
+    )
 }
 
 pub(crate) fn attach_brew_tap_urls(
@@ -767,7 +774,14 @@ fn packages_from_config_files_and_tracked_config_files(
         packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps, false)?,
     );
 
-    resolve_managers(by_mgr, manager_options, false)
+    resolve_managers(
+        by_mgr,
+        manager_options,
+        ResolveOpts {
+            strict: false,
+            applies_together: false,
+        },
+    )
 }
 
 #[cfg(unix)]
@@ -819,7 +833,15 @@ fn packages_from_config_files_with_brew_taps(
 ) -> Result<Vec<ManagerPackages>> {
     let (requests, options) =
         package_requests_from_config_files(config_files, brew_taps, filter_env);
-    resolve_managers(requests, options, false)
+    resolve_managers(
+        requests,
+        options,
+        ResolveOpts {
+            strict: false,
+            // `filter_env == false` is the prune union across environments
+            applies_together: filter_env,
+        },
+    )
 }
 
 fn package_requests_from_config_files(
@@ -2077,7 +2099,14 @@ fn packages_from_specs_with_config_files(
     };
     #[cfg(not(unix))]
     let options = IndexMap::new();
-    resolve_managers(by_mgr, options, true)
+    resolve_managers(
+        by_mgr,
+        options,
+        ResolveOpts {
+            strict: true,
+            applies_together: true,
+        },
+    )
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -2184,11 +2213,30 @@ fn brew_adopt_from_config_files(config_files: &ConfigMap) -> bool {
     adopt
 }
 
+#[derive(Clone, Copy)]
+struct ResolveOpts {
+    /// Unknown or settings-excluded managers are hard errors rather than
+    /// warnings that skip the entry.
+    strict: bool,
+    /// Whether these requests are declarations that apply together on one host.
+    ///
+    /// Prune deliberately unions declarations across environments so it can
+    /// protect whatever any environment declares. Entries that are never active
+    /// at the same time do not contradict each other, and an unrelated
+    /// manager's entries must not block a prune, so that union is not checked
+    /// for one package declared under two spellings.
+    applies_together: bool,
+}
+
 fn resolve_managers(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
     mut manager_options: IndexMap<String, ManagerPackageOptions>,
-    strict: bool,
+    opts: ResolveOpts,
 ) -> eyre::Result<Vec<ManagerPackages>> {
+    let ResolveOpts {
+        strict,
+        applies_together,
+    } = opts;
     let enabled = crate::config::Settings::get()
         .system_packages
         .managers
@@ -2212,7 +2260,9 @@ fn resolve_managers(
                 // Two spellings of one package that disagree resolve by
                 // machine state rather than by config, so reject the pair
                 // wherever requests are aggregated — `status` included.
-                packages::check_name_conflicts(manager.as_ref(), &requests)?;
+                if applies_together {
+                    packages::check_name_conflicts(manager.as_ref(), &requests)?;
+                }
                 out.push(ManagerPackages {
                     manager: manager.clone(),
                     requests,
@@ -2899,6 +2949,70 @@ mod tests {
         // but a bare spec is a different cask from the official tap, so the
         // tap entry's adopt does not carry over to it
         assert!(!casks.options.brew_cask_adopt("elsewhere"));
+        Ok(())
+    }
+
+    /// Prune unions declarations across environments so it can protect whatever
+    /// any environment declares, which means entries that are never active at
+    /// the same time land in one list. They are not in conflict, and an
+    /// unrelated manager's entries must not block a brew prune.
+    #[cfg(unix)]
+    #[test]
+    fn the_prune_union_is_not_checked_for_folded_names() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:jq" = "latest"
+                "winget:Git.Git" = { env = "prod" }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "winget:git.git" = { state = "absent", env = "dev" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        assert_eq!(brew.requests.len(), 1);
+        Ok(())
+    }
+
+    /// The same union, but with both spellings in one config file, which is the
+    /// shape that reaches the `filter_env`-gated aggregation rather than the
+    /// merge of current and tracked configs.
+    #[cfg(unix)]
+    #[test]
+    fn the_prune_union_is_not_checked_within_one_config() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:jq" = "latest"
+                "winget:Git.Git" = { env = "prod" }
+                "winget:git.git" = { state = "absent", env = "dev" }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:ffmpeg" = "latest"
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        assert_eq!(brew.requests.len(), 2);
         Ok(())
     }
 
