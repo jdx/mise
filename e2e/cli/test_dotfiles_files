@@ -798,6 +798,15 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 "~/.edit-link-destination" = { mode = "track" }
 EOF
 assert_not_contains "EDITOR=\"$PWD/editor-write\" mise dotfiles edit ~/.edit-link 2>&1" "history does not capture"
+
+# a dangling link is written through just the same, so it warns too
+ln -sf ~/.edit-link-missing ~/.edit-dangling
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-dangling" = { mode = "track" }
+EOF
+assert_contains "EDITOR=\"$PWD/editor-write\" mise dotfiles edit ~/.edit-dangling 2>&1" "history does not capture"
+assert "cat ~/.edit-link-missing" "edited source"
 : >"$MISE_CONFIG_DIR/config.toml"
 
 # a target that is both tracked and deployed is edited through its source, so

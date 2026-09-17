@@ -186,7 +186,20 @@ fn warn_if_the_edit_escapes_history(config: &Config, target: &std::path::Path) {
     if !file::is_symlink_or_junction(target) {
         return;
     }
-    let destination = tracked::normalize(target);
+    // resolve the chain the way an atomic write does, so a dangling or
+    // unreadable link — which still writes through to its destination — is
+    // reported rather than mistaken for a path that escapes nothing
+    let destination = match file::atomic_write_target(target) {
+        Ok(destination) => tracked::normalize_target(&destination),
+        Err(err) => {
+            // an unresolvable chain is one the editor cannot open either
+            debug!(
+                "dotfiles: could not resolve {}: {err:#}",
+                target.display_user()
+            );
+            return;
+        }
+    };
     if destination == target {
         return;
     }
