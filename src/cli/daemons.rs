@@ -117,22 +117,26 @@ impl Daemons {
             roots.push(root.to_path_buf());
         }
         let (names, flags) = split_args(action, &args)?;
+        let names: Vec<String> = names
+            .iter()
+            .map(|name| loaded.resolve_alias(name))
+            .collect();
         let install = matches!(action, "start" | "restart");
         let mut root_ids = Vec::new();
         for root in &roots {
             let previous = runtime::read_state(root)?;
-            let namespace = if previous.namespace.is_empty() {
-                runtime::namespace(root)?
-            } else {
-                previous.namespace.clone()
+            let namespace = match loaded.namespace_for(root) {
+                Some(namespace) => namespace.to_string(),
+                None if previous.namespace.is_empty() => runtime::namespace(root)?,
+                None => previous.namespace.clone(),
             };
             let mut ids = if install { Vec::new() } else { previous.ids };
             ids.extend(
                 loaded
                     .for_root(root)
                     .daemons
-                    .keys()
-                    .map(|name| format!("{namespace}/{name}")),
+                    .values()
+                    .map(|daemon| format!("{namespace}/{}", daemon.name)),
             );
             root_ids.push(ids);
         }
@@ -153,7 +157,11 @@ impl Daemons {
                 continue;
             }
             let scoped = runtime::config_for_root(&config, &root).await?;
-            let set = scoped.daemons()?.for_root(&root);
+            let requested = loaded.for_root(&root);
+            // Reload from the root's own hierarchy so the definition and its
+            // `mise x` environment come from the project that owns it, then keep
+            // only the daemons this invocation actually inherited or imported.
+            let set = scoped.daemons()?.for_root(&root).restricted_to(&requested);
             let previous = runtime::read_state(&root)?;
             if set.daemons.is_empty() && previous.ids.is_empty() {
                 continue;
@@ -161,12 +169,19 @@ impl Daemons {
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if action == "ls" {
+                // An explicit namespace is known before anything is registered,
+                // so listing can show the qualified ID another project would use.
+                let listed = if previous.namespace.is_empty() {
+                    set.namespace_for(&root).unwrap_or_default()
+                } else {
+                    previous.namespace.as_str()
+                };
                 let mut ids = previous.ids.clone();
-                for name in set.daemons.keys() {
-                    let id = if previous.namespace.is_empty() {
+                for name in set.daemons.values().map(|d| &d.name) {
+                    let id = if listed.is_empty() {
                         name.clone()
                     } else {
-                        format!("{}/{name}", previous.namespace)
+                        format!("{listed}/{name}")
                     };
                     if !ids.contains(&id) {
                         ids.push(id);
@@ -174,7 +189,7 @@ impl Daemons {
                 }
                 for id in ids {
                     let name = id.rsplit('/').next().unwrap_or(&id);
-                    let daemon = set.daemons.get(name);
+                    let daemon = set.find(name);
                     let status = if let Ok(runtime) = &runtime
                         && !previous.namespace.is_empty()
                     {
@@ -203,10 +218,7 @@ impl Daemons {
                 .cloned()
                 .collect();
             if install {
-                selected.retain(|id| {
-                    set.daemons
-                        .contains_key(id.rsplit('/').next().unwrap_or(id))
-                });
+                selected.retain(|id| set.find(id.rsplit('/').next().unwrap_or(id)).is_some());
             }
             if selected.is_empty() {
                 continue;

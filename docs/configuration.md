@@ -613,7 +613,11 @@ See [Tasks](/tasks/) for the full list of configuration options.
 
 ### `[daemons]`
 
-Experimental custom processes and managed Postgres/Redis presets share one section. Higher-precedence declarations replace the complete same-name daemon; explicit environment variables override preset exports. See [daemons](/daemons).
+Experimental custom processes and managed Postgres/Redis presets share one section. Higher-precedence declarations replace the complete same-name daemon; explicit environment variables override preset exports. A daemon table with `project` runs a daemon that a sibling project declares, under that project's namespace and root. See [daemons](/daemons).
+
+### `[daemons_settings]`
+
+Project-wide daemon options. `namespace` replaces the hashed pitchfork namespace with a fixed one so other projects can name these daemons; `namespace_per_worktree` (default `true`) keeps linked git worktrees of one repository apart. See [daemons](/daemons#namespaces).
 
 ## Environment variables
 

@@ -52,6 +52,81 @@ Lifecycle commands accept project daemon names; `--group` is rejected because
 pitchfork groups can include daemons outside the project. Use pitchfork directly
 for group operations.
 
+## Namespaces
+
+Each project's daemons live in a pitchfork namespace. By default that namespace is
+the project directory name plus a hash of its path, which never collides between
+unrelated checkouts but is not predictable enough to write down. Name it explicitly
+when another project needs to refer to these daemons:
+
+```toml
+[daemons_settings]
+namespace = "entiredb"
+```
+
+Namespaces follow the same rules as daemon names: letters, numbers, `.`, `_` and
+`-`, no leading or trailing `-`, and no `--`. Daemon IDs are then `entiredb/<name>`.
+A `namespace` key in a project's own `pitchfork.toml` still wins over the default;
+`[daemons_settings]` wins over both.
+
+Changing the namespace of a project whose daemons are running fails; stop them
+first. Once nothing is running, mise adopts the new namespace and forgets IDs from
+the old one.
+
+### Worktrees
+
+An explicit namespace is written in a configuration file, so every linked git
+worktree of the same repository would claim the same one and the two checkouts
+would fight over the same daemon IDs and state directory. In a linked worktree
+mise therefore appends a worktree-specific suffix, giving `entiredb-<hash>`. The
+main checkout keeps the unsuffixed name.
+
+That trade-off is deliberate: predictable IDs in the main checkout, isolation
+everywhere else. It means a qualified `depends` written against `entiredb/db`
+resolves in the main checkout but not from a linked worktree. If you would rather
+have every worktree share one set of daemons, and you accept that two worktrees
+running them at once will collide, turn the suffix off:
+
+```toml
+[daemons_settings]
+namespace = "entiredb"
+namespace_per_worktree = false
+```
+
+## Daemons from another project
+
+A daemon table with `project` pulls in a daemon that a sibling project declares,
+instead of redefining it:
+
+```toml
+[daemons.pipeline]
+project = "../mirror-pipeline"
+name = "worker"
+
+[daemons.api]
+run = "npm run dev"
+depends = ["pipeline"]
+```
+
+`project` is a directory containing a mise configuration with its own `[daemons]`;
+a relative path resolves against this project root. `name` is the daemon's name
+inside that project and defaults to the local key. The referenced directory must be
+trusted, exactly as it would be if you had changed into it.
+
+The imported daemon keeps its own project: it runs with that directory as its
+working directory, under that project's namespace, and with that project's state,
+data, and `mise x` environment. `mise daemons start pipeline` from this project
+starts `mirror/worker` in the sibling checkout. Because the daemon belongs to the
+other project, its tool and its exported environment variables stay there —
+`[daemons]` presets in a referenced project do not export `DATABASE_URL` here.
+
+`depends` may name the imported daemon by its local key; mise rewrites it to the
+qualified ID, since pitchfork resolves bare names only inside one namespace. You can
+also write the qualified ID yourself.
+
+If the directory is missing, mise names the path it expected and the setting to
+change, so a developer who keeps sibling checkouts somewhere else knows what to fix.
+
 ## Database presets
 
 | Preset     | Tool       | Default port | Environment defaults                                       |

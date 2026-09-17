@@ -153,6 +153,7 @@ pub(crate) fn expand(
         preset: Some(preset_name.into()),
         tool: Some((tool, version.into())),
         exports,
+        imported: false,
     })
 }
 
