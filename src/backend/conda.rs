@@ -667,17 +667,13 @@ impl CondaBackend {
             let src = install_path.join(&entry.relative_path);
             let dst = Self::bin_launcher_path(&symlink_dir, bin_name, cfg!(windows));
             if src.exists() && !dst.exists() {
-                if needs_launcher {
-                    Self::create_bin_launcher(&install_path, &src, &dst)?;
-                } else {
-                    // A symlinked command is invoked as `<prefix>/.mise-bins/<name>` rather
-                    // than `<prefix>/bin/<name>`, so its `argv[0]` differs from the launcher's.
-                    // That is safe only because the two directories sit at the same depth:
-                    // `dirname(argv[0])/../share` reaches `<prefix>/share` either way, and a
-                    // sibling lookup finds the package's other commands, which this directory
-                    // holds in full whenever it is symlinked. See `mise_bins_dir_sits_beside_bin`.
-                    file::make_symlink_or_copy(&src, &dst)?;
-                }
+                Self::place_bin_entry(
+                    &install_path,
+                    &src,
+                    &dst,
+                    needs_launcher,
+                    file::make_symlink_or_copy,
+                )?;
             }
         }
 
@@ -755,6 +751,41 @@ impl CondaBackend {
                     file::hard_link_or_copy(&src, &dst)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Places one of the package's commands in `.mise-bins`.
+    ///
+    /// A command that needs the prefix activated gets a launcher; the rest are symlinked.
+    /// A symlinked command is invoked as `<prefix>/.mise-bins/<name>` rather than
+    /// `<prefix>/bin/<name>`, so its `argv[0]` differs from the launcher's. That is safe
+    /// only because the two directories sit at the same depth: `dirname(argv[0])/../share`
+    /// reaches `<prefix>/share` either way, and a sibling lookup finds the package's other
+    /// commands, which this directory holds in full whenever it is symlinked. See
+    /// `mise_bins_dir_sits_beside_bin`.
+    ///
+    /// `link` is the symlink step, taken as an argument so the fallback below can be tested.
+    fn place_bin_entry(
+        prefix: &Path,
+        src: &Path,
+        dst: &Path,
+        needs_launcher: bool,
+        link: impl FnOnce(&Path, &Path) -> Result<()>,
+    ) -> Result<()> {
+        if needs_launcher {
+            return Self::create_bin_launcher(prefix, src, dst);
+        }
+        if let Err(err) = link(src, dst) {
+            // A filesystem that refuses symlinks would otherwise fail an install that used
+            // to work, since every command was a written file before. Fall back to the
+            // launcher: for this package its activation is unnecessary rather than wrong,
+            // which is a better trade than no install at all.
+            debug!(
+                "conda: symlinking {} failed, falling back to a launcher: {err:#}",
+                file::display_path(dst)
+            );
+            return Self::create_bin_launcher(prefix, src, dst);
         }
         Ok(())
     }
@@ -1490,6 +1521,30 @@ mod tests {
                 prefix.display()
             )
         );
+    }
+
+    /// Installing onto a filesystem that refuses symlinks must not fail a package that
+    /// would otherwise be symlinked — before this, every command was a written file.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_symlink_falls_back_to_a_launcher() {
+        let temp = tempfile::tempdir().unwrap();
+        let prefix = temp.path().join("prefix");
+        let target = prefix.join("bin/tool");
+        let dst = prefix.join(MISE_BINS_DIR).join("tool");
+        file::create_dir_all(target.parent().unwrap()).unwrap();
+        file::create_dir_all(dst.parent().unwrap()).unwrap();
+        file::write(&target, "\x7fELF-ish binary").unwrap();
+
+        CondaBackend::place_bin_entry(&prefix, &target, &dst, false, |_, _| {
+            Err(eyre::eyre!("read-only or symlink-hostile filesystem"))
+        })
+        .unwrap();
+
+        assert!(!dst.is_symlink());
+        let launcher = std::fs::read_to_string(&dst).unwrap();
+        assert!(launcher.contains("export CONDA_PREFIX"));
+        assert!(launcher.contains("exec '"));
     }
 
     /// A tool that resolves its resources relative to `argv[0]` without following the
