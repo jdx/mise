@@ -39578,6 +39578,38 @@ packages:
           - windows
           - amd64
   - type: github_release
+    repo_owner: floci-io
+    repo_name: floci-cli
+    description: Official command-line interface for Floci
+    files:
+      - name: floci
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.1.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.1.4")
+        asset: floci-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: floci-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+          - windows/amd64
+  - type: github_release
     repo_owner: flosell
     repo_name: iam-policy-json-to-terraform
     description: Small tool to convert an IAM Policy in JSON format into a Terraform aws_iam_policy_document
@@ -80630,11 +80662,21 @@ packages:
       - darwin
       - linux
       - amd64
-    version_constraint: semver(">= 0.3.9")
+    version_constraint: "false"
     version_overrides:
       - version_constraint: semver("< 0.3.9")
         rosetta2: true
+      - version_constraint: semver("< 0.11.6")
       - version_constraint: "true"
+        cosign:
+          bundle:
+            type: github_release
+            asset: regbot-{{.OS}}-{{.Arch}}.sigstore.json
+          opts:
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --certificate-identity
+            - https://github.com/regclient/regclient/.github/workflows/go.yml@refs/tags/{{.Version}}
   - name: regclient/regclient/regctl
     type: github_release
     repo_owner: regclient
@@ -81424,6 +81466,17 @@ packages:
             src: rm-version-switcher-aarch64
         supported_envs:
           - linux/arm64
+  - type: github_release
+    repo_owner: robgonnella
+    repo_name: minienv
+    description: Effortless remote mini environments generated directly from docker compose config
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: minienv-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
   - type: github_release
     repo_owner: robinovitch61
     repo_name: kl
