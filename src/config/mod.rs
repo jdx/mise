@@ -3967,7 +3967,12 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
 /// change what the lockfile should contain has to run generation itself.
 /// Without this, a config-only removal leaves the dropped tool's entry — and the
 /// dependency sidecar it references — behind until the next install regenerates.
-async fn generate_lockfiles_after_changes(
+///
+/// Call this only when the configuration actually changed. Generation resolves
+/// and rewrites, so running it for a command that turned out to be a no-op would
+/// both rewrite an unrelated stale lockfile and let a resolution failure fail a
+/// command that had nothing to do.
+pub(crate) async fn generate_lockfiles_after_changes(
     config: &Arc<Config>,
     new_versions: &[ToolVersion],
     lockfile_update_mode: lockfile::LockfileUpdateMode,
@@ -4025,8 +4030,7 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks_for_scope(
         &changed_install_paths,
         lockfile::LockfileUpdateMode::Normal,
     )
-    .await?;
-    generate_lockfiles_after_changes(config, &[], lockfile::LockfileUpdateMode::Normal).await
+    .await
 }
 
 async fn rebuild_shims_and_runtime_symlinks_for_changes(

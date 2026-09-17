@@ -155,6 +155,19 @@ impl Unuse {
             let config = Config::reset().await?;
             let ts = config.get_toolset().await?;
             config::rebuild_shims_and_runtime_symlinks_for_scope(&config, ts, shim_scope).await?;
+            // Only an edited config changes what the lockfile should contain;
+            // pruning installed versions does not. Under
+            // `lockfile_mode = "generate"` nothing else rebuilds the file here,
+            // so without this the removed tool's entry — and the dependency
+            // sidecar it points at — survive until the next install.
+            if !removed.is_empty() {
+                config::generate_lockfiles_after_changes(
+                    &config,
+                    &[],
+                    crate::lockfile::LockfileUpdateMode::Normal,
+                )
+                .await?;
+            }
         }
 
         Ok(())
