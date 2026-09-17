@@ -6,7 +6,10 @@ use async_trait::async_trait;
 use eyre::bail;
 use serde::Deserialize;
 
-use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
+use super::{
+    InstallOpts, PackageDesiredState, PackageRequest, PackageState, PackageStatus,
+    SystemPackageManager,
+};
 use crate::result::Result;
 
 /// `scoop bucket add` exit code for a bucket that is already present.
@@ -160,6 +163,32 @@ fn bucket_add_args(bucket: &str) -> Vec<String> {
 
 fn refresh_args() -> Vec<String> {
     vec!["update".to_string()]
+}
+
+/// Rejects two declarations that name one app but disagree about its state.
+///
+/// `[bootstrap.packages]` keys on the literal spec, so `scoop:Git` and
+/// `scoop:git` are two entries while Scoop resolves both to one app. The driver
+/// removes before it installs and decides both from the pre-removal status, so
+/// an absent declaration would win for an installed app and a present one for a
+/// missing app — the result would follow the machine instead of the config.
+fn check_no_conflict(pkgs: &[PackageRequest]) -> Result<()> {
+    for (index, pkg) in pkgs.iter().enumerate() {
+        let app = app_name(&pkg.name);
+        for other in &pkgs[index + 1..] {
+            if app_name(&other.name).eq_ignore_ascii_case(app) && other.desired != pkg.desired {
+                let (present, absent) = match pkg.desired {
+                    PackageDesiredState::Present => (&pkg.name, &other.name),
+                    PackageDesiredState::Absent => (&other.name, &pkg.name),
+                };
+                bail!(
+                    "scoop: '{present}' and '{absent}' name the same app but ask for opposite \
+                     states; declare it once"
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Case-insensitive membership, the way Scoop and Windows compare names.
@@ -420,6 +449,7 @@ impl SystemPackageManager for ScoopManager {
             return Ok(vec![]);
         }
         check_supported(pkgs)?;
+        check_no_conflict(pkgs)?;
         let export = export().await?;
         Ok(pkgs
             .iter()
@@ -573,7 +603,14 @@ mod tests {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
-            desired: crate::system::packages::PackageDesiredState::Present,
+            desired: PackageDesiredState::Present,
+        }
+    }
+
+    fn absent(name: &str) -> PackageRequest {
+        PackageRequest {
+            desired: PackageDesiredState::Absent,
+            ..req(name, None)
         }
     }
 
@@ -694,6 +731,29 @@ mod tests {
         assert!(has_global(&export, "git") && has_local(&export, "git"));
         assert!(has_global(&export, "gh") && !has_local(&export, "gh"));
         assert!(!has_global(&export, "ripgrep") && has_local(&export, "ripgrep"));
+    }
+
+    #[test]
+    fn one_app_declared_both_present_and_absent_is_rejected() {
+        // Without this the driver would remove an installed app and install a
+        // missing one, so the config's meaning would depend on the machine.
+        let err = check_no_conflict(&[
+            req("ripgrep", None),
+            req("extras/Vscode", Some("1.99.0")),
+            absent("extras/vscode"),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "scoop: 'extras/Vscode' and 'extras/vscode' name the same app but ask for \
+             opposite states; declare it once"
+        );
+
+        // Agreeing duplicates and different apps stay allowed; deduplication
+        // already collapses them.
+        check_no_conflict(&[req("Git", None), req("git", Some("2.51.0"))]).unwrap();
+        check_no_conflict(&[absent("git"), absent("Git")]).unwrap();
+        check_no_conflict(&[req("git", None), absent("ripgrep")]).unwrap();
     }
 
     #[test]

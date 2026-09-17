@@ -20,6 +20,11 @@ installing, so a shared config does not depend on the machine having run that
 command already. A bucket Scoop does not know by name needs a one-time
 `scoop bucket add <name> <repo>`; mise does not manage bucket remotes.
 
+Declare each app once. Scoop compares app and bucket names
+case-insensitively, so `scoop:Git` and `scoop:git` are the same app; two such
+entries asking for opposite states are rejected rather than resolved by
+whichever the machine happens to have installed.
+
 Declare the app name, not a manifest URL or local path. Scoop can install from
 one, but it records the app under the name the manifest declares, which mise
 cannot know — the entry would read as missing on every run. mise rejects those
