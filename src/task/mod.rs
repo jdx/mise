@@ -3542,23 +3542,27 @@ where
             let Some(matcher) = task_name_glob(pat).ok() else {
                 return Ok(vec![]);
             };
-            let exact: Vec<&T> = self
+            // Keys that match without extension stripping suppress only the
+            // extension-bearing task that shares their identity, e.g. a file
+            // task `hello.sh` next to a toml task `hello` (#10298). Tasks in
+            // other groups keep matching through the stripped form (#13273).
+            let exact_keys: HashSet<&str> = self
                 .iter()
                 .filter(|(name, _)| task_name_matches(&matcher, name, false))
-                .map(|(_, task)| task)
-                .unique()
+                .map(|(name, _)| name.as_str())
                 .collect();
-            if !exact.is_empty() {
-                return Ok(exact);
-            }
-            let ext_stripped: Vec<&T> = self
+            let matched: Vec<&T> = self
                 .iter()
-                .filter(|(name, _)| task_name_matches(&matcher, name, true))
+                .filter(|(name, _)| {
+                    exact_keys.contains(name.as_str())
+                        || (task_name_matches(&matcher, name, true)
+                            && !exact_keys.contains(strip_extension(name)))
+                })
                 .map(|(_, task)| task)
                 .unique()
                 .collect();
-            if !ext_stripped.is_empty() {
-                return Ok(ext_stripped);
+            if !matched.is_empty() {
+                return Ok(matched);
             }
             if self.keys().any(|k| k.starts_with("//")) {
                 return self.get_matching(&format!("//{pat}"));
@@ -3652,20 +3656,33 @@ where
             path_matches && task_matches
         };
 
-        // Prefer exact task-name matches; fall back to extension-stripped matches
-        // only when no key matched exactly.
-        let exact: Vec<&T> = self
+        // The extension-stripped form of a key, keeping any monorepo path
+        // prefix (which may itself contain dots) intact.
+        let stripped_key = |k: &str| -> String {
+            match k.split_once(':') {
+                Some((path, task)) => format!("{path}:{}", strip_extension(task)),
+                None => strip_extension(k).to_string(),
+            }
+        };
+
+        // Keys that match without extension stripping suppress only the
+        // extension-bearing task that shares their identity, e.g. a file task
+        // `//pkg:hello.sh` next to a toml task `//pkg:hello` (#10298). A task
+        // in another package still matches through its stripped form, so one
+        // package declaring the task in toml no longer removes every other
+        // package's file task from a glob (#13273).
+        let exact_keys: HashSet<&str> = self
             .iter()
             .filter(|(k, _)| entry_matches(k.as_str(), false))
-            .map(|(_, t)| t)
-            .unique()
+            .map(|(k, _)| k.as_str())
             .collect();
-        if !exact.is_empty() {
-            return Ok(exact);
-        }
         Ok(self
             .iter()
-            .filter(|(k, _)| entry_matches(k.as_str(), true))
+            .filter(|(k, _)| {
+                exact_keys.contains(k.as_str())
+                    || (entry_matches(k.as_str(), true)
+                        && !exact_keys.contains(stripped_key(k).as_str()))
+            })
             .map(|(_, t)| t)
             .unique()
             .collect())

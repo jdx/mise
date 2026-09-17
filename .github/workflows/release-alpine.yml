@@ -15,7 +15,9 @@ concurrency:
   group: release-alpine-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
 
 env:
-  DRY_RUN: ${{ github.event_name == 'release' && '0' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.dry_run && '1' || '0')) || '1' }}
+  # `github.event.inputs` values are always strings, so the string "false" was
+  # truthy and pinned this to dry-run. The `inputs` context honors `type: boolean`.
+  DRY_RUN: ${{ (github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)) && '0' || '1' }}
   GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   GH_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}

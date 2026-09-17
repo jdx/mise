@@ -12,7 +12,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.9.9"
+version = "2026.9.10"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -278,7 +278,7 @@ which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "8", default-features = false, features = ["deflate"] }
-zstd = "0.13"
+zstd = "0.14"
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"

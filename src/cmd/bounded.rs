@@ -18,7 +18,7 @@ impl CmdLineRunner<'_> {
 
     /// Return the exit status and bounded output without replaying command output.
     pub(crate) async fn output_isolated(mut self, limit: usize) -> Result<std::process::Output> {
-        let _read_lock = RAW_LOCK.read().await;
+        let _read_lock = super::raw_read_lock().await;
         let timeout = self.timeout.unwrap_or(Duration::from_secs(5));
         self.cmd.kill_on_drop(true);
         self.cmd
