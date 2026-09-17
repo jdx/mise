@@ -1547,6 +1547,20 @@ impl ConfigFile for MiseToml {
                         crate::backend::backend_type::BackendType::Http
                             | crate::backend::backend_type::BackendType::S3
                     );
+                    // `install_env` is a typed core option, so it never reaches the
+                    // `opts` loop below and its values went to the installer
+                    // unrendered — `{{ env.HOME }}` arrived literally, unlike every
+                    // other tool option (#13306). Render it here, with `version`
+                    // bound to itself so the placeholder still round-trips: core
+                    // options are deliberately exempt from the backend `{version}`
+                    // normalization, and nothing renders `install_env` again later.
+                    let mut install_env_context = context.clone();
+                    install_env_context.insert("version", "{{version}}");
+                    for value in options.core.install_env.values_mut() {
+                        if let EnvValue::String(s) = value {
+                            *s = self.parse_template_with_context(&install_env_context, s)?;
+                        }
+                    }
                     for (k, v) in options.opts.iter_mut() {
                         self.parse_tool_option_value_template(
                             &opts_context,
@@ -3837,6 +3851,48 @@ mod tests {
             Some(&EnvValue::String("{{version}}".to_string()))
         );
         assert_eq!(opts.get("url"), Some("https://example.com/{version}"));
+        file::remove_file(&p).unwrap();
+    }
+
+    /// `install_env` is the documented way to give a tool an environment for its
+    /// download, install, and verification steps, but as a core option it skipped
+    /// the tool-option template pass and its values reached the installer raw.
+    /// See: <https://github.com/jdx/mise/discussions/13306>
+    #[tokio::test]
+    async fn test_install_env_renders_templates() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [env]
+        COMPAT_LIB_DIR = "/opt/curses-narrow-compat"
+
+        [tools]
+        node = { version = "1.0.0", install_env = { LD_LIBRARY_PATH = "{{env.COMPAT_LIB_DIR}}", KEEP = "{{version}}" } }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let opts = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "node")
+            .and_then(|(_, reqs)| reqs.first())
+            .unwrap()
+            .options();
+
+        assert_eq!(
+            opts.install_env.get("LD_LIBRARY_PATH"),
+            Some(&EnvValue::String("/opt/curses-narrow-compat".to_string()))
+        );
+        // Nothing renders install_env again, so the version placeholder is left
+        // as written rather than normalized the way backend options are.
+        assert_eq!(
+            opts.install_env.get("KEEP"),
+            Some(&EnvValue::String("{{version}}".to_string()))
+        );
         file::remove_file(&p).unwrap();
     }
 

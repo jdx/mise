@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Test that file tasks can extend a task template via `#MISE extends=...`
+
+cat <<'EOF' >mise.toml
+[task_templates.shared]
+description = "template description"
+alias = "sh"
+env = { FOO = "template_foo", BAR = "template_bar" }
+run = "echo template run"
+
+[task_templates.other]
+env = { FOO = "other_foo" }
+EOF
+
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/build
+#!/usr/bin/env bash
+#MISE extends="shared"
+#MISE env={BAR = "local_bar"}
+echo "FOO=$FOO BAR=$BAR"
+EOF
+chmod +x mise-tasks/build
+
+# `extends` is honored rather than reported as an unknown header field
+assert_not_contains "mise tasks ls 2>&1" "unknown field"
+
+# env deep merges the same way it does for a toml task
+assert "mise run build" "FOO=template_foo BAR=local_bar"
+
+# scalar fields fall back to the template
+assert_contains "mise tasks ls" "template description"
+assert_contains "mise run sh" "FOO=template_foo"
+
+# the script file is the command: the template's `run` must not replace or shadow it
+assert_not_contains "mise run build" "template run"
+
+# a local value still wins over the template's
+cat <<'EOF' >mise-tasks/build
+#!/usr/bin/env bash
+#MISE extends="shared"
+#MISE description="local description"
+echo "FOO=$FOO"
+EOF
+chmod +x mise-tasks/build
+
+assert_contains "mise tasks ls" "local description"
+assert_not_contains "mise tasks ls" "template description"
+
+# an unknown template name is an error rather than a silent fallback
+cat <<'EOF' >mise-tasks/build
+#!/usr/bin/env bash
+#MISE extends="nope"
+echo hi
+EOF
+chmod +x mise-tasks/build
+
+assert_fail "mise run build" "which was not found"

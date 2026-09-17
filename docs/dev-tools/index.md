@@ -84,6 +84,13 @@ For migration guidance, see [comparison to asdf](./comparison-to-asdf).
 Tool versions and options can reference environment variables and
 [`vars`](/configuration/vars.html), including values from `_.source`, `_.file`,
 and environment modules. Those values are resolved before tool templates render.
+This includes `install_env`, which is useful for pointing an install at a
+directory that only exists under the current user's home:
+
+```toml
+[tools]
+swift = { version = "6.3.3", install_env = { LD_LIBRARY_PATH = "{{env.HOME}}/.local/lib/compat" } }
+```
 
 ## Tool Options
 
