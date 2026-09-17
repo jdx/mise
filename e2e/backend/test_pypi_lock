@@ -41,6 +41,15 @@ touch index/publish
 mise lock
 assert_succeed 'cmp first.lock mise.lock'
 assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
+# Generate mode drops a removed tool's entry and its sidecar during `mise unuse`
+# itself, rather than leaving both behind until some later install regenerates.
+MISE_LOCKFILE_MODE=generate mise unuse --no-prune pipx:mise-lock-cli
+assert_not_contains "cat mise.lock" 'pipx:mise-lock-cli'
+assert_fail 'test -d .mise/locks/pipx-mise-lock-cli'
+cp original.toml mise.toml
+cp first.lock mise.lock
+cp -R first-sidecars/. .mise/locks/
+assert_contains "mise x --locked -- lock-cli" 'dependency=1.0.0'
 mise lock --bump pipx:mise-lock-cli
 assert_contains "mise x --locked -- lock-cli" 'dependency=2.0.0'
 second_path=$(mise where pipx:mise-lock-cli)
