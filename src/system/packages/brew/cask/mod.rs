@@ -1385,10 +1385,20 @@ fn install_app(
         &logical_target,
         !require_unowned,
     ) {
-        // Leave nothing staged behind a refusal.
+        if err.downcast_ref::<AppTargetCollision>().is_none() {
+            // A real activation failure. The swap may already have happened and
+            // only the caskroom symlink failed, so leave both staged copies in
+            // place for recovery and report what actually went wrong.
+            return Err(err);
+        }
+        // Nothing was activated, so the staged copies are safe to discard.
         let _ = remove_all_at(&parent.fd, &tmp_name);
         let _ = file::remove_all(&caskroom_app);
-        return Err(err.wrap_err(unowned_target_error(manager, &logical_target)));
+        return Err(err.wrap_err(format!(
+            "{}: '{}' was created by something else while this app was being staged; it was left untouched",
+            manager.label(),
+            logical_target.display()
+        )));
     }
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
     let relative = Path::new(".").join(&name);
@@ -1577,6 +1587,22 @@ fn replace_caskroom_app_with_symlink(caskroom_app: &Path, target: &Path) -> Resu
 /// activation fails. All operations are `*at`-relative to the verified
 /// descriptor, so no application directory pathname is ever re-resolved.
 #[cfg(unix)]
+/// An app appeared at the destination while this entry staged its own bundle.
+///
+/// Typed so the caller can tell it apart from an ordinary activation failure:
+/// only this one means nothing was activated and the staged copies are safe to
+/// discard.
+#[derive(Debug)]
+struct AppTargetCollision;
+
+impl std::fmt::Display for AppTargetCollision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("an app appeared at the destination while this one was being staged")
+    }
+}
+
+impl std::error::Error for AppTargetCollision {}
+
 fn swap_app_at(
     parent: &TrustedOperationParent,
     name: &std::ffi::OsStr,
@@ -1602,20 +1628,21 @@ fn swap_app_at(
             nix::sys::stat::Mode::from_bits_truncate(0o755),
         ) {
             Ok(()) => {}
-            Err(nix::errno::Errno::EEXIST) => {
-                return Err(eyre!(
-                    "an app appeared at '{}' while this one was being staged; it was left untouched",
-                    Path::new(name).display()
-                ));
-            }
+            Err(nix::errno::Errno::EEXIST) => return Err(AppTargetCollision.into()),
             Err(err) => return Err(err.into()),
         }
-        return nix::fcntl::renameat(&parent.fd, tmp_name, &parent.fd, name).wrap_err_with(|| {
-            format!(
-                "brew-cask: failed to activate {}",
-                Path::new(name).display()
-            )
-        });
+        if let Err(err) = nix::fcntl::renameat(&parent.fd, tmp_name, &parent.fd, name) {
+            // Drop the placeholder, or a later apply reads the empty bundle
+            // left behind as a foreign app and refuses.
+            let _ = nix::unistd::unlinkat(&parent.fd, name, nix::unistd::UnlinkatFlags::RemoveDir);
+            return Err(err).wrap_err_with(|| {
+                format!(
+                    "brew-cask: failed to activate {}",
+                    Path::new(name).display()
+                )
+            });
+        }
+        return Ok(());
     }
     // Atomic swap: rename the existing target aside before putting the new one
     // in place so a failure leaves the old app intact rather than nothing.

@@ -8876,7 +8876,7 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     )
     .unwrap_err()
     .to_string();
-    assert!(err.contains("appeared at"), "{err}");
+    assert!(err.contains("appeared at the destination"), "{err}");
 
     // Untouched: same contents, same inode, not moved aside.
     assert_eq!(
@@ -8890,7 +8890,28 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     );
     assert!(!root.join("Example.mise-old-test").exists());
 
+    // A rename failure must not leave the placeholder behind: a later apply
+    // would read that empty bundle as a foreign app and refuse forever.
+    file::remove_all(&target)?;
+    let missing_tmp = std::ffi::OsStr::new("Example.absent-tmp");
+    assert!(
+        swap_app_at(
+            &parent,
+            std::ffi::OsStr::new("Example.app"),
+            missing_tmp,
+            std::ffi::OsStr::new("Example.mise-old-test"),
+            false,
+        )
+        .is_err()
+    );
+    assert!(
+        !target.exists(),
+        "an empty placeholder was left at the target"
+    );
+
     // With ownership, replacement is still what happens.
+    file::create_dir_all(target.join("Contents"))?;
+    crate::file::write(target.join("Contents/marker"), "theirs")?;
     swap_app_at(
         &parent,
         std::ffi::OsStr::new("Example.app"),
