@@ -139,7 +139,9 @@ pub(crate) fn describe(entries: &[(Entry, u64)]) -> Vec<String> {
 pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<Outcome> {
     // The root is gone, so pitchfork runs from the state directory instead.
     let cwd = &entry.dir;
-    let Some(lock) = crate::lock_file::LockFile::at(&cwd.join("project.lock")).try_lock()? else {
+    let Some(lock) =
+        crate::lock_file::LockFile::at(&super::lock_file_for_state_dir(cwd)).try_lock()?
+    else {
         warn!(
             "keeping {}: another mise process holds its daemon lock",
             display_path(cwd)
@@ -207,47 +209,13 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         );
         return Ok(Outcome::Kept);
     }
-    if !detach_and_delete(cwd, lock)? {
-        return Ok(Outcome::Kept);
-    }
-    Ok(Outcome::Removed)
-}
-
-/// Deletes a state directory whose `project.lock` the caller holds.
-///
-/// The lock file lives inside the directory being deleted, which rules out
-/// deleting it in place: Windows refuses to remove a file another handle still
-/// holds open, and releasing the lock first would let a racing `prepare()` for
-/// a restored project write fresh state into the directory a moment before it
-/// is deleted. Renaming the directory while the lock is still held closes both:
-/// the rename is atomic, and afterwards nothing else can reach what is being
-/// deleted, because a later `prepare()` locks and rebuilds the original path.
-///
-/// A rename that fails keeps the state rather than falling back to a racy
-/// delete. A directory left behind by a crash between the rename and the delete
-/// still carries its `state.json`, so the next prune finds it and finishes the
-/// job.
-fn detach_and_delete(dir: &Path, lock: fslock::LockFile) -> Result<bool> {
-    let Some(parent) = dir.parent() else {
-        warn!("keeping {}: it has no parent directory", display_path(dir));
-        return Ok(false);
-    };
-    let name = dir.file_name().unwrap_or_default().to_string_lossy();
-    let detached = parent.join(format!(
-        ".pruning-{name}-{}-{}",
-        std::process::id(),
-        crate::hash::hash_to_str(&dir)
-    ));
-    if let Err(err) = std::fs::rename(dir, &detached) {
-        warn!(
-            "keeping {}: cannot detach it for removal: {err}",
-            display_path(dir)
-        );
-        return Ok(false);
-    }
+    // The lock is a sibling of this directory, so it stays valid through the
+    // deletion: nothing else can prepare this state until the lock is dropped,
+    // which happens only once there is nothing left to protect. The empty lock
+    // file is left in place, the way every other mise lock file is.
+    crate::file::remove_all(cwd)?;
     drop(lock);
-    crate::file::remove_all(&detached)?;
-    Ok(true)
+    Ok(Outcome::Removed)
 }
 
 #[cfg(test)]
@@ -335,7 +303,7 @@ mod tests {
         let dir = write_state(&base, "gone", &gone, &[("db/one", 1)]);
         let entry = orphans(&base).unwrap().remove(0);
 
-        let held = crate::lock_file::LockFile::at(&dir.join("project.lock"))
+        let held = crate::lock_file::LockFile::at(&super::super::lock_file_for_state_dir(&dir))
             .try_lock()
             .unwrap()
             .unwrap();
@@ -349,20 +317,23 @@ mod tests {
         assert!(dir.join("state.json").exists());
     }
 
-    #[test]
-    fn deletion_detaches_the_directory_before_releasing_its_lock() {
+    #[tokio::test]
+    async fn the_lock_guarding_a_state_directory_outlives_it() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
         let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
-        let lock = crate::lock_file::LockFile::at(&dir.join("project.lock"))
-            .try_lock()
-            .unwrap()
-            .unwrap();
-        assert!(detach_and_delete(&dir, lock).unwrap());
-        assert!(!dir.exists());
-        // Nothing is left under the state root, detached or otherwise, so a
-        // later prepare() for this path starts from a clean directory.
-        assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0);
+        let lock = super::super::lock_file_for_state_dir(&dir);
+        // A sibling, not a file inside the directory being deleted: prune holds
+        // it across the removal, so no other process can write state into a
+        // directory that is on its way out.
+        assert_eq!(lock.parent(), dir.parent());
+        assert!(!lock.starts_with(&dir));
+
+        let entry = orphans(&base).unwrap().remove(0);
+        assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
+        // A lock file is not a state directory, so it is never itself an entry.
+        std::fs::write(&lock, "").unwrap();
+        assert_eq!(scan(&base).unwrap().len(), 1);
     }
 
     #[test]

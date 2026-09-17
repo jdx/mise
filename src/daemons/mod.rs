@@ -43,6 +43,25 @@ pub(crate) fn state_dir(root: &Path) -> PathBuf {
         ))
 }
 
+/// The lock serializing everything that touches one project's daemon state.
+///
+/// Deliberately a sibling of [`state_dir`] rather than a file inside it.
+/// `mise daemons prune` deletes that directory, and a lock living inside the
+/// directory being deleted cannot be held across the deletion: releasing it
+/// first leaves a window for another process to write fresh state into the
+/// doomed directory, and Windows refuses to delete a file whose handle is still
+/// open. As a sibling it stays valid through the removal.
+pub(crate) fn lock_file(root: &Path) -> PathBuf {
+    let dir = state_dir(root);
+    lock_file_for_state_dir(&dir)
+}
+
+/// [`lock_file`] for a state directory whose project root may no longer exist.
+pub(crate) fn lock_file_for_state_dir(dir: &Path) -> PathBuf {
+    let name = dir.file_name().unwrap_or_default().to_string_lossy();
+    dir.with_file_name(format!("{name}.lock"))
+}
+
 pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let mut declarations = IndexMap::new();
     for cf in files.values().rev() {
