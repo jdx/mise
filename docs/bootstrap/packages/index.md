@@ -151,26 +151,13 @@ Unknown managers produce a warning and a package-plugin installation hint.
 Their entries are ignored, allowing a configuration to include managers a
 particular mise installation does not yet support.
 
-Entries are keyed by the spec exactly as written, so two spellings of one
-package are two entries. For most managers that is correct — `apt:Git` and
-`apt:git` really are two different packages. The Windows managers are the
-exception: WinGet matches package IDs case-insensitively, and Scoop compares
-app and bucket names case-insensitively and resolves an app with or without its
-bucket, so `winget:Git.Git` and `winget:git.git`, or `scoop:extras/Git` and
-`scoop:git`, each name one package twice. When two such entries disagree about
-`version` or `state`, mise rejects the configuration and names both spellings
-instead of letting the machine's current state decide which declaration wins:
-
-```toml
-[bootstrap.packages]
-"winget:Git.Git" = "latest"
-"winget:git.git" = { state = "absent" } # error: declare it once
-```
-
-Entries that a selector such as `os` or `env` keeps apart on a given host never
-overlap, so declaring one spelling per platform or environment is fine.
-`mise bootstrap packages prune` is deliberate about this: it protects whatever
-any environment declares, so it never treats that union as a conflict.
+Declare each package using a consistent spelling across your configuration
+files. WinGet package IDs and Scoop app names are case-insensitive; Scoop bucket
+prefixes do not distinguish installed apps. If active declarations refer to the
+same package but specify different versions or states, mise reports an error.
+Remove the duplicate or use the same configuration key to override an earlier
+declaration. Entries excluded by `os` or `env` selectors do not participate in
+this check.
 
 ## Commands
 
