@@ -907,4 +907,76 @@ end
         assert!(!denied.exists());
         Ok(())
     }
+
+    const BUILD_SHIM_RB: &str = include_str!("shim.rb");
+
+    /// Both shims define the `Language::*` namespace, and they have to stay in
+    /// step. A mixin that resolves while extracting metadata but not during a
+    /// source build would fail late, as a NameError, after the download has
+    /// already happened.
+    #[test]
+    fn language_mixin_definitions_match_across_shims() {
+        fn language_module(src: &str) -> &str {
+            let start = src
+                .find("\nmodule Language\n")
+                .expect("shim defines no Language module");
+            let rest = &src[start + 1..];
+            let end = rest
+                .find("\nend\n")
+                .expect("unterminated Language module");
+            &rest[..end + "\nend\n".len()]
+        }
+        assert_eq!(
+            language_module(METADATA_SHIM_RB),
+            language_module(BUILD_SHIM_RB),
+        );
+    }
+
+    /// A formula pulls a Language mixin in from its class body. That is a
+    /// constant reference, so it is resolved before any DSL `method_missing`
+    /// can intervene: an undefined one aborts evaluation on the `include` line
+    /// itself, and everything declared below it is never read.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn resolves_language_mixin_constants() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let source = r#"
+class Widget < Formula
+  include Language::Python::Virtualenv
+  include Language::Python::Shebang
+  include Language::Node::Shebang
+  include Language::Perl::Shebang
+  include Language::PHP::Shebang
+  include Language::Java
+  version "1.2.3"
+  url "https://example.com/widget-1.2.3.tar.gz"
+  sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  depends_on "python"
+end
+"#;
+        let mut runner = CmdLineRunner::new(&ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(METADATA_SHIM_RB)
+            .stdin_string(source.to_string())
+            .env("MISE_BREW_NAME", "widget")
+            .env("MISE_BREW_TAP", "acme/tools")
+            .env("MISE_BREW_SOURCE_PATH", "Formula/widget.rb")
+            .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
+            .env("MISE_BREW_TAP_COMMIT", "deadbeef")
+            .env("MISE_BREW_MACOS_VERSION", "15.3")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", std::env::consts::ARCH)
+            .with_sandbox(metadata_sandbox()?);
+        runner.apply_sandbox().await?;
+        let formula: Formula = serde_json::from_str(&runner.read().await?)?;
+        assert_eq!(formula.versions.stable.as_deref(), Some("1.2.3"));
+        // The declarations below the includes are the actual point: they are
+        // what a NameError on the first `include` would have hidden.
+        assert_eq!(formula.dependencies, ["python"]);
+        Ok(())
+    }
 }
