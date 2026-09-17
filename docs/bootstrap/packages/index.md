@@ -253,9 +253,9 @@ Remove `--dry-run` to apply the plan. The scope depends on the manager:
   `--manager` is omitted.
 - **`brew-cask`** removes only mise-owned direct artifacts with current receipts
   and unchanged content fingerprints. It skips Homebrew-owned casks, older
-  receipts, pkg and command-wrapper artifacts, lifecycle actions, changed or
-  shared targets, and incomplete transactions. Each skip includes a reason;
-  `zap` metadata is never applied.
+  receipts, pkg, installer, command-wrapper and generic artifacts, lifecycle
+  actions, changed or shared targets, and incomplete transactions. Each skip
+  includes a reason; `zap` metadata is never applied.
 - **Package plugins** remove only packages mise observed changing from missing
   to installed during `PackageInstall`. Existing or manually installed
   packages are not adopted. The plugin must implement `PackageUninstall`;
@@ -342,8 +342,8 @@ An app that appears at the destination while mise is staging its own bundle is
 refused the same way, and left untouched:
 
 ```
-macos-app:example: an app appeared at '/Applications/Example.app' while this one
-was being staged; it was left untouched
+macos-app: '/Applications/Example.app' was created by something else while this
+app was being staged; it was left untouched
 ```
 
 A dry run warns about an existing unowned app, but cannot determine whether
