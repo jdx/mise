@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
@@ -2879,6 +2879,46 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let filter = !self.include_prereleases(selection_opts);
         let versions = self.fuzzy_match_filter(versions, query, filter);
         Ok(self.version_order(selection_opts)?.order(versions))
+    }
+
+    /// Remote versions the release-age cutoff excluded, in listing order.
+    ///
+    /// Resolution calls this only after a filtered listing already failed to
+    /// produce a match, so the remote-version cache is warm and this adds no
+    /// fetch. `query` narrows the result exactly as the failed resolution did,
+    /// so a prefix request never reports versions it would not have selected
+    /// anyway.
+    async fn versions_hidden_by_before_date(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before: Timestamp,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let hidden: Vec<VersionInfo> = self
+            .list_remote_versions_with_info_with_selection_options(config, &opts, false)
+            .await?
+            .into_iter()
+            .filter(|v| {
+                v.created_at_timestamp()
+                    .is_some_and(|created| created >= before)
+            })
+            .collect();
+        let matched: HashSet<String> = self
+            .fuzzy_match_filter(
+                hidden.iter().map(|v| v.version.clone()).collect(),
+                query,
+                !self.include_prereleases(&opts),
+            )
+            .into_iter()
+            .collect();
+        let hidden = hidden
+            .into_iter()
+            .filter(|v| matched.contains(&v.version))
+            .collect();
+        Ok(self
+            .version_order(&opts)?
+            .order_by(hidden, |v: &VersionInfo| v.version.as_str()))
     }
 
     /// Select the latest query match using the active request's options.
