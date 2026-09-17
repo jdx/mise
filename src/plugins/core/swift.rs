@@ -2,7 +2,6 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
-use crate::file::display_path;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -14,7 +13,7 @@ use crate::{file, github, gpg, plugins};
 use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -189,7 +188,7 @@ fn missing_sonames(install_path: &Path) -> Vec<String> {
         debug!("swift: no ldd on PATH, cannot name the missing libraries");
         return vec![];
     }
-    let mut missing = BTreeSet::new();
+    let mut missing = std::collections::BTreeSet::new();
     for (dir, want_library) in [("usr/bin", false), ("usr/lib", true)] {
         for entry in file::ls(&install_path.join(dir)).unwrap_or_default() {
             let is_candidate = if want_library {
@@ -211,7 +210,7 @@ fn missing_sonames(install_path: &Path) -> Vec<String> {
                 .read()
             {
                 Ok(output) => missing.extend(parse_ldd_missing(&output)),
-                Err(err) => debug!("swift: ldd {}: {err:#}", display_path(&entry)),
+                Err(err) => debug!("swift: ldd {}: {err:#}", file::display_path(&entry)),
             }
         }
     }
