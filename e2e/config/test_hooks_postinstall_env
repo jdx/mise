@@ -123,3 +123,22 @@ TOMLEOF
 http_output=$(mise install 2>&1)
 assert_contains_text "$http_output" "HTTP_PRE_TOOLS_VAR=available_before_tools"
 assert_not_contains_text "$http_output" "HTTP_POST_TOOLS_VAR=available_after_tools"
+
+# Hooks run one after another inside a single install batch, and an [env] value
+# can read a file an earlier hook just wrote. The config env used to be memoized
+# by whichever hook asked first — with parallel installs, a race — so every later
+# hook got that snapshot. A hook ordered after another must see what it did.
+echo "STATE=before" >state.env
+
+cat <<ORDEREOF >mise.toml
+[env]
+_.file = "state.env"
+
+[tools]
+"http:first" = { version = "1.0.0", url = "http://127.0.0.1:$PORT/demo.tar.gz", bin_path = "demo/bin", postinstall = "echo FIRST_STATE=\$STATE; echo STATE=after > \$MISE_CONFIG_ROOT/state.env" }
+"http:second" = { version = "1.0.0", url = "http://127.0.0.1:$PORT/demo.tar.gz", bin_path = "demo/bin", depends = ["http:first"], postinstall = "echo SECOND_STATE=\$STATE" }
+ORDEREOF
+
+ordered_output=$(mise install 2>&1)
+assert_contains_text "$ordered_output" "FIRST_STATE=before"
+assert_contains_text "$ordered_output" "SECOND_STATE=after"

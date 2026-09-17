@@ -3570,13 +3570,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // install is populated only if some earlier step in the same process
         // happened to resolve it. asdf plugins do, to run their own scripts, so
         // the promise held for `dummy` in the e2e test and for nothing else:
-        // every other backend reached here with an empty config env. Resolve it
-        // instead. `Config::env` is always the tools-independent env, so asking
-        // for it now returns what it would have returned later.
+        // every other backend reached here with an empty config env.
+        //
+        // `env_uncached` rather than `env`: hooks run one after another within an
+        // install batch and an `[env]` value can read a file an earlier hook just
+        // wrote, so each hook resolves its own env instead of sharing the first
+        // one's snapshot.
         //
         // Best-effort: a `[env]` that cannot resolve is reported by the command
         // that needs it, and should not be what fails an otherwise good install.
-        match ctx.config.env().await {
+        match ctx.config.env_uncached().await {
             Ok(config_env) => {
                 for (k, v) in config_env {
                     env_vars.entry(k).or_insert(v);
