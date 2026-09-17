@@ -1,0 +1,5 @@
+backends = ["aqua:fish-shell/fish-shell"]
+description = "The user-friendly command line shell"
+os = ["linux", "macos"]
+test = { cmd = "fish --version", expected = "fish, version {{version}}" }
+version_order = "source"
