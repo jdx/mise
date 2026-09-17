@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Read go version from go.work (idiomatic version file, opt-in)
+
+mise settings set idiomatic_version_file_enable_tools go
+
+# in workspace mode the go command consults go.work's toolchain line, not the member
+# modules' go.mod, so go.work is the file that decides the version
+cat >go.work <<GOWORK
+go 1.24.0
+
+toolchain go1.24.3
+
+use (
+    ./api
+    ./worker
+)
+GOWORK
+assert "mise current go" "1.24.3"
+assert_not_contains "mise current go 2>&1" "deprecated"
+
+# go.work wins over a go.mod alongside it, matching Go's own precedence
+cat >go.mod <<GOMOD
+module example.com/m
+
+toolchain go1.21.4
+GOMOD
+assert "mise current go" "1.24.3"
+
+# go.work's own `go` line is a floor, not the version the workspace is built with, so it
+# is not read -- including the full patch version `go work init` writes. With go.mod gone
+# there is nothing left to resolve.
+rm go.mod
+cat >go.work <<GOWORK
+go 1.24.0
+
+use ./api
+GOWORK
+assert "mise current go" ""
+assert_not_contains "mise current go 2>&1" "deprecated"
+
+# a toolchain that is not a fully-qualified toolchain name is not a pin
+cat >go.work <<GOWORK
+go 1.24.0
+toolchain default
+GOWORK
+assert "mise current go" ""

@@ -501,7 +501,7 @@ in both mise and nvm. Here are some of the supported idiomatic version files:
 | dotnet        | `global.json`                                                                                                                                                                                                                                                                                              |
 | earthly       | `Earthfile`                                                                                                                                                                                                                                                                                                |
 | elixir        | `.exenv-version`                                                                                                                                                                                                                                                                                           |
-| go            | `.go-version`, `go.mod`                                                                                                                                                                                                                                                                                    |
+| go            | `.go-version`, `go.mod`, `go.work`                                                                                                                                                                                                                                                                         |
 | golangci-lint | `.golangci.yml`, `.golangci.yaml`, `.golangci.toml`, `.golangci.json`                                                                                                                                                                                                                                      |
 | goreleaser    | `.config/goreleaser.yml`, `.config/goreleaser.yaml`, `.goreleaser.yml`, `.goreleaser.yaml`, `goreleaser.yml`, `goreleaser.yaml`                                                                                                                                                                            |
 | java          | `.java-version`, `.sdkmanrc`                                                                                                                                                                                                                                                                               |
@@ -582,6 +582,12 @@ mise use node@22
 
 For `go.mod`, the `toolchain goX.Y.Z` directive is used — an exact pin of the toolchain the module
 builds and tests with. The `go X.Y` directive is a minimum and is deprecated (see above).
+
+`go.work` is read the same way, and takes precedence over a `go.mod` beside it. That matches Go:
+in workspace mode the `go` command consults the `toolchain` and `go` lines in `go.work` rather than
+the member modules' `go.mod` files. Only `toolchain` is read — `go.work`'s own `go` line takes
+effect only when the default toolchain is older, so it is a floor like `go.mod`'s, not the version
+the workspace is built with.
 
 ### Enabling idiomatic version files
 

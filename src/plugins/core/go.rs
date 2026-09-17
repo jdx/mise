@@ -286,6 +286,7 @@ impl Backend for GoPlugin {
                 &file::read_to_string(path)?,
                 Settings::get().idiomatic_version_file_ignore_minimum_versions,
             ),
+            Some(name) if name == "go.work" => parse_gowork(&file::read_to_string(path)?),
             _ => {
                 // .go-version
                 let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
@@ -425,6 +426,48 @@ fn is_go_toolchain_version(v: &str) -> bool {
     regex!(r"^[0-9]+\.[0-9]+\.[0-9]+$").is_match(v)
 }
 
+/// Value of the first `<keyword> <value>` directive, ignoring `//` line comments.
+///
+/// `go.mod` and `go.work` share this line-oriented directive grammar, so one reader serves
+/// both files.
+fn directive_value(body: &str, keyword: &str) -> Option<String> {
+    body.lines().find_map(|line| {
+        let line = line.split("//").next().unwrap_or("");
+        let mut parts = line.split_whitespace();
+        if parts.next() == Some(keyword) {
+            parts.next().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// The `toolchain goX.Y.Z` directive, when it names a real, fully-qualified toolchain.
+fn toolchain_directive(body: &str) -> Option<String> {
+    directive_value(body, "toolchain")
+        .and_then(|v| v.strip_prefix("go").map(|s| s.to_string()))
+        .filter(|v| is_go_toolchain_version(v))
+}
+
+/// Parse a `go.work` file into a Go version request for idiomatic version resolution.
+///
+/// A workspace's `go.work` decides the toolchain for every module in it: the `go` command
+/// "consults the `toolchain` and `go` lines in the current workspace's `go.work` file or,
+/// when there is no workspace, the main module's `go.mod` file". In workspace mode the
+/// member modules' own directives are not consulted at all, so reading `go.mod` there
+/// answers a question Go never asks.
+///
+/// Only `toolchain` is read. `go.work`'s own `go` line is a floor -- it "only has an effect
+/// when the default toolchain is older than the suggested toolchain" -- which is the same
+/// kind of declaration as `go.mod`'s deprecated `go` directive, not the version the
+/// workspace is built with. `ignore_minimums` therefore has nothing to switch off here.
+///
+/// Returns an empty string when there is no usable `toolchain` line, so the caller skips
+/// the file rather than erroring or pinning a wrong version.
+fn parse_gowork(body: &str) -> String {
+    toolchain_directive(body).unwrap_or_default()
+}
+
 /// Parse a `go.mod` file into a Go version request for idiomatic version resolution.
 ///
 /// `toolchain goX.Y.Z` is the *exact* toolchain the module builds and tests with (what
@@ -442,27 +485,11 @@ fn is_go_toolchain_version(v: &str) -> bool {
 /// missing directive) so the caller skips the file rather than erroring or pinning a
 /// wrong version.
 fn parse_gomod(body: &str, ignore_minimums: bool) -> String {
-    // Value of the first `<keyword> <value>` directive, ignoring `//` line comments.
-    let directive_value = |keyword: &str| -> Option<String> {
-        body.lines().find_map(|line| {
-            let line = line.split("//").next().unwrap_or("");
-            let mut parts = line.split_whitespace();
-            if parts.next() == Some(keyword) {
-                parts.next().map(|s| s.to_string())
-            } else {
-                None
-            }
-        })
-    };
-
     // A fully-qualified `toolchain goX.Y.Z` pin is the only non-deprecated source. A
     // malformed/partial/pre-release toolchain (e.g. `toolchain default`,
     // `toolchain go1.22`, `toolchain go1.22rc1`) is not a real toolchain name, so it
     // falls through to the `go` directive rather than discarding the file.
-    if let Some(toolchain) = directive_value("toolchain")
-        .and_then(|v| v.strip_prefix("go").map(|s| s.to_string()))
-        .filter(|v| is_go_toolchain_version(v))
-    {
+    if let Some(toolchain) = toolchain_directive(body) {
         return toolchain;
     }
 
@@ -470,7 +497,7 @@ fn parse_gomod(body: &str, ignore_minimums: bool) -> String {
         return String::new();
     }
 
-    match directive_value("go").filter(|v| is_go_directive_version(v)) {
+    match directive_value(body, "go").filter(|v| is_go_directive_version(v)) {
         Some(minimum) => {
             deprecated_at!(
                 "2026.8.10",
@@ -602,5 +629,44 @@ mod tests {
         assert_eq!(parse_gomod("go 1.21\ntoolchain default\n", true), "");
         assert_eq!(parse_gomod("go 1.21\ntoolchain go1.21.4\n", true), "1.21.4");
         assert_eq!(parse_gomod("toolchain go1.21.4\n", true), "1.21.4");
+    }
+
+    #[test]
+    fn test_parse_gowork() {
+        // the `toolchain` pin is what a workspace declares, and the `use` block around it
+        // does not get in the way
+        assert_eq!(
+            parse_gowork(indoc! {r#"
+                go 1.24.0
+
+                toolchain go1.24.3
+
+                use (
+                    ./api
+                    ./worker
+                )
+            "#}),
+            "1.24.3"
+        );
+        // inline `//` comments and extra whitespace are ignored
+        assert_eq!(
+            parse_gowork("toolchain   go1.24.3   // set by go work use\n"),
+            "1.24.3"
+        );
+        // `go.work`'s own `go` line is a floor, not the version the workspace is built
+        // with, so a workspace without a `toolchain` line yields nothing -- including when
+        // the `go` line carries a full patch version, which `go work init` writes
+        assert_eq!(parse_gowork("go 1.24.0\n"), "");
+        assert_eq!(parse_gowork("go 1.24\n"), "");
+        // `godebug` shares the `go` prefix but is a different directive
+        assert_eq!(parse_gowork("godebug default=go1.24\n"), "");
+        // a toolchain that is not a real, fully-qualified toolchain name is not a pin, and
+        // there is no `go` directive to fall back to
+        assert_eq!(parse_gowork("go 1.24.0\ntoolchain default\n"), "");
+        assert_eq!(parse_gowork("go 1.24.0\ntoolchain go1.24\n"), "");
+        assert_eq!(parse_gowork("go 1.24.0\ntoolchain go1.24rc1\n"), "");
+        // an empty or directive-less file is skipped
+        assert_eq!(parse_gowork(""), "");
+        assert_eq!(parse_gowork("use ./api\n"), "");
     }
 }
