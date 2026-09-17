@@ -348,15 +348,17 @@ async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> Result<S
         "macos" => Ok("osx".to_string()),
         "windows" => Ok("windows10".to_string()),
         _ => {
-            if let Some(pinned) = &Settings::get().swift.platform {
-                return Ok(pinned.clone());
-            }
-            // Every published Linux build links against glibc. `mise lock`
-            // already refuses musl targets; without the same check here an
-            // Alpine host resolves to a real UBI URL and downloads ~1GB of a
-            // toolchain that cannot run.
+            // Every published Linux build links against glibc, so musl is
+            // settled before anything else — including `swift.platform`, which
+            // chooses between distro builds and cannot conjure one that links
+            // against musl. `resolve_lock_info` refuses musl ahead of the pin
+            // too; checking it later here would let `mise install` proceed
+            // where `mise lock` had already called the platform impossible.
             if target.libc() == Some("musl") {
                 bail!("swift does not publish musl builds");
+            }
+            if let Some(pinned) = &Settings::get().swift.platform {
+                return Ok(pinned.clone());
             }
             let arch = api_arch(target);
             let host = host_distro(target);
@@ -1363,6 +1365,28 @@ mod lockfile_tests {
             resolve_platform(&tv, &target("linux-x64-musl"))
                 .await
                 .is_err()
+        );
+    }
+
+    /// `swift.platform` chooses between distro builds; it cannot produce one
+    /// that links against musl. Honouring the pin first would let `mise
+    /// install` download a glibc toolchain for a target `mise lock` has
+    /// already refused.
+    #[tokio::test]
+    async fn a_platform_pin_does_not_override_the_musl_refusal() {
+        let _guard = pin_platform(Some("ubuntu24.04"));
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.1");
+
+        assert!(
+            resolve_platform(&tv, &target("linux-x64-musl"))
+                .await
+                .is_err()
+        );
+        // The pin still applies where glibc is available.
+        assert_eq!(
+            resolve_platform(&tv, &target("linux-x64")).await.unwrap(),
+            "ubuntu24.04"
         );
     }
 
