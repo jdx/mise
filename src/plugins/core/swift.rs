@@ -381,17 +381,18 @@ async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> Result<S
                     // against swift.org's error page.
                     None => bail!("swift {} publishes no Linux build for {arch}", tv.version),
                 },
-                // Offline, or a release the index does not list. Every guess
-                // at what a release published is wrong for some host, so
-                // prefer the one thing that is not a guess: if a tarball for
-                // this version was downloaded before, it names the build that
-                // was really chosen. Only with nothing cached — where the
-                // install cannot succeed offline anyway, and the token only
-                // shapes the error — fall back to the host's own version.
-                Err(err) => {
-                    debug!("swift: could not read the release index: {err:#}");
-                    Ok(offline_platform(tv, target, &host))
-                }
+                // Which distro builds a release published is only knowable
+                // from the index. Every guess at it is wrong for some host —
+                // the family's newest hands an Ubuntu 22.04 machine a 24.04
+                // build, the host's own version asks for a `fedora40` that was
+                // never published — so say what is missing instead. Pinning
+                // `swift.platform` resolves without the index at all, and is
+                // checked before this.
+                Err(err) => bail!(
+                    "swift {}: cannot tell which Linux build {} needs without swift.org's release index: {err:#}\nSet swift.platform to choose a build without it.",
+                    tv.version,
+                    host.id
+                ),
             }
         }
     }
@@ -468,20 +469,6 @@ impl Family {
         ("Red Hat Universal Base Image ", Family::Ubi),
     ];
 
-    /// The family an artifact token belongs to. Tokens begin with their
-    /// family's prefix and no two prefixes overlap, so this is unambiguous.
-    fn from_token(token: &str) -> Option<Self> {
-        [
-            Family::Ubuntu,
-            Family::Debian,
-            Family::Fedora,
-            Family::AmazonLinux,
-            Family::Ubi,
-        ]
-        .into_iter()
-        .find(|family| token.starts_with(family.token_prefix()))
-    }
-
     /// Map an os-release `ID` (or `ID_LIKE` entry) onto a family swift.org
     /// builds for. Derivatives are listed so an Ubuntu remix gets an Ubuntu
     /// build rather than a fabricated `linuxmint22`-style name.
@@ -493,23 +480,6 @@ impl Family {
             "amzn" => Some(Family::AmazonLinux),
             "rhel" | "ubi" | "centos" | "rocky" | "almalinux" | "ol" => Some(Family::Ubi),
             _ => None,
-        }
-    }
-
-    /// The oldest build this family had when this was written, used only when
-    /// the release index cannot be read *and* the host does not say which
-    /// version it is. Oldest rather than newest: with nothing to compare
-    /// against, the lowest glibc floor is the only safe direction, and it
-    /// matches what online selection picks for a version-less host. It may be
-    /// stale — that is the point of reading the index — but it is a token
-    /// swift.org has really published, which a host label is not.
-    fn oldest_known_token(self) -> &'static str {
-        match self {
-            Family::Ubuntu => "ubuntu22.04",
-            Family::Debian => "debian12",
-            Family::Fedora => "fedora39",
-            Family::AmazonLinux => "amazonlinux2",
-            Family::Ubi => "ubi9",
         }
     }
 
@@ -666,22 +636,6 @@ impl HostDistro {
         })
     }
 
-    /// The build to try when the release index cannot be read.
-    ///
-    /// A host that names its own version asks for exactly that build: it is
-    /// what online selection returns whenever swift.org ships it, so it is the
-    /// tarball most likely to be in the download cache already, and it can
-    /// never be a newer glibc than the host itself. Guessing the family's
-    /// newest instead would invert that — an Ubuntu 22.04 host would be handed
-    /// a 24.04 build that cannot run. With no version to go on, fall back to
-    /// the family's oldest known build.
-    fn offline_token(&self) -> String {
-        match &self.version {
-            Some(_) => self.label(),
-            None => self.family.oldest_known_token().to_string(),
-        }
-    }
-
     /// A stable name for this host, recorded in the lockfile so one distro's
     /// checksum is never applied to another's tarball. It is a label for the
     /// machine, not necessarily the token of the build it resolves to — which
@@ -784,76 +738,6 @@ fn select_build<'a>(
             any.sort_by(|a, b| a.version.cmp(&b.version));
             any.first().copied().map(|build| (build, Fit::OtherFamily))
         })
-}
-
-/// The build an already-downloaded tarball is for, if there is one.
-///
-/// Offline the download cache is the only ground truth about what a release
-/// published: whatever is there was chosen while the index was readable. A
-/// name only counts when `url` would really produce it, so a `.sig`, a partial
-/// download, or another architecture's tarball is ignored.
-fn offline_platform(tv: &ToolVersion, target: &PlatformTarget, host: &HostDistro) -> String {
-    offline_platform_in(&tv.download_path(), tv, target, host)
-}
-
-fn offline_platform_in(
-    dir: &Path,
-    tv: &ToolVersion,
-    target: &PlatformTarget,
-    host: &HostDistro,
-) -> String {
-    cached_token_in(dir, tv, target, host).unwrap_or_else(|| host.offline_token())
-}
-
-fn cached_token_in(
-    dir: &Path,
-    tv: &ToolVersion,
-    target: &PlatformTarget,
-    host: &HostDistro,
-) -> Option<String> {
-    let prefix = format!("swift-{}-RELEASE-", tv.version);
-    let suffix = format!(".{}", extension(target));
-    let mut cached = file::ls(dir)
-        .ok()?
-        .iter()
-        .filter_map(|path| {
-            let name = path.file_name()?.to_str()?;
-            let token = name.strip_prefix(&prefix)?.strip_suffix(&suffix)?;
-            let token = match architecture(target) {
-                Some(arch) => token.strip_suffix(&format!("-{arch}"))?,
-                None => token,
-            };
-            // No published token has ever contained a hyphen — true of all 24
-            // of them, back to Swift 2.2 — so one here is another
-            // architecture's suffix that this target does not strip. Without
-            // this an x86_64 lookup accepts `…-fedora39-aarch64.tar.gz`,
-            // whose reconstructed URL matches its own name, and `-` sorts
-            // before `.`, so it would beat the correct tarball. If swift.org
-            // ever does publish a hyphenated token, this stops recognizing the
-            // cache and falls back to the host version, which is safe.
-            if token.contains('-') {
-                return None;
-            }
-            // Only a name `url` would really produce: not a signature, a
-            // partial download, or another version's tarball.
-            url(tv, target, token)
-                .ends_with(name)
-                .then(|| token.to_string())
-        })
-        .collect::<Vec<_>>();
-    // A cache shared across distro pins can hold several. Prefer the host's
-    // own build, then its family, then whatever is there, deterministically.
-    cached.sort_by_key(|token| {
-        let rank = if host.version.is_some() && *token == host.label() {
-            0
-        } else if Family::from_token(token) == Some(host.family) {
-            1
-        } else {
-            2
-        };
-        (rank, token.clone())
-    });
-    cached.into_iter().next()
 }
 
 /// Say so when the chosen build is not one swift.org tests on this distro.
@@ -1216,70 +1100,6 @@ mod platform_selection_tests {
         );
     }
 
-    /// The offline fallback has to name a build swift.org really published.
-    /// A host label does not: an unrecognized distro labels itself `ubi`,
-    /// which is not an artifact token at all.
-    #[test]
-    fn offline_tokens_are_real_published_builds() {
-        let published: Vec<String> = ["6.3.3", "6.4.0"]
-            .iter()
-            .flat_map(|version| builds(version))
-            .map(|build| build.token)
-            .collect();
-        for family in [
-            Family::Ubuntu,
-            Family::Debian,
-            Family::Fedora,
-            Family::AmazonLinux,
-            Family::Ubi,
-        ] {
-            let token = family.oldest_known_token();
-            assert!(
-                published.contains(&token.to_string()),
-                "{token} is not a published build"
-            );
-            assert_ne!(
-                token,
-                family.token_prefix(),
-                "{token} is a family name, not a build"
-            );
-        }
-    }
-
-    /// Offline, a host that names its own version asks for that build — the
-    /// one online selection returns whenever swift.org ships it, so the one
-    /// most likely already downloaded, and never a newer glibc than the host.
-    /// Substituting the family'''s newest would hand an Ubuntu 22.04 machine a
-    /// 24.04 build that cannot run.
-    #[test]
-    fn the_offline_fallback_keeps_the_host_version() {
-        // Deliberately versions that differ from the family fallback, so
-        // ignoring the host version cannot pass this.
-        assert_eq!(
-            host("ID=ubuntu\nVERSION_ID=\"24.04\"\n").offline_token(),
-            "ubuntu24.04"
-        );
-        assert_ne!(
-            host("ID=ubuntu\nVERSION_ID=\"24.04\"\n").offline_token(),
-            Family::Ubuntu.oldest_known_token()
-        );
-        assert_eq!(
-            host("ID=fedora\nVERSION_ID=41\n").offline_token(),
-            "fedora41"
-        );
-        assert_eq!(
-            host("ID=rocky\nVERSION_ID=\"10.1\"\n").offline_token(),
-            "ubi10"
-        );
-        // No version to go on: the family'''s oldest, matching what online
-        // selection picks for these hosts.
-        assert_eq!(
-            host("ID=linuxmint\nID_LIKE=ubuntu\n").offline_token(),
-            "ubuntu22.04"
-        );
-        assert_eq!(host("ID=arch\n").offline_token(), "ubi9");
-    }
-
     /// The lockfile label names the machine, not the artifact, so it stays put
     /// as swift.org's published set moves underneath it.
     #[test]
@@ -1326,15 +1146,6 @@ mod lockfile_tests {
 
     fn target(platform: &str) -> PlatformTarget {
         PlatformTarget::new(Platform::parse(platform).expect("valid platform"))
-    }
-
-    fn fedora_host(version: &str) -> HostDistro {
-        HostDistro {
-            family: Family::Fedora,
-            version: Some(DistroVersion::new(version)),
-            family_is_fallback: false,
-            id: format!("fedora {version}"),
-        }
     }
 
     fn tool_version(backend: &SwiftPlugin, version: &str) -> ToolVersion {
@@ -1516,144 +1327,19 @@ mod lockfile_tests {
         );
     }
 
-    /// Offline the cache is the only ground truth about what a release really
-    /// published: a Fedora 40 host is served by `fedora39` on a release that
-    /// ships 39 and 41, and no guess from the host's own version can know
-    /// that. Whatever was downloaded while the index was readable does.
-    #[test]
-    fn a_cached_tarball_names_the_build_to_reuse() {
-        let _guard = pin_platform(None);
+    /// Choosing a build needs swift.org's release index, so a pin is the way
+    /// to install without reaching it. The pin has to short-circuit before the
+    /// index is consulted: this version is not one the index lists, so
+    /// anything that reached the fetch would fail instead of returning it.
+    #[tokio::test]
+    async fn a_pinned_platform_resolves_without_the_release_index() {
+        let _guard = pin_platform(Some("ubi9"));
         let backend = SwiftPlugin::new();
-        let tv = tool_version(&backend, "6.3.3");
-        let dir = tempfile::tempdir().expect("tempdir");
-        let host = fedora_host("40");
-
-        // Nothing cached yet: nothing to learn from.
-        assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-x64"), &host),
-            None
-        );
-
-        for name in [
-            // A signature and another release's tarball must not count.
-            "swift-6.3.3-RELEASE-fedora39.tar.gz.sig",
-            "swift-6.1.2-RELEASE-ubuntu24.04.tar.gz",
-            "swift-6.3.3-RELEASE-fedora39.tar.gz",
-        ] {
-            std::fs::write(dir.path().join(name), "").expect("write");
-        }
+        let tv = tool_version(&backend, "0.0.0-not-a-release");
 
         assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-x64"), &host),
-            Some("fedora39".to_string())
-        );
-        // The x64 tarball carries no arch suffix, so it must not be taken for
-        // an arm64 one.
-        assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-arm64"), &host),
-            None
-        );
-
-        std::fs::write(
-            dir.path()
-                .join("swift-6.3.3-RELEASE-fedora39-aarch64.tar.gz"),
-            "",
-        )
-        .expect("write");
-        assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-arm64"), &host),
-            Some("fedora39".to_string())
-        );
-        // …and the reverse: an x64 lookup must not pick up the aarch64
-        // tarball, which sorts first because `-` precedes `.`.
-        assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-x64"), &host),
-            Some("fedora39".to_string())
-        );
-    }
-
-    /// An x86_64 target strips no arch suffix, so without a guard it parses
-    /// `…-fedora39-aarch64.tar.gz` as the platform `fedora39-aarch64` and its
-    /// reconstructed URL matches its own name. Offline install would then
-    /// unpack an aarch64 toolchain on x86_64.
-    #[test]
-    fn an_x64_cache_lookup_rejects_an_aarch64_tarball() {
-        let _guard = pin_platform(None);
-        let backend = SwiftPlugin::new();
-        let tv = tool_version(&backend, "6.3.3");
-        let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(
-            dir.path()
-                .join("swift-6.3.3-RELEASE-fedora39-aarch64.tar.gz"),
-            "",
-        )
-        .expect("write");
-
-        assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-x64"), &fedora_host("39")),
-            None
-        );
-    }
-
-    /// A cache shared across `swift.platform` pins can hold several distros'
-    /// tarballs. Taking whichever sorts first would hand a Fedora host an
-    /// `amazonlinux2` toolchain while its own build sat right there.
-    #[test]
-    fn a_shared_cache_prefers_the_host_build() {
-        let _guard = pin_platform(None);
-        let backend = SwiftPlugin::new();
-        let tv = tool_version(&backend, "6.3.3");
-        let dir = tempfile::tempdir().expect("tempdir");
-        for name in [
-            "swift-6.3.3-RELEASE-amazonlinux2.tar.gz",
-            "swift-6.3.3-RELEASE-fedora39.tar.gz",
-            "swift-6.3.3-RELEASE-fedora41.tar.gz",
-            "swift-6.3.3-RELEASE-ubi9.tar.gz",
-        ] {
-            std::fs::write(dir.path().join(name), "").expect("write");
-        }
-
-        // Exact host version wins.
-        assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-x64"), &fedora_host("41")),
-            Some("fedora41".to_string())
-        );
-        // No exact match: the host's own family beats an alphabetical winner.
-        assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-x64"), &fedora_host("40")),
-            Some("fedora39".to_string())
-        );
-        // A host with no family match falls back deterministically.
-        let arch_host = HostDistro::unrecognized("arch".to_string());
-        assert_eq!(
-            cached_token_in(dir.path(), &tv, &target("linux-x64"), &arch_host),
-            Some("ubi9".to_string())
-        );
-    }
-
-    /// The offline decision itself: a cached tarball wins over any guess from
-    /// the host, and the host'''s own version is used only when there is
-    /// nothing cached to learn from.
-    #[test]
-    fn the_offline_choice_prefers_a_cached_tarball_over_the_host_guess() {
-        let _guard = pin_platform(None);
-        let backend = SwiftPlugin::new();
-        let tv = tool_version(&backend, "6.3.3");
-        let dir = tempfile::tempdir().expect("tempdir");
-        let host = fedora_host("40");
-
-        // Nothing cached: the host is all there is to go on, even though this
-        // release never published a fedora40 build.
-        assert_eq!(
-            offline_platform_in(dir.path(), &tv, &target("linux-x64"), &host),
-            "fedora40"
-        );
-
-        // A tarball from when the index was readable knows better.
-        std::fs::write(dir.path().join("swift-6.3.3-RELEASE-fedora39.tar.gz"), "").expect("write");
-        assert_eq!(
-            offline_platform_in(dir.path(), &tv, &target("linux-x64"), &host),
-            "fedora39"
+            resolve_platform(&tv, &target("linux-x64")).await.unwrap(),
+            "ubi9"
         );
     }
 

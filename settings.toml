@@ -3145,7 +3145,7 @@ type = "Bool"
 
 [swift.platform]
 default_docs = '"osx" | "windows10" | "ubuntu24.04" | "debian12" | "fedora41" | "amazonlinux2023" | "ubi9"'
-description = "Override the distro build to use for precompiled binaries. By default the distro is detected and matched against what the Swift release actually publishes, which changes from release to release; set this only to force a specific build."
+description = "Override the distro build to use for precompiled binaries. By default the distro is detected and matched against what the Swift release actually publishes, which changes from release to release. Set this to force a specific build, or to install without reaching swift.org's release index."
 env = "MISE_SWIFT_PLATFORM"
 optional = true
 type = "String"
