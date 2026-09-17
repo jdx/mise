@@ -313,7 +313,7 @@ pub(crate) fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) 
         return namespace(root);
     };
     crate::daemons::validate_id("namespace", explicit)?;
-    if settings.is_none_or(|s| s.namespace_per_worktree) && is_linked_worktree(root) {
+    if settings.is_none_or(|s| s.namespace_per_worktree()) && is_linked_worktree(root) {
         // Linked worktrees of one repository share the configuration that names
         // the namespace, so an unsuffixed namespace would make two checkouts
         // fight over the same pitchfork daemon IDs and state directory.
@@ -511,7 +511,7 @@ mod tests {
     fn settings(namespace: &str, per_worktree: bool) -> DaemonSettings {
         DaemonSettings {
             namespace: Some(namespace.to_string()),
-            namespace_per_worktree: per_worktree,
+            namespace_per_worktree: Some(per_worktree),
         }
     }
 

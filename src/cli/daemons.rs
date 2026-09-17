@@ -112,6 +112,8 @@ impl Daemons {
                 .await;
         }
         let loaded = config.daemons()?;
+        // The loop below shadows `root` with each project root it prepares.
+        let project_root = root.to_path_buf();
         let mut roots = loaded.roots();
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
@@ -157,11 +159,17 @@ impl Daemons {
                 continue;
             }
             let scoped = runtime::config_for_root(&config, &root).await?;
-            let requested = loaded.for_root(&root);
             // Reload from the root's own hierarchy so the definition and its
-            // `mise x` environment come from the project that owns it, then keep
-            // only the daemons this invocation actually inherited or imported.
-            let set = scoped.daemons()?.for_root(&root).restricted_to(&requested);
+            // `mise x` environment come from the project that owns it. The
+            // generated pitchfork config for a root is rewritten wholesale, so
+            // this has to stay that project's complete set: registering only the
+            // daemon this project imported would delete its siblings from the
+            // configuration it shares, orphaning any that were running.
+            let set = scoped.daemons()?.for_root(&root);
+            // What this invocation may act on, which for another project's root
+            // is only what it imported or inherited.
+            let requested = loaded.for_root(&root);
+            let foreign = root != project_root;
             let previous = runtime::read_state(&root)?;
             if set.daemons.is_empty() && previous.ids.is_empty() {
                 continue;
@@ -219,6 +227,15 @@ impl Daemons {
                 .collect();
             if install {
                 selected.retain(|id| set.find(id.rsplit('/').next().unwrap_or(id)).is_some());
+            }
+            if foreign {
+                // Registering another project's daemons does not mean starting
+                // or stopping them; only the ones this project asked for.
+                selected.retain(|id| {
+                    requested
+                        .find(id.rsplit('/').next().unwrap_or(id))
+                        .is_some()
+                });
             }
             if selected.is_empty() {
                 continue;

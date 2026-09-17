@@ -21,27 +21,36 @@ pub(crate) enum Declaration {
 }
 
 /// Project-wide daemon options declared in `[daemons_settings]`.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// Every field is optional so a higher-precedence file can set one key without
+/// discarding the others; see [`DaemonSettings::merge`].
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DaemonSettings {
     /// Fixed pitchfork namespace for this project, replacing the hashed default.
     #[serde(default)]
     pub namespace: Option<String>,
     /// Keep linked git worktrees of one repository in separate namespaces.
-    #[serde(default = "yes")]
-    pub namespace_per_worktree: bool,
+    #[serde(default)]
+    pub namespace_per_worktree: Option<bool>,
 }
 
-fn yes() -> bool {
-    true
-}
-
-impl Default for DaemonSettings {
-    fn default() -> Self {
-        Self {
-            namespace: None,
-            namespace_per_worktree: true,
+impl DaemonSettings {
+    /// Overlay a higher-precedence file's table onto this one, key by key. A
+    /// `mise.local.toml` that sets only `namespace_per_worktree` must not drop
+    /// the `namespace` that `mise.toml` established, because other projects
+    /// refer to daemons by the qualified ID that namespace produces.
+    fn merge(&mut self, other: Self) {
+        if other.namespace.is_some() {
+            self.namespace = other.namespace;
         }
+        if other.namespace_per_worktree.is_some() {
+            self.namespace_per_worktree = other.namespace_per_worktree;
+        }
+    }
+
+    pub(crate) fn namespace_per_worktree(&self) -> bool {
+        self.namespace_per_worktree.unwrap_or(true)
     }
 }
 
@@ -118,7 +127,10 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         }
         let root = cf.project_root().unwrap_or_else(|| cf.config_root());
         if let Some(file_settings) = file_settings {
-            settings.insert(root.clone(), file_settings);
+            settings
+                .entry(root.clone())
+                .or_default()
+                .merge(file_settings);
         }
         for (name, declaration) in entries {
             declarations.insert(
@@ -213,6 +225,32 @@ fn build(name: &str, declaration: Declaration, source: PathBuf, root: PathBuf) -
     })
 }
 
+/// Config files that apply to a directory, lowest precedence first.
+///
+/// A referenced project is later reloaded through its whole configuration
+/// hierarchy when its daemons are prepared, so discovery has to walk the same
+/// ancestors. Reading only the directory itself would miss a daemon or a
+/// `[daemons_settings] namespace` inherited from a parent config, and mise would
+/// then compute one daemon ID here and register a different one there.
+fn hierarchy_config_paths(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    // `all_dirs` yields the directory first and its ancestors after it; reverse
+    // so the nearest config is read last and wins.
+    for ancestor in crate::file::all_dirs(dir, &crate::env::MISE_CEILING_PATHS)?
+        .into_iter()
+        .rev()
+    {
+        // Within one directory this helper lists the highest-precedence file
+        // first, which is the opposite of the order wanted here.
+        paths.extend(
+            crate::config::config_paths_in_dir(&ancestor)
+                .into_iter()
+                .rev(),
+        );
+    }
+    Ok(paths)
+}
+
 /// Pull a daemon definition out of another project so it runs with that
 /// project's root, state, and `mise x` environment rather than this one's.
 fn import(
@@ -257,7 +295,7 @@ fn import(
             crate::file::display_path(source)
         );
     }
-    let paths = crate::config::config_paths_in_dir(&dir);
+    let paths = hierarchy_config_paths(&dir)?;
     if paths.is_empty() {
         bail!(
             "[daemons.{local_name}].project expects a mise configuration in {}, which has none; add a mise.toml declaring [daemons.{remote_name}] there",
@@ -265,16 +303,14 @@ fn import(
         );
     }
     let mut found: Option<(Declaration, PathBuf, PathBuf)> = None;
-    let mut settings: Option<DaemonSettings> = None;
+    let mut settings = DaemonSettings::default();
     let mut available: Vec<String> = Vec::new();
-    // `config_paths_in_dir` returns the highest-precedence file first; walk it
-    // backwards so a local override still wins, exactly as ordinary loading does.
-    for path in paths.iter().rev() {
+    for path in &paths {
         // `MiseToml::from_file` runs the same trust gate as ordinary config
         // loading, so an untrusted sibling project cannot be pulled in silently.
         let cf = crate::config::config_file::mise_toml::MiseToml::from_file(path)?;
         if let Some(file_settings) = cf.daemon_settings() {
-            settings = Some(file_settings);
+            settings.merge(file_settings);
         }
         let remote_root = crate::config::config_file::config_root::config_root(path);
         for (name, declaration) in cf.daemon_declarations() {
@@ -312,7 +348,7 @@ fn import(
         remote_root.clone(),
     )?;
     daemon.imported = true;
-    let namespace = runtime::resolve_namespace(&remote_root, settings.as_ref())?;
+    let namespace = runtime::resolve_namespace(&remote_root, Some(&settings))?;
     let id = format!("{namespace}/{}", daemon.name);
     namespaces.insert(remote_root, namespace);
     Ok((id, daemon))
@@ -440,22 +476,6 @@ impl DaemonSet {
     /// daemons are keyed by qualified ID, so the map key is not always the name.
     pub(crate) fn find(&self, name: &str) -> Option<&Daemon> {
         self.daemons.values().find(|d| d.name == name)
-    }
-
-    /// Drop daemons this project does not ask for. A root reloaded from its own
-    /// configuration hierarchy can declare more daemons than were inherited or
-    /// imported here, and only the requested ones belong in its generated config.
-    pub(crate) fn restricted_to(&self, requested: &Self) -> Self {
-        Self {
-            daemons: self
-                .daemons
-                .iter()
-                .filter(|(_, d)| requested.find(&d.name).is_some())
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            namespaces: self.namespaces.clone(),
-            aliases: self.aliases.clone(),
-        }
     }
 
     pub(crate) fn auto(&self) -> bool {
@@ -714,6 +734,71 @@ mod tests {
         let err = load(&config).unwrap_err().to_string();
         assert!(err.contains("[daemons.worker]"), "{err}");
         assert!(err.contains("build"), "{err}");
+    }
+
+    #[test]
+    fn referenced_projects_inherit_daemons_and_namespaces_from_parent_configs() {
+        // The referenced root is reloaded through its whole hierarchy when its
+        // daemons are prepared, so discovery has to agree with that.
+        let tmp = tempfile::tempdir().unwrap();
+        let group = tmp.path().join("group");
+        referenced_project(
+            &group,
+            "[daemons_settings]\nnamespace = 'shared'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let mirror = group.join("mirror-pipeline");
+        std::fs::create_dir_all(&mirror).unwrap();
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.worker]\nproject = {}\n",
+                toml::Value::String(mirror.to_string_lossy().into_owned())
+            ),
+        )]);
+        let set = load(&config).unwrap();
+        // Both the daemon and the namespace come from the parent config.
+        let daemon = &set.daemons["shared/worker"];
+        assert!(daemon.imported);
+        assert_eq!(daemon.root, group.canonicalize().unwrap());
+        assert_eq!(
+            set.namespace_for(&group.canonicalize().unwrap()),
+            Some("shared")
+        );
+    }
+
+    #[test]
+    fn daemon_settings_merge_across_files_instead_of_replacing() {
+        // A file that sets one key must not discard a namespace another file
+        // established; other projects refer to the IDs it produces.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let config = files(&[
+            (
+                root.join("mise.local.toml").to_str().unwrap(),
+                "[daemons_settings]\nnamespace_per_worktree = false\n",
+            ),
+            (
+                root.join("mise.toml").to_str().unwrap(),
+                "[daemons_settings]\nnamespace = 'entiredb'\n[daemons.api]\nrun = 'exec api'\n",
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        let declared = set.daemons["api"].root.clone();
+        assert_eq!(set.namespace_for(&declared), Some("entiredb"));
+        // The higher-precedence file still wins for the key it does set.
+        let mut merged = DaemonSettings {
+            namespace: Some("entiredb".into()),
+            namespace_per_worktree: Some(true),
+        };
+        merged.merge(DaemonSettings {
+            namespace: None,
+            namespace_per_worktree: Some(false),
+        });
+        assert_eq!(merged.namespace.as_deref(), Some("entiredb"));
+        assert!(!merged.namespace_per_worktree());
+        assert!(DaemonSettings::default().namespace_per_worktree());
     }
 
     #[test]

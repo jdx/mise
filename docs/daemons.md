@@ -69,6 +69,11 @@ Namespaces follow the same rules as daemon names: letters, numbers, `.`, `_` and
 A `namespace` key in a project's own `pitchfork.toml` still wins over the default;
 `[daemons_settings]` wins over both.
 
+`[daemons_settings]` merges key by key across configuration files, so a
+`mise.local.toml` that sets only `namespace_per_worktree` keeps the `namespace`
+that `mise.toml` established. This differs from `[daemons]`, where a
+higher-precedence declaration replaces a same-name daemon completely.
+
 Changing the namespace of a project whose daemons are running fails; stop them
 first. Once nothing is running, mise adopts the new namespace and forgets IDs from
 the old one.
@@ -108,10 +113,14 @@ run = "npm run dev"
 depends = ["pipeline"]
 ```
 
-`project` is a directory containing a mise configuration with its own `[daemons]`;
-a relative path resolves against this project root. `name` is the daemon's name
-inside that project and defaults to the local key. The referenced directory must be
-trusted, exactly as it would be if you had changed into it.
+`project` is a directory whose mise configuration declares the daemon; a relative
+path resolves against this project root. `name` is the daemon's name inside that
+project and defaults to the local key. The referenced directory must be trusted,
+exactly as it would be if you had changed into it.
+
+The referenced directory is read through its whole configuration hierarchy, the
+same one mise uses when it runs the daemon, so a daemon or a `[daemons_settings]`
+namespace the project inherits from a parent configuration is found too.
 
 The imported daemon keeps its own project: it runs with that directory as its
 working directory, under that project's namespace, and with that project's state,
@@ -123,6 +132,11 @@ other project, its tool and its exported environment variables stay there —
 `depends` may name the imported daemon by its local key; mise rewrites it to the
 qualified ID, since pitchfork resolves bare names only inside one namespace. You can
 also write the qualified ID yourself.
+
+Starting an import registers the referenced project's complete generated
+configuration, because that file is rewritten as a whole and its other daemons
+must survive. Only the daemons this project imported are started or stopped;
+the rest stay under the referenced project's own control.
 
 If the directory is missing, mise names the path it expected and the setting to
 change, so a developer who keeps sibling checkouts somewhere else knows what to fix.
