@@ -8366,7 +8366,7 @@ fn structured_run_respects_failure_policy() -> Result<()> {
         .expect_err("signal termination must remain an error");
     assert!(matches!(
         err.downcast_ref::<crate::errors::Error>(),
-        Some(crate::errors::Error::ScriptFailed(_, Some(status))) if status.code().is_none()
+        Some(crate::errors::Error::ScriptFailed(_, Some(status), _)) if status.code().is_none()
     ));
     let invalid = serde_json::json!({"type": "run", "command": {"path": "/usr/bin/false"}, "must_succeed": "false"});
     assert!(parse_flight_step(&cask, "postflight_steps", &invalid).is_err());

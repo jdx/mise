@@ -90,9 +90,26 @@ pub(crate) struct TaskTemplate {
     pub pass_through_env: Vec<String>,
 }
 
+/// What a merge does with the template's `usage` spec.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UsageMerge {
+    /// Prepend the template's spec to the task's. For a template the task named with
+    /// `extends`: it asked for what the template declares, so adding a flag of its own must
+    /// not drop the shared ones.
+    Compose,
+    /// Use the template's spec only when the task has none, like every other field a
+    /// workspace default contributes. Composing there could add a required argument to a
+    /// command that parsed fine before, which is not what "fills anything still unset" means.
+    FillOnly,
+}
+
 impl Task {
     /// Merge a template into this task, using template values only where the task
     /// doesn't already have values set. This allows tasks to override template values.
+    ///
+    /// This is the fill-only merge, used for a workspace-root task default. For a template
+    /// the task named with `extends`, see [`Self::merge_extended_template`], which differs
+    /// only in what it does with `usage`.
     ///
     /// Merge semantics:
     /// - run, run_windows: Local overrides completely (if non-empty)
@@ -102,8 +119,22 @@ impl Task {
     /// - depends, depends_post, wait_for: Local overrides completely (if non-empty)
     /// - dir: Local overrides; defaults to None if not in template
     /// - sources, outputs: Local overrides completely (if non-empty)
+    /// - usage: Template spec used only when the task has none
     /// - Other fields: Local overrides template (if set)
     pub(crate) fn merge_template(&mut self, template: &TaskTemplate) {
+        self.merge_template_with(template, UsageMerge::FillOnly)
+    }
+
+    /// Merge a template the task named with `extends`.
+    ///
+    /// Every field behaves as it does in [`Self::merge_template`], except `usage`: the
+    /// template's spec is prepended to the task's rather than used only when the task has
+    /// none, so a task adding a flag of its own keeps the shared ones.
+    pub(crate) fn merge_extended_template(&mut self, template: &TaskTemplate) {
+        self.merge_template_with(template, UsageMerge::Compose)
+    }
+
+    fn merge_template_with(&mut self, template: &TaskTemplate, usage_merge: UsageMerge) {
         // A task whose command is a script file does not also get a `run`. `file` wins over
         // `run` in the executor, so a task holding both carries a script that can never
         // execute and yet shows up wherever the task is described.
@@ -225,9 +256,19 @@ impl Task {
             self.toml_bool_presence.record("silent");
         }
 
-        // usage: use template only if local is empty
-        if self.usage.is_empty() && !template.usage.is_empty() {
-            self.usage = template.usage.clone();
+        // usage: a task with no spec of its own takes the template's either way. A task that
+        // has one keeps it, and additionally gets the template's declarations prepended when
+        // the template is one it named with `extends` -- a usage spec is a list of
+        // declarations, so a task adding a flag of its own should not thereby drop every
+        // shared one. Template first, so the shared flags lead in `--help` and a template's
+        // positional args stay ahead of the task's. Both halves are rendered together
+        // afterwards, so tera in either still resolves.
+        if !template.usage.is_empty() {
+            if self.usage.trim().is_empty() {
+                self.usage = template.usage.clone();
+            } else if usage_merge == UsageMerge::Compose {
+                self.usage = format!("{}\n{}", template.usage.trim_end(), self.usage.trim());
+            }
         }
 
         // timeout: use template only if local not set
@@ -335,6 +376,69 @@ mod tests {
         assert_eq!(task.file, Some("mise-tasks/build".into()));
         assert!(task.run.is_empty());
         assert!(task.run_windows.is_empty());
+    }
+
+    #[test]
+    fn test_merge_template_usage_is_composed() {
+        let mut task = Task {
+            usage: "flag \"--own <v>\"".to_string(),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            usage: "flag \"--shared <v>\"\n".to_string(),
+            ..Default::default()
+        };
+
+        task.merge_extended_template(&template);
+
+        assert_eq!(task.usage, "flag \"--shared <v>\"\nflag \"--own <v>\"");
+    }
+
+    #[test]
+    fn test_merge_template_usage_from_template_only() {
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            usage: "flag \"--shared <v>\"".to_string(),
+            ..Default::default()
+        };
+
+        task.merge_extended_template(&template);
+
+        assert_eq!(task.usage, "flag \"--shared <v>\"");
+    }
+
+    #[test]
+    fn test_workspace_default_usage_only_fills() {
+        let mut task = Task {
+            usage: "flag \"--own <v>\"".to_string(),
+            ..Default::default()
+        };
+        let default = TaskTemplate {
+            usage: "arg \"<required>\"".to_string(),
+            ..Default::default()
+        };
+
+        // A workspace default fills what the task left unset; composing here would add a
+        // required argument to a command line that parsed fine before.
+        task.merge_template(&default);
+        assert_eq!(task.usage, "flag \"--own <v>\"");
+
+        // With no spec of its own, the task still takes the default's.
+        let mut bare = Task::default();
+        bare.merge_template(&default);
+        assert_eq!(bare.usage, "arg \"<required>\"");
+    }
+
+    #[test]
+    fn test_merge_template_usage_without_template_spec() {
+        let mut task = Task {
+            usage: "flag \"--own <v>\"".to_string(),
+            ..Default::default()
+        };
+
+        task.merge_extended_template(&TaskTemplate::default());
+
+        assert_eq!(task.usage, "flag \"--own <v>\"");
     }
 
     #[test]
