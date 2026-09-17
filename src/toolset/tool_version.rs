@@ -80,6 +80,7 @@ impl ToolVersion {
         query: &str,
         before_date: Option<Timestamp>,
         minimum_release_age: Option<&str>,
+        suggest_exact_pin: bool,
     ) -> eyre::Report {
         let id = backend.id();
         // The version list is also empty when fetching it failed, in which case
@@ -118,11 +119,25 @@ impl ToolVersion {
         };
         let count = hidden.len();
         let plural = if count == 1 { "" } else { "s" };
+        // Pinning the newest hidden version reproduces what was asked for only
+        // when the request selects a version directly. A `sub-N:` request
+        // subtracts from the base, so pinning the base would install something
+        // other than what was requested — `sub-1:1.8.2` resolves to `0`, not to
+        // the release below 1.8.2.
+        let remedy = if suggest_exact_pin {
+            format!(
+                " Install that one now with `{id}@{}`, or lower minimum_release_age.",
+                newest.version
+            )
+        } else {
+            format!(
+                " Lower minimum_release_age to make {} eligible.",
+                if count == 1 { "it" } else { "them" }
+            )
+        };
         eyre::eyre!(
             "no versions found for {id} matching minimum_release_age{age_fragment}: \
-             it hid {count} release{plural}{cutoff}, the newest being {}{released}. \
-             Install that one now with `{id}@{}`, or lower minimum_release_age.",
-            newest.version,
+             it hid {count} release{plural}{cutoff}, the newest being {}{released}.{remedy}",
             newest.version,
         )
     }
@@ -763,6 +778,7 @@ impl ToolVersion {
                 &v,
                 opts.before_date,
                 request.options().minimum_release_age(),
+                true,
             )
             .await);
         }
@@ -975,6 +991,7 @@ impl ToolVersion {
                 prefix,
                 opts.before_date,
                 request.options().minimum_release_age(),
+                true,
             )
             .await);
         };
@@ -1034,6 +1051,7 @@ pub(crate) async fn resolve_sub_base(
                     "latest",
                     before_date,
                     None,
+                    false,
                 )
                 .await);
             }

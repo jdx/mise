@@ -189,3 +189,9 @@ assert_not_contains_text "$(mise install jq@prefix:99 2>&1 || true)" "minimum_re
 # Only versions the query would have selected are counted: prefix:1.8 reports
 # the hidden 1.8.x releases, not every hidden version.
 assert_fail "mise install jq@prefix:1.8 --minimum-release-age 1990-01-01" "the newest being 1.8"
+
+# A sub-N: request is not offered the exact-pin escape: pinning the base
+# installs something other than what was asked for, since sub-1:1.8.2 subtracts
+# from 1.8.2 rather than selecting the release below it.
+assert_fail "mise install jq@sub-1:latest --minimum-release-age 1990-01-01" "Lower minimum_release_age to make them eligible"
+assert_not_contains_text "$(mise install jq@sub-1:latest --minimum-release-age 1990-01-01 2>&1 || true)" "Install that one now"
