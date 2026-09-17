@@ -759,7 +759,9 @@ end
             return Ok(());
         };
         const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let widget = |url: &str| format!("class Widget < Formula\n  url \"{url}\"\n  sha256 \"{SHA}\"\nend\n");
+        let widget = |url: &str| {
+            format!("class Widget < Formula\n  url \"{url}\"\n  sha256 \"{SHA}\"\nend\n")
+        };
 
         // A release asset named for its platform carries no version in its
         // filename at all, so the tag path segment is the only source. This is
@@ -779,7 +781,9 @@ end
         let f = formula_metadata(
             &ruby,
             "widget",
-            &widget("https://github.com/o/r/releases/download/v1.10.0/widget-1.10.0-arm64-macos.tar.gz"),
+            &widget(
+                "https://github.com/o/r/releases/download/v1.10.0/widget-1.10.0-arm64-macos.tar.gz",
+            ),
         )
         .await?;
         assert_eq!(f.versions.stable.as_deref(), Some("1.10.0"));
