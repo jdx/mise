@@ -3074,8 +3074,11 @@ impl Task {
 ///
 /// Resolving the literal values up front removes that ordering dependence without changing
 /// which value wins. A name is only hoisted when every directive assigning it is a plain
-/// literal; the last of those is the one that wins today, and it still does, since it moves to
-/// the front and the copies it already overrode are dropped with it.
+/// literal from the same config file; the last of those is the one that wins today, and it
+/// still does, since it moves to the front and the copies it already overrode are dropped with
+/// it. Sharing a config file matters because [`EnvResults::resolve`] drops directives by their
+/// source in safe mode: hoisting an assignment the resolver then drops would delete the copies
+/// that would have run.
 fn bind_literal_vars_first(
     directives: Vec<(EnvDirective, PathBuf)>,
 ) -> Vec<(EnvDirective, PathBuf)> {
@@ -3097,13 +3100,15 @@ fn bind_literal_vars_first(
     }
 
     /// A value that renders to itself and records nothing else, so where it resolves cannot
-    /// change what it produces. A redacted literal is excluded: dropping the copies it
-    /// overrode would drop their redactions with them.
+    /// change what it produces. Two kinds of literal are excluded: a redacted one, because
+    /// dropping the copies it overrode would drop their redactions with them, and a
+    /// `tools = true` one, because [`Task::resolve_task_vars`] resolves with
+    /// [`ToolsFilter::NonToolsOnly`] and never runs it at all.
     fn is_plain_literal(directive: &EnvDirective) -> bool {
         matches!(
             directive,
             EnvDirective::Val(_, value, opts)
-                if !contains_template_syntax(value) && opts.redact.is_none()
+                if !contains_template_syntax(value) && opts.redact.is_none() && !opts.tools
         )
     }
 
@@ -3122,15 +3127,21 @@ fn bind_literal_vars_first(
         return directives;
     }
 
-    // Per name, the literal to hoist, or `None` once something that is not a plain literal
-    // assigns it.
-    let mut winners: IndexMap<&str, Option<usize>> = IndexMap::new();
-    for (i, (directive, _)) in directives.iter().enumerate() {
+    // Per name, the literal to hoist and the file it came from, or `None` once anything
+    // disqualifies the name.
+    let mut winners: IndexMap<&str, Option<(usize, &Path)>> = IndexMap::new();
+    for (i, (directive, source)) in directives.iter().enumerate() {
         let Some(name) = assigned_name(directive) else {
             continue;
         };
-        let winner = winners.entry(name).or_insert(Some(i));
-        *winner = (is_plain_literal(directive) && winner.is_some()).then_some(i);
+        let winner = match winners.get(name).copied() {
+            None => is_plain_literal(directive).then_some((i, source.as_path())),
+            Some(None) => None,
+            Some(Some((_, first_source))) => (is_plain_literal(directive)
+                && first_source == source.as_path())
+            .then_some((i, source.as_path())),
+        };
+        winners.insert(name, winner);
     }
     let hoisted: HashSet<String> = winners
         .iter()
@@ -3140,7 +3151,7 @@ fn bind_literal_vars_first(
     let prelude: Vec<(EnvDirective, PathBuf)> = winners
         .values()
         .flatten()
-        .map(|&i| directives[i].clone())
+        .map(|&(i, _)| directives[i].clone())
         .collect();
     if prelude.is_empty() {
         return directives;
@@ -3929,6 +3940,24 @@ mod tests {
             )
         }
 
+        fn tools(key: &str, value: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::Val(
+                    key.into(),
+                    value.into(),
+                    EnvDirectiveOptions {
+                        tools: true,
+                        ..Default::default()
+                    },
+                ),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn from(source: &str, directive: (EnvDirective, PathBuf)) -> (EnvDirective, PathBuf) {
+            (directive.0, PathBuf::from(source))
+        }
+
         fn file(path: &str) -> (EnvDirective, PathBuf) {
             (
                 EnvDirective::File(path.into(), Default::default()),
@@ -4005,6 +4034,34 @@ mod tests {
                     val("arg", "--token={{vars.token}}"),
                 ]),
                 ["token=secret", "arg=--token={{vars.token}}"]
+            );
+        }
+
+        /// `resolve_task_vars` resolves with `NonToolsOnly`, so a `tools = true` value never
+        /// runs. Hoisting it as the winner would delete the copies that do.
+        #[test]
+        fn a_tools_literal_is_left_alone() {
+            assert_eq!(
+                order(vec![
+                    val("mode", "template"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    tools("mode", "task"),
+                ]),
+                ["mode=template", "cmd=run --{{vars.mode}}", "mode=task"]
+            );
+        }
+
+        /// Safe mode drops directives by the config file they came from, so a name assigned
+        /// from two files keeps its order rather than risk hoisting the one that is dropped.
+        #[test]
+        fn a_name_assigned_from_two_files_is_left_alone() {
+            assert_eq!(
+                order(vec![
+                    val("mode", "base"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    from("overlay.toml", val("mode", "overlay")),
+                ]),
+                ["mode=base", "cmd=run --{{vars.mode}}", "mode=overlay"]
             );
         }
 

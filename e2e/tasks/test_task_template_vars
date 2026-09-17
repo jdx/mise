@@ -78,3 +78,18 @@ EOF
 
 assert "mise run uses_config" "config"
 assert "mise run uses_task" "task"
+
+# A `tools = true` var is resolved in a separate pass and never reaches a task's vars, so
+# overriding a template's literal with one must leave the template's value in place rather
+# than delete it.
+cat <<'EOF' >mise.toml
+[task_templates.toolsy]
+vars = { mode = "template", cmd = "run --{{ vars.mode | default(value='MISSING') }}" }
+run = "echo {{ vars.cmd }}"
+
+[tasks.tools_override]
+extends = "toolsy"
+vars = { mode = { value = "task", tools = true } }
+EOF
+
+assert "mise run tools_override" "run --template"
