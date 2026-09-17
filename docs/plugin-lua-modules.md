@@ -593,6 +593,35 @@ colon-separated string to PATH in code that also runs on Windows.
 
 ## Command Module
 
+Three functions run a command. **Prefer `cmd.exec`.** It is the only one that does not
+compete for the terminal, so it never holds up the tools installing alongside it.
+
+| Function     | Output                                    | Returns                               | Cost to other installs                   |
+| ------------ | ----------------------------------------- | ------------------------------------- | ---------------------------------------- |
+| `cmd.exec`   | captured                                  | stdout as a string; raises on failure | none                                     |
+| `os.execute` | streamed to the terminal                  | exit status                           | holds mise's terminal lock while it runs |
+| `cmd.stream` | streamed to the terminal, stdin connected | exit status                           | holds that lock exclusively              |
+
+Reach for `os.execute` only when the user should watch output as it happens, and for
+`cmd.stream` only when the child genuinely has to interact with the user. Because mise
+installs tools in parallel, only one child can own the terminal at a time, so both take
+mise's terminal lock.
+
+What waits on that lock is everything that writes to the terminal: any command mise runs
+itself, such as a core tool's build or an asdf plugin's script, plus `os.execute` and
+`cmd.stream` in any other plugin. `cmd.exec` does not take the lock at all — it captures
+its output, so it can never collide with a child that owns the terminal. That is why a
+hook that shells out through the streaming functions repeatedly slows the installs running
+beside it, and a long `cmd.stream` call stalls them until it exits.
+
+Preferring `cmd.exec` costs nothing in visibility. A plugin's own `print()` output is
+routed to that tool's progress line, so progress reporting belongs in `print()` rather
+than in a child's streamed output.
+
+Unless the user enables [`raw`](/configuration/settings.html#raw), `cmd.exec` and
+`os.execute` give children `/dev/null` on stdin; `cmd.stream` always connects it. See
+[Hooks and stdin](#hooks-and-stdin) below.
+
 `cmd.exec` runs a command through mise's configured default inline shell. It returns stdout
 on success and raises an error containing stderr on failure. Successful stderr is not part
 of the returned string. `pcall(cmd.exec, ...)` can intercept the error.
@@ -601,6 +630,49 @@ The string is shell code, not an argument array. Use `cwd` for the working direc
 quote external values for that shell; interpolating tool options into shell text can execute
 unintended commands. `os.execute` streams output and returns the exit status using Lua 5.1
 conventions (`0` for success), with the same mise-constructed environment.
+
+### Hooks and stdin
+
+Prefer non-interactive hooks. mise installs tools in parallel, so no single child owns the
+terminal: a prompt written from a hook appears underneath the progress bars of the other
+installs, where the user cannot see or answer it. Take what you need from the tool options,
+the environment, or the lockfile rather than prompting, and pass children their own
+non-interactive flag (`--yes`, `--non-interactive`, `-n`) where they have one.
+
+Because of that, `cmd.exec` and `os.execute` give children `/dev/null` on stdin unless the
+user enables [`raw`](/configuration/settings.html#raw) (see below). A child
+that reads stdin under either one sees EOF immediately rather than hanging or stealing input
+from a sibling install.
+
+### Interactive children with `cmd.stream`
+
+When a hook genuinely must be interactive — entering a credential, accepting a license — use
+`cmd.stream`, which connects stdin and streams stdout and stderr to the terminal instead of
+capturing them, and returns the exit status:
+
+```lua
+local cmd = require("cmd")
+
+local code = cmd.stream("some-tool login")
+if code ~= 0 then
+    error("login failed with status " .. tostring(code))
+end
+```
+
+`cmd.stream` accepts the same `cwd` and `env` options as `cmd.exec` and uses the same
+mise-constructed environment.
+
+While the child runs, mise pauses the progress display and holds an exclusive lock, so no
+other mise command runs alongside it. Other installs continue but wait to run commands of
+their own until the child exits. That is the point — an interactive child needs the terminal
+to itself — but it means a long-running `cmd.stream` call stalls everything else. Reach for
+it only when the interaction is genuinely required, and prefer a non-interactive path when
+the tool offers one.
+
+Users can also connect stdio for every child with [`raw`](/configuration/settings.html#raw)
+(`mise install --raw`, `MISE_RAW=1`), which serializes installs. That is a user-side escape
+hatch, not a way to build a plugin: a hook that only works under `--raw` is broken for
+everyone who does not set it. Use `cmd.stream` instead.
 
 ### Basic Command Execution
 
@@ -643,7 +715,34 @@ The options table supports the following keys:
 
 - **`cwd`** (string): Set the working directory for the command
 - **`env`** (table): Set environment variables for the command. These are merged on top of the inherited environment (see below).
-- **`timeout`**: Currently ignored. Do not rely on it to terminate a command.
+- **`timeout`** (number): Seconds to allow the command to run before it is killed and an
+  error is raised. Must be greater than zero; fractions are allowed. Supported by
+  `cmd.exec` and `cmd.stream`; `os.execute` takes no options table.
+
+### Timeouts
+
+Without `timeout` a command runs as long as it likes, which is usually what an install
+step wants. Pass it when a command could hang indefinitely — reaching a network service
+that may not answer, or an interactive child nobody is there to answer:
+
+```lua
+local cmd = require("cmd")
+
+local ok, err = pcall(cmd.exec, "some-tool sync", { timeout = 30 })
+if not ok then
+    error("sync did not finish: " .. tostring(err))
+end
+```
+
+On expiry the command is killed and the call raises, so a timeout can be caught with
+`pcall` but never mistaken for a normal non-zero exit. `cmd.exec` discards whatever the
+command had produced so far.
+
+Only the shell mise spawned is killed. A command that starts its own background
+processes can leave them running after the timeout fires, so prefer a tool's own
+timeout flag when it has one. `cmd.exec` stops collecting output at the deadline in
+that case, so the call still returns on time, but output those processes had already
+written may be discarded along with the error.
 
 ### Environment Inheritance in Env Module Hooks
 

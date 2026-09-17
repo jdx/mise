@@ -117,6 +117,7 @@ Options:
 - `MISE_INSTALL_PATH=/some/path` – change the binary path (default: `~/.local/bin/mise`)
 - `MISE_VERSION=v2025.12.0` – install a specific version
 - `MISE_INSTALL_SKIP_IF_EXISTS=1` – skip the download/install if the mise binary at the install path already matches the requested version
+- `MISE_INSTALL_MUSL=1` – use the static musl build on systems with older glibc
 
 To verify the install script hasn't been tampered with:
 
@@ -150,6 +151,44 @@ Supported OS/arch:
 - `linux-arm64-musl`
 - `linux-armv7`
 - `linux-armv7-musl`
+
+The `linux-x64`, `linux-arm64`, and `linux-armv7` builds are dynamically linked and
+require **glibc 2.18 or newer**. For systems with older glibc or a different
+libc, such as musl on Alpine Linux, use the matching static `-musl` build. These
+builds do not require glibc.
+
+The installer at `mise.run` selects musl builds automatically on musl systems.
+On glibc systems, it selects a GNU build without checking the glibc version. If
+your glibc is older than 2.18, select the musl build explicitly:
+
+```sh
+curl -fsSL https://mise.run | MISE_INSTALL_MUSL=1 sh
+```
+
+::: details Policy for raising the glibc minimum
+
+Before mise raises its glibc minimum, every distribution with an older version
+must have reached the end of standard vendor support. Extended-support programs,
+such as Ubuntu ESM, RHEL ELS, and SUSE LTSS, do not extend this period. Users of
+those systems can use static musl builds.
+
+The following table lists standard support end dates for several distributions:
+
+| glibc  | Distros                                                | Standard support ends                    |
+| ------ | ------------------------------------------------------ | ---------------------------------------- |
+| ≤ 2.27 | RHEL 7, Ubuntu 16.04 / 18.04, Debian 9, Amazon Linux 2 | ended (last: Amazon Linux 2, 2026-06-30) |
+| 2.28   | Debian 10                                              | ended 2024-06-30                         |
+| 2.28   | RHEL 8, Rocky 8, AlmaLinux 8                           | 2029-05-31                               |
+| 2.31   | Ubuntu 20.04, Debian 11                                | ended (last: Debian 11, 2026-08-31)      |
+| 2.34   | Amazon Linux 2023                                      | 2029-06-30                               |
+| 2.34   | RHEL 9, Rocky 9, AlmaLinux 9                           | 2032-05-31                               |
+| 2.35   | Ubuntu 22.04                                           | 2027-06-01                               |
+
+The minimum remains **glibc 2.18**. These dates inform future compatibility
+changes; they do not set a release schedule. The same support policy applies to
+distributions omitted from the table.
+
+:::
 
 If you need something else, compile it with `cargo install mise` (see below).
 
@@ -375,7 +414,7 @@ change. To keep compiling from source, set
 [`all_compile = true`](/configuration/settings.html#all_compile) explicitly.
 :::
 
-### yum (RHEL 8, CentOS Stream 8, Amazon Linux 2)
+### yum (RHEL 8, CentOS Stream 8)
 
 ```sh
 sudo yum install -y yum-utils

@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# Regression for #13273: a glob must expand to every matching task, including
+# file tasks that only match after their extension is stripped. Previously an
+# exact match anywhere in the expansion (a toml task, or a file task with no
+# extension) suppressed every extension-bearing task in the whole expansion, so
+# `mise run '//...:lint'` silently ran a subset and still exited 0.
+
+export MISE_EXPERIMENTAL=1
+
+cat >mise.toml <<'EOF'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+
+mkdir -p packages/a packages/b/mise-tasks packages/c/mise-tasks
+cat >packages/a/mise.toml <<'EOF'
+[tasks.lint]
+run = 'echo "a-lint-marker"'
+EOF
+touch packages/b/mise.toml packages/c/mise.toml
+
+cat >packages/b/mise-tasks/lint <<'EOF'
+#!/usr/bin/env bash
+echo "b-lint-marker"
+EOF
+cat >packages/c/mise-tasks/lint.sh <<'EOF'
+#!/usr/bin/env bash
+echo "c-lint-marker"
+EOF
+chmod +x packages/b/mise-tasks/lint packages/c/mise-tasks/lint.sh
+
+mise trust
+
+out="$(mise run '//...:lint' 2>&1)"
+assert_contains_text "$out" "a-lint-marker"
+assert_contains_text "$out" "b-lint-marker"
+assert_contains_text "$out" "c-lint-marker"
+
+# A toml task and a same-named file task in the same package are still the same
+# task identity, so the script must not run twice (#10298).
+cat >packages/a/mise.toml <<'EOF'
+[tasks.lint]
+run = 'echo "a-lint-marker"'
+EOF
+mkdir -p packages/a/mise-tasks
+cat >packages/a/mise-tasks/lint.sh <<'EOF'
+#!/usr/bin/env bash
+echo "a-file-lint-marker"
+EOF
+chmod +x packages/a/mise-tasks/lint.sh
+
+out="$(mise run '//...:lint' 2>&1)"
+assert_contains_text "$out" "a-lint-marker"
+assert_not_contains_text "$out" "a-file-lint-marker"
+assert_contains_text "$out" "c-lint-marker"

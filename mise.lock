@@ -473,113 +473,111 @@ url = "https://github.com/orhun/git-cliff/releases/download/v2.14.1/git-cliff-2.
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/539702434"
 
 [[tools."github:jdx/tak"]]
-version = "0.0.9"
+version = "0.0.10"
 backend = "github:jdx/tak"
 
 [tools."github:jdx/tak"."platforms.linux-arm64"]
-checksum = "sha256:9069450a581d5918c7f40fe4120f054a71835da322604becb42b7acb5bd1e0a1"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992902"
+checksum = "sha256:525a4796db332f9f865063820095306efc5ed698ec3e7714e2185f26344335bd"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781784"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.linux-arm64-musl"]
-checksum = "sha256:0caa3b6b66fe98298714a90e6de0690402a417f5b3c34d9aa9c912edf69a18f1"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992901"
+checksum = "sha256:ca8a988a994a9053084c5461be1d450bf164081608a6fea5e1ecfcc566470816"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781786"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.linux-x64"]
-checksum = "sha256:dfb0020b976d679af5a7504190ffbcb201c0e11b2f7788901fd6f60740cd87d4"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992912"
+checksum = "sha256:56fe41af8906be449806e4fb199b46ab653e75540265631ba25c633259df5460"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781794"
 provenance = "github-attestations"
-provenance_verified = true
 
 [tools."github:jdx/tak"."platforms.linux-x64-baseline"]
-checksum = "sha256:dfb0020b976d679af5a7504190ffbcb201c0e11b2f7788901fd6f60740cd87d4"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992912"
+checksum = "sha256:56fe41af8906be449806e4fb199b46ab653e75540265631ba25c633259df5460"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781794"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.linux-x64-musl"]
-checksum = "sha256:c761a4dbf695dc493744c79de0f3ab67a1698ee5af9afd35f6d019af36145420"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992915"
+checksum = "sha256:3128ec683a75b1848ac74dc7e0f4673cbd24be10981bb9e6a04f2778ee4f0b7b"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781793"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:c761a4dbf695dc493744c79de0f3ab67a1698ee5af9afd35f6d019af36145420"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992915"
+checksum = "sha256:3128ec683a75b1848ac74dc7e0f4673cbd24be10981bb9e6a04f2778ee4f0b7b"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781793"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.macos-arm64"]
-checksum = "sha256:be4690bad41265946803d11f145c22e01368164e7f1fe49befef8789259c9471"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992905"
+checksum = "sha256:2d0dcb013e5c364b6bcc233a19398dd09450552995547060dd9cc10ebc04a731"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781785"
 provenance = "github-attestations"
-provenance_verified = true
 
 [tools."github:jdx/tak"."platforms.windows-x64"]
-checksum = "sha256:a15f62ea6fa0051f8ae01fca58da26c550ae95fd9d7eccaa167ca53d6f2262b3"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992910"
+checksum = "sha256:02e352f1ac7285785857afc882cfddf98035da7fe2f0c2769acbd1f1f3e1624b"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781790"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.windows-x64-baseline"]
-checksum = "sha256:a15f62ea6fa0051f8ae01fca58da26c550ae95fd9d7eccaa167ca53d6f2262b3"
-url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992910"
+checksum = "sha256:02e352f1ac7285785857afc882cfddf98035da7fe2f0c2769acbd1f1f3e1624b"
+url = "https://github.com/jdx/tak/releases/download/v0.0.10/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/545781790"
 provenance = "github-attestations"
 
 [[tools.hk]]
-version = "2.0.0"
+version = "2.0.1"
 backend = "aqua:jdx/hk"
 
 [tools.hk."platforms.linux-arm64"]
-checksum = "sha256:1034ac9e07d7ffc18b58c72c6fe1013bd1e6ab1d8fa421bc4f4ac68ee08cb011"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560743974"
+checksum = "sha256:8a28f2737914bbffa8dd16f39a2fc65d85e9a52261789cf6a1affd6c6762fbc1"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-aarch64-unknown-linux-gnu.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:494b4e1c6be73b44cffcead07a97681ec3f1ea72df05a6fbba5a2bfae3648604"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560743976"
+checksum = "sha256:b75f54bf8a3679a13a01d250959ae77fab033ca5025eb557b76442c59efa8eb8"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-aarch64-unknown-linux-musl.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64"]
-checksum = "sha256:d2cdde7a68dba648b2d25605ceab364074a057fb93618b46ce7ac3e298bfba2c"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560743996"
+checksum = "sha256:f14d0290a07f82911f32ea5e4a91dd80d90abb852488912b1ade9b240f70d615"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-x86_64-unknown-linux-gnu.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-baseline"]
-checksum = "sha256:d2cdde7a68dba648b2d25605ceab364074a057fb93618b46ce7ac3e298bfba2c"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560743996"
+checksum = "sha256:f14d0290a07f82911f32ea5e4a91dd80d90abb852488912b1ade9b240f70d615"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-x86_64-unknown-linux-gnu.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:8faf654847d8cc7432012d4b1277ae91b4bca78275f87776f0381aee26d7920d"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560744002"
+checksum = "sha256:76269248e27114f361d533551ffca757e58a1d4abe880fd008df16d19128ea97"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-x86_64-unknown-linux-musl.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:8faf654847d8cc7432012d4b1277ae91b4bca78275f87776f0381aee26d7920d"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560744002"
+checksum = "sha256:76269248e27114f361d533551ffca757e58a1d4abe880fd008df16d19128ea97"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-x86_64-unknown-linux-musl.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.macos-arm64"]
-checksum = "sha256:9ee3f4350b321677e5ce291882c6441b153773b32705734d2208f93ac71ce12f"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560743972"
+checksum = "sha256:6ec393f898f562f76c4839a910356b4afec6740eff23f18ebdf8cf41c793a461"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-aarch64-apple-darwin.tar.gz"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.windows-x64"]
-checksum = "sha256:81fca45c5e7697fdc114080f2fc1ea229bb053b4201a7f4e15e62d1a68820a65"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560743971"
+checksum = "sha256:b3cb8ab5958393faacefabfb3a402060eb256b1fda8e1f83c74c3fc877ebff8f"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-x86_64-pc-windows-msvc.zip"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.windows-x64-baseline"]
-checksum = "sha256:81fca45c5e7697fdc114080f2fc1ea229bb053b4201a7f4e15e62d1a68820a65"
-url = "https://github.com/jdx/hk/releases/download/v2.0.0/hk-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/hk/releases/assets/560743971"
+checksum = "sha256:b3cb8ab5958393faacefabfb3a402060eb256b1fda8e1f83c74c3fc877ebff8f"
+url = "https://github.com/jdx/hk/releases/download/v2.0.1/hk-x86_64-pc-windows-msvc.zip"
+signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [[tools.jq]]
 version = "1.8.2"
@@ -697,36 +695,42 @@ checksum = "sha256:a05f13ee92e1100306ff707592d33195cadf9b61209921662915bd71643d6
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-aarch64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170204"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-arm64-musl"]
 checksum = "sha256:0540e5a9c7c5b3910a3c9d5cd300c8cd1395d80d17e15825b0e0eaee966c5847"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-aarch64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170206"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64"]
 checksum = "sha256:b854c43bd335b1e450138b06fab82512cf550300ee224fe5d17e2cb673986079"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170228"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-baseline"]
 checksum = "sha256:b854c43bd335b1e450138b06fab82512cf550300ee224fe5d17e2cb673986079"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170228"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-musl"]
 checksum = "sha256:3075b697c4475ee8ddc24c97a58342252f166f293d57c7546d274021b29af14f"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170229"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:3075b697c4475ee8ddc24c97a58342252f166f293d57c7546d274021b29af14f"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-unknown-linux-musl.tar.gz"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170229"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.macos-arm64"]
 checksum = "sha256:5801558a4e81545eb5abbb6ac0cca27ddf95a25e0aa9f41e7c5b63e01d1b75ce"
@@ -734,58 +738,61 @@ url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-aarch64
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170205"
 provenance = "github-attestations"
 provenance_verified = true
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.windows-x64"]
 checksum = "sha256:a2f07c618539933ca521db5e1ffd62faf3a009e2e29cb73932ba17d041740596"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170223"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.windows-x64-baseline"]
 checksum = "sha256:a2f07c618539933ca521db5e1ffd62faf3a009e2e29cb73932ba17d041740596"
 url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170223"
 provenance = "github-attestations"
+signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [[tools.node]]
-version = "24.20.0"
+version = "24.21.0"
 backend = "core:node"
 
 [tools.node."platforms.linux-arm64"]
-checksum = "sha256:3515603e2487879a39bc75716f1a2affd027500c64ba50e845cf72cb33219013"
-url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-arm64.tar.gz"
+checksum = "sha256:724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-arm64.tar.gz"
 
 [tools.node."platforms.linux-arm64-musl"]
-checksum = "sha256:2c8c507ccb0f20812d9526ba8ca454b1652aadef68fc8bad06f07fb1122dd1ef"
-url = "https://unofficial-builds.nodejs.org/download/release/v24.20.0/node-v24.20.0-linux-arm64-musl.tar.gz"
+checksum = "sha256:3048b0811e158ca0d8672b59c839861763e144492980d8d29b369dfee45747e4"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.21.0/node-v24.21.0-linux-arm64-musl.tar.gz"
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:855d581f8a4eb1a8117e3426de25fe02770592febcfb31369aee1ffbfee9e8ec"
-url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-x64.tar.gz"
+checksum = "sha256:6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz"
 
 [tools.node."platforms.linux-x64-baseline"]
-checksum = "sha256:855d581f8a4eb1a8117e3426de25fe02770592febcfb31369aee1ffbfee9e8ec"
-url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-x64.tar.gz"
+checksum = "sha256:6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz"
 
 [tools.node."platforms.linux-x64-musl"]
-checksum = "sha256:9ae1399fef4bd8990e15773ce1327b336a20b9e97d8c7549f4f42ca73c43f562"
-url = "https://unofficial-builds.nodejs.org/download/release/v24.20.0/node-v24.20.0-linux-x64-musl.tar.gz"
+checksum = "sha256:01a713e34da98e7b4d2a3191ee7ca3f93dd0384d1a2ef23c379b2161ee6e133a"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.21.0/node-v24.21.0-linux-x64-musl.tar.gz"
 
 [tools.node."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:9ae1399fef4bd8990e15773ce1327b336a20b9e97d8c7549f4f42ca73c43f562"
-url = "https://unofficial-builds.nodejs.org/download/release/v24.20.0/node-v24.20.0-linux-x64-musl.tar.gz"
+checksum = "sha256:01a713e34da98e7b4d2a3191ee7ca3f93dd0384d1a2ef23c379b2161ee6e133a"
+url = "https://unofficial-builds.nodejs.org/download/release/v24.21.0/node-v24.21.0-linux-x64-musl.tar.gz"
 
 [tools.node."platforms.macos-arm64"]
-checksum = "sha256:40e5607e5ecb3db9192723776da2d75d966260fc74a7a9e731c1bd67dda96bc8"
-url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-darwin-arm64.tar.gz"
+checksum = "sha256:bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-arm64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
-checksum = "sha256:6cac9ffbca8f6a47091e4b5c772e0606049c3871cb67d900c0cedde630e545ba"
-url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-win-x64.zip"
+checksum = "sha256:158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
 
 [tools.node."platforms.windows-x64-baseline"]
-checksum = "sha256:6cac9ffbca8f6a47091e4b5c772e0606049c3871cb67d900c0cedde630e545ba"
-url = "https://nodejs.org/dist/v24.20.0/node-v24.20.0-win-x64.zip"
+checksum = "sha256:158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
+url = "https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip"
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
