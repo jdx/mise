@@ -102,6 +102,7 @@ impl Task {
     /// - depends, depends_post, wait_for: Local overrides completely (if non-empty)
     /// - dir: Local overrides; defaults to None if not in template
     /// - sources, outputs: Local overrides completely (if non-empty)
+    /// - usage: Concatenated (template spec first, then the task's own)
     /// - Other fields: Local overrides template (if set)
     pub(crate) fn merge_template(&mut self, template: &TaskTemplate) {
         // run: only use template if local is empty
@@ -215,9 +216,20 @@ impl Task {
             self.toml_bool_presence.record("silent");
         }
 
-        // usage: use template only if local is empty
-        if self.usage.is_empty() && !template.usage.is_empty() {
-            self.usage = template.usage.clone();
+        // usage: the template's spec is prepended to the task's rather than replaced by it.
+        // A usage spec is a list of declarations, so the composable reading is the useful one:
+        // it lets a template hold the flags several tasks share while each task adds its own.
+        // Replacing meant a task that declared a single flag silently lost every inherited
+        // one, which is the opposite of how the rest of these fields behave.
+        //
+        // Template first so shared flags lead in `--help`, and so a template's positional
+        // args stay ahead of the task's. Both halves are rendered together afterwards, so
+        // tera in either still resolves.
+        if !template.usage.is_empty() {
+            self.usage = match self.usage.trim() {
+                "" => template.usage.clone(),
+                own => format!("{}\n{own}", template.usage.trim_end()),
+            };
         }
 
         // timeout: use template only if local not set
@@ -284,6 +296,47 @@ mod tests {
         // Template run should be used when local is empty
         assert_eq!(task.run.len(), 1);
         assert!(matches!(&task.run[0], RunEntry::Script(s) if s == "template command"));
+    }
+
+    #[test]
+    fn test_merge_template_usage_is_composed() {
+        let mut task = Task {
+            usage: "flag \"--own <v>\"".to_string(),
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            usage: "flag \"--shared <v>\"\n".to_string(),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert_eq!(task.usage, "flag \"--shared <v>\"\nflag \"--own <v>\"");
+    }
+
+    #[test]
+    fn test_merge_template_usage_from_template_only() {
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            usage: "flag \"--shared <v>\"".to_string(),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert_eq!(task.usage, "flag \"--shared <v>\"");
+    }
+
+    #[test]
+    fn test_merge_template_usage_without_template_spec() {
+        let mut task = Task {
+            usage: "flag \"--own <v>\"".to_string(),
+            ..Default::default()
+        };
+
+        task.merge_template(&TaskTemplate::default());
+
+        assert_eq!(task.usage, "flag \"--own <v>\"");
     }
 
     #[test]

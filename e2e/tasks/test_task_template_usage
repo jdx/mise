@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Test that a task extending a template inherits its usage spec
+
+cat <<'EOF' >mise.toml
+[task_templates.deploy]
+usage = """
+flag "--env <env>" help="Target environment"
+flag "--dry-run" help="Print what would happen"
+"""
+
+[tasks.deploy-api]
+extends = "deploy"
+usage = 'flag "--replicas <n>" help="How many to run"'
+run = 'echo "env=$usage_env dry=$usage_dry_run replicas=$usage_replicas"'
+
+[tasks.deploy-web]
+extends = "deploy"
+run = 'echo "env=$usage_env"'
+EOF
+
+# The task's own flags are added to the template's rather than replacing them
+assert "mise run deploy-api --env prod --dry-run --replicas 3" "env=prod dry=true replicas=3"
+
+# --help lists both, template flags first
+assert_contains "mise run deploy-api --help" "--env <env>"
+assert_contains "mise run deploy-api --help" "--dry-run"
+assert_contains "mise run deploy-api --help" "--replicas <n>"
+
+# A task with no usage of its own still inherits the template's
+assert "mise run deploy-web --env staging" "env=staging"
+
+# An inherited flag that is not passed stays unset
+assert "mise run deploy-api --env prod" "env=prod dry= replicas="
+
+# Choices declared once in the template are enforced for every task that extends it
+cat <<'EOF' >mise.toml
+[task_templates.deploy]
+usage = """
+flag "--env <env>" help="Target environment" {
+  arg "<env>" {
+    choices "dev" "prod"
+  }
+}
+"""
+
+[tasks.deploy-api]
+extends = "deploy"
+usage = 'flag "--replicas <n>"'
+run = 'echo "env=$usage_env"'
+EOF
+
+assert "mise run deploy-api --env dev" "env=dev"
+assert_fail "mise run deploy-api --env nope" "Invalid choice"
+
+# Tera in either half is rendered after the two are joined
+cat <<'EOF' >mise.toml
+[vars]
+env_help = "Target environment"
+
+[task_templates.deploy]
+usage = 'flag "--env <env>" help="{{ vars.env_help }}"'
+
+[tasks.deploy-api]
+extends = "deploy"
+usage = 'flag "--replicas <n>" help="{{ vars.env_help }}"'
+run = 'echo "env=$usage_env"'
+EOF
+
+assert_contains "mise run deploy-api --help" "Target environment"
+assert "mise run deploy-api --env dev" "env=dev"
