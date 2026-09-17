@@ -107,6 +107,10 @@ impl Task {
     /// Merge a template into this task, using template values only where the task
     /// doesn't already have values set. This allows tasks to override template values.
     ///
+    /// This is the fill-only merge, used for a workspace-root task default. For a template
+    /// the task named with `extends`, see [`Self::merge_extended_template`], which differs
+    /// only in what it does with `usage`.
+    ///
     /// Merge semantics:
     /// - run, run_windows: Local overrides completely (if non-empty)
     /// - tools: Deep merge (local tools added/override template)
@@ -115,7 +119,7 @@ impl Task {
     /// - depends, depends_post, wait_for: Local overrides completely (if non-empty)
     /// - dir: Local overrides; defaults to None if not in template
     /// - sources, outputs: Local overrides completely (if non-empty)
-    /// - usage: Concatenated (template spec first, then the task's own)
+    /// - usage: Template spec used only when the task has none
     /// - Other fields: Local overrides template (if set)
     pub(crate) fn merge_template(&mut self, template: &TaskTemplate) {
         self.merge_template_with(template, UsageMerge::FillOnly)
@@ -123,8 +127,9 @@ impl Task {
 
     /// Merge a template the task named with `extends`.
     ///
-    /// Identical to [`Self::merge_template`] except that the template's `usage` spec is
-    /// composed with the task's rather than used only when the task has none.
+    /// Every field behaves as it does in [`Self::merge_template`], except `usage`: the
+    /// template's spec is prepended to the task's rather than used only when the task has
+    /// none, so a task adding a flag of its own keeps the shared ones.
     pub(crate) fn merge_extended_template(&mut self, template: &TaskTemplate) {
         self.merge_template_with(template, UsageMerge::Compose)
     }
