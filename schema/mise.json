@@ -1991,7 +1991,7 @@
               "type": "boolean"
             },
             "platform": {
-              "description": "Override the platform to use for precompiled binaries.",
+              "description": "Override the distro build to use for precompiled binaries. By default the distro is detected and matched against what the Swift release actually publishes, which changes from release to release. Set this to force a specific build, or to install without reaching swift.org's release index.",
               "type": "string"
             }
           }
