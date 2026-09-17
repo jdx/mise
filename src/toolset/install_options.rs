@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::config::settings::Settings;
+use crate::toolset::ToolRequest;
 use crate::toolset::tool_version::ResolveOptions;
 
 #[derive(Debug, Clone)]
@@ -9,6 +10,9 @@ pub(crate) struct InstallOptions {
     /// The caller prints its own final installation results.
     pub hide_success_summary: bool,
     pub force: bool,
+    /// Explicit CLI postinstall requests that must not silently skip their hooks.
+    /// Configured hooks retain their usual install-only behavior.
+    pub required_postinstall: Vec<ToolRequest>,
     pub jobs: Option<usize>,
     pub raw: bool,
     /// only install missing tools if passed as arguments
@@ -51,6 +55,7 @@ impl Default for InstallOptions {
             reason: "install".to_string(),
             hide_success_summary: false,
             force: false,
+            required_postinstall: Vec::new(),
             missing_args_only: true,
             include_lazy: false,
             skip_auto_install: false,

@@ -819,14 +819,30 @@ impl Toolset {
             && Settings::get().lockfile_enabled()
             && !ctx.locked
             && !opts.dry_run;
-        if !generate {
-            return backend.install_version(ctx, tv).await;
+        if generate {
+            let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
+                && !opts.raw
+                && !Settings::get().raw;
+            preparations.start(config.clone(), tv.clone(), concurrent)?;
         }
-        let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
-            && !opts.raw
-            && !Settings::get().raw;
-        preparations.start(config.clone(), tv.clone(), concurrent)?;
-        backend.install_version(ctx, tv).await
+        let tv = backend.install_version(ctx, tv).await?;
+        // Check the actual outcome after the install lock, not a preflight snapshot.
+        // Match the original request: resolution can canonicalize path/alias requests.
+        if !opts.dry_run
+            && tv.install_satisfied == Some(true)
+            && opts
+                .required_postinstall
+                .iter()
+                .any(|required| tool_key(required) == tool_key(tr))
+        {
+            eyre::bail!(
+                "--postinstall did not run for {}: already installed\n\
+                hint: Run the command manually, or retry with --force to reinstall and run it.\n\
+                The requested configuration changes were not saved.",
+                tv.style()
+            );
+        }
+        Ok(tv)
     }
 
     pub(crate) async fn install_missing_bin(

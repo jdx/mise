@@ -3452,7 +3452,8 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let will_uninstall =
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
-        if install_satisfied && !will_uninstall {
+        tv.install_satisfied = Some(install_satisfied && !will_uninstall);
+        if tv.install_satisfied == Some(true) {
             ctx.pr.finish_with_icon(
                 "already installed".into(),
                 crate::ui::progress_report::ProgressIcon::Skipped,

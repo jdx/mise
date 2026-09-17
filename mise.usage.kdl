@@ -6279,6 +6279,11 @@ https://mise.jdx.dev/configuration/settings.html#lockfile
     flag "-h --help" help="Print help" action=help builtin=#true
     clause tools {
         flag --postinstall help="Command to run after installing this tool" {
+            long_help #"""
+Command to run after installing this tool
+
+Errors if the tool is already installed and the command is skipped. Use --force to reinstall and run the command, or run it manually.
+"""#
             arg <COMMAND>
         }
         flag --tool-option help=#"""

@@ -179,6 +179,12 @@ Behavior:
 - The tool's bin path is on PATH during the command, so you can invoke the installed tool directly.
 - Environment variables include `MISE_TOOL_INSTALL_PATH` pointing to the tool's install directory and any variables from that tool's `install_env` option.
 - If the install fails, the `postinstall` command is not run.
+- Configured hooks are skipped when the tool is already installed.
+- When explicitly passing `mise use --postinstall "command" tool`, a skipped hook
+  returns an error instead of silently succeeding, and the requested configuration
+  changes are not saved. Other tools in the same invocation may already have been
+  installed. Run the command manually, or add `--force` to reinstall and run it.
+  Dry runs do not execute hooks and are exempt from this error.
 
 ## OS-Specific Tools
 

@@ -74,6 +74,8 @@ an activated shell on its next prompt, or immediately in `mise exec` commands.
 - **`--remove <TOOL>`** — Remove the tool(s) from config file
 - **`-h --help`** — Print help
 - **`--postinstall <COMMAND>`** — Command to run after installing this tool
+
+  Errors if the tool is already installed and the command is skipped. Use --force to reinstall and run the command, or run it manually.
 - **`--tool-option <KEY=VALUE>`** — Set an option for this tool (repeat for multiple options).
   Values use inline tool-option types; unquoted text is treated as a string.
   Place these flags before the tool they apply to.

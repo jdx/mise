@@ -6,6 +6,7 @@ assert "cat single-hook" "single"
 assert "mise config get tools.dummy.postinstall" "printf single >single-hook"
 
 # Prefix association restarts after each tool, so each tool receives only its own hook.
+ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny"
 ln -s "$ROOT/test/data/plugins/tiny" "$MISE_DATA_DIR/plugins/tiny-no-hook"
 mise use \
   --postinstall "printf dummy >dummy-hook" dummy@1.0.0 \
@@ -17,17 +18,59 @@ assert "mise config get tools.dummy.postinstall" "printf dummy >dummy-hook"
 assert "mise config get tools.tiny.postinstall" "printf tiny >tiny-hook"
 assert_fail "mise config get tools.tiny-no-hook.postinstall"
 
-# Omitting the flag preserves a configured hook. Replacing it without reinstalling updates
-# config but does not run the new command until an installation is actually requested.
+# Omitting the flag preserves a configured hook and keeps no-op installs successful.
+# An explicit hook must not silently succeed when installation is skipped.
+printf unchanged >dummy-hook
 mise use dummy@1.0.0
+mise install dummy@1.0.0
+assert "cat dummy-hook" "unchanged"
 assert "mise config get tools.dummy.postinstall" "printf dummy >dummy-hook"
-mise use --postinstall "printf replacement >replacement-hook" dummy@1.0.0
-assert "mise config get tools.dummy.postinstall" "printf replacement >replacement-hook"
+assert_fail_contains \
+  'mise use --postinstall "printf replacement >replacement-hook" dummy@1.0.0 2>&1' \
+  "--postinstall did not run for dummy@1.0.0: already installed"
+assert "mise config get tools.dummy.postinstall" "printf dummy >dummy-hook"
 assert_fail "test -e replacement-hook"
+
+# Versionless and explicit latest requests must also fail, including global writes.
+assert_fail_contains \
+  'mise use --postinstall "touch latest-hook" dummy@latest 2>&1' \
+  "--postinstall did not run"
+assert_fail_contains \
+  'mise use --global --postinstall "touch global-skipped-hook" dummy 2>&1' \
+  "--postinstall did not run"
+assert_fail "test -e latest-hook"
+assert_fail "test -e global-skipped-hook"
+assert_fail "test -e $MISE_CONFIG_DIR/config.toml"
+
+# Path requests are canonicalized during resolution; they must still report skipped hooks.
+mkdir -p linked-tool/bin
+assert_fail_contains \
+  'mise use --postinstall "touch path-skipped-hook" dummy@path:./linked-tool 2>&1' \
+  "--postinstall did not run"
+assert_fail "test -e path-skipped-hook"
+
+# A mixed invocation must report the skipped hook even when another tool was installed.
+assert_fail_contains \
+  'mise use --postinstall "touch skipped-hook" dummy@1.0.0 --postinstall "touch fresh-hook" tiny@3.0.0 2>&1' \
+  "--postinstall did not run for dummy@1.0.0: already installed"
+assert_fail "test -e skipped-hook"
+assert "test -e fresh-hook" ""
+assert "mise config get tools.tiny.version" "2.0.0"
+
 mise use --force --postinstall "printf forced >forced-hook" dummy@1.0.0
 assert "cat forced-hook" "forced"
 
+# An installed tool without an explicit hook does not block another tool's hook.
+mise use dummy@1.0.0 --postinstall "touch another-hook" tiny@1.0.0
+assert "test -e another-hook" ""
+
+# Explicit hooks remain scoped to the requested version of the same tool.
+mise use tiny@1.0.0 --postinstall "touch version-hook" tiny@1.1.0
+assert "test -e version-hook" ""
+
 # Dry-run reports the planned hook without executing it or modifying the existing entry.
+mise use --dry-run --postinstall "touch installed-dry-run-hook" dummy@1.0.0
+assert_fail "test -e installed-dry-run-hook"
 output=$(mise use --dry-run --postinstall "touch dry-run-hook" dummy@3.0.0 2>&1)
 assert_contains_text "$output" "would install"
 assert_fail "test -e dry-run-hook"
@@ -48,7 +91,7 @@ assert_fail_contains "mise use --force 2>&1" "TOOL@VERSION"
 mkdir write-options
 (
   cd write-options
-  mise use --path path.toml --postinstall "touch path-hook" dummy@1.0.0
+  mise use --force --path path.toml --postinstall "touch path-hook" dummy@1.0.0
   assert_contains "cat path.toml" "postinstall"
 
   mise use --force --path nested.toml \
@@ -57,23 +100,23 @@ mkdir write-options
   assert_contains "cat nested-which" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin/dummy"
   assert "cat nested-ls" "2.0.0"
 
-  mise use --env ci --postinstall "touch env-hook" dummy@1.0.0
+  mise use --force --env ci --postinstall "touch env-hook" dummy@1.0.0
   assert_contains "cat mise.ci.toml" "postinstall"
 
   MISE_GLOBAL_CONFIG_FILE="$PWD/global.toml" \
-    mise use --global --postinstall "touch global-hook" dummy@1.0.0
+    mise use --force --global --postinstall "touch global-hook" dummy@1.0.0
   assert_contains "cat global.toml" "postinstall"
 
-  mise use --pin --path pinned.toml --postinstall "touch pin-hook" dummy@1.0.0
+  mise use --force --pin --path pinned.toml --postinstall "touch pin-hook" dummy@1.0.0
   assert_contains "cat pinned.toml" 'version = "1.0.0"'
   assert_contains "cat pinned.toml" "postinstall"
 
-  mise use --path inline.toml --postinstall "touch inline-hook" 'dummy[foo=bar]@1.0.0'
+  mise use --force --path inline.toml --postinstall "touch inline-hook" 'dummy[foo=bar]@1.0.0'
   assert_contains "cat inline.toml" 'foo = "bar"'
   assert_contains "cat inline.toml" "postinstall"
 
   printf '[tools.dummy]\nversion = "1.0.0"\nfoo = "bar"\n' >standard.toml
-  mise use --path standard.toml --postinstall "touch standard-hook" dummy@1.0.0
+  mise use --force --path standard.toml --postinstall "touch standard-hook" dummy@1.0.0
   assert_contains "cat standard.toml" 'foo = "bar"'
   assert_contains "cat standard.toml" 'postinstall = "touch standard-hook"'
 )
@@ -84,7 +127,7 @@ mkdir legacy-config
 printf 'dummy 1.0.0\n' >legacy-config/.tool-versions
 (
   cd legacy-config
-  mise use --postinstall "touch legacy-hook" dummy@1.0.0
+  mise use --force --postinstall "touch legacy-hook" dummy@1.0.0
   assert "mise config get tools.dummy.postinstall" "touch legacy-hook"
   assert "cat .tool-versions" "dummy 1.0.0"
   assert_contains "cat mise.toml" "postinstall"

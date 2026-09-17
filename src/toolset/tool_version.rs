@@ -59,7 +59,8 @@ pub(crate) struct ToolVersion {
     pub aube_lock: Option<crate::lockfile::GraphRef<AubeLock>>,
     pub uv_lock: Option<crate::lockfile::GraphRef<crate::lockfile::UvLock>>,
     pub uv_python: Option<(PathBuf, String)>,
-    /// Install satisfaction computed during dry-run installs.
+    /// Whether installation was (or, for dry-run, would be) skipped because the
+    /// requested tool was already installed.
     pub install_satisfied: Option<bool>,
 }
 

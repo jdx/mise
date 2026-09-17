@@ -153,6 +153,9 @@ pub(crate) struct Use {
 #[derive(Debug, usage_rs::Args)]
 struct UseTool {
     /// Command to run after installing this tool
+    ///
+    /// Errors if the tool is already installed and the command is skipped.
+    /// Use --force to reinstall and run the command, or run it manually.
     #[usage(long, value_name = "COMMAND")]
     postinstall: Option<String>,
 
@@ -325,6 +328,12 @@ impl Use {
                 versions.clone(),
                 &InstallOptions {
                     reason: "use".to_string(),
+                    required_postinstall: versions
+                        .iter()
+                        .zip(&self.tools)
+                        .filter(|(_, target)| target.postinstall.is_some())
+                        .map(|(request, _)| request.clone())
+                        .collect(),
                     force: self.force,
                     jobs: self.jobs,
                     raw: self.raw,
