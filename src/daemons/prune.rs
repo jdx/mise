@@ -207,32 +207,47 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         );
         return Ok(Outcome::Kept);
     }
-    delete_locked_state_dir(cwd, lock)?;
+    if !detach_and_delete(cwd, lock)? {
+        return Ok(Outcome::Kept);
+    }
     Ok(Outcome::Removed)
 }
 
 /// Deletes a state directory whose `project.lock` the caller holds.
 ///
-/// The lock file lives inside the directory being deleted, and Windows refuses
-/// to remove a file another handle still holds open. Emptying the directory
-/// under the lock, releasing it, and only then dropping the directory keeps the
-/// lock meaningful for as long as there is state left to protect.
-fn delete_locked_state_dir(dir: &Path, lock: fslock::LockFile) -> Result<()> {
-    remove_contents_except_lock(dir)?;
-    drop(lock);
-    crate::file::remove_all(dir)
-}
-
-/// Deletes everything in `dir` except the `project.lock` the caller holds.
-fn remove_contents_except_lock(dir: &Path) -> Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.file_name().is_some_and(|name| name == "project.lock") {
-            continue;
-        }
-        crate::file::remove_all(path)?;
+/// The lock file lives inside the directory being deleted, which rules out
+/// deleting it in place: Windows refuses to remove a file another handle still
+/// holds open, and releasing the lock first would let a racing `prepare()` for
+/// a restored project write fresh state into the directory a moment before it
+/// is deleted. Renaming the directory while the lock is still held closes both:
+/// the rename is atomic, and afterwards nothing else can reach what is being
+/// deleted, because a later `prepare()` locks and rebuilds the original path.
+///
+/// A rename that fails keeps the state rather than falling back to a racy
+/// delete. A directory left behind by a crash between the rename and the delete
+/// still carries its `state.json`, so the next prune finds it and finishes the
+/// job.
+fn detach_and_delete(dir: &Path, lock: fslock::LockFile) -> Result<bool> {
+    let Some(parent) = dir.parent() else {
+        warn!("keeping {}: it has no parent directory", display_path(dir));
+        return Ok(false);
+    };
+    let name = dir.file_name().unwrap_or_default().to_string_lossy();
+    let detached = parent.join(format!(
+        ".pruning-{name}-{}-{}",
+        std::process::id(),
+        crate::hash::hash_to_str(&dir)
+    ));
+    if let Err(err) = std::fs::rename(dir, &detached) {
+        warn!(
+            "keeping {}: cannot detach it for removal: {err}",
+            display_path(dir)
+        );
+        return Ok(false);
     }
-    Ok(())
+    drop(lock);
+    crate::file::remove_all(&detached)?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -335,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn deleting_state_releases_its_lock_before_removing_the_directory() {
+    fn deletion_detaches_the_directory_before_releasing_its_lock() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
         let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
@@ -343,8 +358,11 @@ mod tests {
             .try_lock()
             .unwrap()
             .unwrap();
-        delete_locked_state_dir(&dir, lock).unwrap();
+        assert!(detach_and_delete(&dir, lock).unwrap());
         assert!(!dir.exists());
+        // Nothing is left under the state root, detached or otherwise, so a
+        // later prepare() for this path starts from a clean directory.
+        assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0);
     }
 
     #[test]
