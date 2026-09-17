@@ -662,11 +662,15 @@ impl BrewCaskManager {
         // can mutate anything, including when producing a dry-run plan.
         artifacts.app_target_paths()?;
         let installed_version = mise_installed_cask_version(&cask)?;
-        let previous_ownership = previous_receipt(&cask)?;
+        // Read before the download for the fast-path skip and the dry-run
+        // plan only. Anything that mutates must use the read taken under the
+        // installation lock below, since another process can install or
+        // retarget this token while the archive is in flight.
+        let pre_download_ownership = previous_receipt(&cask)?;
         if let Some(reason) = installed_skip_reason(
             &cask,
             &artifacts,
-            previous_ownership.as_ref(),
+            pre_download_ownership.as_ref(),
             installed_version.as_deref(),
             mode,
         )? {
@@ -718,7 +722,7 @@ impl BrewCaskManager {
         // brew-cask defers to Homebrew by token, which macos-app cannot do: the
         // conflict is at the shared app directory, not the token.
         if opts.dry_run {
-            warn_existing_app_targets(&cask, previous_ownership.as_ref(), &artifacts.apps)?;
+            warn_existing_app_targets(&cask, pre_download_ownership.as_ref(), &artifacts.apps)?;
             artifacts.print_install_plan(&cask)?;
             return Ok(cask.version);
         }
@@ -827,9 +831,13 @@ impl BrewCaskManager {
             // Resolved per app: one declaration can own one target and not
             // another, and a changed artifact name points at a target that no
             // receipt covers.
+            // Decided from the receipt read under the lock, not the
+            // pre-download one: a concurrent retarget would otherwise leave a
+            // stale receipt claiming the old target is still owned, and this
+            // replacement would skip adoption entirely.
             let require_unowned = requires_unowned_target(
                 &cask,
-                previous_ownership.as_ref(),
+                locked_ownership.as_ref(),
                 &app_target_path(app.target_name()?)?,
             );
             // Taking over an unowned target is opt-in. brew-cask keeps its own
