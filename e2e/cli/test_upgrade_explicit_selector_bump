@@ -144,3 +144,36 @@ MISE_PIN=1 mise up --bump asdf:tiny-local@latest --prune
 assert_contains "cat mise.toml" 'tiny-local = "3.1.0"'
 mise up --bump asdf:tiny-local@latest --prune
 assert_contains "cat mise.toml" 'tiny-local = "latest"'
+
+# Explicit ref, branch, and revision selectors are persisted verbatim.
+for selector in ref:master branch:master rev:master; do
+  cat <<'EOF2' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF2
+  mise install "dummy@$selector"
+  mise up --bump "dummy@$selector" --prune
+  assert_contains "cat mise.toml" "dummy = \"$selector\""
+done
+
+# A system selector is persisted when the system executable is available.
+mkdir -p bin
+cat <<'EOF2' >bin/dummy
+#!/usr/bin/env bash
+exit 0
+EOF2
+chmod +x bin/dummy
+cat <<'EOF2' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF2
+PATH="$PWD/bin:$PATH" mise up --bump dummy@system --prune
+assert_contains "cat mise.toml" 'dummy = "system"'
+
+# A failed typed selector must not overwrite a working configuration.
+cat <<'EOF2' >mise.toml
+[tools]
+dummy = "1.0.0"
+EOF2
+mise up --bump dummy@path:/does-not-exist --prune >/dev/null 2>&1 || :
+assert_contains "cat mise.toml" 'dummy = "1.0.0"'

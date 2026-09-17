@@ -77,6 +77,17 @@ impl ToolsetBuilder {
         self
     }
 
+    /// Build a toolset from configuration, environment, and arguments without resolving versions.
+    pub(crate) fn build_unresolved(self, config: &Arc<Config>) -> Result<Toolset> {
+        let mut toolset = Toolset {
+            ..Default::default()
+        };
+        self.load_config_files(config, &mut toolset)?;
+        self.load_runtime_env(&mut toolset, env::vars_safe().collect())?;
+        self.load_runtime_args(&mut toolset)?;
+        Ok(toolset)
+    }
+
     pub(crate) async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
         let mut toolset = Toolset {
             ..Default::default()

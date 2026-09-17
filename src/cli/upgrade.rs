@@ -70,8 +70,11 @@ pub(crate) struct Upgrade {
     /// For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
     /// this will install 22.1.0 and set `node = "22.1.0"` in your config.
     ///
-    /// It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
-    /// would change your config to `node = "22"`.
+    /// With a bare tool, it keeps the same precision as what was there before, so if you instead had
+    /// `node = "20"`, it would change your config to `node = "22"`. When an explicit selector is
+    /// provided (`node@latest`, `node@3`, or `node@prefix:3`), that selector is persisted instead.
+    /// For version selectors, `settings.pin` persists the resolved concrete version. Requests from non-writable
+    /// sources are not persisted. For example, `mise upgrade node@latest --bump` writes `latest`.
     #[usage(long, short = 'b', verbatim_doc_comment)]
     bump: bool,
 
@@ -204,8 +207,7 @@ impl Upgrade {
             let scope = self.scope();
             let effective = ToolsetBuilder::new()
                 .with_scope(scope)
-                .build(&config)
-                .await?;
+                .build_unresolved(&config)?;
             for tool in &self.tool {
                 let Some(request) = tool.tvr.as_ref() else {
                     continue;
@@ -213,6 +215,35 @@ impl Upgrade {
                 let Some((configured_ba, configured_request)) =
                     effective_persistable_request(&effective, &tool.ba)
                 else {
+                    if let Some((_, versions)) = effective
+                        .versions
+                        .iter()
+                        .find(|(ba, _)| backend_args_match(ba, &tool.ba))
+                        && versions
+                            .requests
+                            .iter()
+                            .filter(|request| request.is_os_supported())
+                            .count()
+                            > 1
+                    {
+                        warn!("upgrading multiple versions with --bump is not yet supported");
+                    }
+                    let source = effective
+                        .versions
+                        .iter()
+                        .find(|(ba, _)| backend_args_match(ba, &tool.ba))
+                        .and_then(|(_, versions)| {
+                            versions
+                                .requests
+                                .iter()
+                                .find(|request| request.is_os_supported())
+                        })
+                        .map(|request| request.source().to_string())
+                        .unwrap_or_else(|| "no matching writable config source".to_string());
+                    warn!(
+                        "cannot persist explicit bump for {} from {}",
+                        tool.ba, source
+                    );
                     continue;
                 };
 
@@ -477,37 +508,15 @@ impl Upgrade {
                     display_path(cf.get_path())
                 );
             }
-            let resolve_options = ResolveOptions {
-                use_locked_version: false,
-                latest_versions: true,
-                before_date,
-                inactive: self.inactive,
-                ..Default::default()
-            };
+            let candidates = ts
+                .list_current_versions()
+                .into_iter()
+                .map(|(_, version)| version)
+                .collect::<Vec<_>>();
             let mut planned_explicit_config_bumps = Vec::new();
             for bump in explicit_config_bumps {
-                let pending = outdated.iter().find(|outdated| {
-                    backend_args_match(outdated.tool_version.ba(), bump.request.ba())
-                        && outdated.tool_version.request.version() == bump.request.version()
-                });
-                let eligible = if let Some(pending) = pending {
-                    // Outdated entries can include requests that failed initial resolution.
-                    // Validate the actual install request before advertising its config update.
-                    pending
-                        .tool_request
-                        .resolve(config, &resolve_options)
-                        .await
-                        .is_ok_and(|version| {
-                            // Path requests resolve syntactically, but cannot be installed
-                            // unless their target already exists.
-                            !matches!(version.request, ToolRequest::Path { .. })
-                                || version.backend().is_ok_and(|backend| {
-                                    backend.is_version_installed(config, &version, true)
-                                })
-                        })
-                } else {
-                    explicit_bump_is_installed(&ts, config, bump)
-                };
+                let pending = find_explicit_bump_outdated(&outdated, bump);
+                let eligible = explicit_bump_is_eligible(pending, bump, &candidates, &ts, config);
                 if eligible {
                     planned_explicit_config_bumps.push(bump.clone());
                 }
@@ -662,20 +671,17 @@ impl Upgrade {
                     ));
                 }
             }
-            let explicit_config_bumps = explicit_config_bumps
-                .iter()
-                .filter(|bump| {
-                    explicit_bump_is_successful(
-                        bump,
-                        &outdated,
-                        &successful_versions,
-                        &ts,
-                        config,
-                    )
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            apply_explicit_config_bumps(&explicit_config_bumps).await?;
+            let mut eligible_explicit_config_bumps = Vec::new();
+            for bump in explicit_config_bumps {
+                let pending = find_explicit_bump_outdated(&outdated, bump);
+                if explicit_bump_is_eligible(pending, bump, &successful_versions, &ts, config)
+                {
+                    eligible_explicit_config_bumps.push(bump.clone());
+                }
+            }
+            if let Err(e) = apply_explicit_config_bumps(&eligible_explicit_config_bumps).await {
+                config_file_errors.push(e.wrap_err("failed to apply explicit configuration bumps"));
+            }
             if config_file_errors.len() == 1 {
                 return Err(config_file_errors.pop().unwrap());
             }
@@ -1184,20 +1190,30 @@ fn explicit_bump_is_installed(
         })
 }
 
-fn explicit_bump_is_successful(
+fn find_explicit_bump_outdated<'a>(
+    outdated: &'a [OutdatedInfo],
     bump: &ExplicitConfigBump,
-    outdated: &[OutdatedInfo],
-    successful_versions: &[ToolVersion],
+) -> Option<&'a OutdatedInfo> {
+    outdated.iter().find(|outdated| {
+        backend_args_match(outdated.tool_version.ba(), bump.request.ba())
+            && outdated.tool_version.request.version() == bump.request.version()
+    })
+}
+
+fn explicit_bump_is_eligible(
+    pending: Option<&OutdatedInfo>,
+    bump: &ExplicitConfigBump,
+    candidates: &[ToolVersion],
     toolset: &Toolset,
     config: &Arc<Config>,
 ) -> bool {
-    if let Some(outdated) = outdated.iter().find(|outdated| {
-        backend_args_match(outdated.tool_version.ba(), bump.request.ba())
-            && outdated.tool_version.request.version() == bump.request.version()
-    }) {
-        return explicit_bump_matches_successful(outdated, successful_versions);
+    if let Some(pending) = pending {
+        let candidate = explicit_bump_matches_successful(pending, candidates);
+        if !candidate {
+            return false;
+        }
+        return !matches!(&pending.tool_request, ToolRequest::Path { path, .. } if !path.exists());
     }
-
     explicit_bump_is_installed(toolset, config, bump)
 }
 
@@ -1224,7 +1240,10 @@ fn effective_persistable_request<'a>(
         .iter()
         .filter(|request| request.is_os_supported());
     let request = supported.next()?;
-    if supported.next().is_some() || request.source().path().is_none() {
+    if supported.next().is_some()
+        || request.source().path().is_none()
+        || request.source().is_mise_toml_daemon()
+    {
         return None;
     }
     Some((ba, request))
