@@ -117,7 +117,7 @@ pub(crate) static EDITOR: Lazy<String> = Lazy::new(|| {
 /// else POSIX — so the shared default left `mise tasks edit` there with nothing to run at all.
 /// `notepad` is the one editor Windows can be relied on to have.
 ///
-/// It also has to *wait*, because `mise dotfiles edit --apply` converges the target as soon as the
+/// It also has to *wait*, because `mise dot edit --apply` converges the target as soon as the
 /// editor returns. Measured on Windows 11 26200, where `System32\notepad.exe` no longer exists and
 /// `notepad` resolves to a zero-byte app-execution alias under `WindowsApps`: spawned the way
 /// `Command::status` does it, the parent was still waiting five seconds later, so the alias hands

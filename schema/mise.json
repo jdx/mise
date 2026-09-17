@@ -783,7 +783,7 @@
         },
         "disable_backends": {
           "default": [],
-          "description": "Backends to exclude from tool resolution and new installs, such as `asdf`, `pipx`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled.",
+          "description": "Backends to exclude from tool resolution and new installs, such as `asdf`, `pypi`, or a vfox-backend plugin name. Existing installations are left on disk and become available again if the backend is re-enabled.",
           "type": "array",
           "items": {
             "type": "string"
@@ -1169,6 +1169,11 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "allow_plaintext_history": {
+              "default": false,
+              "description": "Allow publishing history that contains unencrypted versions of files now marked for encryption.",
+              "type": "boolean"
+            },
             "describe_command": {
               "default": "",
               "description": "A command that names commits the watcher saves (an agent, say): it gets one JSON object on stdin (uuid, trigger, the computed description, changed tracked paths, and a unified diff of changed unencrypted files, at most 64 KiB) and prints one line of at most 200 characters, which becomes the description. Empty: computed descriptions only.",
@@ -1607,7 +1612,6 @@
           "unevaluatedProperties": false,
           "properties": {
             "registry_url": {
-              "default": "https://pypi.org/pypi/{}/json",
               "description": "URL to use for pipx registry.",
               "type": "string"
             },
@@ -1639,6 +1643,20 @@
           "default": true,
           "description": "Fail when provenance API checks cannot be completed.",
           "type": "boolean"
+        },
+        "pypi": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "registry_url": {
+              "description": "Package registry URL for Python tools (pipx.registry_url is a compatibility alias).",
+              "type": "string"
+            },
+            "uvx": {
+              "description": "Use uv for Python tools when available (pipx.uvx is a compatibility alias).",
+              "type": "boolean"
+            }
+          }
         },
         "python": {
           "type": "object",
@@ -1876,6 +1894,20 @@
             "type": "string"
           }
         },
+        "shims": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "exclude": {
+              "default": [],
+              "description": "Command names mise should never create shims for, leaving them to the system.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "shims_dir": {
           "description": "Directory containing user shims.",
           "type": "string"
@@ -1997,7 +2029,7 @@
               "type": "boolean"
             },
             "platform": {
-              "description": "Override the platform to use for precompiled binaries.",
+              "description": "Override the distro build to use for precompiled binaries. By default the distro is detected and matched against what the Swift release actually publishes, which changes from release to release. Set this to force a specific build, or to install without reaching swift.org's release index.",
               "type": "string"
             }
           }
@@ -4783,7 +4815,24 @@
                   },
                   "adopt": {
                     "type": "boolean",
-                    "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
+                    "description": "adopt an existing identical app artifact instead of replacing it (brew-cask and macos-app)"
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "macos-app only: download URL for the app archive; {{version}} is replaced with the declared version"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{64}$",
+                    "description": "macos-app only: expected sha256 of the download as 64 hex characters; required with url. Homebrew's no_check sentinel is not accepted"
+                  },
+                  "artifact": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "macos-app only: app bundle to install from the archive, e.g. Nuvio.app; required with url"
                   },
                   "state": {
                     "type": "string",
@@ -4791,6 +4840,9 @@
                     "enum": ["present", "absent"],
                     "default": "present"
                   }
+                },
+                "dependentRequired": {
+                  "url": ["sha256", "artifact", "version"]
                 },
                 "additionalProperties": false
               }

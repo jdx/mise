@@ -37,6 +37,7 @@ impl PluginsUninstall {
 
         for plugin_name in plugins {
             let plugin_name = unalias_backend(&plugin_name);
+            let plugin_name = plugin_name.as_ref();
             self.uninstall_one(plugin_name, &mpr).await?;
         }
         Ok(())

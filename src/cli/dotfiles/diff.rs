@@ -8,8 +8,8 @@ use crate::system;
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap dotfiles diff
-mise bootstrap dotfiles diff ~/.zshrc"###
+        r###"mise dot diff
+mise dot diff ~/.zshrc"###
     )
 )]
 pub(crate) struct DotfilesDiff {

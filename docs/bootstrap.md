@@ -52,7 +52,7 @@ Choose the command that matches what your repository contains:
 | ------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------- |
 | A bootstrap project with `mise.toml` and source files                    | `mise bootstrap --from <url>`  | A separate checkout, then targets defined by the project |
 | Global mise configuration such as `config.toml`, `conf.d/`, and `tasks/` | `mise bootstrap --adopt <url>` | Your global mise configuration directory                 |
-| Tracked dotfiles shared through `mise bootstrap dotfiles origin set`     | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
+| Tracked dotfiles shared through `mise dot origin set`                    | `mise bootstrap --adopt <url>` | Each tracked file's path on this machine                 |
 
 For a walkthrough of sharing tracked dotfiles, see
 [Set up a machine](/bootstrap/setup.html).
@@ -99,7 +99,7 @@ must be a Git checkout with the requested URL as its `origin`. Pass
 ### Shared dotfile history
 
 A **setup repository** holds the dotfile history you share through
-`mise bootstrap dotfiles origin set`. On another machine, run:
+`mise dot origin set`. On another machine, run:
 
 ```sh
 mise bootstrap --adopt you/setup
@@ -156,7 +156,7 @@ preflight prevents a missing input from leaving a partially provisioned host.
    [`[bootstrap.compose]`](/bootstrap/compose.html) projects.
 8. `mise bootstrap repos apply` clones or updates
    [`[bootstrap.repos]`](/bootstrap/repos.html).
-9. `mise bootstrap dotfiles apply` applies [`[dotfiles]`](/dotfiles.html).
+9. `mise dot apply` applies [`[dotfiles]`](/dotfiles.html).
 10. `mise bootstrap mise-shell-activate apply` configures shell activation from
     [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html).
 11. `mise bootstrap macos defaults apply` writes
@@ -195,7 +195,7 @@ exclusive.
 
 Use `mise bootstrap --update` to refresh system package manager metadata
 before installing packages (apk: `--update-cache`, apt: `apt-get update`,
-winget: `winget source update`) and
+scoop: `scoop update`, winget: `winget source update`) and
 update declared repositories. Check the [repo update rules](/bootstrap/repos.html)
 for clean-worktree and fast-forward requirements.
 
@@ -271,9 +271,9 @@ mise bootstrap status --json
 mise bootstrap status --missing
 mise bootstrap packages status
 mise bootstrap repos status
-mise bootstrap dotfiles status
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --dry-run --verbose
+mise dot status
+mise dot apply --dry-run
+mise dot apply --dry-run --verbose
 mise bootstrap mise-shell-activate status
 mise bootstrap macos defaults status
 mise bootstrap macos launchd-agents status
@@ -282,18 +282,18 @@ mise bootstrap firewall status
 mise bootstrap user status
 ```
 
-Use `mise bootstrap dotfiles history` to see the checkpoints bootstrap has recorded — a pair per
+Use `mise dot history` to see the checkpoints bootstrap has recorded — a pair per
 mutating run, with the tracked files before and after. See [History](/history.html).
 
 ```sh
-mise bootstrap dotfiles history
-mise bootstrap dotfiles history show latest
-mise bootstrap dotfiles history diff 11 12
+mise dot history
+mise dot history show latest
+mise dot history diff 11 12
 ```
 
 `mise bootstrap status --missing` checks the whole declarative bootstrap
 surface in one command. The narrower `mise bootstrap packages status --missing`
-and `mise bootstrap dotfiles status --missing` commands are useful when you only
+and `mise dot status --missing` commands are useful when you only
 want to check one part without installing anything.
 
 ## What goes where
@@ -306,7 +306,7 @@ want to check one part without installing anything.
 | [`[bootstrap.services]`](/bootstrap/services.html)                      | User services on Linux, macOS, and Windows; existing Linux system services  |
 | [`[bootstrap.compose]`](/bootstrap/compose.html)                        | Docker Compose project lifecycle                                            |
 | [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)               | Package manager plugins                                                     |
-| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, or winget       |
+| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, scoop, winget   |
 | [`[bootstrap.repos]`](/bootstrap/repos.html)                            | Git repos cloned before dotfiles are applied                                |
 | [`[dotfiles]`](/dotfiles.html)                                          | Tracking dotfiles, creating files from sources, and editing blocks or lines |
 | [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)              | mise activation snippets in shell startup files                             |
@@ -324,6 +324,37 @@ Use declarative sections when mise can inspect and converge the state. Use
 `[tasks.bootstrap]` for imperative setup that does not fit those sections,
 such as checking authentication or seeding local data. The task runs again on
 every bootstrap, so guard operations that should happen only once.
+
+## Templates
+
+Not every part of `mise.toml` is a [Tera template](/templates.html). Inside
+`[bootstrap]`, these are rendered:
+
+| Where                                                         | What is rendered                                                   |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)  | every string value in a unit                                       |
+| [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html) | every string value in an agent                                     |
+| `[bootstrap.hooks]`                                           | the hook command                                                   |
+| [`[bootstrap.files]`](/bootstrap/files.html)                  | file content, only with `template = true`                          |
+| [`[dotfiles]`](/dotfiles.html)                                | file content, only with `mode = "template"` or `template = "tera"` |
+
+Everything else — section keys, package specs, repo paths, macOS defaults, and
+the remaining `[bootstrap]` values — is used exactly as written.
+
+Rendering uses the template context of the config file that declared the entry,
+so <code v-pre>{{ config_root }}</code> is the directory of _that_ config, not
+the directory you run `mise bootstrap` from. A managed file's content template
+additionally gets <code v-pre>{{ target }}</code> and
+<code v-pre>{{ secret(name="...") }}</code>.
+
+Values with no template syntax skip the renderer entirely, so a literal
+`%h`, `%i`, or `$HOME` in a unit or agent reaches the generated file unchanged by
+templating. Any `~` expansion a section documents still happens afterwards.
+
+<code v-pre>{{ exec(...) }}</code> is available in `[bootstrap.hooks]` and in file
+content templates, but not in unit or agent values: those render identically for
+`status`, `plan`, `--dry-run`, and `apply`, so a read-only command must never
+shell out.
 
 ## Hooks
 
@@ -358,7 +389,7 @@ post-defaults = "killall Dock || true"
 Hooks merge across the config hierarchy from global to local, so shared config
 can define broad machine setup while a project adds its own phase commands.
 The `pre-dotfiles` and `post-dotfiles` phases also wrap
-`mise bootstrap dotfiles apply`.
+`mise dot apply`.
 
 ## Common workflows
 
@@ -386,7 +417,7 @@ For a file you already manage in `copy` mode, save edits back to its source:
 
 ```sh
 $EDITOR ~/.zshrc
-mise bootstrap dotfiles add ~/.zshrc
+mise dot add ~/.zshrc
 ```
 
 `add` updates the managed source. For a file mise does not yet manage, it
@@ -394,14 +425,14 @@ creates a source under `dotfiles.root`, writes a configuration entry, and
 applies it. See [capturing changes](/dotfiles.html#capturing-changes).
 
 For a file you edit in place and want to save in history, use
-`mise bootstrap dotfiles track ~/.zshrc`, then set up
+`mise dot track ~/.zshrc`, then set up
 [automatic saves](/history.html#automatic-saves).
 
 ### Edit a managed dotfile
 
 ```sh
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles apply ~/.zshrc
+mise dot edit ~/.zshrc
+mise dot apply ~/.zshrc
 ```
 
 For symlinked dotfiles, `edit` opens the managed source, so it works with the

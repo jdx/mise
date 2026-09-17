@@ -39,3 +39,25 @@ assert_not_contains "mise tasks info remote_http_task" "http://localhost"
 
 # Validate should work with remote tasks
 assert_succeed "mise tasks validate remote_http_task"
+
+#################################################################################
+# Test that a remote task's `#MISE extends` resolves its template
+#################################################################################
+
+cat <<EOF >mise.toml
+[task_templates.shared]
+env = { FOO = "from_template" }
+
+[tasks.remote_extends_task]
+file = "http://localhost:${HTTP_PORT}/test/extends-task"
+EOF
+
+assert_contains "mise run remote_extends_task" "extends-task FOO=from_template"
+
+# A template named by a remote task but not defined is an error, not a silent skip
+cat <<EOF >mise.toml
+[tasks.remote_extends_task]
+file = "http://localhost:${HTTP_PORT}/test/extends-task"
+EOF
+
+assert_fail "mise run remote_extends_task" "which was not found"

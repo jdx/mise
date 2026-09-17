@@ -16,7 +16,10 @@ echo "PACKAGER_PRIVKEY=\"/github/home/.abuild/$ALPINE_KEY_ID\"" >>/github/home/.
 git config --global user.name "Jeff Dickey"
 git config --global user.email 6271-jdxcode@users.gitlab.alpinelinux.org
 
-git clone https://gitlab.alpinelinux.org/alpine/aports.git/ /home/packager/aports
+# gitlab.alpinelinux.org answers git requests from CI IP ranges with an HTTP 418
+# anti-bot challenge, with or without credentials, so clone the GitHub mirror
+# instead. It tracks the same history; we still push and open the MR on GitLab.
+git clone https://github.com/alpinelinux/aports.git /home/packager/aports
 cd /home/packager/aports
 git config --local core.hooksPath .githooks
 git remote add jdxcode "https://jdxcode:$GITLAB_TOKEN@gitlab.alpinelinux.org/jdxcode/aports.git/"

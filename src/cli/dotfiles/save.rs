@@ -94,7 +94,7 @@ impl DotfilesSave {
                     let reason = if tracked.entry_for(&path).is_some() {
                         "it is excluded, missing, or omitted from capture"
                     } else {
-                        "track it with `mise bootstrap dotfiles track`"
+                        "track it with `mise dot track`"
                     };
                     bail!("{} is not captured; {reason}", display_path(&path));
                 }

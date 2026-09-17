@@ -185,7 +185,7 @@ impl ScriptManager {
             cmd = cmd.stderr_null();
         }
         cmd.read()
-            .wrap_err_with(|| ScriptFailed(display_path(self.get_script_path(script)), None))
+            .wrap_err_with(|| ScriptFailed(display_path(self.get_script_path(script)), None, None))
     }
 
     pub(crate) fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
@@ -203,11 +203,13 @@ impl ScriptManager {
         }
         let cmd = cmd.with_pr(pr).env_clear().envs(&self.env);
         if let Err(e) = cmd.execute() {
-            let status = match e.downcast_ref::<Error>() {
-                Some(ScriptFailed(_, status)) => *status,
-                _ => None,
+            // Re-label the failure with the script's path, keeping the child's
+            // own last stderr line so the reason survives the rewrite.
+            let (status, stderr_tail) = match e.downcast_ref::<Error>() {
+                Some(ScriptFailed(_, status, stderr_tail)) => (*status, stderr_tail.clone()),
+                _ => (None, None),
             };
-            return Err(ScriptFailed(display_path(&path), status).into());
+            return Err(ScriptFailed(display_path(&path), status, stderr_tail).into());
         }
         Ok(())
     }

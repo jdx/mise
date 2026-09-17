@@ -11,12 +11,12 @@ description: "Pull incoming shared changes into the live files"
 
 Pull incoming shared changes into the live files
 
-Writes the changes the last `mise bootstrap dotfiles sync` recorded as pending
+Writes the changes the last `mise dot sync` recorded as pending
 (`apply` keeps deploying your own `[dotfiles]` declarations; `pull` writes
 what other machines shared),
 as one recoverable transaction: a protective checkpoint first, every
 file written and journaled one at a time, reload hooks only afterwards,
-and `mise bootstrap dotfiles undo` to reverse it. Configuration and the sources it
+and `mise dot undo` to reverse it. Configuration and the sources it
 references apply together; an incoming configuration file that does not
 parse, a path with unsaved local edits, staged git changes in your own
 checkout, or a genuine local edit pauses the complete application.
@@ -38,15 +38,23 @@ their shared versions follow in the same run.
 - **`-y --yes`** — Pull without prompting
 - **`--take-remote <PATH>`** — Resolve a conflict with the repository's version
 - **`--keep-local <PATH>`** — Resolve a conflict by keeping this machine's version (published next)
+- **`--take-remote-all`** — Resolve every remaining conflict with the repository's version
+
+  Paths named by --keep-local keep this machine's version; every other conflict takes the repository's. Useful on a newly adopted machine, where each pre-existing file that differs is a separate conflict.
+- **`--keep-local-all`** — Resolve every remaining conflict by keeping this machine's version
+
+  Paths named by --take-remote take the repository's version; every other conflict keeps this machine's. Each kept path must already be saved.
 - **`-h --help`** — Print help
 
 Examples:
 
 ```
-mise bootstrap dotfiles pull --dry-run
-mise bootstrap dotfiles pull --yes
-mise bootstrap dotfiles pull --take-remote ~/.zshrc
-mise bootstrap dotfiles pull --keep-local ~/.zshrc
+mise dot pull --dry-run
+mise dot pull --yes
+mise dot pull --take-remote ~/.zshrc
+mise dot pull --keep-local ~/.zshrc
+mise dot pull --take-remote-all
+mise dot pull --take-remote-all --keep-local ~/.zshrc
 ```
 
 <!-- generated reference navigation -->

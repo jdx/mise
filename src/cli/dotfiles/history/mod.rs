@@ -1,4 +1,4 @@
-//! `mise bootstrap dotfiles history`: the checkpoint browser for the tracked
+//! `mise dot history`: the checkpoint browser for the tracked
 //! configuration files, and the helpers every history command shares.
 
 use eyre::Result;
@@ -108,13 +108,13 @@ pub(crate) fn short(oid: &str) -> String {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles history</bold>
-    $ <bold>mise bootstrap dotfiles history --path ~/.config/hypr/bindings.lua</bold>
-    $ <bold>mise bootstrap dotfiles history show latest</bold>
-    $ <bold>mise bootstrap dotfiles history diff</bold>          # the working tree against the latest checkpoint
-    $ <bold>mise bootstrap dotfiles history diff 11 12 --patch</bold>
-    $ <bold>mise bootstrap dotfiles save --description "before the theme change"</bold>
-    $ <bold>mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua</bold>
-    $ <bold>mise bootstrap dotfiles undo</bold>
+    $ <bold>mise dot history</bold>
+    $ <bold>mise dot history --path ~/.config/hypr/bindings.lua</bold>
+    $ <bold>mise dot history show latest</bold>
+    $ <bold>mise dot history diff</bold>          # the working tree against the latest checkpoint
+    $ <bold>mise dot history diff 11 12 --patch</bold>
+    $ <bold>mise dot save --description "before the theme change"</bold>
+    $ <bold>mise dot rollback ~/.config/hypr/bindings.lua</bold>
+    $ <bold>mise dot undo</bold>
 "#
 );

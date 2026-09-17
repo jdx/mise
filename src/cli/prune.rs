@@ -233,7 +233,7 @@ async fn delete(
         }
         match prompt::confirm_with_all(format!("remove {} ?", tv))? {
             Confirmation::Yes => confirmed.push((p, tv)),
-            Confirmation::No => {}
+            Confirmation::No | Confirmation::Unanswered => {}
             Confirmation::Unavailable if unavailable == UnavailableConfirmation::Decline => {}
             Confirmation::Unavailable => eyre::bail!(
                 "mise prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"

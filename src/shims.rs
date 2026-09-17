@@ -445,10 +445,20 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
         // Locating the mise binary walks PATH, so defer it until a declaration
         // actually needs a shim.
         let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+        let excluded = &Settings::get().shims.exclude;
         for (shims_dir, bins) in bins_by_dir {
+            // Bootstrap shims are written outside the reshim path, so they need the
+            // same exclusion filter get_desired_shims applies, or a `mise env`/`x`/`run`
+            // for a missing lazy tool restores a name reshim had just removed. Filter
+            // after platform expansion, exactly as get_desired_shims does: on Windows
+            // `platform_shim_names` goes through `Path::with_extension`, which treats a
+            // version-qualified bin like `python3.12` as having extension `.12` and
+            // rewrites it to `python3.exe`. Filtering the pre-expansion name would let
+            // that unversioned shim through.
             let shims = bins
                 .iter()
                 .flat_map(|bin| platform_shim_names(&mise_bin, bin))
+                .filter(|name| !shim_name_excluded(excluded, name))
                 .collect::<BTreeSet<String>>();
             match write_bootstrap_shims(&mise_bin, &shims_dir, &shims, false)? {
                 None => {}
@@ -703,13 +713,20 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
         return Ok(());
     }
     let mut jset = JoinSet::new();
+    let excluded = Settings::get().shims.exclude.clone();
     for plugin in backend::list() {
         let shims_dir = shims_dir.to_path_buf();
+        let excluded = excluded.clone();
         jset.spawn(async move {
             if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
                 for bin in files {
                     let bin = bin?;
                     let bin_name = bin.file_name().into_string().unwrap();
+                    // Plugins publish straight into the shim farm without going through
+                    // get_desired_shims, so an excluded name would reappear on reshim.
+                    if shim_name_excluded(&excluded, &bin_name) {
+                        continue;
+                    }
                     let symlink_path = shims_dir.join(bin_name);
                     make_shim(&bin.path(), &symlink_path).await?;
                 }
@@ -1722,7 +1739,48 @@ async fn get_desired_shims(
             Err(err) => warn!("Skipping invalid lazy shim declaration: {err:#}"),
         }
     }
+    let excluded = &Settings::get().shims.exclude;
+    if !excluded.is_empty() {
+        shims.retain(|name| !shim_name_excluded(excluded, name));
+    }
     Ok(shims)
+}
+
+/// Normalize a shim name so every variant [`platform_shim_names`] can generate for a
+/// single command compares equal. Windows "file" mode emits both an extensionless shim
+/// and a `.cmd` shim, so stripping only `EXE_SUFFIX` would leave `python.cmd` behind
+/// when `python` is excluded. Case is folded where the filesystem is case-insensitive.
+///
+/// Suffixes are stripped repeatedly. `platform_shim_names` cannot produce a compound
+/// name (`Path::with_extension` replaces rather than appends), but plugin farms
+/// contribute arbitrary filenames from disk, so `python.exe.cmd` still normalizes.
+fn shim_name_key(name: &str) -> String {
+    let mut name = name;
+    loop {
+        let mut stripped = command_name_without_exe_suffix(name);
+        if cfg!(windows)
+            && let Some((stem, ext)) = stripped.rsplit_once('.')
+            && ext.eq_ignore_ascii_case("cmd")
+        {
+            stripped = stem;
+        }
+        // each pass strictly shortens the name or changes nothing, so this terminates
+        if stripped == name {
+            break;
+        }
+        name = stripped;
+    }
+    if cfg!(windows) || cfg!(macos) {
+        name.to_lowercase()
+    } else {
+        name.to_string()
+    }
+}
+
+/// Whether `shims.exclude` covers this shim name.
+pub(crate) fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {
+    let key = shim_name_key(name);
+    excluded.iter().any(|e| shim_name_key(e) == key)
 }
 
 fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
@@ -1979,6 +2037,55 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn shims_exclude_matches_regardless_of_exe_suffix() {
+        let excluded: BTreeSet<String> = ["python", "pip3"].iter().map(|s| s.to_string()).collect();
+        assert!(shim_name_excluded(&excluded, "python"));
+        assert!(shim_name_excluded(&excluded, "pip3"));
+        // the generated name carries the platform suffix on Windows; a bare entry still covers it
+        assert!(shim_name_excluded(
+            &excluded,
+            &format!("python{}", std::env::consts::EXE_SUFFIX)
+        ));
+        // and an entry written with the suffix covers the bare name
+        let with_suffix: BTreeSet<String> =
+            [format!("python{}", std::env::consts::EXE_SUFFIX)].into();
+        assert!(shim_name_excluded(&with_suffix, "python"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shims_exclude_covers_windows_cmd_and_exe_variants() {
+        let excluded: BTreeSet<String> = ["python"].iter().map(|s| s.to_string()).collect();
+        // "file" shim mode generates both of these for one command
+        assert!(shim_name_excluded(&excluded, "python"));
+        assert!(shim_name_excluded(&excluded, "python.cmd"));
+        assert!(shim_name_excluded(&excluded, "python.exe"));
+        // Windows command lookup is case-insensitive, so matching must be too
+        assert!(shim_name_excluded(&excluded, "Python.CMD"));
+        let upper: BTreeSet<String> = ["PYTHON.cmd"].iter().map(|s| s.to_string()).collect();
+        assert!(shim_name_excluded(&upper, "python"));
+        // compound suffixes normalize too; only a plugin farm can produce one, since
+        // platform_shim_names replaces extensions rather than appending them
+        assert!(shim_name_excluded(&excluded, "python.exe.cmd"));
+        assert!(shim_name_excluded(&excluded, "python.cmd.exe"));
+        // a different command that merely shares a prefix is untouched
+        assert!(!shim_name_excluded(&excluded, "python3.cmd"));
+    }
+
+    #[test]
+    fn shims_exclude_does_not_match_version_qualified_names() {
+        let excluded: BTreeSet<String> = ["python", "python3"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        // excluding the unversioned commands must leave python3.12 dispatching normally,
+        // which is the whole point of the setting
+        assert!(!shim_name_excluded(&excluded, "python3.12"));
+        assert!(!shim_name_excluded(&excluded, "python3.12-config"));
+        assert!(!shim_name_excluded(&excluded, "pythonx"));
+    }
 
     #[test]
     fn locked_windows_shims_get_distinct_old_paths() {

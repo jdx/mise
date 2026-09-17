@@ -231,6 +231,12 @@ impl SystemPackageManager for WingetManager {
         }
     }
 
+    /// WinGet matches `--id --exact` case-insensitively, so two spellings of
+    /// one package ID are one package.
+    fn package_identity(&self, name: &str) -> Option<String> {
+        Some(name.to_ascii_lowercase())
+    }
+
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         let mut statuses = Vec::with_capacity(pkgs.len());
         for pkg in pkgs {

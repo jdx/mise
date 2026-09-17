@@ -2,6 +2,12 @@ source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
 {%- if path == "daemons" or path is starting_with(pat="daemons/") -%}
 {%- set path = "daemons.rs" -%}
+{%- elif path == "dotfiles/history" -%}
+{%- set path = "dotfiles/history/mod.rs" -%}
+{%- elif path == "dotfiles/include" -%}
+{%- set path = "dotfiles/exclude.rs" -%}
+{%- elif path == "dotfiles/origin" or path == "dotfiles/origin/set" -%}
+{%- set path = "dotfiles/origin.rs" -%}
 {%- elif path == "bootstrap/packages/apply" -%}
 {%- set path = "system/install.rs" -%}
 {%- elif path == "bootstrap/packages/import" -%}
@@ -38,6 +44,8 @@ source_code_link_template #"""
 {%- set path = "dotfiles/save.rs" -%}
 {%- elif path == "bootstrap/dotfiles/capture" -%}
 {%- set path = "dotfiles/capture.rs" -%}
+{%- elif path == "bootstrap/dotfiles/conflicts" -%}
+{%- set path = "dotfiles/conflicts.rs" -%}
 {%- elif path == "bootstrap/dotfiles/track" -%}
 {%- set path = "dotfiles/track.rs" -%}
 {%- elif path == "bootstrap/dotfiles/untrack" -%}

@@ -238,7 +238,7 @@ function main() {
         "--file",
         "mise.usage.kdl",
       ],
-      { encoding: "utf8" },
+      { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 },
     ),
   ).cmd as Command;
   const commands = new Map<string, Command>();

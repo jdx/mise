@@ -22,7 +22,6 @@ use packslip::model::{
     repository, repository_subpath, tag_version,
 };
 use packslip::sigstore::{Policy, Trust};
-use reqwest::header::HeaderMap;
 
 use crate::backend::options::VersionOrder;
 use crate::backend::platform_target::PlatformTarget;
@@ -35,7 +34,7 @@ use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::github;
-use crate::http::{HTTP, HTTP_FETCH};
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::packslip_pins::{self, Observed};
@@ -631,6 +630,16 @@ pub(crate) fn verify_release_list(
 /// The headers a download from GitHub needs; nothing for anywhere else.
 /// Listing timestamps only filter candidates. The authenticated log time
 /// decides whether a selected release is old enough to install.
+/// Whether the release-age cutoff has already had its say about this version.
+///
+/// The cutoff decides which release a fuzzy request may pick. A lockfile entry
+/// and an explicit pin like `hk = "2.0.1"` are both that decision already taken
+/// and committed, so re-applying the cutoff here would reject a version mise
+/// itself resolved — `minimum_release_age` documents both as unfiltered.
+fn selection_already_made(tv: &ToolVersion) -> bool {
+    tv.resolved_from_lockfile() || tv.request_pinned_this_version()
+}
+
 fn check_verified_age(
     logged_at: Option<&str>,
     published_at: &str,
@@ -682,14 +691,6 @@ fn verified_age_allowed(
     Ok(recorded <= before)
 }
 
-fn headers_for(url: &str) -> Result<HeaderMap> {
-    if url.starts_with("https://github.com/") || url.starts_with("https://api.github.com/") {
-        github::get_headers(url)
-    } else {
-        Ok(HeaderMap::new())
-    }
-}
-
 /// Refuse a list whose sequence is below one already accepted for the
 /// project, and remember the highest seen. The crate verifies the list
 /// and its expiry; this is the consumer's part, kept with the pins.
@@ -697,10 +698,9 @@ fn check_sequence(project: &str, list: &ReleaseListStatement) -> Result<()> {
     crate::packslip_pins::check_sequence(project, list.predicate.sequence)
 }
 
-/// Where a release's packslip is and what to send to fetch it.
+/// Where a release's packslip is.
 struct Located {
     url: String,
-    headers: HeaderMap,
     /// The digest a signed release list recorded for the bundle, if any.
     digest: Option<String>,
 }
@@ -815,7 +815,6 @@ impl PackslipBackend {
             };
             refuse_if_withdrawn(project, &tv.version, entry)?;
             return Ok(Some(Located {
-                headers: headers_for(&entry.packslip)?,
                 url: entry.packslip.clone(),
                 digest: list.digest_of(&entry.packslip).map(str::to_string),
             }));
@@ -835,7 +834,6 @@ impl PackslipBackend {
         refuse_if_withdrawn(project, &tv.version, entry)?;
         Ok(Some(Located {
             url: entry.packslip.clone(),
-            headers: HeaderMap::new(),
             digest: list.digest_of(&entry.packslip).map(str::to_string),
         }))
     }
@@ -868,8 +866,9 @@ impl PackslipBackend {
             );
         };
         Ok(Located {
-            headers: github::get_headers(&asset.browser_download_url)?,
-            url: asset.browser_download_url.clone(),
+            // A private repository serves nothing at the browser URL, and the
+            // asset's API endpoint is already in hand here.
+            url: github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url).await,
             digest: None,
         })
     }
@@ -913,11 +912,7 @@ impl PackslipBackend {
                 (vendor.url, vendor.digest)
             }
         };
-        let text = HTTP_FETCH
-            .get_text_request(&url)
-            .headers(&headers_for(&url)?)
-            .send()
-            .await?;
+        let text = crate::packslip::fetch_text(&url).await?;
         let actual = hex::encode(Sha256::digest(text.as_bytes()));
         for expected in vendor_digest
             .iter()
@@ -1228,7 +1223,6 @@ impl PackslipBackend {
                 let vendor = self.vendor_entry(&project, &tv, &pin, &opts).await?;
                 (
                     Located {
-                        headers: headers_for(&stamp.entry.packslip)?,
                         url: stamp.entry.packslip.clone(),
                         digest: Some(digest),
                     },
@@ -1242,13 +1236,7 @@ impl PackslipBackend {
         let bundle_path = tv.download_path().join(bundle_name(&project));
         file::create_dir_all(tv.download_path())?;
         ctx.pr.set_message("download packslip".into());
-        HTTP.download_file_with_headers(
-            &located.url,
-            &bundle_path,
-            &located.headers,
-            Some(ctx.pr.as_ref()),
-        )
-        .await?;
+        crate::packslip::download_file(&located.url, &bundle_path, Some(ctx.pr.as_ref())).await?;
         let pinned: Vec<&String> = located.digest.iter().chain(vendor_digest.iter()).collect();
         if !pinned.is_empty() {
             let (actual, _) = packslip::digest_file(&bundle_path)?;
@@ -1288,11 +1276,12 @@ impl PackslipBackend {
                 .map(|t| format!(", logged {t}"))
                 .unwrap_or_default()
         );
-        // Release age governs selection, but a committed lockfile has already
-        // selected this exact signed release. Keep the cutoff in InstallContext
-        // for package-manager transitive dependencies while making the locked
-        // top-level Packslip artifact reproducible during its cooling window.
-        let before = if tv.resolved_from_lockfile() {
+        // Release age governs selection, and this release was already selected:
+        // either a committed lockfile recorded it, or the request named it
+        // outright. Keep the cutoff in InstallContext for package-manager
+        // transitive dependencies while making the top-level Packslip artifact
+        // installable during its cooling window.
+        let before = if selection_already_made(&tv) {
             None
         } else {
             crate::install_before::resolve_before_date_for_tool(
@@ -1395,13 +1384,7 @@ impl PackslipBackend {
         let file_path = tv.download_path().join(&artifact.name);
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("download {}", artifact.name));
-        HTTP.download_file_with_headers(
-            &url,
-            &file_path,
-            &headers_for(&url)?,
-            Some(ctx.pr.as_ref()),
-        )
-        .await?;
+        crate::packslip::download_file(&url, &file_path, Some(ctx.pr.as_ref())).await?;
 
         // The signed digest and size first, then what the lockfile remembers:
         // a lock entry written from an earlier packslip keeps its checksum and
@@ -1683,11 +1666,17 @@ impl Backend for PackslipBackend {
         let (statement, verified) = self
             .verified_release(&project, tv, &pin, &opts, stamp)
             .await?;
-        let before = crate::install_before::resolve_before_date_for_tool(
-            &self.ba,
-            tv.before_date,
-            raw_opts.minimum_release_age(),
-        )?;
+        // Locking records the version that resolution already chose, so a
+        // selection the cutoff does not govern stays lockable while it cools.
+        let before = if selection_already_made(tv) {
+            None
+        } else {
+            crate::install_before::resolve_before_date_for_tool(
+                &self.ba,
+                tv.before_date,
+                raw_opts.minimum_release_age(),
+            )?
+        };
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,

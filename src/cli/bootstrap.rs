@@ -9,12 +9,7 @@ use heck::ToKebabCase;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::dotfiles::{
-    DotfilesAdd, DotfilesApply, DotfilesCapture, DotfilesDiff, DotfilesEdit, DotfilesExclude,
-    DotfilesHistory, DotfilesInclude, DotfilesOrigin, DotfilesPaths, DotfilesPull, DotfilesRecover,
-    DotfilesRollback, DotfilesSave, DotfilesStatus, DotfilesSync, DotfilesTrack, DotfilesUnapply,
-    DotfilesUndo, DotfilesUntrack, DotfilesWatch,
-};
+use super::dotfiles::{Dotfiles, DotfilesApply};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -65,6 +60,7 @@ use crate::ui::table::MiseTable;
     example(r###"mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
 mise bootstrap --adopt git@github.com:example/mise-config.git --yes
+mise bootstrap --adopt git@github.com:example/mise-config.git --replace-history --yes
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
@@ -72,7 +68,7 @@ mise bootstrap status --missing
 mise bootstrap packages apply --yes
 mise bootstrap repos status
 mise bootstrap repos apply --dry-run
-mise bootstrap dotfiles status
+mise dot status
 mise bootstrap mise-shell-activate apply --dry-run
 mise bootstrap macos defaults status
 mise bootstrap macos launchd-agents apply --dry-run
@@ -90,6 +86,10 @@ pub(crate) struct Bootstrap {
     /// Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
     #[usage(long, value_name = "GIT_URL|OWNER/REPO", conflicts = "from")]
     adopt: Option<String>,
+
+    /// Replace local dotfile history while adopting a setup repository
+    #[usage(long, requires = "adopt")]
+    replace_history: bool,
 
     // Kept separately from `adopt` so only the legacy spelling emits a warning.
     /// Deprecated alias for --adopt
@@ -278,7 +278,7 @@ enum Commands {
     #[usage(hide = true)]
     ConfigRoots(BootstrapConfigRoots),
     Compose(BootstrapCompose),
-    Dotfiles(BootstrapDotfiles),
+    Dotfiles(Dotfiles),
     Files(BootstrapFiles),
     Firewall(BootstrapFirewall),
     #[usage(hide = true)]
@@ -836,79 +836,6 @@ struct BootstrapSecretsStatus {
     /// Exit with code 1 if a declared secret input is unavailable
     #[usage(long)]
     missing: bool,
-}
-
-/// Manage dotfiles from `[dotfiles]`
-#[derive(Debug, usage_rs::Args)]
-#[usage(verbatim_doc_comment)]
-struct BootstrapDotfiles {
-    #[usage(subcommand)]
-    command: BootstrapDotfilesCommands,
-}
-
-#[derive(Debug, usage_rs::Subcommands)]
-enum BootstrapDotfilesCommands {
-    Add(DotfilesAdd),
-    Apply(BootstrapDotfilesApply),
-    Capture(DotfilesCapture),
-    Diff(DotfilesDiff),
-    Edit(DotfilesEdit),
-    Exclude(DotfilesExclude),
-    History(DotfilesHistory),
-    Include(DotfilesInclude),
-    Origin(DotfilesOrigin),
-    Paths(DotfilesPaths),
-    Pull(DotfilesPull),
-    Recover(DotfilesRecover),
-    Rollback(DotfilesRollback),
-    Save(DotfilesSave),
-    Status(BootstrapDotfilesStatus),
-    Sync(DotfilesSync),
-    Track(DotfilesTrack),
-    Unapply(DotfilesUnapply),
-    Undo(DotfilesUndo),
-    Untrack(DotfilesUntrack),
-    Watch(DotfilesWatch),
-}
-
-/// Apply dotfiles from `[dotfiles]`
-///
-/// Applies configured whole-file entries and edits that aren't in their
-/// desired state. Whole-file entries may symlink, copy, or render templates.
-/// Edit entries manage a marker-delimited block or a single line in a file
-/// mise doesn't otherwise own.
-#[derive(Debug, usage_rs::Args)]
-#[usage(
-    verbatim_doc_comment,
-    example(
-        r###"mise bootstrap dotfiles apply
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --force --yes"###
-    )
-)]
-struct BootstrapDotfilesApply {
-    #[usage(flatten)]
-    cmd: DotfilesApply,
-}
-
-/// Show the status of dotfiles from `[dotfiles]`
-///
-/// Template entries are rendered to compare their output; trusted template
-/// functions may execute. `--missing` changes the exit status, not the listing.
-#[derive(Debug, usage_rs::Args)]
-#[usage(
-    visible_alias = "ls",
-    verbatim_doc_comment,
-    example(
-        r###"mise bootstrap dotfiles status
-mise bootstrap dotfiles status ~/.zshrc
-mise bootstrap dotfiles status --json
-mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync"###
-    )
-)]
-struct BootstrapDotfilesStatus {
-    #[usage(flatten)]
-    cmd: DotfilesStatus,
 }
 
 /// Manage bootstrap system packages from `[bootstrap.packages]`
@@ -1524,7 +1451,7 @@ impl Bootstrap {
         } else {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PrePackages)
                 .await?;
-            let all_mgrs = system::packages_from_config(&config);
+            let all_mgrs = system::packages_from_config(&config)?;
             let has_plugin_packages = all_mgrs
                 .iter()
                 .any(|mp| mp.manager.is_plugin() && !mp.disabled)
@@ -1673,7 +1600,7 @@ impl Bootstrap {
                     dry_run: self.dry_run,
                     verbose: false,
                     force: self.force_dotfiles,
-                    force_hint: "use --force-dotfiles or run `mise bootstrap dotfiles apply --force`",
+                    force_hint: "use --force-dotfiles or run `mise dot apply --force`",
                     yes: self.yes,
                 };
                 if !system::files::apply(&config, &files, &opts, &secrets)? {
@@ -1835,7 +1762,7 @@ impl Bootstrap {
         }
 
         if !skip.contains(&BootstrapPart::Packages) {
-            let mgrs = system::packages_from_config(&config)
+            let mgrs = system::packages_from_config(&config)?
                 .into_iter()
                 .filter(|mp| mp.manager.is_plugin())
                 .collect::<Vec<_>>();
@@ -1930,8 +1857,13 @@ impl Bootstrap {
         // its files are written by the same recoverable pull as any other
         // incoming change; the ordinary bootstrap then runs from them
         if let Some(url) = expanded.as_deref()
-            && let Some(outcome) =
-                system::history::sync::onboard::from_git(url, self.yes, self.dry_run).await?
+            && let Some(outcome) = system::history::sync::onboard::from_git(
+                url,
+                self.yes,
+                self.dry_run,
+                self.replace_history,
+            )
+            .await?
         {
             if self.dry_run {
                 if let Some(preview) = outcome.preview_config.as_ref() {
@@ -1945,7 +1877,7 @@ impl Bootstrap {
             // installations are not what was asked for
             if outcome.setup_held {
                 bail!(
-                    "the setup from {url} is paused; nothing was bootstrapped. `mise bootstrap dotfiles status` lists the paths that need attention; resolve them with `mise bootstrap dotfiles pull`, then run `mise bootstrap`"
+                    "the setup from {url} is paused; nothing was bootstrapped. `mise dot status` lists the paths that need attention. Existing files that differ are kept until you decide: `mise dot pull --take-remote-all` chooses the repository's version for every conflict, or `mise dot pull --take-remote <path>` and `mise dot pull --keep-local <path>` decide one at a time. A path held for another reason, such as a directory where the repository has a file, says so in `mise dot status` and needs that fix instead. Then run `mise bootstrap`"
                 );
             }
             let config_dir = system::history::tracked::global_config_dir();
@@ -2164,6 +2096,7 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
     let mut args = args.iter().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--replace-history" => {}
             "--from" | "--adopt" | "--from-git" | "--from-dir" | "--cd" | "-C" => {
                 args.next();
             }
@@ -3595,7 +3528,7 @@ impl BootstrapStatus {
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
         let mut json_out = serde_json::Map::new();
-        for mp in system::packages_from_config(config) {
+        for mp in system::packages_from_config(config)? {
             let name = mp.manager.name();
             let reason = if mp.disabled {
                 Some("excluded by the system_packages.managers setting".to_string())
@@ -3632,7 +3565,10 @@ impl BootstrapStatus {
                 );
                 continue;
             }
-            let statuses = mp.manager.installed(&mp.requests).await?;
+            let statuses = mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await?;
             let mut json_pkgs = vec![];
             for s in statuses {
                 let auto_updates = s.state.auto_updates();
@@ -4207,49 +4143,16 @@ impl BootstrapStatus {
     }
 }
 
-impl BootstrapDotfiles {
-    async fn run(self) -> Result<()> {
-        match self.command {
-            BootstrapDotfilesCommands::Add(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Capture(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Diff(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Exclude(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::History(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Include(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Paths(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Rollback(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Save(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Track(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Undo(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Untrack(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Watch(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Origin(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Pull(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Recover(cmd) => cmd.run().await,
-            BootstrapDotfilesCommands::Sync(cmd) => cmd.run().await,
-        }
-    }
-}
-
-impl BootstrapDotfilesApply {
-    async fn run(self) -> Result<()> {
-        // one operation around both hook phases and the apply itself, so a
-        // hook that edits a tracked file is inside the checkpoint pair
-        let dry_run = self.cmd.dry_run();
-        OperationScope::wrap("bootstrap dotfiles apply", dry_run, self.run_inner()).await
-    }
-
-    async fn run_inner(self) -> Result<()> {
+pub(crate) async fn run_dotfiles_apply(cmd: DotfilesApply) -> Result<()> {
+    // one operation around both hook phases and the apply itself, so a
+    // hook that edits a tracked file is inside the checkpoint pair
+    let dry_run = cmd.dry_run();
+    OperationScope::wrap("dotfiles apply", dry_run, async move {
         let mut config = Config::get().await?;
-        let (files, edits) = self.cmd.requests(&config)?;
-        let dry_run = self.cmd.dry_run();
+        let (files, edits) = cmd.requests(&config)?;
         let hooks = system::hooks_from_config(&config);
         run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
-        if !self.cmd.run_inner().await? {
+        if !cmd.run_inner().await? {
             return Ok(());
         }
         let hooks = if dry_run {
@@ -4261,7 +4164,8 @@ impl BootstrapDotfilesApply {
             system::hooks_from_config(&config)
         };
         run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles, dry_run).await
-    }
+    })
+    .await
 }
 
 /// Updates or clones the bootstrap repository. `Ok(false)` is a dry run
@@ -4328,12 +4232,6 @@ async fn run_bootstrap_hooks(
         return Ok(());
     }
     hooks::run_phase(config, hooks, phase, dry_run).await
-}
-
-impl BootstrapDotfilesStatus {
-    async fn run(self) -> Result<()> {
-        self.cmd.run().await
-    }
 }
 
 impl BootstrapPackages {
@@ -5270,6 +5168,7 @@ mod tests {
                 } else {
                     args.extend([flag, "jdx/dotfiles"].map(String::from));
                 }
+                args.push("--replace-history".to_string());
                 args.push("--yes".to_string());
                 assert_eq!(
                     bootstrap_from_child_args(Path::new("/checkout"), &args),

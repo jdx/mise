@@ -557,6 +557,24 @@ mod tests {
             check_semver_bump("stable", "0.10.0"),
             Some("stable".to_string())
         );
+        // Build metadata is part of the tag for k3s (`v1.37.0+k3s1`) and Java
+        // (`temurin-17.0.7+7`), so a bump has to keep it. Without it the pin
+        // named a release that does not exist.
+        std::assert_eq!(
+            check_semver_bump("1.36.4+k3s1", "1.37.0+k3s1"),
+            Some("1.37.0+k3s1".to_string())
+        );
+        std::assert_eq!(check_semver_bump("1.36.4+k3s1", "1.36.4+k3s1"), None);
+        std::assert_eq!(
+            check_semver_bump("17.0.7+7", "17.0.8+7"),
+            Some("17.0.8+7".to_string())
+        );
+        // A coarser pin stays coarse -- the metadata only rides along when the
+        // old pin was specific enough to have had it.
+        std::assert_eq!(
+            check_semver_bump("1.36", "1.37.0+k3s1"),
+            Some("1.37".to_string())
+        );
         std::assert_eq!(
             check_semver_bump("beta", "1.0.0-beta.1"),
             Some("beta".to_string())

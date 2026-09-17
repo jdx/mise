@@ -9,10 +9,17 @@ dependencies from [conda-forge](https://conda-forge.org/) or another Anaconda
 channel. It solves dependencies and downloads packages directly, so conda,
 mamba, and micromamba do not need to be installed.
 
-Commands from the selected package run inside that package's isolated conda prefix. mise sets
-`CONDA_PREFIX`, makes the prefix's executable directories available to the command process, and applies
-`etc/conda/activate.d` scripts before starting it. This lets a command use its packaged runtime
-dependencies without adding dependency commands to your interactive shell's `PATH`.
+Each package is installed into its own isolated conda prefix. When a package needs that prefix
+activated — it ships `etc/conda/activate.d` scripts, its prefix contains executables from its
+dependencies, or one of its commands is a script — mise starts its commands through a launcher
+that sets `CONDA_PREFIX`, makes the prefix's executable directories available, and applies the
+activation scripts. This lets a command use its packaged runtime dependencies without adding
+dependency commands to your interactive shell's `PATH`.
+
+A package with none of those — a single-binary tool such as `conda:ripgrep` — has nothing to
+activate, so on Unix its commands are symlinked directly. They start without an extra shell
+process, and without `CONDA_PREFIX` or the prefix's executable directories being set for the
+command and whatever it spawns.
 
 The code for this is inside the mise repository at [`./src/backend/conda.rs`](https://github.com/jdx/mise/blob/main/src/backend/conda.rs).
 
@@ -104,7 +111,7 @@ Override the conda channel for a specific package:
 ## Limitations
 
 - mise solves and installs transitive dependencies in an isolated prefix for each tool. It does not import or maintain a general-purpose `environment.yml`.
-- Only commands belonging to the requested package are exposed to your shell. Dependency executables remain available inside that tool's launcher environment.
+- Only commands belonging to the requested package are exposed to your shell. For a package that is started through a launcher, its dependencies' executables stay reachable from inside that command but never reach your shell.
 - The solver uses one channel per tool. Packages from channels such as bioconda may require dependencies from another channel that this configuration cannot supply.
 - Native requirements such as a compatible libc or GPU driver still belong to the host.
 

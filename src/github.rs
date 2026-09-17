@@ -532,7 +532,13 @@ async fn get_release_with_options(
     let url = if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
-        format!("{api_url}/repos/{repo}/releases/tags/{tag}")
+        // As one path segment: a tag may hold `#` or `/`, which would
+        // otherwise start a fragment or reach a different path. GitHub accepts
+        // the encoded form, and `versions_host` already sends it that way.
+        format!(
+            "{api_url}/repos/{repo}/releases/tags/{}",
+            urlencoding::encode(tag)
+        )
     };
     let headers = get_headers(&url)?;
     crate::http::HTTP_FETCH
@@ -673,6 +679,68 @@ pub(crate) async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -
         Err(e) => {
             debug!("HEAD on browser URL failed ({e}), using the API asset endpoint");
             api_url.to_string()
+        }
+    }
+}
+
+/// Split a `github.com/{owner}/{repo}/releases/download/{tag}/{asset}` browser
+/// URL into `(owner/repo, tag, asset name)`. `None` for any other URL.
+///
+/// A tag may contain `/`, and GitHub leaves those literal in the download URL
+/// (`.../download/@biomejs/biome@2.5.2/biome-linux-x64`) while percent-encoding
+/// the rest. An asset name never contains one, so the last segment is the asset
+/// and everything before it is the tag.
+pub(crate) fn release_asset_from_url(url: &str) -> Option<(String, String, String)> {
+    let url = url::Url::parse(url).ok()?;
+    if url.host_str()? != "github.com" {
+        return None;
+    }
+    let segments = url.path_segments()?.collect::<Vec<_>>();
+    let [owner, repo, "releases", "download", tail @ ..] = segments.as_slice() else {
+        return None;
+    };
+    let (asset, tag) = tail.split_last()?;
+    if tag.is_empty() || asset.is_empty() {
+        return None;
+    }
+    let tag = tag
+        .iter()
+        .map(|segment| urlencoding::decode(segment).map(|s| s.into_owned()))
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?
+        .join("/");
+    let asset = urlencoding::decode(asset).ok()?.into_owned();
+    Some((format!("{owner}/{repo}"), tag, asset))
+}
+
+/// The API endpoint that serves the release asset a browser-facing URL names.
+///
+/// A private repository answers `github.com/.../releases/download/...` with 404
+/// even for a caller holding a valid token, so the asset has to be fetched from
+/// `api.github.com/repos/{repo}/releases/assets/{id}` instead — and only the
+/// release metadata knows that id. `None` when the URL is not a GitHub release
+/// download, the release cannot be read, or it carries no asset by that name.
+///
+/// Pass `use_versions_host: false` when the browser URL has already failed: the
+/// repository is most likely private, so mise-versions cannot hold the release
+/// and asking would only tell a public host the owner, repository, and tag.
+pub(crate) async fn release_asset_api_url(
+    browser_url: &str,
+    use_versions_host: bool,
+) -> Option<String> {
+    let (repo, tag, asset_name) = release_asset_from_url(browser_url)?;
+    let release = match get_release_with_versions_host(&repo, &tag, use_versions_host).await {
+        Ok(release) => release,
+        Err(err) => {
+            debug!("failed to resolve GitHub release asset {repo}@{tag}/{asset_name}: {err:#}");
+            return None;
+        }
+    };
+    match release.assets.iter().find(|asset| asset.name == asset_name) {
+        Some(asset) => Some(asset.url.clone()),
+        None => {
+            debug!("GitHub release {repo}@{tag} did not include asset {asset_name}");
+            None
         }
     }
 }
@@ -1115,6 +1183,73 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_release_asset_from_url_parses_browser_download_urls() {
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/owner/repo/releases/download/v1.2.3/tool-aarch64.tar.gz"
+            ),
+            Some((
+                "owner/repo".to_string(),
+                "v1.2.3".to_string(),
+                "tool-aarch64.tar.gz".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_decodes_tag_and_asset() {
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/owner/repo/releases/download/v1%2Bmeta/tool%20name.tar.gz"
+            ),
+            Some((
+                "owner/repo".to_string(),
+                "v1+meta".to_string(),
+                "tool name.tar.gz".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_keeps_a_tag_that_spans_segments() {
+        // GitHub percent-encodes `@` but leaves a tag's `/` as a path
+        // separator, so the asset is the last segment and the tag is the rest.
+        assert_eq!(
+            release_asset_from_url(
+                "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.2/biome-linux-x64"
+            ),
+            Some((
+                "biomejs/biome".to_string(),
+                "@biomejs/biome@2.5.2".to_string(),
+                "biome-linux-x64".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_release_asset_from_url_ignores_non_release_urls() {
+        assert_eq!(
+            release_asset_from_url("https://example.com/owner/repo/releases/download/v1/tool"),
+            None
+        );
+        assert_eq!(
+            release_asset_from_url("https://github.com/owner/repo/archive/refs/tags/v1.tar.gz"),
+            None
+        );
+        // An API asset endpoint is already what the fallback resolves to, so it
+        // is not itself a browser URL to resolve.
+        assert_eq!(
+            release_asset_from_url("https://api.github.com/repos/owner/repo/releases/assets/1"),
+            None
+        );
+        // A tag with no asset after it names no file.
+        assert_eq!(
+            release_asset_from_url("https://github.com/owner/repo/releases/download/v1"),
+            None
+        );
+    }
+
     const GITHUB_TOKEN_VARS: [&str; 4] = [
         "MISE_GITHUB_TOKEN",
         "GITHUB_API_TOKEN",
@@ -1554,6 +1689,34 @@ something_else = "value"
             url: format!("https://api.github.com/repos/owner/repo/releases/assets/{name}"),
             digest: None,
         }
+    }
+
+    #[tokio::test]
+    async fn test_release_lookup_encodes_the_tag_as_one_path_segment() {
+        // A tag may hold `#` or `/`. Interpolated raw, the first would start a
+        // fragment and the second would reach a different path, so neither
+        // release could be looked up.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/tag-encoding-test";
+        let tag = "release/2026#1";
+        let mock = server
+            .mock(
+                "GET",
+                format!("/repos/{repo}/releases/tags/release%2F2026%231").as_str(),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&make_release(tag)).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+
+        let release = get_release_for_url_with_versions_host(&server.url(), repo, tag, false)
+            .await
+            .unwrap();
+        assert_eq!(release.tag_name, tag);
+        mock.assert_async().await;
     }
 
     #[tokio::test]

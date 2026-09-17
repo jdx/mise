@@ -35,6 +35,7 @@ repeated or comma-separated parts and cannot be combined.
 ## Flags
 - **`--from <GIT_URL>`** — Clone a git repository and bootstrap from its configuration
 - **`--adopt <GIT_URL|OWNER/REPO>`** — Adopt global configuration or shared dotfile history from a Git repository, then bootstrap
+- **`--replace-history`** — Replace local dotfile history while adopting a setup repository
 - **`--from-dir <DIR>`** — Directory used for the repository cloned by --from
 - **`-n --dry-run`** — Print what would happen without installing anything
 - **`-y --yes`** — Skip confirmation prompts
@@ -60,6 +61,7 @@ repeated or comma-separated parts and cannot be combined.
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
 mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
 mise bootstrap --adopt git@github.com:example/mise-config.git --yes
+mise bootstrap --adopt git@github.com:example/mise-config.git --replace-history --yes
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation
@@ -67,7 +69,7 @@ mise bootstrap status --missing
 mise bootstrap packages apply --yes
 mise bootstrap repos status
 mise bootstrap repos apply --dry-run
-mise bootstrap dotfiles status
+mise dot status
 mise bootstrap mise-shell-activate apply --dry-run
 mise bootstrap macos defaults status
 mise bootstrap macos launchd-agents apply --dry-run

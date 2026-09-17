@@ -27,10 +27,10 @@ use crate::ui::prompt;
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap dotfiles add ~/.zshrc
-mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
-mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
-mise bootstrap dotfiles add --changed"###
+        r###"mise dot add ~/.zshrc
+mise dot add --mode copy ~/.config/starship.toml
+mise dot add --source dotfiles/gitconfig ~/.gitconfig
+mise dot add --changed"###
     )
 )]
 pub(crate) struct DotfilesAdd {
@@ -105,7 +105,7 @@ impl DotfilesAdd {
         }
         match self.mode.as_deref() {
             Some("track") => bail!(
-                "`--mode track` tracks a file where it is and takes no source; use `mise bootstrap dotfiles track <path>`"
+                "`--mode track` tracks a file where it is and takes no source; use `mise dot track <path>`"
             ),
             Some(mode) => {
                 FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))
@@ -168,7 +168,7 @@ impl DotfilesAdd {
                 .any(|req| req.mode == FileMode::Track && req.target == target)
             {
                 bail!(
-                    "{target_raw}: tracked in place; pass `--mode copy` after `mise bootstrap dotfiles untrack {target_raw}` to seed a source instead"
+                    "{target_raw}: tracked in place; pass `--mode copy` after `mise dot untrack {target_raw}` to seed a source instead"
                 );
             }
             if managed_edits.iter().any(|req| {
@@ -419,7 +419,7 @@ impl DotfilesAdd {
                 dry_run: false,
                 verbose: false,
                 force: false,
-                force_hint: "run `mise bootstrap dotfiles apply --force`",
+                force_hint: "run `mise dot apply --force`",
                 yes: true,
             };
             let apply_plan = if !self.no_apply && !apply_requests.is_empty() {

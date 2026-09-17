@@ -16,6 +16,12 @@ Use the package identifier shown by `winget search`, not a display name. mise
 passes the identifier to WinGet with `--id` and `--exact`, so bootstrap never
 accepts an ambiguous fuzzy match.
 
+WinGet matches identifiers case-insensitively, so `winget:Git.Git` and
+`winget:git.git` are one package written two ways. They are still two
+`[bootstrap.packages]` entries, and mise rejects the configuration if they
+disagree about `version` or `state` rather than resolving the pair from the
+machine's current state. Declare the package once.
+
 ## Commands
 
 ```sh
@@ -49,5 +55,6 @@ other platform's bootstrap.
 
 This support is local to the Windows machine running `mise bootstrap`.
 [`mise bootstrap remote`](/bootstrap/remote.html) still requires a POSIX-shell
-target; native Windows SSH/PowerShell targets are not supported yet. Scoop and
-Chocolatey are also outside this first implementation.
+target; native Windows SSH/PowerShell targets are not supported yet. Scoop
+packages have their own manager, [`scoop`](/bootstrap/packages/scoop.html);
+Chocolatey is not supported.

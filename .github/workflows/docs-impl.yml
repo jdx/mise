@@ -15,7 +15,7 @@ on:
         required: false
 
 concurrency:
-  group: docs-${{ github.head_ref }}
+  group: docs-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'deploy' || 'validation' }}-${{ github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease && 'release' || github.head_ref || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -30,9 +30,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # for lastUpdated
+      # mise-action exports its github_token as MISE_GITHUB_TOKEN, which takes
+      # precedence over the GITHUB_TOKEN set above. Left at its default that is
+      # the ephemeral installation token, whose budget is shared by every
+      # workflow in the repository — so a release, which starts eight workflows
+      # at once, can finish off what the hour's other CI already spent before
+      # this job installs its tools. Pass the PAT through so mise draws on its
+      # own budget instead.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
           install_args: bun
+          github_token: ${{ secrets.MISE_GH_TOKEN || github.token }}
       # Check the API directly instead of bootstrapping the rate-limit helper,
       # since installing the helper itself requires GitHub API access.
       - name: Wait for GitHub rate limit
@@ -62,4 +70,4 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-          DRY_RUN: ${{ !inputs.trusted || github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+          DRY_RUN: ${{ !inputs.trusted || github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'v') || github.event.release.prerelease }}

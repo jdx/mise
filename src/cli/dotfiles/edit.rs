@@ -5,9 +5,12 @@ use eyre::{Result, bail};
 use super::add::DotfilesAdd;
 use crate::config::Config;
 use crate::file;
+use crate::path::PathExt;
 use crate::system;
 use crate::system::edits::{BlockSource, EditOp};
+use crate::system::files::FileMode;
 use crate::system::history::OperationScope;
+use crate::system::history::tracked::{self, TrackedSet};
 use crate::ui::prompt;
 
 /// Edit a managed dotfile source
@@ -15,8 +18,8 @@ use crate::ui::prompt;
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles edit --apply ~/.config/starship.toml"###
+        r###"mise dot edit ~/.zshrc
+mise dot edit --apply ~/.config/starship.toml"###
     )
 )]
 pub(crate) struct DotfilesEdit {
@@ -115,10 +118,47 @@ fn source_for_target(
     target: &std::path::Path,
     raw: &str,
 ) -> Result<Option<PathBuf>> {
-    for req in system::files::files_from_config(config)? {
-        if system::files::matches_target(&req.target, &req.target_raw, &[raw.to_string()]) {
-            return Ok(Some(req.source));
-        }
+    let matching_files = system::files::files_from_config(config)?
+        .into_iter()
+        .filter(|req| {
+            system::files::matches_target(&req.target, &req.target_raw, &[raw.to_string()])
+        })
+        .collect::<Vec<_>>();
+    // one target may be both tracked and deployed, and tracking composes
+    // first. editing the source is what converges a deployed target — and
+    // what `--apply` would otherwise write back over — so the deployment
+    // entry wins; the tracked file is edited only when nothing deploys it.
+    let deployments = matching_files
+        .iter()
+        .filter(|req| req.mode != FileMode::Track)
+        .collect::<Vec<_>>();
+    // composed roots may each deploy into one target (symlink-each entries
+    // whose leaves do not collide), and nothing says which source the edit
+    // means — name them instead of opening whichever composed first
+    if deployments.len() > 1 {
+        let sources = deployments
+            .iter()
+            .map(|req| req.source.display_user())
+            .collect::<Vec<_>>()
+            .join(", ");
+        bail!("{raw}: multiple [dotfiles] entries deploy this target; edit one of: {sources}");
+    }
+    let selected = deployments
+        .into_iter()
+        .next()
+        .or_else(|| matching_files.first());
+    if let Some(req) = selected {
+        // a tracked file has no source: it stays where it is, so that is
+        // what to edit. inline content lives in the config that declares
+        // it, like an inline edit entry.
+        return Ok(Some(match req.mode {
+            FileMode::Track => {
+                warn_if_the_edit_escapes_history(config, &req.target);
+                req.target.clone()
+            }
+            FileMode::Content => req.origin.config.clone(),
+            _ => req.source.clone(),
+        }));
     }
     let matching_edits = system::edits::edits_from_config(config)?
         .into_iter()
@@ -154,6 +194,44 @@ fn source_for_target(
     Ok(None)
 }
 
+/// History captures a tracked symlink as a link, never its destination, so an
+/// editor that follows the link writes to a file the surrounding checkpoint
+/// does not hold. Say so rather than record a generation that misses the edit.
+fn warn_if_the_edit_escapes_history(config: &Config, target: &std::path::Path) {
+    if !file::is_symlink_or_junction(target) {
+        return;
+    }
+    // resolve the chain the way an atomic write does, so a dangling or
+    // unreadable link — which still writes through to its destination — is
+    // reported rather than mistaken for a path that escapes nothing
+    let destination = match file::atomic_write_target(target) {
+        Ok(destination) => tracked::normalize_target(&destination),
+        Err(err) => {
+            // an unresolvable chain is one the editor cannot open either
+            debug!(
+                "dotfiles: could not resolve {}: {err:#}",
+                target.display_user()
+            );
+            return;
+        }
+    };
+    if destination == target {
+        return;
+    }
+    match TrackedSet::from_config(config).and_then(|set| set.would_capture(&destination)) {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(err) => {
+            debug!("dotfiles: could not resolve the tracked set: {err:#}");
+        }
+    }
+    warn!(
+        "{} is tracked as a symlink: this edits {}, which history does not capture; track that path too to save its contents",
+        target.display_user(),
+        destination.display_user()
+    );
+}
+
 fn open_or_create(path: &std::path::Path) -> Result<()> {
     if !path.exists() {
         if let Some(parent) = path.parent() {
@@ -184,7 +262,7 @@ async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
             dry_run: false,
             verbose: false,
             force: false,
-            force_hint: "use `mise bootstrap dotfiles apply --force`",
+            force_hint: "use `mise dot apply --force`",
             yes: true,
         };
         system::files::apply(&config, &files, &opts, &secrets)?;

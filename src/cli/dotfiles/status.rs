@@ -23,10 +23,10 @@ use crate::ui::table::MiseTable;
     visible_alias = "ls",
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap dotfiles status
-mise bootstrap dotfiles status ~/.zshrc
-mise bootstrap dotfiles status --json
-mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync"###
+        r###"mise dot status
+mise dot status ~/.zshrc
+mise dot status --json
+mise dot status --missing # exit 1 if anything is out of sync"###
     )
 )]
 pub(crate) struct DotfilesStatus {

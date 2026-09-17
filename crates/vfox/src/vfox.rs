@@ -63,6 +63,14 @@ pub struct Vfox {
     pub cmd_env: Option<IndexMap<String, String>>,
     /// Shell command used by Lua `cmd.exec()`.
     pub default_inline_shell: Option<Vec<String>>,
+    /// Whether the user asked for child stdio to be connected (mise's `raw`
+    /// setting). When false, hook children spawned by `cmd.exec`/`os.execute`
+    /// get `/dev/null` on stdin so a parallel install cannot race for it.
+    pub raw_stdio: bool,
+    /// Serializes children that write to the terminal, used by Lua `cmd.stream`
+    /// and `os.execute`. Set by mise; when absent those commands run directly,
+    /// which is what standalone `vfox-cli` wants.
+    pub terminal_lock: Option<TerminalLock>,
     /// Optional GitHub token for Lua http requests to GitHub API endpoints.
     pub github_token: Option<String>,
     /// Optional lazy resolver for the GitHub token. When set, the token is only
@@ -78,6 +86,24 @@ pub struct Vfox {
     log_tx: Option<mpsc::Sender<String>>,
     log_handler: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
+
+/// Runs a child that writes to the terminal, under mise's terminal lock.
+///
+/// Called with `exclusive = true` by `cmd.stream`, which needs the terminal to
+/// itself, and `exclusive = false` by `os.execute`, whose output streams to the
+/// terminal and so must not overlap an exclusive child.
+///
+/// Takes the work to run rather than a command so the implementation can hold its
+/// guards across the child's whole lifetime and release them when it returns.
+/// Returns the child's exit status. (#13254)
+pub type TerminalLock = Arc<
+    dyn Fn(
+            bool,
+            &mut dyn FnMut() -> std::result::Result<i64, String>,
+        ) -> std::result::Result<i64, String>
+        + Send
+        + Sync,
+>;
 
 pub(crate) type UrlRewriter = Arc<dyn Fn(&mut Url) + Send + Sync>;
 
@@ -211,6 +237,10 @@ impl Vfox {
         let mut plugin = Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))?;
         plugin.runtime_env_type = self.runtime_env_type.clone();
         self.set_cmd_shell(&plugin)?;
+        plugin.set_raw_stdio(self.raw_stdio)?;
+        if let Some(runner) = &self.terminal_lock {
+            plugin.set_terminal_lock(runner.clone())?;
+        }
         if let Some(rewriter) = &self.url_rewriter {
             plugin.set_url_rewriter(rewriter.clone())?;
         }
@@ -895,6 +925,8 @@ impl Default for Vfox {
             skip_verification: false,
             cmd_env: None,
             default_inline_shell: None,
+            raw_stdio: false,
+            terminal_lock: None,
             github_token: None,
             github_token_resolver: None,
             runtime_env_type: None,
@@ -947,6 +979,8 @@ mod tests {
                 skip_verification: false,
                 cmd_env: None,
                 default_inline_shell: None,
+                raw_stdio: false,
+                terminal_lock: None,
                 github_token: None,
                 github_token_resolver: None,
                 runtime_env_type: None,

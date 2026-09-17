@@ -62,6 +62,18 @@ enum AllowBuilds {
     Packages(Vec<String>),
 }
 
+/// How far a tool opts out of aube's non-registry-source gate.
+/// `Packages` is the scoped form and the one to prefer: it names the
+/// dependencies allowed an exotic source and leaves the rest of the graph
+/// gated. `All` drops the gate for everything the tool pulls in, now and
+/// after any future update.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AllowExoticDeps {
+    None,
+    All,
+    Packages(Vec<String>),
+}
+
 impl<'a> NpmOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
@@ -96,20 +108,80 @@ impl<'a> NpmOptions<'a> {
         )
     }
 
-    /// Whether this tool's own package may install despite falling below
-    /// aube's weekly-download threshold. Scoped to the requested package
-    /// only — transitive dependencies stay gated.
+    /// Whether this tool's own package may bypass aube's reputation gates.
+    /// Scoped to the requested package only — transitive dependencies stay
+    /// gated, and the malicious-package advisory check still runs.
     fn allow_low_downloads(&self) -> eyre::Result<bool> {
-        let Some(value) = self.values.raw().opts.get("allow_low_downloads") else {
+        self.bool_option("allow_low_downloads")
+    }
+
+    /// Which dependencies in this tool's graph may come from non-registry
+    /// sources (`git+`, `file:`, `exec:`, or a direct tarball URL). aube
+    /// blocks them by default via `blockExoticSubdeps`; some packages
+    /// legitimately depend on one, e.g. a package the registry no longer
+    /// carries a safe release of.
+    ///
+    /// A list names the exempt packages and is what the docs steer people
+    /// to; `true` is the blunt form that exempts the whole graph.
+    fn allow_exotic_deps(&self) -> eyre::Result<AllowExoticDeps> {
+        let Some(value) = self.values.raw().opts.get("allow_exotic_deps") else {
+            return Ok(AllowExoticDeps::None);
+        };
+        match value {
+            toml::Value::Boolean(true) => Ok(AllowExoticDeps::All),
+            toml::Value::Boolean(false) => Ok(AllowExoticDeps::None),
+            toml::Value::String(value) if value.eq_ignore_ascii_case("true") => {
+                Ok(AllowExoticDeps::All)
+            }
+            toml::Value::String(value) if value.eq_ignore_ascii_case("false") => {
+                Ok(AllowExoticDeps::None)
+            }
+            toml::Value::String(value) => Ok(Self::canonical_exotic_packages(vec![value.clone()])),
+            toml::Value::Array(values) => {
+                let packages = values
+                    .iter()
+                    .map(|value| {
+                        value.as_str().map(str::to_string).ok_or_else(|| {
+                            eyre::eyre!("allow_exotic_deps array must contain only strings")
+                        })
+                    })
+                    .collect::<eyre::Result<Vec<_>>>()?;
+                Ok(Self::canonical_exotic_packages(packages))
+            }
+            value => Err(eyre::eyre!(
+                "allow_exotic_deps must be true, false, a string, or array, got {value}"
+            )),
+        }
+    }
+
+    fn canonical_exotic_packages(mut packages: Vec<String>) -> AllowExoticDeps {
+        Self::canonicalize_string_list(&mut packages);
+        if packages.is_empty() {
+            AllowExoticDeps::None
+        } else {
+            AllowExoticDeps::Packages(packages)
+        }
+    }
+
+    fn canonical_allow_exotic_deps_lockfile_value(&self) -> eyre::Result<Option<String>> {
+        Ok(match self.allow_exotic_deps()? {
+            AllowExoticDeps::None => None,
+            AllowExoticDeps::All => Some("true".into()),
+            AllowExoticDeps::Packages(packages) => Some(format!("{packages:?}")),
+        })
+    }
+
+    /// Parse a boolean tool option, accepting the TOML boolean and the string
+    /// spellings `mise use npm:x[key=true]` produces. Absent reads as `false`.
+    fn bool_option(&self, key: &str) -> eyre::Result<bool> {
+        let Some(value) = self.values.raw().opts.get(key) else {
             return Ok(false);
         };
         match value {
             toml::Value::Boolean(value) => Ok(*value),
             toml::Value::String(value) if value.eq_ignore_ascii_case("true") => Ok(true),
             toml::Value::String(value) if value.eq_ignore_ascii_case("false") => Ok(false),
-            value => Err(eyre::eyre!(
-                "allow_low_downloads must be a boolean, got {value}"
-            )),
+            value => Err(eyre::eyre!("{key} must be a boolean, got {value}")),
         }
     }
 
@@ -248,6 +320,10 @@ impl<'a> NpmOptions<'a> {
                     self.canonical_trust_policy_excludes_lockfile_value()
                         .ok()
                         .flatten()
+                } else if key == "allow_exotic_deps" {
+                    self.canonical_allow_exotic_deps_lockfile_value()
+                        .ok()
+                        .flatten()
                 } else {
                     self.values.raw().opts.get(&key).map(|value| match value {
                         toml::Value::String(value) => value.clone(),
@@ -299,6 +375,10 @@ impl Backend for NPMBackend {
 
     fn get_type(&self) -> BackendType {
         BackendType::Npm
+    }
+
+    fn is_backend_prerelease(&self, version: &str) -> bool {
+        is_semver_prerelease(version)
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
@@ -473,9 +553,18 @@ impl Backend for NPMBackend {
         if package_manager == NpmPackageManager::Aube
             && tv.aube_lock.is_none()
             && (source_lockfile_version.is_some_and(|v| v >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled()))
+                || Self::aube_lock_creation_enabled(&tv))
         {
             tv.aube_lock = Some(self.resolve_aube_lock(&tv).await?);
+        }
+        if let Some(lock) = &tv.aube_lock {
+            let lock = if !ctx.locked && lock.load().is_err() {
+                lock.refresh()?
+            } else {
+                lock.clone()
+            };
+            self.validate_aube_lock(&tv, lock.load()?)?;
+            tv.aube_lock = Some(lock);
         }
         Ok(tv)
     }
@@ -496,7 +585,7 @@ impl Backend for NPMBackend {
                 None
             };
             if source_lockfile_version.is_some_and(|version| version >= 2)
-                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled())
+                || Self::aube_lock_creation_enabled(tv)
             {
                 return Ok(false);
             }
@@ -690,6 +779,19 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    /// Return whether automatic project-lockfile maintenance should create an
+    /// aube graph for this request. Settings are invocation-wide, but automatic
+    /// lockfile updates deliberately exclude tools owned by global configs.
+    fn aube_lock_creation_enabled(tv: &ToolVersion) -> bool {
+        !tv.resolved_from_lockfile()
+            && Settings::get().lockfile_creation_enabled()
+            && !tv
+                .request
+                .source()
+                .path()
+                .is_some_and(crate::config::is_global_config)
+    }
+
     pub(crate) fn uses_embedded_aube() -> bool {
         let settings = Settings::get();
         matches!(settings.npm.package_manager, NpmPackageManager::Aube)
@@ -1149,6 +1251,7 @@ impl NPMBackend {
         let install_path = tv.install_path();
         crate::file::create_dir_all(&install_path)?;
 
+        Self::warn_if_install_env_ignored(tv);
         let allow_builds = options.allow_builds()?;
         self.write_aube_embed_project(
             &install_path,
@@ -1160,7 +1263,7 @@ impl NPMBackend {
         self.write_aube_root_dependency(&install_path, &self.tool_name(), &tv.version)?;
 
         if let Some(lock) = &tv.aube_lock {
-            crate::file::write(install_path.join("aube-lock.yaml"), lock.to_yaml()?)?;
+            crate::file::write(install_path.join("aube-lock.yaml"), lock.load()?.to_yaml()?)?;
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
             let mut install_options = aube::embed::InstallOptions::new(&install_path);
             install_options.frozen_mode = aube::embed::FrozenMode::Frozen;
@@ -1169,7 +1272,9 @@ impl NPMBackend {
             install_options.dangerously_allow_all_builds = matches!(allow_builds, AllowBuilds::All);
             install_options.control =
                 aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
-                    .with_prompt_handler(Arc::new(AubePromptHandler));
+                    .with_prompt_decision_handler(Arc::new(AubePromptHandler {
+                        yes: ctx.explicit_yes,
+                    }));
             install_options.runtime = self.aube_embed_runtime(ctx).await;
             let install = aube::embed::install_with_overrides(
                 install_options,
@@ -1209,7 +1314,9 @@ impl NPMBackend {
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
             control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
-                .with_prompt_handler(Arc::new(AubePromptHandler)),
+                .with_prompt_decision_handler(Arc::new(AubePromptHandler {
+                    yes: ctx.explicit_yes,
+                })),
             // Run dependency lifecycle scripts on the node mise resolved as a
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
@@ -1250,6 +1357,24 @@ impl NPMBackend {
         }
         result.map_err(|e| self.format_aube_install_error(e))?;
         Ok(())
+    }
+
+    /// The embedded installer runs in-process, so nothing hands it a
+    /// per-tool environment: aube snapshots the real process env when the
+    /// install starts. `install_env` is therefore silently inert here, which
+    /// otherwise looks like the setting simply not working — notably for
+    /// someone reaching for `AUBE_*` to relax an install-scoped gate. Point at
+    /// the tool options that do reach aube instead.
+    fn warn_if_install_env_ignored(tv: &ToolVersion) {
+        let keys = tv.install_env().keys().cloned().collect::<Vec<_>>();
+        if keys.is_empty() {
+            return;
+        }
+        warn!(
+            "install_env ({}) is ignored for {}: mise installs through the embedded aube package manager, which runs in-process rather than as a subprocess. Install-scoped aube settings have npm backend tool options (`allow_builds`, `allow_exotic_deps`, `allow_low_downloads`, `trust_policy_excludes`); anything else has to be set in mise's own environment.",
+            keys.join(", "),
+            tv.ba().full(),
+        );
     }
 
     /// Install through a standalone aube executable while keeping version
@@ -1408,10 +1533,33 @@ impl NPMBackend {
         Ok(())
     }
 
+    pub(crate) fn validate_aube_lock(
+        &self,
+        tv: &ToolVersion,
+        lock: &crate::lockfile::AubeLock,
+    ) -> Result<()> {
+        let requirement = lock
+            .graph
+            .get("importers")
+            .and_then(|v| v.get("."))
+            .and_then(|v| v.get("dependencies"))
+            .and_then(|v| v.get(self.tool_name()))
+            .and_then(|v| v.get("specifier"))
+            .and_then(toml::Value::as_str);
+        if requirement != Some(tv.version.as_str()) {
+            eyre::bail!(
+                "npm:{} dependency graph does not match root version {}; run `mise lock`",
+                self.tool_name(),
+                tv.version
+            );
+        }
+        Ok(())
+    }
+
     pub(crate) async fn resolve_aube_lock(
         &self,
         tv: &ToolVersion,
-    ) -> Result<crate::lockfile::AubeLock> {
+    ) -> Result<crate::lockfile::GraphRef<crate::lockfile::AubeLock>> {
         crate::backend::aube_host::init();
         let temp = tempfile::tempdir()?;
         let request_options = tv.request.options();
@@ -1423,13 +1571,19 @@ impl NPMBackend {
         install_options.lockfile_only = true;
         install_options.ignore_scripts = true;
         install_options.run_root_lifecycle = false;
-        install_options.control =
-            aube::embed::InstallControl::silent().with_prompt_handler(Arc::new(AubePromptHandler));
+        install_options.control = aube::embed::InstallControl::silent()
+            .with_prompt_decision_handler(Arc::new(AubePromptHandler {
+                yes: Settings::cli_yes(),
+            }));
         aube::embed::install_with_overrides(install_options, Self::aube_embed_install_overrides())
             .await
             .map_err(|error| self.format_aube_install_error(error))?;
         let contents = crate::file::read_to_string(temp.path().join("aube-lock.yaml"))?;
-        crate::lockfile::AubeLock::from_yaml(&contents)
+        let mut graph = crate::lockfile::AubeLock::from_yaml(&contents)?;
+        graph.project = Some(crate::file::read_to_string(
+            temp.path().join("package.json"),
+        )?);
+        Ok(graph.into())
     }
 
     /// Configure a standalone `aube add --global` invocation to install into
@@ -1472,6 +1626,7 @@ impl NPMBackend {
     ) -> Result<toml::Table> {
         let trust_policy_excludes = options.trust_policy_excludes()?;
         let allow_low_downloads = options.allow_low_downloads()?;
+        let allow_exotic_deps = options.allow_exotic_deps()?;
         let mut config = toml::Table::new();
         if let Some(before_date) = before_date {
             let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
@@ -1502,6 +1657,25 @@ impl NPMBackend {
                 "allowedUnpopularPackages".to_string(),
                 toml::Value::Array(vec![toml::Value::String(self.tool_name())]),
             );
+        }
+        match allow_exotic_deps {
+            // Nothing written: aube's own default stays in charge, so a
+            // stricter org-managed config still wins.
+            AllowExoticDeps::None => {}
+            // Keep the gate on and name the exceptions, so a dependency
+            // added by a later update is still stopped.
+            AllowExoticDeps::Packages(packages) => {
+                config.insert(
+                    "blockExoticSubdepsExclude".to_string(),
+                    toml::Value::Array(packages.into_iter().map(toml::Value::String).collect()),
+                );
+            }
+            AllowExoticDeps::All => {
+                config.insert(
+                    "blockExoticSubdeps".to_string(),
+                    toml::Value::Boolean(false),
+                );
+            }
         }
         Ok(config)
     }
@@ -1656,14 +1830,31 @@ impl aube::embed::InstallReporter for AubeProgressReporter {
 /// installs fail closed instead of waiting on stdin and interactive prompts
 /// cannot be overwritten by the progress renderer.
 #[derive(Debug)]
-struct AubePromptHandler;
+struct AubePromptHandler {
+    yes: bool,
+}
 
-impl aube::embed::InstallPromptHandler for AubePromptHandler {
-    fn confirm(&self, prompt: aube::embed::InstallPrompt) -> aube::embed::InstallPromptFuture<'_> {
+impl aube::embed::InstallPromptDecisionHandler for AubePromptHandler {
+    fn decide(
+        &self,
+        prompt: aube::embed::InstallPrompt,
+    ) -> aube::embed::InstallPromptDecisionFuture<'_> {
+        let yes = self.yes;
         Box::pin(async move {
-            crate::ui::prompt::confirm_with_default(aube_prompt_message(&prompt), false)
-                .map(|answer| answer.is_yes())
-                .map_err(|err| miette::miette!("{err:#}"))
+            if yes {
+                return Ok(aube::embed::InstallPromptDecision::Accept);
+            }
+            let answer =
+                crate::ui::prompt::confirm_with_default(aube_prompt_message(&prompt), false)
+                    .map_err(|err| miette::miette!("{err:#}"))?;
+            Ok(match answer {
+                crate::ui::prompt::Confirmation::Yes => aube::embed::InstallPromptDecision::Accept,
+                crate::ui::prompt::Confirmation::No => aube::embed::InstallPromptDecision::Decline,
+                crate::ui::prompt::Confirmation::Unanswered
+                | crate::ui::prompt::Confirmation::Unavailable => {
+                    aube::embed::InstallPromptDecision::Unavailable
+                }
+            })
         })
     }
 }
@@ -2011,6 +2202,35 @@ fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> St
              Investigation guide and known exceptions: \
              https://aube.jdx.dev/security#trust-policy"
         ));
+    } else if matches!(
+        err.code().map(|c| c.to_string()).as_deref(),
+        Some(
+            "ERR_AUBE_LOW_DOWNLOAD_PACKAGE"
+                | "ERR_AUBE_NEW_PACKAGE_NAME"
+                | "ERR_AUBE_SIMILAR_PACKAGE_NAME"
+        )
+    ) {
+        msg.push_str(&format!(
+            "\n  help: after verifying the package, set `allow_low_downloads = true` on `{tool_full}` to approve it"
+        ));
+    } else if msg.contains("blockExoticSubdeps") {
+        // aube's own help points at `.npmrc` / `settings.toml`, which mise
+        // generates and overwrites on every install. Name the mise option
+        // instead. Matched on the message because the blocked-specifier
+        // failure reaches mise as a plain registry error on some paths, with
+        // `ERR_AUBE_BLOCKED_EXOTIC_SUBDEP` only on others.
+        msg.push_str(&format!(
+            "\n\n  A dependency in this package's graph is fetched from a git, file, or direct \
+             tarball URL rather than the npm registry, which aube blocks by default.\n\n  \
+             Review where that dependency actually comes from before allowing it — an \
+             attacker-controlled URL in a transitive dependency is a supply-chain foothold the \
+             registry's own protections never see. Then list it in `allow_exotic_deps` — the \
+             package name is in the error above:\n  \
+             \"{tool_full}\" = {{ version = \"latest\", allow_exotic_deps = [\"<package>\"] }}\n\n  \
+             Every other package in the graph stays gated, including one a later update adds. \
+             `allow_exotic_deps = true` exempts the whole graph instead and should be a last \
+             resort."
+        ));
     } else if let Some(help) = err.help() {
         msg.push_str(&format!("\n  help: {help}"));
     }
@@ -2027,7 +2247,29 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "allow_builds".into(),
         "trust_policy_excludes".into(),
         "allow_low_downloads".into(),
+        "allow_exotic_deps".into(),
     ]
+}
+
+/// A distinct `short` per tool keeps the install-state memo, which is
+/// process-wide, from mixing versions between tests.
+#[cfg(test)]
+pub(crate) fn test_backend(
+    tool: &str,
+    installs_path: Option<PathBuf>,
+    opts: Option<ToolVersionOptions>,
+) -> NPMBackend {
+    let mut ba = BackendArg::new_raw(
+        format!("npm:{tool}"),
+        Some(tool.to_string()),
+        tool.to_string(),
+        opts,
+        crate::cli::args::BackendResolution::new(true),
+    );
+    if let Some(installs_path) = installs_path {
+        ba.installs_path = installs_path;
+    }
+    NPMBackend::from_arg(ba)
 }
 
 #[cfg(test)]
@@ -2057,6 +2299,71 @@ mod tests {
             BackendResolution::new(true),
         );
         NPMBackend::from_arg(ba)
+    }
+
+    #[test]
+    fn latest_installed_version_ignores_latest_symlink_into_prerelease() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-latest-link");
+        std::fs::create_dir_all(installs_path.join("1.2.4")).unwrap();
+        std::fs::create_dir_all(installs_path.join("1.3.1-3")).unwrap();
+        crate::file::make_symlink_or_file(Path::new("./1.3.1-3"), &installs_path.join("latest"))
+            .unwrap();
+        let backend = test_backend("happy-latest-link", Some(installs_path), None);
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("1.2.4")
+        );
+    }
+
+    #[test]
+    fn latest_installed_version_keeps_prereleases_when_enabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-prerelease-enabled");
+        std::fs::create_dir_all(installs_path.join("1.3.1-3")).unwrap();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        let backend = test_backend(
+            "happy-prerelease-enabled",
+            Some(installs_path.clone()),
+            Some(opts),
+        );
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("1.3.1-3")
+        );
+
+        crate::file::make_symlink_or_file(Path::new("./1.3.1-3"), &installs_path.join("latest"))
+            .unwrap();
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("1.3.1-3")
+        );
+    }
+
+    #[test]
+    fn installed_versions_matching_skips_numeric_prereleases_unless_requested() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-matching");
+        let backend = test_backend("happy-matching", Some(installs_path.clone()), None);
+        for version in ["1.2.4", "1.3.1-3"] {
+            let install_path = installs_path.join(version);
+            std::fs::create_dir_all(&install_path).unwrap();
+            crate::toolset::install_state::add_tool_version(backend.ba(), &install_path, version);
+        }
+
+        assert_eq!(backend.list_installed_versions_matching("1"), ["1.2.4"]);
+        assert_eq!(
+            backend.list_installed_versions_matching("1.3"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            backend.list_installed_versions_matching("1.3.1-3"),
+            ["1.3.1-3"]
+        );
     }
 
     #[tokio::test]
@@ -2246,6 +2553,22 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_aube_prompt_handler_auto_confirms_yes_install_option() {
+        use aube::embed::InstallPromptDecisionHandler;
+
+        let decision = AubePromptHandler { yes: true }
+            .decide(aube::embed::InstallPrompt::LowDownloadPackage {
+                package: "tiny".to_string(),
+                weekly_downloads: 12,
+                threshold: 1000,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(decision, aube::embed::InstallPromptDecision::Accept);
+    }
+
     #[test]
     fn test_build_aube_install_error_message_trust_downgrade() {
         use miette::Diagnostic;
@@ -2284,6 +2607,39 @@ mod tests {
     }
 
     #[test]
+    fn test_build_aube_install_error_message_points_at_allow_exotic_deps() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        // The shape a blocked non-registry subdep actually reaches mise in: a
+        // plain registry error nested under the resolver's summary, with
+        // aube's own `.npmrc` / `settings.toml` help attached.
+        #[derive(Debug, Error, Diagnostic)]
+        #[error(
+            "registry error for xlsx: uses exotic specifier \"https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz\" which is blocked by blockExoticSubdeps (declared by @gmickel/gno)"
+        )]
+        #[diagnostic(help("set blockExoticSubdeps=false in .npmrc / settings.toml"))]
+        struct Cause;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("failed to resolve dependencies")]
+        struct TopErr {
+            #[source]
+            source: Cause,
+        }
+
+        let report = miette::Report::new(TopErr { source: Cause });
+        let msg = build_aube_install_error_message(&report, "npm:@gmickel/gno");
+        assert!(msg.contains("caused by: registry error for xlsx"));
+        // Steers to the scoped list, not the whole-graph switch.
+        assert!(msg.contains("allow_exotic_deps = [\"<package>\"]"));
+        assert!(msg.contains("\"npm:@gmickel/gno\""));
+        // aube's help names the config files mise generates and overwrites, so
+        // it must not be the remedy the user is told to follow.
+        assert!(!msg.contains("help: set blockExoticSubdeps=false"));
+    }
+
+    #[test]
     fn test_build_aube_install_error_message_other_error_keeps_aube_help() {
         use miette::Diagnostic;
         use thiserror::Error;
@@ -2298,6 +2654,29 @@ mod tests {
         assert!(msg.contains("aube install failed: something else failed"));
         assert!(msg.contains("help: try again later"));
         assert!(!msg.contains("trust_policy_excludes"));
+    }
+
+    #[test]
+    fn test_build_aube_install_error_message_uses_mise_prompt_gate_remedy() {
+        use miette::Diagnostic;
+        use thiserror::Error;
+
+        #[derive(Debug, Error, Diagnostic)]
+        #[error("refusing to add @n8n/cli: only 569 weekly downloads (threshold: 1000)")]
+        #[diagnostic(
+            code(ERR_AUBE_LOW_DOWNLOAD_PACKAGE),
+            help("pass --allow-low-downloads to bypass")
+        )]
+        struct LowDownloads;
+
+        let report = miette::Report::new(LowDownloads);
+        let msg = build_aube_install_error_message(&report, "npm:@n8n/cli");
+
+        assert!(msg.contains("569 weekly downloads"));
+        assert!(msg.contains("allow_low_downloads = true"));
+        assert!(msg.contains("`npm:@n8n/cli`"));
+        assert!(!msg.contains("--allow-low-downloads"));
+        assert!(!msg.contains("mise add"));
     }
 
     fn assert_npm_view_versions_time(data: &serde_json::Value) {
@@ -3135,6 +3514,146 @@ pkg@1.2.0 '1.2.0'
         assert!(!install_path.join(".config/aube/config.toml").exists());
     }
 
+    fn write_gno_project(raw_options: &ToolVersionOptions) -> toml::Table {
+        let backend = create_npm_backend("@gmickel/gno");
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("npm-gno").join("1.0.0");
+        crate::file::create_dir_all(&install_path).unwrap();
+        let options = NpmOptions::new(raw_options);
+        let allow_builds = options.allow_builds().unwrap();
+        backend
+            .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
+            .unwrap();
+        toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_scopes_exotic_deps_to_listed_packages() {
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
+            "allow_exotic_deps".to_string(),
+            toml::Value::Array(vec![toml::Value::String("xlsx".into())]),
+        );
+
+        let config = write_gno_project(&raw_options);
+
+        // The gate itself stays on: only the named package is exempt, so a
+        // non-registry dependency a later update adds is still blocked.
+        assert_eq!(
+            config["blockExoticSubdepsExclude"],
+            toml::Value::Array(vec![toml::Value::String("xlsx".to_string())])
+        );
+        assert!(!config.contains_key("blockExoticSubdeps"));
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_accepts_a_bare_exotic_package_string() {
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options.opts.insert(
+            "allow_exotic_deps".to_string(),
+            toml::Value::String("xlsx".into()),
+        );
+
+        let config = write_gno_project(&raw_options);
+
+        // A bare string is the one-package list, matching `allow_builds`.
+        // `"true"`/`"false"` keep their boolean meaning and are covered by
+        // `test_allow_exotic_deps_parses_every_form`.
+        assert_eq!(
+            config["blockExoticSubdepsExclude"],
+            toml::Value::Array(vec![toml::Value::String("xlsx".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_unblocks_every_exotic_dep_when_asked() {
+        let mut raw_options = ToolVersionOptions::default();
+        raw_options
+            .opts
+            .insert("allow_exotic_deps".to_string(), toml::Value::Boolean(true));
+
+        let config = write_gno_project(&raw_options);
+
+        assert_eq!(config["blockExoticSubdeps"], toml::Value::Boolean(false));
+        assert!(!config.contains_key("blockExoticSubdepsExclude"));
+    }
+
+    #[test]
+    fn test_write_aube_embed_project_leaves_exotic_deps_blocked_by_default() {
+        let config = write_gno_project(&ToolVersionOptions::default());
+        // Neither key written: aube's own default stays in charge, and a
+        // stricter org-managed config can still win.
+        assert!(!config.contains_key("blockExoticSubdeps"));
+        assert!(!config.contains_key("blockExoticSubdepsExclude"));
+    }
+
+    #[test]
+    fn test_allow_exotic_deps_parses_every_form() {
+        fn parse(value: toml::Value) -> eyre::Result<AllowExoticDeps> {
+            let mut opts = ToolVersionOptions::default();
+            opts.opts.insert("allow_exotic_deps".to_string(), value);
+            NpmOptions::new(&opts).allow_exotic_deps()
+        }
+
+        assert_eq!(
+            NpmOptions::new(&ToolVersionOptions::default())
+                .allow_exotic_deps()
+                .unwrap(),
+            AllowExoticDeps::None
+        );
+        assert_eq!(
+            parse(toml::Value::Boolean(true)).unwrap(),
+            AllowExoticDeps::All
+        );
+        assert_eq!(
+            parse(toml::Value::String("true".into())).unwrap(),
+            AllowExoticDeps::All
+        );
+        assert_eq!(
+            parse(toml::Value::String("false".into())).unwrap(),
+            AllowExoticDeps::None
+        );
+        // Duplicates collapse and order is canonical, so the value written to
+        // `mise.lock` doesn't churn on a reordered config.
+        assert_eq!(
+            parse(toml::Value::Array(vec![
+                toml::Value::String("xlsx".into()),
+                toml::Value::String("canvas".into()),
+                toml::Value::String("xlsx".into()),
+            ]))
+            .unwrap(),
+            AllowExoticDeps::Packages(vec!["canvas".into(), "xlsx".into()])
+        );
+        // An empty list is not a silent "allow everything".
+        assert_eq!(
+            parse(toml::Value::Array(vec![])).unwrap(),
+            AllowExoticDeps::None
+        );
+        assert!(parse(toml::Value::Integer(1)).is_err());
+        assert!(parse(toml::Value::Array(vec![toml::Value::Integer(1)])).is_err());
+    }
+
+    #[test]
+    fn test_allow_exotic_deps_lockfile_value_is_canonical() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "allow_exotic_deps".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("xlsx".into()),
+                toml::Value::String("canvas".into()),
+            ]),
+        );
+        assert_eq!(
+            NpmOptions::new(&opts)
+                .lockfile_options()
+                .get("allow_exotic_deps"),
+            Some(&"[\"canvas\", \"xlsx\"]".to_string())
+        );
+    }
+
     #[test]
     fn test_allow_low_downloads_defaults_off_and_rejects_non_bool() {
         let empty = ToolVersionOptions::default();
@@ -3359,6 +3878,7 @@ pkg@1.2.0 '1.2.0'
         assert!(is_semver_prerelease("3.0.0-foo"));
         // Maintainer-invented tag mise's regex doesn't know about — still flagged.
         assert!(is_semver_prerelease("4.0.0-internal-build-7"));
+        assert!(is_semver_prerelease("1.3.1-3"));
     }
 
     #[test]

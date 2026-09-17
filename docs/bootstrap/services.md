@@ -26,7 +26,7 @@ Install the service and check it:
 
 ```sh
 mise bootstrap services apply
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 Once the watcher is running, keep editing your files normally. See
@@ -62,7 +62,7 @@ mise creates a service definition for your platform:
 - `command`: the command line to run. `~` and `~/` are expanded. Required
   unless `builtin` is set.
 - `builtin`: a service supplied by mise. `"history-watch"` runs
-  `mise bootstrap dotfiles watch` at low priority. It sets `scope = "user"`
+  `mise dot watch` at low priority. It sets `scope = "user"`
   and `restart = "on-failure"`. Use it without `command`.
 - `description`: shown by the service manager.
 - `restart`: `"on-failure"` (default), `"always"`, or `"never"`. Windows
@@ -127,6 +127,12 @@ systemctl --user start dev.mise.mise-history.service
 ```
 
 If you used another service name, replace `mise-history` in those commands.
+
+If `mise doctor` reports that the history service is running but is not
+watching your store, its process is watching something else: it was started
+by an older mise whose watch lock lived elsewhere, or it runs with a
+different `MISE_STATE_DIR` than your shell. `mise bootstrap services apply`
+restarts it even though its definition is unchanged.
 
 #### Install mise at a permanent path {#durable-executable}
 

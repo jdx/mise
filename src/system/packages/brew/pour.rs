@@ -1,5 +1,6 @@
 //! Pour a bottle: extract -> relocate -> codesign -> receipt -> link.
 
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use eyre::{WrapErr, bail};
@@ -252,32 +253,140 @@ pub(super) fn installed_versions(name: &str) -> Vec<String> {
     versions
 }
 
-pub(super) async fn pour(
+pub(super) struct PreparedBottle {
+    name: String,
+    pkg_version: String,
+    keg: PathBuf,
+    staged_keg: PathBuf,
+    // Fields drop in declaration order: unlock before TempDir removes the
+    // lock file so cleanup also works on Windows filesystems.
+    _staging_lock: fslock::LockFile,
+    staging: tempfile::TempDir,
+    keg_only: bool,
+}
+
+fn create_staging_dir(
+    rack: &Path,
+    pkg_version: &str,
+) -> Result<(tempfile::TempDir, fslock::LockFile)> {
+    crate::file::create_dir_all(rack)?;
+    // Serialize the short cleanup/create handshake within a formula rack. The
+    // per-directory lock then protects active extraction after this lock is
+    // released, including work owned by another mise process.
+    let _rack_lock = crate::lock_file::LockFile::at(&rack.join(".mise-staging.lock")).lock()?;
+    remove_abandoned_staging_dirs(rack)?;
+    let staging = tempfile::Builder::new()
+        .prefix(&format!(".mise-extract-{pkg_version}-"))
+        .tempdir_in(rack)?;
+    let staging_lock = crate::lock_file::LockFile::at(&staging.path().join(".mise-lock")).lock()?;
+    Ok((staging, staging_lock))
+}
+
+fn remove_abandoned_staging_dirs(rack: &Path) -> Result<()> {
+    for entry in rack.read_dir()? {
+        let entry = entry?;
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(".mise-extract-") && !name.starts_with(".mise-tmp-") {
+            continue;
+        }
+        let metadata = match path.symlink_metadata() {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => return Err(err.into()),
+        };
+        if !metadata.is_dir() {
+            continue;
+        }
+        // Older mise versions used lockless staging directories. They may
+        // still belong to a running process, so only reclaim directories that
+        // opt into this cleanup protocol with a regular lock file.
+        let lock_path = path.join(".mise-lock");
+        let lock_metadata = match lock_path.symlink_metadata() {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => return Err(err.into()),
+        };
+        if !lock_metadata.is_file() {
+            continue;
+        }
+        // Open directly instead of LockFile::at(...).try_lock(), which creates
+        // the parent and could resurrect a staging directory removed between
+        // the metadata checks above.
+        let mut lock = match fslock::LockFile::open(&lock_path) {
+            Ok(lock) => lock,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => return Err(err.into()),
+        };
+        if !lock.try_lock()? {
+            continue;
+        }
+        // The rack lock prevents a new owner from appearing after this check.
+        // Drop the file handle first so cleanup also works on Windows filesystems.
+        drop(lock);
+        if let Err(err) = crate::file::remove_all(&path) {
+            let disappeared = err.chain().any(|cause| {
+                cause
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|err| err.kind() == ErrorKind::NotFound)
+            });
+            if !disappeared {
+                return Err(err);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn commit_lock_path() -> PathBuf {
+    prefix::prefix()
+        .join("var/homebrew/locks")
+        .join("mise-bootstrap.lock")
+}
+
+/// Serialize Cellar and shared-prefix mutations even when operation history is
+/// disabled. Bottle download and preparation happen before acquiring this lock;
+/// source builds hold it while writing directly into the final Cellar.
+pub(super) fn commit_lock(pr: &dyn SingleReport) -> Result<fslock::LockFile> {
+    crate::lock_file::LockFile::at(&commit_lock_path()).lock_with_notice(&|| {
+        pr.set_message("waiting for another brew install".to_string());
+    })
+}
+
+/// Extract, relocate, sign, and write the receipt into a formula-specific
+/// staging directory. This does not change the active Homebrew prefix links,
+/// so independent bottles can be prepared concurrently.
+pub(super) fn prepare_bottle(
     rf: &ResolvedFormula,
     tag: &str,
     bottle: &BottleFile,
     tarball: &Path,
     closure: &[ResolvedFormula],
     pr: &dyn SingleReport,
-) -> Result<()> {
+) -> Result<PreparedBottle> {
     let name = &rf.formula.name;
     let pkg_version = rf.formula.pkg_version()?;
     let keg = keg_path(name, &pkg_version);
     let rack = keg.parent().unwrap().to_path_buf();
-    let tmp = rack.join(format!(".mise-tmp-{pkg_version}"));
-    let scratch = rack.join(format!(".mise-extract-{pkg_version}"));
-    for dir in [&tmp, &scratch] {
-        if dir.exists() {
-            crate::file::remove_all(dir)?;
-        }
-    }
-    crate::file::create_dir_all(&scratch)?;
+    let (staging, staging_lock) = create_staging_dir(&rack, &pkg_version)?;
+    let staged_keg = staging.path().join(name).join(&pkg_version);
+    let prepared = PreparedBottle {
+        name: name.clone(),
+        pkg_version,
+        keg,
+        staged_keg,
+        _staging_lock: staging_lock,
+        staging,
+        keg_only: rf.formula.keg_only_for_target(),
+    };
 
     // bottle tarballs contain <name>/<pkg_version>/...
     pr.set_message("extract".to_string());
     crate::file::untar(
         tarball,
-        &scratch,
+        prepared.staging.path(),
         ExtractionFormat::TarGz,
         &ExtractOptions {
             strip_components: 0,
@@ -286,12 +395,12 @@ pub(super) async fn pour(
         },
     )
     .wrap_err_with(|| format!("failed to extract bottle for {name}"))?;
-    let inner = scratch.join(name).join(&pkg_version);
-    if !inner.exists() {
-        bail!("unexpected bottle layout for {name}: missing {name}/{pkg_version} in archive");
+    if !prepared.staged_keg.exists() {
+        bail!(
+            "unexpected bottle layout for {name}: missing {name}/{} in archive",
+            prepared.pkg_version
+        );
     }
-    crate::file::rename(&inner, &tmp)?;
-    crate::file::remove_all(&scratch)?;
 
     // ":any_skip_relocation" skips binary linkage relocation, but Homebrew
     // still replaces placeholders in text files. On Linux, bottles built by
@@ -299,9 +408,10 @@ pub(super) async fn pour(
     // relocation (brew applies the same version check in
     // extend/os/linux/bottle_specification.rb).
     let skip_linkage = bottle.cellar == ":any_skip_relocation"
-        && (cfg!(target_os = "macos") || bottled_by_homebrew_at_least(&tmp, (5, 1, 15)));
+        && (cfg!(target_os = "macos")
+            || bottled_by_homebrew_at_least(&prepared.staged_keg, (5, 1, 15)));
     pr.set_message("relocate".to_string());
-    let report = relocate::relocate_keg(&tmp, name, skip_linkage)?;
+    let report = relocate::relocate_keg(&prepared.staged_keg, name, skip_linkage)?;
     // arm64 macOS kills binaries whose signature doesn't match; Linux ELF
     // files have no signatures to fix
     if cfg!(target_os = "macos") && !report.changed_machos.is_empty() {
@@ -310,23 +420,34 @@ pub(super) async fn pour(
             .wrap_err_with(|| format!("failed to re-sign relocated binaries for {name}"))?;
     }
 
-    write_receipt(rf, tag, &tmp, &report, closure, true)?;
+    write_receipt(rf, tag, &prepared.staged_keg, &report, closure, true)?;
+    Ok(prepared)
+}
 
+/// Commit a prepared bottle into the Cellar and update shared prefix links.
+/// Callers keep this step sequential and dependency ordered.
+pub(super) fn install_prepared(prepared: PreparedBottle, pr: &dyn SingleReport) -> Result<()> {
     pr.set_message("link".to_string());
-    if keg.exists() {
-        crate::file::remove_all(&keg)?;
+    let _commit_lock = commit_lock(pr)?;
+    // Another mise process may have completed the same formula while this
+    // process prepared its bottle outside the commit lock.
+    if keg_installed(&prepared.name, &prepared.pkg_version) {
+        return Ok(());
     }
-    crate::file::rename(&tmp, &keg)?;
+    if prepared.keg.exists() {
+        crate::file::remove_all(&prepared.keg)?;
+    }
+    crate::file::rename(&prepared.staged_keg, &prepared.keg)?;
     // never leave a half-installed keg: if linking fails (conflicts, IO),
     // remove the keg so the next install retries from scratch
-    if let Err(err) = link_keg(name, &pkg_version, rf.formula.keg_only_for_target()) {
-        if let Err(rm_err) = crate::file::remove_all(&keg) {
+    if let Err(err) = link_keg(&prepared.name, &prepared.pkg_version, prepared.keg_only) {
+        if let Err(rm_err) = crate::file::remove_all(&prepared.keg) {
             // a keg left behind here is unlinked but looks installed, so
             // future installs would skip it — make that state visible
             warn!(
                 "failed to remove {} after link failure: {rm_err}\n\
                  remove it manually, then re-run `mise bootstrap packages apply`",
-                keg.display()
+                prepared.keg.display()
             );
         }
         return Err(err);
@@ -621,8 +742,7 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
     let opt_link = prefix_path.join("opt").join(name);
 
     let mut conflicts: Vec<PathBuf> = vec![];
-    // (dest in prefix, target in keg); opt first
-    let mut links: Vec<(PathBuf, PathBuf)> = vec![(opt_link.clone(), keg.clone())];
+    let mut links: Vec<(PathBuf, PathBuf)> = vec![];
     if keg_only {
         debug!(
             "{name} is keg-only, not linking into {}",
@@ -654,6 +774,14 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
         } else {
             conflicts.push(linked);
         }
+    }
+    if can_overwrite(&opt_link) {
+        // Create opt last: keg_installed uses it as the completion marker, so a
+        // process killed during public linking cannot make a partial pour look
+        // complete to another process waiting on the commit lock.
+        links.push((opt_link.clone(), keg.clone()));
+    } else {
+        conflicts.push(opt_link);
     }
     if !conflicts.is_empty() {
         // nothing has been linked yet, and the caller rolls the keg back on
@@ -735,6 +863,53 @@ mod tests {
                 None => crate::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
             }
         }
+    }
+
+    #[test]
+    fn removes_abandoned_locking_staging_directories() {
+        let rack = tempfile::tempdir().unwrap();
+        let extract = rack.path().join(".mise-extract-1.0-abandoned");
+        crate::file::create_dir_all(&extract).unwrap();
+        drop(
+            crate::lock_file::LockFile::at(&extract.join(".mise-lock"))
+                .lock()
+                .unwrap(),
+        );
+
+        remove_abandoned_staging_dirs(rack.path()).unwrap();
+
+        assert!(!extract.exists());
+    }
+
+    #[test]
+    fn preserves_legacy_lockless_staging_directories() {
+        let rack = tempfile::tempdir().unwrap();
+        let extract = rack.path().join(".mise-extract-1.0-legacy");
+        let legacy_tmp = rack.path().join(".mise-tmp-1.0");
+        crate::file::create_dir_all(&extract).unwrap();
+        crate::file::create_dir_all(&legacy_tmp).unwrap();
+
+        remove_abandoned_staging_dirs(rack.path()).unwrap();
+
+        assert!(extract.exists());
+        assert!(legacy_tmp.exists());
+    }
+
+    #[test]
+    fn preserves_locked_staging_until_its_owner_finishes() {
+        let rack = tempfile::tempdir().unwrap();
+        let active = rack.path().join(".mise-extract-1.0-active");
+        crate::file::create_dir_all(&active).unwrap();
+        let held = crate::lock_file::LockFile::at(&active.join(".mise-lock"))
+            .lock()
+            .unwrap();
+
+        remove_abandoned_staging_dirs(rack.path()).unwrap();
+        assert!(active.exists());
+
+        drop(held);
+        remove_abandoned_staging_dirs(rack.path()).unwrap();
+        assert!(!active.exists());
     }
 
     /// keg with a versioned dylib and its unversioned alias (the relative
@@ -1174,6 +1349,24 @@ mod tests {
         assert!(err.to_string().contains("not created by mise or brew"));
         assert_eq!(crate::file::read_to_string(&linked)?, "foreign");
         assert!(prefix.join("opt/foo").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_foreign_opt_file_blocks_linking_before_changes() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        write_lib_keg(&prefix, "foo", "1.0")?;
+        let opt = prefix.join("opt/foo");
+        crate::file::create_dir_all(opt.parent().unwrap())?;
+        crate::file::write(&opt, "foreign")?;
+
+        let err = link_keg("foo", "1.0", false).unwrap_err();
+
+        assert!(err.to_string().contains("not created by mise or brew"));
+        assert_eq!(crate::file::read_to_string(&opt)?, "foreign");
+        assert!(prefix.join("lib/libfoo.dylib").symlink_metadata().is_err());
         Ok(())
     }
 

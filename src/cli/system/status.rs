@@ -30,7 +30,7 @@ pub(crate) struct SystemStatus {
 impl SystemStatus {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let mgrs = system::packages_from_config(&config);
+        let mgrs = system::packages_from_config(&config)?;
         let mut any_missing = false;
         let mut rows: Vec<Vec<String>> = vec![];
         let mut json_out = serde_json::Map::new();
@@ -74,7 +74,10 @@ impl SystemStatus {
                 }
                 continue;
             }
-            let statuses = mp.manager.installed(&mp.requests).await?;
+            let statuses = mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await?;
             let mut json_pkgs = vec![];
             for s in statuses {
                 let auto_updates = s.state.auto_updates();

@@ -41,15 +41,24 @@ impl SkillsLs {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let skills = crate::packslip::active_skills(&config).await?;
+        // A declared skill that is not on disk is the one case an empty
+        // listing cannot explain by itself, so say it before the listing.
+        for missing in &skills.missing {
+            warn!("{missing}");
+        }
         if self.json {
-            miseprintln!("{}", serde_json::to_string_pretty(&skills)?);
+            miseprintln!("{}", serde_json::to_string_pretty(&skills.found)?);
             return Ok(());
         }
-        if skills.is_empty() {
-            miseprintln!("no skills declared by the active tools");
+        if skills.found.is_empty() {
+            if skills.missing.is_empty() {
+                miseprintln!("no skills declared by the active tools");
+            } else {
+                miseprintln!("the active tools declare skills, but none are installed");
+            }
             return Ok(());
         }
-        let rows = skills.into_iter().map(|s| Row {
+        let rows = skills.found.into_iter().map(|s| Row {
             name: s.name,
             tool: s.tool,
             version: s.version,
