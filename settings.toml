@@ -2914,6 +2914,40 @@ parse_env = "list_by_os_path_separator"
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
+[shims.exclude]
+default = []
+description = "Command names mise should never create shims for, leaving them to the system."
+docs = """
+Names listed here are skipped when mise generates shims, and any existing shims with those names
+are removed on the next reshim. mise still installs and manages the tool — it just never generates a
+shim for that name, so nothing in the shim directory intercepts the command and it resolves to
+whatever else `PATH` provides.
+
+This is useful when a tool's unversioned command is also provided by the OS and other software
+depends on getting the system one. On Arch Linux, for example, `/usr/bin/python` is the distro
+interpreter and its modules live in a matching `site-packages` directory, so a project that pins
+`python` also changes which interpreter a `#!/usr/bin/env python` script gets:
+
+    mise settings shims.exclude=python,python3,pip,pip3
+
+With that set, `python` and `python3` always resolve to the system interpreter, while a
+version-qualified shim such as `python3.12` still resolves to the version a config selects.
+
+Excluding `python3` means `python3 -m venv` builds a virtualenv from the system interpreter rather
+than the configured one. Use the version-qualified command (for example `python3.12 -m venv`) when
+you want the mise-managed version.
+
+This only affects the shims mise generates, including lazy-tool bootstrap shims and
+plugin-provided shims. Two things are deliberately not covered: under `mise activate` without
+`--shims` a tool's bin directory joins `PATH` as a whole, so excluded names are still visible
+there; and command wrappers publish to their own directory from an explicit declaration, so an
+excluded name you also declare as a wrapper still resolves to the wrapper.
+"""
+env = "MISE_SHIMS_EXCLUDE"
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
 [shims_dir]
 description = "Directory containing user shims."
 docs = """
@@ -3110,8 +3144,8 @@ optional = true
 type = "Bool"
 
 [swift.platform]
-default_docs = '"osx" | "windows10" | "ubuntu20.04" | "ubuntu22.04" | "ubuntu24.04" | "amazonlinux2" | "ubi9" | "fedora39"'
-description = "Override the platform to use for precompiled binaries."
+default_docs = '"osx" | "windows10" | "ubuntu24.04" | "debian12" | "fedora41" | "amazonlinux2023" | "ubi9"'
+description = "Override the distro build to use for precompiled binaries. By default the distro is detected and matched against what the Swift release actually publishes, which changes from release to release. Set this to force a specific build, or to install without reaching swift.org's release index."
 env = "MISE_SWIFT_PLATFORM"
 optional = true
 type = "String"
