@@ -1,9 +1,1 @@
-what do you think of this 3 pr stack? [https://github.com/jdx/mise/pull/13294](https://github.com/jdx/mise/pull/13294)
-
----
-
-post your feedback
-
----
-
 add another pr on top of this that fixes the docs prose/content/structure in the modified md files. I want you to edit the sections that were edited but ALSO the entire file since you're a smarter model than opus 5
