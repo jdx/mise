@@ -381,14 +381,10 @@ async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> Result<S
                     // against swift.org's error page.
                     None => bail!("swift {} publishes no Linux build for {arch}", tv.version),
                 },
-                // Offline, or a release the index does not list. Fall back to
-                // the family's last known build: it may be stale, but it is a
-                // token swift.org has really published, so a tarball already in
-                // the download cache is still found. A host label is not —
-                // an unrecognized distro labels itself `ubi`, which is nothing.
+                // Offline, or a release the index does not list.
                 Err(err) => {
                     debug!("swift: could not read the release index: {err:#}");
-                    Ok(host.family.offline_token().to_string())
+                    Ok(host.offline_token())
                 }
             }
         }
@@ -480,16 +476,19 @@ impl Family {
         }
     }
 
-    /// The newest build this family had when this was written, used only when
-    /// the release index cannot be read. It may be stale — that is the point
-    /// of reading the index — but it is a token swift.org has really
-    /// published, which a host label is not.
-    fn offline_token(self) -> &'static str {
+    /// The oldest build this family had when this was written, used only when
+    /// the release index cannot be read *and* the host does not say which
+    /// version it is. Oldest rather than newest: with nothing to compare
+    /// against, the lowest glibc floor is the only safe direction, and it
+    /// matches what online selection picks for a version-less host. It may be
+    /// stale — that is the point of reading the index — but it is a token
+    /// swift.org has really published, which a host label is not.
+    fn oldest_known_token(self) -> &'static str {
         match self {
-            Family::Ubuntu => "ubuntu24.04",
+            Family::Ubuntu => "ubuntu22.04",
             Family::Debian => "debian12",
-            Family::Fedora => "fedora41",
-            Family::AmazonLinux => "amazonlinux2023",
+            Family::Fedora => "fedora39",
+            Family::AmazonLinux => "amazonlinux2",
             Family::Ubi => "ubi9",
         }
     }
@@ -645,6 +644,22 @@ impl HostDistro {
             family_is_fallback: false,
             id: os_release_id(os_release),
         })
+    }
+
+    /// The build to try when the release index cannot be read.
+    ///
+    /// A host that names its own version asks for exactly that build: it is
+    /// what online selection returns whenever swift.org ships it, so it is the
+    /// tarball most likely to be in the download cache already, and it can
+    /// never be a newer glibc than the host itself. Guessing the family's
+    /// newest instead would invert that — an Ubuntu 22.04 host would be handed
+    /// a 24.04 build that cannot run. With no version to go on, fall back to
+    /// the family's oldest known build.
+    fn offline_token(&self) -> String {
+        match &self.version {
+            Some(_) => self.label(),
+            None => self.family.oldest_known_token().to_string(),
+        }
     }
 
     /// A stable name for this host, recorded in the lockfile so one distro's
@@ -1128,7 +1143,7 @@ mod platform_selection_tests {
             Family::AmazonLinux,
             Family::Ubi,
         ] {
-            let token = family.offline_token();
+            let token = family.oldest_known_token();
             assert!(
                 published.contains(&token.to_string()),
                 "{token} is not a published build"
@@ -1139,6 +1154,40 @@ mod platform_selection_tests {
                 "{token} is a family name, not a build"
             );
         }
+    }
+
+    /// Offline, a host that names its own version asks for that build — the
+    /// one online selection returns whenever swift.org ships it, so the one
+    /// most likely already downloaded, and never a newer glibc than the host.
+    /// Substituting the family'''s newest would hand an Ubuntu 22.04 machine a
+    /// 24.04 build that cannot run.
+    #[test]
+    fn the_offline_fallback_keeps_the_host_version() {
+        // Deliberately versions that differ from the family fallback, so
+        // ignoring the host version cannot pass this.
+        assert_eq!(
+            host("ID=ubuntu\nVERSION_ID=\"24.04\"\n").offline_token(),
+            "ubuntu24.04"
+        );
+        assert_ne!(
+            host("ID=ubuntu\nVERSION_ID=\"24.04\"\n").offline_token(),
+            Family::Ubuntu.oldest_known_token()
+        );
+        assert_eq!(
+            host("ID=fedora\nVERSION_ID=41\n").offline_token(),
+            "fedora41"
+        );
+        assert_eq!(
+            host("ID=rocky\nVERSION_ID=\"10.1\"\n").offline_token(),
+            "ubi10"
+        );
+        // No version to go on: the family'''s oldest, matching what online
+        // selection picks for these hosts.
+        assert_eq!(
+            host("ID=linuxmint\nID_LIKE=ubuntu\n").offline_token(),
+            "ubuntu22.04"
+        );
+        assert_eq!(host("ID=arch\n").offline_token(), "ubi9");
     }
 
     /// The lockfile label names the machine, not the artifact, so it stays put
