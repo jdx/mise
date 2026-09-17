@@ -1734,12 +1734,12 @@
               "description": "Enable GitHub Artifact Attestations verification for precompiled Ruby binaries.",
               "type": "boolean"
             },
-            "precompiled_arch": {
-              "description": "Override architecture identifier for precompiled Ruby binaries.",
-              "type": "string"
-            },
             "precompiled_api_url": {
               "description": "Override the GitLab API URL for a `gitlab:owner/repo` precompiled_url (self-hosted GitLab).",
+              "type": "string"
+            },
+            "precompiled_arch": {
+              "description": "Override architecture identifier for precompiled Ruby binaries.",
               "type": "string"
             },
             "precompiled_os": {
