@@ -3782,6 +3782,13 @@ mod tests {
             "1.0.0"
         );
         assert_eq!(backend.strip_version_prefix("1.0.0", &opts), "1.0.0");
+        // A tag that repeats the prefix keeps one copy in the listed version.
+        // The listed version is still installable: the install path prefixes it
+        // again to get back to the tag. See `tag_candidates` in static_helpers.
+        assert_eq!(
+            backend.strip_version_prefix("release-release-1.0.0", &opts),
+            "release-1.0.0"
+        );
     }
 
     #[test]
