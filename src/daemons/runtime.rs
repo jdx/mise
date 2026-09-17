@@ -1,3 +1,4 @@
+use super::ports::PortClaim;
 use super::{DaemonSet, state_dir};
 use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
@@ -6,6 +7,7 @@ use crate::env_diff::EnvMap;
 use crate::toolset::{ToolRequest, ToolSource, Toolset, ToolsetBuilder};
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,6 +23,11 @@ pub(crate) struct State {
     pub bin: PathBuf,
     #[serde(default)]
     pub config_hash: String,
+    /// Ports allocated per daemon name. Persisting them keeps an `auto`
+    /// allocation stable across a change to the slot derivation, and lets other
+    /// project roots on this machine detect a conflict before starting.
+    #[serde(default)]
+    pub ports: BTreeMap<String, PortClaim>,
 }
 
 pub(crate) struct Runtime {
@@ -37,6 +44,52 @@ pub(crate) fn read_state(root: &Path) -> Result<State> {
         });
     }
     Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+}
+
+/// Fail before registering configuration when another project root on this
+/// machine has already claimed one of our ports. Two checkouts of the same
+/// project landing on the same slot is rare but silent otherwise: the second
+/// daemon would fail to bind, or worse, connect to the first one's data.
+pub(crate) fn check_port_conflicts(root: &Path, ports: &BTreeMap<String, PortClaim>) -> Result<()> {
+    if ports.is_empty() {
+        return Ok(());
+    }
+    let mine = state_dir(root);
+    let Ok(entries) = std::fs::read_dir(crate::dirs::STATE.join("daemons")) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if dir == mine || !dir.is_dir() {
+            continue;
+        }
+        let Ok(other) = std::fs::read(dir.join("state.json")) else {
+            continue;
+        };
+        let Ok(other) = serde_json::from_slice::<State>(&other) else {
+            continue;
+        };
+        // A removed checkout keeps no claim; its data directory can be reused.
+        if other.root == root || !other.root.is_dir() {
+            continue;
+        }
+        for (name, claim) in ports {
+            if let Some((other_name, _)) = other
+                .ports
+                .iter()
+                .find(|(_, other_claim)| other_claim.port == claim.port)
+            {
+                bail!(
+                    "daemon {name} would use port {}, already claimed by {other_name} in {}. \
+                     Set an explicit port on one of them, or use port = {{ auto = true, base = <port> }} \
+                     to move this project's range.",
+                    claim.port,
+                    other.root.display()
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn write_if_changed(path: &Path, content: &[u8]) -> Result<bool> {
@@ -224,6 +277,11 @@ impl Runtime {
             ids: previous.ids,
             bin: self.bin.clone(),
             config_hash: String::new(),
+            ports: set
+                .daemons
+                .values()
+                .filter_map(|d| d.port.map(|claim| (d.name.clone(), claim)))
+                .collect(),
         };
         for daemon in set.daemons.values() {
             let id = format!("{}/{}", state.namespace, daemon.name);
@@ -246,6 +304,9 @@ impl Runtime {
             )?;
             return Ok((state, lock));
         }
+        // Past the fast path, so this runs on an explicit start or restart and
+        // whenever the rendered configuration changed, never on every prompt.
+        check_port_conflicts(root, &state.ports)?;
         self.supports_external_config(root).await?;
         write_if_changed(&file, content.as_bytes())?;
         if set.daemons.is_empty() {
@@ -446,6 +507,44 @@ mod tests {
         std::os::unix::fs::symlink(&root, &link).unwrap();
         assert_eq!(namespace(&root).unwrap(), namespace(&link).unwrap());
         assert_eq!(state_dir(&root), state_dir(&link));
+    }
+
+    #[test]
+    fn conflicting_ports_name_the_other_project_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = tmp.path().join("mine");
+        let theirs = tmp.path().join("theirs");
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::create_dir_all(&theirs).unwrap();
+        let claim = PortClaim::fixed(5432);
+        let ports = BTreeMap::from([("db".to_string(), claim)]);
+
+        let other = State {
+            root: theirs.clone(),
+            ports: ports.clone(),
+            ..State::default()
+        };
+        let dir = state_dir(&theirs);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("state.json"),
+            serde_json::to_vec_pretty(&other).unwrap(),
+        )
+        .unwrap();
+
+        let err = check_port_conflicts(&mine, &ports).unwrap_err().to_string();
+        assert!(err.contains("5432"), "{err}");
+        assert!(err.contains(&theirs.display().to_string()), "{err}");
+        // A different port in the same project is fine, and so is our own state.
+        check_port_conflicts(
+            &mine,
+            &BTreeMap::from([("db".to_string(), PortClaim::fixed(5433))]),
+        )
+        .unwrap();
+        check_port_conflicts(&theirs, &ports).unwrap();
+        // A checkout that no longer exists holds no claim.
+        std::fs::remove_dir_all(&theirs).unwrap();
+        check_port_conflicts(&mine, &ports).unwrap();
     }
 
     #[test]

@@ -4,6 +4,44 @@
   "title": "mise",
   "type": "object",
   "$defs": {
+    "daemon_port": {
+      "description": "A fixed port, or \"auto\" to derive one from the project root so the primary checkout keeps the base port and each linked git worktree gets its own.",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "type": "string",
+          "const": "auto",
+          "description": "Offset the preset's default port by this project root's worktree slot."
+        },
+        {
+          "type": "object",
+          "required": ["auto"],
+          "properties": {
+            "auto": {
+              "const": true,
+              "description": "Enable per-worktree port allocation."
+            },
+            "base": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Port used by the primary checkout. Defaults to the preset's port; required for custom daemons."
+            },
+            "stride": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "description": "Distance between consecutive worktree slots. Defaults to 1."
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "task_dependency_item": {
       "description": "task name and args",
       "oneOf": [
@@ -5773,6 +5811,20 @@
               },
               "mise": {
                 "type": "boolean"
+              },
+              "port": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/daemon_port"
+                  },
+                  {
+                    "type": "object",
+                    "description": "Pitchfork's structured port configuration, forwarded verbatim.",
+                    "not": {
+                      "required": ["auto"]
+                    }
+                  }
+                ]
               }
             },
             "additionalProperties": true
@@ -5789,9 +5841,7 @@
                 "type": "string"
               },
               "port": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 65535
+                "$ref": "#/$defs/daemon_port"
               },
               "options": {
                 "type": "object"

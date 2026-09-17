@@ -31,7 +31,8 @@ port = 5433
 A string selects a preset matching the entry name. A table with `run` defines a
 custom process. A table with `preset` and `version` selects a preset for any instance
 name, and remaining fields override its pitchfork daemon definition. For presets,
-`port` is an integer. Custom daemons accept the same integer shorthand or pitchfork's structured `port` configuration.
+`port` is an integer or `"auto"`. Custom daemons accept the same values, or pitchfork's
+structured `port` configuration.
 User-provided strings retain pitchfork template syntax; mise renders only the
 embedded preset templates.
 
@@ -59,8 +60,9 @@ for group operations.
 | `postgres` | `postgres` | 5432         | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `DATABASE_URL` |
 | `redis`    | `redis`    | 6379         | `REDIS_URL`                                                |
 
-Both bind to loopback and require their configured ports to be free; ports do not
-bump automatically. PostgreSQL uses the `postgres` user with local trust authentication. Any process
+Both bind to loopback and require their configured ports to be free. A fixed port
+never bumps; use [`port = "auto"`](#ports-across-git-worktrees) to give each worktree
+its own. PostgreSQL uses the `postgres` user with local trust authentication. Any process
 that can reach its loopback port can connect without a password. These presets
 are for development on a trusted local machine; use a custom daemon with
 authentication for shared or untrusted environments.
@@ -76,6 +78,70 @@ the instance your application uses. Explicit `[tools]` declarations
 must match the version requested by the preset (for example, an installed `18.1`
 can satisfy `18`). Multiple instances sharing a
 tool must use the same version request.
+
+## Ports across git worktrees
+
+Mise renders a daemon's port into its command line and its `[env]` exports while
+configuration loads, so `mise env` and `mise x` see the endpoint without a discovery
+step. That happens long before pitchfork could pick a port, which is why pitchfork's
+own `bump` cannot separate two checkouts of the same project. Running the same
+daemons from a primary checkout and several linked worktrees at once would otherwise
+fail on the second `mise daemons start`.
+
+Set `port = "auto"` to derive the port from the project root instead:
+
+```toml
+[daemons.postgres]
+preset = "postgres"
+version = "18"
+port = "auto"
+
+[daemons.api]
+run = "npm run dev"
+port = { auto = true, base = 3000 }
+```
+
+The primary checkout keeps the base port, so a single-checkout project is unchanged:
+`PGPORT` stays `5432` and the API stays on `3000`. Each linked git worktree gets a
+stable offset derived from its path, so the same worktree always resolves to the same
+port and two worktrees do not collide. A worktree is recognised by its `.git` entry
+being a file rather than a directory; a project outside git is treated as the only
+copy and also keeps the base port.
+
+`base` sets the port the primary checkout uses. It defaults to the preset's port and
+is required for custom daemons, which have no default to offset. `stride` sets the
+distance between consecutive worktree slots and defaults to `1`; raise it for a daemon
+that binds a contiguous range so neighbouring worktrees cannot overlap. A large `base`
+or `stride` can push a high-numbered slot past 65535, which fails at config load with a
+message naming the daemon.
+
+There are 512 slots, one for the primary checkout and 511 for worktrees. That keeps an
+allocated port recognisably near its base: Postgres stays within 5432 to 5943 and Redis
+within 6379 to 6890, so the two preset ranges cannot reach each other.
+
+The resolved port is recorded in the generated `state.json` alongside the `base` and
+`stride` it came from, and `mise daemons ls --json` reports it:
+
+```sh
+mise daemons ls --json
+```
+
+```json
+[
+  {
+    "id": "mise-3f0a/postgres",
+    "name": "postgres",
+    "port": 5679,
+    "port_auto": true
+  }
+]
+```
+
+Because the allocation is persisted, a future change to how offsets are derived cannot
+move a daemon that is already running. Editing `base` or `stride` does re-derive it.
+Starting a daemon fails when another project root on this machine has already claimed
+the same port, naming that root; give one of them an explicit port or a different
+`base`.
 
 ## Data and configuration
 

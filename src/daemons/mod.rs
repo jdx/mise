@@ -1,5 +1,6 @@
 //! Project daemons: custom pitchfork definitions and embedded database presets.
 pub(crate) mod hook_env;
+pub(crate) mod ports;
 pub(crate) mod presets;
 pub(crate) mod runtime;
 
@@ -8,7 +9,9 @@ use crate::config::{ConfigMap, Settings};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 use eyre::{Result, bail};
 use indexmap::IndexMap;
+use ports::{PortClaim, PortRequest};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -27,6 +30,9 @@ pub(crate) struct Daemon {
     pub preset: Option<String>,
     pub tool: Option<(String, String)>,
     pub exports: IndexMap<String, String>,
+    /// The resolved allocation for a `port = "auto"` daemon, persisted so it
+    /// survives a later change to the slot derivation.
+    pub port: Option<PortClaim>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -68,6 +74,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         }
     }
     let mut set = DaemonSet::default();
+    // Previously persisted allocations, read once per project root.
+    let mut claims: BTreeMap<PathBuf, BTreeMap<String, PortClaim>> = BTreeMap::new();
     for (name, (declaration, source, root)) in declarations {
         if name.is_empty()
             || name == "."
@@ -89,10 +97,45 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 (preset, version, table)
             }
         };
+        let request = table
+            .remove("port")
+            .map(|value| ports::parse(&name, value))
+            .transpose()?;
+        // `auto` resolution reuses the allocation recorded by the last start, so
+        // a change to the slot derivation cannot move a running daemon's port.
+        let persisted = if matches!(request, Some(PortRequest::Auto { .. })) {
+            claims
+                .entry(root.clone())
+                .or_insert_with(|| {
+                    runtime::read_state(&root)
+                        .map(|s| s.ports)
+                        .unwrap_or_default()
+                })
+                .get(&name)
+                .copied()
+        } else {
+            None
+        };
         let daemon = if let Some(preset) = preset {
             let version = version
                 .ok_or_else(|| eyre::eyre!("[daemons.{name}] requires version with preset"))?;
-            presets::expand(&name, &preset, &version, table, &source, &root)?
+            let claim = match request {
+                Some(PortRequest::Passthrough(_)) => bail!(
+                    "[daemons.{name}].port must be an integer or \"auto\"; \
+                     pitchfork's structured port is only available on custom daemons"
+                ),
+                Some(PortRequest::Fixed(port)) => Some(PortClaim::fixed(port)),
+                Some(PortRequest::Auto { base, stride }) => Some(ports::resolve(
+                    &name,
+                    &root,
+                    base,
+                    stride,
+                    Some(presets::default_port(&preset)?),
+                    persisted,
+                )?),
+                None => None,
+            };
+            presets::expand(&name, &preset, &version, table, &source, &root, claim)?
         } else {
             if version.is_some() || table.contains_key("options") {
                 bail!("[daemons.{name}] requires preset when specifying version or options");
@@ -100,20 +143,19 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             if table.get("run").and_then(toml::Value::as_str).is_none() {
                 bail!("[daemons.{name}] requires run or preset");
             }
-            if let Some(port) = table.get("port").and_then(toml::Value::as_integer) {
-                if !(1..=65535).contains(&port) {
-                    bail!("daemon port must be an integer from 1 to 65535");
+            let claim = match request {
+                Some(PortRequest::Passthrough(value)) => {
+                    table.insert("port".into(), value);
+                    None
                 }
-                table.insert(
-                    "port".into(),
-                    toml::Value::Table(toml::Table::from_iter([
-                        (
-                            "expect".into(),
-                            toml::Value::Array(vec![toml::Value::Integer(port)]),
-                        ),
-                        ("bump".into(), toml::Value::Boolean(false)),
-                    ])),
-                );
+                Some(PortRequest::Fixed(port)) => Some(PortClaim::fixed(port)),
+                Some(PortRequest::Auto { base, stride }) => {
+                    Some(ports::resolve(&name, &root, base, stride, None, persisted)?)
+                }
+                None => None,
+            };
+            if let Some(claim) = claim {
+                table.insert("port".into(), expected_port(claim.port));
             }
             table
                 .entry("mise".to_string())
@@ -126,11 +168,24 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 preset: None,
                 tool: None,
                 exports: IndexMap::new(),
+                port: claim,
             }
         };
         set.daemons.insert(name, daemon);
     }
     Ok(set)
+}
+
+/// Pitchfork's structured `port`, pinned to the port mise already rendered into
+/// the daemon's command line and `[env]` exports.
+pub(crate) fn expected_port(port: u16) -> toml::Value {
+    toml::Value::Table(toml::Table::from_iter([
+        (
+            "expect".into(),
+            toml::Value::Array(vec![toml::Value::Integer(i64::from(port))]),
+        ),
+        ("bump".into(), toml::Value::Boolean(false)),
+    ]))
 }
 
 fn take_string(table: &mut toml::Table, key: &str) -> Result<Option<String>> {
@@ -338,6 +393,82 @@ mod tests {
             set.daemons["api"].table["port"]["expect"][0].as_integer(),
             Some(3000)
         );
+    }
+
+    #[test]
+    fn auto_ports_separate_worktrees_but_leave_the_primary_checkout_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let primary = tmp.path().join("project");
+        std::fs::create_dir_all(primary.join(".git")).unwrap();
+        let linked = tmp.path().join("worktree");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::fs::write(linked.join(".git"), "gitdir: /elsewhere\n").unwrap();
+
+        let body = "[daemons.db]\npreset = 'postgres'\nversion = '18'\nport = 'auto'\n[daemons.api]\nrun = 'server'\n[daemons.api.port]\nauto = true\nbase = 3000\n";
+        let ports = |root: &Path| {
+            let set = load(&files(&[(root.join("mise.toml").to_str().unwrap(), body)])).unwrap();
+            (
+                set.daemons["db"].port.unwrap().port,
+                set.daemons["api"].port.unwrap().port,
+            )
+        };
+
+        // The single well-known checkout keeps the well-known ports.
+        assert_eq!(ports(&primary), (5432, 3000));
+        let (db, api) = ports(&linked);
+        assert!(db > 5432 && db <= 5432 + ports::SLOTS);
+        assert!(api > 3000 && api <= 3000 + ports::SLOTS);
+        // Same root, same ports; and the port reaches the exports and the command.
+        assert_eq!(ports(&linked), (db, api));
+        let set = load(&files(&[(
+            linked.join("mise.toml").to_str().unwrap(),
+            body,
+        )]))
+        .unwrap();
+        assert_eq!(set.daemons["db"].exports["PGPORT"], db.to_string());
+        assert!(set.daemons["db"].exports["DATABASE_URL"].contains(&format!(":{db}/")));
+        assert!(
+            set.daemons["db"].table["run"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("-p {db}"))
+        );
+        assert_eq!(
+            set.daemons["api"].table["port"]["expect"][0].as_integer(),
+            Some(i64::from(api))
+        );
+    }
+
+    #[test]
+    fn invalid_auto_port_declarations_are_rejected() {
+        // A custom daemon has no default port to offset.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\nport = 'auto'\n",
+        )]);
+        assert!(
+            load(&config)
+                .unwrap_err()
+                .to_string()
+                .contains("needs a base port")
+        );
+        // Presets do not take pitchfork's structured port.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\n[daemons.db.port]\nexpect = [5432]\n",
+        )]);
+        assert!(load(&config).is_err());
+        // Custom daemons still forward it verbatim.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\n[daemons.api.port]\nexpect = [3000, 3001]\nbump = true\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(
+            set.daemons["api"].table["port"]["bump"].as_bool(),
+            Some(true)
+        );
+        assert!(set.daemons["api"].port.is_none());
     }
 
     #[test]
