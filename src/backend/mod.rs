@@ -3564,11 +3564,25 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // Get pre-tools environment variables from config
         let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, &tv_exact).await?;
 
-        // Add pre-tools environment variables from config if available
-        if let Some(config_env) = ctx.config.env_maybe() {
-            for (k, v) in config_env {
-                env_vars.entry(k).or_insert(v);
+        // Add pre-tools environment variables from config (#6418).
+        //
+        // This asked for the already-resolved env (`env_maybe`), which during an
+        // install is populated only if some earlier step in the same process
+        // happened to resolve it. asdf plugins do, to run their own scripts, so
+        // the promise held for `dummy` in the e2e test and for nothing else:
+        // every other backend reached here with an empty config env. Resolve it
+        // instead. `Config::env` is always the tools-independent env, so asking
+        // for it now returns what it would have returned later.
+        //
+        // Best-effort: a `[env]` that cannot resolve is reported by the command
+        // that needs it, and should not be what fails an otherwise good install.
+        match ctx.config.env().await {
+            Ok(config_env) => {
+                for (k, v) in config_env {
+                    env_vars.entry(k).or_insert(v);
+                }
             }
+            Err(err) => debug!("postinstall: skipping config env: {err:#}"),
         }
         let mut install_env_removals = Vec::new();
         for (key, value) in tv.install_env() {
