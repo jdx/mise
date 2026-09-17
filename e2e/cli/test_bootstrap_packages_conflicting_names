@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# WinGet matches package IDs case-insensitively, so two spellings are one
+# package written twice. The check runs when declarations are aggregated, so it
+# fires on every host, not only Windows.
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"winget:Git.Git" = "latest"
+"winget:git.git" = { state = "absent" }
+EOF
+
+assert_fail "mise bootstrap packages status" "name the same package but ask for opposite states"
+assert_fail "mise bootstrap packages apply --yes" "name the same package but ask for opposite states"
+
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"winget:Git.Git" = "2.43.0"
+"winget:git.git" = "2.47.0"
+EOF
+
+assert_fail "mise bootstrap packages status" "ask for different versions (2.43.0 and 2.47.0)"
+
+# apt names are compared verbatim, so two spellings really are two packages
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"apt:Git" = "latest"
+"apt:git" = { state = "absent" }
+EOF
+
+assert_succeed "mise bootstrap packages status"
+
+# a pair a selector keeps apart is one live declaration, not a conflict
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"winget:Git.Git" = { env = "prod" }
+"winget:git.git" = { state = "absent", env = "dev" }
+EOF
+
+assert_contains "MISE_ENV=prod mise bootstrap packages status" "Git.Git"
+assert_contains "MISE_ENV=dev mise bootstrap packages status" "git.git"
