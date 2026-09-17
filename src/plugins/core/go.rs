@@ -460,7 +460,7 @@ enum GoWorkspace {
     /// `GOWORK=off`: there is no workspace, so `go.mod` decides and any `go.work` lying
     /// around is not Go's workspace file either.
     Off,
-    /// `GOWORK=<file>`: this file is the workspace, wherever it lives.
+    /// `GOWORK=<absolute file>`: this file is the workspace, wherever it lives.
     File(PathBuf),
     /// The default (`auto`, empty, or unset): search upwards for a `go.work`.
     Search,
@@ -470,14 +470,25 @@ fn go_workspace() -> GoWorkspace {
     match env::var("GOWORK").as_deref() {
         Ok("off") => GoWorkspace::Off,
         Ok("" | "auto") | Err(_) => GoWorkspace::Search,
-        Ok(explicit) => GoWorkspace::File(PathBuf::from(explicit)),
+        // Go requires an explicit `GOWORK` to be absolute and refuses to run otherwise
+        // ("go: invalid GOWORK: not an absolute path"). A relative value therefore names no
+        // workspace at all, so mise ignores it rather than honouring a setting that would
+        // stop `go` from running. Go does not require a `.work` suffix, and neither does
+        // this -- and it does not require the file to exist either: the workspace is
+        // selected first, and only reading it fails.
+        Ok(explicit) if Path::new(explicit).is_absolute() => {
+            GoWorkspace::File(PathBuf::from(explicit))
+        }
+        Ok(_) => GoWorkspace::Search,
     }
 }
 
 /// Whether `path` is the workspace file `GOWORK` names.
 ///
-/// Compared by canonical path so the two spellings of one file -- a relative `GOWORK`, a
-/// symlinked checkout -- do not read as different workspaces.
+/// Compared by canonical path so two spellings of one file -- a symlinked checkout, a path
+/// through `..` -- do not read as different workspaces. A `GOWORK` naming a file that does
+/// not exist canonicalizes to nothing and so matches nothing, which is the intent: the
+/// workspace is real as far as selection goes, but no file mise reads is it.
 fn is_named_workspace(path: &Path, named: &Path) -> bool {
     match (path.canonicalize(), named.canonicalize()) {
         (Ok(path), Ok(named)) => path == named,
@@ -501,7 +512,9 @@ fn is_named_workspace(path: &Path, named: &Path) -> bool {
 fn go_workspace_file(go_mod: &Path) -> Option<PathBuf> {
     match go_workspace() {
         GoWorkspace::Off => None,
-        GoWorkspace::File(named) => named.is_file().then_some(named),
+        // Naming a workspace is what turns workspace mode on, whether or not the file is
+        // there. `go` selects it the same way and only fails later, when it reads it.
+        GoWorkspace::File(named) => Some(named),
         GoWorkspace::Search => file::all_dirs(go_mod.parent()?, &env::MISE_CEILING_PATHS)
             .ok()?
             .into_iter()
