@@ -1367,7 +1367,10 @@ async fn prewarm_downloads(
     // precisely when this optimisation is doing the most work.
     let reports: Vec<Box<dyn SingleReport>> = candidates
         .iter()
-        .map(|cask| mpr.add(&format!("brew-cask:{} (download)", cask.token)))
+        // Labelled from the cask, not hardcoded: prewarm resolves macos-app
+        // declarations too, and reporting those under brew-cask names a
+        // manager the download has nothing to do with.
+        .map(|cask| mpr.add(&format!("{}:{} (download)", cask.label(), cask.token)))
         .collect();
 
     let futures: Vec<_> = candidates
