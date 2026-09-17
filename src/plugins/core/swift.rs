@@ -381,10 +381,16 @@ async fn resolve_platform(tv: &ToolVersion, target: &PlatformTarget) -> Result<S
                     // against swift.org's error page.
                     None => bail!("swift {} publishes no Linux build for {arch}", tv.version),
                 },
-                // Offline, or a release the index does not list.
+                // Offline, or a release the index does not list. Every guess
+                // at what a release published is wrong for some host, so
+                // prefer the one thing that is not a guess: if a tarball for
+                // this version was downloaded before, it names the build that
+                // was really chosen. Only with nothing cached — where the
+                // install cannot succeed offline anyway, and the token only
+                // shapes the error — fall back to the host's own version.
                 Err(err) => {
                     debug!("swift: could not read the release index: {err:#}");
-                    Ok(host.offline_token())
+                    Ok(offline_platform(tv, target, &host))
                 }
             }
         }
@@ -764,6 +770,41 @@ fn select_build<'a>(
             any.sort_by(|a, b| a.version.cmp(&b.version));
             any.first().copied().map(|build| (build, Fit::OtherFamily))
         })
+}
+
+/// The build an already-downloaded tarball is for, if there is one.
+///
+/// Offline the download cache is the only ground truth about what a release
+/// published: whatever is there was chosen while the index was readable. A
+/// name only counts when `url` would really produce it, so a `.sig`, a partial
+/// download, or another architecture's tarball is ignored.
+fn offline_platform(tv: &ToolVersion, target: &PlatformTarget, host: &HostDistro) -> String {
+    offline_platform_in(&tv.download_path(), tv, target, host)
+}
+
+fn offline_platform_in(
+    dir: &Path,
+    tv: &ToolVersion,
+    target: &PlatformTarget,
+    host: &HostDistro,
+) -> String {
+    cached_token_in(dir, tv, target).unwrap_or_else(|| host.offline_token())
+}
+
+fn cached_token_in(dir: &Path, tv: &ToolVersion, target: &PlatformTarget) -> Option<String> {
+    let prefix = format!("swift-{}-RELEASE-", tv.version);
+    let suffix = format!(".{}", extension(target));
+    file::ls(dir).ok()?.iter().find_map(|path| {
+        let name = path.file_name()?.to_str()?;
+        let token = name.strip_prefix(&prefix)?.strip_suffix(&suffix)?;
+        let token = match architecture(target) {
+            Some(arch) => token.strip_suffix(&format!("-{arch}"))?,
+            None => token,
+        };
+        url(tv, target, token)
+            .ends_with(name)
+            .then(|| token.to_string())
+    })
 }
 
 /// Say so when the chosen build is not one swift.org tests on this distro.
@@ -1414,6 +1455,83 @@ mod lockfile_tests {
             resolve_platform(&tv, &target("linux-x64-musl"))
                 .await
                 .is_err()
+        );
+    }
+
+    /// Offline the cache is the only ground truth about what a release really
+    /// published: a Fedora 40 host is served by `fedora39` on a release that
+    /// ships 39 and 41, and no guess from the host's own version can know
+    /// that. Whatever was downloaded while the index was readable does.
+    #[test]
+    fn a_cached_tarball_names_the_build_to_reuse() {
+        let _guard = pin_platform(None);
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.3");
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // Nothing cached yet: nothing to learn from.
+        assert_eq!(cached_token_in(dir.path(), &tv, &target("linux-x64")), None);
+
+        for name in [
+            // A signature and another release's tarball must not count.
+            "swift-6.3.3-RELEASE-fedora39.tar.gz.sig",
+            "swift-6.1.2-RELEASE-ubuntu24.04.tar.gz",
+            "swift-6.3.3-RELEASE-fedora39.tar.gz",
+        ] {
+            std::fs::write(dir.path().join(name), "").expect("write");
+        }
+
+        assert_eq!(
+            cached_token_in(dir.path(), &tv, &target("linux-x64")),
+            Some("fedora39".to_string())
+        );
+        // The x64 tarball carries no arch suffix, so it must not be taken for
+        // an arm64 one.
+        assert_eq!(
+            cached_token_in(dir.path(), &tv, &target("linux-arm64")),
+            None
+        );
+
+        std::fs::write(
+            dir.path()
+                .join("swift-6.3.3-RELEASE-fedora39-aarch64.tar.gz"),
+            "",
+        )
+        .expect("write");
+        assert_eq!(
+            cached_token_in(dir.path(), &tv, &target("linux-arm64")),
+            Some("fedora39".to_string())
+        );
+    }
+
+    /// The offline decision itself: a cached tarball wins over any guess from
+    /// the host, and the host'''s own version is used only when there is
+    /// nothing cached to learn from.
+    #[test]
+    fn the_offline_choice_prefers_a_cached_tarball_over_the_host_guess() {
+        let _guard = pin_platform(None);
+        let backend = SwiftPlugin::new();
+        let tv = tool_version(&backend, "6.3.3");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let host = HostDistro {
+            family: Family::Fedora,
+            version: Some(DistroVersion::new("40")),
+            family_is_fallback: false,
+            id: "fedora 40".to_string(),
+        };
+
+        // Nothing cached: the host is all there is to go on, even though this
+        // release never published a fedora40 build.
+        assert_eq!(
+            offline_platform_in(dir.path(), &tv, &target("linux-x64"), &host),
+            "fedora40"
+        );
+
+        // A tarball from when the index was readable knows better.
+        std::fs::write(dir.path().join("swift-6.3.3-RELEASE-fedora39.tar.gz"), "").expect("write");
+        assert_eq!(
+            offline_platform_in(dir.path(), &tv, &target("linux-x64"), &host),
+            "fedora39"
         );
     }
 
