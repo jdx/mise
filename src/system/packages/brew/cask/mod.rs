@@ -566,7 +566,7 @@ impl BrewCaskManager {
         }
         let mpr = MultiProgressReport::get();
         mpr.init_footer(false, "install", pkgs.len());
-        prewarm_downloads(pkgs, mode, &mpr).await;
+        prewarm_downloads(pkgs, mode, &mpr, self.manager, manager_options).await;
         for pkg in pkgs {
             let pr: Box<dyn SingleReport> =
                 mpr.add(&format!("{}:{}", self.manager.label(), pkg.name));
@@ -600,16 +600,7 @@ impl BrewCaskManager {
         manager_options: &ManagerPackageOptions,
         provision_ruby: bool,
     ) -> Result<Cask> {
-        if let Some(spec) = manager_options.macos_app_spec(&req.name) {
-            return declared_app_cask(&req.name, spec);
-        }
-        if !self.manager.uses_homebrew_caskroom() {
-            bail!(
-                "macos-app:{}: no inline declaration found; macos-app entries require url, sha256, artifact, and an explicit version",
-                req.name
-            );
-        }
-        fetch_cask(req, provision_ruby).await
+        resolve_cask_for(self.manager, req, manager_options, provision_ruby).await
     }
 
     /// Starts a top-level cask operation with an empty dependency ancestry.
@@ -1255,7 +1246,36 @@ fn declared_app_cask(name: &str, spec: &crate::system::AppSpec) -> Result<Cask> 
 ///
 /// Every failure is swallowed. This is an optimisation, and the serial pass
 /// reports the real error with its proper context and progress reporting.
-async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode, mpr: &MultiProgressReport) {
+/// Resolve where one request's metadata comes from.
+///
+/// Free-standing so the prewarm pass resolves exactly as installation does.
+/// Asking Homebrew for a `macos-app` token would download whatever unrelated
+/// cask happens to share the name, and report it under the wrong manager.
+async fn resolve_cask_for(
+    manager: CaskManager,
+    req: &PackageRequest,
+    manager_options: &ManagerPackageOptions,
+    provision_ruby: bool,
+) -> Result<Cask> {
+    if let Some(spec) = manager_options.macos_app_spec(&req.name) {
+        return declared_app_cask(&req.name, spec);
+    }
+    if !manager.uses_homebrew_caskroom() {
+        bail!(
+            "macos-app:{}: no inline declaration found; macos-app entries require url, sha256, artifact, and an explicit version",
+            req.name
+        );
+    }
+    fetch_cask(req, provision_ruby).await
+}
+
+async fn prewarm_downloads(
+    pkgs: &[PackageRequest],
+    mode: InstallMode,
+    mpr: &MultiProgressReport,
+    manager: CaskManager,
+    manager_options: &ManagerPackageOptions,
+) {
     let jobs = crate::jobs::normalize(crate::config::Settings::get().jobs);
     if jobs <= 1 || pkgs.len() <= 1 {
         return;
@@ -1267,7 +1287,7 @@ async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode, mpr: &Mul
     // the serial path, which provisions properly.
     let mut candidates = Vec::new();
     for pkg in pkgs {
-        let Ok(cask) = fetch_cask(pkg, false).await else {
+        let Ok(cask) = resolve_cask_for(manager, pkg, manager_options, false).await else {
             continue;
         };
         // git-backed casks clone instead of downloading an archive
@@ -1277,7 +1297,9 @@ async fn prewarm_downloads(pkgs: &[PackageRequest], mode: InstallMode, mpr: &Mul
         // Only a definite "not installed by Homebrew" is worth downloading for.
         // An error here (ambiguous Homebrew metadata, say) means the serial pass
         // is about to report a repair, so downloading first would be waste.
-        if !matches!(homebrew_installed_version(&cask.token), Ok(None)) {
+        if cask.manager.uses_homebrew_caskroom()
+            && !matches!(homebrew_installed_version(&cask.token), Ok(None))
+        {
             continue;
         }
         let Ok(artifacts) = cask_artifacts(&cask) else {
