@@ -557,7 +557,11 @@ impl BrewCaskManager {
             bail!("brew casks are installed at their current version ('{p}')");
         }
         if opts.dry_run {
-            prefix::bootstrap(true)?;
+            // Gated like the real install: previewing a macos-app apply must
+            // not create a Homebrew prefix that applying it never would.
+            if self.manager.uses_homebrew_caskroom() {
+                prefix::bootstrap(true)?;
+            }
             for pkg in pkgs {
                 self.install_one(pkg, opts, None, manager_options, mode)
                     .await?;
@@ -733,6 +737,9 @@ impl BrewCaskManager {
         if adopt && !cask.auto_updates {
             validate_adoptable_apps(cask.manager, &stage, &artifacts.apps)?;
         }
+        // Both managers install into the same application directory, so the
+        // shared lock is taken first, then the manager's own records lock.
+        let _app_lock = lock_app_mutations()?;
         let _caskroom_lock = lock_caskroom(cask.manager)?;
         recover_flight_backups()?;
         if cask.manager.uses_homebrew_caskroom() {
