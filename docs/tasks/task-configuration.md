@@ -271,6 +271,27 @@ Supports the same argument, environment variable, and optional dependency syntax
 - `wait_for = ["setup"]` — matches by name, regardless of args or env overrides. If another task runs `depends = ["DEBUG=1 setup"]`, this will still match and wait for it.
 - `wait_for = ["setup arg1"]` or `wait_for = ["DEBUG=1 setup"]` — matches only tasks running with that exact args/env configuration.
 
+### `daemons` <Badge type="warning" text="experimental" />
+
+- **Type**: `bool | string | string[]`
+
+[Project daemons](/daemons.html) that must be running and ready before this task's
+body starts. `true` requires every daemon declared in the project.
+
+```mise-toml
+[tasks.dev]
+daemons = ["postgres", "nats"]
+run = "npm run dev"
+```
+
+mise starts the listed daemons through pitchfork and waits until pitchfork reports
+them ready, which replaces starting a background process in a prerequisite task and
+polling it by hand. Daemons that are already running are left alone.
+
+Every name must match a `[daemons]` entry; an unknown name fails the run. Daemons
+belong to the dependency phase, so `--skip-deps` and the `task.skip_depends` setting
+skip them, and `--dry-run` does not start anything.
+
 ### `env`
 
 - **Type**: `{ [key]: string | int | bool }`

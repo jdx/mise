@@ -638,6 +638,16 @@ impl<'de> Deserialize<'de> for TaskRustCacheConfig {
     }
 }
 
+/// Project daemons a task requires: `true` for every daemon declared in the
+/// project, or an explicit name or list of names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum TaskDaemons {
+    All(bool),
+    One(String),
+    Names(Vec<String>),
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Task {
@@ -669,6 +679,10 @@ pub(crate) struct Task {
     pub confirm: Option<TaskConfirm>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
+    /// Project daemons that must be running and ready before this task's body
+    /// starts. Skipped along with dependencies under `--skip-deps`.
+    #[serde(default)]
+    pub daemons: Option<TaskDaemons>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends_post: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -1433,6 +1447,13 @@ impl Task {
             })
             .transpose()?;
         task.depends = parse_task_dependencies(&mut p, "depends")?;
+        task.daemons = p
+            .get_raw("daemons")
+            .map(|v| {
+                TaskDaemons::deserialize(v.clone())
+                    .map_err(|e| eyre!("failed to parse daemons field in task header: {e}"))
+            })
+            .transpose()?;
         task.depends_post = parse_task_dependencies(&mut p, "depends_post")?;
         task.wait_for = parse_task_dependencies(&mut p, "wait_for")?;
         task.env = p.parse_env("env")?.unwrap_or_default();
@@ -3275,6 +3296,7 @@ impl Default for Task {
             config_root: None,
             confirm: None,
             depends: vec![],
+            daemons: None,
             depends_post: vec![],
             wait_for: vec![],
             env: Default::default(),
@@ -5423,6 +5445,7 @@ echo "hello world"
 #MISE description="Test task with all fields"
 #MISE aliases=["alias1", "alias2"]
 #MISE depends=["dep1", "dep2"]
+#MISE daemons=["postgres"]
 #MISE depends_post=["post1"]
 #MISE wait_for=["wait1"]
 #MISE env={TEST_VAR="value"}
@@ -5456,6 +5479,10 @@ echo "test"
         assert_eq!(task.description, "Test task with all fields");
         assert_eq!(task.aliases, vec!["alias1", "alias2"]);
         assert_eq!(task.depends.len(), 2);
+        assert_eq!(
+            task.daemons,
+            Some(super::TaskDaemons::Names(vec!["postgres".to_string()]))
+        );
         assert_eq!(task.depends_post.len(), 1);
         assert_eq!(task.wait_for.len(), 1);
         assert_eq!(task.dir, Some("/some/dir".to_string()));

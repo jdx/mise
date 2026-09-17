@@ -170,6 +170,33 @@ depends = ['build']
 
 There are other ways to specify dependencies; see [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post).
 
+### Daemons <Badge type="warning" text="experimental" />
+
+A task can require [project daemons](/daemons.html) instead of a prerequisite task
+that starts a background process and polls it:
+
+```mise-toml
+[daemons]
+postgres = "18"
+
+[daemons.nats]
+run = "exec nats-server"
+ready_port = 4222
+
+[tasks.dev]
+daemons = ["postgres", "nats"]
+run = "npm run dev"
+```
+
+`mise run dev` starts both daemons and waits until pitchfork reports them ready,
+then runs the task. Daemons that are already running are left alone, so repeated
+runs cost nothing. Use `daemons = true` to require every daemon declared in the
+project.
+
+Daemons are part of the dependency phase, so `--skip-deps` and the
+`task.skip_depends` setting skip them, and `--dry-run` does not start anything.
+The name must match a `[daemons]` entry; an unknown name fails the run.
+
 ### Environment variables
 
 You can specify environment variables for a task:
