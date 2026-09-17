@@ -766,6 +766,74 @@ EOF
 EDITOR="$PWD/editor-append" mise dotfiles edit ~/inline-edit
 assert_contains "cat mise.toml" "# edited config"
 
+# a tracked file stays where it is, so edit opens the target itself
+# (tracking is enrolled from the global configuration only)
+echo "tracked before edit" >~/.edit-tracked
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-tracked" = { mode = "track" }
+EOF
+cat <<EOF >mise.toml
+[dotfiles]
+EOF
+EDITOR="$PWD/editor-write" mise dotfiles edit ~/.edit-tracked
+assert "cat ~/.edit-tracked" "edited source"
+: >"$MISE_CONFIG_DIR/config.toml"
+
+# history captures a tracked symlink as a link, so editing through one warns
+# that the destination is not saved unless it is tracked too
+echo "link destination" >~/.edit-link-destination
+ln -sf ~/.edit-link-destination ~/.edit-link
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-link" = { mode = "track" }
+EOF
+assert_contains "EDITOR=\"$PWD/editor-write\" mise dotfiles edit ~/.edit-link 2>&1" "history does not capture"
+assert "cat ~/.edit-link-destination" "edited source"
+
+# no warning once the destination is tracked as well
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-link" = { mode = "track" }
+"~/.edit-link-destination" = { mode = "track" }
+EOF
+assert_not_contains "EDITOR=\"$PWD/editor-write\" mise dotfiles edit ~/.edit-link 2>&1" "history does not capture"
+
+# a dangling link is written through just the same, so it warns too
+ln -sf ~/.edit-link-missing ~/.edit-dangling
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-dangling" = { mode = "track" }
+EOF
+assert_contains "EDITOR=\"$PWD/editor-write\" mise dotfiles edit ~/.edit-dangling 2>&1" "history does not capture"
+assert "cat ~/.edit-link-missing" "edited source"
+: >"$MISE_CONFIG_DIR/config.toml"
+
+# a target that is both tracked and deployed is edited through its source, so
+# a later apply does not write the edit back out
+echo "deployed source" >edit-both-source
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-both" = { mode = "track" }
+EOF
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.edit-both" = { source = "edit-both-source", mode = "copy" }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+EDITOR="$PWD/editor-write" mise dotfiles edit --apply ~/.edit-both
+assert "cat edit-both-source" "edited source"
+assert "cat ~/.edit-both" "edited source"
+: >"$MISE_CONFIG_DIR/config.toml"
+
+# inline content lives in the config that declares it
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.edit-inline-content" = { content = "inline before edit\n" }
+EOF
+EDITOR="$PWD/editor-append" mise dotfiles edit ~/.edit-inline-content
+assert_contains "cat mise.toml" "# edited config"
+
 # Dotfile templates consume the same declared bootstrap secrets as managed
 # system files. Missing inputs fail closed, while dry-runs stay inert.
 dotfile_secret_env="MISE_DOTFILES_TEST_SECRET"
