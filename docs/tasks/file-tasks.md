@@ -107,7 +107,7 @@ cargo build
 
 The script file is the task's command, so a template's `run` is ignored for a
 file task; everything else is inherited by the
-[rules the template docs describe](/tasks/templates#inheritance-rules).
+[rules the template docs describe](/tasks/templates#merge-semantics).
 
 mise provides file tasks with project context variables such as
 `MISE_PROJECT_ROOT`, which identifies the project root regardless of the

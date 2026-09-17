@@ -5398,6 +5398,29 @@ pub(crate) fn task_creation_dir_for_dir(dir: &Path, config_files: &ConfigMap) ->
     bail!("task includes do not contain an existing directory where a file task can be created")
 }
 
+/// Resolve `extends` on a task that was built outside the task-loading pass.
+///
+/// A remote file task is parsed from its downloaded script at run time, long after the
+/// loaders that resolve templates have finished, so it has to ask for the definitions
+/// itself. Without this its `#MISE extends=...` is parsed and then silently dropped.
+///
+/// Collecting the definitions is not free, so a task that names no template pays nothing.
+pub(crate) fn resolve_template_for_late_task(config: &Arc<Config>, task: &mut Task) -> Result<()> {
+    if task.extends.is_none() {
+        return Ok(());
+    }
+    let workspace_graph = (Settings::get().experimental && config.monorepo_root().is_some())
+        .then(|| config.workspace_project_graph_for_task_loading());
+    let definitions = collect_task_definitions(
+        &config.config_files,
+        workspace_graph
+            .as_ref()
+            .and_then(|graph| graph.as_ref().ok())
+            .map(Arc::as_ref),
+    );
+    resolve_task_template(task, &definitions)
+}
+
 pub(crate) async fn load_tasks_in_dir(
     config: &Arc<Config>,
     dir: &Path,
