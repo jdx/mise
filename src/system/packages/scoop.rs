@@ -165,18 +165,26 @@ fn refresh_args() -> Vec<String> {
     vec!["update".to_string()]
 }
 
-/// Rejects two declarations that name one app but disagree about its state.
+/// Rejects two declarations that name one app but disagree about it.
 ///
 /// `[bootstrap.packages]` keys on the literal spec, so `scoop:Git` and
-/// `scoop:git` are two entries while Scoop resolves both to one app. The driver
-/// removes before it installs and decides both from the pre-removal status, so
-/// an absent declaration would win for an installed app and a present one for a
-/// missing app — the result would follow the machine instead of the config.
+/// `scoop:git` are two entries while Scoop resolves both to one app. Neither
+/// disagreement has a defined outcome:
+///
+/// * On state, the driver removes before it installs and decides both from the
+///   pre-removal status, so an absent declaration wins for an installed app and
+///   a present one for a missing app — the result follows the machine.
+/// * On version, both operands reach one `scoop install`. Scoop handles pinned
+///   operands first, then installs the unpinned one over the pin, so the pin
+///   does not survive.
 fn check_no_conflict(pkgs: &[PackageRequest]) -> Result<()> {
     for (index, pkg) in pkgs.iter().enumerate() {
         let app = app_name(&pkg.name);
         for other in &pkgs[index + 1..] {
-            if app_name(&other.name).eq_ignore_ascii_case(app) && other.desired != pkg.desired {
+            if !app_name(&other.name).eq_ignore_ascii_case(app) {
+                continue;
+            }
+            if other.desired != pkg.desired {
                 let (present, absent) = match pkg.desired {
                     PackageDesiredState::Present => (&pkg.name, &other.name),
                     PackageDesiredState::Absent => (&other.name, &pkg.name),
@@ -184,6 +192,16 @@ fn check_no_conflict(pkgs: &[PackageRequest]) -> Result<()> {
                 bail!(
                     "scoop: '{present}' and '{absent}' name the same app but ask for opposite \
                      states; declare it once"
+                );
+            }
+            if pkg.desired == PackageDesiredState::Present && pkg.version != other.version {
+                bail!(
+                    "scoop: '{}' and '{}' name the same app but ask for different versions \
+                     ({} and {}); declare it once",
+                    pkg.name,
+                    other.name,
+                    pkg.version.as_deref().unwrap_or("latest"),
+                    other.version.as_deref().unwrap_or("latest"),
                 );
             }
         }
@@ -751,9 +769,34 @@ mod tests {
 
         // Agreeing duplicates and different apps stay allowed; deduplication
         // already collapses them.
-        check_no_conflict(&[req("Git", None), req("git", Some("2.51.0"))]).unwrap();
+        check_no_conflict(&[req("Git", Some("2.51.0")), req("git", Some("2.51.0"))]).unwrap();
         check_no_conflict(&[absent("git"), absent("Git")]).unwrap();
         check_no_conflict(&[req("git", None), absent("ripgrep")]).unwrap();
+        check_no_conflict(&[req("extras/vscode", None), req("vscode", None)]).unwrap();
+    }
+
+    #[test]
+    fn one_app_declared_at_two_versions_is_rejected() {
+        // Both operands reach one `scoop install`; Scoop installs the pin and
+        // then the unpinned operand replaces it, so the pin never holds.
+        let err = check_no_conflict(&[req("Git", None), req("git", Some("2.51.0"))]).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "scoop: 'Git' and 'git' name the same app but ask for different versions \
+             (latest and 2.51.0); declare it once"
+        );
+        let err = check_no_conflict(&[
+            req("extras/vscode", Some("1.99.0")),
+            req("Vscode", Some("1.100.0")),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "scoop: 'extras/vscode' and 'Vscode' name the same app but ask for different \
+             versions (1.99.0 and 1.100.0); declare it once"
+        );
+        // Absent declarations carry no version to disagree about.
+        check_no_conflict(&[absent("git"), absent("Git")]).unwrap();
     }
 
     #[test]
