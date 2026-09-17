@@ -1517,6 +1517,38 @@ fn install_app(
         });
     }
 
+    // An entry that owns this target is allowed to replace what is at it, but
+    // doing so when the bundle on disk already matches the staged artifact buys
+    // nothing and costs every Privacy & Security grant keyed to the app's
+    // identity at this path — the exact harm this manager exists to avoid.
+    //
+    // Reinstalling an owned target is reached whenever the recorded version is
+    // not trusted. The common case is an interrupted run leaving a pending
+    // transaction journal: that masks the receipt's version, so the "already
+    // installed" check never fires, while the receipt still proves ownership
+    // and so clears the unowned-target refusal. Comparing here keeps the
+    // bundle, and its grants, when a swap would change nothing.
+    //
+    // Scoped to managers that arbitrate by receipt. `brew-cask` owns its target
+    // by token against Homebrew's Caskroom and keeps its existing behaviour.
+    if !manager.uses_homebrew_caskroom() && !require_unowned && exists_at(&parent.fd, &name)? {
+        let source_fingerprint = cask_target_fingerprint(&source)?;
+        let target_fingerprint = cask_target_fingerprint(&bound_target)?;
+        if source_fingerprint == target_fingerprint {
+            info!(
+                "{}: keeping the identical bundle already at {}",
+                manager.label(),
+                logical_target.display()
+            );
+            // `ditto` would have created this on the install path.
+            file::create_dir_all(caskroom)?;
+            file::make_symlink(&logical_target, &caskroom_app)?;
+            return Ok(AppInstall::Installed {
+                metadata_only: !keep_caskroom_copy,
+            });
+        }
+    }
+
     ditto(&source, &caskroom_app)?;
     // Suffix hashes stay derived from the logical path so temporary and backup
     // names are stable across runs.
