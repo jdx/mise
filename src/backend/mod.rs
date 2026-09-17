@@ -2150,6 +2150,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Pre-releases this backend recognises beyond the shared `VERSION_REGEX`,
+    /// which only knows channel tags (`-rc1`, `-beta`): a backend with strict
+    /// semver versions also treats a bare numeric suffix (`1.3.1-3`) as one.
+    fn is_backend_prerelease(&self, _version: &str) -> bool {
+        false
+    }
+
     /// Whether pre-release versions should be included for this backend and
     /// current tool options. Backends can override this only for compatibility
     /// with deprecated backend-specific prerelease settings.
@@ -3098,6 +3105,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 let installs_path = install_state::get_tool(&self.ba().short)
                     .and_then(|tool| tool.installs_path)
                     .unwrap_or_else(|| self.ba().installs_path.clone());
+                let filter = !self.include_prereleases(&self.ba().opts());
                 let installed_symlink = installs_path.join("latest");
                 if installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
@@ -3107,7 +3115,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
                         .to_string_lossy()
                         .to_string();
-                    return Ok(Some(version));
+                    // A `latest` link written before the backend could tell this
+                    // version is a pre-release must not keep winning.
+                    if !filter || !self.is_backend_prerelease(&version) {
+                        return Ok(Some(version));
+                    }
                 }
                 Ok(file::dir_subdirs(&installs_path)
                     .unwrap_or_default()
@@ -3116,6 +3128,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
                     .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
+                    .filter(|v| !filter || !self.is_backend_prerelease(v))
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
             }
@@ -4178,6 +4191,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
+        // Same exact-match bypass as `fuzzy_match_versions`, applied with the
+        // backend's own notion of a pre-release rather than the channel-tag regex.
+        let versions = versions
+            .into_iter()
+            .filter(|v| !filter_prereleases || v == query || !self.is_backend_prerelease(v))
+            .collect();
         fuzzy_match_versions(versions, query, filter_prereleases)
     }
 
