@@ -292,9 +292,21 @@ uv = { path = ".mise/locks/pypi-black/24.10.0", digest = "sha256:…" }
 
 ### Sidecar locations
 
-The directory follows your configuration layout: `.mise/mise.lock` uses
+The directory follows the lockfile's layout: `.mise/mise.lock` uses
 `.mise/locks/`, and both `.config/mise/mise.lock` and `.config/mise.lock` use
-`.config/mise/locks/`. Option variants have a hash suffix. Once recorded, a path
+`.config/mise/locks/`.
+
+If `mise.lock` is a symlink, native dependency sidecar paths are resolved relative
+to the target lockfile, and updates keep sidecars beside that target. This also
+supports deployments that symlink each file individually: new sidecars are stored
+in the dotfiles repository and do not need separate global symlinks.
+
+If you ran `mise lock --global` with this symlink layout on mise 2026.9.8 or
+2026.9.9, you may see a missing dependency sidecar error after upgrading. Run
+`mise lock --global` again to repair the lockfile's relative paths and regenerate
+the sidecars in your dotfiles repository.
+
+Option variants have a hash suffix. Once recorded, a path
 stays unchanged when other variants are added. Directory names follow the tool
 spelling: `pypi:black` uses `pypi-black`, while `pipx:black` uses `pipx-black`.
 Explicit `mise lock` and generate-mode auto-lock saves remove unreferenced sidecar
@@ -433,16 +445,6 @@ This also applies when your global config is a symlink into a dotfiles repo, for
 both paths and treats it as the global config, so `mise lock` run from the repo reports that
 nothing is configured in project scope. Run `mise lock --global` instead; the lockfile is
 written next to the symlink target (`~/dotfiles/mise.lock`).
-
-If `mise.lock` itself is a symlink, native dependency sidecar paths are resolved
-relative to the target lockfile, and updates keep sidecars beside that target.
-This also supports deployments that symlink each file individually: new sidecars
-are stored in the dotfiles repository and do not need separate global symlinks.
-Before publishing an update, mise checks that the symlink still resolves to the
-same target and aborts if it does not. A deployment switch can still occur after
-this recheck and before publication completes, causing mise to finish writing to
-the previously selected target. Keep the deployment stable while mise writes,
-and rerun the command if it aborts because the target changed.
 :::
 
 ## Local Lockfiles
