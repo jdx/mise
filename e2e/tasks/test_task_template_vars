@@ -93,3 +93,17 @@ vars = { mode = { value = "task", tools = true } }
 EOF
 
 assert "mise run tools_override" "run --template"
+
+# The same filter cuts the other way: a `tools = true` value never runs, so it must not stop
+# a literal that does run from binding before the var that reads it.
+cat <<'EOF' >mise.toml
+[task_templates.toolsy2]
+vars = { mode = { value = "tool", tools = true }, cmd = "run --{{ vars.mode | default(value='MISSING') }}" }
+run = "echo {{ vars.cmd }}"
+
+[tasks.tools_ignored]
+extends = "toolsy2"
+vars = { mode = "task" }
+EOF
+
+assert "mise run tools_ignored" "run --task"

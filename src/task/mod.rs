@@ -3073,12 +3073,16 @@ impl Task {
 /// fell back to its `default()` instead.
 ///
 /// Resolving the literal values up front removes that ordering dependence without changing
-/// which value wins. A name is only hoisted when every directive assigning it is a plain
-/// literal from the same config file; the last of those is the one that wins today, and it
-/// still does, since it moves to the front and the copies it already overrode are dropped with
-/// it. Sharing a config file matters because [`EnvResults::resolve`] drops directives by their
-/// source in safe mode: hoisting an assignment the resolver then drops would delete the copies
-/// that would have run.
+/// which value wins. A name is only hoisted when every directive that assigns it and actually
+/// runs is a plain literal from the same config file; the last of those is the one that wins
+/// today, and it still does, since it moves to the front and the copies it already overrode
+/// are dropped with it. Sharing a config file matters because [`EnvResults::resolve`] drops
+/// directives by their source in safe mode, so hoisting an assignment the resolver then drops
+/// would delete the copies that would have run.
+///
+/// This reads the list the way [`Task::resolve_task_vars`] resolves it, with
+/// [`ToolsFilter::NonToolsOnly`]: a `tools = true` directive never runs, so it neither wins a
+/// name nor keeps a literal that does run from being hoisted past it.
 fn bind_literal_vars_first(
     directives: Vec<(EnvDirective, PathBuf)>,
 ) -> Vec<(EnvDirective, PathBuf)> {
@@ -3099,31 +3103,37 @@ fn bind_literal_vars_first(
         }
     }
 
+    /// A directive [`ToolsFilter::NonToolsOnly`] discards, so nothing it says about a name
+    /// counts: it is invisible to every rule below and stays where it is.
+    fn never_runs(directive: &EnvDirective) -> bool {
+        directive.options().tools
+    }
+
     /// A value that renders to itself and records nothing else, so where it resolves cannot
-    /// change what it produces. Two kinds of literal are excluded: a redacted one, because
-    /// dropping the copies it overrode would drop their redactions with them, and a
-    /// `tools = true` one, because [`Task::resolve_task_vars`] resolves with
-    /// [`ToolsFilter::NonToolsOnly`] and never runs it at all.
+    /// change what it produces. A redacted literal is excluded: dropping the copies it
+    /// overrode would drop their redactions with them.
     fn is_plain_literal(directive: &EnvDirective) -> bool {
         matches!(
             directive,
             EnvDirective::Val(_, value, opts)
-                if !contains_template_syntax(value) && opts.redact.is_none() && !opts.tools
+                if !contains_template_syntax(value) && opts.redact.is_none()
         )
     }
 
+    let mut running = directives
+        .iter()
+        .filter(|(directive, _)| !never_runs(directive))
+        .peekable();
     // One directive that assigns names we cannot see is enough to make any reordering
     // unsound: it could be the assignment that wins for a name we were about to hoist.
-    if directives
-        .iter()
+    if running
+        .clone()
         .any(|(directive, _)| assigned_name(directive).is_none())
     {
         return directives;
     }
-    if directives
-        .iter()
-        .all(|(directive, _)| is_plain_literal(directive))
-    {
+    // Nothing that runs can read a var, so the order the literals resolve in cannot matter.
+    if running.all(|(directive, _)| is_plain_literal(directive)) {
         return directives;
     }
 
@@ -3131,6 +3141,9 @@ fn bind_literal_vars_first(
     // disqualifies the name.
     let mut winners: IndexMap<&str, Option<(usize, &Path)>> = IndexMap::new();
     for (i, (directive, source)) in directives.iter().enumerate() {
+        if never_runs(directive) {
+            continue;
+        }
         let Some(name) = assigned_name(directive) else {
             continue;
         };
@@ -3160,7 +3173,8 @@ fn bind_literal_vars_first(
     prelude
         .into_iter()
         .chain(directives.into_iter().filter(|(directive, _)| {
-            !assigned_name(directive).is_some_and(|name| hoisted.contains(name))
+            never_runs(directive)
+                || !assigned_name(directive).is_some_and(|name| hoisted.contains(name))
         }))
         .collect()
 }
@@ -4038,16 +4052,30 @@ mod tests {
         }
 
         /// `resolve_task_vars` resolves with `NonToolsOnly`, so a `tools = true` value never
-        /// runs. Hoisting it as the winner would delete the copies that do.
+        /// runs and cannot win the name. Hoisting it would delete the copies that do run.
         #[test]
-        fn a_tools_literal_is_left_alone() {
+        fn a_tools_value_never_wins_a_name() {
             assert_eq!(
                 order(vec![
                     val("mode", "template"),
                     val("cmd", "run --{{vars.mode}}"),
-                    tools("mode", "task"),
+                    tools("mode", "tool"),
                 ]),
-                ["mode=template", "cmd=run --{{vars.mode}}", "mode=task"]
+                ["mode=template", "cmd=run --{{vars.mode}}", "mode=tool"]
+            );
+        }
+
+        /// For the same reason it is not a competitor either: a literal that does run is
+        /// still hoisted past it.
+        #[test]
+        fn a_tools_value_does_not_block_a_hoist() {
+            assert_eq!(
+                order(vec![
+                    tools("mode", "tool"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    val("mode", "task"),
+                ]),
+                ["mode=task", "mode=tool", "cmd=run --{{vars.mode}}"]
             );
         }
 
