@@ -210,6 +210,14 @@ fn pinned_reinstalls(pkgs: &[PackageRequest], export: &ScoopExport) -> Vec<Strin
     apps
 }
 
+/// App names to act on, dropping any that exist only as a global install.
+fn user_scope_apps(pkgs: &[PackageRequest], global: &[String]) -> Vec<String> {
+    pkgs.iter()
+        .map(|pkg| app_name(&pkg.name).to_string())
+        .filter(|app| !global.contains(app))
+        .collect()
+}
+
 /// Requested apps that exist only as global installs, in request order.
 ///
 /// `scoop uninstall` without `--global` reports that the app is not installed
@@ -439,11 +447,7 @@ impl SystemPackageManager for ScoopManager {
         for app in &global {
             warn!("scoop: '{app}' is installed globally, skipping upgrade");
         }
-        let apps = unpinned
-            .iter()
-            .map(|pkg| app_name(&pkg.name).to_string())
-            .filter(|app| !global.contains(app))
-            .collect::<Vec<_>>();
+        let apps = user_scope_apps(&unpinned, &global);
         if apps.is_empty() {
             return Ok(());
         }
@@ -465,7 +469,18 @@ impl SystemPackageManager for ScoopManager {
             return Ok(());
         }
         let global = global_only(pkgs, &export().await?);
+        // Remove everything mise can reach before reporting the rest. Failing
+        // first would strand every other removable app in the batch, and the
+        // driver aborts the whole run on this error, so it would also skip the
+        // managers queued behind scoop.
+        let apps = user_scope_apps(pkgs, &global);
+        if !apps.is_empty() {
+            apply(&uninstall_args(&apps), "uninstall", opts.dry_run, &[]).await?;
+        }
         if !global.is_empty() {
+            // Not a warning: the driver reports the batch it handed over as
+            // removed, so anything mise did not remove has to fail the run
+            // rather than let that report stand.
             bail!(
                 "scoop: {} installed globally; mise manages the user scope only. \
                  Remove it with `scoop uninstall --global {}` from an elevated shell.",
@@ -477,11 +492,7 @@ impl SystemPackageManager for ScoopManager {
                 global.join(" ")
             );
         }
-        let apps = pkgs
-            .iter()
-            .map(|pkg| app_name(&pkg.name).to_string())
-            .collect::<Vec<_>>();
-        apply(&uninstall_args(&apps), "uninstall", opts.dry_run, &[]).await
+        Ok(())
     }
 }
 
@@ -608,6 +619,28 @@ mod tests {
             vec!["git"]
         );
         assert!(global_only(&[req("ripgrep", None), req("gh", None)], &export).is_empty());
+    }
+
+    #[test]
+    fn one_global_app_does_not_strand_the_rest_of_a_batch() {
+        let pkgs = [
+            req("git", None),
+            req("extras/vscode", None),
+            req("ripgrep", None),
+        ];
+        let global = vec!["git".to_string()];
+        // The removable apps still go out in one `scoop uninstall`; only the
+        // global-only one is held back for the error that follows.
+        assert_eq!(user_scope_apps(&pkgs, &global), vec!["vscode", "ripgrep"]);
+        assert_eq!(
+            uninstall_args(&user_scope_apps(&pkgs, &global)),
+            vec!["uninstall", "vscode", "ripgrep"]
+        );
+        assert!(user_scope_apps(&pkgs, &["git", "vscode", "ripgrep"].map(String::from)).is_empty());
+        assert_eq!(
+            user_scope_apps(&pkgs, &[]),
+            vec!["git", "vscode", "ripgrep"]
+        );
     }
 
     #[test]

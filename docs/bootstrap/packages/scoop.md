@@ -92,6 +92,8 @@ An app that exists only as a global install is reported as installed, and mise
 does not upgrade or reinstall it. Because `scoop uninstall` without `--global`
 exits successfully without touching a global install, `state = "absent"` on one
 fails with a message telling you to run `scoop uninstall --global <app>` from
-an elevated shell rather than reporting a removal that did not happen. A pinned
+an elevated shell rather than reporting a removal that did not happen. Any
+other Scoop packages in the same run are removed first, so one global install
+does not strand the rest of the batch. A pinned
 entry whose only install is global gets the pinned version installed into the
 user scope, which then takes precedence for mise.

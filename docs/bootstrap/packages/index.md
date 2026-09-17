@@ -114,8 +114,9 @@ for a machine-wide selection.
 
 If the package is installed, `status --missing` reports drift and `apply`
 removes it. One exception: an app installed only in Scoop's global scope is
-outside the user scope mise manages, so `apply` fails with the elevated
-`scoop uninstall --global` command to run instead of removing it. See
+outside the user scope mise manages. `apply` removes every other Scoop entry in
+the batch, then fails with the elevated `scoop uninstall --global` command to
+run for that one. See
 [Scoop availability and scope](/bootstrap/packages/scoop.html#availability-and-scope).
 
 Other built-in managers currently support only the default
