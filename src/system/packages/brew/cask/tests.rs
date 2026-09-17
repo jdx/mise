@@ -7539,6 +7539,9 @@ fn upgrades_app_with_protected_existing_contents() -> Result<()> {
         std::ffi::OsStr::new("Docker.app"),
         std::ffi::OsStr::new("Docker.mise-tmp-test"),
         &old_name,
+        // This repro replaces an app it owns; the no-replace path is covered
+        // by activation_refuses_an_app_that_appeared_during_staging.
+        true,
     );
 
     // Remove the ACL so tempfile can clean up even when the repro fails.
