@@ -5449,6 +5449,7 @@ echo "hello world"
 
         // Create a file task with ALL possible header fields
         let script_content = r#"#!/usr/bin/env bash
+#MISE extends="base-template"
 #MISE description="Test task with all fields"
 #MISE aliases=["alias1", "alias2"]
 #MISE depends=["dep1", "dep2"]
@@ -5482,6 +5483,7 @@ echo "test"
             .await
             .unwrap();
 
+        assert_eq!(task.extends, Some("base-template".to_string()));
         assert_eq!(task.description, "Test task with all fields");
         assert_eq!(task.aliases, vec!["alias1", "alias2"]);
         assert_eq!(task.depends.len(), 2);
