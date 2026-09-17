@@ -300,8 +300,9 @@ impl DaemonSet {
 
     /// Check `task = "..."` references against the loaded task list. Task
     /// loading is asynchronous and reads the filesystem, so this cannot run
-    /// while `[daemons]` is parsed; every path that starts or registers
-    /// daemons calls it first.
+    /// while `[daemons]` is parsed. The three paths that register a generated
+    /// pitchfork configuration call it first: `mise daemons start`, a task that
+    /// requires daemons, and the shell auto-lifecycle hook.
     pub(crate) async fn validate_tasks(&self, config: &Arc<Config>) -> Result<()> {
         if self.daemons.values().all(|d| d.task.is_none()) {
             return Ok(());

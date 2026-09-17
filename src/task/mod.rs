@@ -2668,6 +2668,12 @@ impl Task {
         self.depends.extend(other.depends);
         self.depends_post.extend(other.depends_post);
         self.wait_for.extend(other.wait_for);
+        // A `[tasks.<name>] daemons` overlay replaces the file task's own
+        // declaration rather than extending it, so a `true` or a shorter list
+        // in the overlay means what it says.
+        if other.daemons.is_some() {
+            self.daemons = other.daemons;
+        }
         if other.dir.is_some() {
             self.dir = other.dir;
         }

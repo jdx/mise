@@ -294,7 +294,8 @@ mise starts the listed daemons through pitchfork and waits until pitchfork repor
 them ready, which replaces starting a background process in a prerequisite task and
 polling it by hand. Daemons that are already running are left alone.
 
-Every name must match a `[daemons]` entry; an unknown name fails the run. Daemons
+Every name must match a `[daemons]` entry, including one declared in a monorepo
+subproject whose task this run selected; an unknown name fails the run. Daemons
 belong to the dependency phase, so `--skip-deps` and the `task.skip_depends` setting
 skip them, and `--dry-run` does not start anything.
 

@@ -85,6 +85,7 @@ pub(crate) async fn emit(
                 env: env.clone(),
             };
             runtime::validate_tools(&scoped_set, config, ts).await?;
+            scoped_set.validate_tasks(config).await?;
             let (_state, _lock) = runtime.prepare(&root, &scoped_set, force).await?;
             Ok::<_, eyre::Report>(runtime.bin)
         }
