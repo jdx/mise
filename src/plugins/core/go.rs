@@ -289,6 +289,9 @@ impl Backend for GoPlugin {
                 &file::read_to_string(path)?,
                 Settings::get().idiomatic_version_file_ignore_minimum_versions,
             ),
+            // ...and a `go.work` that is not the workspace Go would use is not a version
+            // source either, so the two arms can never both go quiet or both answer.
+            Some(name) if name == "go.work" && !is_active_workspace(path) => String::new(),
             Some(name) if name == "go.work" => parse_gowork(&file::read_to_string(path)?),
             _ => {
                 // .go-version
@@ -452,6 +455,36 @@ fn toolchain_directive(body: &str) -> Option<String> {
         .filter(|v| is_go_toolchain_version(v))
 }
 
+/// How `GOWORK` picks the workspace, mirroring the `go` command.
+enum GoWorkspace {
+    /// `GOWORK=off`: there is no workspace, so `go.mod` decides and any `go.work` lying
+    /// around is not Go's workspace file either.
+    Off,
+    /// `GOWORK=<file>`: this file is the workspace, wherever it lives.
+    File(PathBuf),
+    /// The default (`auto`, empty, or unset): search upwards for a `go.work`.
+    Search,
+}
+
+fn go_workspace() -> GoWorkspace {
+    match env::var("GOWORK").as_deref() {
+        Ok("off") => GoWorkspace::Off,
+        Ok("" | "auto") | Err(_) => GoWorkspace::Search,
+        Ok(explicit) => GoWorkspace::File(PathBuf::from(explicit)),
+    }
+}
+
+/// Whether `path` is the workspace file `GOWORK` names.
+///
+/// Compared by canonical path so the two spellings of one file -- a relative `GOWORK`, a
+/// symlinked checkout -- do not read as different workspaces.
+fn is_named_workspace(path: &Path, named: &Path) -> bool {
+    match (path.canonicalize(), named.canonicalize()) {
+        (Ok(path), Ok(named)) => path == named,
+        _ => false,
+    }
+}
+
 /// The `go.work` that puts `go_mod` in workspace mode, if there is one.
 ///
 /// Workspace mode is not a merge: the `go` command "consults the `toolchain` and `go` lines
@@ -465,24 +498,34 @@ fn toolchain_directive(body: &str) -> Option<String> {
 /// reads config files at or above the working directory, so walking up from the `go.mod`
 /// reaches the same `go.work`, and stops at the same ceiling as the rest of mise's config
 /// discovery.
-///
-/// `GOWORK` overrides the search the way it does for `go`: `off` disables workspace mode,
-/// and an explicit path names the workspace file directly.
 fn go_workspace_file(go_mod: &Path) -> Option<PathBuf> {
-    match env::var("GOWORK").as_deref() {
-        Ok("off") => return None,
-        // `auto` is the default and means "search", as does an unset or empty value.
-        Ok("" | "auto") | Err(_) => {}
-        Ok(explicit) => {
-            let path = PathBuf::from(explicit);
-            return path.is_file().then_some(path);
-        }
+    match go_workspace() {
+        GoWorkspace::Off => None,
+        GoWorkspace::File(named) => named.is_file().then_some(named),
+        GoWorkspace::Search => file::all_dirs(go_mod.parent()?, &env::MISE_CEILING_PATHS)
+            .ok()?
+            .into_iter()
+            .map(|dir| dir.join("go.work"))
+            .find(|p| p.is_file()),
     }
-    file::all_dirs(go_mod.parent()?, &env::MISE_CEILING_PATHS)
-        .ok()?
-        .into_iter()
-        .map(|dir| dir.join("go.work"))
-        .find(|p| p.is_file())
+}
+
+/// Whether a discovered `go.work` is the workspace Go would actually use.
+///
+/// mise finds config files by walking up from the working directory, which is also how Go
+/// finds a workspace -- but only when `GOWORK` leaves it to that search. `GOWORK=off` means
+/// a `go.work` in the tree is just a file, and `GOWORK=<file>` means some *other* `go.work`
+/// is the workspace. Reading a discovered file in either case would pin the toolchain from a
+/// workspace the `go` command is ignoring.
+///
+/// A `GOWORK=<file>` outside the directories mise reads is never discovered, so mise selects
+/// no version rather than the wrong one; pin it in `mise.toml` if that is your setup.
+fn is_active_workspace(go_work: &Path) -> bool {
+    match go_workspace() {
+        GoWorkspace::Off => false,
+        GoWorkspace::File(named) => is_named_workspace(go_work, &named),
+        GoWorkspace::Search => true,
+    }
 }
 
 /// Parse a `go.work` file into a Go version request for idiomatic version resolution.

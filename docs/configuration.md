@@ -591,8 +591,13 @@ When a `go.work` covers a directory, the `go.mod` files under it are not read at
 Go, which in workspace mode consults the `toolchain` and `go` lines in `go.work` rather than the
 member modules' `go.mod` files — so a module nested below the workspace root does not override the
 workspace's toolchain. A workspace with no `toolchain` line therefore selects no version rather than
-falling back to a member's `go.mod`. `GOWORK` works as it does for `go`: `GOWORK=off` disables
-workspace mode, and `GOWORK=<file>` names the workspace file directly.
+falling back to a member's `go.mod`.
+
+`GOWORK` picks the workspace as it does for `go`. `GOWORK=off` disables workspace mode, so `go.mod`
+decides again and a `go.work` in the tree is ignored. `GOWORK=<file>` names the workspace directly,
+so a _different_ `go.work` in the tree is ignored. A `GOWORK=<file>` outside the directories mise
+reads config from is never found, and mise selects no version rather than a wrong one — set the
+version in `mise.toml` for that setup.
 
 ### Enabling idiomatic version files
 

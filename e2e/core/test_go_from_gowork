@@ -38,8 +38,29 @@ toolchain go1.21.4
 GOMOD
 assert "mise --cd api current go" "1.24.3"
 
-# GOWORK=off turns workspace mode off, so the member module's go.mod applies again
+# GOWORK picks the workspace the same way it does for go, and it has to reach both files:
+# whichever of go.work and go.mod is not the one Go would consult must go quiet, or the two
+# answer at once and the nearer file wins by accident.
+
+# off: there is no workspace, so the member go.mod applies again...
 assert "GOWORK=off mise --cd api current go" "1.21.4"
+
+# ...and the go.work in the tree is just a file
+assert "GOWORK=off mise current go" ""
+
+# an explicit path names the workspace wherever it lives. Naming this one changes nothing,
+# including when spelled relatively.
+assert "GOWORK=$PWD/go.work mise current go" "1.24.3"
+assert "GOWORK=./go.work mise current go" "1.24.3"
+
+# naming a different workspace means the go.work in the tree is not Go's workspace file, so
+# mise selects nothing rather than pinning a toolchain go is ignoring
+mkdir -p other
+cat >other/go.work <<GOWORK
+go 1.24.0
+toolchain go1.19.9
+GOWORK
+assert "GOWORK=$PWD/other/go.work mise current go" ""
 
 # go.work's own `go` line is a floor, not the version the workspace is built with, so it
 # is not read -- including the full patch version `go work init` writes. The member go.mod
