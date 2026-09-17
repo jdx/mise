@@ -98,6 +98,31 @@ class MetadataVersion
   def major_minor_patch = self.class.new(@value.split(".")[0, 3].join("."))
 end
 
+# Homebrew's Language::* mixins (Library/Homebrew/language/*.rb). A formula
+# pulls one in from its class body, e.g. `include Language::Python::Virtualenv`
+# in qmk. That is a CONSTANT reference, so the method_missing DSL fallback does
+# not cover it: an undefined one raises NameError while the class body is still
+# being evaluated, before any metadata has been read.
+#
+# The mixins only contribute install-time helpers, and this shim reads only what
+# the class body declares, so empty modules are the right shape here.
+module Language
+  module Java; end
+  module Node
+    module Shebang; end
+  end
+  module Perl
+    module Shebang; end
+  end
+  module PHP
+    module Shebang; end
+  end
+  module Python
+    module Shebang; end
+    module Virtualenv; end
+  end
+end
+
 class Formula
   class << self
     attr_reader :source_url, :source_sha256, :explicit_version, :revision_value,
