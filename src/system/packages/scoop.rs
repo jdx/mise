@@ -416,6 +416,9 @@ impl SystemPackageManager for ScoopManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        if pkgs.is_empty() {
+            return Ok(());
+        }
         // `scoop update <app>` always moves to the bucket's current manifest
         // and has no way to hold a version, so a pinned entry is left alone
         // instead of being silently upgraded off its pin.
@@ -427,10 +430,29 @@ impl SystemPackageManager for ScoopManager {
         if unpinned.is_empty() {
             return Ok(());
         }
+        let unpinned = unpinned.into_iter().cloned().collect::<Vec<_>>();
+        // A global-only install is outside the user scope mise manages.
+        // `scoop update` without `--global` only prints that the app is not
+        // installed locally and still exits zero, so filtering these out
+        // keeps the run quiet about apps mise deliberately leaves alone.
+        let global = global_only(&unpinned, &export().await?);
+        for app in &global {
+            warn!("scoop: '{app}' is installed globally, skipping upgrade");
+        }
         let apps = unpinned
             .iter()
             .map(|pkg| app_name(&pkg.name).to_string())
+            .filter(|app| !global.contains(app))
             .collect::<Vec<_>>();
+        if apps.is_empty() {
+            return Ok(());
+        }
+        // `scoop update <app>` syncs buckets only when Scoop already considers
+        // itself outdated (`LAST_UPDATE` at least three hours old), so an
+        // upgrade inside that window would compare against a stale bucket
+        // clone and silently find nothing to do. Refresh explicitly, the way
+        // the other managers' upgrades do.
+        self.refresh(opts.dry_run).await?;
         apply(&upgrade_args(&apps), "update", opts.dry_run, &[]).await
     }
 

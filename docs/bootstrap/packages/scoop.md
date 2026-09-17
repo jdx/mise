@@ -45,7 +45,9 @@ mise matches installed state on the app name and ignores the bucket qualifier.
 
 Applying the configuration passes `--no-update-scoop` so installing a package
 does not sync Scoop and every bucket as a side effect. Use `--update` to run
-`scoop update` first; upgrade always refreshes.
+`scoop update` first. Upgrade always runs it, because `scoop update <app>` syncs
+buckets only when Scoop already considers itself outdated — within that window
+an upgrade would compare against a stale bucket clone and find nothing to do.
 
 ## Version pins
 
