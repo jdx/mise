@@ -1,0 +1,13 @@
+can you open my browser and enable these for all jdx.dev clis including packslip, but not aube for now, continue what you're doing too
+
+---
+
+setup pitchfork and usage too if you can
+
+---
+
+update the entire cli
+
+---
+
+make the PR just for mise first so i can review it
