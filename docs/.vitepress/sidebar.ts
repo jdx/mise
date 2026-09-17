@@ -134,6 +134,7 @@ export const sidebar: SidebarItem[] = [
           { text: "brew", link: "/bootstrap/packages/brew" },
           { text: "nix", link: "/bootstrap/packages/nix" },
           { text: "mas", link: "/bootstrap/packages/mas" },
+          { text: "Scoop", link: "/bootstrap/packages/scoop" },
           {
             text: "Package Plugins",
             link: "/bootstrap/packages/plugins",
