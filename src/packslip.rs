@@ -162,6 +162,135 @@ fn headers_for(url: &str) -> Result<HeaderMap> {
     }
 }
 
+/// Why a file a packslip names could not be fetched where it says it is.
+enum Unreachable {
+    /// The request failed outright — for a private repository, the 404 GitHub
+    /// answers a browser-facing release URL with.
+    Failed(eyre::Report),
+    /// The request succeeded and GitHub returned its sign-in page instead of
+    /// the file, which is the other way it refuses a private release.
+    SignIn,
+}
+
+impl Unreachable {
+    fn into_error(self, url: &str) -> eyre::Report {
+        match self {
+            Self::Failed(err) => err,
+            Self::SignIn => eyre!(
+                "GitHub answered {url} with its sign-in page instead of the file, so the token mise is using cannot read that repository"
+            ),
+        }
+    }
+}
+
+/// The authenticated endpoint to retry an unreachable GitHub download through.
+///
+/// A packslip carries the browser-facing URL of every file it signs, and GitHub
+/// refuses those for a private repository no matter which token is sent, so the
+/// asset has to be fetched from its API endpoint instead — and only the release
+/// metadata knows that endpoint. The lookup runs after the browser URL has
+/// already failed, so a public install still makes the one request it makes
+/// today and a private one pays a single extra release read rather than being
+/// unusable. It is not conditioned on the status code: the fetch did not
+/// produce the file either way, and a private repository's refusal is
+/// indistinguishable from a real 404 without asking GitHub.
+///
+/// Authentication stays transport-only. Nothing here decides what gets
+/// installed: the signature, project identity, and digest checks all run
+/// afterwards over the bytes that arrive, so an asset that no longer matches
+/// what was signed is still refused.
+async fn retry_url(url: &str, reason: &Unreachable) -> Option<String> {
+    let api_url = github::release_asset_api_url(url, false).await?;
+    match reason {
+        Unreachable::Failed(err) => {
+            debug!("{url} could not be fetched ({err}), retrying at {api_url}")
+        }
+        Unreachable::SignIn => debug!("{url} served a sign-in page, retrying at {api_url}"),
+    }
+    Some(api_url)
+}
+
+/// Whether GitHub served its sign-in page at a release URL rather than the file.
+///
+/// A private repository usually answers a browser-facing release URL with 404,
+/// but it can also return the sign-in page with a 200. A packslip names sigstore
+/// documents and binary artifacts, never an HTML document, so a page arriving
+/// from a release URL is always the refusal and never the file.
+fn is_sign_in_page(url: &str, body: &[u8]) -> bool {
+    if github::release_asset_from_url(url).is_none() {
+        return false;
+    }
+    let head = &body[..body.len().min(512)];
+    let head = String::from_utf8_lossy(head);
+    let head = head
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .to_ascii_lowercase();
+    head.starts_with("<!doctype html") || head.starts_with("<html")
+}
+
+/// The same check against a file that has just been downloaded. A file mise
+/// cannot read back is left to the digest check that follows.
+fn downloaded_sign_in_page(url: &str, dest: &Path) -> bool {
+    use std::io::Read;
+    if github::release_asset_from_url(url).is_none() {
+        return false;
+    }
+    let mut head = [0u8; 512];
+    let Ok(mut file) = std::fs::File::open(dest) else {
+        return false;
+    };
+    let Ok(read) = file.read(&mut head) else {
+        return false;
+    };
+    is_sign_in_page(url, &head[..read])
+}
+
+/// Download a file a packslip names, falling back to the authenticated GitHub
+/// release-asset endpoint when its browser URL is unreachable. See [`retry_url`].
+pub(crate) async fn download_file(
+    url: &str,
+    dest: &Path,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    let reason = match HTTP
+        .download_file_with_headers(url, dest, &headers_for(url)?, pr)
+        .await
+    {
+        Ok(()) if !downloaded_sign_in_page(url, dest) => return Ok(()),
+        Ok(()) => Unreachable::SignIn,
+        Err(err) => Unreachable::Failed(err),
+    };
+    let Some(api_url) = retry_url(url, &reason).await else {
+        return Err(reason.into_error(url));
+    };
+    HTTP.download_file_with_headers(&api_url, dest, &headers_for(&api_url)?, pr)
+        .await
+}
+
+/// Fetch a document a packslip names — a manifest or a signed release list —
+/// with the same fallback [`download_file`] uses.
+pub(crate) async fn fetch_text(url: &str) -> Result<String> {
+    let reason = match HTTP_FETCH
+        .get_text_request(url)
+        .headers(&headers_for(url)?)
+        .send()
+        .await
+    {
+        Ok(text) if !is_sign_in_page(url, text.as_bytes()) => return Ok(text),
+        Ok(_) => Unreachable::SignIn,
+        Err(err) => Unreachable::Failed(err),
+    };
+    let Some(api_url) = retry_url(url, &reason).await else {
+        return Err(reason.into_error(url));
+    };
+    HTTP_FETCH
+        .get_text_request(&api_url)
+        .headers(&headers_for(&api_url)?)
+        .send()
+        .await
+}
+
 /// Fetch the files the statement sources from separate release assets and
 /// from the source repository, so they are on disk before a shell asks for
 /// one. An asset must match the digest the statement signed; a repository
@@ -230,10 +359,7 @@ pub(crate) async fn fetch_files(
                     // The tool is installed by now and the asset is an extra:
                     // one that cannot be fetched is reported, not fatal. One
                     // that arrives with the wrong digest is another matter.
-                    if let Err(err) = HTTP
-                        .download_file_with_headers(url, &dest, &headers_for(url)?, Some(pr))
-                        .await
-                    {
+                    if let Err(err) = download_file(url, &dest, Some(pr)).await {
                         let _ = file::remove_all(&dest);
                         warn!("{}: could not fetch {name}: {err}", tv.style());
                         continue;
@@ -605,6 +731,36 @@ pub(crate) struct Skill {
     pub path: PathBuf,
 }
 
+/// A skill a packslip declares that the install does not hold. Without
+/// this, a skill that never arrived is indistinguishable from a tool that
+/// declares none, and both look like an empty `mise skills ls`.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct MissingSkill {
+    pub name: String,
+    pub tool: String,
+    pub version: String,
+    /// Why it is not there.
+    pub why: String,
+}
+
+impl std::fmt::Display for MissingSkill {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}@{} declares a skill {} that is not installed: {}",
+            self.tool, self.version, self.name, self.why
+        )
+    }
+}
+
+/// What a packslip declares: the skills the install holds, and the ones it
+/// declares that are not there.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct DeclaredSkills {
+    pub found: Vec<Skill>,
+    pub missing: Vec<MissingSkill>,
+}
+
 /// Where `sync_skills` records which links in a directory it made, so
 /// only those are ever replaced or pruned. A link's target alone would not
 /// tell a link mise made from one a person pointed into mise's installs.
@@ -648,14 +804,38 @@ fn write_sync_state(dir: &Path, state: &SyncState) -> Result<()> {
     file::write_atomic(&path, serde_json::to_string_pretty(state)?)
 }
 
-/// The skills a statement declares that are present in the install.
+/// Why a skill a packslip declares is not in the install, for a person who
+/// expected it to be. Two settings are off by default or commonly turned
+/// off, and each keeps a declared skill off disk.
+///
+/// These are settings as they are now, not a record of the install: mise
+/// keeps no history of why a skill did not arrive. So each reason states
+/// what is true today and what to do about it, and never asserts what
+/// happened at install time — the setting may have changed since.
+fn why_missing(group: &[&Resource]) -> String {
+    let settings = Settings::get();
+    if !settings.skills.fetch {
+        "skills.fetch is off; turn it on and reinstall the tool to fetch it".to_string()
+    } else if !settings.packslip.exec
+        && group
+            .iter()
+            .all(|r| matches!(r.source(), Some(ResourceSource::Exec)))
+    {
+        "it is generated by running the tool, and packslip.exec is off".to_string()
+    } else {
+        "the install does not hold it; reinstall the tool to fetch it".to_string()
+    }
+}
+
+/// The skills a statement declares that are present in the install, and
+/// the ones it declares that are not there.
 pub(crate) fn skills_of(
     statement: &Statement,
     install_path: &Path,
     tool: &str,
     version: &str,
     artifact: Option<&Artifact>,
-) -> Vec<Skill> {
+) -> DeclaredSkills {
     // A vendor may offer one skill from several sources, as completions
     // are offered; the most verifiable one that is on disk is the skill.
     let rank = |r: &Resource| match r.source() {
@@ -680,6 +860,7 @@ pub(crate) fn skills_of(
         }
     }
     let mut chosen: Vec<(usize, Skill)> = Vec::new();
+    let mut missing: Vec<MissingSkill> = Vec::new();
     for name in names {
         let mut group = applicable(
             skills
@@ -688,12 +869,18 @@ pub(crate) fn skills_of(
                 .filter(|r| skill_name(r) == Some(name)),
             artifact,
         );
+        // A skill scoped entirely to other platforms is not this install's
+        // to hold: it is absent by design, not missing.
+        if group.is_empty() {
+            continue;
+        }
         group.sort_by_key(|r| rank(r));
-        if let Some((r, path)) = group
-            .into_iter()
+        match group
+            .iter()
+            .copied()
             .find_map(|r| resource_dir(install_path, r).map(|p| (r, p)))
         {
-            chosen.push((
+            Some((r, path)) => chosen.push((
                 rank(r),
                 Skill {
                     name: name.to_string(),
@@ -701,17 +888,29 @@ pub(crate) fn skills_of(
                     version: version.to_string(),
                     path,
                 },
-            ));
+            )),
+            // Declared, and nothing on disk behind it. Silently dropping it
+            // here is what makes a skill that failed to arrive look exactly
+            // like a tool that never offered one.
+            None => missing.push(MissingSkill {
+                name: name.to_string(),
+                tool: tool.to_string(),
+                version: version.to_string(),
+                why: why_missing(&group),
+            }),
         }
     }
     chosen.sort_by_key(|(rank, _)| *rank);
-    chosen.into_iter().map(|(_, skill)| skill).collect()
+    DeclaredSkills {
+        found: chosen.into_iter().map(|(_, skill)| skill).collect(),
+        missing,
+    }
 }
 
 /// The skills of every tool active in the current directory.
-pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<Vec<Skill>> {
+pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
     let ts = config.get_toolset().await?;
-    let mut skills = Vec::new();
+    let mut skills = DeclaredSkills::default();
     for (backend, tv) in ts.list_current_installed_versions(config) {
         let install_path = tv.install_path();
         let statement = match statement(&install_path) {
@@ -727,13 +926,15 @@ pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<Vec<Skill>> {
             &install_path,
             tv.request.options().get_string("variant").as_deref(),
         );
-        skills.extend(skills_of(
+        let declared = skills_of(
             &statement,
             &install_path,
             &backend.ba().short,
             &tv.version,
             artifact.as_ref(),
-        ));
+        );
+        skills.found.extend(declared.found);
+        skills.missing.extend(declared.missing);
     }
     Ok(skills)
 }
@@ -751,19 +952,31 @@ pub(crate) fn skills_dir(root: &Path) -> PathBuf {
 /// project root there is nowhere to link into, so nothing happens.
 pub(crate) async fn auto_sync_skills(config: &Arc<Config>) {
     let settings = Settings::get();
-    if !settings.skills.auto_sync {
-        return;
-    }
     let Some(root) = &config.project_root else {
         return;
     };
+    if !settings.skills.auto_sync {
+        hint_skills(config).await;
+        return;
+    }
     let dir = skills_dir(root);
     let result = async {
         let skills = active_skills(config).await?;
-        if skills.is_empty() && !settings.skills.prune {
+        // Reported, not warned: this runs after every install, and a skill
+        // that is missing on purpose must not nag on each one. `mise skills
+        // ls` is where someone asks the question, and it warns.
+        for missing in &skills.missing {
+            debug!("{missing}");
+        }
+        if skills.found.is_empty() && !settings.skills.prune {
             return Ok(SyncReport::default());
         }
-        sync_skills(&dir, &skills, &crate::dirs::INSTALLS, settings.skills.prune)
+        sync_skills(
+            &dir,
+            &skills.found,
+            &crate::dirs::INSTALLS,
+            settings.skills.prune,
+        )
     }
     .await;
     match result {
@@ -780,6 +993,26 @@ pub(crate) async fn auto_sync_skills(config: &Arc<Config>) {
         }
         Err(err) => warn!("could not sync skills into {}: {err}", dir.display()),
     }
+}
+
+/// A tool may ship an agent skill that nothing links anywhere until
+/// `mise skills sync` runs, and with `skills.auto_sync` off nothing ever
+/// says so. Mention it once, and only when there is a skill to link.
+async fn hint_skills(config: &Arc<Config>) {
+    if !crate::hint::hint_would_display("skills") {
+        return;
+    }
+    let Ok(skills) = active_skills(config).await else {
+        return;
+    };
+    if skills.found.is_empty() {
+        return;
+    }
+    hint!(
+        "skills",
+        "the active tools ship agent skills; link them into this project with",
+        "mise skills sync"
+    );
 }
 
 /// What [`sync_skills`] did.
@@ -1545,6 +1778,80 @@ Register-ArgumentCompleter -Native -CommandName '{tool}' -ScriptBlock $function:
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn test_fetch_text_returns_the_body_of_a_reachable_url() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/packslip.sigstore.json")
+            .with_status(200)
+            .with_body("{}")
+            .create_async()
+            .await;
+        let url = format!("{}/packslip.sigstore.json", server.url());
+        assert_eq!(fetch_text(&url).await.unwrap(), "{}");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_text_surfaces_the_failure_of_a_url_with_no_github_fallback() {
+        // Nothing but a github.com release download has an API asset endpoint to
+        // retry at, so the original error is what the caller sees.
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/packslip.sigstore.json")
+            .with_status(404)
+            .create_async()
+            .await;
+        let url = format!("{}/packslip.sigstore.json", server.url());
+        let err = fetch_text(&url).await.unwrap_err();
+        assert!(
+            crate::http::error_code(&err) == Some(404),
+            "expected a 404, got {err:#}"
+        );
+        mock.assert_async().await;
+    }
+
+    #[test]
+    fn test_sign_in_page_is_recognized_only_at_a_github_release_url() {
+        const RELEASE: &str = "https://github.com/o/r/releases/download/v1/t.tar.gz";
+        const PAGE: &[u8] = b"<!DOCTYPE html>\n<html lang=\"en\">";
+        assert!(is_sign_in_page(RELEASE, PAGE));
+        assert!(is_sign_in_page(RELEASE, b"  \n<html>"));
+        // A signed manifest is JSON and an artifact is an archive; neither is
+        // a page, so neither is mistaken for one.
+        assert!(!is_sign_in_page(
+            RELEASE,
+            br#"{"payloadType":"application"}"#
+        ));
+        assert!(!is_sign_in_page(RELEASE, &[0x1f, 0x8b, 0x08, 0x00]));
+        // Elsewhere there is no API endpoint to retry at, and a publisher is
+        // free to serve whatever it signed.
+        assert!(!is_sign_in_page(
+            "https://tool.example.com/packslip.json",
+            PAGE
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_download_file_writes_a_reachable_url_to_disk() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/tool.tar.gz")
+            .with_status(200)
+            .with_body("payload")
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("tool.tar.gz");
+        let url = format!("{}/tool.tar.gz", server.url());
+        download_file(&url, &dest, None).await.unwrap();
+        assert_eq!(file::read_to_string(&dest).unwrap(), "payload");
+        mock.assert_async().await;
+    }
+
     fn statement_with(resources: &str) -> Statement {
         let json = format!(
             r#"{{"_type":"https://in-toto.io/Statement/v1","subject":[{{"name":"t-linux-x64.tar.xz","digest":{{"sha256":"{a}"}}}},{{"name":"t-skill.tar.gz","digest":{{"sha256":"{b}"}}}}],"predicateType":"https://packslip.dev/release/v1","predicate":{{"project":"github.com/o/r","version":"1.0.0","published_at":"2026-09-01T00:00:00Z","source":{{"repo":"https://github.com/o/r","commit":"{c}"}},"artifacts":[{{"name":"t-linux-x64.tar.xz","os":"linux","arch":"x86_64","libc":"gnu","size":5,"format":"tar.xz","bin":["t","u"]}}],"resources":{resources},"identity":{{"scheme":"sigstore-oidc","key_id":"https://github.com/o/r/.github/workflows/r.yml@refs/tags/v1","issuer":"https://token.actions.githubusercontent.com"}}}}}}"#,
@@ -1887,12 +2194,22 @@ mod tests {
         std::fs::create_dir_all(root.join("empty")).unwrap();
         let fallback = root.join(RESOURCES_DIR).join("repo/skills/t");
         std::fs::create_dir_all(&fallback).unwrap();
+        let declared = skills_of(&s, root, "tool", "1", Some(&s.predicate.artifacts[0]));
         assert!(
-            skills_of(&s, root, "tool", "1", Some(&s.predicate.artifacts[0])).is_empty(),
+            declared.found.is_empty(),
             "neither directory holds a skill yet"
         );
+        assert_eq!(
+            declared
+                .missing
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
+            ["t", "other"],
+            "a declared skill with nothing on disk is reported, not dropped"
+        );
         std::fs::write(fallback.join("SKILL.md"), "# t").unwrap();
-        let skills = skills_of(&s, root, "tool", "1", Some(&s.predicate.artifacts[0]));
+        let skills = skills_of(&s, root, "tool", "1", Some(&s.predicate.artifacts[0])).found;
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].path, fallback);
     }
@@ -2021,9 +2338,18 @@ mod tests {
             .map(|r| r.asset.as_deref().or(r.archive.as_deref()))
             .collect();
         assert_eq!(selected, [Some("t-skill.tar.gz")]);
+        let declared = skills_of(&s, root, "tool", "1", Some(&linux));
         assert!(
-            skills_of(&s, root, "tool", "1", Some(&linux)).is_empty(),
+            declared.found.is_empty(),
             "the scoped skill is the skill, and it is not on disk yet"
+        );
+        assert_eq!(
+            declared
+                .missing
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
+            ["t"],
         );
         // With nothing scoped fitting, the shipped one applies as it always did.
         let mut windows = linux.clone();
@@ -2031,6 +2357,7 @@ mod tests {
         windows.libc = None;
         assert_eq!(
             skills_of(&s, root, "tool", "1", Some(&windows))
+                .found
                 .iter()
                 .map(|s| s.path.clone())
                 .collect::<Vec<_>>(),
@@ -2171,7 +2498,17 @@ mod tests {
         escape.name = Some("../escape".into());
         s.predicate.resources.push(escape);
         let host = s.predicate.artifacts[0].clone();
-        let skills = skills_of(&s, root, "tool", "1", Some(&host));
+        let declared = skills_of(&s, root, "tool", "1", Some(&host));
+        assert_eq!(
+            declared
+                .missing
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
+            ["generated", "missing"],
+            "a skill declared for this platform with nothing behind it is reported; another platform's skill is not missing, it does not apply here"
+        );
+        let skills = declared.found;
         assert_eq!(
             skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
             ["t", "here", "packed", "fromrepo"],

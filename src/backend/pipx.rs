@@ -1,3 +1,5 @@
+mod lock;
+
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
@@ -40,6 +42,7 @@ use versions::Versioning;
 use xx::regex;
 
 const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
+const UV_WITH_EXECUTABLES_FROM_VERSION: &str = "0.8.5";
 
 #[derive(Debug)]
 pub(crate) struct PIPXBackend {
@@ -62,6 +65,109 @@ impl<'a> PipxOptions<'a> {
         self.values.comma_joined("extras")
     }
 
+    fn string_list(&self, key: &str) -> Result<Vec<String>> {
+        let Some(value) = self.values.raw().opts.get(key) else {
+            return Ok(Vec::new());
+        };
+        let values = match value {
+            toml::Value::String(value) => {
+                if value.trim_start().starts_with('[') {
+                    serde_json::from_str(value)
+                        .map_err(|_| eyre!("{key} must be a string or array of strings"))?
+                } else {
+                    vec![value.clone()]
+                }
+            }
+            toml::Value::Array(values) => values
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| eyre!("{key} must be a string or array of strings"))
+                })
+                .collect::<Result<Vec<_>>>()?,
+            _ => bail!("{key} must be a string or array of strings"),
+        };
+        if values.iter().any(|value| value.trim().is_empty()) {
+            bail!("{key} cannot contain empty values");
+        }
+        Ok(values)
+    }
+
+    fn with(&self) -> Result<Vec<String>> {
+        self.string_list("with")
+    }
+
+    fn expose(&self) -> Result<Vec<String>> {
+        self.string_list("expose")
+    }
+
+    fn exposed_package_names(&self) -> Result<Vec<String>> {
+        self.expose()?
+            .into_iter()
+            .map(|requirement| {
+                let Some(name) = Self::requirement_package_name(&requirement) else {
+                    bail!("expose must contain named Python package requirements");
+                };
+                Ok(name.to_string())
+            })
+            .collect()
+    }
+
+    fn requirement_package_name(requirement: &str) -> Option<&str> {
+        let name = requirement
+            .trim()
+            .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')))
+            .next()
+            .unwrap_or_default();
+        (!name.is_empty()).then_some(name)
+    }
+
+    fn dependency_prereleases(&self) -> Result<Option<&'a str>> {
+        let value = match self.values.raw().opts.get("dependency_prereleases") {
+            Some(toml::Value::String(value)) => Some(value.as_str()),
+            Some(_) => bail!("dependency_prereleases must be a string"),
+            None => None,
+        };
+        if value.is_some_and(|value| {
+            !matches!(value, "disallow" | "allow" | "if-necessary" | "explicit")
+        }) {
+            bail!("dependency_prereleases must be disallow, allow, if-necessary, or explicit");
+        }
+        Ok(value)
+    }
+
+    fn has_uv_only_options(&self) -> Result<bool> {
+        Ok(!self.with()?.is_empty()
+            || !self.expose()?.is_empty()
+            || self.dependency_prereleases()?.is_some())
+    }
+
+    fn validate_semantic(&self) -> Result<()> {
+        self.with()?;
+        self.exposed_package_names()?;
+        self.dependency_prereleases()?;
+        if self.has_uv_only_options()? && self.uvx_disabled() {
+            bail!("with, expose, and dependency_prereleases cannot be combined with uvx = false");
+        }
+        Ok(())
+    }
+
+    fn uv_install_args(&self) -> Result<Vec<String>> {
+        let mut args = Vec::new();
+        for requirement in self.with()? {
+            args.extend(["--with".to_string(), requirement]);
+        }
+        for package in self.expose()? {
+            args.extend(["--with-executables-from".to_string(), package]);
+        }
+        if let Some(value) = self.dependency_prereleases()? {
+            args.extend(["--prerelease".to_string(), value.to_string()]);
+        }
+        Ok(args)
+    }
+
     fn package_name(&self) -> Option<&'a str> {
         self.values.str("package_name")
     }
@@ -82,20 +188,27 @@ impl<'a> PipxOptions<'a> {
         self.values.raw().get_string("uvx").as_deref() == Some("false")
     }
 
-    fn lockfile_options(&self) -> BTreeMap<String, String> {
+    fn lockfile_options(&self) -> Result<BTreeMap<String, String>> {
         let mut result = BTreeMap::new();
         if let Some(value) = self.extras() {
             result.insert("extras".to_string(), value);
         }
+        for key in ["with", "expose"] {
+            let values = self.string_list(key)?;
+            if !values.is_empty() {
+                result.insert(key.to_string(), serde_json::to_string(&values)?);
+            }
+        }
         for key in install_time_option_keys() {
-            if key == "extras" {
+            if matches!(key.as_str(), "extras" | "with" | "expose") {
                 continue;
             }
             if let Some(value) = self.values.raw().get_string(&key) {
                 result.insert(key, value);
             }
         }
-        result
+        self.validate_semantic()?;
+        Ok(result)
     }
 }
 
@@ -114,6 +227,14 @@ impl Backend for PIPXBackend {
         // and pipx_cmd relies on dependency_toolset to put python ahead of
         // any system python on PATH.
         Ok(vec!["pipx", "python"])
+    }
+
+    fn get_dependencies_for(&self, opts: &ToolVersionOptions) -> eyre::Result<Vec<&str>> {
+        if PipxOptions::new(opts).has_uv_only_options()? {
+            Ok(vec!["uv", "python"])
+        } else {
+            self.get_dependencies()
+        }
     }
 
     fn get_optional_dependencies(&self) -> eyre::Result<Vec<&str>> {
@@ -300,7 +421,118 @@ impl Backend for PIPXBackend {
         Ok(versions::SemVer::new(version).map(|_| version.to_string()))
     }
 
+    async fn prepare_install_version(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<ToolVersion> {
+        let request_options = tv.request.options();
+        PipxOptions::new(&request_options).validate_semantic()?;
+        if let Some(lock) = &tv.uv_lock {
+            let lock = if !ctx.locked && lock.load().is_err() {
+                lock.refresh()?
+            } else {
+                lock.clone()
+            };
+            self.validate_uv_lock(&tv, lock.load()?)?;
+            tv.uv_lock = Some(lock);
+        } else if self.uv_lock_allowed(&tv) {
+            let revision = if tv.resolved_from_lockfile() {
+                crate::lockfile::version_for_request(&ctx.config, &tv.request)?
+            } else {
+                None
+            };
+            let graph_required = revision.is_some_and(|v| v >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
+            if graph_required {
+                if !self.uv_lock_options_supported(&tv) {
+                    if ctx.locked {
+                        self.validate_lock_options(&tv)?;
+                    }
+                    warn!(
+                        "{} dependency graph skipped because uvx_args or pipx_args are configured; installing with version-only resolution",
+                        self.ba.short
+                    );
+                    return Ok(tv);
+                }
+                if ctx.locked {
+                    bail!(
+                        "{} has no uv dependency graph; run `mise lock`",
+                        self.ba.short
+                    );
+                }
+                if self
+                    .spawnable_dependency(&ctx.config, Some(&ctx.ts), "uv")
+                    .await
+                    .is_none()
+                {
+                    return Ok(tv);
+                }
+                if let Some(version) = tv.uv_install_path_version().map(str::to_owned) {
+                    tv.version = version;
+                }
+                match self.resolve_uv_lock(&ctx.config, &tv).await {
+                    Ok(lock) => tv.uv_lock = Some(lock),
+                    Err(error) => {
+                        warn!(
+                            "{} dependency graph unavailable; installing with version-only resolution: {error}",
+                            self.ba.short
+                        );
+                        return Ok(tv);
+                    }
+                }
+            }
+        }
+        if tv.uv_lock.is_some() {
+            self.bind_uv_python(&ctx.config, &mut tv).await?;
+        }
+        Ok(tv)
+    }
+
+    async fn is_install_satisfied(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        check_symlink: bool,
+    ) -> Result<bool> {
+        if tv.uv_lock.is_some() {
+            if tv.uv_python.is_none() {
+                return Ok(false);
+            }
+        } else if self.uv_lock_allowed(tv) {
+            let revision = if tv.resolved_from_lockfile() {
+                crate::lockfile::version_for_request(config, &tv.request)?
+            } else {
+                None
+            };
+            let graph_required = revision.is_some_and(|v| v >= 2)
+                || (!tv.resolved_from_lockfile() && Settings::get().lockfile_creation_enabled());
+            let locked = config.invocation_locked_for(tv.request.source(), Settings::get().locked)
+                || tv.request.tool_config_locked(config, true);
+            if graph_required {
+                if !locked && self.is_version_installed(config, tv, check_symlink) {
+                    return Ok(true);
+                }
+                if locked
+                    || (!self.uv_lock_options_supported(tv)
+                        || self
+                            .spawnable_dependency(config, None, "uv")
+                            .await
+                            .is_some())
+                {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(self.is_version_installed(config, tv, check_symlink))
+    }
+
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        if tv.uv_lock.is_some() {
+            self.install_uv_lock(ctx, &tv).await?;
+            return Ok(tv);
+        }
+
         let request_options = tv.request.options();
         let options = PipxOptions::new(&request_options);
 
@@ -312,13 +544,19 @@ impl Backend for PIPXBackend {
         // at process creation; treating it as absent falls through to pipx, which either
         // works or reports the install instructions below. The branch only changes in the
         // case where the branch it would have taken cannot run.
-        let uvx_allowed = Settings::get().pipx.uvx != Some(false) && !options.uvx_disabled();
+        let uvx_allowed = Settings::get().pypi.uvx != Some(false) && !options.uvx_disabled();
         let uv_program = if uvx_allowed {
             self.spawnable_dependency(&ctx.config, Some(&ctx.ts), "uv")
                 .await
         } else {
             None
         };
+        if options.has_uv_only_options()? && uv_program.is_none() {
+            bail!(
+                "{} semantic options (`with`, `expose`, and `dependency_prereleases`) require uv; install uv and ensure uvx is enabled",
+                self.ba.short
+            );
+        }
         let pipx_available = if uv_program.is_none() {
             self.spawnable_dependency(&ctx.config, Some(&ctx.ts), "pipx")
                 .await
@@ -341,7 +579,7 @@ impl Backend for PIPXBackend {
                 let reason = if options.uvx_disabled() {
                     "this package sets `uvx = false`"
                 } else {
-                    "uvx is disabled by the `pipx.uvx` setting"
+                    "uvx is disabled by the `pypi.uvx` setting"
                 };
                 format!(
                     "This package is installed with pipx because {reason}, so uv/uvx cannot be \
@@ -385,6 +623,7 @@ impl Backend for PIPXBackend {
 
         if let Some(uv_program) = uv_program {
             let package_request = request.uvx_request(&tv.version, &options);
+            self.ensure_uv_supports_expose(ctx, &options).await?;
             self.warn_if_uv_may_not_support_exclude_newer(ctx).await;
             ctx.pr
                 .set_message(format!("uv tool install {package_request}"));
@@ -399,6 +638,7 @@ impl Backend for PIPXBackend {
             )
             .await?;
             cmd = cmd.args(Self::uv_exclude_newer_args(ctx.before_date));
+            cmd = cmd.args(options.uv_install_args()?);
             if let Some(args) = options.uvx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
@@ -476,7 +716,7 @@ impl Backend for PIPXBackend {
         _target: &PlatformTarget,
     ) -> Result<BTreeMap<String, String>> {
         let opts = request.options();
-        Ok(PipxOptions::new(&opts).lockfile_options())
+        PipxOptions::new(&opts).lockfile_options()
     }
 }
 
@@ -484,6 +724,9 @@ impl Backend for PIPXBackend {
 pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "extras".into(),
+        "with".into(),
+        "expose".into(),
+        "dependency_prereleases".into(),
         "package_name".into(),
         "pipx_args".into(),
         "uvx_args".into(),
@@ -559,14 +802,18 @@ impl PIPXBackend {
             .captures_iter(html)
             .filter_map(|cap| {
                 let href = cap.get(1)?.as_str();
-                let path = href.split(['?', '#']).next()?;
-                let filename = path.rsplit('/').next()?;
-                let filename = urlencoding::decode(filename).ok()?;
+                let filename = Self::distribution_filename_from_url(href)?;
 
                 Self::version_from_distribution_filename(package, &filename)
             })
             .unique()
             .collect()
+    }
+
+    fn distribution_filename_from_url(href: &str) -> Option<String> {
+        let path = href.split(['?', '#']).next()?;
+        let filename = path.rsplit('/').next()?;
+        Some(urlencoding::decode(filename).ok()?.into_owned())
     }
 
     fn version_from_distribution_filename(package: &str, filename: &str) -> Option<String> {
@@ -707,7 +954,11 @@ impl PIPXBackend {
     }
 
     fn get_index_url() -> eyre::Result<String> {
-        let registry_url = Settings::get().pipx.registry_url.clone();
+        let registry_url = Settings::get()
+            .pypi
+            .registry_url
+            .clone()
+            .unwrap_or_else(|| "https://pypi.org/pypi/{}/json".to_string());
 
         // Remove {} placeholders and trailing slashes
         let mut url = registry_url
@@ -748,7 +999,13 @@ impl PIPXBackend {
         let registry_url = options
             .registry_url()
             .map(str::to_owned)
-            .unwrap_or_else(|| Settings::get().pipx.registry_url.clone());
+            .unwrap_or_else(|| {
+                Settings::get()
+                    .pypi
+                    .registry_url
+                    .clone()
+                    .unwrap_or_else(|| "https://pypi.org/pypi/{}/json".to_string())
+            });
 
         debug!("Pipx registry URL: {}", registry_url);
 
@@ -763,7 +1020,11 @@ impl PIPXBackend {
         Ok(registry_url)
     }
 
-    pub(crate) async fn reinstall_all(config: &Arc<Config>) -> Result<()> {
+    pub(crate) async fn reinstall_all(
+        config: &Arc<Config>,
+        invocation_locked: bool,
+        use_locked_version: bool,
+    ) -> Result<()> {
         let ts = Arc::new(ToolsetBuilder::new().build(config).await?);
         let pipx_tools = ts
             .list_installed_versions(config)
@@ -772,6 +1033,8 @@ impl PIPXBackend {
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
             .collect_vec();
         for (b, tv) in pipx_tools {
+            let locked = config.invocation_locked_for(tv.request.source(), invocation_locked)
+                || tv.request.tool_config_locked(config, use_locked_version);
             let ctx = InstallContext {
                 config: config.clone(),
                 ts: ts.clone(),
@@ -780,7 +1043,8 @@ impl PIPXBackend {
                     .into(),
                 force: true,
                 dry_run: false,
-                locked: false,
+                explicit_yes: false,
+                locked,
                 before_date: None,
                 dependency_context: Default::default(),
             };
@@ -853,20 +1117,47 @@ impl PIPXBackend {
                 .await
         else {
             warn!(
-                "minimum_release_age is set for pipx:{} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pipx.html",
-                self.tool_name(),
+                "minimum_release_age is set for {} but could not determine uv version required to verify --exclude-newer support. Release-age filtering for transitive dependencies may not work as expected. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
+                self.ba.short,
             );
             return;
         };
 
         if semver_is_older_than(&version, UV_EXCLUDE_NEWER_VERSION).unwrap_or(false) {
             warn!(
-                "minimum_release_age is set for pipx:{} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pipx.html",
-                self.tool_name(),
-                version,
-                UV_EXCLUDE_NEWER_VERSION,
+                "minimum_release_age is set for {} but uv@{} is older than the documented minimum uv@{} required for --exclude-newer. Older versions may fail while processing the forwarded argument. See https://mise.jdx.dev/dev-tools/backends/pypi.html",
+                self.ba.short, version, UV_EXCLUDE_NEWER_VERSION,
             );
         }
+    }
+
+    async fn ensure_uv_supports_expose(
+        &self,
+        ctx: &InstallContext,
+        options: &PipxOptions<'_>,
+    ) -> Result<()> {
+        if options.expose()?.is_empty() {
+            return Ok(());
+        }
+        let Some(version) =
+            crate::backend::semver_version_from_toolsets_or_path(self, &ctx.config, &ctx.ts, "uv")
+                .await
+        else {
+            bail!(
+                "{} expose requires uv@{} or newer, but the installed uv version could not be determined",
+                self.ba.short,
+                UV_WITH_EXECUTABLES_FROM_VERSION
+            );
+        };
+        if semver_is_older_than(&version, UV_WITH_EXECUTABLES_FROM_VERSION).unwrap_or(false) {
+            bail!(
+                "{} expose requires uv@{} or newer, but uv@{} is installed",
+                self.ba.short,
+                UV_WITH_EXECUTABLES_FROM_VERSION,
+                version
+            );
+        }
+        Ok(())
     }
 }
 
@@ -1153,6 +1444,7 @@ mod tests {
     use super::{
         PIPXBackend, PipxOptions, PipxRequest, PypiPackage, PypiRelease, UV_EXCLUDE_NEWER_VERSION,
     };
+    use crate::backend::Backend;
     use crate::github::GithubRelease;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
@@ -1449,6 +1741,21 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         );
     }
 
+    #[tokio::test]
+    async fn semantic_uv_options_make_uv_the_required_backend_dependency() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let backend = PIPXBackend::from_arg("pipx:black[with=['click']]".into());
+        assert_eq!(
+            backend
+                .get_all_dependencies(false)
+                .unwrap()
+                .into_iter()
+                .map(|ba| ba.short)
+                .collect::<Vec<_>>(),
+            vec!["uv", "python"]
+        );
+    }
+
     #[test]
     fn test_extras_accepts_string_or_array() {
         let mut string_opts = ToolVersionOptions::default();
@@ -1463,6 +1770,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         assert_eq!(
             PipxOptions::new(&string_opts)
                 .lockfile_options()
+                .unwrap()
                 .get("extras"),
             Some(&"postgres,s3".to_string())
         );
@@ -1488,9 +1796,84 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         assert_eq!(
             PipxOptions::new(&array_opts)
                 .lockfile_options()
+                .unwrap()
                 .get("extras"),
             Some(&"postgres,s3".to_string())
         );
+    }
+
+    #[test]
+    fn test_semantic_uv_options_accept_arrays_and_build_args() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "with".to_string(),
+            toml::Value::Array(vec![
+                toml::Value::String("pip".to_string()),
+                toml::Value::String("plugin>=1,<2".to_string()),
+            ]),
+        );
+        opts.opts.insert(
+            "expose".to_string(),
+            toml::Value::Array(vec![toml::Value::String("plugin>=1".to_string())]),
+        );
+        opts.opts.insert(
+            "dependency_prereleases".to_string(),
+            toml::Value::String("allow".to_string()),
+        );
+        let opts = PipxOptions::new(&opts);
+
+        assert_eq!(
+            opts.uv_install_args().unwrap(),
+            [
+                "--with",
+                "pip",
+                "--with",
+                "plugin>=1,<2",
+                "--with-executables-from",
+                "plugin>=1",
+                "--prerelease",
+                "allow",
+            ]
+        );
+        let locked = opts.lockfile_options().unwrap();
+        assert_eq!(locked.get("with").unwrap(), r#"["pip","plugin>=1,<2"]"#);
+        assert_eq!(locked.get("expose").unwrap(), r#"["plugin>=1"]"#);
+        assert_eq!(locked.get("dependency_prereleases").unwrap(), "allow");
+    }
+
+    #[test]
+    fn test_semantic_uv_options_reject_invalid_values() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts.insert(
+            "dependency_prereleases".to_string(),
+            toml::Value::String("sometimes".to_string()),
+        );
+        assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+
+        opts.opts.insert(
+            "dependency_prereleases".to_string(),
+            toml::Value::String("allow".to_string()),
+        );
+        opts.opts.insert(
+            "with".to_string(),
+            toml::Value::Array(vec![toml::Value::Integer(1)]),
+        );
+        assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+    }
+
+    #[test]
+    fn empty_semantic_uv_options_allow_pipx() {
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("with".to_string(), toml::Value::Array(vec![]));
+        opts.opts
+            .insert("expose".to_string(), toml::Value::Array(vec![]));
+        opts.opts
+            .insert("uvx".to_string(), toml::Value::Boolean(false));
+
+        let opts = PipxOptions::new(&opts);
+        assert!(!opts.has_uv_only_options().unwrap());
+        opts.validate_semantic().unwrap();
     }
 
     #[test]
@@ -1540,7 +1923,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             "git+https://github.com/psf/black-repository.git@24.3.0#egg=black[jupyter]"
         );
         assert_eq!(
-            named_opts.lockfile_options().get("package_name"),
+            named_opts.lockfile_options().unwrap().get("package_name"),
             Some(&"black".to_string())
         );
     }

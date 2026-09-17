@@ -471,7 +471,7 @@ impl TestTool {
         }
         let expected = if contains_template_syntax(expected) {
             let mut ctx = config.tera_ctx.clone();
-            ctx.insert("version", &tv.version);
+            ctx.insert("version", tv.display_version());
             let mut tera = get_tera(dirs::CWD.as_ref().map(|d| d.as_path()));
             render_str(&mut tera, expected, &ctx)?
         } else {

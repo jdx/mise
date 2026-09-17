@@ -15,7 +15,7 @@ Without `--to`, each path returns to its most recent saved version that
 differs from what is on disk; unrelated checkpoints never influence the
 choice. With `--to <ref>`, the named checkpoint is the source, and
 `--all` selects everything it covers. The current state is saved in a
-protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
+protective checkpoint first, so `mise dot undo` can reverse it.
 
 ## Arguments
 - **`[PATH]…`** — Paths to roll back (files or directories)
@@ -31,9 +31,9 @@ protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
 Examples:
 
 ```
-mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua
-mise bootstrap dotfiles rollback ~/.zshrc --to 42
-mise bootstrap dotfiles rollback --to latest~3 --all --dry-run
+mise dot rollback ~/.config/hypr/bindings.lua
+mise dot rollback ~/.zshrc --to 42
+mise dot rollback --to latest~3 --all --dry-run
 ```
 
 <!-- generated reference navigation -->

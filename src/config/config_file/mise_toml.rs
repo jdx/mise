@@ -1553,6 +1553,20 @@ impl ConfigFile for MiseToml {
                         crate::backend::backend_type::BackendType::Http
                             | crate::backend::backend_type::BackendType::S3
                     );
+                    // `install_env` is a typed core option, so it never reaches the
+                    // `opts` loop below and its values went to the installer
+                    // unrendered — `{{ env.HOME }}` arrived literally, unlike every
+                    // other tool option (#13306). Render it here, with `version`
+                    // bound to itself so the placeholder still round-trips: core
+                    // options are deliberately exempt from the backend `{version}`
+                    // normalization, and nothing renders `install_env` again later.
+                    let mut install_env_context = context.clone();
+                    install_env_context.insert("version", "{{version}}");
+                    for value in options.core.install_env.values_mut() {
+                        if let EnvValue::String(s) = value {
+                            *s = self.parse_template_with_context(&install_env_context, s)?;
+                        }
+                    }
                     for (k, v) in options.opts.iter_mut() {
                         self.parse_tool_option_value_template(
                             &opts_context,
@@ -3751,6 +3765,9 @@ mod tests {
                         env: vec![],
                         adopt: None,
                         state: crate::system::PackageDesiredStateTomlConfig::Present,
+                        url: None,
+                        sha256: None,
+                        artifact: None,
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",
@@ -3841,6 +3858,48 @@ mod tests {
             Some(&EnvValue::String("{{version}}".to_string()))
         );
         assert_eq!(opts.get("url"), Some("https://example.com/{version}"));
+        file::remove_file(&p).unwrap();
+    }
+
+    /// `install_env` is the documented way to give a tool an environment for its
+    /// download, install, and verification steps, but as a core option it skipped
+    /// the tool-option template pass and its values reached the installer raw.
+    /// See: <https://github.com/jdx/mise/discussions/13306>
+    #[tokio::test]
+    async fn test_install_env_renders_templates() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            r#"
+        [env]
+        COMPAT_LIB_DIR = "/opt/curses-narrow-compat"
+
+        [tools]
+        node = { version = "1.0.0", install_env = { LD_LIBRARY_PATH = "{{env.COMPAT_LIB_DIR}}", KEEP = "{{version}}" } }
+        "#,
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let opts = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "node")
+            .and_then(|(_, reqs)| reqs.first())
+            .unwrap()
+            .options();
+
+        assert_eq!(
+            opts.install_env.get("LD_LIBRARY_PATH"),
+            Some(&EnvValue::String("/opt/curses-narrow-compat".to_string()))
+        );
+        // Nothing renders install_env again, so the version placeholder is left
+        // as written rather than normalized the way backend options are.
+        assert_eq!(
+            opts.install_env.get("KEEP"),
+            Some(&EnvValue::String("{{version}}".to_string()))
+        );
         file::remove_file(&p).unwrap();
     }
 
@@ -4848,7 +4907,7 @@ run = "cargo build"
     #[tokio::test]
     async fn test_table_syntax_preserves_registry_defaults() {
         // Test for #8039: table syntax like `ansible = { version = "latest" }`
-        // should preserve registry defaults (e.g. uvx=false, pipx_args=--include-deps)
+        // should preserve registry defaults (e.g. expose=["ansible-core"]).
         let _config = Config::get().await.unwrap();
         let cf = parse(formatdoc! {r#"
             [tools]
@@ -4864,20 +4923,15 @@ run = "cargo build"
             .expect("ansible should be in tool request set");
         let opts = ansible_requests[0].options();
         assert_eq!(
-            opts.get_string("uvx").as_deref(),
-            Some("false"),
-            "registry default uvx=false should be preserved with table syntax"
-        );
-        assert_eq!(
-            opts.get("pipx_args"),
-            Some("--include-deps"),
-            "registry default pipx_args=--include-deps should be preserved with table syntax"
+            opts.opts.get("expose").and_then(toml::Value::as_array),
+            Some(&vec![toml::Value::String("ansible-core".to_string())]),
+            "registry default expose should be preserved with table syntax"
         );
 
         // Also verify that user-provided options override registry defaults
         let cf2 = parse(formatdoc! {r#"
             [tools]
-            ansible = {{ version = "latest", uvx = "true" }}
+            ansible = {{ version = "latest", expose = ["custom-core"] }}
         "#});
         let trs2 = cf2.to_tool_request_set().unwrap();
         let ansible2 = trs2
@@ -4888,14 +4942,27 @@ run = "cargo build"
             .expect("ansible should be in tool request set");
         let opts2 = ansible2[0].options();
         assert_eq!(
-            opts2.get_string("uvx").as_deref(),
-            Some("true"),
-            "user-provided uvx=true should override registry default uvx=false"
+            opts2.opts.get("expose").and_then(toml::Value::as_array),
+            Some(&vec![toml::Value::String("custom-core".to_string())]),
+            "user-provided expose should override the registry default"
         );
+
+        let cf3 = parse(formatdoc! {r#"
+            [tools]
+            ansible = {{ version = "latest", uvx = false, expose = [] }}
+        "#});
+        let trs3 = cf3.to_tool_request_set().unwrap();
+        let ansible3 = trs3
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "ansible")
+            .map(|(_, reqs)| reqs)
+            .expect("ansible should be in tool request set");
+        let opts3 = ansible3[0].options();
         assert_eq!(
-            opts2.get("pipx_args"),
-            Some("--include-deps"),
-            "non-overridden registry default pipx_args should still be preserved"
+            opts3.opts.get("expose").and_then(toml::Value::as_array),
+            Some(&vec![]),
+            "an empty user-provided expose should clear the registry default"
         );
     }
 

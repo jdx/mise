@@ -15,8 +15,8 @@ use crate::ui::prompt;
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles edit --apply ~/.config/starship.toml"###
+        r###"mise dot edit ~/.zshrc
+mise dot edit --apply ~/.config/starship.toml"###
     )
 )]
 pub(crate) struct DotfilesEdit {
@@ -184,7 +184,7 @@ async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
             dry_run: false,
             verbose: false,
             force: false,
-            force_hint: "use `mise bootstrap dotfiles apply --force`",
+            force_hint: "use `mise dot apply --force`",
             yes: true,
         };
         system::files::apply(&config, &files, &opts, &secrets)?;

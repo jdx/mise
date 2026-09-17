@@ -16,6 +16,13 @@
       "enabled": false
     },
     {
+      "description": "fedora major bumps only take effect when the rpm/copr images are rebuilt at release time, so a broken base image surfaces mid-release rather than in PR CI (see the fedora 40 rollback in 8184bc9). Bump manually against the release path; digest updates stay enabled.",
+      "matchPackageNames": ["fedora"],
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "matchPackageNames": ["taiki-e/install-action"],
       "matchManagers": ["github-actions"],
       "enabled": false

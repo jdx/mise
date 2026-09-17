@@ -1,0 +1,12 @@
+bins = ["nubr"]
+description = "Run TypeScript on Node.js - the Nub project's runner for a file, a package.json script, or an installed bin, on plain Node"
+test = { cmd = "nubr --version", expected = "{{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "npm:@nubjs/runner"
+
+[backends.options]
+# Curated registry entry: the package is newly published and below aube's
+# download threshold, and the registry entry is the popularity decision.
+allow_low_downloads = true

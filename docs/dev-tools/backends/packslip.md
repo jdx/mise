@@ -60,6 +60,25 @@ signed release list and an explicit [signer configuration](#pubkey).
 For bundle filenames, discovery URLs, and monorepo identity rules, see
 [project discovery](/dev-tools/packslip-verification.html#project-discovery).
 
+### Private GitHub repositories {#private-repositories}
+
+A private repository works with the same credentials the [`github:`
+backend](/dev-tools/github-tokens.html) uses — `MISE_GITHUB_TOKEN`,
+`GITHUB_API_TOKEN`, or `GITHUB_TOKEN` — and needs nothing in your
+configuration:
+
+```toml [mise.toml]
+[tools]
+"packslip:github.com/my-org/internal-cli" = "latest"
+```
+
+GitHub serves release assets of a private repository only from its API, not
+from the `github.com/.../releases/download/...` URLs a manifest records, so
+mise retries there with your token when a download fails. The token is used
+for transport only: the signature, project identity, signer continuity, and
+artifact digest checks are unchanged, and no credential is read from the
+signed manifest.
+
 ## Versions
 
 List available versions or select a specific release:
@@ -348,6 +367,7 @@ MISE_DEBUG=1 mise install packslip:github.com/jdx/hk
 | Signed list expired, rolled back, or missing | Ask the list's publisher for a current valid list. Removing an accepted list does not reset its policy.                                                                                       |
 | Version excluded by stamp policy             | Check your configured stampers. A trusted stamper must approve the version, and the vendor must not have withdrawn it.                                                                        |
 | Digest or size mismatch                      | Report the affected release and artifact to the publisher; the download must match the signed manifest.                                                                                       |
+| 404 on a private repository's release        | Confirm the token in `MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN`, or `GITHUB_TOKEN` can read the repository. See [private repositories](#private-repositories).                                   |
 
 For completion and skill errors, see
 [resource troubleshooting](/dev-tools/packslip-resources.html#troubleshooting).

@@ -2,7 +2,6 @@ use eyre::Result;
 
 use crate::config::{Config, Settings};
 use crate::system;
-use crate::system::history::OperationScope;
 
 /// Apply dotfiles from `[dotfiles]`
 ///
@@ -14,9 +13,9 @@ use crate::system::history::OperationScope;
 #[usage(
     verbatim_doc_comment,
     example(
-        r###"mise bootstrap dotfiles apply
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --force --yes"###
+        r###"mise dot apply
+mise dot apply --dry-run
+mise dot apply --force --yes"###
     )
 )]
 pub(crate) struct DotfilesApply {
@@ -55,10 +54,6 @@ impl DotfilesApply {
         Vec<system::edits::EditRequest>,
     )> {
         super::select_requests(config, &self.targets)
-    }
-
-    pub(crate) async fn run(self) -> Result<bool> {
-        OperationScope::wrap("bootstrap dotfiles apply", self.dry_run, self.run_inner()).await
     }
 
     /// The apply without an operation of its own, for a caller that already

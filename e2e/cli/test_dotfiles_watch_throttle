@@ -26,15 +26,22 @@ git --git-dir="$repo" show "\$(mise bootstrap dotfiles history show "\$1" --json
 EOF2
 chmod +x "$snapshot_of"
 
+# Waits until the shell condition $1 holds, for at most $2 seconds (default
+# 30). The budget is wall clock rather than a fixed number of iterations: a
+# loaded CI runner can take seconds to answer one `mise` invocation, which a
+# count of sleeps silently turns into a much shorter timeout.
 wait_until() {
-  for _ in $(seq 1 100); do
+  local deadline=$((SECONDS + ${2:-30}))
+  while ((SECONDS < deadline)); do
     if eval "$1" >/dev/null 2>&1; then
       return 0
     fi
     sleep 0.2
   done
   echo "timed out waiting for: $1" >&2
-  [[ -f watch.log ]] && cat watch.log >&2
+  if [[ -f watch.log ]]; then
+    cat watch.log >&2
+  fi
   return 1
 }
 
@@ -96,19 +103,36 @@ assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "exclude"
 assert_not_contains "cat $MISE_CONFIG_DIR/config.toml" "autosave"
 
 # an ordinary edit is still saved promptly while the churn goes on, and the
-# checkpoint it makes does not carry the churning file's live content (the
-# edit lands right after a save of the churning file, so its next save is a
-# whole interval away)
+# checkpoint it makes carries the version of the churning file that the save
+# before it recorded, never its live content
 captured="grep -c '\"event\":\"captured\"' watch.log"
 n="$(eval "$captured")"
 wait_until "[[ \$($captured) -gt $n ]]"
-churn_checkpoint="$(jq -r 'select(.event == "captured") | .uuid' watch.log | tail -1)"
-echo 'monitor=DP-2' >~/.config/hypr/monitors.lua
-wait_until "mise bootstrap dotfiles history --json | jq -e '.[0].description | test(\"monitors.lua\")'"
-# Pin the actual edit checkpoint: another scheduled save may become latest
-# while these assertions run. Compare snapshot contents, not display lines.
-monitor_checkpoint="$(jq -r 'select(.event == "captured" and (.description | contains("monitors.lua"))) | .uuid' watch.log | tail -1)"
-assert "$snapshot_of $monitor_checkpoint .config/hypr/state.json" "$($snapshot_of "$churn_checkpoint" .config/hypr/state.json)"
+# Pin the capture the edit made: another scheduled save may become latest
+# while these assertions run, so compare snapshot contents, not display
+# lines. A save the churning file is due for may share that capture, which
+# then carries its live content by design and proves nothing here — edit
+# again until a capture is the edit's alone. The churn is saved once per
+# interval at most, so this normally settles on the first attempt.
+edit_captures='[.[] | select(.event == "captured" and (.description | contains("monitors.lua")))]'
+edits="jq -rs '$edit_captures | length' watch.log"
+monitor_checkpoint=""
+for attempt in 1 2 3 4 5; do
+  n="$(eval "$edits")"
+  echo "monitor=DP-2.$attempt" >~/.config/hypr/monitors.lua
+  wait_until "[[ \$($edits) -gt $n ]]"
+  edit="$(jq -rs "$edit_captures | last" watch.log)"
+  if ! printf '%s' "$edit" | jq -e '.description | contains("state.json")' >/dev/null; then
+    monitor_checkpoint="$(printf '%s' "$edit" | jq -r .uuid)"
+    break
+  fi
+done
+[[ -n $monitor_checkpoint ]] ||
+  fail "every capture of the edit was shared with a due save of the churning file"
+# the save before it, whichever capture that was: under load the churn can be
+# saved again between the wait above and the edit
+previous_checkpoint="$(jq -rs --arg uuid "$monitor_checkpoint" '[.[] | select(.event == "captured") | .uuid] | .[index($uuid) - 1]' watch.log)"
+assert "$snapshot_of $monitor_checkpoint .config/hypr/state.json" "$($snapshot_of "$previous_checkpoint" .config/hypr/state.json)"
 
 # unsaved changes to the throttled file are visible as they happen
 wait_until "[[ \$(mise bootstrap dotfiles status --json | jq -r '.history.health.throttled[0].pending_changes // 0') -ge 1 ]]"

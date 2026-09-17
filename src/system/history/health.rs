@@ -1,5 +1,5 @@
 //! Background health, persisted under `$MISE_STATE_DIR/history/health.json`
-//! by the watcher and read by `mise doctor` and `mise bootstrap dotfiles
+//! by the watcher and read by `mise doctor` and `mise dot
 //! status`. This is pull-based visibility: nothing here gets the user's
 //! attention on its own. Readers distinguish stale information (the last
 //! update is older than the watcher's reconcile period while a watcher

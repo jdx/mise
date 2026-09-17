@@ -1,6 +1,6 @@
 //! `[dotfiles]` — declarative config files (dotfiles) applied by
-//! `mise bootstrap dotfiles apply` or `mise bootstrap`, and removed by
-//! `mise bootstrap dotfiles unapply`.
+//! `mise dot apply` or `mise bootstrap`, and removed by
+//! `mise dot unapply`.
 //!
 //! Entries are keyed by target path and point at a source file or directory,
 //! resolved relative to the config file that declares them:
@@ -1479,7 +1479,7 @@ where
 ///
 /// Note: computing a template entry's state requires rendering it, so this
 /// runs the template engine — including `exec()` — from
-/// `mise bootstrap dotfiles status`. That's the same trust model as `[env]`
+/// `mise dot status`. That's the same trust model as `[env]`
 /// templates (which run on
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
@@ -2794,10 +2794,10 @@ fn plan_unapply_one<'a>(
             plan_single_file(req, opts, &mut paths)?;
         }
         // a tracked file was never written by mise: stop tracking it with
-        // `mise bootstrap dotfiles untrack`, the file itself stays
+        // `mise dot untrack`, the file itself stays
         FileMode::Track => {
             info!(
-                "files: {} is tracked in place; nothing to remove (use `mise bootstrap dotfiles untrack` to stop tracking it)",
+                "files: {} is tracked in place; nothing to remove (use `mise dot untrack` to stop tracking it)",
                 req.target.display_user()
             );
             return Ok(None);

@@ -29,7 +29,7 @@ impl<'a> TaskToolInstaller<'a> {
         config: &mut Arc<Config>,
         tasks: &Deps,
         dry_run: bool,
-        previewed_tools: &HashSet<ToolVersion>,
+        previewed_tools: &[ToolVersion],
     ) -> Result<()> {
         self.install_task_list(
             config,
@@ -47,7 +47,7 @@ impl<'a> TaskToolInstaller<'a> {
         config: &mut Arc<Config>,
         tasks: Vec<Task>,
         dry_run: bool,
-        previewed_tools: &HashSet<ToolVersion>,
+        previewed_tools: &[ToolVersion],
     ) -> Result<()> {
         self.install_task_list(config, tasks, dry_run, previewed_tools, false)
             .await
@@ -58,7 +58,7 @@ impl<'a> TaskToolInstaller<'a> {
         config: &mut Arc<Config>,
         tasks: Vec<Task>,
         dry_run: bool,
-        previewed_tools: &HashSet<ToolVersion>,
+        previewed_tools: &[ToolVersion],
         reload_config: bool,
     ) -> Result<()> {
         let all_tool_requests = self.collect_tool_requests(config, &tasks).await?;
@@ -223,7 +223,7 @@ impl<'a> TaskToolInstaller<'a> {
         config: &mut Arc<Config>,
         mut ts: Toolset,
         dry_run: bool,
-        previewed_tools: &HashSet<ToolVersion>,
+        previewed_tools: &[ToolVersion],
         reload_config: bool,
     ) -> Result<()> {
         if dry_run {

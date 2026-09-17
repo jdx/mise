@@ -10,7 +10,7 @@ use crate::system::history::replay::{self, RollbackRequest};
 /// differs from what is on disk; unrelated checkpoints never influence the
 /// choice. With `--to <ref>`, the named checkpoint is the source, and
 /// `--all` selects everything it covers. The current state is saved in a
-/// protective checkpoint first, so `mise bootstrap dotfiles undo` can reverse it.
+/// protective checkpoint first, so `mise dot undo` can reverse it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesRollback {
@@ -56,8 +56,8 @@ impl DotfilesRollback {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles rollback ~/.config/hypr/bindings.lua</bold>
-    $ <bold>mise bootstrap dotfiles rollback ~/.zshrc --to 42</bold>
-    $ <bold>mise bootstrap dotfiles rollback --to latest~3 --all --dry-run</bold>
+    $ <bold>mise dot rollback ~/.config/hypr/bindings.lua</bold>
+    $ <bold>mise dot rollback ~/.zshrc --to 42</bold>
+    $ <bold>mise dot rollback --to latest~3 --all --dry-run</bold>
 "#
 );

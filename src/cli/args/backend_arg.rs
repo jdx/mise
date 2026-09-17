@@ -12,7 +12,7 @@ use crate::toolset::{
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
-use heck::{ToKebabCase, ToShoutySnakeCase};
+use heck::ToShoutySnakeCase;
 use std::collections::HashSet;
 use std::env;
 use std::fmt::{Debug, Display};
@@ -61,7 +61,7 @@ pub(crate) struct BackendArg {
 
 impl<A: AsRef<str>> From<A> for BackendArg {
     fn from(s: A) -> Self {
-        let short = unalias_backend(s.as_ref()).to_string();
+        let short = unalias_backend(s.as_ref()).into_owned();
         // Check if this is a full backend identifier (e.g., "aqua:oven-sh/bun")
         // If so, treat it as explicit since the user specified the backend
         let explicit = if let Some((prefix, _)) = short.split_once(':') {
@@ -184,7 +184,7 @@ fn parse_backend_components(
     short: &str,
     full: Option<&String>,
 ) -> (String, String, Option<ToolVersionOptions>) {
-    let short = unalias_backend(short).to_string();
+    let short = unalias_backend(short).into_owned();
     let source = full.unwrap_or(&short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (name, Some(parse_tool_options(opts_str))),
@@ -200,7 +200,7 @@ fn parse_backend_components_fallible(
     short: &str,
     full: Option<&String>,
 ) -> Result<(String, String, Option<ToolVersionOptions>)> {
-    let short = unalias_backend(short).to_string();
+    let short = unalias_backend(short).into_owned();
     let source = full.unwrap_or(&short);
     let (source, opts) = match split_bracketed_opts(source) {
         Some((name, opts_str)) => (
@@ -276,7 +276,9 @@ impl BackendArg {
         opts: Option<ToolVersionOptions>,
         resolution: BackendResolution,
     ) -> Self {
-        let pathname = short.to_kebab_case();
+        let short = unalias_backend(&short).into_owned();
+        // Keep each explicitly configured spelling in its own directory namespace.
+        let pathname = backend::tool_directory_name(&short);
         let opts_source = opts.as_ref().map(|_| ToolOptionSource::InlineBackendArg);
         Self {
             tool_name,
@@ -467,13 +469,14 @@ impl BackendArg {
         }
         let full = Config::get_()
             .all_aliases
-            .get(unalias_backend(&self.short))
+            .get(unalias_backend(&self.short).as_ref())
             .and_then(|a| a.backend.clone())?;
         let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
         if name.contains(':') {
             return None;
         }
         let name = unalias_backend(name);
+        let name = name.as_ref();
         REGISTRY.contains_key(name).then(|| name.to_string())
     }
 
@@ -502,6 +505,7 @@ impl BackendArg {
 
     pub(crate) fn full(&self) -> String {
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
 
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
@@ -749,8 +753,17 @@ impl BackendArg {
 
     fn env_backend_override(&self) -> Option<String> {
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
         let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
-        env::var(&env_key).ok()
+        env::var(&env_key).ok().or_else(|| {
+            short.strip_prefix("pypi:").and_then(|name| {
+                env::var(format!(
+                    "MISE_BACKENDS_PIPX_{}",
+                    name.to_shouty_snake_case()
+                ))
+                .ok()
+            })
+        })
     }
 
     fn backend_alias_opts_from_loaded_config(&self) -> Option<ToolVersionOptions> {
@@ -758,6 +771,7 @@ impl BackendArg {
             return None;
         }
         let short = unalias_backend(&self.short);
+        let short = short.as_ref();
         Config::get_()
             .all_aliases
             .get(short)
@@ -804,6 +818,7 @@ impl BackendArg {
             full.clone()
         } else {
             let short = unalias_backend(&self.short);
+            let short = short.as_ref();
             if let Some(full) = install_state::get_tool_full(short) {
                 full
             } else if let Some(pt) = install_state::get_plugin_type(short) {
@@ -866,7 +881,7 @@ impl FromStr for BackendArg {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let short = unalias_backend(s).to_string();
+        let short = unalias_backend(s).into_owned();
         let explicit = if let Some((prefix, _)) = short.split_once(':') {
             BackendType::guess(prefix) != BackendType::Unknown
         } else {
@@ -1227,4 +1242,19 @@ mod tests {
         assert_eq!(opts.get("bin"), Some("solc"));
         assert_eq!(opts.get("foo"), Some("resolved"));
     }
+}
+
+#[test]
+fn pypi_and_pipx_use_distinct_tool_identities() {
+    let preferred = BackendArg::from("pypi:black");
+    let legacy = BackendArg::from("pipx:black");
+    assert_ne!(preferred, legacy);
+    assert_eq!(preferred.short, "pypi:black");
+    assert_eq!(legacy.short, "pipx:black");
+    assert_eq!(preferred.full(), "pypi:black");
+    assert_eq!(legacy.full(), "pipx:black");
+    assert_ne!(preferred.installs_path, legacy.installs_path);
+    assert_eq!(preferred.tool_dir_name(), "pypi-black");
+    assert_eq!(BackendType::guess("pipx:black"), BackendType::Pipx);
+    assert_eq!(BackendType::guess("pypi:black"), BackendType::Pipx);
 }

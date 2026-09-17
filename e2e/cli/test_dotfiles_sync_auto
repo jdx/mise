@@ -120,7 +120,7 @@ b_watcher=$!
 wait_until "grep -q '\"conflicts\":1' b.log"
 assert_contains "cat $B/.config/hypr/bindings.lua" "wezterm"
 assert_contains "$b bootstrap dotfiles status 2>&1" "both sides changed the same lines"
-assert_contains "$b bootstrap dotfiles status 2>&1" "mise bootstrap dotfiles pull"
+assert_contains "$b bootstrap dotfiles status 2>&1" "mise dot pull"
 assert_contains "$b doctor 2>&1 || true" "sync conflict"
 echo 'monitor=DP-1' >~/.config/hypr/monitors.lua
 wait_until "git --git-dir=$origin show main:home/.config/hypr/monitors.lua | grep -q DP-1"

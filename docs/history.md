@@ -19,13 +19,13 @@ A **checkpoint** is a saved version of your tracked files, stored as a Git
 commit. To save the current contents of one file:
 
 ```sh
-mise bootstrap dotfiles save ~/.zshrc
+mise dot save ~/.zshrc
 ```
 
 To save all tracked files with a description:
 
 ```sh
-mise bootstrap dotfiles save --description "before changing my theme"
+mise dot save --description "before changing my theme"
 ```
 
 An ordinary save with no changes creates no commit. Supplying
@@ -33,7 +33,7 @@ An ordinary save with no changes creates no commit. Supplying
 files have not changed.
 
 For a file tracked with `autosave = false`, save its edits by naming it:
-`mise bootstrap dotfiles save <path>`. Automatic checkpoints keep that
+`mise dot save <path>`. Automatic checkpoints keep that
 file's last saved version. Commands that explicitly modify or capture it
 can also save it; see [operation checkpoints](#operation-checkpoints).
 
@@ -56,7 +56,7 @@ Install it and check that it is running:
 
 ```sh
 mise bootstrap services apply
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 mise uses a systemd user service on Linux, a LaunchAgent on macOS, or a
@@ -73,15 +73,15 @@ can have unsaved edits while other files have already been saved. Explicit
 To see files being saved less often:
 
 ```sh
-mise bootstrap dotfiles paths --noisy
+mise dot paths --noisy
 ```
 
 Logs, caches, databases, and session state usually belong outside your
 tracked files. For a configuration file you want to save only on request:
 
 ```sh
-mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave
-mise bootstrap dotfiles save ~/.config/app/state.json
+mise dot track ~/.config/app/state.json --no-autosave
+mise dot save ~/.config/app/state.json
 ```
 
 Tracking saves the first version immediately. Later edits wait for an
@@ -92,15 +92,15 @@ explicit save. Check [watcher health](#health) if expected saves are missing.
 List the checkpoints where a file changed, newest first:
 
 ```sh
-mise bootstrap dotfiles history --path ~/.zshrc
+mise dot history --path ~/.zshrc
 ```
 
-Run `mise bootstrap dotfiles history` without `--path` to see all checkpoints.
+Run `mise dot history` without `--path` to see all checkpoints.
 Use an ID from the list to inspect one. The examples below use checkpoint 12:
 
 ```sh
-mise bootstrap dotfiles history show 12
-mise bootstrap dotfiles history diff 12 --patch --path ~/.zshrc
+mise dot history show 12
+mise dot history diff 12 --patch --path ~/.zshrc
 ```
 
 `history show` displays checkpoint details, including what triggered it and
@@ -109,13 +109,13 @@ structured output. `history diff 12` shows what changed in that checkpoint.
 To compare two checkpoints, supply both IDs:
 
 ```sh
-mise bootstrap dotfiles history diff 11 12 --patch --path ~/.zshrc
+mise dot history diff 11 12 --patch --path ~/.zshrc
 ```
 
 To compare your current file with its latest saved version:
 
 ```sh
-mise bootstrap dotfiles history diff --path ~/.zshrc
+mise dot history diff --path ~/.zshrc
 ```
 
 This also shows unsaved edits in files with `autosave = false`. Add
@@ -137,7 +137,7 @@ With `--path`, `latest~N` counts only checkpoints where that path changed.
 For example:
 
 ```sh
-mise bootstrap dotfiles history show latest~1 --path ~/.zshrc
+mise dot history show latest~1 --path ~/.zshrc
 ```
 
 This selects the checkpoint before the file's most recent change, even if
@@ -154,15 +154,15 @@ To restore a file to its most recent saved version that differs from its
 current contents, preview the change and then apply it:
 
 ```sh
-mise bootstrap dotfiles rollback ~/.zshrc --dry-run
-mise bootstrap dotfiles rollback ~/.zshrc
+mise dot rollback ~/.zshrc --dry-run
+mise dot rollback ~/.zshrc
 ```
 
 mise saves the current contents before replacing them. To reverse that
 rollback, run:
 
 ```sh
-mise bootstrap dotfiles undo
+mise dot undo
 ```
 
 `undo` restores the tracked files changed by the operation. Other files
@@ -174,8 +174,8 @@ To choose a checkpoint, use an ID from `history` or a
 [checkpoint reference](#referring-to-checkpoints):
 
 ```sh
-mise bootstrap dotfiles rollback ~/.zshrc --to 42
-mise bootstrap dotfiles rollback --to latest~3 --all --dry-run
+mise dot rollback ~/.zshrc --to 42
+mise dot rollback --to latest~3 --all --dry-run
 ```
 
 `--all` selects everything covered by the chosen checkpoint. If that
@@ -228,9 +228,18 @@ before first saving a file that needs it.
 Create an empty private repository and replace `you/setup` with its name:
 
 ```sh
-mise bootstrap dotfiles origin set https://github.com/you/setup.git --sync sync
-mise bootstrap dotfiles status
+mise dot origin set https://github.com/you/setup.git --sync sync
+mise dot status
 ```
+
+Any Git URL works, including a self-hosted host:
+
+```sh
+mise dot origin set git@gitea.example.com:you/setup.git --sync sync
+```
+
+The URL must not contain credentials, a query string, or a fragment.
+Authenticate with an SSH agent, or with a Git credential helper for HTTPS.
 
 Review the connection preview before confirming. With `--sync sync`, the
 watcher pushes saved changes and periodically fetches and applies changes
@@ -259,8 +268,8 @@ which defaults to `sync`; specify `--sync` in scripts to choose explicitly.
 These commands work in every mode:
 
 ```sh
-mise bootstrap dotfiles sync
-mise bootstrap dotfiles pull
+mise dot sync
+mise dot pull
 ```
 
 `sync` pushes saved commits and fetches remote changes. `pull` applies
@@ -275,7 +284,7 @@ save contribute their last saved contents.
 its shared sources together; partial pulls are not supported. It does not
 install tools or services, or render templates. When those declarations or
 their sources change, run `mise bootstrap` to deploy them. If only dotfile
-deployment is needed, use `mise bootstrap dotfiles apply` to create files
+deployment is needed, use `mise dot apply` to create files
 from the sources, templates, and edits in `[dotfiles]`. A separate `apply`
 is not needed merely to restore shared tracked-file contents.
 
@@ -287,17 +296,46 @@ show the last error.
 
 ### Resolve a conflict
 
-Inspect the reported files:
+Inspect the saved version on this machine against the fetched repository
+version:
 
 ```sh
-mise bootstrap dotfiles status
+mise dot status
+mise dot conflicts ~/.zshrc
 ```
+
+`conflicts` prints a unified diff without changing either side. To open the
+comparison in Git's configured diff tool, or its configured merge tool when no
+diff tool is set, pass `--difftool`. An explicitly selected tool can be passed
+with `--difftool --tool <name>`.
 
 Choose the remote version of a file, or keep the local version:
 
 ```sh
-mise bootstrap dotfiles pull --take-remote ~/.zshrc
-mise bootstrap dotfiles pull --keep-local ~/.zshrc
+mise dot pull --take-remote ~/.zshrc
+mise dot pull --keep-local ~/.zshrc
+```
+
+To decide every conflict the same way in one command, use the blanket form.
+`--keep-local` and `--take-remote` still name the exceptions:
+
+```sh
+mise dot pull --take-remote-all
+mise dot pull --take-remote-all --keep-local ~/.zshrc
+mise dot pull --keep-local-all
+```
+
+`--keep-local-all` requires every file it keeps to be saved already, so run
+`mise dot save` first if you have unsaved edits.
+
+To combine both sides, use the conflict diff to edit the live file, explicitly
+save the merged path (also capturing files tracked with `--no-autosave`), then
+choose the saved local version:
+
+```sh
+mise dot conflicts --difftool ~/.zshrc
+mise dot save ~/.zshrc
+mise dot pull --keep-local ~/.zshrc
 ```
 
 Run the command for the choice you want. mise records each decision and
@@ -312,14 +350,14 @@ settings, inactive platform variants, or multiple Git merge bases, follow
 the reported Git-level repair instructions in a separate checkout.
 
 Pull saves a checkpoint first, records each file it writes, and runs reload
-hooks afterwards. You can reverse it with `mise bootstrap dotfiles undo`.
+hooks afterwards. You can reverse it with `mise dot undo`.
 Writes happen one file at a time; interrupted work uses the
 [recovery process](#recovery-details).
 
 ### Conflict notifications
 
 Desktop notifications are enabled by default for sharing conflicts. They
-point to `mise bootstrap dotfiles status` for resolution steps. A pause
+point to `mise dot status` for resolution steps. A pause
 produces one notification; further retries during the same pause stay quiet.
 A new pause after recovery can notify again.
 
@@ -385,9 +423,9 @@ To inspect what an update changed in your tracked dotfiles, wrap it with
 `capture`. For example, on Omarchy:
 
 ```sh
-mise bootstrap dotfiles capture --label "omarchy update" -- omarchy-update
-mise bootstrap dotfiles history --label "omarchy update"
-mise bootstrap dotfiles history diff --operation --patch
+mise dot capture --label "omarchy update" -- omarchy-update
+mise dot history --label "omarchy update"
+mise dot history diff --operation --patch
 ```
 
 `capture` saves tracked files before and after the command, including files
@@ -396,7 +434,7 @@ succeeded. The diff compares those two checkpoints, even if other saves
 happened later. To inspect an older operation, supply its checkpoint ID:
 
 ```sh
-mise bootstrap dotfiles history diff 42 --operation --patch
+mise dot history diff 42 --operation --patch
 ```
 
 The command runs directly with inherited input, output, and environment.
@@ -442,9 +480,9 @@ Bootstrap reports required files missing from history.
 Use glob patterns to exclude files from history:
 
 ```sh
-mise bootstrap dotfiles exclude '~/.config/hypr/plugins/**'
-mise bootstrap dotfiles include '~/.config/hypr/plugins/**'
-mise bootstrap dotfiles paths
+mise dot exclude '~/.config/hypr/plugins/**'
+mise dot include '~/.config/hypr/plugins/**'
+mise dot paths
 ```
 
 Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
@@ -460,7 +498,7 @@ to save manually. An excluded file is left out of future saves entirely.
 To stop tracking a file:
 
 ```sh
-mise bootstrap dotfiles untrack ~/.zshrc
+mise dot untrack ~/.zshrc
 ```
 
 The file stays in place, while future checkpoints leave it out. Earlier
@@ -482,9 +520,117 @@ recipients = ["<age-or-plugin-public-recipient>", "<recovery-public-recipient>"]
 
 Replace the placeholders with public recipients for your machines and an
 independent recovery key. Keep private decryption keys outside tracking.
-Configure local identities with `settings.age.identity_files`,
-`settings.age.key_file`, or the supported SSH identity settings. Public
-recipients travel with the repository.
+Public recipients travel with the repository.
+
+### Choose recipients
+
+A recipient is a **public** key. mise encrypts each saved version to every
+recipient in the list, so every machine that must read the history needs its
+own recipient entry. These forms are accepted:
+
+| Recipient      | Example                    | Notes                                       |
+| -------------- | -------------------------- | ------------------------------------------- |
+| age x25519     | `age1qyqszq...`            | From `age-keygen`. Works unattended.        |
+| SSH public key | `ssh-ed25519 AAAAC3Nza...` | Your existing key, if it has no passphrase. |
+| Tagged age     | `age1tag1...`              | Works unattended.                           |
+| age plugin     | `age1yubikey1...`          | Interactive only; see the warning below.    |
+
+The matching **private** key is the identity mise decrypts with. It finds
+identities automatically at `~/.config/mise/age.txt` and at `~/.ssh/id_ed25519`
+or `~/.ssh/id_rsa`. Point it elsewhere with `settings.age.key_file`,
+`settings.age.identity_files`, or `settings.age.ssh_identity_files`.
+
+#### Use an existing SSH key
+
+If your SSH private key has no passphrase, its public key works as a recipient
+and needs no new tooling. Add the contents of the `.pub` file:
+
+```sh
+cat ~/.ssh/id_ed25519.pub
+```
+
+```toml
+[history.encryption]
+recipients = ["ssh-ed25519 AAAAC3Nza... you@desktop"]
+```
+
+mise then decrypts with `~/.ssh/id_ed25519` automatically.
+
+::: warning
+mise does not prompt for SSH key passphrases. A passphrase-protected private
+key cannot decrypt history at all; the failure names the file and the reason
+when mise first needs it. Generate a dedicated age key instead. This is
+separate from Git authentication, where a passphrase-protected key in an SSH
+agent is the recommended choice — an agent does not help age decryption.
+:::
+
+#### Generate a dedicated age key
+
+Install the age CLI and create an identity:
+
+```sh
+mise use -g age
+mkdir -p ~/.config/mise
+mise exec -- age-keygen -o ~/.config/mise/age.txt
+# Public key: age1qyqszq...
+```
+
+`age.txt` holds the private identity; mise reads it from that default path. The
+printed `age1...` line is the recipient. Keep the file out of tracking, and
+restrict it with `chmod 600 ~/.config/mise/age.txt`.
+
+Repeat this on each machine and add every public key to `recipients`. A machine
+whose recipient is missing can still transfer the encrypted history, but it
+cannot read those files: a pull that has to inspect or apply one fails with
+`cannot unlock <path>` rather than skipping it.
+
+#### Add a recovery recipient
+
+If you lose the only machine holding an identity, the encrypted history becomes
+unreadable — re-encrypting requires decrypting first. Generate a second
+identity that lives nowhere on your machines:
+
+```sh
+(umask 077 && mise exec -- age-keygen -o ~/recovery-key.txt)
+cat ~/recovery-key.txt
+```
+
+Add its public key to `recipients`, store the file's contents in a password
+manager or another offline location, then remove the local copy:
+
+```sh
+rm ~/recovery-key.txt
+```
+
+Treat it like a backup code: it decrypts everything encrypted after you add it.
+Do not leave it in a tracked path, and do not write it somewhere the watcher
+saves.
+
+A complete configuration for one machine plus recovery:
+
+```toml
+[history.encryption]
+recipients = [
+  "age1qyqszq...",  # desktop
+  "age1ljx8w2...",  # laptop
+  "age1v9zm4f...",  # recovery, stored in the password manager
+]
+```
+
+Changing the list re-encrypts each file the next time it is saved. Commits
+already in history keep the recipients they were written with, so a machine
+added later reads versions saved after the change, not the ones before it. Add
+every machine's recipient before saving private contents you expect all of them
+to read.
+
+::: warning
+Plugin recipients such as `age1yubikey1...` require an interactive terminal,
+and encryption parses the whole list at once. The history watcher runs in the
+background, so a list containing **any** plugin recipient stops automatic
+saving with `plugin-dependent age recipients require interactive
+synchronization` — adding a native recipient alongside it does not help. For
+files the watcher saves, use only the age, tagged, and SSH forms above.
+:::
 
 mise encrypts contents before storing them in Git. Filenames and public
 metadata remain visible. The files you edit or restore stay unencrypted.
@@ -506,8 +652,125 @@ Adding encryption later leaves earlier plaintext versions in Git. Before a
 push, mise checks all reachable commits, including intermediate saves and
 merge parents, for violations of encrypted-path settings. An earlier
 plaintext version blocks the push even if the newest version is encrypted.
-You must explicitly rewrite or replace that history. This checks encryption
-settings; it does not scan arbitrary unencrypted files for secrets.
+To push, remove that history or explicitly allow it as shown below. This check
+uses encryption settings; it does not scan other files for secrets.
+
+### Allow plaintext history
+
+To publish the older unencrypted versions anyway, bypass the check for one sync:
+
+```sh
+mise dot sync --allow-plaintext-history
+```
+
+To allow this for all syncs and pulls, including the watcher, add to your
+global config:
+
+```toml
+[settings.history]
+allow_plaintext_history = true
+```
+
+Both options publish the old plaintext to the origin. New saves still use the
+file's encryption policy. The setting defaults to `false` and is ignored in
+project configs.
+
+### Remove plaintext from history
+
+If you saved credentials before enabling encryption, rotate them first.
+Encryption does not protect copies in older commits, even in a private repo.
+
+Stop the supervising history watcher service and back up the repository. Keep
+the backup secure: it contains the plaintext too. If the service uses the
+documented `mise-history` name, stop and remove its installed definition with:
+
+```sh
+mise bootstrap services remove mise-history
+```
+
+This uses the configured user service manager on Linux, macOS, and Windows and
+prevents it from restarting the watcher during the repair. If you used another
+service name, replace `mise-history` with that name.
+
+If the plaintext was never pushed, you can drop the affected checkpoints and
+save the current file again with encryption enabled. This drops **all
+checkpoints after the last safe commit**, including changes to other files.
+Find that commit with `mise dot history`, or inspect the bare repository with
+the `git log` command below.
+
+Replace `safe` and the credentials path below with your commit and tracked
+file. Make sure encryption is configured for that path before saving.
+History uses a bare Git repository, so use `git update-ref` to move the branch:
+
+```sh
+repo="${MISE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mise}/history/repo.git"
+git --git-dir="$repo" log --all -- home/.config/app/credentials
+old="$(git --git-dir="$repo" rev-parse refs/heads/main)"
+safe="<commit before plaintext was saved>"
+
+if git --git-dir="$repo" merge-base --is-ancestor "$safe" "$old"; then
+  git --git-dir="$repo" update-ref -m "remove plaintext history" \
+    refs/heads/main "$safe" "$old" &&
+    mise dot save ~/.config/app/credentials \
+      --description "save encrypted credentials" &&
+    mise dot sync
+fi
+```
+
+The ancestry check rejects commits outside the current history. Passing `old`
+to `update-ref` makes it fail if another process has moved the branch. The save
+records the live file with encryption and rebuilds mise's checkpoint index.
+Moving the branch makes the discarded commits unreachable but does not
+immediately erase their plaintext objects from the active repository. After
+verifying the repaired history and deciding that you no longer need those
+objects for recovery, remove them from the active repository with:
+
+```sh
+git --git-dir="$repo" reflog expire --expire=now --all
+git --git-dir="$repo" gc --prune=now
+```
+
+The secure backup still contains the discarded history. Delete it only when
+you no longer need it for recovery.
+
+To keep later checkpoints, use a tool such as
+[git-filter-repo](https://github.com/newren/git-filter-repo) on a separate,
+secure copy. Check that no reachable commit contains plaintext for the
+protected path before replacing the local `refs/heads/main`. Do not filter
+mise's active repository in place.
+
+If the plaintext was already pushed, pause history on every machine using the
+repo. Repair the history, then push the replacement branch with Git's
+`--force-with-lease`; mise does not force-push. On every other machine, move
+its existing history store to a secure backup and run
+`mise bootstrap --adopt <url>` to initialize a fresh store from the reviewed
+replacement. A fresh adoption compares any existing declared files with the
+incoming setup before creating local ancestry; identical files are accepted,
+while differences still wait for a decision.
+
+If the machine still has unrelated local history that you intentionally want
+to discard, replace it in one operation:
+
+```sh
+mise bootstrap --adopt <url> --replace-history --yes
+```
+
+This takes the history-operation and synchronization locks, so a running
+watcher cannot create another checkpoint during replacement. The remote must
+be a valid mise setup repository. Existing files that differ still stop the
+operation, and a failure restores the previous local branch and synchronization
+state. The option replaces history only for this adoption; there is no
+persistent setting that lets the watcher discard divergent history.
+
+Ordinary `mise dot sync` does not replace existing history. Do not restart any
+watcher until every machine uses the replacement, or an old store can bring the
+plaintext back. The Git host may still retain old objects or backups.
+
+Restart the declared watcher once the repair is complete:
+
+```sh
+mise bootstrap services apply
+```
 
 ## Checking watcher health {#health}
 
@@ -515,7 +778,7 @@ If files are not being saved or shared, start with:
 
 ```sh
 mise doctor
-mise bootstrap dotfiles status
+mise dot status
 ```
 
 `doctor` summarizes a watcher that is declared but stopped, repeated save
@@ -525,6 +788,11 @@ they change constantly. It includes the command to start a stopped watcher.
 `status` gives more detail: whether the watcher is running, declared but
 stopped, or not declared; the latest save and full scan; the last failure;
 and each busy file's save interval, last save, and pending edits.
+
+Both also report a watcher service whose process is running but is not
+watching this store, which happens when that process comes from an older
+mise or uses a different `MISE_STATE_DIR`. `mise bootstrap services apply`
+restarts it.
 
 These commands read the watcher's saved health report without starting
 synchronization or changing files. The report lives in `health.json` in the
@@ -598,11 +866,11 @@ that invalidates the plan stops the operation.
 
 Files are written one at a time, with a journal recording each affected
 path. An interruption can leave some writes completed. Use
-`mise bootstrap dotfiles recover` to retry unfinished writes. If later edits
+`mise dot recover` to retry unfinished writes. If later edits
 prevent recovery, inspect the reported paths. To accept the current files:
 
 ```sh
-mise bootstrap dotfiles recover <operation> --keep-current
+mise dot recover <operation> --keep-current
 ```
 
 After confirmation, this discards that operation's temporary recovery
@@ -685,7 +953,7 @@ default). Set that interval to `0` to disable periodic scans.
 Edits to global TOML configuration or `conf.d/` reload the tracked paths
 and update their watches. Setting `history.enabled = false` stops the watcher.
 To run one scan from a timer or cron job, use
-`mise bootstrap dotfiles watch --once`.
+`mise dot watch --once`.
 
 Failed saves remain pending and are retried with increasing delays from
 one second to five minutes. A save that overlaps bootstrap, rollback, or
@@ -707,8 +975,8 @@ commits, and encrypting its latest version does not erase earlier plaintext.
 ## Requirements and settings
 
 History needs a `git` binary (on macOS, the Xcode Command Line Tools). Without
-one, `mise bootstrap dotfiles save` fails and bootstrap commands still run, recording
-their journals without content; `mise bootstrap dotfiles status` says so.
+one, `mise dot save` fails and bootstrap commands still run, recording
+their journals without content; `mise dot status` says so.
 
 `settings.history.enabled` defaults to `true`. Disabling it stops automatic
 capture; it does not delete committed history.

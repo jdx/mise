@@ -1,22 +1,25 @@
 use super::*;
 
-pub(super) fn installed_version(token: &str) -> Option<String> {
-    let versions = installed_versions(token);
+pub(super) fn installed_version(manager: CaskManager, token: &str) -> Option<String> {
+    let versions = installed_versions(manager, token);
     match versions.as_slice() {
         [version] => Some(version.clone()),
         [] => None,
         _ => {
-            warn!("brew-cask:{token}: multiple Caskroom versions found; reinstall to reconcile");
+            warn!(
+                "{}:{token}: multiple install records found; reinstall to reconcile",
+                manager.label()
+            );
             None
         }
     }
 }
 
-pub(super) fn installed_versions(token: &str) -> Vec<String> {
+pub(super) fn installed_versions(manager: CaskManager, token: &str) -> Vec<String> {
     // Version discovery excludes mise's transaction directories. Cleanup is
     // intentionally broader: remove_stale_versions removes those stale temp
     // and backup directories after replace_caskroom completes.
-    let dir = caskroom_token_dir(token);
+    let dir = caskroom_token_dir(manager, token);
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -34,7 +37,7 @@ pub(super) fn installed_versions(token: &str) -> Vec<String> {
 }
 
 pub(super) fn homebrew_installed_versions(token: &str) -> Result<Vec<String>> {
-    let dir = caskroom_token_dir(token);
+    let dir = caskroom_token_dir(CaskManager::BrewCask, token);
     let entries = std::fs::read_dir(&dir).wrap_err_with(|| {
         format!(
             "brew-cask:{token}: failed to read Homebrew Caskroom directory '{}'",
@@ -113,7 +116,7 @@ pub(super) fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) 
 }
 
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {
-    let path = caskroom_token_dir(token).join(".metadata");
+    let path = caskroom_token_dir(CaskManager::BrewCask, token).join(".metadata");
     match path.symlink_metadata() {
         Ok(_) => Ok(true),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -209,7 +212,7 @@ pub(super) fn remove_obsolete_binary_links(
     previous_targets: &[PathBuf],
     current_targets: &[PathBuf],
 ) -> Result<()> {
-    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
+    let token_dir = file::desymlink_path(&caskroom_token_dir(cask.manager, &cask.token));
     for target in previous_targets {
         if current_targets.contains(target) {
             continue;
@@ -242,7 +245,7 @@ pub(super) fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>>
 }
 
 pub(super) fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<String>> {
-    if cask_journal_pending_in(state_dir, &cask.token) {
+    if cask_journal_pending_in(state_dir, cask.manager, &cask.token) {
         return Ok(None);
     }
     match previous_receipt(cask)? {
@@ -285,14 +288,30 @@ pub(super) fn state_for_version(
 }
 
 pub(super) fn package_state(req: &PackageRequest, cask: &Cask) -> Result<PackageState> {
-    if let Some(version) = homebrew_installed_version(&cask.token)? {
+    // Only the Homebrew-backed manager shares the Caskroom. For macos-app a
+    // same-named Homebrew cask is a different install in a different state
+    // root, so consulting it here would report Homebrew's version as this
+    // package's state — or fail the whole status query with a brew-cask
+    // error raised from leftover Caskroom metadata.
+    if cask.manager.uses_homebrew_caskroom()
+        && let Some(version) = homebrew_installed_version(&cask.token)?
+    {
         return Ok(state_for_version(req, cask, version));
     }
     let artifacts = cask_artifacts(cask)?;
     if let Some(state) = platform_unavailable_state(cask, &artifacts) {
         return Ok(state);
     }
-    Ok(mise_installed_cask_version(cask)?
+    let installed = mise_installed_cask_version(cask)?;
+    // A retarget leaves the recorded version matching while the declared app
+    // is not installed anywhere, so reporting it installed would hide work
+    // that apply still has to do.
+    if installed.is_some()
+        && !declared_apps_are_owned(cask, &artifacts, previous_receipt(cask)?.as_ref())?
+    {
+        return Ok(PackageState::Missing);
+    }
+    Ok(installed
         .map(|version| state_for_version(req, cask, version))
         .unwrap_or(PackageState::Missing))
 }
@@ -494,61 +513,295 @@ pub(super) fn cask_directory_digest(root: &Path) -> Result<String> {
     Ok(hex::encode(digest.finalize()))
 }
 
+/// What a directory entry contributes to the digest.
+enum DigestEntry {
+    Directory,
+    File(String),
+    Symlink(Vec<u8>),
+}
+
+/// Fingerprint a target through a directory descriptor.
+///
+/// Produces the same digest as [`cask_target_fingerprint`] — the receipts on
+/// disk record these, so the two must agree exactly — but resolves no pathname
+/// along the way. Every step is `fstatat`, `openat` or `readlinkat` relative to
+/// a descriptor, so a component replaced part-way through the walk cannot make
+/// this measure a different tree from the one the caller found and is about to
+/// act on. `cask_target_fingerprint` stays for callers that hold no descriptor.
+pub(super) fn cask_target_fingerprint_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<CaskTargetFingerprint> {
+    let stat = nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)
+        .wrap_err_with(|| format!("failed to fingerprint {}", Path::new(name).display()))?;
+    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+    if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
+        let target = read_link_verified_at(&parent, name, &stat)?;
+        return Ok(CaskTargetFingerprint {
+            kind: CaskTargetKind::Symlink,
+            digest: hex::encode(Sha256::digest(&target)),
+        });
+    }
+    if kind.contains(nix::sys::stat::SFlag::S_IFREG) {
+        return Ok(CaskTargetFingerprint {
+            kind: CaskTargetKind::File,
+            digest: file_digest_at(&parent, name, &stat)?,
+        });
+    }
+    if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+        let mut entries = Vec::new();
+        let dir = nix::dir::Dir::from_fd(open_verified_at(
+            &parent,
+            name,
+            &stat,
+            nix::fcntl::OFlag::O_DIRECTORY,
+        )?)?;
+        collect_digest_entries_at(dir, Path::new(""), &mut entries)?;
+        return Ok(CaskTargetFingerprint {
+            kind: CaskTargetKind::Directory,
+            digest: digest_from_entries(entries),
+        });
+    }
+    bail!(
+        "brew-cask: unsupported target type '{}'",
+        Path::new(name).display()
+    )
+}
+
+/// Open `name` under `parent` and confirm the descriptor is the entry that was
+/// just classified.
+///
+/// `O_NOFOLLOW` refuses a symlink, but not a directory or file swapped for
+/// another of the same kind between the `fstatat` that classified it and this
+/// open. Rechecking device and inode from the descriptor itself closes that,
+/// the same way `remove_staging_dir_at` guards the staging directory.
+pub(super) fn open_verified_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+    classified: &nix::sys::stat::FileStat,
+    flags: nix::fcntl::OFlag,
+) -> Result<std::os::fd::OwnedFd> {
+    let fd = nix::fcntl::openat(
+        parent,
+        name,
+        flags | nix::fcntl::OFlag::O_RDONLY | nix::fcntl::OFlag::O_NOFOLLOW,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let opened = nix::sys::stat::fstat(&fd)?;
+    if opened.st_dev != classified.st_dev || opened.st_ino != classified.st_ino {
+        bail!(
+            "brew-cask: '{}' was replaced while being fingerprinted",
+            Path::new(name).display()
+        );
+    }
+    Ok(fd)
+}
+
+/// Read a symlink's target and confirm the entry did not change around it.
+///
+/// A symlink cannot be pinned by a descriptor the way a directory or file can:
+/// there is no portable way to open the link itself — macOS has neither
+/// `O_PATH` nor `AT_EMPTY_PATH` — so `readlinkat` resolves the name again. This
+/// detects a replacement rather than preventing one, and the detection is
+/// defeatable: renaming the original aside, planting a substitute for the read,
+/// then renaming the original back preserves its inode, so the recheck passes.
+///
+/// Closing that would need per-entry atomicity a tree walk over a mutable
+/// directory cannot provide. What bounds it is the directory itself:
+/// `open_trusted_directory` refuses an app directory that is world-writable or
+/// owned by anyone but root or the invoking user, so an attacker able to run
+/// this race is already able to edit the bundle outright, before or after the
+/// walk. The check is kept because it costs nothing and catches the ordinary
+/// case — a concurrent install or an interrupted one — not because it is a
+/// boundary.
+pub(super) fn read_link_verified_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+    classified: &nix::sys::stat::FileStat,
+) -> Result<Vec<u8>> {
+    let target = nix::fcntl::readlinkat(&parent, name)?;
+    let after = nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    let kind = nix::sys::stat::SFlag::from_bits_truncate;
+    if after.st_dev != classified.st_dev
+        || after.st_ino != classified.st_ino
+        || kind(after.st_mode) != kind(classified.st_mode)
+    {
+        bail!(
+            "brew-cask: '{}' was replaced while being fingerprinted",
+            Path::new(name).display()
+        );
+    }
+    Ok(target.as_os_str().as_encoded_bytes().to_vec())
+}
+
+/// Hash a regular file opened relative to `parent`.
+///
+/// Always hashes in process, where the path-based form shells out to
+/// `sha256sum` above 50MB. The digest is identical either way; only the large
+/// file shortcut is lost, and it cannot be kept without naming a path.
+fn file_digest_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+    classified: &nix::sys::stat::FileStat,
+) -> Result<String> {
+    use std::io::Read;
+
+    let fd = open_verified_at(parent, name, classified, nix::fcntl::OFlag::empty())?;
+    let mut file = std::fs::File::from(fd);
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buf)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+/// Walk `dir` depth-first, recording each entry against its path relative to
+/// the fingerprint root. Descends only through descriptors.
+fn collect_digest_entries_at(
+    dir: nix::dir::Dir,
+    prefix: &Path,
+    out: &mut Vec<(PathBuf, DigestEntry)>,
+) -> Result<()> {
+    let mut dir = dir;
+    let names = dir
+        .iter()
+        .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for name in names {
+        if name.as_bytes() == b"." || name.as_bytes() == b".." {
+            continue;
+        }
+        let name = std::ffi::OsStr::from_bytes(name.to_bytes());
+        let relative = prefix.join(name);
+        let stat = nix::sys::stat::fstatat(&dir, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+        if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
+            out.push((
+                relative,
+                DigestEntry::Symlink(read_link_verified_at(&dir, name, &stat)?),
+            ));
+        } else if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+            let child = nix::dir::Dir::from_fd(open_verified_at(
+                &dir,
+                name,
+                &stat,
+                nix::fcntl::OFlag::O_DIRECTORY,
+            )?)?;
+            out.push((relative.clone(), DigestEntry::Directory));
+            collect_digest_entries_at(child, &relative, out)?;
+        } else if kind.contains(nix::sys::stat::SFlag::S_IFREG) {
+            out.push((
+                relative,
+                DigestEntry::File(file_digest_at(&dir, name, &stat)?),
+            ));
+        } else {
+            bail!(
+                "brew-cask: unsupported directory entry '{}'",
+                relative.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Emit the digest bytes in the order and shape [`cask_directory_digest`] uses.
+fn digest_from_entries(mut entries: Vec<(PathBuf, DigestEntry)>) -> String {
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut digest = Sha256::new();
+    for (relative, entry) in entries {
+        digest.update([match entry {
+            DigestEntry::Symlink(_) => b'l',
+            DigestEntry::Directory => b'd',
+            DigestEntry::File(_) => b'f',
+        }]);
+        hash_digest_field(&mut digest, relative.as_os_str().as_encoded_bytes());
+        match entry {
+            DigestEntry::Symlink(target) => hash_digest_field(&mut digest, &target),
+            DigestEntry::Directory => {}
+            DigestEntry::File(hash) => hash_digest_field(&mut digest, hash.as_bytes()),
+        }
+    }
+    hex::encode(digest.finalize())
+}
+
 pub(super) fn hash_digest_field(digest: &mut Sha256, value: &[u8]) {
     digest.update((value.len() as u64).to_le_bytes());
     digest.update(value);
 }
 
-pub(super) fn cask_journal_path_in(state_dir: &Path, token: &str, version: &str) -> PathBuf {
-    state_dir
-        .join("brew-cask")
-        .join(token)
-        .join(format!("{version}.json"))
+/// Transaction journals are per-manager, like the install records they guard.
+/// Sharing them across managers would let one manager's pending or failed
+/// transaction hide or clean up the other's install of the same token.
+/// `brew-cask`'s label is unchanged, so its existing journals stay in place.
+pub(super) fn cask_journal_dir_in(state_dir: &Path, manager: CaskManager, token: &str) -> PathBuf {
+    state_dir.join(manager.label()).join(token)
 }
 
-pub(super) fn cask_journal_pending_in(state_dir: &Path, token: &str) -> bool {
-    state_dir
-        .join("brew-cask")
-        .join(token)
+pub(super) fn cask_journal_path_in(
+    state_dir: &Path,
+    manager: CaskManager,
+    token: &str,
+    version: &str,
+) -> PathBuf {
+    cask_journal_dir_in(state_dir, manager, token).join(format!("{version}.json"))
+}
+
+pub(super) fn cask_journal_pending_in(state_dir: &Path, manager: CaskManager, token: &str) -> bool {
+    cask_journal_dir_in(state_dir, manager, token)
         .read_dir()
         .is_ok_and(|mut entries| entries.next().is_some())
 }
 
-pub(super) fn write_cask_journal(journal: &CaskTransactionJournal<'_>) -> Result<()> {
-    write_cask_journal_in(&crate::dirs::STATE, journal)
+pub(super) fn write_cask_journal(
+    manager: CaskManager,
+    journal: &CaskTransactionJournal<'_>,
+) -> Result<()> {
+    write_cask_journal_in(&crate::dirs::STATE, manager, journal)
 }
 
 pub(super) fn write_cask_journal_in(
     state_dir: &Path,
+    manager: CaskManager,
     journal: &CaskTransactionJournal<'_>,
 ) -> Result<()> {
-    let path = cask_journal_path_in(state_dir, journal.token, journal.version);
+    let path = cask_journal_path_in(state_dir, manager, journal.token, journal.version);
     let body = serde_json::to_vec_pretty(journal)?;
     write_durable_file(&path, &body)
 }
 
 pub(super) fn record_cask_action(
+    manager: CaskManager,
     journal: &mut CaskTransactionJournal<'_>,
     action: &str,
 ) -> Result<()> {
-    record_cask_action_in(&crate::dirs::STATE, journal, action)
+    record_cask_action_in(&crate::dirs::STATE, manager, journal, action)
 }
 
 pub(super) fn record_cask_action_in(
     state_dir: &Path,
+    manager: CaskManager,
     journal: &mut CaskTransactionJournal<'_>,
     action: &str,
 ) -> Result<()> {
     journal.completed.push(action.to_string());
-    write_cask_journal_in(state_dir, journal)
+    write_cask_journal_in(state_dir, manager, journal)
 }
 
-pub(super) fn remove_cask_journals(token: &str) -> Result<()> {
-    remove_cask_journals_in(&crate::dirs::STATE, token)
+pub(super) fn remove_cask_journals(manager: CaskManager, token: &str) -> Result<()> {
+    remove_cask_journals_in(&crate::dirs::STATE, manager, token)
 }
 
-pub(super) fn remove_cask_journals_in(state_dir: &Path, token: &str) -> Result<()> {
-    let path = state_dir.join("brew-cask").join(token);
+pub(super) fn remove_cask_journals_in(
+    state_dir: &Path,
+    manager: CaskManager,
+    token: &str,
+) -> Result<()> {
+    let path = cask_journal_dir_in(state_dir, manager, token);
     if path.symlink_metadata().is_ok() {
         file::remove_all(&path)?;
         if let Some(parent) = path.parent() {
@@ -835,7 +1088,7 @@ pub(super) fn cask_prune_plan_from_tokens(
         if configured {
             continue;
         }
-        if cask_journal_pending_in(state_dir, &token) {
+        if cask_journal_pending_in(state_dir, CaskManager::BrewCask, &token) {
             plan.skipped.push(CaskPruneSkip {
                 token,
                 reason: "an incomplete cask transaction is pending".to_string(),
@@ -931,7 +1184,11 @@ pub(super) fn apply_cask_prune_plan_in(
         return Ok(0);
     }
 
-    let _caskroom_lock = lock_caskroom()?;
+    // Prune removes app targets, so it takes the shared app lock first, in the
+    // same order as the install path. Prune itself is brew-cask only;
+    // macos-app reports that it does not support it.
+    let _app_lock = lock_app_mutations()?;
+    let _caskroom_lock = lock_caskroom(CaskManager::BrewCask)?;
     let mut removed = 0;
     for candidate in &plan.remove {
         if let Err(reason) = validate_cask_prune_candidate(candidate)
@@ -950,13 +1207,23 @@ pub(super) fn apply_cask_prune_plan_in(
                 version: &candidate.version,
                 completed: Vec::new(),
             };
-            write_cask_journal_in(state_dir, &journal)?;
+            write_cask_journal_in(state_dir, CaskManager::BrewCask, &journal)?;
             for (index, target) in candidate.receipt.targets.iter().enumerate() {
                 remove_artifact_target_elevating(&target.path)?;
-                record_cask_action_in(state_dir, &mut journal, &format!("prune_target[{index}]"))?;
+                record_cask_action_in(
+                    state_dir,
+                    CaskManager::BrewCask,
+                    &mut journal,
+                    &format!("prune_target[{index}]"),
+                )?;
             }
             file::remove_all(&candidate.version_dir)?;
-            record_cask_action_in(state_dir, &mut journal, "prune_caskroom")?;
+            record_cask_action_in(
+                state_dir,
+                CaskManager::BrewCask,
+                &mut journal,
+                "prune_caskroom",
+            )?;
             if let Some(token_dir) = candidate.version_dir.parent()
                 && let Err(err) = file::remove_dir(token_dir)
             {
@@ -965,7 +1232,7 @@ pub(super) fn apply_cask_prune_plan_in(
                     candidate.token
                 );
             }
-            remove_cask_journals_in(state_dir, &candidate.token)
+            remove_cask_journals_in(state_dir, CaskManager::BrewCask, &candidate.token)
         };
         match remove() {
             Ok(()) => removed += 1,
@@ -978,10 +1245,40 @@ pub(super) fn apply_cask_prune_plan_in(
     Ok(removed)
 }
 
-pub(super) fn lock_caskroom() -> Result<fslock::LockFile> {
-    let caskroom = prefix::prefix().join("Caskroom");
-    file::create_dir_all(&caskroom)?;
-    let path = caskroom.join(".mise.lock");
+/// Serialize every app-directory mutation, across managers.
+///
+/// `brew-cask` and `macos-app` keep separate records but install into the same
+/// application directory, so a per-manager lock alone would let two mise
+/// processes interleave the rename sequence on one bundle. This lives in
+/// mise's state directory rather than Homebrew's prefix, so a machine without
+/// Homebrew never has to create one to take it.
+///
+/// Taken before [`lock_caskroom`] wherever both are held, so the order is the
+/// same on every path.
+pub(super) fn lock_app_mutations() -> Result<fslock::LockFile> {
+    file::create_dir_all(*crate::dirs::STATE)?;
+    let path = crate::dirs::STATE.join("cask-apps.lock");
+    let mut lock = fslock::LockFile::open(&path)?;
+    if !lock.try_lock()? {
+        debug!("waiting for cask app lock on {}", path.display());
+        lock.lock()?;
+    }
+    Ok(lock)
+}
+
+/// Serialize installs within one manager's own records.
+///
+/// `brew-cask` keeps its historical Caskroom lock so a concurrently running
+/// older mise still excludes it. `macos-app` writes nothing under Homebrew's
+/// prefix, so locking there would create — and on a machine without Homebrew,
+/// need to elevate to create — a Caskroom it never touches.
+pub(super) fn lock_caskroom(manager: CaskManager) -> Result<fslock::LockFile> {
+    let root = match manager {
+        CaskManager::BrewCask => prefix::prefix().join("Caskroom"),
+        CaskManager::MacosApp => cask_state_root(manager),
+    };
+    file::create_dir_all(&root)?;
+    let path = root.join(".mise.lock");
     let mut lock = fslock::LockFile::open(&path)?;
     if !lock.try_lock()? {
         debug!("waiting for brew-cask lock on {}", path.display());
@@ -1182,22 +1479,41 @@ pub(super) fn symlink_resolves_below(path: &Path, root: &Path) -> bool {
     path_starts_with_resolved_root(&target, root)
 }
 
-pub(super) fn caskroom_token_dir(token: &str) -> PathBuf {
-    prefix::prefix().join("Caskroom").join(token)
+/// Root holding `manager`'s per-token install records.
+///
+/// `brew-cask` uses Homebrew's Caskroom: mise writes its own `.mise-cask.toml`
+/// receipt beside the versioned bundle so an installed Homebrew and mise
+/// observe the same records and can arbitrate ownership of a token.
+///
+/// `macos-app` installs nothing through Homebrew, so its records live under
+/// mise's own state directory. That keeps a Homebrew-shaped path free of
+/// non-Homebrew state, and keeps `macos-app:<token>` from colliding with
+/// `brew-cask:<token>` over one directory.
+pub(super) fn cask_state_root(manager: CaskManager) -> PathBuf {
+    match manager {
+        CaskManager::BrewCask => prefix::prefix().join("Caskroom"),
+        CaskManager::MacosApp => crate::dirs::STATE.join("macos-apps"),
+    }
 }
 
-pub(super) fn caskroom_version_dir(token: &str, version: &str) -> PathBuf {
-    caskroom_token_dir(token).join(version)
+pub(super) fn caskroom_token_dir(manager: CaskManager, token: &str) -> PathBuf {
+    cask_state_root(manager).join(token)
+}
+
+pub(super) fn caskroom_version_dir(manager: CaskManager, token: &str, version: &str) -> PathBuf {
+    caskroom_token_dir(manager, token).join(version)
 }
 
 pub(super) fn caskroom_tmp_dir(cask: &Cask) -> PathBuf {
     let key = format!("{}-{}", cask.token, cask.version);
-    caskroom_token_dir(&cask.token).join(format!(".mise-tmp-{}", hash::hash_to_str(&key)))
+    caskroom_token_dir(cask.manager, &cask.token)
+        .join(format!(".mise-tmp-{}", hash::hash_to_str(&key)))
 }
 
 pub(super) fn caskroom_backup_dir(cask: &Cask) -> PathBuf {
     let key = format!("{}-{}", cask.token, cask.version);
-    caskroom_token_dir(&cask.token).join(format!(".mise-backup-{}", hash::hash_to_str(&key)))
+    caskroom_token_dir(cask.manager, &cask.token)
+        .join(format!(".mise-backup-{}", hash::hash_to_str(&key)))
 }
 
 #[derive(Debug)]

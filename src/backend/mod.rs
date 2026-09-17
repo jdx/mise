@@ -1,12 +1,12 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    Arc, LazyLock, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use tokio::sync::Mutex as TokioMutex;
 
@@ -48,7 +48,7 @@ use crate::{dirs, env, file, hash, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
 use eyre::{Result, WrapErr, bail, eyre};
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use platform_target::PlatformTarget;
 use regex::Regex;
@@ -136,6 +136,19 @@ pub(crate) fn backend_arg_matches_registry_backend(ba: &BackendArg) -> bool {
     REGISTRY
         .get(ba.short.as_str())
         .is_some_and(|rt| rt.backends().iter().any(|b| *b == full))
+}
+
+/// mise-versions publishes one version list per registry short name, generated from the
+/// entry's first backend. Every other backend of the same entry lists different versions:
+/// a `min_version` boundary routes older requests to a later backend, and platform or
+/// settings filtering can select one too. Compare against the declared first backend
+/// rather than the filtered `RegistryTool::backends()` list, so a client-side filter
+/// promoting another backend does not make it inherit the published list.
+pub(crate) fn backend_arg_is_preferred_registry_backend(ba: &BackendArg) -> bool {
+    let full = ba.full_without_opts();
+    REGISTRY
+        .get(ba.short.as_str())
+        .is_some_and(|rt| rt.backends.first().is_some_and(|b| b.full == full))
 }
 
 pub(crate) fn toolset_semver_version(ts: &Toolset, tool: &str) -> Option<String> {
@@ -584,6 +597,9 @@ pub(crate) fn remove(short: &str) {
 }
 
 pub(crate) fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+    if *backend_type == BackendType::Pipx {
+        return is_disabled_backend_name("pypi") || is_disabled_backend_name("pipx");
+    }
     backend_type
         .disable_key()
         .is_some_and(is_disabled_backend_name)
@@ -1432,6 +1448,31 @@ mod tests {
     }
 
     #[test]
+    fn test_only_the_preferred_registry_backend_may_use_the_versions_host() {
+        // mise-versions publishes one list per short name, built from the preferred
+        // backend. A `min_version` boundary routes older requests to a later backend
+        // whose versions that list does not describe.
+        let preferred = BackendArg::new(
+            "hk".to_string(),
+            Some("packslip:github.com/jdx/hk".to_string()),
+        );
+        let fallback = BackendArg::new("hk".to_string(), Some("aqua:jdx/hk".to_string()));
+
+        assert!(backend_arg_matches_registry_backend(&preferred));
+        assert!(backend_arg_matches_registry_backend(&fallback));
+
+        assert!(backend_arg_is_preferred_registry_backend(&preferred));
+        assert!(!backend_arg_is_preferred_registry_backend(&fallback));
+
+        // Inline options still describe the preferred backend.
+        let with_opts = BackendArg::new(
+            "hk".to_string(),
+            Some("packslip:github.com/jdx/hk[bin=hk]".to_string()),
+        );
+        assert!(backend_arg_is_preferred_registry_backend(&with_opts));
+    }
+
+    #[test]
     fn test_runtime_path_for_install_path_remaps_install_subpath() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let short = format!(
@@ -1960,6 +2001,112 @@ mod tests {
         assert!(res);
     }
 
+    /// A backend with a fixed remote-version list. Overrides the listing hook
+    /// rather than `_list_remote_versions` so the shared version cache stays
+    /// out of the test.
+    #[derive(Debug)]
+    struct VersionListBackend {
+        ba: Arc<BackendArg>,
+        versions: Vec<VersionInfo>,
+    }
+
+    impl VersionListBackend {
+        fn new(versions: &[(&str, &str)]) -> Self {
+            Self {
+                ba: Arc::new("test-hidden".into()),
+                versions: versions
+                    .iter()
+                    .map(|(version, created_at)| VersionInfo {
+                        version: (*version).to_string(),
+                        created_at: Some((*created_at).to_string()),
+                        ..Default::default()
+                    })
+                    .collect(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Backend for VersionListBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            Ok(self.versions.clone())
+        }
+
+        async fn list_remote_versions_with_info_and_options(
+            &self,
+            _config: &Arc<Config>,
+            _listing_opts: &ToolVersionOptions,
+            _selection_opts: &ToolVersionOptions,
+            _refresh: bool,
+            _has_local_version_listing_override: bool,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            Ok(self.versions.clone())
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            Ok(tv)
+        }
+    }
+
+    async fn hidden_versions(backend: &VersionListBackend, query: &str) -> Vec<String> {
+        let config = Config::get().await.unwrap();
+        let before: Timestamp = "2026-01-01T00:00:00Z".parse().unwrap();
+        backend
+            .versions_hidden_by_before_date(&config, query, before)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.version)
+            .collect()
+    }
+
+    /// `latest` resolution falls back to the unfiltered date-filtered list when
+    /// its numeric pattern matches nothing, so the hidden set must too — a tool
+    /// tagged only `nightly`/`edge` would otherwise lose the explanation of why
+    /// the cutoff left it with nothing.
+    #[tokio::test]
+    async fn test_hidden_versions_fall_back_for_non_numeric_latest() {
+        let backend = VersionListBackend::new(&[
+            ("nightly", "2026-06-01T00:00:00Z"),
+            ("edge", "2026-06-02T00:00:00Z"),
+        ]);
+        assert_eq!(
+            hidden_versions(&backend, "latest").await,
+            ["nightly", "edge"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_hidden_versions_exclude_releases_older_than_the_cutoff() {
+        let backend = VersionListBackend::new(&[
+            ("1.0.0", "2025-06-01T00:00:00Z"),
+            ("2.0.0", "2026-06-01T00:00:00Z"),
+        ]);
+        assert_eq!(hidden_versions(&backend, "latest").await, ["2.0.0"]);
+    }
+
+    /// Only versions the failed request could have selected are reported.
+    #[tokio::test]
+    async fn test_hidden_versions_are_narrowed_by_the_query() {
+        let backend = VersionListBackend::new(&[
+            ("1.8.0", "2026-06-01T00:00:00Z"),
+            ("1.9.0", "2026-06-02T00:00:00Z"),
+        ]);
+        assert_eq!(hidden_versions(&backend, "1.8").await, ["1.8.0"]);
+        assert!(hidden_versions(&backend, "99").await.is_empty());
+    }
+
     #[derive(Debug)]
     struct TestBackend {
         ba: Arc<BackendArg>,
@@ -2084,6 +2231,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
 
+    /// Install-time dependencies for a specific tool request.
+    ///
+    /// Most backends have fixed dependencies and inherit the default implementation.
+    /// Backends whose installer is selected by tool options can override this so the
+    /// dependency graph matches the installer that will actually run.
+    fn get_dependencies_for(&self, _opts: &ToolVersionOptions) -> Result<Vec<&str>> {
+        self.get_dependencies()
+    }
+
     /// Plugin-declared system prerequisites (build tools, libraries, ...) that
     /// must be present on the machine before this tool can install. Distinct
     /// from [`Backend::get_dependencies`], which returns other *mise tools*.
@@ -2097,6 +2253,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// Whether this backend's version source lacks an upstream prerelease flag
     /// and should mark regex-shaped versions as prereleases before caching.
     fn mark_prereleases_from_version_pattern(&self) -> bool {
+        false
+    }
+
+    /// Pre-releases this backend recognises beyond the shared `VERSION_REGEX`,
+    /// which only knows channel tags (`-rc1`, `-beta`): a backend with strict
+    /// semver versions also treats a bare numeric suffix (`1.3.1-3`) as one.
+    fn is_backend_prerelease(&self, _version: &str) -> bool {
         false
     }
 
@@ -2137,13 +2300,20 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(vec![])
     }
     fn get_all_dependencies(&self, optional: bool) -> Result<IndexSet<BackendArg>> {
+        self.get_all_dependencies_for(&self.ba().opts(), optional)
+    }
+    fn get_all_dependencies_for(
+        &self,
+        opts: &ToolVersionOptions,
+        optional: bool,
+    ) -> Result<IndexSet<BackendArg>> {
         let all_fulls = self.ba().all_fulls();
         if all_fulls.is_empty() {
             // this can happen on windows where we won't be able to install this os/arch so
             // the fact there might be dependencies is meaningless
             return Ok(Default::default());
         }
-        let mut deps: Vec<&str> = self.get_dependencies()?;
+        let mut deps: Vec<&str> = self.get_dependencies_for(opts)?;
         if optional {
             deps.extend(self.get_optional_dependencies()?);
         }
@@ -2380,19 +2550,21 @@ pub(crate) trait Backend: Debug + Send + Sync {
             }
             matches
         } else {
-            // For non-plugin backends (e.g. github:, cargo:), check if the backend matches
-            // the registry's default. When a user aliases a tool to a different backend
-            // (e.g. `php = "github:verzly/php"`), the versions host would return versions
-            // from the registry's default backend which may not match the aliased backend.
+            // For non-plugin backends (e.g. github:, cargo:), check if the backend is the
+            // registry's preferred one. When a user aliases a tool to a different backend
+            // (e.g. `php = "github:verzly/php"`), or a `min_version` boundary routes an
+            // older request to a later backend, the versions host would return the
+            // preferred backend's versions, which do not describe the resolved backend.
             if REGISTRY.contains_key(ba.short.as_str()) {
-                if !backend_arg_matches_registry_backend(&ba) {
+                let is_preferred = backend_arg_is_preferred_registry_backend(&ba);
+                if !is_preferred {
                     trace!(
                         "Skipping versions host for {} because backend {} is not the registry default",
                         ba.short,
                         ba.full()
                     );
                 }
-                backend_arg_matches_registry_backend(&ba)
+                is_preferred
             } else {
                 trace!(
                     "Skipping versions host for {} because it is not in the registry",
@@ -2641,7 +2813,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 // Embedded-aube lock graphs are part of the physical install
                 // identity. A version-only request path must never satisfy a
                 // graph-locked request for the same top-level version.
-                if tv.aube_lock.is_some() {
+                if tv.aube_lock.is_some() || tv.uv_lock.is_some() {
                     return check_path(&tv.install_path(), check_symlink);
                 }
                 if let Some(install_path) = tv.request.install_path(config)
@@ -2820,6 +2992,55 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let filter = !self.include_prereleases(selection_opts);
         let versions = self.fuzzy_match_filter(versions, query, filter);
         Ok(self.version_order(selection_opts)?.order(versions))
+    }
+
+    /// Remote versions the release-age cutoff excluded, in listing order.
+    ///
+    /// Resolution calls this only after a filtered listing already failed to
+    /// produce a match, so the remote-version cache is warm and this adds no
+    /// fetch. `query` narrows the result exactly as the failed resolution did,
+    /// so a prefix request never reports versions it would not have selected
+    /// anyway.
+    async fn versions_hidden_by_before_date(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before: Timestamp,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let hidden: Vec<VersionInfo> = self
+            .list_remote_versions_with_info_with_selection_options(config, &opts, false)
+            .await?
+            .into_iter()
+            .filter(|v| {
+                v.created_at_timestamp()
+                    .is_some_and(|created| created >= before)
+            })
+            .collect();
+        let matched: HashSet<String> = self
+            .fuzzy_match_filter(
+                hidden.iter().map(|v| v.version.clone()).collect(),
+                query,
+                !self.include_prereleases(&opts),
+            )
+            .into_iter()
+            .collect();
+        // `latest` resolution falls back to the whole date-filtered list when
+        // its numeric pattern matches nothing, so the hidden set has to as
+        // well. Otherwise tools tagged `nightly`, `edge` and the like — the
+        // ones least likely to make the cutoff obvious — drop back to the bare
+        // message this exists to replace.
+        let hidden = if matched.is_empty() && query == "latest" {
+            hidden
+        } else {
+            hidden
+                .into_iter()
+                .filter(|v| matched.contains(&v.version))
+                .collect()
+        };
+        Ok(self
+            .version_order(&opts)?
+            .order_by(hidden, |v: &VersionInfo| v.version.as_str()))
     }
 
     /// Select the latest query match using the active request's options.
@@ -3039,6 +3260,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 let installs_path = install_state::get_tool(&self.ba().short)
                     .and_then(|tool| tool.installs_path)
                     .unwrap_or_else(|| self.ba().installs_path.clone());
+                let filter = !self.include_prereleases(&self.ba().opts());
                 let installed_symlink = installs_path.join("latest");
                 if installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
@@ -3048,7 +3270,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
                         .to_string_lossy()
                         .to_string();
-                    return Ok(Some(version));
+                    // A `latest` link written before the backend could tell this
+                    // version is a pre-release must not keep winning.
+                    if !filter || !self.is_backend_prerelease(&version) {
+                        return Ok(Some(version));
+                    }
                 }
                 Ok(file::dir_subdirs(&installs_path)
                     .unwrap_or_default()
@@ -3057,6 +3283,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
                     .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
+                    .filter(|v| !filter || !self.is_backend_prerelease(v))
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
             }
@@ -3279,7 +3506,23 @@ pub(crate) trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let mut tv = self.prepare_install_version(&ctx, tv).await?;
+        let graph_install_is_current = !ctx.locked
+            && !ctx.force
+            && (tv.uv_lock.is_some() || tv.aube_lock.is_some())
+            && self
+                .is_install_satisfied_or_false(&ctx.config, &tv, true)
+                .await;
+        let mut tv = if graph_install_is_current {
+            if let Some(graph) = &tv.uv_lock {
+                graph.warn_if_missing();
+            }
+            if let Some(graph) = &tv.aube_lock {
+                graph.warn_if_missing();
+            }
+            tv
+        } else {
+            self.prepare_install_version(&ctx, tv).await?
+        };
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
         tv.request.ensure_safe_install_options()?;
@@ -3476,11 +3719,28 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // Get pre-tools environment variables from config
         let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, &tv_exact).await?;
 
-        // Add pre-tools environment variables from config if available
-        if let Some(config_env) = ctx.config.env_maybe() {
-            for (k, v) in config_env {
-                env_vars.entry(k).or_insert(v);
+        // Add pre-tools environment variables from config (#6418).
+        //
+        // This asked for the already-resolved env (`env_maybe`), which during an
+        // install is populated only if some earlier step in the same process
+        // happened to resolve it. asdf plugins do, to run their own scripts, so
+        // the promise held for `dummy` in the e2e test and for nothing else:
+        // every other backend reached here with an empty config env.
+        //
+        // `postinstall_config_env` rather than `Config::env`: hooks run one after
+        // another within an install batch and an `[env]` value can read a file an
+        // earlier hook just wrote, so the process-wide memo would hand every later
+        // hook the first one's snapshot.
+        //
+        // Best-effort: a `[env]` that cannot resolve is reported by the command
+        // that needs it, and should not be what fails an otherwise good install.
+        match postinstall_config_env(&ctx.config).await {
+            Ok(config_env) => {
+                for (k, v) in config_env {
+                    env_vars.entry(k).or_insert(v);
+                }
             }
+            Err(err) => debug!("postinstall: skipping config env: {err:#}"),
         }
         let mut install_env_removals = Vec::new();
         for (key, value) in tv.install_env() {
@@ -3585,13 +3845,18 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 .env("MISE_PROJECT_ROOT", project_root);
         }
 
-        runner
+        let result = runner
             .optimize_inline(
                 &rendered_script,
                 &[],
                 Settings::get().implicit_inline_shell(),
             )
-            .execute()?;
+            .execute();
+        // Whether or not it succeeded: it may have changed a file or command
+        // output that an `[env]` value reads, and the hooks after it are entitled
+        // to see that.
+        invalidate_postinstall_env();
+        result?;
         Ok(())
     }
 
@@ -4103,6 +4368,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
+        // Same exact-match bypass as `fuzzy_match_versions`, applied with the
+        // backend's own notion of a pre-release rather than the channel-tag regex.
+        let versions = versions
+            .into_iter()
+            .filter(|v| !filter_prereleases || v == query || !self.is_backend_prerelease(v))
+            .collect();
         fuzzy_match_versions(versions, query, filter_prereleases)
     }
 
@@ -5545,17 +5816,33 @@ pub(crate) fn fuzzy_match_versions(
         .collect()
 }
 
-pub(crate) fn unalias_backend(backend: &str) -> &str {
+/// Derive the directory namespace from the configured tool spelling.
+pub(crate) fn tool_directory_name(short: &str) -> String {
+    use heck::ToKebabCase;
+    short.to_kebab_case()
+}
+
+pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str> {
+    match backend.strip_prefix("pipx:") {
+        Some(name) => format!("pypi:{name}").into(),
+        None => backend.into(),
+    }
+}
+
+pub(crate) fn unalias_backend(backend: &str) -> std::borrow::Cow<'_, str> {
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
         "golang" => "go",
         _ => backend.trim_start_matches("core:"),
     }
+    .into()
 }
 
 #[test]
 fn test_unalias_backend() {
+    assert_eq!(unalias_backend("pipx:black"), "pipx:black");
+    assert_eq!(unalias_backend("pypi:black"), "pypi:black");
     assert_eq!(unalias_backend("node"), "node");
     assert_eq!(unalias_backend("nodejs"), "node");
     assert_eq!(unalias_backend("core:node"), "node");
@@ -5595,8 +5882,55 @@ impl Ord for dyn Backend {
     }
 }
 
+/// The config `[env]` a tool's `postinstall` hook runs with.
+///
+/// A hook has to see an env input that a hook before it changed, which rules out
+/// the process-wide memo behind [`Config::env`]. Resolving unconditionally for
+/// every hook goes too far the other way: it re-runs each executable directive —
+/// an `_.source` script, an `exec()` value — once per hook, and with parallel
+/// installs runs them against each other at the same time.
+///
+/// So one resolution is shared by every hook that starts without a hook having
+/// completed in between, and two never resolve at once. A completed hook is the
+/// only thing during an install that can change an env input, so this is as few
+/// resolutions as freshness allows.
+struct SharedHookEnv {
+    /// What [`POSTINSTALL_ENV_GENERATION`] read when this was resolved. A hook
+    /// completing since then makes it stale.
+    generation: u64,
+    env: IndexMap<String, String>,
+}
+
+static POSTINSTALL_ENV: LazyLock<TokioMutex<Option<SharedHookEnv>>> =
+    LazyLock::new(Default::default);
+static POSTINSTALL_ENV_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+async fn postinstall_config_env(config: &Arc<Config>) -> Result<IndexMap<String, String>> {
+    let mut shared = POSTINSTALL_ENV.lock().await;
+    let generation = POSTINSTALL_ENV_GENERATION.load(Ordering::SeqCst);
+    if let Some(shared) = shared.as_ref()
+        && shared.generation == generation
+    {
+        return Ok(shared.env.clone());
+    }
+    let env = config.env_uncached().await?;
+    *shared = Some(SharedHookEnv {
+        generation,
+        env: env.clone(),
+    });
+    Ok(env)
+}
+
+/// Drop the shared resolution. Called after every hook, which may have changed a
+/// file or command output an `[env]` value reads, and on [`reset`], where the
+/// config it was resolved from is gone.
+fn invalidate_postinstall_env() {
+    POSTINSTALL_ENV_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
 pub(crate) async fn reset() -> Result<()> {
     install_state::reset();
+    invalidate_postinstall_env();
     {
         let mut tools = TOOLS.lock().unwrap();
         *tools = None;

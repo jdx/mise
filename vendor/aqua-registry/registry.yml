@@ -1759,7 +1759,7 @@ packages:
         supported_envs:
           - darwin
           - linux
-      - version_constraint: semver("<= 2.39.0")
+      - version_constraint: semver("<= 2.37.0")
         asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
@@ -1778,23 +1778,50 @@ packages:
               arm64: aarch64
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: Version == "v2.37.1"
         asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
-        windows_arm_emulation: true
         files:
           - name: dua
             src: "{{.AssetWithoutExt}}/dua"
         replacements:
           amd64: x86_64
+          arm64: aarch64
           darwin: apple-darwin
           linux: unknown-linux-musl
           windows: pc-windows-msvc
         overrides:
-          - goos: linux
-            replacements:
-              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.39.0")
+        asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: dua
+            src: "{{.AssetWithoutExt}}/dua"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: dua-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: dua
+            src: "{{.AssetWithoutExt}}/dua"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
           - goos: windows
             format: zip
         github_artifact_attestations:
@@ -4556,7 +4583,7 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 7.1.2-18")
         supported_envs:
-          - windows/amd64
+          - windows
         overrides:
           - goos: linux
             format: raw
@@ -4564,8 +4591,10 @@ packages:
             files:
               - name: magick
           - goos: windows
-            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-x64.{{.Format}}
+            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-{{.Arch}}.{{.Format}}
             format: 7z
+            replacements:
+              amd64: x64
             files:
               - name: compare
               - name: composite
@@ -4579,11 +4608,13 @@ packages:
         github_artifact_attestations:
           signer_workflow: ImageMagick/ImageMagick/.github/workflows/release.yml
         supported_envs:
-          - windows/amd64
+          - windows
         overrides:
           - goos: windows
-            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-x64.{{.Format}}
+            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-{{.Arch}}.{{.Format}}
             format: 7z
+            replacements:
+              amd64: x64
             files:
               - name: compare
               - name: composite
@@ -4597,7 +4628,7 @@ packages:
         github_artifact_attestations:
           signer_workflow: ImageMagick/ImageMagick/.github/workflows/release.yml
         supported_envs:
-          - windows/amd64
+          - windows
           - linux/amd64
         overrides:
           - goos: linux
@@ -4606,8 +4637,10 @@ packages:
             files:
               - name: magick
           - goos: windows
-            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-x64.{{.Format}}
+            asset: ImageMagick-{{.Version}}-portable-Q16-HDRI-{{.Arch}}.{{.Format}}
             format: 7z
+            replacements:
+              amd64: x64
             files:
               - name: compare
               - name: composite
@@ -21521,6 +21554,51 @@ packages:
           algorithm: sha256
   - type: github_release
     repo_owner: boyter
+    repo_name: cs
+    description: Code search tool with CLI, TUI, MCP and HTTP support that requires no indexing
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        asset: cs-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.3.0")
+        asset: cs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: cs_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: boyter
     repo_name: scc
     description: "Sloc, Cloc and Code: scc is a very fast accurate code counter with complexity calculations and COCOMO estimates written in pure Go"
     version_constraint: "false"
@@ -35795,6 +35873,19 @@ packages:
           type: github_release
           asset: SHASUMS256.txt
           algorithm: sha256
+      - version_constraint: semver("<= 0.57.0")
+        asset: dprint-{{.Arch}}-{{.OS}}.zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHASUMS256.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: dprint-{{.Arch}}-{{.OS}}.zip
         windows_arm_emulation: true
@@ -35808,6 +35899,8 @@ packages:
           type: github_release
           asset: SHASUMS256.txt
           algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: dprint/dprint/.github/workflows/ci.generated.yml
   - type: github_release
     repo_owner: drlau
     repo_name: akashi
@@ -39484,6 +39577,38 @@ packages:
           - darwin
           - windows
           - amd64
+  - type: github_release
+    repo_owner: floci-io
+    repo_name: floci-cli
+    description: Official command-line interface for Floci
+    files:
+      - name: floci
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.1.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.1.4")
+        asset: floci-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: floci-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+          - windows/amd64
   - type: github_release
     repo_owner: flosell
     repo_name: iam-policy-json-to-terraform
@@ -46863,6 +46988,20 @@ packages:
         supported_envs:
           - linux
           - darwin
+  - type: github_release
+    repo_owner: grafana
+    repo_name: agento11y
+    description: Actually Useful Agent Observability
+    version_prefix: plugins/agento11y/v
+    asset: agento11y_{{.SemVer}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    checksum:
+      type: github_release
+      asset: agento11y_{{.SemVer}}_checksums.txt
+      algorithm: sha256
+    overrides:
+      - goos: windows
+        format: zip
   - type: github_release
     repo_owner: grafana
     repo_name: alloy
@@ -57846,6 +57985,30 @@ packages:
     supported_envs:
       - linux
       - darwin
+  - type: github_release
+    repo_owner: kjanat
+    repo_name: actionlint
+    description: Find problems in your GitHub Actions workflows
+    search_words:
+      - lint
+      - linter
+      - workflow
+      - ci
+      - github-actions
+    asset: actionlint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    checksum:
+      type: github_release
+      asset: actionlint_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    overrides:
+      - goos: windows
+        format: zip
+    github_artifact_attestations:
+      enabled: true
+    build:
+      type: go_install
+      path: actionlint.kjanat.dev/cmd/actionlint
   - type: github_content
     repo_owner: kjokjo
     repo_name: ipcalc
@@ -66539,6 +66702,61 @@ packages:
         format: zip
     files:
       - name: rg
+  - type: github_release
+    repo_owner: microsoft
+    repo_name: tgrep
+    description: Trigram-indexed grep with a client/server architecture for fast regex search in large codebases locally
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.4")
+        asset: tgrep-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.1.9")
+        asset: tgrep-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: tgrep-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - name: microsoft/vscode/code
     type: http
     repo_owner: microsoft
@@ -67100,26 +67318,20 @@ packages:
         overrides:
           - goos: windows
             asset: minc
-  - type: http
+  - type: github_release
     repo_owner: minio
     repo_name: mc
     description: Unix like utilities for object store
-    url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}
-    complete_windows_ext: false
+    asset: mc.{{.OS}}-{{.Arch}}.{{.Version}}
     windows_arm_emulation: true
     format: raw
-    overrides:
-      - goos: windows
-        files:
-          - name: mc
-            link: mc.exe
     checksum:
-      type: http
+      type: github_release
       algorithm: sha256
-      url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.sha256sum
+      asset: "{{.Asset}}.sha256sum"
     minisign:
-      type: http
-      url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.minisig
+      type: github_release
+      asset: "{{.Asset}}.minisig"
       public_key: RWTx5Zr1tiHQLwG9keckT0c45M3AGeHD6IvimQHpyRywVWGbP1aVSGav
   - type: github_release
     repo_owner: miniscruff
@@ -80202,6 +80414,62 @@ packages:
           type: http
           url: https://developers.redhat.com/content-gateway/rest/mirror/pub/openshift-v4/clients/odo/{{.Version}}/odo-{{.OS}}-{{.Arch}}.exe.sha256
           algorithm: sha256
+  - type: github_release
+    repo_owner: redhat-et
+    repo_name: ripwire
+    description: A zero-dependency CLI and MCP server for finding context in codebases
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.2.2")
+        asset: ripwire-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ripwire
+            src: ripwire-{{trimV .Version}}-{{.OS}}-{{.Arch}}/ripwire
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.5")
+        asset: ripwire-0.2.2-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ripwire
+            src: ripwire-0.2.2-{{.OS}}-{{.Arch}}/ripwire
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: ripwire-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ripwire
+            src: ripwire-{{trimV .Version}}-{{.OS}}-{{.Arch}}/ripwire
+        replacements:
+          amd64: x64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
   - name: redhat.com/openshift-install
     type: http
     url: https://mirror.openshift.com/pub/openshift-v4/{{.Arch}}/clients/ocp/{{trimV .Version}}/openshift-install-{{.OS}}.tar.gz
@@ -80394,11 +80662,21 @@ packages:
       - darwin
       - linux
       - amd64
-    version_constraint: semver(">= 0.3.9")
+    version_constraint: "false"
     version_overrides:
       - version_constraint: semver("< 0.3.9")
         rosetta2: true
+      - version_constraint: semver("< 0.11.6")
       - version_constraint: "true"
+        cosign:
+          bundle:
+            type: github_release
+            asset: regbot-{{.OS}}-{{.Arch}}.sigstore.json
+          opts:
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --certificate-identity
+            - https://github.com/regclient/regclient/.github/workflows/go.yml@refs/tags/{{.Version}}
   - name: regclient/regclient/regctl
     type: github_release
     repo_owner: regclient
@@ -81188,6 +81466,17 @@ packages:
             src: rm-version-switcher-aarch64
         supported_envs:
           - linux/arm64
+  - type: github_release
+    repo_owner: robgonnella
+    repo_name: minienv
+    description: Effortless remote mini environments generated directly from docker compose config
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: minienv-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
   - type: github_release
     repo_owner: robinovitch61
     repo_name: kl

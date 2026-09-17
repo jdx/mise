@@ -130,6 +130,13 @@ class Formula
       spec = options if spec.nil? && options.keys.any? { |key| key.is_a?(String) }
       name, kind = spec.is_a?(Hash) ? spec.first : [spec, nil]
       return if name.nil?
+      # A Symbol names a Homebrew REQUIREMENT, not an installable formula:
+      # `depends_on :macos`, `depends_on :linux`, `depends_on :xcode`, `depends_on :arm`.
+      # Recording one as a dependency makes the resolver look up a formula called
+      # "macos", which does not exist, and the 404 aborts the whole packages run.
+      # (`depends_on macos: :tahoe` already falls out at the `name.nil?` guard above,
+      # because its lone key is a Symbol rather than a String.)
+      return if name.is_a?(Symbol)
       kinds = Array(kind)
       return if kind == :test || (!kinds.empty? && kinds.all? { |value| value == :test })
       target = kind == :build || kinds.include?(:build) ? @build_dependencies : @runtime_dependencies

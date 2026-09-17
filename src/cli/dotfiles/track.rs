@@ -18,7 +18,7 @@ use crate::system::history::tracked::{TrackedSet, normalize_target};
 /// Adds a `[dotfiles]` entry with `mode = "track"`: the file stays where it
 /// is, nothing is copied or linked, and history saves a checkpoint of it
 /// right away. With the history watcher service running, later edits are
-/// saved automatically; without it, `mise bootstrap dotfiles save` saves them.
+/// saved automatically; without it, `mise dot save` saves them.
 ///
 /// `--os` and `--profile` declare a variant: a separate shared stream for
 /// machines matching that platform or mise environment, so a Mac and a
@@ -38,9 +38,13 @@ pub(crate) struct DotfilesTrack {
     #[usage(long, value_name = "PROFILE")]
     profile: Option<String>,
 
-    /// Save only on `mise bootstrap dotfiles save <path>`, never automatically
+    /// Save only on `mise dot save <path>`, never automatically
     #[usage(long)]
     no_autosave: bool,
+
+    /// Encrypt contents before saving them to history (requires `[history.encryption].recipients`)
+    #[usage(long)]
+    encrypt: bool,
 
     /// Accept without prompting
     #[usage(long, short)]
@@ -48,9 +52,18 @@ pub(crate) struct DotfilesTrack {
 }
 
 impl DotfilesTrack {
+    /// Write the requested declarations and capture their initial history baseline.
     pub(crate) async fn run(self) -> Result<()> {
         let _declarations = declaration_lock()?;
         let config = Config::get().await?;
+        if self.encrypt && !Settings::get().history.enabled {
+            bail!("dotfiles: cannot enroll encrypted paths while history is disabled");
+        }
+        if self.encrypt && inside_capture()? {
+            bail!(
+                "dotfiles: cannot enroll encrypted paths inside an active history capture; run `mise dot track --encrypt` separately so its baseline can be verified"
+            );
+        }
         let managed = crate::system::files::composed_files_from_config(&config)?;
         let global = declaration_file(false)?;
         let mut edits: BTreeMap<PathBuf, DeclarationEdit> = BTreeMap::new();
@@ -154,7 +167,7 @@ impl DotfilesTrack {
         }
         if !manual.is_empty() {
             info!(
-                "history: manual saving selected for {}; run `mise bootstrap dotfiles save <path>` after editing",
+                "history: manual saving selected for {}; run `mise dot save <path>` after editing",
                 manual.join(", ")
             );
         }
@@ -175,6 +188,9 @@ impl DotfilesTrack {
             .unwrap_or_else(|| crate::system::files::FilePolicy::for_mode(FileMode::Track));
         if self.no_autosave {
             policy.autosave = false;
+        }
+        if self.encrypt {
+            policy.encrypt = true;
         }
         if policy.encrypt {
             table.insert("encrypt", Value::Boolean(toml_edit::Formatted::new(true)));
@@ -368,7 +384,7 @@ async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
             };
             if !tracked.would_capture(&source)? {
                 warn!(
-                    "dotfiles: {key} is a symlink; history saves and syncs the link, not its contents. Its source {} is not tracked for capture; track the source with `mise bootstrap dotfiles track {}` (and check any exclusions) to include its contents",
+                    "dotfiles: {key} is a symlink; history saves and syncs the link, not its contents. Its source {} is not tracked for capture; track the source with `mise dot track {}` (and check any exclusions) to include its contents",
                     display_path(&source),
                     shell_words::quote(&source.to_string_lossy()),
                 );
@@ -397,14 +413,7 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
     // A capture wrapper owns the operation lock until this child exits. It
     // reloads enrollment and explicitly saves all current tracked files in
     // its outcome (including manual entries), or during interruption recovery.
-    if let Some(parent) = std::env::var_os(crate::system::history::scope::ENV_VAR)
-        && crate::system::history::store::read_marker_in(&crate::dirs::STATE)?.is_some_and(
-            |marker| {
-                marker.kind == crate::system::history::store::OperationKind::Capture
-                    && parent == std::ffi::OsStr::new(&marker.uuid)
-            },
-        )
-    {
+    if inside_capture()? {
         info!(
             "dotfiles: enrolled; the enclosing capture will save the baseline when the command finishes"
         );
@@ -435,6 +444,19 @@ async fn baseline(tracked: &TrackedSet, declared: &[(String, PathBuf)]) -> Resul
         }
     })
     .await?
+}
+
+/// Whether this process is the command running inside a live capture wrapper.
+fn inside_capture() -> Result<bool> {
+    let Some(parent) = std::env::var_os(crate::system::history::scope::ENV_VAR) else {
+        return Ok(false);
+    };
+    Ok(
+        crate::system::history::store::read_marker_in(&crate::dirs::STATE)?.is_some_and(|marker| {
+            marker.kind == crate::system::history::store::OperationKind::Capture
+                && parent == std::ffi::OsStr::new(&marker.uuid)
+        }),
+    )
 }
 
 /// `config.toml`, or `config.local.toml` next to it for machine-only
@@ -485,9 +507,10 @@ fn string(text: &str) -> Value {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise bootstrap dotfiles track ~/.zshrc ~/.config/hypr</bold>
-    $ <bold>mise bootstrap dotfiles track ~/.zshrc --os macos</bold>
-    $ <bold>mise bootstrap dotfiles track ~/.config/app/state.json --no-autosave</bold>
+    $ <bold>mise dot track ~/.zshrc ~/.config/hypr</bold>
+    $ <bold>mise dot track ~/.zshrc --os macos</bold>
+    $ <bold>mise dot track ~/.config/app/credentials --encrypt</bold>
+    $ <bold>mise dot track ~/.config/app/state.json --no-autosave</bold>
 "#
 );
 
