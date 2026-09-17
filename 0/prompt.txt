@@ -1,0 +1,1 @@
+hmm i think i want to use entire without the hooks actually, can you remove them from the pr? also remove any settings.local.json on this box that use that
