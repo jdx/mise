@@ -70,6 +70,7 @@ When a task extends a template, fields are merged according to these rules:
 | `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                           |
 | `dir`                                             | Local overrides; defaults to config_root if not in template       |
 | `sources`, `outputs`, `cache`                     | Local overrides completely                                        |
+| `usage`                                           | Concatenated: the template's spec, then the task's own            |
 | `output`                                          | Local overrides template (if set)                                 |
 | Sandbox deny fields                               | Compose with task-local settings                                  |
 | Sandbox allow fields                              | Template and task-local values are combined                       |
@@ -108,6 +109,28 @@ extends = "python:build"
 env = { DEBUG = "1" }  # Override DEBUG, keep PYTHONPATH from template
 # Result: env = { PYTHONPATH = "src", DEBUG = "1" }
 ```
+
+### Example: Shared Arguments
+
+A template's `usage` spec holds the flags and arguments its tasks have in common.
+A task that extends it adds its own; it does not have to repeat the shared ones:
+
+```toml
+[task_templates.deploy]
+usage = """
+flag "--env <env>" help="Target environment"
+flag "--dry-run" help="Print what would happen"
+"""
+
+[tasks.deploy-api]
+extends = "deploy"
+usage = 'flag "--replicas <n>" help="How many to run"'
+run = 'echo "env=$usage_env replicas=$usage_replicas"'
+```
+
+`mise run deploy-api --help` lists `--env`, `--dry-run`, and `--replicas`, in that
+order. Declare each flag in one place: a flag written in both the template and the
+task is two declarations and appears twice in `--help`.
 
 ### Example: Complete Override for Depends
 

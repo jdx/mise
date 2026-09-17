@@ -3627,7 +3627,7 @@ fn apply_named_template(task: &mut Task, definitions: &TaskDefinitions) -> Resul
             )
         })?;
 
-        task.merge_template(&template.template);
+        task.merge_extended_template(&template.template);
         task.add_config_source(&template.source);
     }
     Ok(())
