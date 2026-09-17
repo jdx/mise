@@ -4,7 +4,9 @@ description: "Task templates let you define reusable task definitions that multi
 
 # Task Templates
 
-Task templates let you define reusable task definitions that multiple tasks can extend. They are particularly useful in monorepos or projects with similar task patterns across components.
+Define a task template when several tasks share commands, tools, environment variables, or
+dependencies. Each task selects a template with `extends` and supplies the settings that differ.
+Run the task by its name; declaring a template alone does not create a runnable task.
 
 The Python examples below assume a uv project whose development dependencies
 include `pytest` and, for coverage, `pytest-cov`. Declaring Python as a tool does
@@ -12,7 +14,7 @@ not install those project packages.
 
 ## Defining Templates
 
-Templates are defined in the `[task_templates.*]` section of your `mise.toml`:
+Add a named template under `[task_templates.<name>]` in `mise.toml`:
 
 ```toml
 [task_templates."python:build"]
@@ -30,7 +32,8 @@ depends = ["build"]
 
 ## Extending Templates
 
-Tasks can extend templates using the `extends` field:
+Set `extends` to the template name. Fields omitted from the task inherit the template
+values; fields set on the task follow the [merge rules](#merge-semantics):
 
 ```toml
 [tasks.build]
@@ -49,9 +52,41 @@ run = "uv run pytest --cov"  # Override run while keeping tools, depends
 uv build
 ```
 
+## Parameterizing a Template with Vars
+
+Put a shared command in the template's `run` field and use `vars` for the values that differ
+between tasks. Template fields are merged into each task before rendering, so the inherited
+command sees that task's vars.
+
+```toml
+[task_templates.e2e]
+vars = { mode = "headless" }
+run = "echo --mode={{ vars.mode }}"
+
+[tasks.test]
+extends = "e2e"
+vars = { mode = "headed" }
+
+[tasks."test:ci"]
+extends = "e2e"
+```
+
+`mise run test` prints `--mode=headed`. `mise run test:ci` inherits the template's default
+and prints `--mode=headless`. Replace `echo` with your test command to use the same pattern
+for a test suite.
+
+Template vars and task-local vars are combined, with task-local values taking precedence for
+the same name. You can also use a Tera fallback in `run`, such as
+<span v-pre>`{{ vars.mode | default(value='headless') }}`</span>, when the var is optional.
+
+Keep expressions that depend on task-local vars in the task or its template. A top-level
+`[vars]` entry is resolved during config loading; task-local overrides do not recalculate
+that stored value. See [when vars are resolved](/configuration/vars.html#when-vars-are-resolved).
+
 ## Template Naming
 
-Templates use colon (`:`) separators for namespacing, similar to task naming conventions in monorepos:
+Template names are arbitrary strings. Use colon (`:`) separators to group related templates,
+just as you would for task names:
 
 - `python:build`
 - `python:test`
@@ -60,7 +95,8 @@ Templates use colon (`:`) separators for namespacing, similar to task naming con
 
 ## Merge Semantics
 
-When a task extends a template, fields are merged according to these rules:
+The task inherits omitted fields. When both the template and task set a field, the following
+rules apply. “Local” means the value defined on the task.
 
 | Field                                             | Behavior                                                          |
 | ------------------------------------------------- | ----------------------------------------------------------------- |
@@ -78,6 +114,8 @@ When a task extends a template, fields are merged according to these rules:
 | `description`, `shell`, `timeout`, etc.           | Local overrides template (if set)                                 |
 | `quiet`, `hide`, `raw`, `interactive`, `raw_args` | Not supported on templates (set explicitly on each task)          |
 
+### Empty lists and file tasks
+
 For `run`, `run_windows`, `depends`, `depends_post`, `wait_for`, and `sources`, an
 empty local list currently inherits the template's value. In particular,
 `depends = []` does not clear template dependencies. Use a separate template when
@@ -86,31 +124,6 @@ output declaration; `cache = { enabled = false }` explicitly disables inherited 
 
 A task that sets `file` — including every file task — runs that script rather than
 any `run` script, so it never inherits `run` or `run_windows` from a template.
-
-### Parameterizing a Template with Vars
-
-A template's `run` is merged into the task before the task is rendered, so it can read the vars
-the task declares. This is how several tasks share one command and each supplies its own values:
-
-```toml
-[task_templates.e2e]
-run = "./scripts/test-e2e.sh --mode={{ vars.mode | default(value='headless') }}"
-
-[tasks.test]
-extends = "e2e"
-vars = { mode = "headed" }
-
-[tasks."test:ci"]
-extends = "e2e"
-```
-
-`mise run test` runs `./scripts/test-e2e.sh --mode=headed`, and `mise run test:ci` falls back to
-`--mode=headless`.
-
-Write the fragment in the template rather than in a top-level `[vars]` entry: config vars are
-resolved once when the config loads, before any task-local var exists, so a task cannot change a
-value one of them already expanded. See
-[when vars are resolved](/configuration/vars.html#when-vars-are-resolved).
 
 ### Example: Deep Merge for Tools
 
@@ -172,7 +185,9 @@ depends = ["build"]  # Completely replaces template depends
 
 ## Tera Templating
 
-Templates support Tera templating, rendered in the **context of the project that uses them**:
+Task templates reuse task definitions; [Tera templates](/templates) evaluate expressions inside
+those definitions. Tera expressions use the context of the project that uses the task template,
+even when the template is defined in a parent or global config:
 
 ```toml
 [task_templates."python:build"]
@@ -187,11 +202,12 @@ Available variables (same as regular tasks):
 - <code v-pre>{{ config_root }}</code> - The project using the template (NOT where the template is defined)
 - <code v-pre>{{ env.VAR }}</code> - Environment variables
 - <code v-pre>{{ cwd }}</code> - Current working directory
-- <code v-pre>{{ vars.* }}</code> - User-defined variables from config
+- <code v-pre>{{ vars.* }}</code> - Config vars, with template and task-local overrides
 
 ## Monorepo Usage
 
-Task templates are especially useful in monorepos where multiple packages share similar build patterns:
+Define shared templates in the monorepo root, then extend them in each package. In this example,
+the API package adds coverage to its test command while the worker uses the inherited command:
 
 ```toml
 # Root mise.toml
