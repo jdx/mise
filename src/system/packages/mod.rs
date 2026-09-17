@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, mas, winget) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, macos-app, mas, winget) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -213,6 +213,30 @@ pub(crate) trait SystemPackageManager: Send + Sync {
         false
     }
 
+    /// Query installed state with manager-specific declarative options.
+    ///
+    /// `macos-app` resolves no metadata of its own, so its status query needs
+    /// the inline declaration the same way its install does. Managers without
+    /// additional package options use the ordinary query unchanged.
+    async fn installed_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        _manager_options: &ManagerPackageOptions,
+    ) -> Result<Vec<PackageStatus>> {
+        self.installed(pkgs).await
+    }
+
+    /// Upgrade with manager-specific declarative options, for the same reason
+    /// [`Self::installed_with_options`] exists.
+    async fn upgrade_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        _manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        self.upgrade(pkgs, opts).await
+    }
+
     /// Install with manager-specific declarative options. Managers without
     /// additional package options use the ordinary install path unchanged.
     async fn install_with_options(
@@ -257,6 +281,8 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(brew::BrewManager::new()),
         #[cfg(unix)]
         Arc::new(brew::BrewCaskManager::new()),
+        #[cfg(unix)]
+        Arc::new(brew::BrewCaskManager::new_macos_app()),
         Arc::new(dnf::DnfManager::new()),
         Arc::new(flatpak::FlatpakManager::new()),
         Arc::new(flatpak::FlatpakManager::new_user()),

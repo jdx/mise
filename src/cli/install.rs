@@ -240,7 +240,11 @@ impl Install {
             if !available.contains(mp.manager.name()) {
                 continue;
             }
-            match mp.manager.installed(&mp.requests).await {
+            match mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await
+            {
                 Ok(statuses) => {
                     missing += statuses
                         .iter()

@@ -56,6 +56,80 @@ to make adoption the default for all casks, with per-cask `adopt = false`
 overrides. See the
 [brew cask documentation](/bootstrap/packages/brew.html#casks).
 
+## macOS apps without a cask
+
+`macos-app` installs a macOS `.app` bundle straight from a URL, for apps that
+have no Homebrew cask — vendor-direct downloads and internal builds. Declare
+what a cask would carry:
+
+```toml
+[bootstrap.packages]
+"macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}-arm64.dmg", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app" }
+```
+
+`url`, `sha256`, `artifact`, and an explicit `version` are all required.
+`sha256` must be a real 64-character hex digest — unlike a cask, `macos-app`
+does not accept Homebrew's `no_check` sentinel, because an inline declaration
+names one pinned artifact and there is nothing to verify against without it.
+mise downloads the archive, verifies the checksum, and installs `Nuvio.app` into
+`/Applications` — the same installer `brew-cask` uses, so `.dmg` and `.zip`
+archives and the app directory behave identically. What differs is how an app
+already at the target is handled; see below.
+`{{version}}` in `url` is replaced with `version`, so a release bump is a
+two-field edit.
+
+::: warning These entries do not upgrade themselves
+mise has no way to learn that a newer version exists behind a plain URL, so
+`mise bootstrap packages upgrade` does nothing for a `macos-app` entry. You bump
+`version` and `sha256` by hand for each release. Prefer `brew-cask` whenever a
+cask exists — it tracks versions for you.
+:::
+
+`macos-app` records ownership under mise's own state directory rather than
+Homebrew's Caskroom, so `macos-app:<name>` and `brew-cask:<name>` are
+independent and never contend for the same install record.
+
+They can still contend for the same _app_, though: `/Applications` is shared,
+and a declaration may name any bundle. So `macos-app` never swaps a bundle it
+holds no receipt for — whether that app came from Homebrew, another declaration,
+or a manual install. It compares what is already there against what it
+downloaded:
+
+- **Without `adopt = true`** — refused, whatever the contents:
+
+  ```
+  macos-app:nuvio: '/Applications/Nuvio.app' already exists and is not owned by
+  this entry; set adopt = true to take it over if it is identical to the
+  download, or remove it to install a different build.
+  ```
+
+- **With `adopt = true`** — taken over in place when the app is identical to the
+  download. The bundle is not moved or replaced, so it keeps its Privacy &
+  Security grants. A _different_ build is still refused; remove it instead.
+
+Adoption is deliberately explicit. Recording ownership authorizes every later
+replacement by mise, so it is not a claim to make implicitly on an app Homebrew
+or another declaration still owns — a version bump would then replace a bundle
+the other manager still believes it controls. If you adopt an app another
+manager installed, reconcile that manager's record as well.
+
+The same applies after an interrupted install: a bundle left at the target with
+no completed ownership receipt needs `adopt = true` like any other, and a
+pending transaction alone never authorizes takeover.
+
+Ownership is recorded per target. Changing `artifact`, or changing the app
+directory, points the entry at a target the previous receipt never covered, so
+that target goes through this policy even though the package is installed.
+
+This is deliberately stricter than `brew-cask`, which warns and replaces: a swap
+strands the other owner's install record, and macOS revokes the app's Privacy &
+Security grants on any swap — even to a byte-identical bundle, because the
+grants follow the bundle's identity at that path rather than its contents.
+
+`mise bootstrap packages apply --dry-run` warns when an app is already at a
+target this entry does not own. It cannot say whether `adopt = true` would
+succeed, since it has not downloaded anything to compare against.
+
 ## Host packages or mise tools
 
 Host package declarations can include version constraints where the manager
@@ -70,21 +144,22 @@ for host-owned state such as editor extensions and other applications' plugins.
 
 ## Supported package managers
 
-| Manager        | Platform                                                       | Page                                                |
-| -------------- | -------------------------------------------------------------- | --------------------------------------------------- |
-| `apk`          | Alpine Linux                                                   | [apk](/bootstrap/packages/apk.html)                 |
-| `apt`          | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)                 |
-| `aur`          | Arch, Manjaro with yay or paru                                 | [AUR](/bootstrap/packages/aur.html)                 |
-| `dnf`          | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)                 |
-| `pacman`       | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)           |
-| `brew`         | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)               |
-| `brew-cask`    | macOS; Linux (font casks) — **no Homebrew required**           | [brew](/bootstrap/packages/brew.html)               |
-| `flatpak`      | Linux with the `flatpak` CLI on `PATH` (system scope)          | [Flatpak](/bootstrap/packages/flatpak.html)         |
-| `flatpak-user` | Linux with the `flatpak` CLI on `PATH` (user scope)            | [Flatpak](/bootstrap/packages/flatpak.html)         |
-| `nix`          | Linux and macOS with the `nix` CLI on `PATH` (user profile)    | [Nix](/bootstrap/packages/nix.html)                 |
-| `mas`          | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                 |
-| `winget`       | Windows with the `winget` CLI on `PATH`                        | [WinGet](/bootstrap/packages/winget.html)           |
-| plugin         | Declared by the plugin                                         | [Package plugins](/bootstrap/packages/plugins.html) |
+| Manager        | Platform                                                       | Page                                                       |
+| -------------- | -------------------------------------------------------------- | ---------------------------------------------------------- |
+| `apk`          | Alpine Linux                                                   | [apk](/bootstrap/packages/apk.html)                        |
+| `apt`          | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)                        |
+| `aur`          | Arch, Manjaro with yay or paru                                 | [AUR](/bootstrap/packages/aur.html)                        |
+| `dnf`          | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)                        |
+| `pacman`       | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)                  |
+| `brew`         | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)                      |
+| `brew-cask`    | macOS; Linux (font casks) — **no Homebrew required**           | [brew](/bootstrap/packages/brew.html)                      |
+| `macos-app`    | macOS — installs an `.app` bundle from a declared URL          | [packages](/bootstrap/packages/#macos-apps-without-a-cask) |
+| `flatpak`      | Linux with the `flatpak` CLI on `PATH` (system scope)          | [Flatpak](/bootstrap/packages/flatpak.html)                |
+| `flatpak-user` | Linux with the `flatpak` CLI on `PATH` (user scope)            | [Flatpak](/bootstrap/packages/flatpak.html)                |
+| `nix`          | Linux and macOS with the `nix` CLI on `PATH` (user profile)    | [Nix](/bootstrap/packages/nix.html)                        |
+| `mas`          | macOS with the `mas` CLI on `PATH`                             | [mas](/bootstrap/packages/mas.html)                        |
+| `winget`       | Windows with the `winget` CLI on `PATH`                        | [WinGet](/bootstrap/packages/winget.html)                  |
+| plugin         | Declared by the plugin                                         | [Package plugins](/bootstrap/packages/plugins.html)        |
 
 ## Semantics
 

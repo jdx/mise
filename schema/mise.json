@@ -4777,7 +4777,24 @@
                   },
                   "adopt": {
                     "type": "boolean",
-                    "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
+                    "description": "adopt an existing identical app artifact instead of replacing it (brew-cask and macos-app)"
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "macos-app only: download URL for the app archive; {{version}} is replaced with the declared version"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{64}$",
+                    "description": "macos-app only: expected sha256 of the download as 64 hex characters; required with url. Homebrew's no_check sentinel is not accepted"
+                  },
+                  "artifact": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": ".*\\S.*",
+                    "description": "macos-app only: app bundle to install from the archive, e.g. Nuvio.app; required with url"
                   },
                   "state": {
                     "type": "string",
@@ -4785,6 +4802,9 @@
                     "enum": ["present", "absent"],
                     "default": "present"
                   }
+                },
+                "dependentRequired": {
+                  "url": ["sha256", "artifact", "version"]
                 },
                 "additionalProperties": false
               }

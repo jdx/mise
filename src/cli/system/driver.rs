@@ -109,7 +109,10 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         if !d.dry_run {
             mp.manager.prepare_mutation(&mp.requests).await?;
         }
-        let statuses = mp.manager.installed(&mp.requests).await?;
+        let statuses = mp
+            .manager
+            .installed_with_options(&mp.requests, &mp.options)
+            .await?;
         if let Some(reason) = unavailable_package_reason(d, &statuses) {
             bail!("{reason}");
         }
@@ -253,9 +256,14 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
                         PackageState::Unavailable { .. } => None,
                     })
                     .collect();
-                mp.manager.upgrade(&targets, &opts).await?;
+                mp.manager
+                    .upgrade_with_options(&targets, &opts, &mp.options)
+                    .await?;
                 if !d.dry_run {
-                    let after = mp.manager.installed(&targets).await?;
+                    let after = mp
+                        .manager
+                        .installed_with_options(&targets, &mp.options)
+                        .await?;
                     let changed: Vec<String> = after
                         .iter()
                         .filter_map(|s| match &s.state {
