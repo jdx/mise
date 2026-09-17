@@ -2,6 +2,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
+use crate::file::display_path;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -13,7 +14,7 @@ use crate::{file, github, gpg, plugins};
 use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -138,7 +139,99 @@ impl SwiftPlugin {
 
     fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         self.test_swift(ctx, tv)
+            .map_err(|err| explain_missing_libraries(tv, err))
     }
+}
+
+/// Name the shared libraries a failed `swift --version` could not load.
+///
+/// swift.org publishes one Linux build per distro family, and mise falls back to
+/// another family's build when the host's is not published (#13297). The build
+/// then links against sonames the host may spell differently — Arch builds
+/// ncurses wide-only, so `libncursesw.so.6` is present and `libncurses.so.6` is
+/// not — and the whole symptom is exit 127 after a ~1GB download. The loader
+/// names the first soname it fails on; `ldd` knows all of them, so ask it once
+/// and let the user fix the set in one pass instead of one install at a time.
+///
+/// See: <https://github.com/jdx/mise/discussions/13306>
+#[cfg(target_os = "linux")]
+fn explain_missing_libraries(tv: &ToolVersion, err: eyre::Report) -> eyre::Report {
+    let missing = missing_sonames(&tv.install_path());
+    if missing.is_empty() {
+        return err;
+    }
+    err.wrap_err(format!(
+        "this swift build needs shared libraries missing from this host: {} (point LD_LIBRARY_PATH at them with install_env)",
+        missing.join(", ")
+    ))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn explain_missing_libraries(_tv: &ToolVersion, err: eyre::Report) -> eyre::Report {
+    err
+}
+
+/// The unresolved sonames under the toolchain's `usr/bin` and `usr/lib`.
+///
+/// Those two directories only, and not recursively: they hold the executables
+/// and the libraries those executables load, which is the set the report this
+/// came from measured against a real ubi9 artifact. It also keeps the work
+/// bounded by the toolchain's own layout rather than by the size of the tree.
+/// This runs only after `swift --version` has already failed, so the cost falls
+/// on an install that is broken either way.
+///
+/// `ldd` runs the dynamic loader over each file. These are swift.org artifacts
+/// whose GPG signature mise verified before extracting, which is the same trust
+/// the install already extends by running one of them.
+#[cfg(target_os = "linux")]
+fn missing_sonames(install_path: &Path) -> Vec<String> {
+    if file::which("ldd").is_none() {
+        debug!("swift: no ldd on PATH, cannot name the missing libraries");
+        return vec![];
+    }
+    let mut missing = BTreeSet::new();
+    for (dir, want_library) in [("usr/bin", false), ("usr/lib", true)] {
+        for entry in file::ls(&install_path.join(dir)).unwrap_or_default() {
+            let is_candidate = if want_library {
+                entry
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().contains(".so"))
+            } else {
+                file::is_executable(&entry)
+            };
+            if !is_candidate || !entry.is_file() {
+                continue;
+            }
+            // `unchecked`: ldd exits non-zero for a file that is not a dynamic
+            // executable, which is an ordinary thing to meet in these
+            // directories and not a reason to give up on the rest.
+            match crate::cmd::cmd("ldd", [entry.as_os_str()])
+                .unchecked()
+                .stderr_null()
+                .read()
+            {
+                Ok(output) => missing.extend(parse_ldd_missing(&output)),
+                Err(err) => debug!("swift: ldd {}: {err:#}", display_path(&entry)),
+            }
+        }
+    }
+    missing.into_iter().collect()
+}
+
+/// The sonames `ldd` reported as unresolved, from lines like
+/// `\tlibncurses.so.6 => not found`.
+#[cfg(target_os = "linux")]
+fn parse_ldd_missing(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            line.ends_with("=> not found")
+                .then(|| line.split_whitespace().next())
+                .flatten()
+                .map(str::to_string)
+        })
+        .collect()
 }
 
 #[cfg(macos)]
@@ -1425,5 +1518,56 @@ mod lockfile_tests {
                 )
             );
         }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::{missing_sonames, parse_ldd_missing};
+    use crate::file;
+
+    #[test]
+    fn parse_ldd_missing_reads_unresolved_sonames() {
+        let output = "\tlinux-vdso.so.1 (0x0000ffff123)\n\
+             \tlibncurses.so.6 => not found\n\
+             \tlibc.so.6 => /usr/lib/libc.so.6 (0x0000ffff456)\n\
+             \tlibpanel.so.6 => not found\n";
+
+        assert_eq!(
+            parse_ldd_missing(output),
+            vec!["libncurses.so.6".to_string(), "libpanel.so.6".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_ldd_missing_ignores_a_file_that_is_not_dynamic() {
+        assert!(parse_ldd_missing("\tnot a dynamic executable\n").is_empty());
+    }
+
+    /// The walk has to survive the ordinary contents of these directories: a
+    /// shell script beside the executables, a file named like a library that is
+    /// not an ELF, a name that is not a library at all. `ldd` exits non-zero on
+    /// each of those, which must not abort the scan or invent a missing soname.
+    #[test]
+    fn missing_sonames_tolerates_files_that_are_not_dynamic_executables() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("usr/bin");
+        let lib = tmp.path().join("usr/lib");
+        file::create_dir_all(&bin).unwrap();
+        file::create_dir_all(&lib).unwrap();
+        file::write(bin.join("swift-helper"), "#!/bin/sh\nexit 0\n").unwrap();
+        file::make_executable(bin.join("swift-helper")).unwrap();
+        file::write(lib.join("libnotreally.so.1"), "not an ELF").unwrap();
+        file::write(lib.join("swift.json"), "{}").unwrap();
+
+        assert!(missing_sonames(tmp.path()).is_empty());
+    }
+
+    /// A tree without the toolchain layout is not an error, just nothing to say.
+    #[test]
+    fn missing_sonames_is_empty_without_a_toolchain_layout() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        assert!(missing_sonames(tmp.path()).is_empty());
     }
 }
