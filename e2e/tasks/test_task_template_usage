@@ -21,10 +21,11 @@ EOF
 # The task's own flags are added to the template's rather than replacing them
 assert "mise run deploy-api --env prod --dry-run --replicas 3" "env=prod dry=true replicas=3"
 
-# --help lists both, template flags first
-assert_contains "mise run deploy-api --help" "--env <env>"
-assert_contains "mise run deploy-api --help" "--dry-run"
-assert_contains "mise run deploy-api --help" "--replicas <n>"
+# --help lists both, template flags first. Compared as one ordered list so a regression
+# that reorders them fails rather than just checking each flag is present somewhere.
+assert "mise run deploy-api --help | grep -oE '\-\-(env|dry-run|replicas)' | head -3" "--env
+--dry-run
+--replicas"
 
 # A task with no usage of its own still inherits the template's
 assert "mise run deploy-web --env staging" "env=staging"

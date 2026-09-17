@@ -3618,7 +3618,7 @@ fn resolve_task_template(task: &mut Task, definitions: &TaskDefinitions) -> Resu
             )
         })?;
 
-        task.merge_template(&template.template);
+        task.merge_extended_template(&template.template);
         task.add_config_source(&template.source);
     }
     if let Some(defaults) = &definitions.workspace_defaults

@@ -90,6 +90,19 @@ pub(crate) struct TaskTemplate {
     pub pass_through_env: Vec<String>,
 }
 
+/// What a merge does with the template's `usage` spec.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UsageMerge {
+    /// Prepend the template's spec to the task's. For a template the task named with
+    /// `extends`: it asked for what the template declares, so adding a flag of its own must
+    /// not drop the shared ones.
+    Compose,
+    /// Use the template's spec only when the task has none, like every other field a
+    /// workspace default contributes. Composing there could add a required argument to a
+    /// command that parsed fine before, which is not what "fills anything still unset" means.
+    FillOnly,
+}
+
 impl Task {
     /// Merge a template into this task, using template values only where the task
     /// doesn't already have values set. This allows tasks to override template values.
@@ -105,6 +118,18 @@ impl Task {
     /// - usage: Concatenated (template spec first, then the task's own)
     /// - Other fields: Local overrides template (if set)
     pub(crate) fn merge_template(&mut self, template: &TaskTemplate) {
+        self.merge_template_with(template, UsageMerge::FillOnly)
+    }
+
+    /// Merge a template the task named with `extends`.
+    ///
+    /// Identical to [`Self::merge_template`] except that the template's `usage` spec is
+    /// composed with the task's rather than used only when the task has none.
+    pub(crate) fn merge_extended_template(&mut self, template: &TaskTemplate) {
+        self.merge_template_with(template, UsageMerge::Compose)
+    }
+
+    fn merge_template_with(&mut self, template: &TaskTemplate, usage_merge: UsageMerge) {
         // run: only use template if local is empty
         if self.run.is_empty() {
             self.run = template.run.clone();
@@ -216,20 +241,19 @@ impl Task {
             self.toml_bool_presence.record("silent");
         }
 
-        // usage: the template's spec is prepended to the task's rather than replaced by it.
-        // A usage spec is a list of declarations, so the composable reading is the useful one:
-        // it lets a template hold the flags several tasks share while each task adds its own.
-        // Replacing meant a task that declared a single flag silently lost every inherited
-        // one, which is the opposite of how the rest of these fields behave.
-        //
-        // Template first so shared flags lead in `--help`, and so a template's positional
-        // args stay ahead of the task's. Both halves are rendered together afterwards, so
-        // tera in either still resolves.
+        // usage: a task with no spec of its own takes the template's either way. A task that
+        // has one keeps it, and additionally gets the template's declarations prepended when
+        // the template is one it named with `extends` -- a usage spec is a list of
+        // declarations, so a task adding a flag of its own should not thereby drop every
+        // shared one. Template first, so the shared flags lead in `--help` and a template's
+        // positional args stay ahead of the task's. Both halves are rendered together
+        // afterwards, so tera in either still resolves.
         if !template.usage.is_empty() {
-            self.usage = match self.usage.trim() {
-                "" => template.usage.clone(),
-                own => format!("{}\n{own}", template.usage.trim_end()),
-            };
+            if self.usage.trim().is_empty() {
+                self.usage = template.usage.clone();
+            } else if usage_merge == UsageMerge::Compose {
+                self.usage = format!("{}\n{}", template.usage.trim_end(), self.usage.trim());
+            }
         }
 
         // timeout: use template only if local not set
@@ -309,7 +333,7 @@ mod tests {
             ..Default::default()
         };
 
-        task.merge_template(&template);
+        task.merge_extended_template(&template);
 
         assert_eq!(task.usage, "flag \"--shared <v>\"\nflag \"--own <v>\"");
     }
@@ -322,9 +346,31 @@ mod tests {
             ..Default::default()
         };
 
-        task.merge_template(&template);
+        task.merge_extended_template(&template);
 
         assert_eq!(task.usage, "flag \"--shared <v>\"");
+    }
+
+    #[test]
+    fn test_workspace_default_usage_only_fills() {
+        let mut task = Task {
+            usage: "flag \"--own <v>\"".to_string(),
+            ..Default::default()
+        };
+        let default = TaskTemplate {
+            usage: "arg \"<required>\"".to_string(),
+            ..Default::default()
+        };
+
+        // A workspace default fills what the task left unset; composing here would add a
+        // required argument to a command line that parsed fine before.
+        task.merge_template(&default);
+        assert_eq!(task.usage, "flag \"--own <v>\"");
+
+        // With no spec of its own, the task still takes the default's.
+        let mut bare = Task::default();
+        bare.merge_template(&default);
+        assert_eq!(bare.usage, "arg \"<required>\"");
     }
 
     #[test]
@@ -334,7 +380,7 @@ mod tests {
             ..Default::default()
         };
 
-        task.merge_template(&TaskTemplate::default());
+        task.merge_extended_template(&TaskTemplate::default());
 
         assert_eq!(task.usage, "flag \"--own <v>\"");
     }
