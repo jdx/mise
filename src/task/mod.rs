@@ -2499,6 +2499,7 @@ impl Task {
             .map(|directive| (directive, self.config_source.clone()))
             .collect();
         directives.extend(self.overlay_vars.iter().cloned());
+        directives = bind_literal_vars_first(directives);
         let template_env: EnvMap = tera_ctx
             .get("env")
             .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
@@ -3060,6 +3061,122 @@ impl Task {
 
         Ok((env, task_env.collect(), env_remove))
     }
+}
+
+/// Bind a task's literal vars before resolving the rest of them.
+///
+/// A task's vars are the concatenation of every layer that contributed one: a task template
+/// named with `extends`, a workspace-root task default, a `[tasks.<name>]` overlay on a file
+/// task, and the task's own table. Each directive renders against the vars resolved before it,
+/// so a var written in one layer could not read a value a later layer supplied. Most visibly,
+/// a var defined by a task template could not read the value the task passed it and silently
+/// fell back to its `default()` instead.
+///
+/// Resolving the literal values up front removes that ordering dependence without changing
+/// which value wins. A name is only hoisted when every directive that assigns it and actually
+/// runs is a plain literal from the same config file; the last of those is the one that wins
+/// today, and it still does, since it moves to the front and the copies it already overrode
+/// are dropped with it. Sharing a config file matters because [`EnvResults::resolve`] drops
+/// directives by their source in safe mode, so hoisting an assignment the resolver then drops
+/// would delete the copies that would have run.
+///
+/// This reads the list the way [`Task::resolve_task_vars`] resolves it, with
+/// [`ToolsFilter::NonToolsOnly`]: a `tools = true` directive never runs, so it neither wins a
+/// name nor keeps a literal that does run from being hoisted past it.
+fn bind_literal_vars_first(
+    directives: Vec<(EnvDirective, PathBuf)>,
+) -> Vec<(EnvDirective, PathBuf)> {
+    /// The var this directive assigns, or `None` when it can assign names not known until it
+    /// runs — a dotenv file, a sourced script, a module.
+    fn assigned_name(directive: &EnvDirective) -> Option<&str> {
+        match directive {
+            EnvDirective::Val(k, _, _)
+            | EnvDirective::Default(k, _, _)
+            | EnvDirective::Rm(k, _)
+            | EnvDirective::Required(k, _)
+            | EnvDirective::Age { key: k, .. } => Some(k),
+            EnvDirective::File(..)
+            | EnvDirective::Path(..)
+            | EnvDirective::Source(..)
+            | EnvDirective::Module(..)
+            | EnvDirective::PythonVenv { .. } => None,
+        }
+    }
+
+    /// A directive [`ToolsFilter::NonToolsOnly`] discards, so nothing it says about a name
+    /// counts: it is invisible to every rule below and stays where it is.
+    fn never_runs(directive: &EnvDirective) -> bool {
+        directive.options().tools
+    }
+
+    /// A value that renders to itself and records nothing else, so where it resolves cannot
+    /// change what it produces. A redacted literal is excluded: dropping the copies it
+    /// overrode would drop their redactions with them.
+    fn is_plain_literal(directive: &EnvDirective) -> bool {
+        matches!(
+            directive,
+            EnvDirective::Val(_, value, opts)
+                if !contains_template_syntax(value) && opts.redact.is_none()
+        )
+    }
+
+    let mut running = directives
+        .iter()
+        .filter(|(directive, _)| !never_runs(directive))
+        .peekable();
+    // One directive that assigns names we cannot see is enough to make any reordering
+    // unsound: it could be the assignment that wins for a name we were about to hoist.
+    if running
+        .clone()
+        .any(|(directive, _)| assigned_name(directive).is_none())
+    {
+        return directives;
+    }
+    // Nothing that runs can read a var, so the order the literals resolve in cannot matter.
+    if running.all(|(directive, _)| is_plain_literal(directive)) {
+        return directives;
+    }
+
+    // Per name, the literal to hoist and the file it came from, or `None` once anything
+    // disqualifies the name.
+    let mut winners: IndexMap<&str, Option<(usize, &Path)>> = IndexMap::new();
+    for (i, (directive, source)) in directives.iter().enumerate() {
+        if never_runs(directive) {
+            continue;
+        }
+        let Some(name) = assigned_name(directive) else {
+            continue;
+        };
+        let winner = match winners.get(name).copied() {
+            None => is_plain_literal(directive).then_some((i, source.as_path())),
+            Some(None) => None,
+            Some(Some((_, first_source))) => (is_plain_literal(directive)
+                && first_source == source.as_path())
+            .then_some((i, source.as_path())),
+        };
+        winners.insert(name, winner);
+    }
+    let hoisted: HashSet<String> = winners
+        .iter()
+        .filter(|(_, winner)| winner.is_some())
+        .map(|(name, _)| name.to_string())
+        .collect();
+    let prelude: Vec<(EnvDirective, PathBuf)> = winners
+        .values()
+        .flatten()
+        .map(|&(i, _)| directives[i].clone())
+        .collect();
+    if prelude.is_empty() {
+        return directives;
+    }
+
+    prelude
+        .into_iter()
+        .chain(directives.into_iter().filter(|(directive, _)| {
+            never_runs(directive)
+                || !assigned_name(directive).is_some_and(|name| hoisted.contains(name))
+        }))
+        .collect()
 }
 
 pub(crate) fn clear_usage_env(env: &mut EnvMap) {
@@ -3811,6 +3928,195 @@ pub(crate) async fn parse_usage_values_from_task(
 
 #[cfg(test)]
 mod tests {
+    mod literal_var_binding {
+        use super::super::bind_literal_vars_first;
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        use std::path::PathBuf;
+
+        fn val(key: &str, value: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::Val(key.into(), value.into(), Default::default()),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn redacted(key: &str, value: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::Val(
+                    key.into(),
+                    value.into(),
+                    EnvDirectiveOptions {
+                        redact: Some(true),
+                        ..Default::default()
+                    },
+                ),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn tools(key: &str, value: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::Val(
+                    key.into(),
+                    value.into(),
+                    EnvDirectiveOptions {
+                        tools: true,
+                        ..Default::default()
+                    },
+                ),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn from(source: &str, directive: (EnvDirective, PathBuf)) -> (EnvDirective, PathBuf) {
+            (directive.0, PathBuf::from(source))
+        }
+
+        fn file(path: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::File(path.into(), Default::default()),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn order(directives: Vec<(EnvDirective, PathBuf)>) -> Vec<String> {
+            bind_literal_vars_first(directives)
+                .into_iter()
+                .map(|(directive, _)| directive.to_string())
+                .collect()
+        }
+
+        /// The reported shape: a task template's var reads a value the task supplies, which
+        /// the task declares after it. Fails before the fix, where `wrap` renders first and
+        /// takes the `default()` branch.
+        #[test]
+        fn a_literal_binds_before_the_var_that_reads_it() {
+            assert_eq!(
+                order(vec![val("wrap", "--opt={{vars.opt}}"), val("opt", "task")]),
+                ["opt=task", "wrap=--opt={{vars.opt}}"]
+            );
+        }
+
+        /// A task overriding a template's literal default: only the winning assignment is
+        /// hoisted, so the template's own copy cannot clobber it again part way through.
+        #[test]
+        fn only_the_last_literal_for_a_name_survives() {
+            assert_eq!(
+                order(vec![
+                    val("name", "template"),
+                    val("greeting", "hello {{vars.name}}"),
+                    val("name", "task"),
+                ]),
+                ["name=task", "greeting=hello {{vars.name}}"]
+            );
+        }
+
+        /// The inverse direction stays intact: a templated var is never moved, so it still
+        /// resolves after whatever it reads.
+        #[test]
+        fn a_templated_value_keeps_its_place() {
+            assert_eq!(
+                order(vec![val("base", "/opt"), val("path", "{{vars.base}}/bin")]),
+                ["base=/opt", "path={{vars.base}}/bin"]
+            );
+        }
+
+        /// A name a `default` directive also assigns keeps its declaration order, since
+        /// `default` reads what resolved before it and hoisting would change its answer.
+        #[test]
+        fn a_name_a_default_assigns_is_left_alone() {
+            assert_eq!(
+                order(vec![
+                    val("mode", ""),
+                    val("cmd", "run --{{vars.mode}}"),
+                    (
+                        EnvDirective::Default("mode".into(), "fast".into(), Default::default()),
+                        PathBuf::from("mise.toml"),
+                    ),
+                ]),
+                ["mode=", "cmd=run --{{vars.mode}}", "mode default=fast"]
+            );
+        }
+
+        /// A redacted literal is left where it is: hoisting it would drop the redaction that
+        /// the copies it overrode registered.
+        #[test]
+        fn a_redacted_literal_is_left_alone() {
+            assert_eq!(
+                order(vec![
+                    redacted("token", "secret"),
+                    val("arg", "--token={{vars.token}}"),
+                ]),
+                ["token=secret", "arg=--token={{vars.token}}"]
+            );
+        }
+
+        /// `resolve_task_vars` resolves with `NonToolsOnly`, so a `tools = true` value never
+        /// runs and cannot win the name. Hoisting it would delete the copies that do run.
+        #[test]
+        fn a_tools_value_never_wins_a_name() {
+            assert_eq!(
+                order(vec![
+                    val("mode", "template"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    tools("mode", "tool"),
+                ]),
+                ["mode=template", "cmd=run --{{vars.mode}}", "mode=tool"]
+            );
+        }
+
+        /// For the same reason it is not a competitor either: a literal that does run is
+        /// still hoisted past it.
+        #[test]
+        fn a_tools_value_does_not_block_a_hoist() {
+            assert_eq!(
+                order(vec![
+                    tools("mode", "tool"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    val("mode", "task"),
+                ]),
+                ["mode=task", "mode=tool", "cmd=run --{{vars.mode}}"]
+            );
+        }
+
+        /// Safe mode drops directives by the config file they came from, so a name assigned
+        /// from two files keeps its order rather than risk hoisting the one that is dropped.
+        #[test]
+        fn a_name_assigned_from_two_files_is_left_alone() {
+            assert_eq!(
+                order(vec![
+                    val("mode", "base"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    from("overlay.toml", val("mode", "overlay")),
+                ]),
+                ["mode=base", "cmd=run --{{vars.mode}}", "mode=overlay"]
+            );
+        }
+
+        /// A dotenv file can assign any name, so nothing moves past it.
+        #[test]
+        fn a_dotenv_file_stops_every_hoist() {
+            assert_eq!(
+                order(vec![
+                    val("cmd", "run --{{vars.mode}}"),
+                    file(".env"),
+                    val("mode", "fast"),
+                ]),
+                [
+                    "cmd=run --{{vars.mode}}".to_string(),
+                    format!("_.file = \"{}\"", crate::file::display_path(".env")),
+                    "mode=fast".to_string(),
+                ]
+            );
+        }
+
+        /// Nothing to gain when no value can read another, so the list is handed back as is.
+        #[test]
+        fn a_list_of_only_literals_is_untouched() {
+            assert_eq!(order(vec![val("a", "1"), val("b", "2")]), ["a=1", "b=2"]);
+        }
+    }
+
     mod header_key_paths {
         use super::super::{
             extract_usage_from_comments, merge_header_value, parse_mise_header_toml,
