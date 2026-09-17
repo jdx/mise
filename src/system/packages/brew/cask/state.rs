@@ -968,7 +968,10 @@ pub(super) fn apply_cask_prune_plan_in(
         return Ok(0);
     }
 
-    // Prune is brew-cask only; macos-app reports that it does not support it.
+    // Prune removes app targets, so it takes the shared app lock first, in the
+    // same order as the install path. Prune itself is brew-cask only;
+    // macos-app reports that it does not support it.
+    let _app_lock = lock_app_mutations()?;
     let _caskroom_lock = lock_caskroom(CaskManager::BrewCask)?;
     let mut removed = 0;
     for candidate in &plan.remove {
@@ -1026,13 +1029,38 @@ pub(super) fn apply_cask_prune_plan_in(
     Ok(removed)
 }
 
-/// Serialize installs within a manager, in that manager's own state root.
+/// Serialize every app-directory mutation, across managers.
 ///
-/// `macos-app` records nothing under Homebrew's prefix, so locking there would
-/// create — and on a machine without Homebrew, need to elevate to create — a
-/// Caskroom this manager never writes to.
+/// `brew-cask` and `macos-app` keep separate records but install into the same
+/// application directory, so a per-manager lock alone would let two mise
+/// processes interleave the rename sequence on one bundle. This lives in
+/// mise's state directory rather than Homebrew's prefix, so a machine without
+/// Homebrew never has to create one to take it.
+///
+/// Taken before [`lock_caskroom`] wherever both are held, so the order is the
+/// same on every path.
+pub(super) fn lock_app_mutations() -> Result<fslock::LockFile> {
+    file::create_dir_all(*crate::dirs::STATE)?;
+    let path = crate::dirs::STATE.join("cask-apps.lock");
+    let mut lock = fslock::LockFile::open(&path)?;
+    if !lock.try_lock()? {
+        debug!("waiting for cask app lock on {}", path.display());
+        lock.lock()?;
+    }
+    Ok(lock)
+}
+
+/// Serialize installs within one manager's own records.
+///
+/// `brew-cask` keeps its historical Caskroom lock so a concurrently running
+/// older mise still excludes it. `macos-app` writes nothing under Homebrew's
+/// prefix, so locking there would create — and on a machine without Homebrew,
+/// need to elevate to create — a Caskroom it never touches.
 pub(super) fn lock_caskroom(manager: CaskManager) -> Result<fslock::LockFile> {
-    let root = cask_state_root(manager);
+    let root = match manager {
+        CaskManager::BrewCask => prefix::prefix().join("Caskroom"),
+        CaskManager::MacosApp => cask_state_root(manager),
+    };
     file::create_dir_all(&root)?;
     let path = root.join(".mise.lock");
     let mut lock = fslock::LockFile::open(&path)?;
