@@ -134,3 +134,53 @@ profile_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --ar
 unset __MISE_SESSION
 MISE_ENV=second mise hook-env --shell-pid "$$" -s bash >"$TMPDIR/profile-hook"
 assert_contains "jq -r '.profile[]' '$profile_state'" second
+
+# Deleting a project leaves its daemon state behind until it is pruned explicitly.
+mkdir -p "$HOME/live-project" "$HOME/doomed-project"
+cd "$HOME/live-project"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "sleep 30"
+TOML
+mise daemons start
+live_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+assert_contains "mise daemons ls --json" '"data_size"'
+assert_contains "mise daemons ls --json" "\"state_dir\": \"$(dirname "$live_state")\""
+
+cd "$HOME/doomed-project"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+run = "sleep 30"
+TOML
+mise daemons start
+doomed_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+doomed_dir=$(dirname "$doomed_state")
+mkdir -p "$doomed_dir/data/db"
+echo data >"$doomed_dir/data/db/file"
+cd "$HOME"
+rm -rf "$HOME/doomed-project"
+
+# A dry run reports the deleted project without removing anything.
+assert_contains "mise daemons prune --dry-run 2>&1" 'dryrun'
+assert_contains "mise daemons prune --dry-run 2>&1" "$(basename "$doomed_dir")"
+assert_contains "mise daemons prune --dry-run 2>&1" 'from deleted ~/doomed-project'
+assert "test -f '$doomed_state'"
+
+# Starting daemons elsewhere hints at the leftover state but never deletes it.
+cd "$HOME/live-project"
+assert_contains "mise daemons start 2>&1" 'mise daemons prune'
+assert "test -f '$doomed_state'"
+
+mise daemons prune --yes
+assert "test ! -d '$doomed_dir'"
+assert "test -f '$live_state'"
+assert_contains "mise daemons prune --yes 2>&1" 'no daemon state'
+
+# State for a project that still exists is kept even with no daemons declared.
+: >mise.toml
+mise daemons prune --yes
+assert "test -f '$live_state'"

@@ -161,6 +161,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("deactivate", Read),
     ("daemons", Read),
     ("daemons ls", Read),
+    // Deletes the state and database data of projects that no longer exist.
+    ("daemons prune", Destructive),
     ("daemons status", Read),
     // Bare `mise deps` defaults to `deps install` and runs install steps.
     ("deps", Write),

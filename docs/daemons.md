@@ -93,6 +93,9 @@ To reset a database, stop its daemon, locate its data directory, and explicitly 
 that instance's data. Back up anything you want to retain first. Use the database's
 own migration tools to preserve data across incompatible upgrades.
 
+`mise daemons ls --json` reports `state_dir` and `data_size` for each daemon, so you
+can see what a project costs before deleting it.
+
 Higher-precedence declarations replace a same-name daemon completely. Inherited
 daemons retain their declaring project scope. One environment profile can be active
 per project: stop its daemons and leave its shell sessions before switching `MISE_ENV`.
@@ -101,6 +104,25 @@ Changed definitions take effect on the next start or explicit restart.
 A preset `run` override still runs after database initialization. It follows
 pitchfork shell-command semantics: use `exec` for the final long-running process
 (for example, `setup-command && exec server`) so it receives stop signals directly.
+
+## Pruning deleted projects
+
+Each project root keeps its own state directory, including every linked git worktree.
+Deleting a project directory leaves its daemons registered with pitchfork and its data
+on disk. `mise daemons prune` removes that leftover state:
+
+```sh
+mise daemons prune --dry-run
+mise daemons prune
+```
+
+It selects only state whose recorded project directory no longer exists, stops those
+daemons, unregisters their generated configuration, and deletes their state directory
+including data. Removal is irreversible, so it prompts with the total size first; pass
+`--yes` to prune non-interactively and `--dry-run` to preview. Projects that still
+exist are never touched, even when they no longer declare any daemons. Starting daemons
+prints a notice when such leftover state exists but never removes it: deletion stays
+explicit.
 
 ## Automatic start and stop
 

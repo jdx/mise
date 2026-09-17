@@ -3,6 +3,8 @@ use crate::daemons::{
     self,
     runtime::{self, Runtime},
 };
+use crate::file::display_path;
+use crate::ui::prompt::{self, Confirmation};
 use eyre::{Result, bail};
 use std::path::PathBuf;
 
@@ -33,6 +35,7 @@ enum Commands {
     Logs(Args),
     Status(Args),
     Tui(TuiArgs),
+    Prune(Prune),
     #[usage(name = "__init", hide = true)]
     Init(Init),
 }
@@ -60,6 +63,21 @@ struct List {
     json: bool,
 }
 
+/// Remove daemon state left behind by deleted project directories.
+///
+/// Each project root keeps generated pitchfork configuration and daemon data
+/// under $MISE_STATE_DIR/daemons. Deleting a project (for example with
+/// `git worktree remove`) leaves both behind. This stops those daemons,
+/// unregisters their configuration, and deletes their data. State for projects
+/// that still exist is never removed.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct Prune {
+    /// Show what would be removed without deleting anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+}
+
 #[derive(Debug, usage_rs::Args)]
 struct Init {
     preset: String,
@@ -82,6 +100,7 @@ impl Daemons {
             Some(Commands::Init(args)) => {
                 return daemons::presets::initialize(&args.preset, &args.data, &args.database);
             }
+            Some(Commands::Prune(args)) => return args.run().await,
             Some(Commands::Start(args)) => ("start", args.args, false),
             Some(Commands::Stop(args)) => ("stop", args.args, false),
             Some(Commands::Restart(args)) => ("restart", args.args, false),
@@ -110,6 +129,9 @@ impl Daemons {
             return runtime
                 .exec(root, [vec!["tui".into()], args].concat())
                 .await;
+        }
+        if action == "start" {
+            hint_prunable_state();
         }
         let loaded = config.daemons()?;
         let mut roots = loaded.roots();
@@ -161,6 +183,10 @@ impl Daemons {
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if action == "ls" {
+                // Reported per root so a developer can see what a worktree costs
+                // before deleting it (or before running `mise daemons prune`).
+                let state_dir = daemons::state_dir(&root);
+                let data_size = daemons::prune::dir_size(&state_dir.join("data"));
                 let mut ids = previous.ids.clone();
                 for name in set.daemons.keys() {
                     let id = if previous.namespace.is_empty() {
@@ -182,7 +208,7 @@ impl Daemons {
                     } else {
                         None
                     };
-                    rows.push(serde_json::json!({ "id": id, "name": name, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()) }));
+                    rows.push(serde_json::json!({ "id": id, "name": name, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "root": root, "state_dir": state_dir, "data_size": data_size, "data_size_human": daemons::prune::human_size(data_size) }));
                 }
                 continue;
             }
@@ -248,6 +274,88 @@ impl Daemons {
         }
         Ok(())
     }
+}
+
+impl Prune {
+    async fn run(self) -> Result<()> {
+        let base = daemons::prune::base_dir();
+        let orphans = daemons::prune::orphans(&base)?;
+        if orphans.is_empty() {
+            info!(
+                "no daemon state from deleted projects under {}",
+                display_path(&base)
+            );
+            return Ok(());
+        }
+        let sized: Vec<_> = orphans
+            .into_iter()
+            .map(|entry| {
+                let size = daemons::prune::dir_size(&entry.dir);
+                (entry, size)
+            })
+            .collect();
+        for line in daemons::prune::describe(&sized) {
+            if self.dry_run {
+                info!("{line} {}", console::style("[dryrun]").bold());
+            } else {
+                info!("{line}");
+            }
+        }
+        if self.dry_run {
+            return Ok(());
+        }
+        let total: u64 = sized.iter().map(|(_, size)| size).sum();
+        if !Settings::get().yes {
+            let message = format!(
+                "remove {} daemon state director{} and {} of data?",
+                sized.len(),
+                if sized.len() == 1 { "y" } else { "ies" },
+                daemons::prune::human_size(total),
+            );
+            // Defaults to no: the data is gone for good once this proceeds.
+            match prompt::confirm_with_default(message, false)? {
+                Confirmation::Yes => {}
+                Confirmation::No => return Ok(()),
+                Confirmation::Unavailable => bail!(
+                    "mise daemons prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
+                ),
+            }
+        }
+        // Pitchfork is resolved once from the ambient configuration; each entry
+        // falls back to the executable its own state recorded.
+        let config = Config::get().await?;
+        let (config, ts) = runtime::toolset(&config, false).await?;
+        for (entry, size) in &sized {
+            let runtime = Runtime::from_toolset(&config, &ts, Some(&entry.state.bin))
+                .await
+                .ok();
+            if daemons::prune::remove(entry, runtime.as_ref()).await? {
+                info!(
+                    "removed {} ({})",
+                    display_path(&entry.dir),
+                    daemons::prune::human_size(*size)
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Points at daemon state whose project directory no longer exists. The current
+/// project cannot be among them: it is the directory mise is running in. Nothing
+/// is deleted here; pruning is always explicit.
+fn hint_prunable_state() {
+    let Ok(orphans) = daemons::prune::orphans(&daemons::prune::base_dir()) else {
+        return;
+    };
+    let count = orphans.len();
+    if count == 0 {
+        return;
+    }
+    let plural = if count == 1 { "y" } else { "ies" };
+    info!(
+        "{count} daemon state director{plural} belong to deleted projects; run `mise daemons prune` to remove them"
+    );
 }
 
 fn matches_name(id: &str, name: &str) -> bool {

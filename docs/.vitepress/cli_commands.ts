@@ -428,6 +428,9 @@ export const commands: { [key: string]: Command } = {
       ls: {
         hide: false,
       },
+      prune: {
+        hide: false,
+      },
       restart: {
         hide: false,
       },

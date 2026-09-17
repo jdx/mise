@@ -1,6 +1,7 @@
 //! Project daemons: custom pitchfork definitions and embedded database presets.
 pub(crate) mod hook_env;
 pub(crate) mod presets;
+pub(crate) mod prune;
 pub(crate) mod runtime;
 
 use crate::config::env_directive::EnvDirective;
