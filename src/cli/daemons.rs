@@ -170,6 +170,13 @@ impl Daemons {
             // is only what it imported or inherited.
             let requested = loaded.for_root(&root);
             let foreign = root != project_root;
+            // What this invocation may act on or display. Registration still
+            // uses the complete set above; only visibility narrows here.
+            let visible = if foreign {
+                set.restricted_to(&requested)
+            } else {
+                set.clone()
+            };
             let previous = runtime::read_state(&root)?;
             if set.daemons.is_empty() && previous.ids.is_empty() {
                 continue;
@@ -184,8 +191,15 @@ impl Daemons {
                 } else {
                     previous.namespace.as_str()
                 };
-                let mut ids = previous.ids.clone();
-                for name in set.daemons.values().map(|d| &d.name) {
+                let mut ids: Vec<String> = previous
+                    .ids
+                    .iter()
+                    .filter(|id| {
+                        !foreign || visible.find(id.rsplit('/').next().unwrap_or(id)).is_some()
+                    })
+                    .cloned()
+                    .collect();
+                for name in visible.daemons.values().map(|d| &d.name) {
                     let id = if listed.is_empty() {
                         name.clone()
                     } else {
@@ -197,7 +211,7 @@ impl Daemons {
                 }
                 for id in ids {
                     let name = id.rsplit('/').next().unwrap_or(&id);
-                    let daemon = set.find(name);
+                    let daemon = visible.find(name);
                     let status = if let Ok(runtime) = &runtime
                         && !previous.namespace.is_empty()
                     {
@@ -211,7 +225,10 @@ impl Daemons {
             }
             let runtime = runtime?;
             if install {
-                runtime::validate_tools(&set, &scoped, &ts).await?;
+                // Validate what this invocation will start. A sibling daemon in
+                // the referenced project is registered but not started, so its
+                // tool being absent must not block an import.
+                runtime::validate_tools(&visible, &scoped, &ts).await?;
             }
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime.prepare(&root, &set, true).await?;

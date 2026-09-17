@@ -163,7 +163,7 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         .map(|d| d.root.clone())
         .collect::<indexmap::IndexSet<_>>()
     {
-        let namespace = runtime::resolve_namespace(&root, settings.get(&root))?;
+        let namespace = runtime::resolve_namespace(&root, Some(&settings_for(&settings, &root)))?;
         set.namespaces.insert(root, namespace);
     }
     if !imported_ids.is_empty() {
@@ -223,6 +223,24 @@ fn build(name: &str, declaration: Declaration, source: PathBuf, root: PathBuf) -
         exports: IndexMap::new(),
         imported: false,
     })
+}
+
+/// The `[daemons_settings]` that apply to a project root.
+///
+/// A root inherits the table from its ancestors, nearest declaration winning,
+/// the same way a daemon declared in a parent configuration belongs to that
+/// parent. Resolving this identically here and when a referenced project is
+/// imported is what keeps one namespace from being computed for a daemon and a
+/// different one from being registered for it.
+fn settings_for(settings: &IndexMap<PathBuf, DaemonSettings>, root: &Path) -> DaemonSettings {
+    let mut resolved = DaemonSettings::default();
+    // Farthest ancestor first, so a nearer declaration overrides it.
+    for ancestor in root.ancestors().collect::<Vec<_>>().into_iter().rev() {
+        if let Some(declared) = settings.get(ancestor) {
+            resolved.merge(declared.clone());
+        }
+    }
+    resolved
 }
 
 /// Config files that apply to a directory, lowest precedence first.
@@ -306,16 +324,21 @@ fn import(
         );
     }
     let mut found: Option<(Declaration, PathBuf, PathBuf)> = None;
-    let mut settings = DaemonSettings::default();
+    // Keyed by config root, exactly as `load` keys it, so the namespace resolves
+    // the same way here as it will when this root is prepared.
+    let mut settings: IndexMap<PathBuf, DaemonSettings> = IndexMap::new();
     let mut available: Vec<String> = Vec::new();
     for path in &paths {
         // `MiseToml::from_file` runs the same trust gate as ordinary config
         // loading, so an untrusted sibling project cannot be pulled in silently.
         let cf = crate::config::config_file::mise_toml::MiseToml::from_file(path)?;
-        if let Some(file_settings) = cf.daemon_settings() {
-            settings.merge(file_settings);
-        }
         let remote_root = crate::config::config_file::config_root::config_root(path);
+        if let Some(file_settings) = cf.daemon_settings() {
+            settings
+                .entry(remote_root.clone())
+                .or_default()
+                .merge(file_settings);
+        }
         for (name, declaration) in cf.daemon_declarations() {
             if !available.contains(&name) {
                 available.push(name.clone());
@@ -351,7 +374,8 @@ fn import(
         remote_root.clone(),
     )?;
     daemon.imported = true;
-    let namespace = runtime::resolve_namespace(&remote_root, Some(&settings))?;
+    let namespace =
+        runtime::resolve_namespace(&remote_root, Some(&settings_for(&settings, &remote_root)))?;
     let id = format!("{namespace}/{}", daemon.name);
     namespaces.insert(remote_root, namespace);
     Ok((id, daemon))
@@ -473,6 +497,24 @@ impl DaemonSet {
     /// The pitchfork namespace for a project root, when this set declares daemons for it.
     pub(crate) fn namespace_for(&self, root: &Path) -> Option<&str> {
         self.namespaces.get(root).map(String::as_str)
+    }
+
+    /// The subset of this set that another set also names.
+    ///
+    /// Only for deciding what this invocation may act on or show. Never pass the
+    /// result to `prepare`: a root's generated pitchfork config is rewritten
+    /// whole, so registering a reduced set deletes that project's other daemons.
+    pub(crate) fn restricted_to(&self, requested: &Self) -> Self {
+        Self {
+            daemons: self
+                .daemons
+                .iter()
+                .filter(|(_, d)| requested.find(&d.name).is_some())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            namespaces: self.namespaces.clone(),
+            aliases: self.aliases.clone(),
+        }
     }
 
     /// Look a daemon up by the name it carries inside its own project. Imported
@@ -767,6 +809,56 @@ mod tests {
         assert_eq!(daemon.root, group.canonicalize().unwrap());
         assert_eq!(
             set.namespace_for(&group.canonicalize().unwrap()),
+            Some("shared")
+        );
+    }
+
+    #[test]
+    fn nested_referenced_projects_resolve_the_same_namespace_both_ways() {
+        // The namespace computed when importing has to be the one registered
+        // when that root is prepared, or `depends` and `start` name an ID that
+        // pitchfork never saw.
+        let tmp = tempfile::tempdir().unwrap();
+        let group = tmp.path().join("group");
+        referenced_project(&group, "[daemons_settings]\nnamespace = 'shared'\n");
+        let mirror = group.join("mirror-pipeline");
+        referenced_project(&mirror, "[daemons.worker]\nrun = 'exec worker'\n");
+
+        // What the referenced project computes for itself when it is prepared.
+        let own = files(&[
+            (
+                mirror
+                    .join(&*crate::env::MISE_DEFAULT_CONFIG_FILENAME)
+                    .to_str()
+                    .unwrap(),
+                "[daemons.worker]\nrun = 'exec worker'\n",
+            ),
+            (
+                group
+                    .join(&*crate::env::MISE_DEFAULT_CONFIG_FILENAME)
+                    .to_str()
+                    .unwrap(),
+                "[daemons_settings]\nnamespace = 'shared'\n",
+            ),
+        ]);
+        let own = load(&own).unwrap();
+        let own_root = own.daemons["worker"].root.clone();
+        assert_eq!(own.namespace_for(&own_root), Some("shared"));
+
+        // What another project computes when it imports that daemon.
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.worker]\nproject = {}\n",
+                toml::Value::String(mirror.to_string_lossy().into_owned())
+            ),
+        )]);
+        let imported = load(&config).unwrap();
+        assert!(imported.daemons.contains_key("shared/worker"));
+        assert_eq!(
+            imported.namespace_for(&mirror.canonicalize().unwrap()),
             Some("shared")
         );
     }
