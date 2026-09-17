@@ -26,21 +26,35 @@ toolchain go1.21.4
 GOMOD
 assert "mise current go" "1.24.3"
 
-# go.work's own `go` line is a floor, not the version the workspace is built with, so it
-# is not read -- including the full patch version `go work init` writes. With go.mod gone
-# there is nothing left to resolve.
+# ...and over a member module's go.mod further down, which is the shape a real workspace
+# has. Go does not consult a member's directives in workspace mode, so neither does mise --
+# otherwise the nearer file would win and mise would pick a different toolchain than go.
 rm go.mod
+mkdir -p api
+cat >api/go.mod <<GOMOD
+module example.com/api
+
+toolchain go1.21.4
+GOMOD
+assert "mise --cd api current go" "1.24.3"
+
+# GOWORK=off turns workspace mode off, so the member module's go.mod applies again
+assert "GOWORK=off mise --cd api current go" "1.21.4"
+
+# go.work's own `go` line is a floor, not the version the workspace is built with, so it
+# is not read -- including the full patch version `go work init` writes. The member go.mod
+# is still not consulted, so there is nothing left to resolve.
 cat >go.work <<GOWORK
 go 1.24.0
 
 use ./api
 GOWORK
-assert "mise current go" ""
-assert_not_contains "mise current go 2>&1" "deprecated"
+assert "mise --cd api current go" ""
+assert_not_contains "mise --cd api current go 2>&1" "deprecated"
 
 # a toolchain that is not a fully-qualified toolchain name is not a pin
 cat >go.work <<GOWORK
 go 1.24.0
 toolchain default
 GOWORK
-assert "mise current go" ""
+assert "mise --cd api current go" ""

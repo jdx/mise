@@ -583,11 +583,16 @@ mise use node@22
 For `go.mod`, the `toolchain goX.Y.Z` directive is used — an exact pin of the toolchain the module
 builds and tests with. The `go X.Y` directive is a minimum and is deprecated (see above).
 
-`go.work` is read the same way, and takes precedence over a `go.mod` beside it. That matches Go:
-in workspace mode the `go` command consults the `toolchain` and `go` lines in `go.work` rather than
-the member modules' `go.mod` files. Only `toolchain` is read — `go.work`'s own `go` line takes
-effect only when the default toolchain is older, so it is a floor like `go.mod`'s, not the version
-the workspace is built with.
+`go.work` is read the same way, and only its `toolchain` directive is read: `go.work`'s own `go`
+line takes effect only when the default toolchain is older, so it is a floor like `go.mod`'s, not
+the version the workspace is built with.
+
+When a `go.work` covers a directory, the `go.mod` files under it are not read at all. That matches
+Go, which in workspace mode consults the `toolchain` and `go` lines in `go.work` rather than the
+member modules' `go.mod` files — so a module nested below the workspace root does not override the
+workspace's toolchain. A workspace with no `toolchain` line therefore selects no version rather than
+falling back to a member's `go.mod`. `GOWORK` works as it does for `go`: `GOWORK=off` disables
+workspace mode, and `GOWORK=<file>` names the workspace file directly.
 
 ### Enabling idiomatic version files
 

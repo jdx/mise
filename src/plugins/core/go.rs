@@ -282,6 +282,9 @@ impl Backend for GoPlugin {
     }
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
         let v = match path.file_name() {
+            // In workspace mode a member module's own directives are not consulted, so a
+            // `go.mod` covered by a workspace yields nothing and the `go.work` decides.
+            Some(name) if name == "go.mod" && go_workspace_file(path).is_some() => String::new(),
             Some(name) if name == "go.mod" => parse_gomod(
                 &file::read_to_string(path)?,
                 Settings::get().idiomatic_version_file_ignore_minimum_versions,
@@ -447,6 +450,39 @@ fn toolchain_directive(body: &str) -> Option<String> {
     directive_value(body, "toolchain")
         .and_then(|v| v.strip_prefix("go").map(|s| s.to_string()))
         .filter(|v| is_go_toolchain_version(v))
+}
+
+/// The `go.work` that puts `go_mod` in workspace mode, if there is one.
+///
+/// Workspace mode is not a merge: the `go` command "consults the `toolchain` and `go` lines
+/// in the current workspace's `go.work` file or, when there is no workspace, the main
+/// module's `go.mod` file". A member module's own directives are not consulted at all, so a
+/// `go.mod` under a workspace is not a version source for mise either. Without this, a
+/// member module nearer the working directory would outrank the workspace above it, and
+/// mise would activate a different toolchain from the one `go` selects.
+///
+/// Go looks for the workspace by walking up from the working directory. mise only ever
+/// reads config files at or above the working directory, so walking up from the `go.mod`
+/// reaches the same `go.work`, and stops at the same ceiling as the rest of mise's config
+/// discovery.
+///
+/// `GOWORK` overrides the search the way it does for `go`: `off` disables workspace mode,
+/// and an explicit path names the workspace file directly.
+fn go_workspace_file(go_mod: &Path) -> Option<PathBuf> {
+    match env::var("GOWORK").as_deref() {
+        Ok("off") => return None,
+        // `auto` is the default and means "search", as does an unset or empty value.
+        Ok("" | "auto") | Err(_) => {}
+        Ok(explicit) => {
+            let path = PathBuf::from(explicit);
+            return path.is_file().then_some(path);
+        }
+    }
+    file::all_dirs(go_mod.parent()?, &env::MISE_CEILING_PATHS)
+        .ok()?
+        .into_iter()
+        .map(|dir| dir.join("go.work"))
+        .find(|p| p.is_file())
 }
 
 /// Parse a `go.work` file into a Go version request for idiomatic version resolution.
