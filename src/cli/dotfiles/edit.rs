@@ -118,20 +118,32 @@ fn source_for_target(
     target: &std::path::Path,
     raw: &str,
 ) -> Result<Option<PathBuf>> {
-    for req in system::files::files_from_config(config)? {
-        if system::files::matches_target(&req.target, &req.target_raw, &[raw.to_string()]) {
-            // a tracked file has no source: it stays where it is, so that is
-            // what to edit. inline content lives in the config that declares
-            // it, like an inline edit entry.
-            return Ok(Some(match req.mode {
-                FileMode::Track => {
-                    warn_if_the_edit_escapes_history(config, &req.target);
-                    req.target
-                }
-                FileMode::Content => req.origin.config,
-                _ => req.source,
-            }));
-        }
+    let matching_files = system::files::files_from_config(config)?
+        .into_iter()
+        .filter(|req| {
+            system::files::matches_target(&req.target, &req.target_raw, &[raw.to_string()])
+        })
+        .collect::<Vec<_>>();
+    // one target may be both tracked and deployed, and tracking composes
+    // first. editing the source is what converges a deployed target — and
+    // what `--apply` would otherwise write back over — so the deployment
+    // entry wins; the tracked file is edited only when nothing deploys it.
+    let selected = matching_files
+        .iter()
+        .find(|req| req.mode != FileMode::Track)
+        .or_else(|| matching_files.first());
+    if let Some(req) = selected {
+        // a tracked file has no source: it stays where it is, so that is
+        // what to edit. inline content lives in the config that declares
+        // it, like an inline edit entry.
+        return Ok(Some(match req.mode {
+            FileMode::Track => {
+                warn_if_the_edit_escapes_history(config, &req.target);
+                req.target.clone()
+            }
+            FileMode::Content => req.origin.config.clone(),
+            _ => req.source.clone(),
+        }));
     }
     let matching_edits = system::edits::edits_from_config(config)?
         .into_iter()

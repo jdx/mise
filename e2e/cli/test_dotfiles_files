@@ -800,6 +800,23 @@ EOF
 assert_not_contains "EDITOR=\"$PWD/editor-write\" mise dotfiles edit ~/.edit-link 2>&1" "history does not capture"
 : >"$MISE_CONFIG_DIR/config.toml"
 
+# a target that is both tracked and deployed is edited through its source, so
+# a later apply does not write the edit back out
+echo "deployed source" >edit-both-source
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-both" = { mode = "track" }
+EOF
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.edit-both" = { source = "edit-both-source", mode = "copy" }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+EDITOR="$PWD/editor-write" mise dotfiles edit --apply ~/.edit-both
+assert "cat edit-both-source" "edited source"
+assert "cat ~/.edit-both" "edited source"
+: >"$MISE_CONFIG_DIR/config.toml"
+
 # inline content lives in the config that declares it
 cat <<EOF >mise.toml
 [dotfiles]
