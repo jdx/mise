@@ -5,6 +5,13 @@ if ($wingetCommand) {
     $script:WingetReady = $LASTEXITCODE -eq 0
 }
 
+$script:ScoopReady = $false
+$scoopCommand = Get-Command scoop -ErrorAction Ignore
+if ($scoopCommand) {
+    & $scoopCommand.Source export *> $null
+    $script:ScoopReady = $LASTEXITCODE -eq 0
+}
+
 Describe 'bootstrap' {
     BeforeAll {
         $script:OriginalDir = Get-Location
@@ -107,5 +114,40 @@ config_roots = ["service-root"]
         $out = mise bootstrap packages apply --manager winget --dry-run --yes 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
         $out | Should -BeLike '*winget install --id Microsoft.AppInstaller --exact --version 0.0-preview --silent*'
+    }
+
+    It 'reports a Scoop app that is not installed' -Skip:(-not $script:ScoopReady) {
+        @"
+[bootstrap.packages]
+"scoop:mise-does-not-exist-0123456789" = "latest"
+"@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
+
+        $out = mise bootstrap packages status 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*scoop*mise-does-not-exist-0123456789*missing*'
+    }
+
+    It 'dry-runs a Scoop bucket add, source refresh, and install' -Skip:(-not $script:ScoopReady) {
+        @"
+[bootstrap.packages]
+"scoop:mise-does-not-exist-0123456789/example-app" = "latest"
+"@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
+
+        $out = mise bootstrap packages apply --manager scoop --update --dry-run --yes 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*scoop bucket add mise-does-not-exist-0123456789*'
+        $out | Should -BeLike '*scoop update*'
+        $out | Should -BeLike '*scoop install --no-update-scoop mise-does-not-exist-0123456789/example-app*'
+    }
+
+    It 'passes Scoop version pins without interpreting them' -Skip:(-not $script:ScoopReady) {
+        @"
+[bootstrap.packages]
+"scoop:mise-does-not-exist-0123456789" = "0.0-preview"
+"@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
+
+        $out = mise bootstrap packages apply --manager scoop --dry-run --yes 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*scoop install --no-update-scoop mise-does-not-exist-0123456789@0.0-preview*'
     }
 }
