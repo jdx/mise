@@ -191,7 +191,7 @@ pub(crate) struct LinuxOsRelease {
 }
 
 impl LinuxOsRelease {
-    fn parse(content: &str) -> Option<Self> {
+    pub(crate) fn parse(content: &str) -> Option<Self> {
         let mut values = BTreeMap::new();
         for line in content.lines() {
             let line = line.trim();
@@ -216,8 +216,10 @@ impl LinuxOsRelease {
         })
     }
 
-    #[cfg(target_os = "linux")]
-    fn ids(&self) -> impl Iterator<Item = &str> {
+    /// `ID` first, then each `ID_LIKE` entry, which is the order os-release
+    /// specifies: the distro's own identity wins, and the families it derives
+    /// from are consulted only as fallbacks.
+    pub(crate) fn ids(&self) -> impl Iterator<Item = &str> {
         std::iter::once(self.id.as_str()).chain(self.id_like.iter().map(String::as_str))
     }
 }
