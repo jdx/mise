@@ -573,6 +573,30 @@ impl Config {
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect())
     }
+    /// The tools-independent config env resolved now, bypassing every cache.
+    ///
+    /// [`Self::env`] memoizes into a process-wide `OnceCell`, which is right for
+    /// a command that resolves the env once and then runs. It is wrong for a
+    /// tool's `postinstall` hook: hooks run one after another inside a single
+    /// install batch, an `[env]` value can read a file or command output that an
+    /// earlier hook just changed, and the memo would hand every later hook the
+    /// first one's snapshot. Which hook fills that memo is not even fixed —
+    /// installs run in parallel, so it comes down to a race.
+    ///
+    /// So a hook resolves its own env and leaves the shared caches alone: it
+    /// neither reads nor writes the memo or the on-disk `CachedNonToolEnv`, and
+    /// a hook that changes an env input is visible to the hooks ordered after
+    /// it. The cost is one resolution per tool that declares a hook.
+    pub(crate) async fn env_uncached(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
+        Ok(self
+            .load_env(false)
+            .await?
+            .env
+            .into_iter()
+            .map(|(k, (v, _))| (k, v))
+            .collect())
+    }
+
     pub(crate) async fn env_with_sources(self: &Arc<Self>) -> eyre::Result<&EnvWithSources> {
         self.env_with_sources
             .get_or_try_init(async || Ok(self.env_results().await?.env.clone()))
@@ -580,7 +604,7 @@ impl Config {
     }
     pub(crate) async fn env_results(self: &Arc<Self>) -> Result<&EnvResults> {
         self.env
-            .get_or_try_init(|| async { self.load_env().await })
+            .get_or_try_init(|| async { self.load_env(true).await })
             .await
     }
 
@@ -1351,12 +1375,19 @@ impl Config {
         Ok(())
     }
 
-    async fn load_env(self: &Arc<Self>) -> Result<EnvResults> {
+    /// Resolve the tools-independent config env.
+    ///
+    /// `use_cache` is false for a caller that needs the env as it is *now*
+    /// rather than as it was when something else first asked — see
+    /// [`Self::env_uncached`]. It suppresses both the process-wide memo (the
+    /// caller reaches this directly, not through the `OnceCell`) and the
+    /// on-disk `CachedNonToolEnv`, in either direction.
+    async fn load_env(self: &Arc<Self>, use_cache: bool) -> Result<EnvResults> {
         if Settings::no_env() || Settings::get().no_env.unwrap_or(false) {
             return Ok(EnvResults::default());
         }
         time!("load_env start");
-        let cache_enabled = CachedNonToolEnv::is_enabled();
+        let cache_enabled = use_cache && CachedNonToolEnv::is_enabled();
         let cache_key = if cache_enabled {
             let config_files: Vec<(PathBuf, u64)> = self
                 .config_files
