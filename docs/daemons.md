@@ -70,7 +70,10 @@ ready_port = 3000
 ```
 
 Each step must succeed before the next one runs, and the daemon is not considered
-ready until the process itself is. **`init` must be idempotent**: it runs on every
+ready until the process itself is. The steps and the long-running process share one
+shell, so a step can export a variable or change directory for the ones after it.
+A task-backed daemon with `init` runs that shell inside the project's tool
+environment, so setup commands see mise-installed tools. **`init` must be idempotent**: it runs on every
 start and restart, including automatic ones. Prefer commands that converge on the
 desired state, such as `npm ci` or a migration tool, over commands that fail or
 duplicate work when the state is already correct.
