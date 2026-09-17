@@ -1451,7 +1451,7 @@ impl Bootstrap {
         } else {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PrePackages)
                 .await?;
-            let all_mgrs = system::packages_from_config(&config);
+            let all_mgrs = system::packages_from_config(&config)?;
             let has_plugin_packages = all_mgrs
                 .iter()
                 .any(|mp| mp.manager.is_plugin() && !mp.disabled)
@@ -1762,7 +1762,7 @@ impl Bootstrap {
         }
 
         if !skip.contains(&BootstrapPart::Packages) {
-            let mgrs = system::packages_from_config(&config)
+            let mgrs = system::packages_from_config(&config)?
                 .into_iter()
                 .filter(|mp| mp.manager.is_plugin())
                 .collect::<Vec<_>>();
@@ -3528,7 +3528,7 @@ impl BootstrapStatus {
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
         let mut json_out = serde_json::Map::new();
-        for mp in system::packages_from_config(config) {
+        for mp in system::packages_from_config(config)? {
             let name = mp.manager.name();
             let reason = if mp.disabled {
                 Some("excluded by the system_packages.managers setting".to_string())

@@ -198,7 +198,11 @@ impl Install {
         let Ok(config) = Config::get().await else {
             return;
         };
-        let mgrs = crate::system::packages_from_config(&config);
+        // a contradictory declaration is reported by the commands that act
+        // on packages; a passing hint stays quiet about it
+        let Ok(mgrs) = crate::system::packages_from_config(&config) else {
+            return;
+        };
         if mgrs.is_empty() {
             return;
         }

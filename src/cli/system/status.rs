@@ -30,7 +30,7 @@ pub(crate) struct SystemStatus {
 impl SystemStatus {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let mgrs = system::packages_from_config(&config);
+        let mgrs = system::packages_from_config(&config)?;
         let mut any_missing = false;
         let mut rows: Vec<Vec<String>> = vec![];
         let mut json_out = serde_json::Map::new();

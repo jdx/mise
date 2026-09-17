@@ -16,6 +16,12 @@ Use the package identifier shown by `winget search`, not a display name. mise
 passes the identifier to WinGet with `--id` and `--exact`, so bootstrap never
 accepts an ambiguous fuzzy match.
 
+WinGet matches identifiers case-insensitively, so `winget:Git.Git` and
+`winget:git.git` are one package written two ways. They are still two
+`[bootstrap.packages]` entries, and mise rejects the configuration if they
+disagree about `version` or `state` rather than resolving the pair from the
+machine's current state. Declare the package once.
+
 ## Commands
 
 ```sh

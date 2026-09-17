@@ -143,6 +143,23 @@ Unknown managers produce a warning and a package-plugin installation hint.
 Their entries are ignored, allowing a configuration to include managers a
 particular mise installation does not yet support.
 
+Entries are keyed by the spec exactly as written, so two spellings of one
+package are two entries. For most managers that is correct — `apt:Git` and
+`apt:git` really are two different packages. WinGet, however, matches package
+IDs case-insensitively, so `winget:Git.Git` and `winget:git.git` name one
+package. When two such entries disagree about `version` or `state`, mise
+rejects the configuration and names both spellings instead of letting the
+machine's current state decide which declaration wins:
+
+```toml
+[bootstrap.packages]
+"winget:Git.Git" = "latest"
+"winget:git.git" = { state = "absent" } # error: declare it once
+```
+
+Entries that a selector such as `os` keeps apart on a given host never overlap,
+so declaring one spelling per platform is fine.
+
 ## Commands
 
 ### Apply or record packages
