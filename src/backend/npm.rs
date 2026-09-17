@@ -377,7 +377,7 @@ impl Backend for NPMBackend {
         BackendType::Npm
     }
 
-    fn is_prerelease_version(&self, version: &str) -> bool {
+    fn is_backend_prerelease(&self, version: &str) -> bool {
         is_semver_prerelease(version)
     }
 

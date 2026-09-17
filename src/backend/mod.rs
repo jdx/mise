@@ -2150,11 +2150,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
         false
     }
 
-    /// Whether an installed version string names a pre-release. The pattern
-    /// only knows channel tags (`-rc1`, `-beta`); backends with strict semver
-    /// versions also recognise bare numeric pre-releases such as `1.3.1-3`.
-    fn is_prerelease_version(&self, version: &str) -> bool {
-        VERSION_REGEX.is_match(version)
+    /// Pre-releases this backend recognises beyond the shared `VERSION_REGEX`,
+    /// which only knows channel tags (`-rc1`, `-beta`): a backend with strict
+    /// semver versions also treats a bare numeric suffix (`1.3.1-3`) as one.
+    fn is_backend_prerelease(&self, _version: &str) -> bool {
+        false
     }
 
     /// Whether pre-release versions should be included for this backend and
@@ -3117,7 +3117,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .to_string();
                     // A `latest` link written before the backend could tell this
                     // version is a pre-release must not keep winning.
-                    if !filter || !self.is_prerelease_version(&version) {
+                    if !filter || !self.is_backend_prerelease(&version) {
                         return Ok(Some(version));
                     }
                 }
@@ -3128,7 +3128,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
                     .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
-                    .filter(|v| !filter || !self.is_prerelease_version(v))
+                    .filter(|v| !filter || !self.is_backend_prerelease(v))
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
             }
@@ -4195,7 +4195,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // backend's own notion of a pre-release rather than the channel-tag regex.
         let versions = versions
             .into_iter()
-            .filter(|v| !filter_prereleases || v == query || !self.is_prerelease_version(v))
+            .filter(|v| !filter_prereleases || v == query || !self.is_backend_prerelease(v))
             .collect();
         fuzzy_match_versions(versions, query, filter_prereleases)
     }

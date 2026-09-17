@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::backend::Backend;
 use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
+use crate::plugins::VERSION_REGEX;
 use crate::semver::split_version_prefix;
 use crate::toolset::{ToolRequest, Toolset};
 use crate::{backend, env, file};
@@ -227,7 +228,7 @@ fn installed_versions_in_dir(backend: &Arc<dyn Backend>, installs_dir: &Path) ->
     real_installs_in_dir(installs_dir)
         .into_iter()
         .filter(|v| !installs_dir.join(v).join("incomplete").exists())
-        .filter(|v| !backend.is_prerelease_version(v))
+        .filter(|v| !VERSION_REGEX.is_match(v) && !backend.is_backend_prerelease(v))
         .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
         .collect()
 }
@@ -528,6 +529,34 @@ mod tests {
         assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
         // the install itself is never touched
         assert!(installs_dir.join("2.1.0").is_dir());
+        Ok(())
+    }
+
+    /// `1.3.1-3` carries no channel tag, so only the backend knows it is a
+    /// pre-release and that links an older mise wrote into it are stale.
+    #[test]
+    fn prune_stale_generated_symlinks_removes_links_into_backend_prereleases() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let installs_dir = temp_dir.path().join("installs").join("npm-happy");
+        fs::create_dir_all(installs_dir.join("1.2.4"))?;
+        fs::create_dir_all(installs_dir.join("1.3.1-3"))?;
+        make_symlink_or_file(Path::new("./1.2.4"), &installs_dir.join("1.2"))?;
+        make_symlink_or_file(Path::new("./1.3.1-3"), &installs_dir.join("1.3"))?;
+        make_symlink_or_file(Path::new("./1.3.1-3"), &installs_dir.join("latest"))?;
+        make_symlink_or_file(Path::new("./1.3.1-3"), &installs_dir.join("next"))?;
+
+        prune_stale_generated_symlinks(
+            &npm_test_backend(),
+            &installs_dir,
+            &IndexMap::new(),
+            &HashSet::new(),
+        )?;
+
+        assert!(fs::symlink_metadata(installs_dir.join("1.3")).is_err());
+        assert!(fs::symlink_metadata(installs_dir.join("latest")).is_err());
+        assert!(is_runtime_symlink(&installs_dir.join("1.2")));
+        assert!(is_runtime_symlink(&installs_dir.join("next")));
+        assert!(installs_dir.join("1.3.1-3").is_dir());
         Ok(())
     }
 
