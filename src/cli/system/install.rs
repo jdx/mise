@@ -52,7 +52,7 @@ pub(crate) struct SystemInstall {
     #[usage(long, short)]
     yes: bool,
 
-    /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, winget: `source update`)
+    /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, zypper: `refresh`, winget: `source update`)
     #[usage(long)]
     update: bool,
 }

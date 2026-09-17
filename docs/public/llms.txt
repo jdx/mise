@@ -78,6 +78,7 @@
 - [apt](https://mise.jdx.dev/bootstrap/packages/apt.html): System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
 - [AUR](https://mise.jdx.dev/bootstrap/packages/aur.html): The aur manager installs packages from the Arch User Repository with yay or paru.
 - [dnf](https://mise.jdx.dev/bootstrap/packages/dnf.html): System packages for Red Hat-family Linux (Fedora, RHEL, CentOS Stream, Rocky, Alma, ...).
+- [zypper](https://mise.jdx.dev/bootstrap/packages/zypper.html): Manage host packages on openSUSE and SUSE Linux Enterprise. Both zypper and rpm must be on PATH.
 - [pacman](https://mise.jdx.dev/bootstrap/packages/pacman.html): System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 - [brew](https://mise.jdx.dev/bootstrap/packages/brew.html): Homebrew formulae and casks — without requiring Homebrew to be installed.
 - [nix](https://mise.jdx.dev/bootstrap/packages/nix.html): The nix bootstrap package manager installs packages into the current user's normal Nix profile. It works on Linux and macOS with Nix on PATH, independently of whether the operating system is NixOS.

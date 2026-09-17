@@ -28,7 +28,7 @@ only. `install` is accepted as an alias for this command.
 - **`-m --manager <MANAGER>`** — Only install packages for this built-in or plugin manager
 - **`-n --dry-run`** — Print the commands that would run without running them
 - **`-y --yes`** — Skip the confirmation prompt
-- **`--update`** — Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, winget: `source update`)
+- **`--update`** — Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`, zypper: `refresh`, winget: `source update`)
 - **`-h --help`** — Print help
 
 ## Examples

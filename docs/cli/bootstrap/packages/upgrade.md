@@ -13,8 +13,8 @@ description: "Upgrade installed bootstrap packages from `[bootstrap.packages]`"
 Upgrade installed bootstrap packages from `[bootstrap.packages]`
 
 Refreshes package manager metadata and upgrades the configured packages
-that are already installed: apk/apt/aur/dnf/pacman upgrade to the newest
-available version (apk, apt, and dnf honor a version pinned in config), brew
+that are already installed: apk/apt/aur/dnf/pacman/zypper upgrade to the newest
+available version (apk, apt, dnf, and zypper honor a version pinned in config), brew
 pours the formula's current bottle and replaces the old keg, brew-cask
 installs the current cask artifact, flatpak and flatpak-user update
 applications and runtimes, mas upgrades App Store apps, and winget upgrades

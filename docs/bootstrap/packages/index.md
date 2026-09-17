@@ -56,6 +56,7 @@ explains its prerequisites, package names, and version support.
 | `apt`           | Debian, Ubuntu                                                     | [apt](/bootstrap/packages/apt.html)                 |
 | `aur`           | Arch, Manjaro with yay or paru                                     | [AUR](/bootstrap/packages/aur.html)                 |
 | `dnf`           | Fedora, RHEL, CentOS, Rocky, Alma                                  | [dnf](/bootstrap/packages/dnf.html)                 |
+| `zypper`        | openSUSE, SUSE Linux Enterprise with `zypper` and `rpm`            | [zypper](/bootstrap/packages/zypper.html)           |
 | `pacman`        | Arch, Manjaro                                                      | [pacman](/bootstrap/packages/pacman.html)           |
 | `brew`          | macOS arm64; Linux x86_64/arm64; no Homebrew installation required | [Homebrew](/bootstrap/packages/brew.html)           |
 | `brew-cask`     | macOS; font-only casks on Linux; no Homebrew installation required | [Casks](/bootstrap/packages/brew.html#casks)        |
@@ -103,7 +104,7 @@ for a machine-wide selection.
 
 ### Remove a package declaratively
 
-`pacman` supports `state = "absent"`:
+`pacman` and `zypper` support `state = "absent"`:
 
 ```toml
 [bootstrap.packages]
@@ -190,7 +191,7 @@ already installed. Missing packages are skipped; use `apply` to install them.
 The manager determines which version is available and how it is installed.
 
 Version pins remain subject to the manager's capabilities. For example, apk,
-apt, and dnf honor configured pins. AUR, pacman, brew, brew-cask, flatpak,
+apt, dnf, and zypper honor configured pins. AUR, pacman, brew, brew-cask, flatpak,
 flatpak-user, and mas cannot install pins, so pinned entries are skipped with a
 warning. See the manager's guide for details.
 
@@ -387,7 +388,7 @@ alone does not activate it.
 
 ## sudo
 
-apk, apt, dnf, and pacman need root for package changes. mise uses sudo when
+apk, apt, dnf, pacman, and zypper need root for package changes. mise uses sudo when
 necessary, with the following behavior:
 
 - **Already root:** commands run directly, without sudo.
