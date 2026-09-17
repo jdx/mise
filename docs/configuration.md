@@ -529,6 +529,8 @@ in both mise and nvm. Here are some of the supported idiomatic version files:
 
 <!-- mise:idiomatic-version-files:end -->
 
+For Bazel setup and supported `.bazelversion` values, see the [Bazel cookbook](/mise-cookbook/bazel.html).
+
 Registry-backed tools can also describe how mise should extract versions from structured
 idiomatic files. Registry entries may use the same `version_regex`, `version_json_path`, and
 `version_expr` parsers as the [HTTP backend](/dev-tools/backends/http.html#version-list-url).
