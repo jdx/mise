@@ -3957,6 +3957,26 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
         lockfile_update_mode,
     )
     .await?;
+    generate_lockfiles_after_changes(config, new_versions, lockfile_update_mode).await
+}
+
+/// Run complete lockfile generation once the shim farm reflects the change.
+///
+/// `rebuild_shims_and_runtime_symlinks_for_changes` skips the merge-mode
+/// lockfile update under `lockfile_mode = "generate"`, so every caller that can
+/// change what the lockfile should contain has to run generation itself.
+/// Without this, a config-only removal leaves the dropped tool's entry — and the
+/// dependency sidecar it references — behind until the next install regenerates.
+///
+/// Call this only when the configuration actually changed. Generation resolves
+/// and rewrites, so running it for a command that turned out to be a no-op would
+/// both rewrite an unrelated stale lockfile and let a resolution failure fail a
+/// command that had nothing to do.
+pub(crate) async fn generate_lockfiles_after_changes(
+    config: &Arc<Config>,
+    new_versions: &[ToolVersion],
+    lockfile_update_mode: lockfile::LockfileUpdateMode,
+) -> Result<()> {
     if Settings::get().generate_lockfiles()
         && Settings::get().lockfile_enabled()
         && (!Settings::get().locked
