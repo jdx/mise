@@ -9,7 +9,7 @@ use super::{DaemonSet, runtime};
 use crate::config::{Config, Settings};
 use crate::task::Task;
 use eyre::{Result, bail};
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -57,26 +57,44 @@ pub(crate) fn gate(experimental: bool, tasks: &[Task]) -> Result<bool> {
 /// Start every daemon the given tasks require and wait until pitchfork reports
 /// them ready. Already-running daemons are left alone, so this is cheap to
 /// repeat.
+///
+/// Names are resolved per project, not against one merged set. In a monorepo a
+/// dependency task can live in a different subproject, and two subprojects may
+/// each declare a daemon of the same name; each task's names are therefore
+/// looked up in its own configuration hierarchy.
 pub(crate) async fn start(config: &Arc<Config>, tasks: &[Task]) -> Result<()> {
     if !gate(Settings::get().experimental, tasks)? {
         return Ok(());
     }
     Settings::ensure_not_safe("starting task daemons")?;
-    let names = required(tasks, config.daemons()?)?;
-    if names.is_empty() {
-        return Ok(());
+    let mut by_project: IndexMap<PathBuf, Vec<Task>> = IndexMap::new();
+    for task in tasks {
+        let Some(project) = task
+            .config_root
+            .clone()
+            .or_else(|| config.project_root.clone())
+        else {
+            continue;
+        };
+        by_project.entry(project).or_default().push(task.clone());
     }
-    let roots: Vec<PathBuf> = config
-        .daemons()?
-        .daemons
-        .iter()
-        .filter(|(name, _)| names.contains(*name))
-        .map(|(_, daemon)| daemon.root.clone())
-        .collect::<IndexSet<_>>()
-        .into_iter()
-        .collect();
-    for root in roots {
-        let scoped = runtime::config_for_root(config, &root).await?;
+    // A daemon root can be shared by several projects, so collect the whole
+    // request before touching pitchfork.
+    let mut wanted: IndexMap<PathBuf, (Arc<Config>, IndexSet<String>)> = IndexMap::new();
+    for (project, tasks) in by_project {
+        let scoped = runtime::config_for_root(config, &project).await?;
+        let set = scoped.daemons()?;
+        for name in required(&tasks, set)? {
+            let root = set.daemons[&name].root.clone();
+            wanted
+                .entry(root)
+                .or_insert_with(|| (scoped.clone(), IndexSet::new()))
+                .1
+                .insert(name);
+        }
+    }
+    for (root, (scoped, names)) in wanted {
+        let scoped = runtime::config_for_root(&scoped, &root).await?;
         // The generated pitchfork configuration describes every daemon in the
         // project, not only the ones this run starts.
         let set = scoped.daemons()?.for_root(&root);

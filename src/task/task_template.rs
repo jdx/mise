@@ -25,6 +25,8 @@ pub(crate) struct TaskTemplate {
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
+    pub daemons: Option<crate::task::TaskDaemons>,
+    #[serde(default)]
     pub env: EnvList,
     #[serde(default, deserialize_with = "deserialize_vars")]
     pub vars: EnvList,
@@ -185,6 +187,11 @@ impl Task {
         // wait_for: local overrides completely if non-empty
         if self.wait_for.is_empty() && !template.wait_for.is_empty() {
             self.wait_for = template.wait_for.clone();
+        }
+
+        // daemons: local overrides; use template only if local not set
+        if self.daemons.is_none() {
+            self.daemons = template.daemons.clone();
         }
 
         // dir: local overrides; use template only if local not set

@@ -350,9 +350,14 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
             daemon.source.to_string_lossy().replace(['\r', '\n'], " ")
         ));
         let mut table = daemon.table.clone();
-        // Ensure mise x sees the profile that generated this definition, even at boot.
+        // Ensure mise sees the profile that generated this definition, even at
+        // boot. A task-backed daemon runs mise itself rather than being wrapped
+        // in `mise x`, so it needs the profile even though it sets mise = false;
+        // without it a supervisor restart would resolve the task against the
+        // default configuration.
         if !state.profile.is_empty()
-            && table.get("mise").and_then(toml::Value::as_bool) != Some(false)
+            && (daemon.task.is_some()
+                || table.get("mise").and_then(toml::Value::as_bool) != Some(false))
         {
             let env = table
                 .entry("env".to_string())

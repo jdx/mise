@@ -790,7 +790,7 @@ impl Run {
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_default_to_latest(true)
-            .with_config_files(combined_configs.clone())
+            .with_config_files(combined_configs)
             .with_resolve_options(resolve_options)
             .build(&config)
             .await?;
@@ -844,11 +844,7 @@ impl Run {
         // what stops a task-backed daemon, which runs `mise run --skip-deps`,
         // from starting itself.
         if !self.skip_deps && !self.dry_run {
-            // Resolve daemon names against the subdirectory configs of the
-            // tasks in this run as well, so `mise run //app:dev` sees a
-            // `[daemons]` section declared in the subproject.
-            let daemon_config = config.with_config_files(combined_configs);
-            crate::daemons::tasks::start(&daemon_config, &resolved_tasks).await?;
+            crate::daemons::tasks::start(&config, &resolved_tasks).await?;
         }
 
         // Apply global timeout for entire run if configured
