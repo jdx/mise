@@ -780,6 +780,26 @@ EDITOR="$PWD/editor-write" mise dotfiles edit ~/.edit-tracked
 assert "cat ~/.edit-tracked" "edited source"
 : >"$MISE_CONFIG_DIR/config.toml"
 
+# history captures a tracked symlink as a link, so editing through one warns
+# that the destination is not saved unless it is tracked too
+echo "link destination" >~/.edit-link-destination
+ln -sf ~/.edit-link-destination ~/.edit-link
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-link" = { mode = "track" }
+EOF
+assert_contains "EDITOR=\"$PWD/editor-write\" mise dotfiles edit ~/.edit-link 2>&1" "history does not capture"
+assert "cat ~/.edit-link-destination" "edited source"
+
+# no warning once the destination is tracked as well
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-link" = { mode = "track" }
+"~/.edit-link-destination" = { mode = "track" }
+EOF
+assert_not_contains "EDITOR=\"$PWD/editor-write\" mise dotfiles edit ~/.edit-link 2>&1" "history does not capture"
+: >"$MISE_CONFIG_DIR/config.toml"
+
 # inline content lives in the config that declares it
 cat <<EOF >mise.toml
 [dotfiles]

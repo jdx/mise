@@ -5,10 +5,12 @@ use eyre::{Result, bail};
 use super::add::DotfilesAdd;
 use crate::config::Config;
 use crate::file;
+use crate::path::PathExt;
 use crate::system;
 use crate::system::edits::{BlockSource, EditOp};
 use crate::system::files::FileMode;
 use crate::system::history::OperationScope;
+use crate::system::history::tracked::{self, TrackedSet};
 use crate::ui::prompt;
 
 /// Edit a managed dotfile source
@@ -122,7 +124,10 @@ fn source_for_target(
             // what to edit. inline content lives in the config that declares
             // it, like an inline edit entry.
             return Ok(Some(match req.mode {
-                FileMode::Track => req.target,
+                FileMode::Track => {
+                    warn_if_the_edit_escapes_history(config, &req.target);
+                    req.target
+                }
                 FileMode::Content => req.origin.config,
                 _ => req.source,
             }));
@@ -160,6 +165,31 @@ fn source_for_target(
         bail!("{raw}: target must be absolute or start with ~/");
     }
     Ok(None)
+}
+
+/// History captures a tracked symlink as a link, never its destination, so an
+/// editor that follows the link writes to a file the surrounding checkpoint
+/// does not hold. Say so rather than record a generation that misses the edit.
+fn warn_if_the_edit_escapes_history(config: &Config, target: &std::path::Path) {
+    if !file::is_symlink_or_junction(target) {
+        return;
+    }
+    let destination = tracked::normalize(target);
+    if destination == target {
+        return;
+    }
+    match TrackedSet::from_config(config).and_then(|set| set.would_capture(&destination)) {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(err) => {
+            debug!("dotfiles: could not resolve the tracked set: {err:#}");
+        }
+    }
+    warn!(
+        "{} is tracked as a symlink: this edits {}, which history does not capture; track that path too to save its contents",
+        target.display_user(),
+        destination.display_user()
+    );
 }
 
 fn open_or_create(path: &std::path::Path) -> Result<()> {
