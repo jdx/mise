@@ -492,6 +492,17 @@ pub(crate) fn validate_app_declaration<'a>(
     let Some(sha256) = sha256 else {
         eyre::bail!("macos-app:{name}: 'url' requires 'sha256'");
     };
+    // A URL ending in `.git` is cloned rather than downloaded, and a clone has
+    // no archive to hash, so `fetch_and_stage` never reaches the checksum step.
+    // Accepting one would record a `sha256` that is never verified and install
+    // an unchecked bundle from a declaration that looks pinned — this manager's
+    // entire integrity story is that digest. Checked against the interpolated
+    // URL because that is the string the fetcher dispatches on.
+    if url.replace("{{version}}", version).ends_with(".git") {
+        eyre::bail!(
+            "macos-app:{name}: 'url' must be a direct download of the artifact; a '.git' URL is cloned and cannot be verified against 'sha256'"
+        );
+    }
     // `no_check` is a Homebrew sentinel that makes the shared fetcher skip
     // verification. It exists for casks whose URL serves a moving target, which
     // an inline declaration never is — accepting it here would silently drop
@@ -2622,6 +2633,55 @@ mod tests {
             )
             .unwrap(),
             (digest, "N.app")
+        );
+    }
+
+    /// A `.git` URL is cloned rather than downloaded, so it never reaches the
+    /// checksum step. Accepting one would record a `sha256` that is never
+    /// verified and install an unchecked bundle from a declaration that looks
+    /// pinned.
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_rejects_a_git_url() {
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let err = AppSpec::parse(
+            "nuvio",
+            "https://example.com/nuvio.git",
+            Some(digest),
+            Some("N.app"),
+            "1.0.0",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("must be a direct download"), "{err}");
+
+        // Checked against the interpolated URL, because that is the string the
+        // fetcher dispatches on — a template alone would miss this.
+        let interpolated = AppSpec::parse(
+            "nuvio",
+            "https://example.com/{{version}}",
+            Some(digest),
+            Some("N.app"),
+            "nuvio.git",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            interpolated.contains("must be a direct download"),
+            "{interpolated}"
+        );
+
+        // An ordinary download is unaffected, including one whose path merely
+        // contains "git".
+        assert!(
+            AppSpec::parse(
+                "nuvio",
+                "https://example.com/gitkraken.dmg",
+                Some(digest),
+                Some("N.app"),
+                "1.0.0",
+            )
+            .is_ok()
         );
     }
 

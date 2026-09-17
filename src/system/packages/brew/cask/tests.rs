@@ -8693,6 +8693,151 @@ fn macos_app_adopts_an_identical_target_only_with_adopt() -> Result<()> {
     Ok(())
 }
 
+/// Replacing a bundle that already matches the staged artifact resets the app's
+/// macOS Privacy & Security grants for no gain, so an owned target whose
+/// contents are identical must be kept in place rather than swapped.
+///
+/// This is reached on an ordinary re-install: an interrupted run leaves a
+/// pending transaction journal, which masks the receipt's recorded version, so
+/// the "already installed" skip never fires — while the receipt still proves
+/// ownership and so clears the unowned-target refusal.
+#[test]
+fn macos_app_keeps_an_identical_owned_bundle_in_place() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let stage = root.join("stage");
+    let caskroom = root.join("Caskroom/example/1.0.0");
+    file::create_dir_all(stage.join("Example.app/Contents"))?;
+    crate::file::write(stage.join("Example.app/Contents/app"), "ours")?;
+    let bundle = root.join("Applications/Example.app");
+    file::create_dir_all(bundle.join("Contents"))?;
+    crate::file::write(bundle.join("Contents/app"), "ours")?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+    };
+    let before = bundle.symlink_metadata()?;
+
+    // No adoption opt-in: adopt authorizes taking over someone else's app, and
+    // this entry already owns this target.
+    assert_eq!(
+        install_app(
+            &stage,
+            &caskroom,
+            &app,
+            AppInstallOptions {
+                manager: CaskManager::MacosApp,
+                require_unowned: false,
+                keep_caskroom_copy: true,
+                adopt: false,
+                verify_adopt: true,
+                defer_if_running: false,
+            },
+        )?,
+        AppInstall::Installed {
+            metadata_only: false
+        }
+    );
+
+    // Same inode: the bundle was never swapped, so its TCC grants survive. A
+    // changed inode here is exactly the failure this manager exists to avoid.
+    assert_eq!(
+        std::os::unix::fs::MetadataExt::ino(&bundle.symlink_metadata()?),
+        std::os::unix::fs::MetadataExt::ino(&before),
+        "the identical owned bundle was replaced rather than kept in place"
+    );
+    assert_eq!(
+        crate::file::read_to_string(bundle.join("Contents/app"))?,
+        "ours"
+    );
+    // The install record still points at the installed bundle.
+    assert_eq!(
+        std::fs::read_link(caskroom.join("Example.app"))?,
+        root.join("Applications/Example.app")
+    );
+    Ok(())
+}
+
+/// The counterpart to [`macos_app_keeps_an_identical_owned_bundle_in_place`]:
+/// keeping the bundle is conditional on the contents matching, so an owned
+/// target whose bundle differs is still replaced. Without this, "keep what we
+/// own" would silently stop installing updates.
+///
+/// macOS-only: replacing the bundle runs `ditto`.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_app_replaces_an_owned_bundle_that_differs() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = trusted_tempdir()?;
+    let root = tmp.path().canonicalize()?;
+    let _guard = BrewPrefixGuard::set(&root);
+    let stage = root.join("stage");
+    let caskroom = root.join("Caskroom/example/1.0.0");
+    file::create_dir_all(stage.join("Example.app/Contents"))?;
+    crate::file::write(stage.join("Example.app/Contents/app"), "new")?;
+    let bundle = root.join("Applications/Example.app");
+    file::create_dir_all(bundle.join("Contents"))?;
+    crate::file::write(bundle.join("Contents/app"), "old")?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+    };
+
+    assert_eq!(
+        install_app(
+            &stage,
+            &caskroom,
+            &app,
+            AppInstallOptions {
+                manager: CaskManager::MacosApp,
+                require_unowned: false,
+                keep_caskroom_copy: true,
+                adopt: false,
+                verify_adopt: true,
+                defer_if_running: false,
+            },
+        )?,
+        AppInstall::Installed {
+            metadata_only: false
+        }
+    );
+    assert_eq!(
+        crate::file::read_to_string(bundle.join("Contents/app"))?,
+        "new"
+    );
+    Ok(())
+}
+
+/// Staging is keyed on the manager as well as the token and version, and runs
+/// before the app-mutation lock. Sharing the directory would let two managers
+/// installing the same token at the same version `remove_all` each other's
+/// extract tree and stage the wrong payload.
+#[test]
+fn staging_directories_are_scoped_per_manager() -> Result<()> {
+    let spec = crate::system::AppSpec {
+        url: "https://example.com/Nuvio.dmg".to_string(),
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".to_string(),
+        artifact: "Nuvio.app".to_string(),
+        version: "1.1.20".to_string(),
+    };
+    let declared = declared_app_cask("nuvio", &spec)?;
+    let mut brewed = declared.clone();
+    brewed.manager = CaskManager::BrewCask;
+    assert_eq!(declared.token, brewed.token);
+    assert_eq!(declared.version, brewed.version);
+
+    for kind in ["cask-extract", "cask-git-clone"] {
+        assert_ne!(
+            cask_staging_dir(&declared, kind),
+            cask_staging_dir(&brewed, kind),
+            "{kind} is shared between managers"
+        );
+    }
+    Ok(())
+}
+
 /// Ownership is per target, not per token. A receipt for one app must not
 /// authorize replacing a different app the declaration later points at — by
 /// renaming `artifact`, or by moving the app directory.
