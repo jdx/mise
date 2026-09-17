@@ -40,6 +40,16 @@ pub(crate) fn quote(value: impl AsRef<str>) -> String {
     format!("'{}'", value.as_ref().replace('\'', "'\\''"))
 }
 
+/// Wrap a command so it runs inside the project's tool environment. Needed
+/// wherever pitchfork is told not to wrap the daemon itself in `mise x`.
+pub(crate) fn in_tool_env(command: &str) -> String {
+    format!(
+        "{} x -- sh -c {}",
+        quote(crate::env::MISE_BIN.to_string_lossy()),
+        quote(command)
+    )
+}
+
 /// Chain idempotent setup steps in front of the long-running command, using
 /// pitchfork's shell-command semantics: every step must succeed before the
 /// process that keeps running is reached. Returns `run` unchanged when there is
@@ -116,11 +126,7 @@ pub(crate) fn expand(
         }
     }
     if let Some(toml::Value::String(command)) = table.get_mut("ready_cmd") {
-        *command = format!(
-            "{} x -- sh -c {}",
-            quote(crate::env::MISE_BIN.to_string_lossy()),
-            quote(command.as_str())
-        );
+        *command = in_tool_env(command.as_str());
     }
     let mut exports = preset.exports;
     for value in exports.values_mut() {

@@ -120,6 +120,10 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             if args.is_some() && task.is_none() {
                 bail!("[daemons.{name}] args requires task");
             }
+            // An explicit `mise` value is the user's call; otherwise a task
+            // daemon opts out of pitchfork's `mise x` wrapper below, and its
+            // setup steps have to reach the tool environment some other way.
+            let wrap_init = task.is_some() && !table.contains_key("mise");
             if let Some(task) = &task {
                 if task.is_empty() {
                     bail!("[daemons.{name}] task must not be empty");
@@ -167,10 +171,15 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 .entry("mise".to_string())
                 .or_insert(toml::Value::Boolean(true));
             if !init.is_empty() {
+                let steps: Vec<String> = if wrap_init {
+                    init.iter().map(|s| presets::in_tool_env(s)).collect()
+                } else {
+                    init.clone()
+                };
                 let run = table["run"].as_str().unwrap().to_string();
                 table.insert(
                     "run".into(),
-                    toml::Value::String(presets::with_init(&init, &run)),
+                    toml::Value::String(presets::with_init(&steps, &run)),
                 );
             }
             Daemon {
@@ -521,6 +530,29 @@ mod tests {
         let init = run.find(" daemons __init ").unwrap();
         assert!(init < run.find("echo ready").unwrap());
         assert!(run.contains("&& echo ready && exec "));
+        // A task daemon opts out of pitchfork's `mise x` wrapper, so its setup
+        // steps have to enter the tool environment themselves.
+        let wrapped = files(&[(
+            "/project/mise.toml",
+            "[daemons.core]\ntask = 'dev'\ninit = 'npm ci'\n",
+        )]);
+        let run = load(&wrapped).unwrap().daemons["core"].table["run"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(run.starts_with(&presets::in_tool_env("npm ci")), "{run}");
+        assert!(run.ends_with("run --skip-deps 'dev'"), "{run}");
+        // An explicit `mise` value is the user's call, so the step is left alone.
+        let explicit = files(&[(
+            "/project/mise.toml",
+            "[daemons.core]\ntask = 'dev'\ninit = 'npm ci'\nmise = true\n",
+        )]);
+        assert!(
+            load(&explicit).unwrap().daemons["core"].table["run"]
+                .as_str()
+                .unwrap()
+                .starts_with("npm ci && ")
+        );
         // `init` is consumed by mise and never reaches pitchfork.
         assert!(
             !load(&config).unwrap().daemons["db"]

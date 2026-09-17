@@ -58,11 +58,14 @@ pub(crate) fn gate(experimental: bool, tasks: &[Task]) -> Result<bool> {
 /// them ready. Already-running daemons are left alone, so this is cheap to
 /// repeat.
 ///
+/// A dry run still applies the experimental gate and resolves every name, so a
+/// typo fails there as it would on a real run; it just stops before pitchfork.
+///
 /// Names are resolved per project, not against one merged set. In a monorepo a
 /// dependency task can live in a different subproject, and two subprojects may
 /// each declare a daemon of the same name; each task's names are therefore
 /// looked up in its own configuration hierarchy.
-pub(crate) async fn start(config: &Arc<Config>, tasks: &[Task]) -> Result<()> {
+pub(crate) async fn start(config: &Arc<Config>, tasks: &[Task], dry_run: bool) -> Result<()> {
     if !gate(Settings::get().experimental, tasks)? {
         return Ok(());
     }
@@ -92,6 +95,14 @@ pub(crate) async fn start(config: &Arc<Config>, tasks: &[Task]) -> Result<()> {
                 .1
                 .insert(name);
         }
+    }
+    if dry_run {
+        for (root, (_, names)) in &wanted {
+            for name in names {
+                info!("[dry-run] would start daemon {name} in {}", root.display());
+            }
+        }
+        return Ok(());
     }
     for (root, (scoped, names)) in wanted {
         let scoped = runtime::config_for_root(&scoped, &root).await?;

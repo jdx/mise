@@ -842,9 +842,9 @@ impl Run {
         // report them ready, before any task body runs. Daemons are a
         // dependency of the task, so `--skip-deps` skips them too; that is also
         // what stops a task-backed daemon, which runs `mise run --skip-deps`,
-        // from starting itself.
-        if !self.skip_deps && !self.dry_run {
-            crate::daemons::tasks::start(&config, &resolved_tasks).await?;
+        // from starting itself. A dry run still validates the names.
+        if !self.skip_deps {
+            crate::daemons::tasks::start(&config, &resolved_tasks, self.dry_run).await?;
         }
 
         // Apply global timeout for entire run if configured
