@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::file;
 use crate::system;
 use crate::system::edits::{BlockSource, EditOp};
+use crate::system::files::FileMode;
 use crate::system::history::OperationScope;
 use crate::ui::prompt;
 
@@ -117,7 +118,14 @@ fn source_for_target(
 ) -> Result<Option<PathBuf>> {
     for req in system::files::files_from_config(config)? {
         if system::files::matches_target(&req.target, &req.target_raw, &[raw.to_string()]) {
-            return Ok(Some(req.source));
+            // a tracked file has no source: it stays where it is, so that is
+            // what to edit. inline content lives in the config that declares
+            // it, like an inline edit entry.
+            return Ok(Some(match req.mode {
+                FileMode::Track => req.target,
+                FileMode::Content => req.origin.config,
+                _ => req.source,
+            }));
         }
     }
     let matching_edits = system::edits::edits_from_config(config)?

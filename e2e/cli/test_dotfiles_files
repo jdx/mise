@@ -766,6 +766,28 @@ EOF
 EDITOR="$PWD/editor-append" mise dotfiles edit ~/inline-edit
 assert_contains "cat mise.toml" "# edited config"
 
+# a tracked file stays where it is, so edit opens the target itself
+# (tracking is enrolled from the global configuration only)
+echo "tracked before edit" >~/.edit-tracked
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.edit-tracked" = { mode = "track" }
+EOF
+cat <<EOF >mise.toml
+[dotfiles]
+EOF
+EDITOR="$PWD/editor-write" mise dotfiles edit ~/.edit-tracked
+assert "cat ~/.edit-tracked" "edited source"
+: >"$MISE_CONFIG_DIR/config.toml"
+
+# inline content lives in the config that declares it
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.edit-inline-content" = { content = "inline before edit\n" }
+EOF
+EDITOR="$PWD/editor-append" mise dotfiles edit ~/.edit-inline-content
+assert_contains "cat mise.toml" "# edited config"
+
 # Dotfile templates consume the same declared bootstrap secrets as managed
 # system files. Missing inputs fail closed, while dry-runs stay inert.
 dotfile_secret_env="MISE_DOTFILES_TEST_SECRET"
