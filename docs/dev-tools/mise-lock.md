@@ -301,13 +301,6 @@ to the target lockfile, and updates keep sidecars beside that target. This also
 supports deployments that symlink each file individually: new sidecars are stored
 in the dotfiles repository and do not need separate global symlinks.
 
-::: warning Upgrading from mise 2026.9.7–2026.9.10
-If you ran `mise lock --global` with this symlink layout on mise 2026.9.7 through
-2026.9.10, you may see a missing dependency sidecar error after upgrading. Run
-`mise lock --global` again to repair the lockfile's relative paths and regenerate
-the sidecars in your dotfiles repository.
-:::
-
 Option variants have a hash suffix. Once recorded, a path
 stays unchanged when other variants are added. Directory names follow the tool
 spelling: `pypi:black` uses `pypi-black`, while `pipx:black` uses `pipx-black`.
