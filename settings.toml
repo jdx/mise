@@ -2705,12 +2705,6 @@ env = "MISE_RUBY_GITHUB_ATTESTATIONS"
 optional = true
 type = "Bool"
 
-[ruby.precompiled_arch]
-description = "Override architecture identifier for precompiled Ruby binaries."
-env = "MISE_RUBY_PRECOMPILED_ARCH"
-optional = true
-type = "String"
-
 [ruby.precompiled_api_url]
 description = "Override the GitLab API URL for a `gitlab:owner/repo` precompiled_url (self-hosted GitLab)."
 docs = """
@@ -2723,6 +2717,12 @@ is rejected, since matching-origin requests attach GitLab credentials
 Has no effect for GitHub sources or full URL templates.
 """
 env = "MISE_RUBY_PRECOMPILED_API_URL"
+optional = true
+type = "String"
+
+[ruby.precompiled_arch]
+description = "Override architecture identifier for precompiled Ruby binaries."
+env = "MISE_RUBY_PRECOMPILED_ARCH"
 optional = true
 type = "String"
 

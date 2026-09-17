@@ -249,6 +249,7 @@ pub(crate) async fn get_release_for_url(
 /// source, which (unlike the default GitHub `jdx/ruby` source) never *requires* a build
 /// revision to exist — this just prefers the highest one when a custom source happens to
 /// use the same tag convention.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) async fn get_release_with_build_revision_status(
     api_url: &str,
     repo: &str,
@@ -268,6 +269,7 @@ pub(crate) async fn get_release_with_build_revision_status(
 ///
 /// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the
 /// highest numeric `-N` suffix and ignores the base version.
+#[cfg_attr(windows, allow(dead_code))]
 fn pick_best_numeric_build_revision(
     releases: Vec<GitlabRelease>,
     version: &str,
@@ -291,6 +293,7 @@ fn pick_best_numeric_build_revision(
 /// Given releases with tags like "3.3.11", "3.3.11-1", "3.3.11-2", picks the one
 /// with the highest numeric `-N` suffix. The base version (no suffix) is treated as
 /// revision 0.
+#[cfg_attr(windows, allow(dead_code))]
 fn pick_best_build_revision(releases: Vec<GitlabRelease>, version: &str) -> Option<GitlabRelease> {
     let prefix = format!("{version}-");
     releases
