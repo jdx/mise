@@ -8774,13 +8774,28 @@ fn macos_app_same_version_retarget_is_not_already_installed() -> Result<()> {
     let cask = declared_app_cask("nuvio", &spec)?;
     let artifacts = cask_artifacts(&cask)?;
 
+    // Built with the same resolver the installer records with, not by joining
+    // the appdir by hand: `app_target_path` canonicalizes, and on macOS a
+    // temporary directory under /var resolves to /private/var, so a
+    // hand-built path would never match and the test would pass or fail for
+    // the wrong reason.
+    let owned_app = {
+        let previous = crate::system::AppSpec {
+            artifact: "Nuvio.app".to_string(),
+            ..spec.clone()
+        };
+        let previous_cask = declared_app_cask("nuvio", &previous)?;
+        let previous_artifacts = cask_artifacts(&previous_cask)?;
+        app_target_path(previous_artifacts.apps[0].target_name()?)?
+    };
+
     // The receipt owns the previously declared app, at the same version.
     let receipt = CaskReceipt {
         schema_version: 3,
         version: "1.1.20".to_string(),
         auto_updates: false,
         metadata_only_apps: Vec::new(),
-        apps: vec![appdir.path().join("Nuvio.app")],
+        apps: vec![owned_app],
         binaries: Vec::new(),
         fonts: Vec::new(),
         completions: Vec::new(),
