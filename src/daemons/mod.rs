@@ -797,13 +797,22 @@ fn load_groups(
     }
     for key in groups.keys().cloned().collect::<Vec<_>>() {
         let daemons = expand_group(&groups, &key, &declares, &mut Vec::new())?;
-        // A member can name a daemon this project imported, which is declared
-        // here under the local key but registered under its own project's
-        // qualified ID. Expand to the ID it answers to.
-        groups[&key].daemons = daemons
-            .into_iter()
-            .map(|member| set.aliases.get(&member).cloned().unwrap_or(member))
-            .collect();
+        // A group becomes a pitchfork group in this project's generated
+        // configuration, and its members are that project's daemons. A daemon
+        // reached with `project` belongs to another project and is registered
+        // in that project's configuration under its own namespace, so naming it
+        // here would produce a group mise expands and the registered one does
+        // not. Say so rather than silently dropping the member.
+        if let Some(member) = daemons
+            .iter()
+            .find(|member| set.aliases.contains_key(*member))
+        {
+            let name = &groups[&key].name;
+            bail!(
+                "[daemon_groups.{name}] names {member:?}, which this project reaches with `project`; a group covers the daemons this project declares, so name the imported daemon directly or list it in `depends`"
+            );
+        }
+        groups[&key].daemons = daemons;
     }
     set.groups = groups.into_values().collect();
     Ok(())
@@ -1795,6 +1804,34 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains(&app.display().to_string()), "{err}");
+    }
+
+    #[test]
+    fn a_group_cannot_name_a_daemon_reached_with_project() {
+        let _serial = import_lock();
+        // A group renders into this project's pitchfork configuration, where an
+        // imported daemon has no definition, so accepting the member would
+        // produce a group mise expands and the registered one does not.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(&mirror, "[daemons.worker]\nrun = 'exec worker'\n");
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.pipeline]\nproject = '../mirror'\nname = 'worker'\n[daemons.api]\nrun = 'exec api'\n[daemon_groups]\nweb = ['api', 'pipeline']\n",
+        )]);
+        let err = load(&config).unwrap_err().to_string();
+        assert!(err.contains("[daemon_groups.web]"), "{err}");
+        assert!(err.contains("pipeline"), "{err}");
+        assert!(err.contains("depends"), "{err}");
+        // A group naming only this project's own daemons still loads.
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.pipeline]\nproject = '../mirror'\nname = 'worker'\n[daemons.api]\nrun = 'exec api'\n[daemon_groups]\nweb = ['api']\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(set.expand("web"), Some(["api".to_string()].as_slice()));
     }
 
     #[test]

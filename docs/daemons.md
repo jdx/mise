@@ -293,8 +293,10 @@ mise daemons start pipeline
 
 Run `mise daemons start api` to start the API and its worker dependency: the
 referenced project is registered and started too, even though nothing named it.
-Use the local name `pipeline` in commands, in `depends`, and in a
-`[daemon_groups]` member; mise resolves it to the worker's full daemon ID. You do
+Use the local name `pipeline` in commands and in `depends`; mise resolves it to
+the worker's full daemon ID. A `[daemon_groups]` member cannot name it: a group
+becomes a pitchfork group in this project's configuration and covers the daemons
+this project declares. You do
 not need to configure a namespace to use a project reference.
 
 Starting resolves dependencies across projects, so a daemon here can depend on
