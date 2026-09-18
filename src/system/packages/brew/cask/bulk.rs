@@ -76,25 +76,45 @@ fn stat(path: &Path) -> Result<(u64, u128)> {
     Ok((meta.len(), mtime))
 }
 
-fn is_fresh(path: &Path) -> bool {
-    let Ok(meta) = std::fs::metadata(path) else {
-        return false;
-    };
-    if meta.len() == 0 {
+/// When upstream was last asked, tracked separately from the document itself.
+///
+/// The document's own mtime cannot carry this. It is half of the index's
+/// identity check, so restamping it to restart the staleness window would either
+/// invalidate a perfectly good index or, worse, have to be papered over by
+/// copying the new stamp into the index and asserting agreement that was never
+/// verified.
+fn checked_path() -> PathBuf {
+    dir().join("cask.last-checked")
+}
+
+/// Fresh means "asked upstream recently AND still have a document to read".
+fn is_fresh() -> bool {
+    if std::fs::metadata(document_path()).is_ok_and(|m| m.len() == 0) {
         return false;
     }
-    meta.modified()
+    if !document_path().exists() {
+        return false;
+    }
+    std::fs::metadata(checked_path())
+        .and_then(|m| m.modified())
         .ok()
         .and_then(|m| SystemTime::now().duration_since(m).ok())
         .is_some_and(|age| age < STALE_AFTER)
 }
 
+/// Restart the staleness window without touching the document.
+fn mark_checked() -> Result<()> {
+    crate::file::create_dir_all(dir())?;
+    crate::file::write_atomic(checked_path(), [])?;
+    Ok(())
+}
+
 /// Fetch the document if the cached copy is missing or past the staleness
-/// window. A 304 leaves the bytes alone and only restamps the mtime, which is
-/// what makes the next `is_fresh` check pass without another request.
+/// window. A 304 leaves both the bytes and their index alone and only restarts
+/// the window.
 async fn refresh() -> Result<()> {
     let path = document_path();
-    if is_fresh(&path) {
+    if is_fresh() {
         return Ok(());
     }
 
@@ -116,17 +136,18 @@ async fn refresh() -> Result<()> {
         .wrap_err("failed to fetch the Homebrew cask index")?;
 
     if resp.status() == reqwest::StatusCode::NOT_MODIFIED && path.exists() {
-        // Unchanged upstream: restamp so the window restarts, and keep the
-        // index, which still describes these exact bytes.
-        let now = filetime::FileTime::now();
-        filetime::set_file_mtime(&path, now).ok();
-        if let Ok((size, mtime)) = stat(&path)
-            && let Ok(mut index) = load_index_file()
-        {
-            index.source_mtime_ns = mtime;
-            index.source_size = size;
-            write_index(&index).ok();
-        }
+        // Unchanged upstream, so the document and its index are both still
+        // whatever they were. Only the window restarts.
+        //
+        // Nothing is stamped onto the index here on purpose. Copying the
+        // document's fingerprint into the sidecar would make `load_index`
+        // accept it without ever having checked that it describes this
+        // document: if an earlier refresh died between promoting the document
+        // and writing the index, that assertion would be false, and the wrong
+        // offsets would be trusted for a renewed 24 hours. Leaving both alone
+        // means `load_index` still decides on the evidence, and rebuilds if
+        // they disagree.
+        mark_checked()?;
         return Ok(());
     }
 
@@ -170,6 +191,9 @@ async fn refresh() -> Result<()> {
     index.source_size = size;
     index.source_mtime_ns = mtime;
     write_index(&index)?;
+    // Last, so that a refresh which dies partway leaves the cache stale rather
+    // than fresh-but-unindexed: the next run retries instead of trusting it.
+    mark_checked()?;
     Ok(())
 }
 
