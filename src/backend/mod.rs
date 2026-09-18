@@ -3037,7 +3037,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         before: Timestamp,
     ) -> eyre::Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        let id = self.id();
+        let backend = self.ba().full();
         let hidden: Vec<VersionInfo> = self
             .list_remote_versions_with_info_with_selection_options(config, &opts, false)
             .await?
@@ -3048,7 +3048,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 // that, the versions this message exists to name are exactly the
                 // ones it cannot see.
                 if v.created_at.is_none()
-                    && let Some(created_at) = on_demand_release_date(id, &v.version)
+                    && let Some(created_at) = on_demand_release_date(&backend, &v.version)
                 {
                     v.created_at = Some(created_at);
                 }
@@ -3162,6 +3162,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         if matches.is_empty() {
             return Ok(());
         }
+        let backend = self.ba().full();
         // Cached from the listing this candidate set was built from.
         let dated: HashSet<String> = self
             .list_remote_versions_with_info_with_selection_options(config, selection_opts, false)
@@ -3177,15 +3178,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
             }
             // Reuse an answer this run already paid for; the error message
             // below asks for the same versions again.
-            let created_at = match on_demand_release_date(self.id(), candidate) {
+            let created_at = match on_demand_release_date(&backend, candidate) {
                 Some(created_at) => Some(created_at),
                 None => match self.fetch_version_created_at(config, candidate).await {
                     Ok(created_at) => {
-                        remember_on_demand_release_date(
-                            self.id(),
-                            candidate,
-                            created_at.as_deref(),
-                        );
+                        remember_on_demand_release_date(&backend, candidate, created_at.as_deref());
                         created_at
                     }
                     Err(err) => {
@@ -6253,8 +6250,12 @@ struct SharedHookEnv {
     env: IndexMap<String, String>,
 }
 
-/// Release dates read one version at a time during this run, keyed by backend
-/// id and version.
+/// Release dates read one version at a time during this run, keyed by resolved
+/// backend and version.
+///
+/// The key is `BackendArg::full()`, not the short name: a registry entry can
+/// offer several backends under one short name, and a date read for one of
+/// them says nothing about the same version of another.
 ///
 /// `Backend::fetch_version_created_at` goes to the network, and two separate
 /// things need each answer: the walk that applies a release-age cutoff, and the
@@ -6279,7 +6280,7 @@ static ON_DEMAND_RELEASE_DATES: LazyLock<Mutex<OnDemandReleaseDates>> =
 /// lookup, nothing more, so the simplest bound will do.
 const ON_DEMAND_RELEASE_DATE_LIMIT: usize = 1024;
 
-fn remember_on_demand_release_date(backend_id: &str, version: &str, created_at: Option<&str>) {
+fn remember_on_demand_release_date(backend: &str, version: &str, created_at: Option<&str>) {
     let Some(created_at) = created_at else {
         return;
     };
@@ -6288,17 +6289,17 @@ fn remember_on_demand_release_date(backend_id: &str, version: &str, created_at: 
             dates.clear();
         }
         dates.insert(
-            (backend_id.to_string(), version.to_string()),
+            (backend.to_string(), version.to_string()),
             created_at.to_string(),
         );
     }
 }
 
-fn on_demand_release_date(backend_id: &str, version: &str) -> Option<String> {
+fn on_demand_release_date(backend: &str, version: &str) -> Option<String> {
     ON_DEMAND_RELEASE_DATES
         .lock()
         .ok()?
-        .get(&(backend_id.to_string(), version.to_string()))
+        .get(&(backend.to_string(), version.to_string()))
         .cloned()
 }
 
