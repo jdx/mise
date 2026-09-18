@@ -18,6 +18,34 @@ pub(crate) enum Declaration {
     Definition(toml::Table),
 }
 
+/// `[daemon_groups]` entry: a bare list of members or a table with `daemons`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum GroupDeclaration {
+    List(Vec<String>),
+    Table { daemons: Vec<String> },
+}
+
+impl GroupDeclaration {
+    fn members(&self) -> &[String] {
+        match self {
+            GroupDeclaration::List(members) => members,
+            GroupDeclaration::Table { daemons } => daemons,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Group {
+    pub name: String,
+    pub source: PathBuf,
+    pub root: PathBuf,
+    /// Declared members, which may reference other groups in the same project.
+    pub members: Vec<String>,
+    /// Members expanded to daemon names declared in the same project root.
+    pub daemons: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Daemon {
     pub name: String,
@@ -32,6 +60,7 @@ pub(crate) struct Daemon {
 #[derive(Debug, Default, Clone)]
 pub(crate) struct DaemonSet {
     pub daemons: IndexMap<String, Daemon>,
+    pub groups: IndexMap<String, Group>,
 }
 
 pub(crate) fn state_dir(root: &Path) -> PathBuf {
@@ -44,9 +73,11 @@ pub(crate) fn state_dir(root: &Path) -> PathBuf {
 
 pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let mut declarations = IndexMap::new();
+    let mut group_declarations = IndexMap::new();
     for cf in files.values().rev() {
         let entries = cf.daemon_declarations();
-        if entries.is_empty() {
+        let groups = cf.daemon_group_declarations();
+        if entries.is_empty() && groups.is_empty() {
             continue;
         }
         if !Settings::get().experimental {
@@ -56,31 +87,18 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         if Settings::safe_mode() && !crate::config::is_global_config(cf.get_path()) {
             continue;
         }
+        let source = cf.get_path().to_path_buf();
+        let root = cf.project_root().unwrap_or_else(|| cf.config_root());
         for (name, declaration) in entries {
-            declarations.insert(
-                name,
-                (
-                    declaration,
-                    cf.get_path().to_path_buf(),
-                    cf.project_root().unwrap_or_else(|| cf.config_root()),
-                ),
-            );
+            declarations.insert(name, (declaration, source.clone(), root.clone()));
+        }
+        for (name, declaration) in groups {
+            group_declarations.insert(name, (declaration, source.clone(), root.clone()));
         }
     }
     let mut set = DaemonSet::default();
     for (name, (declaration, source, root)) in declarations {
-        if name.is_empty()
-            || name == "."
-            || name.contains("..")
-            || name.contains("--")
-            || name.starts_with('-')
-            || name.ends_with('-')
-            || !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
-        {
-            bail!("invalid daemon name {name:?}; use letters, numbers, '.', '_' or '-'");
-        }
+        validate_name("daemon", &name)?;
         let (preset, version, mut table) = match declaration {
             Declaration::Preset(version) => (Some(name.clone()), Some(version), toml::Table::new()),
             Declaration::Definition(mut table) => {
@@ -130,7 +148,105 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         };
         set.daemons.insert(name, daemon);
     }
+    load_groups(&mut set, group_declarations)?;
     Ok(set)
+}
+
+fn validate_name(kind: &str, name: &str) -> Result<()> {
+    if name.is_empty()
+        || name == "."
+        || name.contains("..")
+        || name.contains("--")
+        || name.starts_with('-')
+        || name.ends_with('-')
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
+        bail!("invalid {kind} name {name:?}; use letters, numbers, '.', '_' or '-'");
+    }
+    Ok(())
+}
+
+type GroupDeclarations = IndexMap<String, (GroupDeclaration, PathBuf, PathBuf)>;
+
+/// Groups are project scoped: every member resolves to a daemon declared under the
+/// same project root, so a group can never select daemons outside the project.
+fn load_groups(set: &mut DaemonSet, declarations: GroupDeclarations) -> Result<()> {
+    let mut groups: IndexMap<String, Group> = IndexMap::new();
+    for (name, (declaration, source, root)) in declarations {
+        validate_name("daemon group", &name)?;
+        if let Some(daemon) = set.daemons.get(&name)
+            && daemon.root == root
+        {
+            bail!("[daemon_groups.{name}] conflicts with the daemon of the same name");
+        }
+        let members = declaration.members().to_vec();
+        if members.is_empty() {
+            bail!("[daemon_groups.{name}] requires at least one daemon or group");
+        }
+        groups.insert(
+            name.clone(),
+            Group {
+                name,
+                source,
+                root,
+                members,
+                daemons: Vec::new(),
+            },
+        );
+    }
+    for name in groups.keys().cloned().collect::<Vec<_>>() {
+        let daemons = expand_group(set, &groups, &name, &mut Vec::new())?;
+        groups[&name].daemons = daemons;
+    }
+    set.groups = groups;
+    Ok(())
+}
+
+fn expand_group(
+    set: &DaemonSet,
+    groups: &IndexMap<String, Group>,
+    name: &str,
+    seen: &mut Vec<String>,
+) -> Result<Vec<String>> {
+    if seen.iter().any(|s| s == name) {
+        seen.push(name.to_string());
+        bail!(
+            "[daemon_groups.{name}] references itself: {}",
+            seen.join(" -> ")
+        );
+    }
+    seen.push(name.to_string());
+    let group = &groups[name];
+    let mut expanded: Vec<String> = Vec::new();
+    for member in &group.members {
+        if let Some(daemon) = set.daemons.get(member)
+            && daemon.root == group.root
+        {
+            if !expanded.contains(member) {
+                expanded.push(member.clone());
+            }
+            continue;
+        }
+        if let Some(nested) = groups.get(member)
+            && nested.root == group.root
+        {
+            for daemon in expand_group(set, groups, member, seen)? {
+                if !expanded.contains(&daemon) {
+                    expanded.push(daemon);
+                }
+            }
+            continue;
+        }
+        bail!(
+            "{}: [daemon_groups.{name}] member {member:?} is not a daemon or group declared for {}",
+            group.source.display(),
+            group.root.display()
+        );
+    }
+    seen.pop();
+    Ok(expanded)
 }
 
 fn take_string(table: &mut toml::Table, key: &str) -> Result<Option<String>> {
@@ -201,7 +317,18 @@ impl DaemonSet {
                 .filter(|(_, d)| d.root == root)
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
+            groups: self
+                .groups
+                .iter()
+                .filter(|(_, g)| g.root == root)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
         }
+    }
+
+    /// Daemon names selected by `name`, which may be a daemon or a declared group.
+    pub(crate) fn expand(&self, name: &str) -> Option<&[String]> {
+        self.groups.get(name).map(|g| g.daemons.as_slice())
     }
 
     pub(crate) fn auto(&self) -> bool {
@@ -338,6 +465,99 @@ mod tests {
             set.daemons["api"].table["port"]["expect"][0].as_integer(),
             Some(3000)
         );
+    }
+
+    #[test]
+    fn groups_expand_members_and_nested_groups() {
+        let set = load(&files(&[(
+            "/project/mise.toml",
+            r#"
+[daemons.postgres]
+run = 'postgres'
+[daemons.nats]
+run = 'nats'
+[daemons.core]
+run = 'core'
+[daemons.core2]
+run = 'core2'
+[daemons.node0]
+run = 'node0'
+[daemon_groups]
+default = ["postgres", "nats", "core", "node0"]
+two-cluster = ["default", "core2"]
+[daemon_groups.explicit]
+daemons = ["core", "core2"]
+"#,
+        )]))
+        .unwrap();
+        assert_eq!(
+            set.groups["default"].daemons,
+            ["postgres", "nats", "core", "node0"]
+        );
+        // A nested group expands in place and members are deduplicated.
+        assert_eq!(
+            set.groups["two-cluster"].daemons,
+            ["postgres", "nats", "core", "node0", "core2"]
+        );
+        assert_eq!(set.groups["explicit"].daemons, ["core", "core2"]);
+        assert_eq!(set.expand("default").unwrap().len(), 4);
+        assert!(set.expand("postgres").is_none());
+        assert_eq!(set.for_root(Path::new("/project")).groups.len(), 3);
+        assert!(set.for_root(Path::new("/other")).groups.is_empty());
+    }
+
+    #[test]
+    fn groups_are_scoped_to_one_project_root() {
+        // A daemon declared by an outer project is not a valid member of an inner group.
+        let err = load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nall = ['api', 'outer']\n",
+            ),
+            ("/parent/mise.toml", "[daemons.outer]\nrun = 'outer'\n"),
+        ]))
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("is not a daemon or group declared for"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn invalid_groups_are_rejected() {
+        let cases = [
+            (
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nweb = ['missing']\n",
+                "is not a daemon or group",
+            ),
+            (
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nweb = []\n",
+                "requires at least one daemon or group",
+            ),
+            (
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\napi = ['api']\n",
+                "conflicts with the daemon of the same name",
+            ),
+            (
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nweb = ['other']\nother = ['web']\n",
+                "references itself",
+            ),
+            (
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nweb = ['web']\n",
+                "references itself",
+            ),
+            (
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\n'bad name' = ['api']\n",
+                "invalid daemon group name",
+            ),
+        ];
+        for (body, expected) in cases {
+            let err = load(&files(&[("/project/mise.toml", body)]))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(expected), "{body:?} produced {err}");
+        }
     }
 
     #[test]

@@ -33,9 +33,9 @@ TOML
 assert_fail_contains "mise daemons start nonexistent 2>&1" 'no matching project daemons'
 assert_fail_contains "mise daemons start --force nonexistent 2>&1" 'no matching project daemons'
 assert_fail_contains "mise daemons start postgres nonexistent 2>&1" 'no matching project daemons'
-for action in start stop restart; do
-  assert_fail_contains "mise daemons $action --group web 2>&1" 'use pitchfork directly'
-  assert_fail_contains "mise daemons $action postgres --group=web 2>&1" 'use pitchfork directly'
+for action in start stop restart status logs; do
+  assert_fail_contains "mise daemons $action --group web 2>&1" 'no [daemon_groups] entry named'
+  assert_fail_contains "mise daemons $action postgres --group=web 2>&1" 'no [daemon_groups] entry named'
 done
 assert "test ! -s '$DAEMON_LOG'"
 assert_contains "mise daemons ls --json" '"preset": "postgres"'
@@ -68,6 +68,58 @@ mise daemons stop
 assert_contains "cat '$DAEMON_LOG'" 'args=stop '
 assert_fail "MISE_EXPERIMENTAL=0 mise daemons ls"
 assert_fail "MISE_SAFE=1 mise daemons start"
+
+# Groups expand to project daemons; pitchfork's own groups stay out of reach.
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.postgres]
+run = "sleep 30"
+[daemons.core]
+run = "sleep 30"
+[daemons.node0]
+run = "sleep 30"
+[daemons.core2]
+run = "sleep 30"
+[daemon_groups]
+default = ["postgres", "core", "node0"]
+two-cluster = ["default", "core2"]
+TOML
+: >"$DAEMON_LOG"
+mise daemons start two-cluster
+started=$(grep 'args=start ' "$DAEMON_LOG")
+assert_contains "echo '$started'" '/postgres'
+assert_contains "echo '$started'" '/core2'
+generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+assert_contains "cat '$generated'" '[groups.two-cluster]'
+assert_contains "cat '$generated'" '[groups.default]'
+# A bare start selects the default group instead of every daemon.
+: >"$DAEMON_LOG"
+mise daemons start
+started=$(grep 'args=start ' "$DAEMON_LOG")
+assert_contains "echo '$started'" '/postgres'
+assert_not_contains "echo '$started'" '/core2'
+# --group accepts a declared group and rejects anything else.
+: >"$DAEMON_LOG"
+mise daemons stop --group two-cluster
+assert_contains "cat '$DAEMON_LOG'" '/core2'
+assert_fail_contains "mise daemons start --group backend 2>&1" 'no [daemon_groups] entry named'
+assert_fail_contains "mise daemons start missing-group 2>&1" 'no matching project daemons'
+
+cat >mise.toml <<'TOML'
+[daemons.api]
+run = "sleep 30"
+[daemon_groups]
+web = ["api", "missing"]
+TOML
+assert_contains "mise daemons ls 2>&1 || true" 'is not a daemon or group declared for'
+cat >mise.toml <<'TOML'
+[daemons.api]
+run = "sleep 30"
+[daemon_groups]
+api = ["api"]
+TOML
+assert_contains "mise daemons ls 2>&1 || true" 'conflicts with the daemon of the same name'
 
 cat >mise.toml <<'TOML'
 [daemons]

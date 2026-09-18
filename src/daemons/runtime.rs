@@ -366,6 +366,22 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
         }
         daemons.insert(daemon.name.clone(), toml::Value::Table(table));
     }
+    let mut groups = toml::Table::new();
+    for group in set.groups.values() {
+        // Qualified IDs keep the group bound to this project's namespace.
+        let members = group
+            .daemons
+            .iter()
+            .map(|name| toml::Value::String(format!("{}/{name}", state.namespace)))
+            .collect::<Vec<_>>();
+        groups.insert(
+            group.name.clone(),
+            toml::Value::Table(toml::Table::from_iter([(
+                "daemons".into(),
+                toml::Value::Array(members),
+            )])),
+        );
+    }
     let mut doc = toml::Table::new();
     doc.insert(
         "settings".into(),
@@ -378,6 +394,9 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
         )])),
     );
     doc.insert("daemons".into(), toml::Value::Table(daemons));
+    if !groups.is_empty() {
+        doc.insert("groups".into(), toml::Value::Table(groups));
+    }
     Ok(header + &toml::to_string_pretty(&doc)?)
 }
 
@@ -446,6 +465,54 @@ mod tests {
         std::os::unix::fs::symlink(&root, &link).unwrap();
         assert_eq!(namespace(&root).unwrap(), namespace(&link).unwrap());
         assert_eq!(state_dir(&root), state_dir(&link));
+    }
+
+    #[test]
+    fn groups_render_with_qualified_daemon_ids() {
+        let daemon = |name: &str| super::super::Daemon {
+            name: name.to_string(),
+            source: PathBuf::from("/project/mise.toml"),
+            root: PathBuf::from("/project"),
+            table: toml::Table::from_iter([(
+                "run".into(),
+                toml::Value::String(format!("run {name}")),
+            )]),
+            preset: None,
+            tool: None,
+            exports: Default::default(),
+        };
+        let set = DaemonSet {
+            daemons: ["api", "worker"]
+                .into_iter()
+                .map(|name| (name.to_string(), daemon(name)))
+                .collect(),
+            groups: [(
+                "web".to_string(),
+                super::super::Group {
+                    name: "web".into(),
+                    source: PathBuf::from("/project/mise.toml"),
+                    root: PathBuf::from("/project"),
+                    members: vec!["api".into(), "worker".into()],
+                    daemons: vec!["api".into(), "worker".into()],
+                },
+            )]
+            .into_iter()
+            .collect(),
+        };
+        let state = State {
+            namespace: "proj".into(),
+            ..State::default()
+        };
+        let rendered = render(&set, &state).unwrap();
+        assert!(rendered.contains("[groups.web]"), "{rendered}");
+        assert!(rendered.contains("\"proj/api\""), "{rendered}");
+        assert!(rendered.contains("\"proj/worker\""), "{rendered}");
+        // Without groups the section is omitted entirely.
+        let bare = DaemonSet {
+            groups: Default::default(),
+            ..set
+        };
+        assert!(!render(&bare, &state).unwrap().contains("[groups"));
     }
 
     #[test]

@@ -607,6 +607,10 @@ See [Tasks](/tasks/) for the full list of configuration options.
 
 Experimental custom processes and managed Postgres/Redis presets share one section. Higher-precedence declarations replace the complete same-name daemon; explicit environment variables override preset exports. See [daemons](/daemons).
 
+### `[daemon_groups]`
+
+Experimental named sets of project daemons. Each member is a daemon or another group declared in the same project, so a group never selects daemons outside it. Group names work wherever `mise daemons` accepts a daemon name. See [daemons](/daemons#groups).
+
 ## Environment variables
 
 ::: tip

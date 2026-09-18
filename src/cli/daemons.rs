@@ -116,9 +116,10 @@ impl Daemons {
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
         }
-        let (names, flags) = split_args(action, &args)?;
+        let (mut names, groups, flags) = split_args(action, &args)?;
         let install = matches!(action, "start" | "restart");
         let mut root_ids = Vec::new();
+        let mut root_sets = Vec::new();
         for root in &roots {
             let previous = runtime::read_state(root)?;
             let namespace = if previous.namespace.is_empty() {
@@ -126,29 +127,48 @@ impl Daemons {
             } else {
                 previous.namespace.clone()
             };
+            let set = loaded.for_root(root);
             let mut ids = if install { Vec::new() } else { previous.ids };
-            ids.extend(
-                loaded
-                    .for_root(root)
-                    .daemons
-                    .keys()
-                    .map(|name| format!("{namespace}/{name}")),
-            );
+            ids.extend(set.daemons.keys().map(|name| format!("{namespace}/{name}")));
             root_ids.push(ids);
+            root_sets.push(set);
+        }
+        // A pitchfork group can name daemons outside the project, so only groups
+        // declared in [daemon_groups] are accepted here.
+        for group in &groups {
+            if !root_sets.iter().any(|set| set.groups.contains_key(group)) {
+                bail!(
+                    "no [daemon_groups] entry named {group:?}; declare the group in [daemon_groups] or use pitchfork directly for its own groups"
+                );
+            }
+        }
+        names.extend(groups);
+        // Without names, start selects the `default` group when a project declares one.
+        if action == "start"
+            && names.is_empty()
+            && root_sets
+                .iter()
+                .any(|set| set.groups.contains_key("default"))
+        {
+            names.push("default".into());
         }
         // Validate the entire request before any root installs tools or changes state.
         for name in &names {
-            if !root_ids.iter().flatten().any(|id| matches_name(id, name)) {
+            if !root_ids
+                .iter()
+                .zip(&root_sets)
+                .any(|(ids, set)| ids.iter().any(|id| selects(set, id, name)))
+            {
                 bail!("no matching project daemons for {name:?}");
             }
         }
         let mut rows = Vec::new();
         let mut matched = false;
-        for (root, ids) in roots.into_iter().zip(root_ids) {
+        for ((root, ids), root_set) in roots.into_iter().zip(root_ids).zip(root_sets) {
             if !names.is_empty()
                 && !ids
                     .iter()
-                    .any(|id| names.iter().any(|name| matches_name(id, name)))
+                    .any(|id| names.iter().any(|name| selects(&root_set, id, name)))
             {
                 continue;
             }
@@ -199,7 +219,7 @@ impl Daemons {
             let mut selected: Vec<_> = state
                 .ids
                 .iter()
-                .filter(|id| names.is_empty() || names.iter().any(|name| matches_name(id, name)))
+                .filter(|id| names.is_empty() || names.iter().any(|name| selects(&set, id, name)))
                 .cloned()
                 .collect();
             if install {
@@ -254,10 +274,21 @@ fn matches_name(id: &str, name: &str) -> bool {
     id == name || id.rsplit('/').next() == Some(name)
 }
 
-/// Separate positional IDs from pitchfork options before matching project roots.
-/// Value-taking options must retain their values even when a value is a daemon name.
-fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>)> {
+/// A name selects a daemon by short or qualified ID, or every member of a group
+/// declared for the same project root.
+fn selects(set: &daemons::DaemonSet, id: &str, name: &str) -> bool {
+    matches_name(id, name)
+        || set
+            .expand(name)
+            .is_some_and(|members| members.iter().any(|member| matches_name(id, member)))
+}
+
+/// Separate positional IDs, `--group` values, and pitchfork options before matching
+/// project roots. Value-taking options must retain their values even when a value is
+/// a daemon name.
+fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
     let mut names = Vec::new();
+    let mut groups = Vec::new();
     let mut flags = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -269,12 +300,19 @@ fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>
             names.push(arg.clone());
             continue;
         }
-        if matches!(action, "start" | "stop" | "restart")
-            && (arg == "--group" || arg.starts_with("--group="))
-        {
-            bail!(
-                "mise daemons selects project daemon names; use pitchfork directly for --group operations"
-            );
+        if arg == "--group" || arg.starts_with("--group=") {
+            let value = match arg.strip_prefix("--group=") {
+                Some(value) => value.to_string(),
+                None => args
+                    .next()
+                    .ok_or_else(|| eyre::eyre!("--group requires a value"))?
+                    .clone(),
+            };
+            if value.is_empty() {
+                bail!("--group requires a value");
+            }
+            groups.push(value);
+            continue;
         }
         flags.push(arg.clone());
         let takes_value = match action {
@@ -327,37 +365,75 @@ fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>
             flags.push(args.next().unwrap().clone());
         }
     }
-    Ok((names, flags))
+    Ok((names, groups, flags))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::config_file::ConfigFile;
+    use crate::config::config_file::mise_toml::MiseToml;
+    use std::sync::Arc;
+
+    fn files(entries: &[(&str, &str)]) -> crate::config::ConfigMap {
+        entries
+            .iter()
+            .map(|(path, body)| {
+                let path = PathBuf::from(path);
+                let cf: Arc<dyn ConfigFile> = Arc::new(MiseToml::from_str(body, &path).unwrap());
+                (path, cf)
+            })
+            .collect()
+    }
 
     #[test]
     fn names_are_independent_of_flag_order_and_values() {
         for args in [vec!["--force", "missing"], vec!["missing", "--force"]] {
             let args = args.into_iter().map(String::from).collect::<Vec<_>>();
-            let (names, flags) = split_args("start", &args).unwrap();
+            let (names, groups, flags) = split_args("start", &args).unwrap();
             assert_eq!(names, ["missing"]);
+            assert!(groups.is_empty());
             assert_eq!(flags, ["--force"]);
         }
         let args = ["--grep", "api", "--since=5m", "web", "-n", "20"].map(String::from);
-        let (names, flags) = split_args("logs", &args).unwrap();
+        let (names, _, flags) = split_args("logs", &args).unwrap();
         assert_eq!(names, ["web"]);
         assert_eq!(flags, ["--grep", "api", "--since=5m", "-n", "20"]);
-        let (names, flags) =
+        let (names, _, flags) =
             split_args("logs", &["-fn".into(), "20".into(), "web".into()]).unwrap();
         assert_eq!(names, ["web"]);
         assert_eq!(flags, ["-fn", "20"]);
         assert!(split_args("logs", &["--grep".into()]).is_err());
-        for action in ["start", "stop", "restart"] {
-            for args in [vec!["--group", "web"], vec!["api", "--group=web"]] {
-                let args = args.into_iter().map(String::from).collect::<Vec<_>>();
-                assert!(split_args(action, &args).is_err());
-            }
-        }
-        let (names, _) = split_args("start", &["--".into(), "missing".into()]).unwrap();
+        let (names, _, _) = split_args("start", &["--".into(), "missing".into()]).unwrap();
         assert_eq!(names, ["missing"]);
+    }
+
+    #[test]
+    fn group_flags_are_collected_without_reaching_pitchfork() {
+        for action in ["start", "stop", "restart", "status", "logs"] {
+            let args = ["api", "--group", "web", "--group=db"].map(String::from);
+            let (names, groups, flags) = split_args(action, &args).unwrap();
+            assert_eq!(names, ["api"]);
+            assert_eq!(groups, ["web", "db"]);
+            assert!(flags.is_empty());
+        }
+        assert!(split_args("start", &["--group".into()]).is_err());
+        assert!(split_args("start", &["--group=".into()]).is_err());
+    }
+
+    #[test]
+    fn group_names_select_every_member() {
+        let set = daemons::load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemons.web]\nrun = 'web'\n[daemon_groups]\nbackend = ['api', 'worker']\n",
+        )]))
+        .unwrap();
+        assert!(selects(&set, "proj/api", "backend"));
+        assert!(selects(&set, "proj/worker", "backend"));
+        assert!(!selects(&set, "proj/web", "backend"));
+        // Daemon names keep working alongside groups.
+        assert!(selects(&set, "proj/web", "web"));
+        assert!(selects(&set, "proj/web", "proj/web"));
+        assert!(!selects(&set, "proj/web", "missing"));
     }
 }
