@@ -139,12 +139,21 @@ pub(crate) fn describe(entries: &[(Entry, u64)]) -> Vec<String> {
 pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<Outcome> {
     // The root is gone, so pitchfork runs from the state directory instead.
     let cwd = &entry.dir;
-    let Some(mut lock) = super::ProjectLock::try_acquire(cwd)? else {
-        warn!(
-            "keeping {}: another mise process holds its daemon lock",
-            display_path(cwd)
-        );
-        return Ok(Outcome::Kept);
+    let lock = match super::ProjectLock::try_acquire(cwd) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            warn!(
+                "keeping {}: another mise process holds its daemon lock",
+                display_path(cwd)
+            );
+            return Ok(Outcome::Kept);
+        }
+        // One unwritable leftover directory must not end the run; the other
+        // entries are independent of this one.
+        Err(err) => {
+            warn!("keeping {}: cannot lock it: {err:#}", display_path(cwd));
+            return Ok(Outcome::Kept);
+        }
     };
     // Selection and confirmation both happen before this lock is held, and a
     // project directory can come back in between (a restored worktree, a
@@ -179,18 +188,21 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                 return Ok(Outcome::Kept);
             }
         }
+        // Unconditionally, even when the generated file is already gone:
+        // pitchfork keeps the registration separately, and skipping the call
+        // would leave it pointing at a path nothing can discover again once
+        // this directory is deleted.
         let config = entry.config_file();
-        if config.exists()
-            && let Err(err) = runtime
-                .output(
-                    cwd,
-                    &[
-                        "config".into(),
-                        "remove".into(),
-                        config.to_string_lossy().into_owned(),
-                    ],
-                )
-                .await
+        if let Err(err) = runtime
+            .output(
+                cwd,
+                &[
+                    "config".into(),
+                    "remove".into(),
+                    config.to_string_lossy().into_owned(),
+                ],
+            )
+            .await
         {
             warn!(
                 "keeping {}: cannot unregister {}: {err:#}",
@@ -207,42 +219,50 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         );
         return Ok(Outcome::Kept);
     }
-    // The legacy lock file lives inside this directory, so it goes before the
-    // directory does; the sibling lock is held across the deletion, and nothing
-    // that can prune lacks it. The empty sibling lock file is left in place,
-    // the way every other mise lock file is.
-    lock.release_legacy();
-    if let Err(err) = delete_state_dir(cwd) {
+    if let Err(err) = delete_state_dir(cwd, &entry.state, lock) {
         // One unreadable or busy file must not end the run: the other entries
-        // are independent, and `state.json` survives a partial delete, so this
-        // one is still found next time.
+        // are independent, and this one stays discoverable for a later run.
         warn!("keeping {}: {err:#}", display_path(cwd));
         return Ok(Outcome::Kept);
     }
-    drop(lock);
     Ok(Outcome::Removed)
 }
 
-/// Deletes a state directory, leaving `state.json` until everything else is
-/// gone.
+/// Deletes a state directory, keeping it discoverable until it is really gone.
 ///
-/// A delete can fail part way through, on a file that is busy or unreadable.
-/// `state.json` is what makes a directory an entry at all, so removing it first
-/// would turn a partial failure into a directory no later prune can see, and
-/// one that a `prepare()` for a restored project would then build on top of.
-/// Removed last, a partial failure leaves an entry that is still selected,
-/// still reported, and still retried.
-fn delete_state_dir(dir: &Path) -> Result<()> {
-    let state = dir.join("state.json");
+/// A delete can fail part way through, on a file that is busy or unreadable,
+/// and `state.json` is what makes a directory an entry at all. Removing it
+/// first would turn a partial failure into leftover state no later prune can
+/// see, and that a `prepare()` for a restored project would build on top of.
+/// So it goes last, and if the directory itself cannot be removed after that,
+/// it is written back.
+///
+/// The order also decides when the older in-directory lock is released: it
+/// guards the data, so it is held while the data goes, and dropped only for the
+/// removal of the lock file itself, which Windows will not delete while a
+/// handle is open.
+fn delete_state_dir(dir: &Path, state: &State, mut lock: super::ProjectLock) -> Result<()> {
+    let state_file = dir.join("state.json");
+    let legacy = super::legacy_lock_file_for_state_dir(dir);
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
-        if path == state {
+        if path == state_file || path == legacy {
             continue;
         }
         crate::file::remove_all(path)?;
     }
-    crate::file::remove_all(&state)?;
-    crate::file::remove_all(dir)
+    lock.release_legacy();
+    crate::file::remove_all(&legacy)?;
+    crate::file::remove_all(&state_file)?;
+    if let Err(err) = crate::file::remove_all(dir) {
+        // Put the entry back so a later run finishes what this one started.
+        if let Ok(bytes) = serde_json::to_vec_pretty(state) {
+            let _ = crate::daemons::runtime::write_if_changed(&state_file, &bytes);
+        }
+        return Err(err);
+    }
+    drop(lock);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -388,12 +408,50 @@ mod tests {
         // Root, and platforms that ignore the mode, delete it anyway; both
         // outcomes are correct, and neither may leave a directory that no
         // later prune can see.
-        match delete_state_dir(&dir) {
+        let entry = orphans(&base).unwrap().remove(0);
+        let lock = super::super::ProjectLock::try_acquire(&dir)
+            .unwrap()
+            .unwrap();
+        match delete_state_dir(&dir, &entry.state, lock) {
             Err(_) => {
                 assert!(dir.join("state.json").exists());
                 assert_eq!(orphans(&base).unwrap().len(), 1);
             }
             Ok(()) => assert!(!dir.exists()),
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_directory_that_cannot_be_removed_keeps_its_state_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
+        let entry = orphans(&base).unwrap().remove(0);
+        // The lock file is created under `base`, so take it before `base` is
+        // made read-only.
+        let lock = super::super::ProjectLock::try_acquire(&dir)
+            .unwrap()
+            .unwrap();
+        // Everything inside `dir` can go; removing `dir` itself needs to write
+        // to `base`, which now refuses. That is the gap where state.json has
+        // already been deleted.
+        let mut perms = std::fs::metadata(&base).unwrap().permissions();
+        perms.set_mode(0o500);
+        std::fs::set_permissions(&base, perms).unwrap();
+
+        let result = delete_state_dir(&dir, &entry.state, lock);
+
+        let mut perms = std::fs::metadata(&base).unwrap().permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(&base, perms).unwrap();
+        if result.is_err() {
+            assert!(
+                dir.join("state.json").exists(),
+                "state must be written back"
+            );
+            assert_eq!(orphans(&base).unwrap().len(), 1, "a later run must find it");
         }
     }
 
