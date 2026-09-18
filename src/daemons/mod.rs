@@ -105,6 +105,9 @@ pub(crate) enum BareName<'a> {
     Group,
     /// A daemon reached with `project`, and the qualified ID it answers to.
     Import(&'a str),
+    /// A `project` reference that could not be read, and why. Naming one is an
+    /// error; a name some nearer declaration claims never reaches this.
+    Unresolved(&'a str),
 }
 
 #[derive(Debug, Clone)]
@@ -1079,9 +1082,13 @@ impl DaemonSet {
             {
                 return Some(BareName::Group);
             }
-            self.aliases
-                .get(&(ancestor.to_path_buf(), name.to_string()))
-                .map(|id| BareName::Import(id.as_str()))
+            let key = (ancestor.to_path_buf(), name.to_string());
+            if let Some(id) = self.aliases.get(&key) {
+                return Some(BareName::Import(id.as_str()));
+            }
+            self.import_errors
+                .get(&key)
+                .map(|err| BareName::Unresolved(err.as_str()))
         })
     }
 
@@ -1906,6 +1913,38 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains(&app.display().to_string()), "{err}");
+    }
+
+    #[test]
+    fn a_name_means_the_nearest_declaration_that_claims_it() {
+        let _serial = import_lock();
+        // A parent's `project` reference that cannot be read must not take the
+        // word away from a group the child declares under it.
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\n[daemon_groups]\nops = ['api']\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                "[daemons.ops]\nproject = '../gone'\n",
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        // To the child the word is its group; to the parent it is the failure.
+        assert!(matches!(
+            set.resolve_bare(&child, "ops"),
+            Some(BareName::Group)
+        ));
+        assert!(matches!(
+            set.resolve_bare(&parent, "ops"),
+            Some(BareName::Unresolved(_))
+        ));
+        assert_eq!(set.expand("ops"), Some(["api".to_string()].as_slice()));
     }
 
     #[test]

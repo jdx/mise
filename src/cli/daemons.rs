@@ -122,18 +122,18 @@ impl Daemons {
         // An import that could not be resolved is fatal only when this command
         // names it. Someone whose sibling checkout is missing can still list and
         // stop their own daemons; they are told what is unavailable and why.
-        if let Some((name, err)) = loaded.import_errors.iter().find(|((root, name), _)| {
-            // Only a bare name can be the key a project gave an import, and only
-            // a failure this project reaches is its problem: another project may
-            // use the word for an import of its own that resolved.
-            requested_names.iter().any(|requested| {
-                requested == name
-                    && !requested.contains('/')
-                    && project_root.starts_with(root)
-                    && !loaded.imported_in(&project_root, requested)
-            })
+        // Fatal only when this command names it, and only when the name means
+        // that failure to this project: a group or a working import declared
+        // nearer answers for the word instead. A qualified request is literal,
+        // and an unresolved import never got an ID to be qualified with.
+        if let Some((name, err)) = requested_names.iter().find_map(|requested| {
+            match loaded.resolve_bare(&project_root, requested) {
+                Some(daemons::BareName::Unresolved(err)) if !requested.contains('/') => {
+                    Some((requested, err))
+                }
+                _ => None,
+            }
         }) {
-            let name = &name.1;
             bail!("cannot resolve [daemons.{name}]: {err}");
         }
         for ((_, name), err) in &loaded.import_errors {
@@ -154,7 +154,11 @@ impl Daemons {
                 // project keeps its own meaning.
                 match loaded.resolve_bare(&project_root, name) {
                     Some(daemons::BareName::Import(id)) => return Ok(id.to_string()),
-                    Some(daemons::BareName::Group) => return Ok(name.clone()),
+                    // An unresolved import has no ID; the check above already
+                    // refused it, so this only keeps the name intact.
+                    Some(daemons::BareName::Group | daemons::BareName::Unresolved(_)) => {
+                        return Ok(name.clone());
+                    }
                     None => {}
                 }
                 // A group no project in this tree declares can still belong to
