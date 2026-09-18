@@ -279,11 +279,11 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         return Ok(Outcome::Kept);
     }
     if let Some(runtime) = runtime {
-        match runtime.supervisor_up(cwd).await {
+        let supervisor_up = match runtime.supervisor_up(cwd).await {
             // A supervisor that is down cannot be asked to stop anything, but
             // it did not necessarily take its children with it, so the daemons
             // are checked either way below.
-            Ok(false) => {}
+            Ok(false) => false,
             Ok(true) if !entry.state.ids.is_empty() => {
                 // One id at a time: `state.ids` keeps every id this project
                 // ever declared, and pitchfork asked to stop a list it cannot
@@ -296,8 +296,9 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                         return Ok(Outcome::Kept);
                     }
                 }
+                true
             }
-            Ok(_) => {}
+            Ok(_) => true,
             Err(err) => {
                 warn!(
                     "keeping {}: cannot establish supervisor status: {err:#}",
@@ -305,13 +306,13 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                 );
                 return Ok(Outcome::Kept);
             }
-        }
+        };
         // Whatever the supervisor said about itself, every id this project ever
         // declared has to be accounted for: a supervisor that crashed can leave
         // a database running, and not every database writes a lock file to find
         // it by. Redis, for one, does not.
         for id in &entry.state.ids {
-            if let Err(err) = confirm_stopped(runtime, cwd, id).await {
+            if let Err(err) = confirm_stopped(runtime, cwd, id, supervisor_up).await {
                 warn!("keeping {}: {err:#}", display_path(cwd));
                 return Ok(Outcome::Kept);
             }
@@ -373,7 +374,12 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
 /// not answered, and an unanswered question here is a live process writing to
 /// the data below. The database lock scan is a second line of defence, not a
 /// substitute: it only knows the markers it recognizes.
-async fn confirm_stopped(runtime: &Runtime, cwd: &Path, id: &str) -> Result<()> {
+async fn confirm_stopped(
+    runtime: &Runtime,
+    cwd: &Path,
+    id: &str,
+    supervisor_up: bool,
+) -> Result<()> {
     let args = ["status".to_string(), id.to_string(), "--json".to_string()];
     let output = runtime
         .raw_output(cwd, &args)
@@ -381,12 +387,14 @@ async fn confirm_stopped(runtime: &Runtime, cwd: &Path, id: &str) -> Result<()> 
         .map_err(|err| eyre::eyre!(err).wrap_err(format!("cannot check {id}")))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // Tolerated only when pitchfork says which id it does not have. A
-        // failure that says nothing at all is a crash, and "No such file or
-        // directory" on its own is an ordinary I/O error -- a missing
-        // supervisor socket, say. Neither is pitchfork telling us the daemon is
-        // not running, and this is the last check before the data goes.
-        if names_this_as_unknown(&stderr, id) {
+        // Tolerated only when a supervisor that is up says which id it does
+        // not have. The message is matched by substring, and an I/O error
+        // naming a path is enough to satisfy that by accident: "No such file
+        // or directory: .../db.sock" contains both "no such" and the short
+        // name of `ns/db`. A supervisor that is up and reports no such daemon
+        // is answering the question; one that is down is failing to reach
+        // anything, and its errors are not answers.
+        if supervisor_up && names_this_as_unknown(&stderr, id) {
             debug!("pitchfork does not know {id}: {stderr}");
             return Ok(());
         }

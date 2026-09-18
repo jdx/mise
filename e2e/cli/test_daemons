@@ -21,11 +21,13 @@ case "$1" in
       exit 1
     elif [[ -n ${RUNNING_ID:-} && $2 == "$RUNNING_ID" ]]; then
       printf '{"status":"running","pid":4242}\n'
-    else
-      # What pitchfork says about an id it does not have, which is what makes
-      # it safe to go ahead: it names the daemon.
+    elif [[ -n ${UNKNOWN_ID:-} && $2 == "$UNKNOWN_ID" ]]; then
+      # What pitchfork says about an id it does not have. Only a supervisor
+      # that is up may be believed when it says this.
       echo "daemon $2 not found" >&2
       exit 1
+    else
+      printf '{"status":"stopped"}\n'
     fi
     ;;
   stop)
@@ -342,3 +344,27 @@ unset STATUS_BROKEN
 mise daemons prune --yes
 assert "test ! -f '$running_state'"
 unset SUPERVISOR_STATUS STOP_FAILS
+
+# An id pitchfork says it does not have is only an answer from a supervisor
+# that is up; a supervisor that is down cannot reach anything.
+mkdir -p "$HOME/forgotten"
+cd "$HOME/forgotten"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+run = "sleep 30"
+TOML
+mise daemons start
+forgotten_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+forgotten_id=$(jq -r '.ids[0]' "$forgotten_state")
+cd "$HOME"
+rm -rf "$HOME/forgotten"
+export UNKNOWN_ID="$forgotten_id"
+assert_contains "mise daemons prune --yes 2>&1" 'cannot check'
+assert "test -f '$forgotten_state'"
+
+# With the supervisor up, the same answer is one pitchfork is able to give.
+SUPERVISOR_STATUS=up mise daemons prune --yes
+assert "test ! -f '$forgotten_state'"
+unset UNKNOWN_ID
