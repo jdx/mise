@@ -230,8 +230,19 @@ impl Daemons {
                 runtime::validate_tools(set, &scoped, &ts).await?;
                 set.validate_tasks(&scoped).await?;
             }
+            // Only the daemons this invocation selects; an unrelated one whose
+            // port is taken must not block them.
+            let starting: Vec<String> = set
+                .daemons
+                .keys()
+                .filter(|name| {
+                    root_selectors.is_empty()
+                        || root_selectors.iter().any(|s| selects(set, name, s))
+                })
+                .cloned()
+                .collect();
             let (state, _project_lock) = if install {
-                let (state, lock) = runtime.prepare(&root, set, true).await?;
+                let (state, lock) = runtime.prepare(&root, set, true, &starting).await?;
                 (state, Some(lock))
             } else {
                 (previous, None)

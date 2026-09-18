@@ -62,6 +62,21 @@ pub(crate) fn read_state(root: &Path) -> Result<State> {
 /// same instant can both see the port free. Binding is the real arbiter, and the
 /// loser still gets its own bind error; the check exists to replace that opaque
 /// failure with one naming the other project whenever it can.
+/// The subset of a project's claims belonging to daemons this operation will
+/// launch. Registration covers the whole project, so checking every claim would
+/// let one project's Postgres on 5432 block `mise daemons start redis`, which
+/// never binds that port.
+fn ports_being_started(
+    ports: &BTreeMap<String, PortClaim>,
+    starting: &[String],
+) -> BTreeMap<String, PortClaim> {
+    ports
+        .iter()
+        .filter(|(name, _)| starting.iter().any(|s| s == *name))
+        .map(|(name, claim)| (name.clone(), *claim))
+        .collect()
+}
+
 fn claimed_ports(mine: &Path) -> Vec<(State, String, u16)> {
     let Ok(entries) = std::fs::read_dir(crate::dirs::STATE.join("daemons")) else {
         return Vec::new();
@@ -266,11 +281,17 @@ impl Runtime {
 
     /// See [`claimed_ports`]: only a port that another root is actively serving
     /// is a conflict.
+    /// `starting` names the daemons this operation will actually launch. Only
+    /// their ports are checked: registration covers every daemon in the project,
+    /// so checking all of them would let one project's Postgres on 5432 block
+    /// `mise daemons start redis`, which never binds that port.
     async fn check_port_conflicts(
         &self,
         root: &Path,
         ports: &BTreeMap<String, PortClaim>,
+        starting: &[String],
     ) -> Result<()> {
+        let ports = &ports_being_started(ports, starting);
         if ports.is_empty() {
             return Ok(());
         }
@@ -320,6 +341,7 @@ impl Runtime {
         root: &Path,
         set: &DaemonSet,
         force_registration: bool,
+        starting: &[String],
     ) -> Result<(State, fslock::LockFile)> {
         let lock = crate::lock_file::LockFile::at(&state_dir(root).join("project.lock")).lock()?;
         let previous = read_state(root)?;
@@ -369,7 +391,8 @@ impl Runtime {
         // The cost is a directory read and a few small state files per hook for
         // a project that declares ports at all; the liveness probe that follows
         // only runs once a port actually matches.
-        self.check_port_conflicts(root, &state.ports).await?;
+        self.check_port_conflicts(root, &state.ports, starting)
+            .await?;
         if !force_registration
             && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
@@ -656,6 +679,32 @@ mod tests {
                 .iter()
                 .any(|(s, _, _)| s.root == theirs)
         );
+    }
+
+    #[test]
+    fn only_the_daemons_being_started_have_their_ports_checked() {
+        // Registration covers a whole project, so an unrelated daemon whose
+        // port is taken elsewhere must not block the one being started.
+        let ports = BTreeMap::from([
+            ("postgres".to_string(), PortClaim::fixed(5432)),
+            ("redis".to_string(), PortClaim::fixed(6379)),
+        ]);
+        let names = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+
+        // Starting redis never considers the Postgres claim, so another
+        // project serving 5432 cannot block it.
+        let scoped = ports_being_started(&ports, &names(&["redis"]));
+        assert_eq!(scoped.keys().collect::<Vec<_>>(), ["redis"]);
+        assert_eq!(scoped["redis"].port, 6379);
+
+        // A bare start covers everything it will launch.
+        assert_eq!(
+            ports_being_started(&ports, &names(&["postgres", "redis"])).len(),
+            2
+        );
+        // A name with no claim, and no names at all, leave nothing to check.
+        assert!(ports_being_started(&ports, &names(&["web"])).is_empty());
+        assert!(ports_being_started(&ports, &[]).is_empty());
     }
 
     #[test]

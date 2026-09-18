@@ -635,6 +635,21 @@ impl DaemonSet {
         Ok(())
     }
 
+    /// Names of daemons opted into automatic start, which is what a shell hook
+    /// actually launches.
+    pub(crate) fn auto_start_names(&self) -> Vec<String> {
+        self.daemons
+            .values()
+            .filter(|d| {
+                d.table
+                    .get("auto")
+                    .and_then(toml::Value::as_array)
+                    .is_some_and(|a| a.iter().any(|v| v.as_str() == Some("start")))
+            })
+            .map(|d| d.name.clone())
+            .collect()
+    }
+
     pub(crate) fn auto(&self) -> bool {
         self.daemons.values().any(|d| {
             d.table

@@ -93,7 +93,11 @@ pub(crate) async fn emit(
                 let scoped_config = runtime::config_for_root(config, &root).await?;
                 scoped_set.validate_tasks(&scoped_config).await?;
             }
-            let (_state, _lock) = runtime.prepare(&root, &scoped_set, force).await?;
+            // Only the daemons this hook will actually start.
+            let auto_start = scoped_set.auto_start_names();
+            let (_state, _lock) = runtime
+                .prepare(&root, &scoped_set, force, &auto_start)
+                .await?;
             Ok::<_, eyre::Report>(runtime.bin)
         }
         .await;

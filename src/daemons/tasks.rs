@@ -164,7 +164,13 @@ pub(crate) async fn start(
         // would re-probe `pitchfork usage` and re-run `config add` on every
         // `mise run` of a task that requires daemons, even when nothing about
         // the daemons changed and they are already running.
-        let (state, _project_lock) = rt.prepare(&root, &set, false).await?;
+        let required: Vec<String> = set
+            .daemons
+            .keys()
+            .filter(|name| names.contains(name.as_str()))
+            .cloned()
+            .collect();
+        let (state, _project_lock) = rt.prepare(&root, &set, false, &required).await?;
         let ids: Vec<String> = state
             .ids
             .iter()
