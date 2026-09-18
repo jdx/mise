@@ -206,6 +206,30 @@ linux-x64 = { asset_pattern = "gh_*_linux_amd64.tar.gz" }
 macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.zip" }
 ```
 
+### Platform-specific URLs
+
+::: v-pre
+Set `platforms.<os>-<arch>.url` to download from an explicit URL instead of
+selecting a release asset. Use `{{ version }}` for the resolved tool version,
+including when the requested version is `latest`.
+:::
+
+```toml
+[tools."github:owner/repo"]
+version = "latest"
+strip_components = 1
+platforms.macos-arm64.url = "https://github.com/owner/repo/archive/refs/tags/v{{ version }}.tar.gz"
+```
+
+Include any release-tag prefix explicitly in the URL. A top-level `url` is not
+used by this backend. Direct URLs can be combined with `additional_asset_patterns`
+to overlay release assets on the downloaded archive. mise extracts the archives;
+it does not compile source code automatically.
+
+Use separate platform entries for different target URLs. As with other GitHub
+tool options, platform functions and conditionals in `mise.toml` are evaluated
+for the host when the configuration is loaded.
+
 ### Multiple Assets from the Same Release
 
 There are two distinct cases:

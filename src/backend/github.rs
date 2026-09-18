@@ -1979,6 +1979,7 @@ impl UnifiedGitBackend {
         if asset_pattern.is_none()
             && let Some(direct_url) = opts.direct_url_for_target(target)
         {
+            let direct_url = template_string_for_target(&direct_url, tv, target);
             return Ok(ReleaseAsset {
                 name: get_filename_from_url(&direct_url),
                 url: direct_url.clone(),
@@ -3103,6 +3104,72 @@ mod tests {
             "forgejo:test/repo".to_string(),
             Some("forgejo:test/repo".to_string()),
         ))
+    }
+
+    #[tokio::test]
+    async fn test_direct_url_templates_use_resolved_version() {
+        use crate::config::config_file::{ConfigFile, mise_toml::MiseToml};
+
+        crate::toolset::install_state::init().await.unwrap();
+        for backend in [
+            create_test_backend(),
+            create_test_gitlab_backend(),
+            create_test_forgejo_backend(),
+        ] {
+            let config = MiseToml::from_str(
+                &format!(
+                    "[tools.\"{}\"]\n{}",
+                    backend.ba.full(),
+                    r#"
+version = "latest"
+platform_linux_x64_url = 'https://example.com/{{ version }}/tool-linux-amd64.tar.gz'
+platform_linux_arm64_url = 'https://example.com/{{ version }}/tool-{% if arch() == "arm64" %}aarch64{% else %}x86_64{% endif %}.tar.gz'
+platforms_windows_x64_url = 'https://example.com/fixed.zip?download=1'
+platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64.tar.gz'
+"#,
+                ),
+                Path::new("mise.toml"),
+            )
+            .unwrap();
+            let requests = config.to_tool_request_set().unwrap();
+            let (_, requests, _) = requests.iter().next().unwrap();
+            let tv = ToolVersion::new(requests[0].clone(), "2026.09-preview".to_string());
+            let raw_opts = tv.request.options();
+            let opts = backend.options(&raw_opts);
+            let conditional_url = format!(
+                "https://example.com/2026.09-preview/tool-{}.tar.gz",
+                if PlatformTarget::from_current().arch_name() == "arm64" {
+                    "aarch64"
+                } else {
+                    "x86_64"
+                }
+            );
+
+            for (platform, expected) in [
+                (
+                    "linux-x64",
+                    "https://example.com/2026.09-preview/tool-linux-amd64.tar.gz",
+                ),
+                (
+                    "macos-arm64",
+                    "https://example.com/2026.09-preview/tool-darwin-arm64.tar.gz",
+                ),
+                ("windows-x64", "https://example.com/fixed.zip?download=1"),
+                ("linux-arm64", conditional_url.as_str()),
+            ] {
+                let target =
+                    PlatformTarget::new(crate::platform::Platform::parse(platform).unwrap());
+                let asset = backend
+                    .resolve_asset_url_for_target(&tv, &opts, "test/repo", &target)
+                    .await
+                    .unwrap();
+
+                assert_eq!(asset.url, expected);
+                assert_eq!(asset.url_api, expected);
+                assert_eq!(asset.name, get_filename_from_url(expected));
+                assert!(asset.digest.is_none());
+            }
+        }
     }
 
     #[test]
