@@ -5997,6 +5997,37 @@
           }
         ]
       }
+    },
+    "daemon_groups": {
+      "description": "Experimental named groups of project daemons. Members are daemon names or other group names declared in the same project.",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "array",
+            "description": "Daemon or group names in this project.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          {
+            "type": "object",
+            "required": ["daemons"],
+            "properties": {
+              "daemons": {
+                "type": "array",
+                "description": "Daemon or group names in this project.",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
     }
   }
 }
