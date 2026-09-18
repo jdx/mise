@@ -2133,7 +2133,11 @@ impl Task {
             clear_usage_env(&mut env);
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
-            (parse_task_script_usage_or_warn(&file, Some(&env)), vec![])
+            let include_env = self.usage_include_env(config, &file);
+            (
+                parse_task_script_usage_or_warn(&file, Some(&include_env)),
+                vec![],
+            )
         } else {
             let scripts_only = self.run_script_strings();
             let parser_dir = match cwd {

@@ -526,10 +526,13 @@ Both tasks now accept `--env`, `--dry-run`, and `--replicas`, and both reject
 `--help` in the position the `use` node occupies.
 
 Relative `include` paths in file tasks resolve from the directory containing the
-task file. Include paths also expand `$NAME` and `${NAME}` from the task
-environment; mise supplies `MISE_CONFIG_ROOT`, `MISE_PROJECT_ROOT`,
+task file. Include paths also expand `$NAME` and `${NAME}` from mise's startup
+environment; mise additionally supplies `MISE_CONFIG_ROOT`, `MISE_PROJECT_ROOT`,
 `MISE_TASK_DIR`, and `MISE_TASK_FILE`. Use `$$` for a literal dollar sign. An
-undefined variable is an error.
+undefined variable is reported as an invalid usage spec; as with other invalid
+file-task usage headers, the task stays loadable without that interface. Task
+and project `env` directives are resolved later and cannot select an included
+usage file.
 
 A `mise.toml` task can instead build a path with
 <span v-pre>`{{ config_root }}`</span>. File-task `#USAGE` comments are not rendered
