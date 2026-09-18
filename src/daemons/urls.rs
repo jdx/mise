@@ -34,14 +34,14 @@ pub(crate) struct RootLabels {
 }
 
 impl RootLabels {
-    /// The hostname suffix these labels contribute, under `tld`.
+    /// The hostname suffix these labels contribute, under `tld`. `None` when
+    /// the project could not be named, which leaves nothing to build on.
     fn suffix(&self, tld: &str) -> Option<String> {
         let project = self.project.as_deref()?;
-        Ok::<_, ()>(match self.worktree.as_deref() {
+        Some(match self.worktree.as_deref() {
             Some(worktree) => format!("{worktree}.{project}.{tld}"),
             None => format!("{project}.{tld}"),
         })
-        .ok()
     }
 }
 
