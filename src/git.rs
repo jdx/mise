@@ -680,17 +680,18 @@ fn worktree_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
     if gitdir.parent()?.file_name() != Some(OsStr::new("worktrees")) {
         return None;
     }
-    // The private dir must actually exist and carry `commondir`, so a stale or
-    // hand-written `gitdir:` pointing at a directory that merely sits under one
-    // named `worktrees` is not mistaken for a checkout.
-    gitdir.join("commondir").is_file().then_some(gitdir)
+    // The private dir must resolve a real `commondir`, so neither a stale
+    // `gitdir:` nor a hand-made directory that merely sits under one named
+    // `worktrees` is mistaken for a checkout.
+    worktree_common_dir(&gitdir).is_some().then_some(gitdir)
 }
 
-/// Resolves a linked worktree's `.git` file to the root of the main checkout
-fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
-    // The private git dir contains a `commondir` file pointing to the shared
-    // git dir (usually `../..`, i.e. `<main>/.git`).
-    let gitdir = worktree_gitdir(dotgit_file)?;
+/// The shared git dir a worktree's private dir points at, or None when
+/// `commondir` is missing or does not name an existing directory.
+///
+/// For a worktree of an ordinary repository this is `<main>/.git`; for one of a
+/// bare repository it is the bare repo itself.
+fn worktree_common_dir(gitdir: &Path) -> Option<PathBuf> {
     let common = PathBuf::from(
         std::fs::read_to_string(gitdir.join("commondir"))
             .ok()?
@@ -702,6 +703,12 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
         common
     };
     let common = common.canonicalize().ok()?;
+    common.is_dir().then_some(common)
+}
+
+/// Resolves a linked worktree's `.git` file to the root of the main checkout
+fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+    let common = worktree_common_dir(&worktree_gitdir(dotgit_file)?)?;
     if common.file_name() == Some(OsStr::new(".git")) {
         common.parent().map(|p| p.to_path_buf())
     } else {
@@ -1327,6 +1334,26 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         std::fs::write(sep_git.join("config"), "[core]\n").unwrap();
         std::fs::write(sep.join(".git"), format!("gitdir: {}\n", sep_git.display())).unwrap();
         assert!(!super::in_linked_worktree(&sep));
+
+        // A hand-made private dir under `worktrees/` whose `commondir` names
+        // nothing real. The file exists, so only resolving it rejects this.
+        let forged = base.join("forged");
+        let forged_git = base.join("fake/worktrees/forged");
+        std::fs::create_dir_all(&forged_git).unwrap();
+        std::fs::create_dir_all(&forged).unwrap();
+        std::fs::write(forged_git.join("commondir"), "../../nonexistent\n").unwrap();
+        std::fs::write(
+            forged.join(".git"),
+            format!("gitdir: {}\n", forged_git.display()),
+        )
+        .unwrap();
+        assert!(!super::in_linked_worktree(&forged));
+
+        // The same layout becomes a worktree once `commondir` resolves, which
+        // is what separates the two cases.
+        std::fs::create_dir_all(base.join("fake/real-common")).unwrap();
+        std::fs::write(forged_git.join("commondir"), "../../real-common\n").unwrap();
+        assert!(super::in_linked_worktree(&forged));
 
         // A submodule points under `modules/`, and a pruned worktree marker
         // names a directory that no longer exists.

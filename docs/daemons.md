@@ -109,9 +109,10 @@ port across invocations.
 Offsets are hashed into 511 slots rather than assigned in sequence, so two worktrees
 can land on the same slot before the slots run out. This is uncommon and stays that way
 in practice: around a 1% chance with four worktrees and 5% with eight. When it happens,
-starting the second daemon reports the other project by name if its daemon is running,
-and otherwise the daemon fails to bind as it would for any occupied port. Give one of
-the projects an explicit `base` to move it out of the way.
+starting the second daemon names both the daemon holding the port and its project root,
+provided that daemon is running; otherwise the daemon simply fails to bind as it would
+for any occupied port. Give one of the projects an explicit `base` to move it out of
+the way.
 
 The enclosing checkout decides, not the directory holding `mise.toml`, so a config
 nested in a monorepo such as `packages/api/mise.toml` still follows its worktree.
