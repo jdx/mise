@@ -60,9 +60,10 @@ default = ["postgres", "nats", "core", "node0", "node1"]
 two-cluster = ["default", "core2", "c2-node0"]
 ```
 
-A member is another daemon in the same project or another group, which expands in
-place. Members are validated when configuration loads, so a group can never select
-a daemon outside the project. An equivalent table form matching pitchfork's own
+A member is another daemon in the same project or another group in that same project,
+which expands in place. Members are validated when configuration loads, so a group can
+never select a daemon outside the project, including a same-named daemon in a parent or
+child project. An equivalent table form matching pitchfork's own
 syntax also works:
 
 ```toml
@@ -82,7 +83,10 @@ have at least one member. `--group` is accepted only for groups declared in
 include daemons outside the project. Use pitchfork directly for those.
 
 `mise daemons start` with no names starts the `default` group when the project
-declares one, and otherwise starts every project daemon.
+declares one, and otherwise starts every project daemon. Each project resolves this
+on its own: with inherited daemons, a `default` group in one project does not limit
+what another project starts. Group names are likewise project scoped, so nested
+projects may each declare their own `default`.
 
 Groups are also written to the generated pitchfork configuration with fully
 qualified daemon IDs, so `pitchfork start --group two-cluster` works natively.

@@ -367,7 +367,7 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
         daemons.insert(daemon.name.clone(), toml::Value::Table(table));
     }
     let mut groups = toml::Table::new();
-    for group in set.groups.values() {
+    for group in &set.groups {
         // Qualified IDs keep the group bound to this project's namespace.
         let members = group
             .daemons
@@ -486,18 +486,13 @@ mod tests {
                 .into_iter()
                 .map(|name| (name.to_string(), daemon(name)))
                 .collect(),
-            groups: [(
-                "web".to_string(),
-                super::super::Group {
-                    name: "web".into(),
-                    source: PathBuf::from("/project/mise.toml"),
-                    root: PathBuf::from("/project"),
-                    members: vec!["api".into(), "worker".into()],
-                    daemons: vec!["api".into(), "worker".into()],
-                },
-            )]
-            .into_iter()
-            .collect(),
+            groups: vec![super::super::Group {
+                name: "web".into(),
+                source: PathBuf::from("/project/mise.toml"),
+                root: PathBuf::from("/project"),
+                members: vec!["api".into(), "worker".into()],
+                daemons: vec!["api".into(), "worker".into()],
+            }],
         };
         let state = State {
             namespace: "proj".into(),
@@ -509,7 +504,7 @@ mod tests {
         assert!(rendered.contains("\"proj/worker\""), "{rendered}");
         // Without groups the section is omitted entirely.
         let bare = DaemonSet {
-            groups: Default::default(),
+            groups: Vec::new(),
             ..set
         };
         assert!(!render(&bare, &state).unwrap().contains("[groups"));

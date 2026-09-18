@@ -116,7 +116,12 @@ impl Daemons {
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
         }
-        let (mut names, groups, flags) = split_args(action, &args)?;
+        let (names, groups, flags) = split_args(action, &args)?;
+        let selectors: Vec<Selector> = names
+            .into_iter()
+            .map(Selector::Name)
+            .chain(groups.iter().cloned().map(Selector::Group))
+            .collect();
         let install = matches!(action, "start" | "restart");
         let mut root_ids = Vec::new();
         let mut root_sets = Vec::new();
@@ -136,39 +141,30 @@ impl Daemons {
         // A pitchfork group can name daemons outside the project, so only groups
         // declared in [daemon_groups] are accepted here.
         for group in &groups {
-            if !root_sets.iter().any(|set| set.groups.contains_key(group)) {
+            if !root_sets.iter().any(|set| set.group(group).is_some()) {
                 bail!(
                     "no [daemon_groups] entry named {group:?}; declare the group in [daemon_groups] or use pitchfork directly for its own groups"
                 );
             }
         }
-        names.extend(groups);
-        // Without names, start selects the `default` group when a project declares one.
-        if action == "start"
-            && names.is_empty()
-            && root_sets
-                .iter()
-                .any(|set| set.groups.contains_key("default"))
-        {
-            names.push("default".into());
-        }
         // Validate the entire request before any root installs tools or changes state.
-        for name in &names {
+        for selector in &selectors {
             if !root_ids
                 .iter()
                 .zip(&root_sets)
-                .any(|(ids, set)| ids.iter().any(|id| selects(set, id, name)))
+                .any(|(ids, set)| ids.iter().any(|id| selects(set, id, selector)))
             {
-                bail!("no matching project daemons for {name:?}");
+                bail!("no matching project daemons for {:?}", selector.name());
             }
         }
         let mut rows = Vec::new();
         let mut matched = false;
         for ((root, ids), root_set) in roots.into_iter().zip(root_ids).zip(root_sets) {
-            if !names.is_empty()
+            let root_selectors = effective_selectors(&selectors, &root_set, action);
+            if !root_selectors.is_empty()
                 && !ids
                     .iter()
-                    .any(|id| names.iter().any(|name| selects(&root_set, id, name)))
+                    .any(|id| root_selectors.iter().any(|s| selects(&root_set, id, s)))
             {
                 continue;
             }
@@ -216,10 +212,15 @@ impl Daemons {
             } else {
                 (previous, None)
             };
+            // Each root resolves the request against its own groups, so a `default`
+            // group in one project never suppresses another project's daemons.
+            let root_selectors = effective_selectors(&selectors, &set, action);
             let mut selected: Vec<_> = state
                 .ids
                 .iter()
-                .filter(|id| names.is_empty() || names.iter().any(|name| selects(&set, id, name)))
+                .filter(|id| {
+                    root_selectors.is_empty() || root_selectors.iter().any(|s| selects(&set, id, s))
+                })
                 .cloned()
                 .collect();
             if install {
@@ -274,13 +275,48 @@ fn matches_name(id: &str, name: &str) -> bool {
     id == name || id.rsplit('/').next() == Some(name)
 }
 
-/// A name selects a daemon by short or qualified ID, or every member of a group
-/// declared for the same project root.
-fn selects(set: &daemons::DaemonSet, id: &str, name: &str) -> bool {
-    matches_name(id, name)
-        || set
+/// What the user asked for. A positional argument may name a daemon or a group and
+/// is resolved per project root; `--group` only ever names a group, so it can never
+/// fall back to a same-named daemon in an unrelated project.
+#[derive(Debug, Clone, PartialEq)]
+enum Selector {
+    Name(String),
+    Group(String),
+}
+
+impl Selector {
+    fn name(&self) -> &str {
+        match self {
+            Selector::Name(name) | Selector::Group(name) => name,
+        }
+    }
+}
+
+/// Whether `id`, a daemon of `set`'s project, is selected. Groups are looked up in
+/// that same project, so membership never crosses a project boundary.
+fn selects(set: &daemons::DaemonSet, id: &str, selector: &Selector) -> bool {
+    match selector {
+        Selector::Group(name) => set
             .expand(name)
-            .is_some_and(|members| members.iter().any(|member| matches_name(id, member)))
+            .is_some_and(|members| members.iter().any(|member| matches_name(id, member))),
+        Selector::Name(name) => match set.expand(name) {
+            Some(members) => members.iter().any(|member| matches_name(id, member)),
+            None => matches_name(id, name),
+        },
+    }
+}
+
+/// The selectors to apply to one project. A bare `start` uses that project's own
+/// `default` group; a project without one still starts all of its daemons.
+fn effective_selectors(
+    selectors: &[Selector],
+    set: &daemons::DaemonSet,
+    action: &str,
+) -> Vec<Selector> {
+    if selectors.is_empty() && action == "start" && set.group("default").is_some() {
+        return vec![Selector::Group("default".into())];
+    }
+    selectors.to_vec()
 }
 
 /// Separate positional IDs, `--group` values, and pitchfork options before matching
@@ -373,6 +409,7 @@ mod tests {
     use super::*;
     use crate::config::config_file::ConfigFile;
     use crate::config::config_file::mise_toml::MiseToml;
+    use std::path::Path;
     use std::sync::Arc;
 
     fn files(entries: &[(&str, &str)]) -> crate::config::ConfigMap {
@@ -428,12 +465,74 @@ mod tests {
             "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemons.web]\nrun = 'web'\n[daemon_groups]\nbackend = ['api', 'worker']\n",
         )]))
         .unwrap();
-        assert!(selects(&set, "proj/api", "backend"));
-        assert!(selects(&set, "proj/worker", "backend"));
-        assert!(!selects(&set, "proj/web", "backend"));
+        let group = Selector::Group("backend".into());
+        assert!(selects(&set, "proj/api", &group));
+        assert!(selects(&set, "proj/worker", &group));
+        assert!(!selects(&set, "proj/web", &group));
+        // A positional argument resolves to the group of that name.
+        assert!(selects(&set, "proj/api", &Selector::Name("backend".into())));
         // Daemon names keep working alongside groups.
-        assert!(selects(&set, "proj/web", "web"));
-        assert!(selects(&set, "proj/web", "proj/web"));
-        assert!(!selects(&set, "proj/web", "missing"));
+        assert!(selects(&set, "proj/web", &Selector::Name("web".into())));
+        assert!(selects(
+            &set,
+            "proj/web",
+            &Selector::Name("proj/web".into())
+        ));
+        assert!(!selects(
+            &set,
+            "proj/web",
+            &Selector::Name("missing".into())
+        ));
+    }
+
+    #[test]
+    fn a_group_selector_never_matches_a_same_named_daemon() {
+        // One project declares the group; an unrelated project declares a daemon
+        // that happens to share its name.
+        let loaded = daemons::load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nops = ['api']\n",
+            ),
+            ("/parent/mise.toml", "[daemons.ops]\nrun = 'ops'\n"),
+        ]))
+        .unwrap();
+        let other = loaded.for_root(Path::new("/parent"));
+        assert!(!selects(
+            &other,
+            "parent/ops",
+            &Selector::Group("ops".into())
+        ));
+        // The same word given positionally still selects that project's daemon.
+        assert!(selects(&other, "parent/ops", &Selector::Name("ops".into())));
+        let owner = loaded.for_root(Path::new("/parent/child"));
+        assert!(selects(&owner, "child/api", &Selector::Group("ops".into())));
+    }
+
+    #[test]
+    fn a_default_group_applies_only_to_the_project_declaring_it() {
+        let loaded = daemons::load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.web]\nrun = 'web'\n[daemons.extra]\nrun = 'extra'\n[daemon_groups]\ndefault = ['web']\n",
+            ),
+            ("/parent/mise.toml", "[daemons.inherited]\nrun = 'x'\n"),
+        ]))
+        .unwrap();
+        let child = effective_selectors(&[], &loaded.for_root(Path::new("/parent/child")), "start");
+        assert_eq!(child, [Selector::Group("default".into())]);
+        // The parent declares no default, so a bare start keeps every daemon.
+        let parent = effective_selectors(&[], &loaded.for_root(Path::new("/parent")), "start");
+        assert!(parent.is_empty());
+        // Only start has the default-group shorthand.
+        let stop = effective_selectors(&[], &loaded.for_root(Path::new("/parent/child")), "stop");
+        assert!(stop.is_empty());
+        // An explicit request is never replaced by the default group.
+        let explicit = effective_selectors(
+            &[Selector::Name("extra".into())],
+            &loaded.for_root(Path::new("/parent/child")),
+            "start",
+        );
+        assert_eq!(explicit, [Selector::Name("extra".into())]);
     }
 }

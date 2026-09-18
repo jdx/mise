@@ -60,7 +60,9 @@ pub(crate) struct Daemon {
 #[derive(Debug, Default, Clone)]
 pub(crate) struct DaemonSet {
     pub daemons: IndexMap<String, Daemon>,
-    pub groups: IndexMap<String, Group>,
+    /// Group names are project scoped, so nested projects may each declare one
+    /// with the same name. They stay in a root-aware list until `for_root`.
+    pub groups: Vec<Group>,
 }
 
 pub(crate) fn state_dir(root: &Path) -> PathBuf {
@@ -93,7 +95,11 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             declarations.insert(name, (declaration, source.clone(), root.clone()));
         }
         for (name, declaration) in groups {
-            group_declarations.insert(name, (declaration, source.clone(), root.clone()));
+            // Keyed by root so a child project's group never displaces a parent's.
+            group_declarations.insert(
+                (root.clone(), name),
+                (declaration, source.clone(), root.clone()),
+            );
         }
     }
     let mut set = DaemonSet::default();
@@ -168,13 +174,15 @@ fn validate_name(kind: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
-type GroupDeclarations = IndexMap<String, (GroupDeclaration, PathBuf, PathBuf)>;
+type GroupKey = (PathBuf, String);
+type GroupDeclarations = IndexMap<GroupKey, (GroupDeclaration, PathBuf, PathBuf)>;
 
 /// Groups are project scoped: every member resolves to a daemon declared under the
 /// same project root, so a group can never select daemons outside the project.
 fn load_groups(set: &mut DaemonSet, declarations: GroupDeclarations) -> Result<()> {
-    let mut groups: IndexMap<String, Group> = IndexMap::new();
-    for (name, (declaration, source, root)) in declarations {
+    let mut groups: IndexMap<GroupKey, Group> = IndexMap::new();
+    for (key, (declaration, source, root)) in declarations {
+        let name = key.1.clone();
         validate_name("daemon group", &name)?;
         if let Some(daemon) = set.daemons.get(&name)
             && daemon.root == root
@@ -186,7 +194,7 @@ fn load_groups(set: &mut DaemonSet, declarations: GroupDeclarations) -> Result<(
             bail!("[daemon_groups.{name}] requires at least one daemon or group");
         }
         groups.insert(
-            name.clone(),
+            key,
             Group {
                 name,
                 source,
@@ -196,29 +204,30 @@ fn load_groups(set: &mut DaemonSet, declarations: GroupDeclarations) -> Result<(
             },
         );
     }
-    for name in groups.keys().cloned().collect::<Vec<_>>() {
-        let daemons = expand_group(set, &groups, &name, &mut Vec::new())?;
-        groups[&name].daemons = daemons;
+    for key in groups.keys().cloned().collect::<Vec<_>>() {
+        let daemons = expand_group(set, &groups, &key, &mut Vec::new())?;
+        groups[&key].daemons = daemons;
     }
-    set.groups = groups;
+    set.groups = groups.into_values().collect();
     Ok(())
 }
 
 fn expand_group(
     set: &DaemonSet,
-    groups: &IndexMap<String, Group>,
-    name: &str,
+    groups: &IndexMap<GroupKey, Group>,
+    key: &GroupKey,
     seen: &mut Vec<String>,
 ) -> Result<Vec<String>> {
+    let name = &key.1;
     if seen.iter().any(|s| s == name) {
-        seen.push(name.to_string());
+        seen.push(name.clone());
         bail!(
             "[daemon_groups.{name}] references itself: {}",
             seen.join(" -> ")
         );
     }
-    seen.push(name.to_string());
-    let group = &groups[name];
+    seen.push(name.clone());
+    let group = &groups[key];
     let mut expanded: Vec<String> = Vec::new();
     for member in &group.members {
         if let Some(daemon) = set.daemons.get(member)
@@ -229,10 +238,10 @@ fn expand_group(
             }
             continue;
         }
-        if let Some(nested) = groups.get(member)
-            && nested.root == group.root
-        {
-            for daemon in expand_group(set, groups, member, seen)? {
+        // Nested members resolve within the declaring project only.
+        let nested = (group.root.clone(), member.clone());
+        if groups.contains_key(&nested) {
+            for daemon in expand_group(set, groups, &nested, seen)? {
                 if !expanded.contains(&daemon) {
                     expanded.push(daemon);
                 }
@@ -320,15 +329,20 @@ impl DaemonSet {
             groups: self
                 .groups
                 .iter()
-                .filter(|(_, g)| g.root == root)
-                .map(|(k, v)| (k.clone(), v.clone()))
+                .filter(|g| g.root == root)
+                .cloned()
                 .collect(),
         }
     }
 
-    /// Daemon names selected by `name`, which may be a daemon or a declared group.
+    /// The group named `name`. Call on a root-scoped set, where names are unique.
+    pub(crate) fn group(&self, name: &str) -> Option<&Group> {
+        self.groups.iter().find(|g| g.name == name)
+    }
+
+    /// Daemon names a declared group expands to, or None when `name` is not a group.
     pub(crate) fn expand(&self, name: &str) -> Option<&[String]> {
-        self.groups.get(name).map(|g| g.daemons.as_slice())
+        self.group(name).map(|g| g.daemons.as_slice())
     }
 
     pub(crate) fn auto(&self) -> bool {
@@ -491,19 +505,70 @@ daemons = ["core", "core2"]
         )]))
         .unwrap();
         assert_eq!(
-            set.groups["default"].daemons,
+            set.group("default").unwrap().daemons,
             ["postgres", "nats", "core", "node0"]
         );
         // A nested group expands in place and members are deduplicated.
         assert_eq!(
-            set.groups["two-cluster"].daemons,
+            set.group("two-cluster").unwrap().daemons,
             ["postgres", "nats", "core", "node0", "core2"]
         );
-        assert_eq!(set.groups["explicit"].daemons, ["core", "core2"]);
+        assert_eq!(set.group("explicit").unwrap().daemons, ["core", "core2"]);
         assert_eq!(set.expand("default").unwrap().len(), 4);
         assert!(set.expand("postgres").is_none());
         assert_eq!(set.for_root(Path::new("/project")).groups.len(), 3);
         assert!(set.for_root(Path::new("/other")).groups.is_empty());
+    }
+
+    #[test]
+    fn same_group_name_in_two_projects_is_kept() {
+        let set = load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.web]\nrun = 'web'\n[daemon_groups]\ndefault = ['web']\n",
+            ),
+            (
+                "/parent/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\ndefault = ['api']\n",
+            ),
+        ]))
+        .unwrap();
+        assert_eq!(set.groups.len(), 2);
+        assert_eq!(
+            set.for_root(Path::new("/parent/child"))
+                .group("default")
+                .unwrap()
+                .daemons,
+            ["web"]
+        );
+        assert_eq!(
+            set.for_root(Path::new("/parent"))
+                .group("default")
+                .unwrap()
+                .daemons,
+            ["api"]
+        );
+    }
+
+    #[test]
+    fn nested_group_references_stay_inside_one_project() {
+        // `shared` exists only in the parent, so the child cannot reference it.
+        let err = load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.web]\nrun = 'web'\n[daemon_groups]\nall = ['web', 'shared']\n",
+            ),
+            (
+                "/parent/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nshared = ['api']\n",
+            ),
+        ]))
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("is not a daemon or group declared for"),
+            "{err}"
+        );
     }
 
     #[test]
