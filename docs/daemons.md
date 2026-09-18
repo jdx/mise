@@ -274,14 +274,16 @@ A preset renders its resolved port into its own conventional variables, so
 `port = "auto"` moves `PGPORT`, `DATABASE_URL`, and `REDIS_URL` with it. A custom daemon
 has no such convention, so mise exports `<NAME>_PORT`, upper-cased with punctuation
 replaced by underscores. `[daemons.api]` exports `API_PORT`, and `[daemons.web-ui]`
-exports `WEB_UI_PORT`. The variable is a convenience, so a name that cannot produce one
-costs only the variable and never the daemon. Two daemons whose names differ only by
-punctuation, such as `web-ui` and `web_ui`, would claim the same variable, so neither
-exports it and mise warns. A name beginning with a digit cannot be a shell variable at
-all, so it goes without one and mise warns. Both daemons run normally in either case,
-and the ports still reach pitchfork. This applies to an integer `port` as well, so a custom daemon's
-port is always visible to `mise env`, to `mise x`, and to the daemon's own process.
-Pitchfork additionally injects `$PORT` into the process it starts.
+exports `WEB_UI_PORT`. This applies to an integer `port` as well as an auto one, so
+wherever the variable exists it makes the port visible to `mise env`, to `mise x`, and
+to the daemon's own process.
+
+The variable is a convenience, so a name that cannot produce a usable one costs only
+the variable and never the daemon. Two daemons whose names differ only by punctuation,
+such as `web-ui` and `web_ui`, would claim the same variable, so neither exports it and
+mise warns. A name beginning with a digit cannot be a shell variable at all, so it goes
+without one and mise warns. Both daemons run normally in either case, and their ports
+still reach pitchfork, which injects `$PORT` into the process it starts regardless.
 
 Use `port` rather than `ready_port` with `port = "auto"`. A literal `ready_port` cannot
 follow an allocated port, whereas `port` is what mise resolves and pins.
