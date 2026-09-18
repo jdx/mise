@@ -921,13 +921,16 @@ three = ["two", "c"]
             set.for_root(&parent).group("default").unwrap().daemons,
             ["postgres", "api"]
         );
-        // The overriding definition wins, and selection stays per root, so the
-        // parent's group reaches only the daemons that project still owns.
+        // In this merged view, which supplies environment exports and tool requests,
+        // the nearer definition wins and the name belongs to the child.
         assert_eq!(
             set.daemons["postgres"].table["run"].as_str(),
             Some("child postgres")
         );
         assert!(!set.for_root(&parent).daemons.contains_key("postgres"));
+        // What each project registers and runs comes from its own hierarchy instead,
+        // so the parent still has its own postgres and its group still names it.
+        // e2e/cli/test_daemons covers that both start.
     }
 
     #[test]

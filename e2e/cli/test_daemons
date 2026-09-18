@@ -144,6 +144,36 @@ assert_not_contains "echo '$restarted'" '/parent-b'
 mise daemons stop
 stopped=$(grep 'args=stop ' "$DAEMON_LOG")
 assert_contains "echo '$stopped'" '/parent-b'
+# A child redefining a daemon name does not stop the parent running its own: each
+# project registers from its own hierarchy, so both start under their own namespace.
+mkdir -p "$group_base/override/child"
+cd "$group_base/override"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.postgres]
+run = "parent postgres"
+[daemons.api]
+run = "parent api"
+[daemon_groups]
+default = ["postgres", "api"]
+TOML
+cd child
+cat >mise.toml <<'TOML'
+[daemons.postgres]
+run = "child postgres"
+TOML
+: >"$DAEMON_LOG"
+mise daemons start
+parent_start=$(grep 'args=start ' "$DAEMON_LOG" | grep -v '/child ')
+# The parent's group covers the daemon the child redefined, plus its own api.
+assert_contains "echo '$parent_start'" '/postgres'
+assert_contains "echo '$parent_start'" '/api'
+# The child runs its own definition under its own namespace.
+child_start=$(grep 'args=start ' "$DAEMON_LOG" | grep '/child ')
+assert_contains "echo '$child_start'" '/postgres'
+cd "$group_base/group-parent/child"
+
 # A removed group points at ls rather than failing silently.
 assert_fail_contains "mise daemons stop --group gone 2>&1" 'mise daemons ls'
 cd "$group_base"
