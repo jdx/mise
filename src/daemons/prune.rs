@@ -285,18 +285,8 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                 // stopped and does not need to be, and any id still alive is a
                 // process writing to the data below.
                 for id in &entry.state.ids {
-                    let Ok(status) = runtime.status(cwd, id).await else {
-                        continue;
-                    };
-                    if matches!(
-                        status["status"].as_str(),
-                        Some("running" | "waiting" | "stopping")
-                    ) {
-                        warn!(
-                            "keeping {}: {id} is still {}",
-                            display_path(cwd),
-                            status["status"].as_str().unwrap_or("alive")
-                        );
+                    if let Err(err) = confirm_stopped(runtime, cwd, id).await {
+                        warn!("keeping {}: {err:#}", display_path(cwd));
                         return Ok(Outcome::Kept);
                     }
                 }
@@ -357,6 +347,55 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
     Ok(Outcome::Removed)
 }
 
+/// Confirms that pitchfork is not running this daemon.
+///
+/// Only two answers allow the data to go: a daemon pitchfork reports as not
+/// running, and an id pitchfork does not have at all, which `state.ids`
+/// accumulates and which cannot be running by definition. Everything else --
+/// a timeout, a reply that will not parse, a state field that is missing, a
+/// failure that says something other than "unknown" -- means the question was
+/// not answered, and an unanswered question here is a live process writing to
+/// the data below. The database lock scan is a second line of defence, not a
+/// substitute: it only knows the markers it recognizes.
+async fn confirm_stopped(runtime: &Runtime, cwd: &Path, id: &str) -> Result<()> {
+    let args = ["status".to_string(), id.to_string(), "--json".to_string()];
+    let output = runtime
+        .raw_output(cwd, &args)
+        .await
+        .map_err(|err| eyre::eyre!(err).wrap_err(format!("cannot check {id}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Nothing to say about an id it does not have, either by saying so or
+        // by saying nothing at all. Any other complaint is a question left
+        // unanswered.
+        if stderr.trim().is_empty() || names_something_unknown(&stderr) {
+            debug!("pitchfork does not know {id}: {stderr}");
+            return Ok(());
+        }
+        eyre::bail!("cannot check {id}: {stderr}");
+    }
+    let status: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|err| eyre::eyre!("cannot read the status of {id}: {err}"))?;
+    match status["status"].as_str() {
+        Some("running" | "waiting" | "stopping") => {
+            eyre::bail!("{id} is still {}", status["status"].as_str().unwrap_or(""))
+        }
+        Some(_) => Ok(()),
+        None => eyre::bail!("cannot tell whether {id} is running: {status}"),
+    }
+}
+
+/// Whether a pitchfork failure is it saying it has never heard of something.
+fn names_something_unknown(stderr: &str) -> bool {
+    let lowered = stderr.to_lowercase();
+    // Deliberately narrow. Phrases like "unknown" or "is not" turn up in plenty
+    // of real failures, and tolerating one of those would delete a database
+    // whose daemon is still running.
+    ["not found", "no such", "not registered"]
+        .iter()
+        .any(|phrase| lowered.contains(phrase))
+}
+
 /// Turns a pitchfork invocation into success, a tolerated non-failure, or an
 /// error.
 ///
@@ -375,14 +414,7 @@ fn tolerate_unknown(output: Result<std::process::Output>, args: &[String]) -> Re
         return Ok(());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let lowered = stderr.to_lowercase();
-    // Deliberately narrow. Phrases like "unknown" or "is not" turn up in plenty
-    // of real failures, and tolerating one of those would delete a database
-    // whose daemon is still running.
-    if ["not found", "no such", "not registered"]
-        .iter()
-        .any(|phrase| lowered.contains(phrase))
-    {
+    if names_something_unknown(&stderr) {
         debug!("pitchfork {} had nothing to do: {stderr}", args.join(" "));
         return Ok(());
     }
