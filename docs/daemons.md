@@ -144,10 +144,14 @@ mise daemons ls --json
 Because the allocation is persisted, a future change to how offsets are derived cannot
 move a daemon that is already running. Editing `base` or `stride` does re-derive it.
 Starting a daemon fails when another project root on this machine is _running_ a
-daemon on the same port, naming that root. Liveness is what matters: a stopped project
-never reserves a port, so two projects can still take turns on a default port such as
-5432 exactly as before. The check only probes a root whose port actually matches, and
-it leaves the port available when that project's supervisor cannot be reached.
+daemon on the same port, naming that root. Liveness is what matters, and it is checked
+for the daemon holding the port rather than the project around it, so an unrelated
+daemon or an open shell session in that project does not make it look busy. A stopped
+project never reserves a port, so two projects can still take turns on a default port
+such as 5432 exactly as before. The check only probes a root whose port actually
+matches, and it leaves the port available when that project's supervisor cannot be
+reached. It is a diagnostic rather than a reservation: two projects starting at the same
+instant can still both see a port as free, and binding remains the final arbiter.
 
 ## Data and configuration
 

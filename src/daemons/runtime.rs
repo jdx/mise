@@ -56,6 +56,12 @@ pub(crate) fn read_state(root: &Path) -> Result<State> {
 /// projects could take turns on the default 5432 and that has to keep working.
 /// The cheap scan therefore only selects candidates, and the liveness probe runs
 /// solely for a root whose port actually matches.
+///
+/// This is a diagnostic, not a reservation. Because a recorded claim confers
+/// nothing until its daemon is actually serving, two projects starting at the
+/// same instant can both see the port free. Binding is the real arbiter, and the
+/// loser still gets its own bind error; the check exists to replace that opaque
+/// failure with one naming the other project whenever it can.
 fn claimed_ports(mine: &Path) -> Vec<(State, String, u16)> {
     let Ok(entries) = std::fs::read_dir(crate::dirs::STATE.join("daemons")) else {
         return Vec::new();
@@ -255,10 +261,28 @@ impl Runtime {
             let Some((name, _)) = ports.iter().find(|(_, claim)| claim.port == port) else {
                 continue;
             };
+            // Ask about the daemon holding the port, not the project. A
+            // project-wide probe would report a stopped Postgres as running
+            // merely because its Redis, or an open shell session, is alive.
+            //
             // Probing costs a pitchfork call per matching root, so it runs only
             // here. An unreachable supervisor leaves the port available rather
             // than blocking a start that used to work.
-            if !self.active(&other.root, &other).await.unwrap_or(false) {
+            let id = other
+                .ids
+                .iter()
+                .find(|id| id.rsplit('/').next() == Some(other_name.as_str()))
+                .cloned()
+                .unwrap_or_else(|| format!("{}/{other_name}", other.namespace));
+            let serving = self
+                .status(&other.root, &id)
+                .await
+                .ok()
+                .and_then(|value| value["status"].as_str().map(String::from))
+                .is_some_and(|status| {
+                    matches!(status.as_str(), "running" | "waiting" | "stopping")
+                });
+            if !serving {
                 continue;
             }
             bail!(
@@ -330,17 +354,6 @@ impl Runtime {
         }
         // Past the fast path, so this runs on an explicit start or restart and
         // whenever the rendered configuration changed, never on every prompt.
-        // Projects hold different project locks, so without a shared one two
-        // roots resolving to the same port could both scan, see nothing, and
-        // publish. This is held until the claim is durable below.
-        let _ports_lock = (!state.ports.is_empty())
-            .then(|| {
-                crate::lock_file::LockFile::at(
-                    &crate::dirs::STATE.join("daemons").join("ports.lock"),
-                )
-                .lock()
-            })
-            .transpose()?;
         self.check_port_conflicts(root, &state.ports).await?;
         self.supports_external_config(root).await?;
         write_if_changed(&file, content.as_bytes())?;

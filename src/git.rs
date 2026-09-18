@@ -639,8 +639,37 @@ pub(crate) fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Resolves a linked worktree's `.git` file to the root of the main checkout
-fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+/// Whether `path` sits inside a linked git worktree.
+///
+/// Unlike [`main_checkout_equivalent`] this also accepts worktrees of a bare
+/// repository. They have no main checkout to map onto, but they are still
+/// distinct checkouts, which is what matters to a caller allocating a resource
+/// per working copy rather than mapping a path.
+pub(crate) fn in_linked_worktree(path: &Path) -> bool {
+    for wt_root in path.ancestors() {
+        let dotgit = wt_root.join(".git");
+        if dotgit.is_dir() {
+            // Main checkout or a nested independent repository; either way the
+            // search stops rather than consulting an outer repository.
+            return false;
+        }
+        // A submodule's `.git` file is not a worktree marker, but a submodule
+        // may itself sit inside a linked worktree, so keep walking up.
+        if dotgit.is_file() && worktree_gitdir(&dotgit).is_some() {
+            return true;
+        }
+    }
+    false
+}
+
+/// The private git dir of a linked worktree, or None when this `.git` file
+/// belongs to a submodule or a `--separate-git-dir` clone.
+///
+/// Linked worktrees keep their private git dir at `<common>/worktrees/<name>`.
+/// Submodule git dirs live under `modules/`, so the parent directory's name is
+/// what distinguishes them; a path that merely contains a `worktrees` component
+/// elsewhere is not a worktree.
+fn worktree_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
     let contents = std::fs::read_to_string(dotgit_file).ok()?;
     let gitdir = PathBuf::from(contents.strip_prefix("gitdir:")?.trim());
     let gitdir = if gitdir.is_relative() {
@@ -648,14 +677,14 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     } else {
         gitdir
     };
-    // Linked worktrees keep their private git dir at
-    // `<common>/worktrees/<name>`, containing a `commondir` file pointing to
-    // the shared git dir (usually `../..`, i.e. `<main>/.git`). Submodule git
-    // dirs live under `modules/` and have neither, which is what
-    // distinguishes them here.
-    if gitdir.parent()?.file_name() != Some(OsStr::new("worktrees")) {
-        return None;
-    }
+    (gitdir.parent()?.file_name() == Some(OsStr::new("worktrees"))).then_some(gitdir)
+}
+
+/// Resolves a linked worktree's `.git` file to the root of the main checkout
+fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+    // The private git dir contains a `commondir` file pointing to the shared
+    // git dir (usually `../..`, i.e. `<main>/.git`).
+    let gitdir = worktree_gitdir(dotgit_file)?;
     let common = PathBuf::from(
         std::fs::read_to_string(gitdir.join("commondir"))
             .ok()?

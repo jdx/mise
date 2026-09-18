@@ -104,51 +104,17 @@ fn port_field(name: &str, table: &toml::Table, key: &str) -> Result<Option<u16>>
         .transpose()
 }
 
-/// Whether this project root sits inside a linked git worktree.
-///
-/// A project root is the directory holding `mise.toml`, which is often nested
-/// well below the checkout (`/repo/packages/api`), so the enclosing checkout is
-/// found by walking ancestors rather than looking beside the config. The first
-/// `.git` encountered decides: a directory is the primary checkout, and a file
-/// names the real git directory.
-///
-/// Only a `gitdir:` under a `worktrees/` directory is a linked worktree. A
-/// submodule points into `.git/modules/`, and `git clone --separate-git-dir`
-/// points somewhere else entirely; both are the single copy of their project and
-/// must keep the base port.
-fn in_linked_worktree(root: &Path) -> bool {
-    for dir in root.ancestors() {
-        let git = dir.join(".git");
-        // A directory here is the primary checkout; stop before any outer one.
-        if git.is_dir() {
-            return false;
-        }
-        if git.is_file() {
-            let Ok(content) = std::fs::read_to_string(&git) else {
-                // Unreadable marker: fall back to the well-known port rather
-                // than silently moving a single checkout off it.
-                return false;
-            };
-            let Some(target) = content
-                .lines()
-                .find_map(|line| line.trim().strip_prefix("gitdir:"))
-            else {
-                return false;
-            };
-            return Path::new(target.trim())
-                .components()
-                .any(|c| c.as_os_str() == "worktrees");
-        }
-    }
-    false
-}
-
 /// Whether this root keeps the base port. The primary checkout, a project
-/// outside git, a submodule, and a separate-git-dir clone are each the single
-/// copy of their project, so they take slot 0 and the default single-checkout
-/// experience is unchanged.
+/// outside git, a submodule, and a `--separate-git-dir` clone are each the
+/// single copy of their project, so they take slot 0 and the default
+/// single-checkout experience is unchanged.
+///
+/// A project root is the directory holding `mise.toml`, often nested well below
+/// the checkout (`/repo/packages/api`), so the enclosing checkout decides, not
+/// the config directory. That ancestor walk, and the rules that separate a real
+/// worktree from a submodule, live in [`crate::git::in_linked_worktree`].
 pub(crate) fn is_primary(root: &Path) -> bool {
-    !in_linked_worktree(root)
+    !crate::git::in_linked_worktree(root)
 }
 
 /// The slot for a project root: 0 for a primary checkout, otherwise a stable
@@ -336,8 +302,12 @@ mod tests {
             "/repo/.git/modules/sub",
             "/elsewhere/detached-git-dir",
             "not a gitdir line",
+            // The parent directory must be named `worktrees`; a path that
+            // merely contains the word somewhere else is not a worktree.
+            "/repo/worktrees/nested/.git/modules/sub",
+            "/worktrees",
         ] {
-            let root = tmp.path().join(format!("c{}", target.len()));
+            let root = tmp.path().join(crate::hash::hash_to_str(&target));
             std::fs::create_dir_all(&root).unwrap();
             std::fs::write(root.join(".git"), format!("gitdir: {target}\n")).unwrap();
             assert!(is_primary(&root), "{target} must keep the base port");
