@@ -399,24 +399,31 @@ pub(crate) fn apply(
     if matches!(proxy, Proxy::Disabled) && tls.is_some() {
         bail!("[daemons.{name}] sets proxy_tls but proxy = false, so nothing is proxied");
     }
+    // A daemon with no port is not routed, so writing a label for it would
+    // leave the generated configuration claiming something mise does not
+    // believe and its hostname outside the collision bookkeeping below.
     let label = match &proxy {
-        Proxy::Disabled => {
-            table.insert("proxy".into(), toml::Value::Boolean(false));
-            return Ok(Applied { host: None });
-        }
+        Proxy::Disabled => None,
+        _ if !routable => None,
         Proxy::Label(label) => Some(label.clone()),
         Proxy::Derived => sanitize_label(name),
     };
+    let Some(label) = label else {
+        table.insert("proxy".into(), toml::Value::Boolean(false));
+        return Ok(Applied { host: None });
+    };
     // The label is written out even when mise derived it, so pitchfork routes
     // the name mise exported rather than folding the daemon's name again.
-    let host = label.and_then(|label| {
-        table.insert("proxy".into(), toml::Value::String(label.clone()));
-        let host = format!("{label}.{}", labels.suffix(tld)?);
-        hostname_fits(&host).then_some(host)
-    });
-    Ok(Applied {
-        host: host.filter(|_| routable),
-    })
+    table.insert("proxy".into(), toml::Value::String(label.clone()));
+    let host = labels
+        .suffix(tld)
+        .map(|suffix| format!("{label}.{suffix}"))
+        .filter(|host| hostname_fits(host));
+    // A name too long for DNS is no name at all, and pitchfork refuses it too.
+    if host.is_none() {
+        table.insert("proxy".into(), toml::Value::Boolean(false));
+    }
+    Ok(Applied { host })
 }
 
 /// Take a daemon's hostname away after the fact, when another daemon turned out
@@ -599,9 +606,16 @@ mod tests {
         assert_eq!(host.unwrap(), "api.shop.localhost");
         assert_eq!(table["proxy"].as_str().unwrap(), "api");
 
-        // Pitchfork routes only a daemon that configures a port.
-        let (host, _) = parse("").unwrap();
+        // Pitchfork routes only a daemon that configures a port, and the
+        // generated configuration has to say so rather than carrying a label
+        // for a daemon nothing will route.
+        let (host, table) = parse("").unwrap();
         assert!(host.is_none(), "a portless daemon is never routed");
+        assert_eq!(table["proxy"].as_bool(), Some(false));
+        // Even when the declaration named a label.
+        let (host, table) = parse("proxy = 'web'").unwrap();
+        assert!(host.is_none());
+        assert_eq!(table["proxy"].as_bool(), Some(false));
 
         for mode in ["terminate", "passthrough"] {
             let (_, table) = parse(&format!("port = 3000\nproxy_tls = '{mode}'")).unwrap();
@@ -631,6 +645,9 @@ mod tests {
         let long = "c".repeat(MAX_LABEL_LEN);
         let applied = apply(&long, &mut table, &labels, &"d".repeat(MAX_LABEL_LEN)).unwrap();
         assert!(applied.host.is_none(), "{:?}", applied.host);
+        // And the generated configuration agrees, rather than asking the proxy
+        // to route a name it will refuse.
+        assert_eq!(table["proxy"].as_bool(), Some(false));
         // The same labels fit under an ordinary TLD.
         let mut table: toml::Table = toml::from_str("port = 3000").unwrap();
         assert!(
