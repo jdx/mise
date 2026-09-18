@@ -361,6 +361,18 @@ impl Prune {
         if self.dry_run {
             return Ok(vec![]);
         }
+        if Settings::get().yes {
+            // `--yes` answers the question prune would have asked. For a group
+            // whose absence proves less than it appears, that question was
+            // never "delete these too?" -- it is one only a person looking at
+            // the paths can answer, so the flag skips the group rather than
+            // approving it.
+            if caveat.is_some() {
+                warn!("keeping state that may still be in use; prune without --yes to decide");
+                return Ok(vec![]);
+            }
+            return Ok(sized);
+        }
         let total: u64 = sized.iter().map(|(_, size)| size).sum();
         let message = format!(
             "remove {} daemon state director{}{} and {} of data?",
@@ -369,9 +381,6 @@ impl Prune {
             caveat.map(|c| format!(" {c}")).unwrap_or_default(),
             daemons::prune::human_size(total),
         );
-        if caveat.is_none() && Settings::get().yes {
-            return Ok(sized);
-        }
         // Defaults to no: the data is gone for good once this proceeds.
         match prompt::confirm_with_default(message, false)? {
             Confirmation::Yes => Ok(sized),

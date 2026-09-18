@@ -129,6 +129,12 @@ pub(crate) fn scan(base: &Path) -> Result<Vec<Entry>> {
                 continue;
             }
         };
+        // The lock files guarding these directories sit beside them, and a
+        // path under a file is not a missing file, so they would otherwise be
+        // reported as unreadable state.
+        if !dir.is_dir() {
+            continue;
+        }
         let path = dir.join("state.json");
         let bytes = match std::fs::read(&path) {
             Ok(bytes) => bytes,
@@ -498,7 +504,8 @@ mod tests {
         drop(held);
 
         assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
-        // A lock file is not a state directory, so it is never itself an entry.
+        // A lock file is not a state directory, so it is never itself an entry
+        // and never reported as unreadable state either.
         std::fs::write(&lock, "").unwrap();
         assert_eq!(scan(&base).unwrap().len(), 1);
     }

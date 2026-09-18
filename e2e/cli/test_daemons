@@ -188,3 +188,21 @@ assert_contains "mise daemons prune --yes 2>&1" 'no daemon state'
 : >mise.toml
 mise daemons prune --yes
 assert "test -f '$live_state'"
+
+# State whose absence could be an unmounted volume is never deleted by --yes.
+mkdir -p "$HOME/mountish/project"
+cd "$HOME/mountish/project"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+run = "sleep 30"
+TOML
+mise daemons start
+ambiguous_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+cd "$HOME"
+# Removing the project leaves its parent empty, which is what an unmounted
+# mount point looks like, so mise cannot tell the two apart.
+rm -rf "$HOME/mountish/project"
+assert_contains "mise daemons prune --yes 2>&1" 'unmounted volume'
+assert "test -f '$ambiguous_state'"
