@@ -515,7 +515,7 @@ A file task pulls in the same set from its `#USAGE` header:
 
 ```bash [mise-tasks/deploy]
 #!/usr/bin/env bash
-#USAGE include file="/srv/app/shared.usage.kdl"
+#USAGE include file="$MISE_CONFIG_ROOT/shared.usage.kdl"
 #USAGE use "common"
 #USAGE flag "--replicas <n>" help="How many to run"
 echo "env=$usage_env replicas=$usage_replicas"
@@ -525,11 +525,16 @@ Both tasks now accept `--env`, `--dry-run`, and `--replicas`, and both reject
 `--env nope`. A `use` expands where it is written, so shared flags appear in
 `--help` in the position the `use` node occupies.
 
-::: warning
-`include` needs an absolute path. A `mise.toml` task can build one with
-<span v-pre>`{{ config_root }}`</span>, but a file task's `#USAGE` comments are not
-rendered as templates, so it can only spell the path out.
-:::
+Relative `include` paths in file tasks resolve from the directory containing the
+task file. Include paths also expand `$NAME` and `${NAME}` from the task
+environment; mise supplies `MISE_CONFIG_ROOT`, `MISE_PROJECT_ROOT`,
+`MISE_TASK_DIR`, and `MISE_TASK_FILE`. Use `$$` for a literal dollar sign. An
+undefined variable is an error.
+
+A `mise.toml` task can instead build a path with
+<span v-pre>`{{ config_root }}`</span>. File-task `#USAGE` comments are not rendered
+as Tera templates, so use shell-style environment references there rather than
+<span v-pre>`{{ env.VAR }}`</span>.
 
 To share configuration other than arguments — tools, env, dependencies — between
 tasks in the same project, see [task templates](/tasks/templates).
