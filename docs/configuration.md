@@ -492,6 +492,7 @@ in both mise and nvm. Here are some of the supported idiomatic version files:
 | Plugin        | Idiomatic Files                                                                                                                                                                                                                                                                                            |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | atmos         | `.atmos-version`                                                                                                                                                                                                                                                                                           |
+| bazel         | `.bazelversion`                                                                                                                                                                                                                                                                                            |
 | bun           | `.bun-version`, `package.json`                                                                                                                                                                                                                                                                             |
 | chezmoi       | `.chezmoiversion`                                                                                                                                                                                                                                                                                          |
 | cmake         | `CMakeLists.txt`                                                                                                                                                                                                                                                                                           |
@@ -527,6 +528,8 @@ in both mise and nvm. Here are some of the supported idiomatic version files:
 | zig           | `.zig-version`                                                                                                                                                                                                                                                                                             |
 
 <!-- mise:idiomatic-version-files:end -->
+
+For Bazel setup and supported `.bazelversion` values, see the [Bazel cookbook](/mise-cookbook/bazel.html).
 
 Registry-backed tools can also describe how mise should extract versions from structured
 idiomatic files. Registry entries may use the same `version_regex`, `version_json_path`, and

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-mise settings set idiomatic_version_file_enable_tools "chezmoi,cmake,dagger,earthly,golangci-lint,goreleaser,lefthook,pixi,pre-commit,ruff,task"
+mise settings set idiomatic_version_file_enable_tools "bazel,chezmoi,cmake,dagger,earthly,golangci-lint,goreleaser,lefthook,pixi,pre-commit,ruff,task"
 
 cat >dagger.json <<'EOF'
 {
@@ -93,3 +93,37 @@ cat >.ruff.toml <<'EOF'
 required-version = "0.14.0"
 EOF
 assert_contains "mise tool ruff" "0.14.0"
+
+# .bazelversion pins the exact Bazel release the project builds with
+echo "7.2.1" >.bazelversion
+assert "mise tool bazel --requested" "7.2.1"
+
+# a release candidate names a concrete release too
+echo "8.0.0rc1" >.bazelversion
+assert "mise tool bazel --requested" "8.0.0rc1"
+
+# bazelisk also accepts values that name no particular release (latest, last_green,
+# rolling), move on their own (8.x), or point somewhere mise cannot install from (a
+# commit hash, <FORK>/<VERSION>). None of them are version requests, so the file
+# yields nothing rather than resolving to the wrong release or failing outright.
+for bazelversion in latest last_green rolling 8.x my-fork/7.2.1 0f2ab1c9d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8; do
+  echo "$bazelversion" >.bazelversion
+  assert "mise tool bazel --requested" "[none]"
+done
+
+# 8.x reaching the backend would warn about an unsupported semver range on every command
+echo "8.x" >.bazelversion
+assert_not_contains "mise tool bazel 2>&1" "semver range"
+
+# bazelisk reads one line and ignores the rest of the file, so only the first line is a
+# version request. Reading further would ask for two versions of one tool at once...
+printf '7.2.1\n8.0.0\n' >.bazelversion
+assert "mise tool bazel --requested" "7.2.1"
+
+# ...or read past a first line that is deliberately not a release.
+printf 'latest\n8.0.0\n' >.bazelversion
+assert "mise tool bazel --requested" "[none]"
+
+# a CRLF checkout still resolves -- registry parsers see the raw bytes, not normalized lines
+printf '7.2.1\r\n' >.bazelversion
+assert "mise tool bazel --requested" "7.2.1"
