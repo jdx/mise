@@ -568,10 +568,21 @@ fn import(
             );
         }
         let cf = crate::config::config_file::mise_toml::MiseToml::from_file(path)?;
-        let remote_root = crate::config::config_file::config_root::config_root(path);
-        if let Some(file_settings) = cf.daemon_settings() {
+        // Ask the same question `load` asks. `project_root` is the config root
+        // narrowed to project scope, and the walk above reaches the home
+        // directory, so a global config can appear in a referenced project's
+        // ancestry. Honouring `[daemons_settings]` from one here while `load`
+        // ignores it would hand every project that namespace through the back
+        // door this project closed at the front.
+        let project_root = cf.project_root();
+        let remote_root = project_root
+            .clone()
+            .unwrap_or_else(|| crate::config::config_file::config_root::config_root(path));
+        if let Some(file_settings) = cf.daemon_settings()
+            && let Some(project_root) = &project_root
+        {
             settings
-                .entry(remote_root.clone())
+                .entry(project_root.clone())
                 .or_default()
                 .merge(file_settings);
         }
