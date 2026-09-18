@@ -76,6 +76,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let mut set = DaemonSet::default();
     // Previously persisted allocations, read once per project root.
     let mut claims: BTreeMap<PathBuf, BTreeMap<String, PortClaim>> = BTreeMap::new();
+    // Port variables already taken, so two names cannot normalize onto one key.
+    let mut port_keys: BTreeMap<String, String> = BTreeMap::new();
     for (name, (declaration, source, root)) in declarations {
         if name.is_empty()
             || name == "."
@@ -170,9 +172,18 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 // Without this a custom daemon's port would reach pitchfork and
                 // nothing else: `mise env` would export nothing, and the process
                 // could only discover it through pitchfork's own injection.
-                exports: claim
-                    .map(|c| IndexMap::from([(port_env_var(&name), c.port.to_string())]))
-                    .unwrap_or_default(),
+                exports: match claim {
+                    Some(c) => {
+                        let key = port_env_var(&name)?;
+                        if let Some(other) = port_keys.insert(key.clone(), name.clone()) {
+                            bail!(
+                                "daemons {other} and {name} both export {key};                                  their names differ only by punctuation, so one port                                  would silently replace the other. Rename one of them."
+                            );
+                        }
+                        IndexMap::from([(key, c.port.to_string())])
+                    }
+                    None => IndexMap::new(),
+                },
                 port: claim,
             }
         };
@@ -184,7 +195,15 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
 /// The variable a custom daemon's resolved port is exported as, so `mise env`,
 /// `mise x`, and the daemon's own process all see one endpoint. Presets export
 /// their tool's conventional variables instead.
-fn port_env_var(name: &str) -> String {
+fn port_env_var(name: &str) -> Result<String> {
+    // Daemon names may start with a digit, but a shell cannot export one:
+    // `export 1API_PORT=3000` is rejected as an invalid identifier, which would
+    // break the whole activation, so this is refused at config load instead.
+    if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+        bail!(
+            "[daemons.{name}] exports a port, so its name must start with a letter              or underscore; a variable name cannot start with a digit"
+        );
+    }
     let base: String = name
         .chars()
         .map(|c| {
@@ -195,7 +214,7 @@ fn port_env_var(name: &str) -> String {
             }
         })
         .collect();
-    format!("{base}_PORT")
+    Ok(format!("{base}_PORT"))
 }
 
 /// Pitchfork's structured `port`, pinned to the port mise already rendered into
@@ -486,6 +505,34 @@ mod tests {
         assert_eq!(set.daemons["api"].exports["API_PORT"], "3000");
         // Punctuation is not valid in a variable name.
         assert_eq!(set.daemons["web-ui"].exports["WEB_UI_PORT"], "4000");
+        // Two names that normalize onto one variable would make the later
+        // daemon silently replace the earlier one's endpoint.
+        let clash = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.web-ui]\nrun = 'a'\nport = 3000\n[daemons.web_ui]\nrun = 'b'\nport = 3001\n",
+        )]))
+        .unwrap_err()
+        .to_string();
+        assert!(clash.contains("WEB_UI_PORT"), "{clash}");
+        // A shell cannot export a name starting with a digit.
+        assert!(
+            load(&files(&[(
+                root.join("mise.toml").to_str().unwrap(),
+                "[daemons.9api]\nrun = 'a'\nport = 3000\n",
+            )]))
+            .unwrap_err()
+            .to_string()
+            .contains("must start with a letter")
+        );
+        // That name is still fine when mise resolves no port for it.
+        assert!(
+            load(&files(&[(
+                root.join("mise.toml").to_str().unwrap(),
+                "[daemons.9api]\nrun = 'a'\n",
+            )]))
+            .is_ok()
+        );
+
         // A daemon with no port mise resolved exports nothing.
         let set = load(&files(&[(
             root.join("mise.toml").to_str().unwrap(),
