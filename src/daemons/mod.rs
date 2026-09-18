@@ -480,12 +480,7 @@ fn import(
             dir.display()
         );
     }
-    let mut daemon = build(
-        &remote_name,
-        declaration,
-        remote_source,
-        remote_root.clone(),
-    )?;
+    let mut daemon = build(remote_name, declaration, remote_source, remote_root.clone())?;
     daemon.imported = true;
     let namespace =
         runtime::resolve_namespace(&remote_root, Some(&settings_for(&settings, &remote_root)))?;
