@@ -83,7 +83,8 @@ have at least one member. `--group` is accepted only for groups declared in
 include daemons outside the project. Use pitchfork directly for those.
 
 `mise daemons start` with no names starts the `default` group when the project
-declares one, and otherwise starts every project daemon. Each project resolves this
+declares one, and otherwise starts every project daemon. `restart` does the same,
+since it starts daemons too. `stop` without names still covers every project daemon. Each project resolves this
 on its own: with inherited daemons, a `default` group in one project does not limit
 what another project starts. Group names are likewise project scoped, so nested
 projects may each declare their own `default`.

@@ -160,6 +160,11 @@ impl Daemons {
         let mut rows = Vec::new();
         let mut matched = false;
         for ((root, ids), root_set) in roots.into_iter().zip(root_ids).zip(root_sets) {
+            // Each root resolves the request against its own groups, so a `default`
+            // group in one project never suppresses another project's daemons. This
+            // is the one place selectors are resolved, from the set the request was
+            // validated against rather than the per-root reload used for tools and
+            // the generated configuration.
             let root_selectors = effective_selectors(&selectors, &root_set, action);
             if !root_selectors.is_empty()
                 && !ids
@@ -212,14 +217,14 @@ impl Daemons {
             } else {
                 (previous, None)
             };
-            // Each root resolves the request against its own groups, so a `default`
-            // group in one project never suppresses another project's daemons.
-            let root_selectors = effective_selectors(&selectors, &set, action);
+            // `root_selectors` came from the same set the request was validated
+            // against, so selection cannot disagree with that validation.
             let mut selected: Vec<_> = state
                 .ids
                 .iter()
                 .filter(|id| {
-                    root_selectors.is_empty() || root_selectors.iter().any(|s| selects(&set, id, s))
+                    root_selectors.is_empty()
+                        || root_selectors.iter().any(|s| selects(&root_set, id, s))
                 })
                 .cloned()
                 .collect();
@@ -306,14 +311,19 @@ fn selects(set: &daemons::DaemonSet, id: &str, selector: &Selector) -> bool {
     }
 }
 
-/// The selectors to apply to one project. A bare `start` uses that project's own
-/// `default` group; a project without one still starts all of its daemons.
+/// The selectors to apply to one project. A bare `start` or `restart` uses that
+/// project's own `default` group; a project without one still covers all of its
+/// daemons. `restart` is included because it starts daemons, and would otherwise
+/// start the ones a `default` group deliberately leaves out.
 fn effective_selectors(
     selectors: &[Selector],
     set: &daemons::DaemonSet,
     action: &str,
 ) -> Vec<Selector> {
-    if selectors.is_empty() && action == "start" && set.group("default").is_some() {
+    if selectors.is_empty()
+        && matches!(action, "start" | "restart")
+        && set.group("default").is_some()
+    {
         return vec![Selector::Group("default".into())];
     }
     selectors.to_vec()
@@ -527,8 +537,13 @@ mod tests {
         );
         // The parent declares no default, so a bare start keeps every daemon.
         assert!(effective_selectors(&[], &parent, "start").is_empty());
-        // Only start has the default-group shorthand.
+        // restart starts daemons, so it uses the group too; stop does not.
+        assert_eq!(
+            effective_selectors(&[], &child, "restart"),
+            [Selector::Group("default".into())]
+        );
         assert!(effective_selectors(&[], &child, "stop").is_empty());
+        assert!(effective_selectors(&[], &child, "logs").is_empty());
         // An explicit request is never replaced by the default group.
         assert_eq!(
             effective_selectors(&[Selector::Name("extra".into())], &child, "start"),
