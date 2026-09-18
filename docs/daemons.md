@@ -132,14 +132,17 @@ confirmed is kept with a message saying why:
 
 - A project directory mise cannot read, such as one on an unreachable network mount, is
   kept. Only a definite "not found" counts as deleted.
-- A path under a volume that is not mounted reports "not found" exactly as a deleted
-  project does, so mise cannot tell them apart. When the first directory that does exist
-  above the project is empty, which is what an unmounted mount point looks like, the
-  decision goes to a person: `--yes` skips that state instead of deleting it.
-- A project reached through a symlink has its state named for the symlink's target, so
-  deleting only the symlink never takes the live project's data. State that an older
-  mise recorded under the symlink itself cannot be tied back to its directory and is kept
-  permanently; remove it by hand if you want it gone.
+- Two cases are indistinguishable from a deleted project on disk, so each is listed
+  separately and confirmed on its own. Approving the ordinary removals never approves
+  these, and `--yes` skips them entirely:
+  - A path under a volume that is not mounted reports "not found" exactly as a deleted
+    project does. Prune asks when the first directory that does exist above the project
+    is empty, which is what an unmounted mount point looks like.
+  - A project reached through a symlink has its state named for the symlink's target,
+    so deleting only the symlink leaves a live project whose recorded root reads as
+    missing. Prune asks when the recorded path is not the one its directory was named
+    for. Mise records the canonical path, so this only concerns state written by an
+    older version, or a path its filesystem rewrites.
 - A directory that reappears between the prompt and the deletion is kept.
 - If stopping a daemon or unregistering its configuration fails, that state is kept for
   a later run rather than deleted while a process may still be writing to it. Pitchfork

@@ -33,31 +33,15 @@ impl Entry {
     /// `prepare()` already unregisters its configuration, and its data may
     /// still be wanted.
     ///
-    /// The recorded path also has to be the one that named this directory.
-    /// [`state_dir`](super::state_dir) hashes the canonical root while
-    /// `prepare()` records the raw one, so a project reached through a symlink
-    /// has an alias recorded against a directory named for its target.
-    /// Deleting only the alias leaves a live project whose root reads as
-    /// missing, and the hash is what tells the two apart: with the path gone,
-    /// canonicalization falls back to it unchanged, so a name that no longer
-    /// matches proves the recorded path was an alias for something else.
+    /// Whether that absence is enough on its own is a separate question, which
+    /// [`Self::ambiguity`] answers.
     pub(crate) fn orphaned(&self) -> bool {
         if self.state.root.as_os_str().is_empty() {
             return false;
         }
         match std::fs::symlink_metadata(&self.state.root) {
             Ok(_) => false,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                if super::state_dir(&self.state.root).file_name() != self.dir.file_name() {
-                    warn!(
-                        "keeping {}: {} is gone, but this state was created for a different path it pointed at, which may still exist",
-                        display_path(&self.dir),
-                        display_path(&self.state.root)
-                    );
-                    return false;
-                }
-                true
-            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
             Err(err) => {
                 warn!(
                     "keeping {}: cannot read {}: {err}",
@@ -69,22 +53,45 @@ impl Entry {
         }
     }
 
-    /// Whether the recorded root's absence might be a volume that is not
-    /// mounted rather than a project that was deleted.
+    /// Why a missing root might mean something other than a deleted project,
+    /// if it might.
+    ///
+    /// Two cases are indistinguishable from a deleted project on disk, and
+    /// neither can be settled by looking harder, so each is put to a person
+    /// instead: never removed without an explicit answer, and never by `--yes`.
     ///
     /// An unmounted mount point is an ordinary empty directory, and a path
-    /// under it reports `NotFound` exactly as a deleted project does, so the
-    /// filesystem cannot tell them apart. What it can say is whether the first
-    /// ancestor that does exist is empty, which is what an unmounted mount
-    /// point looks like and what the parent of a deleted project almost never
-    /// is. This does not decide anything by itself; it decides whether the
-    /// question has to reach a person.
-    pub(crate) fn root_may_be_unmounted(&self) -> bool {
-        let mut ancestors = self.state.root.ancestors().skip(1);
-        let Some(existing) = ancestors.find(|path| path.exists()) else {
-            return false;
-        };
-        std::fs::read_dir(existing).is_ok_and(|mut dir| dir.next().is_none())
+    /// under it reports `NotFound` exactly as a deleted project does. What the
+    /// filesystem can still say is whether the first ancestor that does exist
+    /// is empty, which is what an unmounted mount point looks like and what a
+    /// deleted project's parent almost never is.
+    ///
+    /// A project reached through a symlink has its state directory named for
+    /// the canonical target while an older `prepare()` recorded the alias, so
+    /// deleting only the symlink leaves a live project whose recorded root
+    /// reads as missing. A recorded path that no longer names its own directory
+    /// is the sign of that. It is not proof: `canonicalize` also rewrites
+    /// `/tmp` on macOS and every path on Windows, so ordinary old state can
+    /// carry a spelling its directory was not named from. Hence a question
+    /// rather than a refusal, which would strand that state forever.
+    pub(crate) fn ambiguity(&self) -> Option<String> {
+        if let Some(existing) = self.state.root.ancestors().skip(1).find(|p| p.exists())
+            && std::fs::read_dir(existing).is_ok_and(|mut dir| dir.next().is_none())
+        {
+            return Some(format!(
+                "{} is empty, so {} may be an unmounted volume rather than a deleted project",
+                display_path(existing),
+                display_path(&self.state.root)
+            ));
+        }
+        if super::state_dir(&self.state.root).file_name() != self.dir.file_name() {
+            return Some(format!(
+                "{} is not the path {} was created for, which may still exist",
+                display_path(&self.state.root),
+                display_path(&self.dir)
+            ));
+        }
+        None
     }
 }
 
@@ -234,20 +241,7 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                     return Ok(Outcome::Kept);
                 }
             }
-            // A supervisor that is down did not necessarily take the daemons
-            // with it: a crash leaves the database process running on the very
-            // data this is about to delete, and its own lock file is the
-            // evidence mise has for that.
-            Ok(_) => {
-                if let Some(lock) = live_database_lock(cwd) {
-                    warn!(
-                        "keeping {}: {} is still there, so a database may be running without its supervisor",
-                        display_path(cwd),
-                        display_path(&lock)
-                    );
-                    return Ok(Outcome::Kept);
-                }
-            }
+            Ok(_) => {}
             Err(err) => {
                 warn!(
                     "keeping {}: cannot establish supervisor status: {err:#}",
@@ -282,6 +276,18 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         );
         return Ok(Outcome::Kept);
     }
+    // Last thing before anything goes: a database writes a lock file beside its
+    // data while it is alive, and one still sitting there means a process may be
+    // using what is about to be deleted -- a supervisor that crashed without its
+    // children, or a stop that pitchfork reported as nothing to do.
+    if let Some(marker) = live_database_lock(cwd) {
+        warn!(
+            "keeping {}: {} is still there, so a database may still be running",
+            display_path(cwd),
+            display_path(&marker)
+        );
+        return Ok(Outcome::Kept);
+    }
     if let Err(err) = delete_state_dir(cwd, lock) {
         // One unreadable or busy file must not end the run: the other entries
         // are independent, and this one stays discoverable for a later run.
@@ -307,15 +313,12 @@ fn tolerate_unknown(output: Result<std::process::Output>, args: &[String]) -> Re
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
     let lowered = stderr.to_lowercase();
-    if [
-        "not found",
-        "no such",
-        "unknown",
-        "not registered",
-        "is not",
-    ]
-    .iter()
-    .any(|phrase| lowered.contains(phrase))
+    // Deliberately narrow. Phrases like "unknown" or "is not" turn up in plenty
+    // of real failures, and tolerating one of those would delete a database
+    // whose daemon is still running.
+    if ["not found", "no such", "not registered"]
+        .iter()
+        .any(|phrase| lowered.contains(phrase))
     {
         debug!("pitchfork {} had nothing to do: {stderr}", args.join(" "));
         return Ok(());
@@ -558,7 +561,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn a_deleted_alias_never_takes_its_live_target_with_it() {
+    fn a_deleted_alias_is_never_removed_without_being_asked_about() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
         let project = tmp.path().join("project");
@@ -582,25 +585,23 @@ mod tests {
         std::fs::create_dir_all(dir.join("data/db")).unwrap();
 
         // Removing only the symlink leaves the project, and its database,
-        // entirely intact.
+        // entirely intact. The recorded root now reads as missing, so what
+        // keeps this state is the caveat, not the selection.
         std::fs::remove_file(&alias).unwrap();
         assert!(project.is_dir());
-        assert!(
-            orphans(&base).unwrap().is_empty(),
-            "a missing alias is not a deleted project"
-        );
+        let entry = orphans(&base).unwrap().remove(0);
+        let why = entry.ambiguity().expect("must not be deleted unasked");
+        assert!(why.contains("may still exist"), "{why}");
 
-        // Even once the project is gone too, this state stays: the recorded
-        // path cannot be tied to the directory that holds it, so its absence
-        // proves nothing. That costs an unprunable directory for state written
-        // through an alias by an older mise; `prepare()` now records the
-        // canonical root, so nothing new lands in this state.
+        // State recorded the way `prepare()` records it now carries no caveat.
         std::fs::remove_dir_all(&project).unwrap();
-        assert!(orphans(&base).unwrap().is_empty());
-
-        // The same project recorded canonically prunes normally.
-        write_state(&base, "canonical", &project, &[]);
-        assert_eq!(orphans(&base).unwrap().len(), 1);
+        let dir = write_state(&base, "canonical", &project, &[]);
+        let entry = orphans(&base)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.dir == dir)
+            .unwrap();
+        assert_eq!(entry.ambiguity(), None);
     }
 
     #[test]
@@ -613,7 +614,8 @@ mod tests {
         std::fs::create_dir(&mount).unwrap();
         write_state(&base, "unmounted", &mount.join("project"), &[]);
         let entry = orphans(&base).unwrap().remove(0);
-        assert!(entry.root_may_be_unmounted());
+        let why = entry.ambiguity().expect("must reach a person");
+        assert!(why.contains("unmounted volume"), "{why}");
 
         // A deleted project leaves its parent behind with other things in it.
         let projects = tmp.path().join("src");
@@ -625,7 +627,7 @@ mod tests {
             .into_iter()
             .find(|e| e.state.root.starts_with(&projects))
             .unwrap();
-        assert!(!entry.root_may_be_unmounted());
+        assert_eq!(entry.ambiguity(), None);
     }
 
     #[test]
@@ -665,6 +667,10 @@ mod tests {
         assert!(tolerate_unknown(failed("daemon ns/db not found"), &args).is_ok());
         assert!(tolerate_unknown(failed("no such config"), &args).is_ok());
         assert!(tolerate_unknown(failed("permission denied"), &args).is_err());
+        // Phrases that turn up in real failures are not tolerated: treating one
+        // of these as "nothing to do" would delete a running database's data.
+        assert!(tolerate_unknown(failed("unknown error from supervisor"), &args).is_err());
+        assert!(tolerate_unknown(failed("daemon is not responding"), &args).is_err());
     }
 
     #[test]

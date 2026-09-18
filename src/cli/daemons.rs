@@ -290,67 +290,29 @@ impl Prune {
             );
             return Ok(());
         }
-        // A root under an unmounted volume is indistinguishable from a deleted
-        // one on disk, so that case is only ever decided by a person. Without
-        // anyone to ask, it is kept.
-        let (mounted, unmounted): (Vec<_>, Vec<_>) = orphans
+        // Entries whose absence proves less than it appears are never mixed in
+        // with the rest: they get their own listing and their own answer, so
+        // approving the confirmed ones never approves these too.
+        let (uncertain, confirmed): (Vec<_>, Vec<_>) = orphans
             .into_iter()
-            .partition(|entry| !entry.root_may_be_unmounted());
-        for entry in &unmounted {
-            let what = if self.dry_run || !Settings::get().yes {
-                "may be an unmounted volume rather than a deleted project"
-            } else {
-                "may be an unmounted volume rather than a deleted project; prune without --yes to decide"
-            };
-            warn!("{} {what}", display_path(&entry.state.root));
-        }
-        let mut orphans = mounted;
-        if !Settings::get().yes || self.dry_run {
-            orphans.extend(unmounted);
-        }
-        if orphans.is_empty() {
-            return Ok(());
-        }
-        let sized: Vec<_> = orphans
-            .into_iter()
-            .map(|entry| {
-                let size = daemons::prune::dir_size(&entry.dir);
-                (entry, size)
-            })
-            .collect();
-        for line in daemons::prune::describe(&sized) {
-            if self.dry_run {
-                info!("{line} {}", console::style("[dryrun]").bold());
-            } else {
-                info!("{line}");
+            .partition(|entry| entry.ambiguity().is_some());
+        let mut selected = self.decide(confirmed, None)?;
+        if !uncertain.is_empty() {
+            for entry in &uncertain {
+                if let Some(why) = entry.ambiguity() {
+                    warn!("{why}");
+                }
             }
+            selected.extend(self.decide(uncertain, Some("that may still be in use"))?);
         }
-        if self.dry_run {
+        if selected.is_empty() {
             return Ok(());
-        }
-        let total: u64 = sized.iter().map(|(_, size)| size).sum();
-        if !Settings::get().yes {
-            let message = format!(
-                "remove {} daemon state director{} and {} of data?",
-                sized.len(),
-                if sized.len() == 1 { "y" } else { "ies" },
-                daemons::prune::human_size(total),
-            );
-            // Defaults to no: the data is gone for good once this proceeds.
-            match prompt::confirm_with_default(message, false)? {
-                Confirmation::Yes => {}
-                // An unanswered prompt is a refusal, not a decision to delete.
-                Confirmation::No | Confirmation::Unanswered => return Ok(()),
-                Confirmation::Unavailable => bail!(
-                    "mise daemons prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
-                ),
-            }
         }
         // Pitchfork is resolved once from the ambient configuration; each entry
         // falls back to the executable its own state recorded.
         let config = Config::get().await?;
         let (config, ts) = runtime::toolset(&config, false).await?;
-        for (entry, size) in &sized {
+        for (entry, size) in &selected {
             let runtime = Runtime::from_toolset(&config, &ts, Some(&entry.state.bin))
                 .await
                 .ok();
@@ -365,6 +327,64 @@ impl Prune {
             }
         }
         Ok(())
+    }
+
+    /// Reports one group of entries and returns those to remove, with their
+    /// sizes.
+    ///
+    /// `caveat`, when present, marks a group whose absence proves less than it
+    /// appears. Such a group is only ever removed on an explicit answer: the
+    /// global `--yes` does not carry to it, and neither does the answer given
+    /// for the ordinary group.
+    fn decide(
+        &self,
+        entries: Vec<daemons::prune::Entry>,
+        caveat: Option<&str>,
+    ) -> Result<Vec<(daemons::prune::Entry, u64)>> {
+        if entries.is_empty() {
+            return Ok(vec![]);
+        }
+        let sized: Vec<_> = entries
+            .into_iter()
+            .map(|entry| {
+                let size = daemons::prune::dir_size(&entry.dir);
+                (entry, size)
+            })
+            .collect();
+        for line in daemons::prune::describe(&sized) {
+            if self.dry_run {
+                info!("{line} {}", console::style("[dryrun]").bold());
+            } else {
+                info!("{line}");
+            }
+        }
+        if self.dry_run {
+            return Ok(vec![]);
+        }
+        let total: u64 = sized.iter().map(|(_, size)| size).sum();
+        let message = format!(
+            "remove {} daemon state director{}{} and {} of data?",
+            sized.len(),
+            if sized.len() == 1 { "y" } else { "ies" },
+            caveat.map(|c| format!(" {c}")).unwrap_or_default(),
+            daemons::prune::human_size(total),
+        );
+        if caveat.is_none() && Settings::get().yes {
+            return Ok(sized);
+        }
+        // Defaults to no: the data is gone for good once this proceeds.
+        match prompt::confirm_with_default(message, false)? {
+            Confirmation::Yes => Ok(sized),
+            // An unanswered prompt is a refusal, not a decision to delete.
+            Confirmation::No | Confirmation::Unanswered => Ok(vec![]),
+            Confirmation::Unavailable if caveat.is_some() => {
+                warn!("keeping state that may still be in use: nobody could be asked about it");
+                Ok(vec![])
+            }
+            Confirmation::Unavailable => bail!(
+                "mise daemons prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
+            ),
+        }
     }
 }
 
