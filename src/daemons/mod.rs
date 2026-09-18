@@ -434,8 +434,10 @@ fn import(
         {
             // The untrusted file can be an ancestor of the referenced project,
             // so name the root that actually needs trusting; trusting the
-            // project directory would not cover it.
-            let untrusted = crate::config::config_file::config_root::config_root(path);
+            // project directory would not cover it. Ask the same question
+            // `is_path_trusted` does: under `paranoid` that is the file itself,
+            // and naming its directory would send the user nowhere.
+            let untrusted = crate::config::config_file::config_trust_root(path);
             bail!(
                 "[daemons.{local_name}].project needs {}, which is not trusted; run `mise trust {}` after reviewing it",
                 crate::file::display_path(path),
