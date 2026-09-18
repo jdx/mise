@@ -23,7 +23,9 @@ export PATH="$HOME/bin:$PATH"
 # are indistinguishable by path and a bare `find` returns whichever one the
 # filesystem happens to list first. state.json records the root it belongs to.
 daemon_state_dir() {
-  local root="${1:-$PWD}" state
+  local requested="${1:-$PWD}" root state
+  # mise records the physical path; bash keeps symlinks in $PWD.
+  root=$(cd -- "$requested" >/dev/null && pwd -P) || fail "cannot resolve daemon root $requested"
   state=$(jq -r --arg root "$root" 'select(.root == $root) | input_filename' "$MISE_STATE_DIR"/daemons/*/state.json)
   test -n "$state" || fail "no daemon state directory for $root"
   # One root means one directory; anything else would put us back to picking one
