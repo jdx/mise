@@ -293,16 +293,7 @@ impl Daemons {
             // Dropping a dependency on an unresolved import keeps the generated
             // config valid, but starting the daemon anyway would run it without
             // something it declared it needs. Say which import is missing.
-            if let Some((name, import)) = loaded
-                .blocked
-                .iter()
-                .find(|(name, _)| starting.find(name).is_some())
-            {
-                bail!(
-                    "daemon {name:?} depends on [daemons.{import}], which is unavailable: {}",
-                    loaded.import_errors[import]
-                );
-            }
+            daemons::ensure_not_blocked(loaded, &starting, None)?;
             starting
         } else {
             daemons::DaemonSet::default()
@@ -458,6 +449,9 @@ impl Daemons {
                 let starting = set.restricted_to(&starting);
                 runtime::validate_tools(&starting, &scoped, &ts).await?;
                 starting.validate_tasks(&scoped).await?;
+                // This root's own configuration, which the check above cannot
+                // see: a referenced project declares its own imports.
+                daemons::ensure_not_blocked(&set, &starting, Some(&root))?;
             }
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime.prepare(&root, &set, true, !foreign).await?;

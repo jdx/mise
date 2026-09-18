@@ -149,7 +149,12 @@ pub(crate) async fn start(
     for (project, tasks) in by_project {
         let scoped = runtime::config_for_root(config, &project).await?;
         let set = scoped.daemons()?;
-        for key in required(&tasks, set)? {
+        let keys = required(&tasks, set)?;
+        // Pitchfork starts a daemon's dependencies with it, so this covers what
+        // comes along and not only what the task named.
+        let starting = set.with_dependencies(&keys.iter().cloned().collect::<Vec<_>>());
+        super::ensure_not_blocked(set, &starting, None)?;
+        for key in keys {
             let daemon = &set.daemons[&key];
             if daemon.imported {
                 foreign.insert(daemon.root.clone());
@@ -168,11 +173,10 @@ pub(crate) async fn start(
     if dry_run {
         for (root, names) in &wanted {
             let scoped = runtime::config_for_root(config, root).await?;
-            scoped
-                .daemons()?
-                .for_root(root)
-                .validate_tasks(&scoped)
-                .await?;
+            let set = scoped.daemons()?.for_root(root);
+            set.validate_tasks(&scoped).await?;
+            let starting = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+            super::ensure_not_blocked(&set, &starting, Some(root))?;
             for name in names {
                 info!("[dry-run] would start daemon {name} in {}", root.display());
             }
@@ -183,6 +187,12 @@ pub(crate) async fn start(
     // live in another project's root. Register every root first and start only
     // once they all exist, so a local daemon listed before an imported one
     // cannot start while that dependency is still unregistered.
+    //
+    // Holding several project locks at once means the order they are taken in
+    // matters: `mise daemons start` sorts its roots, so this takes them in the
+    // same order rather than in whatever order the configuration produced, and
+    // the two cannot deadlock against each other.
+    wanted.sort_keys();
     let mut pending = Vec::new();
     for (root, names) in wanted {
         let scoped = runtime::config_for_root(config, &root).await?;
@@ -213,6 +223,10 @@ pub(crate) async fn start(
         };
         runtime::validate_tools(&starting, &scoped, &ts).await?;
         starting.validate_tasks(&scoped).await?;
+        // This root's own configuration, which is the only view that knows
+        // about imports the referenced project itself declares.
+        let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        super::ensure_not_blocked(&set, &will_start, Some(&root))?;
         // Let the configuration hash short-circuit re-registration. Forcing it
         // would re-probe `pitchfork usage` and re-run `config add` on every
         // `mise run` of a task that requires daemons, even when nothing about

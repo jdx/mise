@@ -607,6 +607,36 @@ fn settings_for(settings: &IndexMap<PathBuf, DaemonSettings>, root: &Path) -> Da
     resolved
 }
 
+/// Refuse to start a daemon whose `depends` named an import that could not be
+/// resolved. The dangling entry is dropped so nothing unresolvable is
+/// registered, which is exactly why starting it anyway would run it without
+/// something it declared.
+///
+/// Called with each view that can hold the answer, because no single one holds
+/// all of it: the invoking project's merged configuration knows about imports
+/// declared there, and each owning root's own configuration knows about the
+/// imports that project declares.
+pub(crate) fn ensure_not_blocked(
+    set: &DaemonSet,
+    starting: &DaemonSet,
+    root: Option<&Path>,
+) -> Result<()> {
+    let Some((name, import)) = set.blocked.iter().find(|(name, _)| {
+        set.daemons
+            .get(*name)
+            .is_some_and(|blocked| starting.contains(blocked))
+    }) else {
+        return Ok(());
+    };
+    let project = root
+        .map(|root| format!(" in {}", root.display()))
+        .unwrap_or_default();
+    bail!(
+        "daemon {name:?}{project} depends on [daemons.{import}], which is unavailable: {}",
+        set.import_errors[import]
+    );
+}
+
 /// Config files that apply to a directory, lowest precedence first.
 ///
 /// A referenced project is later reloaded through its whole configuration
@@ -747,10 +777,21 @@ fn import(
             );
         }
         let cf = crate::config::config_file::mise_toml::MiseToml::from_file(path)?;
-        let remote_root = crate::config::config_file::config_root::config_root(path);
-        if let Some(file_settings) = cf.daemon_settings() {
+        // Ask the same question `load` asks. `project_root` is the config root
+        // narrowed to project scope, and the walk above reaches the home
+        // directory, so a global config can appear in a referenced project's
+        // ancestry. Honouring `[daemons_settings]` from one here while `load`
+        // ignores it would hand every project that namespace through the back
+        // door this project closed at the front.
+        let project_root = cf.project_root();
+        let remote_root = project_root
+            .clone()
+            .unwrap_or_else(|| crate::config::config_file::config_root::config_root(path));
+        if let Some(file_settings) = cf.daemon_settings()
+            && let Some(project_root) = &project_root
+        {
             settings
-                .entry(remote_root.clone())
+                .entry(project_root.clone())
                 .or_default()
                 .merge(file_settings);
         }
@@ -1237,6 +1278,15 @@ impl DaemonSet {
             labels: self.labels.clone(),
             groups: self.groups.clone(),
         }
+    }
+
+    /// Whether this set holds that exact daemon, matched by owning project and
+    /// name. A name alone is unique only within one project, so two projects can
+    /// each have an `api` and only one of them is the daemon in question.
+    pub(crate) fn contains(&self, daemon: &Daemon) -> bool {
+        self.daemons
+            .values()
+            .any(|d| d.name == daemon.name && d.root == daemon.root)
     }
 
     /// Look a daemon up by the name it carries inside its own project. Imported
@@ -1923,6 +1973,64 @@ mod tests {
             imported.namespace_for(&mirror.canonicalize().unwrap()),
             Some("shared")
         );
+    }
+
+    #[test]
+    fn starting_a_daemon_whose_import_is_unavailable_is_refused() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.pipeline]\nproject = '../gone'\n[daemons.api]\nrun = 'exec api'\ndepends = ['pipeline']\n[daemons.web]\nrun = 'exec web'\n",
+        )]);
+        let set = load(&config).unwrap();
+        // Starting the daemon that lost the dependency is refused, naming the
+        // import and why it is unavailable.
+        let err = ensure_not_blocked(&set, &set.with_dependencies(&["api".into()]), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("[daemons.pipeline]"), "{err}");
+        assert!(err.contains("gone"), "{err}");
+        // A daemon that never depended on it is unaffected.
+        assert!(ensure_not_blocked(&set, &set.with_dependencies(&["web".into()]), None).is_ok());
+        // The owning project is named when one is given, since the daemon can
+        // belong to a project other than the one being run.
+        let err = ensure_not_blocked(&set, &set.with_dependencies(&["api".into()]), Some(&app))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(&app.display().to_string()), "{err}");
+    }
+
+    #[test]
+    fn a_daemon_is_identified_by_its_project_not_just_its_name() {
+        let _serial = import_lock();
+        // Two projects can each declare `api`. Matching on the name alone made a
+        // check about one of them fire for the other.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'remote'\n[daemons.api]\nrun = 'exec remote api'\n",
+        );
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.remote_api]\nproject = '../mirror'\nname = 'api'\n[daemons.api]\nrun = 'exec local api'\n",
+        )]);
+        let set = load(&config).unwrap();
+        let local = &set.daemons["api"];
+        let imported = &set.daemons["remote/api"];
+        assert_eq!(local.name, imported.name);
+        assert_ne!(local.root, imported.root);
+        // A set holding only one of them contains that one and not the other.
+        let only_imported = set.with_dependencies(&["remote/api".into()]);
+        assert!(only_imported.contains(imported));
+        assert!(!only_imported.contains(local));
+        // `find` cannot tell them apart, which is why `contains` exists.
+        assert!(only_imported.find("api").is_some());
     }
 
     #[test]
