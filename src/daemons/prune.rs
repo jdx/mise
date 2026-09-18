@@ -509,10 +509,37 @@ fn process_is_alive(pid: i32) -> bool {
 }
 
 #[cfg(windows)]
-fn process_is_alive(_pid: i32) -> bool {
-    // No cheap equivalent here, and the presets that write these files are
-    // Unix-only for now, so the file is taken at its word.
-    true
+fn process_is_alive(pid: i32) -> bool {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, GetLastError};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let Ok(pid) = u32::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: query-only access, with no inherited handle and no pointers.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        // A process owned by somebody else exists and cannot be opened, which
+        // is not the same as one that has gone.
+        // SAFETY: reads this thread's last error, set by the call above.
+        return unsafe { GetLastError() } == ERROR_ACCESS_DENIED;
+    }
+    // SAFETY: the valid process handle is freshly allocated and uniquely owned.
+    let process = unsafe { OwnedHandle::from_raw_handle(process) };
+    let mut code = 0u32;
+    // SAFETY: code is writable and the handle remains alive for the call.
+    if unsafe { GetExitCodeProcess(process.as_raw_handle(), &mut code) } == 0 {
+        // The handle opened, so something is there; an unreadable exit code is
+        // not evidence that it has gone.
+        return true;
+    }
+    // A pid can be reused once its process has exited, so a handle that opens
+    // is not proof on its own; STILL_ACTIVE is.
+    const STILL_ACTIVE: u32 = 259;
+    code == STILL_ACTIVE
 }
 
 /// Deletes a project's daemon state and data, under both locks.
