@@ -605,7 +605,45 @@ See [Tasks](/tasks/) for the full list of configuration options.
 
 ### `[daemons]`
 
-Experimental custom processes and managed Postgres/Redis presets share one section. Higher-precedence declarations replace the complete same-name daemon; explicit environment variables override preset exports. See [daemons](/daemons).
+Define background processes, managed PostgreSQL or Redis instances, and references
+to daemons in other projects. Daemon management requires `experimental = true`.
+
+```toml
+[daemons.api]
+run = "npm run dev"
+
+[daemons.worker]
+project = "../workers"
+```
+
+The `api` daemon runs in this project; `worker` uses the `worker` declaration in
+`../workers`. A reference accepts only `project` and an optional `name` to select a
+differently named daemon.
+
+A higher-precedence declaration replaces the complete same-name daemon. Explicit
+environment variables override preset exports. See [Daemons](/daemons) for presets,
+[project references](/daemons#daemons-from-another-project), and lifecycle commands.
+
+### `[daemons_settings]`
+
+Set the namespace used in daemon IDs such as `my-app/api`:
+
+```toml
+[daemons_settings]
+namespace = "my-app"
+namespace_per_worktree = true # default
+```
+
+Without an explicit namespace, mise derives one from the project path. Linked Git
+worktrees append a unique suffix to an explicit namespace by default.
+
+These settings merge by key across project configuration files and are inherited
+by child projects. They are ignored in global and system configuration. See
+[Namespaces](/daemons#namespaces) for naming rules, inheritance, and worktree behavior.
+
+### `[daemon_groups]`
+
+Experimental named sets of project daemons. Each member is a daemon or another group declared in the same project, so a group never selects daemons outside it. Group names work wherever `mise daemons` accepts a daemon name. See [daemons](/daemons#groups).
 
 ## Environment variables
 

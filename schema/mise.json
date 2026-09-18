@@ -5856,6 +5856,9 @@
                   "required": ["preset"]
                 },
                 {
+                  "required": ["project"]
+                },
+                {
                   "required": ["task"]
                 },
                 {
@@ -5913,6 +5916,9 @@
             "not": {
               "anyOf": [
                 {
+                  "required": ["project"]
+                },
+                {
                   "required": ["task"]
                 },
                 {
@@ -5944,6 +5950,69 @@
               }
             },
             "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "description": "Daemon declared by another project, run under that project's namespace and root.",
+            "required": ["project"],
+            "properties": {
+              "project": {
+                "type": "string",
+                "description": "Directory of a project whose mise configuration declares the daemon. A relative path resolves against this project root."
+              },
+              "name": {
+                "type": "string",
+                "description": "Daemon name inside the referenced project, when it differs from this key."
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "daemons_settings": {
+      "description": "Experimental project-wide daemon options.",
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "description": "Fixed pitchfork namespace for this project, replacing the hashed default so other projects can refer to its daemons by qualified ID."
+        },
+        "namespace_per_worktree": {
+          "type": "boolean",
+          "default": true,
+          "description": "Append a worktree-specific suffix to an explicit namespace when the project root is a linked git worktree."
+        }
+      },
+      "additionalProperties": false
+    },
+    "daemon_groups": {
+      "description": "Experimental named groups of project daemons. Members are daemon names or other group names declared in the same project.",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "array",
+            "description": "Daemon or group names in this project.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          {
+            "type": "object",
+            "required": ["daemons"],
+            "properties": {
+              "daemons": {
+                "type": "array",
+                "description": "Daemon or group names in this project.",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
           }
         ]
       }
