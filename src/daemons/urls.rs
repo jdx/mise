@@ -713,6 +713,34 @@ mod tests {
         assert_eq!(resolved.worktree.as_deref(), Some("shop-pr-42"));
     }
 
+    /// A submodule is its own working copy, but the copy that distinguishes it
+    /// is the worktree containing it: the same submodule checked out under two
+    /// worktrees is two copies, and naming both after the submodule's own
+    /// directory would give them one hostname.
+    #[test]
+    fn a_submodule_takes_the_worktree_that_contains_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (primary, linked) = checkout_pair(tmp.path());
+        // Git keeps a submodule's git dir under the superproject's, which for a
+        // linked worktree is the shared one in the primary checkout.
+        let module = primary
+            .join(".git")
+            .join("modules")
+            .join("vendor")
+            .join("shared-lib");
+        std::fs::create_dir_all(&module).unwrap();
+        let submodule = linked.join("vendor").join("shared-lib");
+        std::fs::create_dir_all(&submodule).unwrap();
+        std::fs::write(
+            submodule.join(".git"),
+            format!("gitdir: {}\n", module.display()),
+        )
+        .unwrap();
+        let resolved = labels(&submodule, &settings(Some("shop"))).unwrap();
+        assert_eq!(resolved.worktree.as_deref(), Some("shop-pr-42"));
+        assert_eq!(resolved.project.as_deref(), Some("shop"));
+    }
+
     /// Pitchfork reads `worktree_label` from the checkout's own configuration
     /// rather than from the file mise registers, so mise reads it there too.
     #[test]
