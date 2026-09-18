@@ -1,0 +1,5 @@
+backends = ["npm:orcareplay"]
+bins = ["orca", "orcareplay"]
+description = "Records the real provider traffic of an AI agent run and replays or forks it offline"
+test = { cmd = "orca --version", expected = "{{version}}" }
+version_order = "semver"
