@@ -236,66 +236,81 @@ To reset a database, stop its daemon, locate its data directory, and explicitly 
 that instance's data. Back up anything you want to retain first. Use the database's
 own migration tools to preserve data across incompatible upgrades.
 
-`mise daemons ls --json` reports `root`, `state_dir` and `data_size` on every daemon
-row. They describe the project the daemon belongs to, not the daemon itself, so rows
-from the same project repeat them. That is how you see what a project costs before
-deleting it.
-
 Higher-precedence declarations replace a same-name daemon completely. Inherited
 daemons retain their declaring project scope. One environment profile can be active
 per project: stop its daemons and leave its shell sessions before switching `MISE_ENV`.
 Changed definitions take effect on the next start or explicit restart.
 
-## Pruning deleted projects
+### Inspecting storage
 
-Each project root keeps its own state directory, including every linked git worktree.
-Deleting a project directory leaves its daemons registered with pitchfork and its data
-on disk. `mise daemons prune` removes that leftover state:
+Use `mise daemons ls --json` to locate a project's daemon data and check its size
+before deleting the project or a worktree. Each daemon row includes:
+
+| Field             | Value                                                                       |
+| ----------------- | --------------------------------------------------------------------------- |
+| `root`            | Project directory                                                           |
+| `state_dir`       | Directory containing the project's generated configuration, state, and data |
+| `data_size`       | Total size of the project's daemon data in bytes                            |
+| `data_size_human` | The same size formatted for display                                         |
+
+These fields describe the whole project, so daemons from the same project report
+the same values.
+
+### Pruning deleted projects
+
+Each project, including each linked Git worktree, has its own daemon state and
+data. Deleting the project directory (for example, with `git worktree remove`)
+leaves that data on disk and its daemons registered with pitchfork.
+
+Use [`mise daemons prune`](/cli/daemons/prune.html) to clean up after deleted
+projects. It scans all project state under `$MISE_STATE_DIR/daemons/`:
 
 ```sh
+# Preview the projects, state directories, and sizes
 mise daemons prune --dry-run
+
+# Review the list and confirm removal
 mise daemons prune
 ```
 
-It selects only state whose recorded project directory is definitely missing, stops
-those daemons, unregisters their generated configuration, and deletes their data and
-state. Two empty lock files stay behind: they are what keeps the removal from racing
-another mise process, so they cannot be removed by it. Removal is irreversible, so it
-prompts with the total size first; pass `--yes` to prune non-interactively and
-`--dry-run` to preview. Projects that still exist are never touched, even when they no
-longer declare any daemons. Starting daemons prints a notice when such leftover state
-exists but never removes it: deletion stays explicit.
+Pruning stops the affected daemons, unregisters their generated configuration,
+and deletes their configuration, state, and data. The confirmation prompt shows
+the number of state directories and their total size, and defaults to **no**.
+Back up any data you want to keep: removal is irreversible.
 
-Every step has to be confirmed before anything is deleted, and whatever cannot be
-confirmed is kept with a message saying why:
+State for existing projects is preserved, even if they no longer declare any
+daemons. `mise daemons start` displays a reminder when it finds state eligible for
+pruning; it does not delete anything automatically.
 
-- A project directory mise cannot read, such as one on an unreachable network mount, is
-  kept. Only a definite "not found" counts as deleted.
-- Two cases are indistinguishable from a deleted project on disk, so each is listed
-  separately and confirmed on its own. Approving the ordinary removals never approves
-  these, and `--yes` skips them entirely:
-  - A path under a volume that is not mounted reports "not found" exactly as a deleted
-    project does. Prune asks when the first directory that does exist above the project
-    is empty or cannot be listed, and when the project's own parent directory is gone
-    as well. Between them those cover a mount point left behind empty and one that
-    disappeared with its volume, as happens on macOS and with a Windows drive letter.
-  - A project reached through a symlink has its state named for the symlink's target,
-    so deleting only the symlink leaves a live project whose recorded root reads as
-    missing. Prune asks when the recorded path is not the one its directory was named
-    for. Mise records the canonical path, so this only concerns state written by an
-    older version, or a path its filesystem rewrites.
-- A directory that reappears between the prompt and the deletion is kept.
-- If stopping a daemon or unregistering its configuration fails, that state is kept for
-  a later run rather than deleted while a process may still be writing to it. Pitchfork
-  reporting that it never knew the daemon or the configuration is not a failure.
-- Every daemon the project ever declared is checked with pitchfork, whether or not the
-  supervisor is up, because a crashed supervisor can leave a database running. The data
-  is kept unless pitchfork reports the daemon as not running or does not know it at all;
-  a timeout or an answer that cannot be read keeps it. A database lock file such as
-  `postmaster.pid` naming a live process keeps it too.
-- Pruning needs pitchfork itself. Without it nothing can be stopped or unregistered, and
-  deleting the state would destroy the record a later run needs.
-- State whose `state.json` cannot be read or parsed is reported and skipped.
+#### Non-interactive cleanup
+
+Pass the global `--yes` flag to confirm ordinary removals without a prompt:
+
+```sh
+mise daemons prune --yes
+```
+
+If a missing project could be on an unmounted volume or reached through a deleted
+symlink, mise asks for separate confirmation. `--yes` skips these entries. Run
+without `--yes` to review them, and confirm only if the project itself was deleted.
+A deleted parent directory, an empty or unreadable ancestor, or a recorded path
+that differs from the path used to create the state directory can trigger this
+extra check.
+
+#### When state is kept
+
+Pruning requires pitchfork to be available. Mise reports why it keeps state when
+it cannot read the project path or state file, acquire the project lock, confirm
+that the daemons have stopped, or unregister their configuration. It also keeps
+state if the project directory reappears before removal.
+
+Database PID or lock files can also prevent removal. A PID file naming a live
+process blocks pruning; a stale PID does not. An unreadable marker or one without
+a valid PID is treated as potentially active. Resolve the reported condition
+before retrying.
+
+After successful pruning, two empty lock files remain to coordinate concurrent
+mise processes. They contain no daemon data and are ignored by future prune runs.
 
 ## Automatic start and stop
 

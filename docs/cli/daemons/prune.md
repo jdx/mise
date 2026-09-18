@@ -11,14 +11,17 @@ description: "Remove daemon state left behind by deleted project directories."
 
 Remove daemon state left behind by deleted project directories.
 
-Each project root keeps generated pitchfork configuration and daemon data
-under $MISE_STATE_DIR/daemons. Deleting a project (for example with
-`git worktree remove`) leaves both behind. This stops those daemons,
-unregisters their configuration, and deletes their data. State for projects
-that still exist is never removed.
+Scan `$MISE_STATE_DIR/daemons/` for state belonging to deleted projects,
+including removed Git worktrees. Stop their daemons, unregister their
+configuration, and delete their state and data. Existing projects are preserved.
 
-Prompts before deleting anything; pass the global --yes to prune
-non-interactively.
+Use `--dry-run` to preview the paths and sizes. Removal is irreversible and
+requires confirmation. Pass the global `--yes` flag for non-interactive cleanup;
+entries that may belong to an unmounted volume or a deleted symlink are skipped
+with `--yes` and require separate interactive confirmation.
+
+Pitchfork must be available. State is kept when mise cannot confirm that the
+daemons have stopped or cannot unregister their configuration.
 
 ## Flags
 - **`-n --dry-run`** — Show what would be removed without deleting anything
