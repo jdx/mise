@@ -71,3 +71,27 @@ native extensions, `MAKEFLAGS` controls parallel make jobs:
 [tools]
 "gem:rubocop" = { version = "latest", install_env = { MAKEFLAGS = "-j4" } }
 ```
+
+### `source`
+
+Install one gem from a specific registry instead of the configured default:
+
+```toml
+[tools]
+"gem:internal-cli" = { version = "2.2.0", source = "https://gems.example.com/acme" }
+```
+
+Without this, the only way to install from a private registry is to make it the
+machine's primary `gem sources` entry, which redirects every other `gem install`
+on that machine as well.
+
+The source applies to version resolution as well as installation, so `latest`
+resolves against the same registry the gem is installed from.
+
+Credentials are not part of this option. `gem` reads `~/.gem/credentials`
+itself, so no token has to be written into `mise.toml`, which is usually
+committed. Authenticate once with `gem signin --host <registry>` (or however
+your registry documents it) and mise will inherit it.
+
+Dependencies are still resolved from the other configured sources, so a private
+gem whose dependencies live on rubygems.org installs normally.

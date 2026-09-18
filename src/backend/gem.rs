@@ -51,8 +51,13 @@ impl Backend for GemBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
-        // Get the gem source URL using the mise-managed Ruby environment
-        let source_url = self.get_gem_source(config).await;
+        // Resolution and installation have to agree on where the gem comes
+        // from. Listing versions from rubygems.org and then installing from a
+        // private registry would resolve `latest` against the wrong catalogue.
+        let source_url = match self.configured_source() {
+            Some(source) => source,
+            None => self.get_gem_source(config).await.to_string(),
+        };
 
         // Use RubyGems-compatible API to get versions with timestamps
         let url = format!("{}api/v1/versions/{}.json", source_url, self.tool_name());
@@ -95,14 +100,21 @@ impl Backend for GemBackend {
         )
         .await;
 
-        CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "gem").await)
-            .arg("install")
-            .arg(self.tool_name())
-            .arg("--version")
-            .arg(&tv.version)
-            .arg("--install-dir")
-            .arg(tv.install_path().join("libexec"))
-            .with_pr(ctx.pr.as_ref())
+        let mut cmd =
+            CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "gem").await)
+                .arg("install")
+                .arg(self.tool_name())
+                .arg("--version")
+                .arg(&tv.version)
+                .arg("--install-dir")
+                .arg(tv.install_path().join("libexec"));
+        if let Some(source) = self.configured_source() {
+            // `--source` rather than `--clear-sources --source`: the latter
+            // would also cut off the registry holding this gem's dependencies,
+            // which commonly still live on rubygems.org.
+            cmd = cmd.arg("--source").arg(source);
+        }
+        cmd.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .env_values(tv.install_env())
             .execute()?;
@@ -133,6 +145,21 @@ impl GemBackend {
         Self { ba: Arc::new(ba) }
     }
 
+    /// A `source` option, which pins one tool to one gem registry.
+    ///
+    /// Without it the only way to install from a private registry is to make it
+    /// the machine's primary `gem sources` entry, because that is what
+    /// [`Self::get_gem_source`] reads and what a bare `gem install` uses. That
+    /// redirects every unrelated `gem install` on the machine to satisfy one
+    /// tool, which is too blunt to ask of anyone.
+    ///
+    /// Credentials are deliberately not part of this. `gem` already reads
+    /// `~/.gem/credentials`, so the option carries only a URL and no secret has
+    /// to be written into a config file that is usually committed.
+    fn configured_source(&self) -> Option<String> {
+        self.ba().opts().get("source").and_then(normalize_source)
+    }
+
     /// Get the primary gem source URL using the mise-managed Ruby environment.
     /// The result is memoized globally after first successful detection.
     async fn get_gem_source(&self, config: &Arc<Config>) -> &'static str {
@@ -160,6 +187,24 @@ impl GemBackend {
             }
         }
     }
+}
+
+/// Normalize a configured `source`, returning `None` when it carries nothing.
+///
+/// The trailing slash matters: the version-listing URL is built by
+/// concatenation, so `https://gems.example.com` would otherwise produce
+/// `https://gems.example.comapi/v1/…`, which fails as a confusing 404 rather
+/// than as a bad configuration.
+fn normalize_source(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    Some(if raw.ends_with('/') {
+        raw.to_string()
+    } else {
+        format!("{raw}/")
+    })
 }
 
 /// RubyGems API response for version info
@@ -515,6 +560,51 @@ mod tests {
                 "{version} should use remote discovery"
             );
         }
+    }
+
+    /// The version-listing URL is built by concatenation, so a source without a
+    /// trailing slash would silently become `https://gems.example.comapi/v1/...`
+    /// and fail as a 404 rather than as a configuration error.
+    #[test]
+    fn a_source_is_normalized_to_end_with_a_slash() {
+        for input in [
+            "https://gems.example.com",
+            "https://gems.example.com/",
+            "  https://gems.example.com  ",
+        ] {
+            assert_eq!(
+                normalize_source(input).as_deref(),
+                Some("https://gems.example.com/"),
+                "{input:?}"
+            );
+        }
+    }
+
+    /// An empty or whitespace-only value means "not configured" rather than
+    /// "install from the empty string", which would build a nonsense URL.
+    #[test]
+    fn an_empty_source_is_treated_as_unset() {
+        for input in ["", "   ", "\t"] {
+            assert_eq!(normalize_source(input), None, "{input:?}");
+        }
+    }
+
+    /// A path under the host is kept: registries commonly scope gems per owner,
+    /// as in `https://gems.example.com/acme`.
+    #[test]
+    fn a_source_path_is_preserved() {
+        assert_eq!(
+            normalize_source("https://gems.example.com/acme").as_deref(),
+            Some("https://gems.example.com/acme/")
+        );
+    }
+
+    /// Without the option nothing changes, so an ordinary rubygems.org tool
+    /// keeps using the detected primary source.
+    #[test]
+    fn no_source_option_leaves_the_backend_unconfigured() {
+        let backend = GemBackend::from_arg("gem:rubocop".into());
+        assert_eq!(backend.configured_source(), None);
     }
 
     #[test]
