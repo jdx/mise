@@ -117,12 +117,13 @@ mise daemons prune
 ```
 
 It selects only state whose recorded project directory is definitely missing, stops
-those daemons, unregisters their generated configuration, and deletes their state
-directory including data. Removal is irreversible, so it prompts with the total size
-first; pass `--yes` to prune non-interactively and `--dry-run` to preview. Projects that
-still exist are never touched, even when they no longer declare any daemons. Starting
-daemons prints a notice when such leftover state exists but never removes it: deletion
-stays explicit.
+those daemons, unregisters their generated configuration, and deletes their data and
+state. Two empty lock files stay behind: they are what keeps the removal from racing
+another mise process, so they cannot be removed by it. Removal is irreversible, so it
+prompts with the total size first; pass `--yes` to prune non-interactively and
+`--dry-run` to preview. Projects that still exist are never touched, even when they no
+longer declare any daemons. Starting daemons prints a notice when such leftover state
+exists but never removes it: deletion stays explicit.
 
 Every step has to be confirmed before anything is deleted. A project directory mise
 cannot read, such as one on an unplugged volume or an unreachable network mount, is kept
@@ -130,8 +131,8 @@ rather than treated as deleted. A directory that reappears between the prompt an
 deletion is kept. If stopping a daemon or unregistering its configuration fails, that
 state is kept for a later run rather than deleted while a process may still be writing
 to it. Pruning also needs pitchfork itself: without it nothing can be stopped or
-unregistered, and deleting the directory would destroy the record a later run needs.
-Each case reports why it was kept.
+unregistered, and deleting the state would destroy the record a later run needs. Each
+case reports why it was kept.
 
 ## Automatic start and stop
 

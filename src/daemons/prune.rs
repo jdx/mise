@@ -16,9 +16,6 @@ use std::path::{Path, PathBuf};
 pub(crate) struct Entry {
     pub dir: PathBuf,
     pub state: State,
-    /// The bytes `state` was read from, kept verbatim so the file can be
-    /// recognized later without assuming anything about how it re-serializes.
-    raw: Vec<u8>,
 }
 
 impl Entry {
@@ -85,11 +82,7 @@ pub(crate) fn scan(base: &Path) -> Result<Vec<Entry>> {
             continue;
         };
         match serde_json::from_slice::<State>(&bytes) {
-            Ok(state) => entries.push(Entry {
-                dir,
-                state,
-                raw: bytes,
-            }),
+            Ok(state) => entries.push(Entry { dir, state }),
             Err(err) => debug!("ignoring {}: {err}", display_path(&path)),
         }
     }
@@ -226,7 +219,7 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         );
         return Ok(Outcome::Kept);
     }
-    if let Err(err) = delete_state_dir(entry, lock) {
+    if let Err(err) = delete_state_dir(cwd, lock) {
         // One unreadable or busy file must not end the run: the other entries
         // are independent, and this one stays discoverable for a later run.
         warn!("keeping {}: {err:#}", display_path(cwd));
@@ -235,25 +228,20 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
     Ok(Outcome::Removed)
 }
 
-/// Deletes a state directory, keeping it discoverable until it is really gone.
+/// Deletes a project's daemon state and data, under both locks.
 ///
-/// A delete can fail part way through, on a file that is busy or unreadable,
-/// and `state.json` is what makes a directory an entry at all. Removing it
-/// first would turn a partial failure into leftover state no later prune can
-/// see, and that a `prepare()` for a restored project would build on top of.
-/// So it goes last, and if the directory itself cannot be removed after that,
-/// it is written back.
+/// Nothing here is released early, so no `prepare()` -- from this mise or from
+/// an older one holding only the in-directory lock -- can be writing while the
+/// files go. That is what keeps the removal free of any check-then-delete gap,
+/// and it is why the two lock files are the one thing left behind: the inner
+/// one cannot be deleted while it is held, which Windows enforces, and
+/// releasing it first would reopen the window it exists to close. Both are
+/// empty, and mise leaves its lock files in place everywhere else too.
 ///
-/// The order also decides when the older in-directory lock is released. It
-/// guards the data, so it is held until the data is gone, and dropped only for
-/// the removal of the lock file itself, which Windows will not delete while a
-/// handle is open. From there on a `prepare()` from an older mise, which takes
-/// only that lock, could write into this directory, so the last two steps
-/// verify rather than assume: `state.json` must still be the file that was
-/// selected, and the directory must be empty afterwards. Either check failing
-/// means somebody else is using this state, and it is left to them.
-fn delete_state_dir(entry: &Entry, mut lock: super::ProjectLock) -> Result<()> {
-    let dir = &entry.dir;
+/// `state.json` goes last. It is what makes a directory an entry at all, so if
+/// a file above it turns out to be busy or unreadable, what is left is still
+/// selected, still reported, and still retried.
+fn delete_state_dir(dir: &Path, lock: super::ProjectLock) -> Result<()> {
     let state_file = dir.join("state.json");
     let legacy = super::legacy_lock_file_for_state_dir(dir);
     for child in std::fs::read_dir(dir)? {
@@ -263,27 +251,7 @@ fn delete_state_dir(entry: &Entry, mut lock: super::ProjectLock) -> Result<()> {
         }
         crate::file::remove_all(path)?;
     }
-    lock.release_legacy();
-    crate::file::remove_all(&legacy)?;
-    if std::fs::read(&state_file)? != entry.raw {
-        eyre::bail!(
-            "{} was rewritten while it was being removed",
-            display_path(&state_file)
-        );
-    }
     crate::file::remove_all(&state_file)?;
-    // `remove_dir`, not a recursive delete: it fails if anything was written
-    // back here, which is exactly the case that must not be deleted.
-    if let Err(err) = std::fs::remove_dir(dir) {
-        // Put the entry back so a later run finishes what this one started --
-        // but only if nothing else has: a `prepare()` that wrote its own
-        // `state.json` here is why this removal failed, and its state is
-        // current where these bytes are stale.
-        if !state_file.exists() {
-            let _ = crate::daemons::runtime::write_if_changed(&state_file, &entry.raw);
-        }
-        return Err(eyre::eyre!(err).wrap_err(format!("failed to remove {}", display_path(dir))));
-    }
     drop(lock);
     Ok(())
 }
@@ -429,94 +397,43 @@ mod tests {
         std::fs::set_permissions(&busy, perms).unwrap();
 
         // Root, and platforms that ignore the mode, delete it anyway; both
-        // outcomes are correct, and neither may leave a directory that no
-        // later prune can see.
-        let entry = orphans(&base).unwrap().remove(0);
+        // outcomes are correct, and neither may leave state that no later
+        // prune can see.
         let lock = super::super::ProjectLock::try_acquire(&dir)
             .unwrap()
             .unwrap();
-        match delete_state_dir(&entry, lock) {
+        match delete_state_dir(&dir, lock) {
             Err(_) => {
                 assert!(dir.join("state.json").exists());
                 assert_eq!(orphans(&base).unwrap().len(), 1);
             }
-            Ok(()) => assert!(!dir.exists()),
+            Ok(()) => assert!(!dir.join("state.json").exists()),
         }
-    }
-
-    #[tokio::test]
-    async fn state_rewritten_during_removal_is_left_alone() {
-        let tmp = tempfile::tempdir().unwrap();
-        let base = tmp.path().join("daemons");
-        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
-        let mut entry = orphans(&base).unwrap().remove(0);
-        // Stand in for a prepare() from an older mise, which takes only the
-        // in-directory lock and so can still write here while the last files
-        // are being removed.
-        entry.raw = b"{}".to_vec();
-        let lock = super::super::ProjectLock::try_acquire(&dir)
-            .unwrap()
-            .unwrap();
-        assert!(delete_state_dir(&entry, lock).is_err());
-        assert!(dir.join("state.json").exists());
-        assert_eq!(orphans(&base).unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn a_restore_never_overwrites_newer_state() {
-        let tmp = tempfile::tempdir().unwrap();
-        let base = tmp.path().join("daemons");
-        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[]);
-        let entry = orphans(&base).unwrap().remove(0);
-        let lock = super::super::ProjectLock::try_acquire(&dir)
-            .unwrap()
-            .unwrap();
-        // What a prepare() racing the last unlinks leaves behind: its own
-        // state.json, plus a file that makes the directory removal fail.
-        std::fs::write(dir.join("pitchfork.toml"), "[daemons]\n").unwrap();
-        let fresh = br#"{"root":"/somewhere/else"}"#;
-        std::fs::write(dir.join("state.json"), fresh).unwrap();
-
-        assert!(delete_state_dir(&entry, lock).is_err());
-        assert_eq!(
-            std::fs::read(dir.join("state.json")).unwrap(),
-            fresh,
-            "the newer state must survive"
-        );
     }
 
     #[test]
-    #[cfg(unix)]
-    fn a_directory_that_cannot_be_removed_keeps_its_state_file() {
-        use std::os::unix::fs::PermissionsExt;
+    fn deletion_keeps_only_the_lock_files_that_made_it_safe() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
-        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
-        let entry = orphans(&base).unwrap().remove(0);
-        // The lock file is created under `base`, so take it before `base` is
-        // made read-only.
+        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 64)]);
+        let legacy = super::super::legacy_lock_file_for_state_dir(&dir);
         let lock = super::super::ProjectLock::try_acquire(&dir)
             .unwrap()
             .unwrap();
-        // Everything inside `dir` can go; removing `dir` itself needs to write
-        // to `base`, which now refuses. That is the gap where state.json has
-        // already been deleted.
-        let mut perms = std::fs::metadata(&base).unwrap().permissions();
-        perms.set_mode(0o500);
-        std::fs::set_permissions(&base, perms).unwrap();
 
-        let result = delete_state_dir(&entry, lock);
+        delete_state_dir(&dir, lock).unwrap();
 
-        let mut perms = std::fs::metadata(&base).unwrap().permissions();
-        perms.set_mode(0o700);
-        std::fs::set_permissions(&base, perms).unwrap();
-        if result.is_err() {
-            assert!(
-                dir.join("state.json").exists(),
-                "state must be written back"
-            );
-            assert_eq!(orphans(&base).unwrap().len(), 1, "a later run must find it");
-        }
+        // The data, the generated configuration and the state are gone; the
+        // in-directory lock stays, because it is held for the whole removal and
+        // releasing it early is the race this design avoids.
+        assert!(!dir.join("data").exists());
+        assert!(!dir.join("pitchfork.toml").exists());
+        assert!(!dir.join("state.json").exists());
+        assert!(legacy.exists());
+        assert_eq!(dir_size(&dir), 0);
+        // Without state.json it is no longer an entry, so it is neither
+        // reported nor pruned again.
+        assert!(scan(&base).unwrap().is_empty());
     }
 
     #[test]

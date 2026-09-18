@@ -70,10 +70,12 @@ pub(crate) fn legacy_lock_file_for_state_dir(dir: &Path) -> PathBuf {
 /// Both locks guarding one project's daemon state, held together.
 ///
 /// Acquired sibling first, then legacy, by everything that takes both, so they
-/// cannot deadlock against each other.
+/// cannot deadlock against each other. Released together, which is what lets
+/// `mise daemons prune` delete state without any window for a `prepare()` to
+/// write into it.
 pub(crate) struct ProjectLock {
     _sibling: fslock::LockFile,
-    legacy: Option<fslock::LockFile>,
+    _legacy: fslock::LockFile,
 }
 
 impl ProjectLock {
@@ -82,9 +84,8 @@ impl ProjectLock {
         let dir = state_dir(root);
         Ok(Self {
             _sibling: crate::lock_file::LockFile::at(&lock_file_for_state_dir(&dir)).lock()?,
-            legacy: Some(
-                crate::lock_file::LockFile::at(&legacy_lock_file_for_state_dir(&dir)).lock()?,
-            ),
+            _legacy: crate::lock_file::LockFile::at(&legacy_lock_file_for_state_dir(&dir))
+                .lock()?,
         })
     }
 
@@ -103,18 +104,8 @@ impl ProjectLock {
         };
         Ok(Some(Self {
             _sibling: sibling,
-            legacy: Some(legacy),
+            _legacy: legacy,
         }))
-    }
-
-    /// Releases the legacy lock, keeping the sibling one.
-    ///
-    /// The legacy lock file lives inside the directory prune is about to
-    /// delete, and Windows will not remove a file whose handle is still open.
-    /// The sibling lock still excludes every mise version that has it, which is
-    /// every version that can prune.
-    pub(crate) fn release_legacy(&mut self) {
-        self.legacy.take();
     }
 }
 

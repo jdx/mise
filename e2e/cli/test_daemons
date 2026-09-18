@@ -176,7 +176,11 @@ assert_contains "mise daemons start 2>&1" 'mise daemons prune'
 assert "test -f '$doomed_state'"
 
 mise daemons prune --yes
-assert "test ! -d '$doomed_dir'"
+# The data and the state are gone; the lock files that made the removal safe
+# stay behind, and without state.json it is no longer an entry.
+assert "test ! -f '$doomed_state'"
+assert "test ! -d '$doomed_dir/data'"
+assert "test ! -f '$doomed_dir/pitchfork.toml'"
 assert "test -f '$live_state'"
 assert_contains "mise daemons prune --yes 2>&1" 'no daemon state'
 
