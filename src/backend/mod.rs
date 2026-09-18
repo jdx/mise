@@ -5149,6 +5149,26 @@ mod latest_version_tests {
         assert_eq!(backend.lazy_date_calls(), 2);
     }
 
+    #[test]
+    fn remembered_release_dates_evict_oldest_first() {
+        let mut dates: OnDemandReleaseDates = (0..5)
+            .map(|i| {
+                (
+                    ("go:tool".to_string(), format!("1.0.{i}")),
+                    "2025-01-01".to_string(),
+                )
+            })
+            .collect();
+
+        evict_oldest_release_dates(&mut dates, 3);
+
+        // Room for one more, and what went is the oldest — a resolution still
+        // explaining its cutoff keeps the dates it just stored.
+        assert_eq!(dates.len(), 2);
+        assert!(dates.contains_key(&("go:tool".to_string(), "1.0.4".to_string())));
+        assert!(!dates.contains_key(&("go:tool".to_string(), "1.0.0".to_string())));
+    }
+
     #[tokio::test]
     async fn test_cutoff_retries_a_version_it_could_not_date() {
         let config = Config::get().await.unwrap();
@@ -6269,15 +6289,14 @@ struct SharedHookEnv {
 /// metadata it could not parse, and holding onto that would keep a version
 /// unchecked for the rest of the process. A release date that was read, on the
 /// other hand, describes a release that already happened and cannot change.
-type OnDemandReleaseDates = HashMap<(String, String), String>;
+type OnDemandReleaseDates = IndexMap<(String, String), String>;
 static ON_DEMAND_RELEASE_DATES: LazyLock<Mutex<OnDemandReleaseDates>> =
     LazyLock::new(Default::default);
 
 /// How many dates to keep. Reaching this needs a cutoff deep enough to walk
 /// past a listing's dated versions, repeated across hundreds of tools, so a CLI
 /// run never comes close; the bound is here so a long-lived process (a daemon,
-/// an embedded use) cannot grow this without end. Forgetting costs a repeated
-/// lookup, nothing more, so the simplest bound will do.
+/// an embedded use) cannot grow this without end.
 const ON_DEMAND_RELEASE_DATE_LIMIT: usize = 1024;
 
 fn remember_on_demand_release_date(backend: &str, version: &str, created_at: Option<&str>) {
@@ -6285,13 +6304,22 @@ fn remember_on_demand_release_date(backend: &str, version: &str, created_at: Opt
         return;
     };
     if let Ok(mut dates) = ON_DEMAND_RELEASE_DATES.lock() {
-        if dates.len() >= ON_DEMAND_RELEASE_DATE_LIMIT {
-            dates.clear();
-        }
+        evict_oldest_release_dates(&mut dates, ON_DEMAND_RELEASE_DATE_LIMIT);
         dates.insert(
             (backend.to_string(), version.to_string()),
             created_at.to_string(),
         );
+    }
+}
+
+/// Make room for one more date by dropping the oldest.
+///
+/// The oldest rather than the whole map: another resolution may still be
+/// relying on a date it stored to say which versions its cutoff hid. Losing one
+/// costs a repeated lookup, nothing more.
+fn evict_oldest_release_dates(dates: &mut OnDemandReleaseDates, limit: usize) {
+    while dates.len() >= limit {
+        dates.shift_remove_index(0);
     }
 }
 
