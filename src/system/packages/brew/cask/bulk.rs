@@ -369,6 +369,25 @@ pub(super) async fn cask(token: &str) -> Option<Cask> {
         debug!("brew-cask: bulk index unavailable ({err:#}); falling back to per-cask metadata");
         return None;
     }
+    // Validating the index and then reading through it is one operation, for the
+    // same reason publishing is. Without the lock a concurrent publication can
+    // replace the document in between, and if the stale range happens to parse
+    // as the requested token, `validate_cask_identity` accepts it: it checks the
+    // token and a path-safe version, not which generation of the document the
+    // bytes came from. The result would be a url, version and checksum taken
+    // from a document that is no longer there, rather than a fallback.
+    //
+    // Taken after `refresh`, which acquires and releases it internally, so these
+    // never nest. Uncontended except during a publication, which is rare.
+    let _lock = match crate::lock_file::LockFile::at(&dir().join("cask.lock")).lock() {
+        Ok(lock) => lock,
+        Err(err) => {
+            debug!(
+                "brew-cask: bulk index lock unavailable ({err:#}); falling back to per-cask metadata"
+            );
+            return None;
+        }
+    };
     let index = match load_index() {
         Ok(index) => index,
         Err(err) => {
