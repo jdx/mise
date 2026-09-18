@@ -96,6 +96,16 @@
   filter: drop-shadow(0 0 10px rgba(139, 34, 82, 0.4));
 }
 
+/* The sidebar and the outline rails are position: fixed and 100vh tall, so they
+   keep covering the viewport edges after the doc ends. Paint the bottom band over
+   them: above the sidebar (25 at >=960px), below the nav (30). */
+.EndevSponsors,
+.EndevFooter {
+  background: var(--vp-c-bg);
+  position: relative;
+  z-index: 26;
+}
+
 .EndevFooter {
   align-items: center;
   border-top: 1px solid var(--vp-c-divider);
