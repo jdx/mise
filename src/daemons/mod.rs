@@ -76,6 +76,9 @@ pub(crate) fn state_dir(root: &Path) -> PathBuf {
 pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let mut declarations = IndexMap::new();
     let mut group_declarations = IndexMap::new();
+    // A nearer config replaces a same-name daemon outright, so the winning
+    // declaration's root is not the only project that declared that name.
+    let mut declared_in: IndexMap<String, Vec<PathBuf>> = IndexMap::new();
     for cf in files.values().rev() {
         let entries = cf.daemon_declarations();
         let groups = cf.daemon_group_declarations();
@@ -92,6 +95,10 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         let source = cf.get_path().to_path_buf();
         let root = cf.project_root().unwrap_or_else(|| cf.config_root());
         for (name, declaration) in entries {
+            let roots = declared_in.entry(name.clone()).or_default();
+            if !roots.contains(&root) {
+                roots.push(root.clone());
+            }
             declarations.insert(name, (declaration, source.clone(), root.clone()));
         }
         for (name, declaration) in groups {
@@ -154,7 +161,7 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         };
         set.daemons.insert(name, daemon);
     }
-    load_groups(&mut set, group_declarations)?;
+    load_groups(&mut set, group_declarations, &declared_in)?;
     Ok(set)
 }
 
@@ -179,14 +186,21 @@ type GroupDeclarations = IndexMap<GroupKey, (GroupDeclaration, PathBuf, PathBuf)
 
 /// Groups are project scoped: every member resolves to a daemon declared under the
 /// same project root, so a group can never select daemons outside the project.
-fn load_groups(set: &mut DaemonSet, declarations: GroupDeclarations) -> Result<()> {
+fn load_groups(
+    set: &mut DaemonSet,
+    declarations: GroupDeclarations,
+    declared_in: &IndexMap<String, Vec<PathBuf>>,
+) -> Result<()> {
+    let declares = |root: &Path, name: &str| {
+        declared_in
+            .get(name)
+            .is_some_and(|roots| roots.iter().any(|r| r == root))
+    };
     let mut groups: IndexMap<GroupKey, Group> = IndexMap::new();
     for (key, (declaration, source, root)) in declarations {
         let name = key.1.clone();
         validate_name("daemon group", &name)?;
-        if let Some(daemon) = set.daemons.get(&name)
-            && daemon.root == root
-        {
+        if declares(&root, &name) {
             bail!("[daemon_groups.{name}] conflicts with the daemon of the same name");
         }
         let members = declaration.members().to_vec();
@@ -205,7 +219,7 @@ fn load_groups(set: &mut DaemonSet, declarations: GroupDeclarations) -> Result<(
         );
     }
     for key in groups.keys().cloned().collect::<Vec<_>>() {
-        let daemons = expand_group(set, &groups, &key, &mut Vec::new())?;
+        let daemons = expand_group(&groups, &key, &declares, &mut Vec::new())?;
         groups[&key].daemons = daemons;
     }
     set.groups = groups.into_values().collect();
@@ -213,9 +227,9 @@ fn load_groups(set: &mut DaemonSet, declarations: GroupDeclarations) -> Result<(
 }
 
 fn expand_group(
-    set: &DaemonSet,
     groups: &IndexMap<GroupKey, Group>,
     key: &GroupKey,
+    declares: &impl Fn(&Path, &str) -> bool,
     seen: &mut Vec<String>,
 ) -> Result<Vec<String>> {
     let name = &key.1;
@@ -230,9 +244,10 @@ fn expand_group(
     let group = &groups[key];
     let mut expanded: Vec<String> = Vec::new();
     for member in &group.members {
-        if let Some(daemon) = set.daemons.get(member)
-            && daemon.root == group.root
-        {
+        // Membership follows what this project declared, so a same-name daemon
+        // redefined by a nearer config keeps the group valid. Selection is still
+        // per root, so the group only ever reaches this project's own daemons.
+        if declares(&group.root, member) {
             if !expanded.contains(member) {
                 expanded.push(member.clone());
             }
@@ -241,7 +256,7 @@ fn expand_group(
         // Nested members resolve within the declaring project only.
         let nested = (group.root.clone(), member.clone());
         if groups.contains_key(&nested) {
-            for daemon in expand_group(set, groups, &nested, seen)? {
+            for daemon in expand_group(groups, &nested, declares, seen)? {
                 if !expanded.contains(&daemon) {
                     expanded.push(daemon);
                 }
@@ -547,6 +562,36 @@ daemons = ["core", "core2"]
             set.for_root(&parent).group("default").unwrap().daemons,
             ["api"]
         );
+    }
+
+    #[test]
+    fn a_child_overriding_a_daemon_keeps_the_parent_group_loadable() {
+        // The child replaces the parent's postgres, which is documented behavior.
+        // The parent's group still names a daemon the parent declared, so the
+        // configuration has to keep loading.
+        let set = load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.postgres]\nrun = 'child postgres'\n",
+            ),
+            (
+                "/parent/mise.toml",
+                "[daemons.postgres]\nrun = 'parent postgres'\n[daemons.api]\nrun = 'api'\n[daemon_groups]\ndefault = ['postgres', 'api']\n",
+            ),
+        ]))
+        .unwrap();
+        let parent = set.daemons["api"].root.clone();
+        assert_eq!(
+            set.for_root(&parent).group("default").unwrap().daemons,
+            ["postgres", "api"]
+        );
+        // The overriding definition wins, and selection stays per root, so the
+        // parent's group reaches only the daemons that project still owns.
+        assert_eq!(
+            set.daemons["postgres"].table["run"].as_str(),
+            Some("child postgres")
+        );
+        assert!(!set.for_root(&parent).daemons.contains_key("postgres"));
     }
 
     #[test]
