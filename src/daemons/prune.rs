@@ -380,8 +380,13 @@ mod tests {
         assert_eq!(scan(&base).unwrap().len(), 1);
     }
 
+    /// Unix only: the failure is injected with POSIX permissions, which is the
+    /// one portable way to make a delete fail part way through. The ordering it
+    /// checks is platform independent.
     #[test]
+    #[cfg(unix)]
     fn a_partial_delete_leaves_an_entry_that_is_still_found() {
+        use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
         let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
@@ -389,19 +394,14 @@ mod tests {
         // read_dir reports and remove_all then fails on.
         let busy = dir.join("data");
         let mut perms = std::fs::metadata(&busy).unwrap().permissions();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            perms.set_mode(0o500);
-        }
+        perms.set_mode(0o500);
         std::fs::set_permissions(&busy, perms).unwrap();
 
-        // Root, and platforms that ignore the mode, delete it anyway; both
-        // outcomes are correct, and neither may leave state that no later
-        // prune can see.
         let lock = super::super::ProjectLock::try_acquire(&dir)
             .unwrap()
             .unwrap();
+        // Running as root deletes it anyway; both outcomes are correct, and
+        // neither may leave state that no later prune can see.
         match delete_state_dir(&dir, lock) {
             Err(_) => {
                 assert!(dir.join("state.json").exists());
