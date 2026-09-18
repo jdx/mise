@@ -17,6 +17,22 @@ esac
 SH
 chmod u+x ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
+
+# mise keeps each project's generated configuration in a state directory named
+# after a hash of the project root, so the several projects this test sets up
+# are indistinguishable by path and a bare `find` returns whichever one the
+# filesystem happens to list first. state.json records the root it belongs to.
+daemon_state_dir() {
+  local requested="${1:-$PWD}" root state
+  # mise records the physical path; bash keeps symlinks in $PWD.
+  root=$(cd -- "$requested" >/dev/null && pwd -P) || fail "cannot resolve daemon root $requested"
+  state=$(jq -r --arg root "$root" 'select(.root == $root) | input_filename' "$MISE_STATE_DIR"/daemons/*/state.json)
+  test -n "$state" || fail "no daemon state directory for $root"
+  # One root means one directory; anything else would put us back to picking one
+  # arbitrarily, and a multi-line "$state" would silently build a garbled path.
+  test "$(echo "$state" | wc -l)" -eq 1 || fail "several daemon state directories for $root: $state"
+  echo "${state%/state.json}"
+}
 cat >mise.toml <<'TOML'
 [tools]
 pitchfork = "system"
@@ -60,7 +76,7 @@ mise daemons start
 assert_contains "cat '$DAEMON_LOG'" 'config add'
 assert_contains "cat '$DAEMON_LOG'" '/api'
 assert "test ! -f pitchfork.toml"
-generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+generated="$(daemon_state_dir)/pitchfork.toml"
 assert_contains "cat '$generated'" 'mise = true'
 assert_not_contains "cat '$generated'" 'MISE_ENV = ""'
 assert_contains "cat '$generated'" '{{ env.SOMETHING }}'
@@ -90,7 +106,7 @@ mise daemons start two-cluster
 started=$(grep 'args=start ' "$DAEMON_LOG")
 assert_contains "echo '$started'" '/postgres'
 assert_contains "echo '$started'" '/core2'
-generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+generated="$(daemon_state_dir)/pitchfork.toml"
 assert_contains "cat '$generated'" '[groups.two-cluster]'
 assert_contains "cat '$generated'" '[groups.default]'
 # A bare start selects the default group instead of every daemon.
@@ -173,7 +189,7 @@ assert_not_contains "echo '$parent_start'" '/postgres'
 child_start=$(grep 'args=start ' "$DAEMON_LOG" | grep 'override/child ')
 assert_contains "echo '$child_start'" '/postgres'
 # The generated parent configuration no longer defines the name it lost.
-parent_conf=$(grep -rl 'parent api' "$MISE_STATE_DIR/daemons" | head -1)
+parent_conf="$(daemon_state_dir "$group_base/override")/pitchfork.toml"
 assert_not_contains "cat '$parent_conf'" 'parent postgres'
 cd "$group_base/group-parent/child"
 
@@ -246,7 +262,7 @@ assert_contains "mise run dev" 'dev-ran'
 assert_contains "cat '$DAEMON_LOG'" 'args=start '
 assert_contains "cat '$DAEMON_LOG'" '/api'
 assert_not_contains "cat '$DAEMON_LOG'" '/core'
-generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+generated="$(daemon_state_dir)/pitchfork.toml"
 # The supervised task runs through plain `mise run`, so its depends still run;
 # a marker in the daemon environment is what stops the recursion instead.
 assert_not_contains "cat '$generated'" 'skip-deps'
@@ -332,7 +348,7 @@ mise = false
 auto = ["start"]
 TOML
 MISE_ENV=first mise daemons start
-profile_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+profile_state="$(daemon_state_dir)/state.json"
 unset __MISE_SESSION
 MISE_ENV=second mise hook-env --shell-pid "$$" -s bash >"$TMPDIR/profile-hook"
 assert_contains "jq -r '.profile[]' '$profile_state'" second
