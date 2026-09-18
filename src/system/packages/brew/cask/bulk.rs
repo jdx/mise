@@ -147,6 +147,16 @@ async fn refresh() -> Result<()> {
     let mut index = build_index(&body)?;
 
     crate::file::create_dir_all(dir())?;
+
+    // Publishing the document and its index is one operation and has to be
+    // serialized. Interleaved, two refreshes can install different bodies and
+    // then stamp one body's index with the other body's size and mtime, which
+    // `load_index` accepts because they agree: the offsets then slice the wrong
+    // document. The lock is held across the synchronous publication only, not
+    // across the download above, so a second process waits a moment rather than
+    // blocking on a ~19MB transfer.
+    let _lock = crate::lock_file::LockFile::at(&dir().join("cask.lock")).lock()?;
+
     crate::file::write_atomic(&path, &body)?;
     if let Some(stamp) = last_modified {
         crate::file::write_atomic(dir().join("cask.last-modified"), stamp).ok();
@@ -330,9 +340,7 @@ pub(super) async fn cask(token: &str) -> Option<Cask> {
         .get(token)
         .map(String::as_str)
         .unwrap_or(token);
-    let Some(&(offset, len)) = index.casks.get(canonical) else {
-        return None;
-    };
+    let &(offset, len) = index.casks.get(canonical)?;
 
     // Read and parse are fallible for a reason that is nobody's fault: another
     // mise process can replace the document between `load_index` validating it

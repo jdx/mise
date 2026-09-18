@@ -30,8 +30,17 @@ pub(super) async fn fetch_cask(req: &PackageRequest, provision_ruby: bool) -> Re
     // cannot stop the per-cask request below from running.
     if official_api && let Some(mut cask) = super::bulk::cask(requested_token).await {
         cask.raw_base = Some(HOMEBREW_CASK_RAW.to_string());
-        validate_cask_identity(&cask, requested_token, official_api)?;
-        return Ok(cask);
+        // A cask that fails validation here is evidence the index is wrong about
+        // this token, not that the token is bad: a stale range can slice a
+        // neighbouring cask, which parses fine and then fails on identity. That
+        // is still a cache problem, so it falls back like every other one rather
+        // than failing the request the per-cask endpoint would have answered.
+        match validate_cask_identity(&cask, requested_token, official_api) {
+            Ok(()) => return Ok(cask),
+            Err(err) => debug!(
+                "brew-cask: bulk index gave a mismatched cask for '{requested_token}' ({err}); falling back to per-cask metadata"
+            ),
+        }
     }
 
     let (url, raw_base) = match tap_name {
