@@ -225,14 +225,12 @@ project declares a group `web` and another declares a daemon `web`, the one name
 selects the group in the first and the daemon in the second. `--group` only ever
 selects a group, and never a daemon that happens to share its name.
 
-When a nearer project redefines a daemon name, each project still manages its own
-daemon. They are separate daemons in separate namespaces and both run. With a parent
-declaring `default = ["postgres", "api"]` and a child redefining `postgres`, starting
-from the child starts the child's `postgres`, and the parent's group starts the
-parent's `postgres` and `api`. A nearer declaration replaces a same-name daemon in
-the merged view that supplies environment exports and tool requests, not in what each
-project registers and runs. Two projects defining the same service therefore get two
-processes, so give them different ports or declare the service in one project only.
+A nearer declaration replaces a same-name daemon completely, so the name belongs to
+the project that declared it last. A group in an outer project keeps naming it, but
+the daemon is started by the project that now owns it. With a parent declaring
+`default = ["postgres", "api"]` and a child redefining `postgres`, starting from the
+child runs one `postgres`, the child's, together with the parent's `api`. One service
+means one process, whichever project ends up owning it.
 
 A group is an alias in the configuration rather than persisted state, so removing
 one leaves nothing to expand. Daemons it started are still tracked by name: `mise

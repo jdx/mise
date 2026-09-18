@@ -179,8 +179,12 @@ impl Daemons {
             {
                 continue;
             }
+            // The per-root configuration supplies this project's tools and env. Which
+            // daemons it owns comes from the merged view instead, the same way the
+            // auto lifecycle and task-required daemons resolve them, so a name a
+            // nearer project redefines is registered and started once.
             let scoped = runtime::config_for_root(&config, &root).await?;
-            let set = scoped.daemons()?.for_root(&root);
+            let set = &root_set;
             let previous = runtime::read_state(&root)?;
             if set.daemons.is_empty() && previous.ids.is_empty() {
                 continue;
@@ -215,11 +219,11 @@ impl Daemons {
             }
             let runtime = runtime?;
             if install {
-                runtime::validate_tools(&set, &scoped, &ts).await?;
+                runtime::validate_tools(set, &scoped, &ts).await?;
                 set.validate_tasks(&scoped).await?;
             }
             let (state, _project_lock) = if install {
-                let (state, lock) = runtime.prepare(&root, &set, true).await?;
+                let (state, lock) = runtime.prepare(&root, set, true).await?;
                 (state, Some(lock))
             } else {
                 (previous, None)
@@ -230,8 +234,7 @@ impl Daemons {
                 .ids
                 .iter()
                 .filter(|id| {
-                    root_selectors.is_empty()
-                        || root_selectors.iter().any(|s| selects(&root_set, id, s))
+                    root_selectors.is_empty() || root_selectors.iter().any(|s| selects(set, id, s))
                 })
                 .cloned()
                 .collect();
