@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 pub(crate) struct Entry {
     pub dir: PathBuf,
     pub state: State,
+    /// The bytes `state` was read from, kept verbatim so the file can be
+    /// recognized later without assuming anything about how it re-serializes.
+    raw: Vec<u8>,
 }
 
 impl Entry {
@@ -82,7 +85,11 @@ pub(crate) fn scan(base: &Path) -> Result<Vec<Entry>> {
             continue;
         };
         match serde_json::from_slice::<State>(&bytes) {
-            Ok(state) => entries.push(Entry { dir, state }),
+            Ok(state) => entries.push(Entry {
+                dir,
+                state,
+                raw: bytes,
+            }),
             Err(err) => debug!("ignoring {}: {err}", display_path(&path)),
         }
     }
@@ -219,7 +226,7 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         );
         return Ok(Outcome::Kept);
     }
-    if let Err(err) = delete_state_dir(cwd, &entry.state, lock) {
+    if let Err(err) = delete_state_dir(entry, lock) {
         // One unreadable or busy file must not end the run: the other entries
         // are independent, and this one stays discoverable for a later run.
         warn!("keeping {}: {err:#}", display_path(cwd));
@@ -237,15 +244,20 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
 /// So it goes last, and if the directory itself cannot be removed after that,
 /// it is written back.
 ///
-/// The order also decides when the older in-directory lock is released: it
-/// guards the data, so it is held while the data goes, and dropped only for the
-/// removal of the lock file itself, which Windows will not delete while a
-/// handle is open.
-fn delete_state_dir(dir: &Path, state: &State, mut lock: super::ProjectLock) -> Result<()> {
+/// The order also decides when the older in-directory lock is released. It
+/// guards the data, so it is held until the data is gone, and dropped only for
+/// the removal of the lock file itself, which Windows will not delete while a
+/// handle is open. From there on a `prepare()` from an older mise, which takes
+/// only that lock, could write into this directory, so the last two steps
+/// verify rather than assume: `state.json` must still be the file that was
+/// selected, and the directory must be empty afterwards. Either check failing
+/// means somebody else is using this state, and it is left to them.
+fn delete_state_dir(entry: &Entry, mut lock: super::ProjectLock) -> Result<()> {
+    let dir = &entry.dir;
     let state_file = dir.join("state.json");
     let legacy = super::legacy_lock_file_for_state_dir(dir);
-    for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
+    for child in std::fs::read_dir(dir)? {
+        let path = child?.path();
         if path == state_file || path == legacy {
             continue;
         }
@@ -253,13 +265,19 @@ fn delete_state_dir(dir: &Path, state: &State, mut lock: super::ProjectLock) -> 
     }
     lock.release_legacy();
     crate::file::remove_all(&legacy)?;
+    if std::fs::read(&state_file)? != entry.raw {
+        eyre::bail!(
+            "{} was rewritten while it was being removed",
+            display_path(&state_file)
+        );
+    }
     crate::file::remove_all(&state_file)?;
-    if let Err(err) = crate::file::remove_all(dir) {
+    // `remove_dir`, not a recursive delete: it fails if anything was written
+    // back here, which is exactly the case that must not be deleted.
+    if let Err(err) = std::fs::remove_dir(dir) {
         // Put the entry back so a later run finishes what this one started.
-        if let Ok(bytes) = serde_json::to_vec_pretty(state) {
-            let _ = crate::daemons::runtime::write_if_changed(&state_file, &bytes);
-        }
-        return Err(err);
+        let _ = crate::daemons::runtime::write_if_changed(&state_file, &entry.raw);
+        return Err(eyre::eyre!(err).wrap_err(format!("failed to remove {}", display_path(dir))));
     }
     drop(lock);
     Ok(())
@@ -412,13 +430,31 @@ mod tests {
         let lock = super::super::ProjectLock::try_acquire(&dir)
             .unwrap()
             .unwrap();
-        match delete_state_dir(&dir, &entry.state, lock) {
+        match delete_state_dir(&entry, lock) {
             Err(_) => {
                 assert!(dir.join("state.json").exists());
                 assert_eq!(orphans(&base).unwrap().len(), 1);
             }
             Ok(()) => assert!(!dir.exists()),
         }
+    }
+
+    #[tokio::test]
+    async fn state_rewritten_during_removal_is_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
+        let mut entry = orphans(&base).unwrap().remove(0);
+        // Stand in for a prepare() from an older mise, which takes only the
+        // in-directory lock and so can still write here while the last files
+        // are being removed.
+        entry.raw = b"{}".to_vec();
+        let lock = super::super::ProjectLock::try_acquire(&dir)
+            .unwrap()
+            .unwrap();
+        assert!(delete_state_dir(&entry, lock).is_err());
+        assert!(dir.join("state.json").exists());
+        assert_eq!(orphans(&base).unwrap().len(), 1);
     }
 
     #[test]
@@ -441,7 +477,7 @@ mod tests {
         perms.set_mode(0o500);
         std::fs::set_permissions(&base, perms).unwrap();
 
-        let result = delete_state_dir(&dir, &entry.state, lock);
+        let result = delete_state_dir(&entry, lock);
 
         let mut perms = std::fs::metadata(&base).unwrap().permissions();
         perms.set_mode(0o700);
