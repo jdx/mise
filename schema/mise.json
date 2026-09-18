@@ -43,7 +43,7 @@
       ]
     },
     "daemon_proxy": {
-      "description": "Hostname label the reverse proxy routes to this daemon, or false to opt out. Defaults to the daemon's name. The full hostname is <proxy>.<worktree_label>.<project>.<tld>.",
+      "description": "Hostname label the reverse proxy routes to this daemon, false to opt out, or true to use the daemon's name. Only a daemon with a port is routed. The hostname is <proxy>.<worktree>.<project>.<tld> in a linked git worktree and <proxy>.<project>.<tld> in the primary checkout.",
       "oneOf": [
         {
           "type": "string",
@@ -52,8 +52,7 @@
         },
         {
           "type": "boolean",
-          "const": false,
-          "description": "Opt out of the reverse proxy; no hostname and no URL export."
+          "description": "false opts out of the reverse proxy; true uses the daemon's name, which re-enables routing for a preset that opts out."
         }
       ]
     },
@@ -6070,12 +6069,6 @@
           "type": "boolean",
           "default": true,
           "description": "Append a worktree-specific suffix to an explicit namespace when the project root is a linked git worktree."
-        },
-        "worktree_label": {
-          "type": "string",
-          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
-          "maxLength": 63,
-          "description": "Hostname component that separates this checkout from the project's others. Defaults to the checkout directory's name; set it in a worktree's mise.local.toml."
         }
       },
       "additionalProperties": false

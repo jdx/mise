@@ -15,14 +15,34 @@ use std::sync::LazyLock;
 /// Named in errors and docs so an older supervisor's rejection is explicable.
 pub(crate) const REQUIRED_PITCHFORK: &str = "2.26.0";
 
+/// Maximum length of one DNS label (RFC 1035).
+const MAX_LABEL_LEN: usize = 63;
+
+/// Maximum length of a whole hostname (RFC 1035), which the labels share with
+/// the configured TLD.
+const MAX_HOSTNAME_LEN: usize = 253;
+
 /// The hostname components a project root contributes, shared by every daemon
 /// declared there.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RootLabels {
-    /// Identifies the project itself, derived from its pitchfork namespace.
-    pub project: String,
-    /// Separates concurrent checkouts of that project.
-    pub worktree: String,
+    /// Identifies the project itself across all of its checkouts.
+    pub project: Option<String>,
+    /// Separates this checkout from the project's others. Absent in the
+    /// primary checkout, whose daemons sit directly under the project label.
+    pub worktree: Option<String>,
+}
+
+impl RootLabels {
+    /// The hostname suffix these labels contribute, under `tld`.
+    fn suffix(&self, tld: &str) -> Option<String> {
+        let project = self.project.as_deref()?;
+        Ok::<_, ()>(match self.worktree.as_deref() {
+            Some(worktree) => format!("{worktree}.{project}.{tld}"),
+            None => format!("{project}.{tld}"),
+        })
+        .ok()
+    }
 }
 
 /// What `proxy` asks for on one daemon.
@@ -30,8 +50,10 @@ pub(crate) struct RootLabels {
 pub(crate) enum Proxy {
     /// `proxy = false`: no hostname, and so no URL export.
     Disabled,
-    /// `proxy = "label"`, or the daemon's own name when the key is absent.
+    /// `proxy = "label"`: the declaration names the hostname component.
     Label(String),
+    /// Absent, or `proxy = true`: the label comes from the daemon's name.
+    Derived,
 }
 
 /// The pitchfork proxy settings that decide what a hostname's URL looks like.
@@ -70,16 +92,17 @@ impl ProxySettings {
         }
     }
 
-    /// Where the stack's own pages live, for `mise daemons urls`.
-    pub(crate) fn stack_url(&self, labels: &RootLabels) -> String {
-        self.url(&format!(
-            "{}.{}.{}",
-            labels.worktree, labels.project, self.tld
-        ))
+    /// Where this checkout's own page lives, for `mise daemons urls`. The
+    /// primary checkout has no page of its own; its stack is the project.
+    pub(crate) fn stack_url(&self, labels: &RootLabels) -> Option<String> {
+        let project = labels.project.as_deref()?;
+        let worktree = labels.worktree.as_deref()?;
+        Some(self.url(&format!("{worktree}.{project}.{}", self.tld)))
     }
 
-    pub(crate) fn project_url(&self, labels: &RootLabels) -> String {
-        self.url(&format!("{}.{}", labels.project, self.tld))
+    pub(crate) fn project_url(&self, labels: &RootLabels) -> Option<String> {
+        let project = labels.project.as_deref()?;
+        Some(self.url(&format!("{project}.{}", self.tld)))
     }
 }
 
@@ -234,90 +257,123 @@ pub(crate) fn validate_label(kind: &str, value: &str) -> Result<()> {
 }
 
 /// Fold a daemon name, namespace or directory name into something a hostname
-/// can carry. These are not typed as labels by their owners, so they are
-/// repaired rather than rejected: `my_api.v2` becomes `my-api-v2`.
-pub(crate) fn sanitize_label(value: &str) -> String {
-    let mapped: String = value
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let trimmed = mapped
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-");
-    let trimmed = if trimmed.is_empty() {
-        "mise".to_string()
+/// can carry, exactly as pitchfork's `sanitize_label` does: letters lowercased,
+/// digits kept, everything else a `-`, runs collapsed, ends trimmed, truncated
+/// to 63 characters and trimmed again.
+///
+/// `None` when nothing usable is left, in which case there is no hostname to
+/// offer. Repairing rather than rejecting is deliberate: these names were not
+/// written as DNS labels by whoever chose them.
+pub(crate) fn sanitize_label(value: &str) -> Option<String> {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    let trimmed = if trimmed.len() > MAX_LABEL_LEN {
+        trimmed[..MAX_LABEL_LEN].trim_end_matches('-')
     } else {
         trimmed
     };
-    // Cutting at 63 can land just after a separator, which would leave a label
-    // ending in `-`; that is not a name DNS accepts.
-    trimmed
-        .chars()
-        .take(63)
-        .collect::<String>()
-        .trim_end_matches('-')
-        .to_string()
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
-/// The checkout a project root belongs to, which is what distinguishes two
-/// copies of one project. A project root nested in a monorepo
-/// (`/repo/packages/api`) takes the checkout's name, not its own, so every
-/// project in one worktree shares a worktree label.
-pub(crate) fn default_worktree_label(root: &Path) -> String {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let dir = crate::git::checkout_root(&root).unwrap_or(root);
-    sanitize_label(&dir.file_name().unwrap_or_default().to_string_lossy())
+/// Whether a hostname still leaves room for the configured TLD. A name nothing
+/// can resolve is worse than no name, and pitchfork refuses the same ones.
+fn hostname_fits(host: &str) -> bool {
+    host.len() <= MAX_HOSTNAME_LEN
 }
 
-/// The hostname components for a project root.
+/// The `worktree_label` a checkout's own pitchfork configuration declares.
 ///
-/// The project label comes from the pitchfork namespace before any
-/// per-worktree suffix: the suffix exists to keep two checkouts' daemon IDs
-/// apart, and the worktree label already does that here. A project without an
-/// explicit `[daemons_settings] namespace` therefore carries the hash mise
-/// generates for it, which is stable but not memorable; naming the namespace is
-/// what buys a readable hostname.
+/// Pitchfork reads this key from the four configuration files in the checkout
+/// itself, not from the file mise generates and registers, so mise has to read
+/// it from the same place or the two would disagree about the hostname. The
+/// highest-precedence file wins, as it does for `namespace`.
+fn declared_worktree_label(dir: &Path) -> Option<String> {
+    for name in [
+        "pitchfork.local.toml",
+        "pitchfork.toml",
+        ".config/pitchfork.local.toml",
+        ".config/pitchfork.toml",
+    ] {
+        let path = dir.join(name);
+        if !path.exists() {
+            continue;
+        }
+        let Ok(doc) = std::fs::read_to_string(&path).map(|t| toml::from_str::<toml::Value>(&t))
+        else {
+            continue;
+        };
+        if let Ok(doc) = doc
+            && let Some(label) = doc.get("worktree_label").and_then(toml::Value::as_str)
+        {
+            return Some(label.to_string());
+        }
+    }
+    None
+}
+
+/// The label naming one linked worktree: what its own configuration declares,
+/// otherwise its directory name.
+fn worktree_label(dir: &Path) -> Option<String> {
+    match declared_worktree_label(dir) {
+        Some(label) => sanitize_label(&label),
+        None => sanitize_label(&dir.file_name()?.to_string_lossy()),
+    }
+}
+
+/// The hostname components for a project root, derived the way pitchfork
+/// derives them so the two always name the same host.
+///
+/// The project label is the explicit `[daemons_settings] namespace` before any
+/// per-worktree suffix, otherwise the primary checkout's directory name. The
+/// worktree label is present only in a linked worktree; in the primary checkout
+/// a daemon sits directly under the project, as `api.shop.localhost`.
+///
+/// A project root nested in a monorepo, such as `/repo/packages/api`, takes its
+/// enclosing checkout's names, so every project in one worktree shares them.
 pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabels> {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let checkout = crate::git::checkout_of(&root);
     let project = match settings.namespace.as_deref() {
         Some(explicit) => sanitize_label(explicit),
-        // The hashed default namespace is derived from the root path, so every
-        // checkout would produce a different project label and the worktree
-        // component would be saying it twice. Hashing the main checkout's
-        // equivalent path instead keeps one project label across checkouts.
+        // Not the hashed default namespace: that is derived from the root path,
+        // so every checkout would produce a different project label and the
+        // worktree component would be saying it twice. Pitchfork names the
+        // project after the primary checkout's directory, so mise does too.
         None => {
-            let stable =
-                crate::git::main_checkout_equivalent(root).unwrap_or_else(|| root.to_path_buf());
-            sanitize_label(&super::runtime::namespace(&stable)?)
+            let dir = checkout.primary.as_deref().unwrap_or(root.as_path());
+            dir.file_name()
+                .and_then(|name| sanitize_label(&name.to_string_lossy()))
         }
     };
-    let worktree = match settings.worktree_label.as_deref() {
-        Some(label) => {
-            validate_label("[daemons_settings] worktree_label", label)?;
-            label.to_string()
-        }
-        None => default_worktree_label(root),
-    };
+    let worktree = checkout.worktree.as_deref().and_then(worktree_label);
     Ok(RootLabels { project, worktree })
+}
+
+/// What a daemon's `proxy` declaration resolved to.
+pub(crate) struct Applied {
+    /// The hostname the proxy routes to it. None when the daemon opted out,
+    /// configured no port, or produced a name DNS could not carry.
+    pub host: Option<String>,
 }
 
 /// Read `proxy` and `proxy_tls` from a daemon table, validate them, write the
 /// normalized values back for pitchfork, and return the daemon's hostname.
-///
-/// `None` means the daemon opted out with `proxy = false` and gets no URL.
 pub(crate) fn apply(
     name: &str,
     table: &mut toml::Table,
     labels: &RootLabels,
     tld: &str,
-) -> Result<Option<String>> {
+) -> Result<Applied> {
+    // Pitchfork routes only a daemon that configures a port, so one without a
+    // port has no hostname to advertise and gets no URL export either.
+    let routable = table.contains_key("port");
     let tls = match table.get("proxy_tls") {
         None => None,
         Some(toml::Value::String(mode)) if matches!(mode.as_str(), "terminate" | "passthrough") => {
@@ -328,59 +384,92 @@ pub(crate) fn apply(
         ),
     };
     let proxy = match table.get("proxy") {
-        None => Proxy::Label(sanitize_label(name)),
+        // `proxy = true` turns routing back on for a daemon a preset opted out
+        // of, using the name-derived label. Pitchfork accepts it, so mise does.
+        None | Some(toml::Value::Boolean(true)) => Proxy::Derived,
         Some(toml::Value::Boolean(false)) => Proxy::Disabled,
-        Some(toml::Value::Boolean(true)) => bail!(
-            "[daemons.{name}].proxy must be false or a hostname label; \
-             omit it to use the daemon's name"
-        ),
         Some(toml::Value::String(label)) => {
             validate_label(&format!("[daemons.{name}].proxy label"), label)?;
             Proxy::Label(label.clone())
         }
         Some(other) => {
-            bail!("[daemons.{name}].proxy must be false or a hostname label; got {other}")
+            bail!("[daemons.{name}].proxy must be a hostname label, true, or false; got {other}")
         }
     };
     if matches!(proxy, Proxy::Disabled) && tls.is_some() {
         bail!("[daemons.{name}] sets proxy_tls but proxy = false, so nothing is proxied");
     }
-    match &proxy {
+    let label = match &proxy {
         Proxy::Disabled => {
             table.insert("proxy".into(), toml::Value::Boolean(false));
-            Ok(None)
+            return Ok(Applied { host: None });
         }
-        Proxy::Label(label) => {
-            table.insert("proxy".into(), toml::Value::String(label.clone()));
-            Ok(Some(format!(
-                "{label}.{}.{}.{tld}",
-                labels.worktree, labels.project
-            )))
-        }
-    }
+        Proxy::Label(label) => Some(label.clone()),
+        Proxy::Derived => sanitize_label(name),
+    };
+    // The label is written out even when mise derived it, so pitchfork routes
+    // the name mise exported rather than folding the daemon's name again.
+    let host = label.and_then(|label| {
+        table.insert("proxy".into(), toml::Value::String(label.clone()));
+        let host = format!("{label}.{}", labels.suffix(tld)?);
+        hostname_fits(&host).then_some(host)
+    });
+    Ok(Applied {
+        host: host.filter(|_| routable),
+    })
+}
+
+/// Take a daemon's hostname away after the fact, when another daemon turned out
+/// to derive the same one. The proxy must not be asked to route an ambiguous
+/// hostname, and the daemon keeps running on its port.
+pub(crate) fn withdraw(table: &mut toml::Table) {
+    table.insert("proxy".into(), toml::Value::Boolean(false));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn settings(namespace: Option<&str>, worktree_label: Option<&str>) -> DaemonSettings {
+    fn settings(namespace: Option<&str>) -> DaemonSettings {
         DaemonSettings {
             namespace: namespace.map(str::to_string),
             namespace_per_worktree: None,
-            worktree_label: worktree_label.map(str::to_string),
         }
+    }
+
+    /// A primary checkout and a linked worktree of it, as `git worktree add`
+    /// leaves them.
+    fn checkout_pair(tmp: &Path) -> (PathBuf, PathBuf) {
+        let primary = tmp.join("shop");
+        let private = primary.join(".git").join("worktrees").join("pr-42");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(primary.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
+        let linked = tmp.join("shop-pr-42");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::fs::write(
+            linked.join(".git"),
+            format!("gitdir: {}\n", private.display()),
+        )
+        .unwrap();
+        (primary, linked)
     }
 
     #[test]
     fn a_label_is_repaired_or_rejected_depending_on_who_wrote_it() {
-        assert_eq!(sanitize_label("My_Api.v2"), "my-api-v2");
-        assert_eq!(sanitize_label("--"), "mise");
-        assert_eq!(sanitize_label(&"a".repeat(80)).len(), 63);
+        assert_eq!(sanitize_label("My_Api.v2").unwrap(), "my-api-v2");
+        // Runs collapse and the ends are trimmed, as pitchfork does it.
+        assert_eq!(sanitize_label("--a__b--").unwrap(), "a-b");
+        assert!(sanitize_label("--").is_none(), "nothing usable is no label");
+        assert_eq!(
+            sanitize_label(&"a".repeat(80)).unwrap().len(),
+            MAX_LABEL_LEN
+        );
         // Truncation must not leave a trailing separator behind.
-        let cut = sanitize_label(&format!("{}-{}", "a".repeat(62), "b".repeat(5)));
+        let cut = sanitize_label(&format!("{}-{}", "a".repeat(62), "b".repeat(5))).unwrap();
         assert_eq!(cut, "a".repeat(62));
         validate_label("label", &cut).unwrap();
+        // A declared label is rejected rather than repaired: the user typed it.
         assert!(validate_label("label", "api-2").is_ok());
         for invalid in ["", "-api", "api-", "API", "my_api", &"a".repeat(64)] {
             assert!(validate_label("label", invalid).is_err(), "{invalid:?}");
@@ -389,29 +478,29 @@ mod tests {
 
     #[test]
     fn a_url_omits_the_port_only_on_the_standard_one() {
-        let host = "api.main.shop.localhost";
+        let host = "api.shop.localhost";
         assert_eq!(
             ProxySettings::default().url(host),
-            "https://api.main.shop.localhost"
+            "https://api.shop.localhost"
         );
         let plain = ProxySettings {
             https: false,
             port: 80,
             tld: "localhost".into(),
         };
-        assert_eq!(plain.url(host), "http://api.main.shop.localhost");
+        assert_eq!(plain.url(host), "http://api.shop.localhost");
         let custom = ProxySettings {
             https: true,
             port: 8443,
             tld: "localhost".into(),
         };
-        assert_eq!(custom.url(host), "https://api.main.shop.localhost:8443");
+        assert_eq!(custom.url(host), "https://api.shop.localhost:8443");
         let http_custom = ProxySettings {
             https: false,
             port: 8088,
             tld: "test".into(),
         };
-        assert_eq!(http_custom.url(host), "http://api.main.shop.localhost:8088");
+        assert_eq!(http_custom.url(host), "http://api.shop.localhost:8088");
     }
 
     #[test]
@@ -432,9 +521,9 @@ mod tests {
                 tld: "test".into()
             }
         );
-        // LAN mode forces the mDNS TLD whatever the files or `tld` asked for,
-        // and it is applied after every layer rather than inside one, so a
-        // later `tld` cannot undo it.
+
+        // LAN mode forces the mDNS TLD, and it is applied after every layer
+        // rather than inside one, so a later `tld` cannot undo it.
         let mut lan = ProxySettings {
             tld: "test".into(),
             ..ProxySettings::default()
@@ -471,8 +560,7 @@ mod tests {
             });
             assert!(cased.https, "{spelling:?} must turn HTTPS on");
         }
-        // A spelling neither side recognises leaves the setting alone rather
-        // than guessing at it.
+        // A spelling neither side recognises leaves the setting alone.
         let mut unknown = ProxySettings::default();
         apply_proxy_env(&mut unknown, false, |key| {
             matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| "maybe".to_string())
@@ -483,46 +571,78 @@ mod tests {
     #[test]
     fn proxy_declarations_are_validated_and_normalized() {
         let labels = RootLabels {
-            project: "shop".into(),
-            worktree: "main".into(),
+            project: Some("shop".into()),
+            worktree: None,
         };
         let parse = |text: &str| -> Result<(Option<String>, toml::Table)> {
             let mut table: toml::Table = toml::from_str(text)?;
-            let host = apply("api", &mut table, &labels, "localhost")?;
-            Ok((host, table))
+            let applied = apply("api", &mut table, &labels, "localhost")?;
+            Ok((applied.host, table))
         };
-        let (host, table) = parse("").unwrap();
-        assert_eq!(host.unwrap(), "api.main.shop.localhost");
+        let (host, table) = parse("port = 3000").unwrap();
+        assert_eq!(host.unwrap(), "api.shop.localhost");
+        // The derived label is written out, so pitchfork routes the name mise
+        // exported rather than folding the daemon's name a second time.
         assert_eq!(table["proxy"].as_str().unwrap(), "api");
 
-        let (host, table) = parse("proxy = 'web'").unwrap();
-        assert_eq!(host.unwrap(), "web.main.shop.localhost");
+        let (host, table) = parse("port = 3000\nproxy = 'web'").unwrap();
+        assert_eq!(host.unwrap(), "web.shop.localhost");
         assert_eq!(table["proxy"].as_str().unwrap(), "web");
 
-        let (host, table) = parse("proxy = false").unwrap();
+        let (host, table) = parse("port = 3000\nproxy = false").unwrap();
         assert!(host.is_none(), "an opted-out daemon has no hostname");
         assert_eq!(table["proxy"].as_bool(), Some(false));
 
+        // `proxy = true` turns routing back on for a daemon a preset opted out
+        // of, using the name-derived label. Pitchfork accepts it, so mise does.
+        let (host, table) = parse("port = 3000\nproxy = true").unwrap();
+        assert_eq!(host.unwrap(), "api.shop.localhost");
+        assert_eq!(table["proxy"].as_str().unwrap(), "api");
+
+        // Pitchfork routes only a daemon that configures a port.
+        let (host, _) = parse("").unwrap();
+        assert!(host.is_none(), "a portless daemon is never routed");
+
         for mode in ["terminate", "passthrough"] {
-            let (_, table) = parse(&format!("proxy_tls = '{mode}'")).unwrap();
+            let (_, table) = parse(&format!("port = 3000\nproxy_tls = '{mode}'")).unwrap();
             assert_eq!(table["proxy_tls"].as_str().unwrap(), mode);
         }
         for invalid in [
-            "proxy = true",
-            "proxy = 3000",
-            "proxy = 'Web'",
-            "proxy = 'my_web'",
-            "proxy_tls = 'reencrypt'",
-            "proxy_tls = true",
-            "proxy = false\nproxy_tls = 'terminate'",
+            "port = 3000\nproxy = 3000",
+            "port = 3000\nproxy = 'Web'",
+            "port = 3000\nproxy = 'my_web'",
+            "port = 3000\nproxy_tls = 'reencrypt'",
+            "port = 3000\nproxy_tls = true",
+            "port = 3000\nproxy = false\nproxy_tls = 'terminate'",
         ] {
             assert!(parse(invalid).is_err(), "{invalid:?}");
         }
     }
 
+    /// A hostname nothing can resolve is worse than no hostname, and pitchfork
+    /// refuses the same ones.
+    #[test]
+    fn a_hostname_that_cannot_fit_is_not_offered() {
+        let labels = RootLabels {
+            project: Some("a".repeat(MAX_LABEL_LEN)),
+            worktree: Some("b".repeat(MAX_LABEL_LEN)),
+        };
+        let mut table: toml::Table = toml::from_str("port = 3000").unwrap();
+        let long = "c".repeat(MAX_LABEL_LEN);
+        let applied = apply(&long, &mut table, &labels, &"d".repeat(MAX_LABEL_LEN)).unwrap();
+        assert!(applied.host.is_none(), "{:?}", applied.host);
+        // The same labels fit under an ordinary TLD.
+        let mut table: toml::Table = toml::from_str("port = 3000").unwrap();
+        assert!(
+            apply(&long, &mut table, &labels, "localhost")
+                .unwrap()
+                .host
+                .is_some()
+        );
+    }
+
     /// A daemon name that is not a shell identifier still runs; only the
-    /// convenience variables are skipped, and punctuation is folded rather
-    /// than rejected.
+    /// convenience variables are skipped, and punctuation is folded.
     #[test]
     fn endpoint_variables_share_one_stem() {
         assert_eq!(super::super::env_var_base("api").unwrap(), "API");
@@ -534,25 +654,83 @@ mod tests {
     }
 
     #[test]
-    fn labels_name_the_project_and_the_checkout() {
+    fn a_primary_checkout_has_no_worktree_label() {
         let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("shop");
-        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let (primary, linked) = checkout_pair(tmp.path());
 
-        // An explicit namespace is what makes the hostname readable.
-        let resolved = labels(&root, &settings(Some("shop"), None)).unwrap();
-        assert_eq!(resolved.project, "shop");
-        assert_eq!(resolved.worktree, "shop");
+        // The primary checkout's daemons sit directly under the project, which
+        // is what pitchfork routes; adding a worktree component would make
+        // every URL a 404.
+        let resolved = labels(&primary, &settings(Some("shop"))).unwrap();
+        assert_eq!(resolved.project.as_deref(), Some("shop"));
+        assert_eq!(resolved.worktree, None);
+        assert_eq!(resolved.suffix("localhost").unwrap(), "shop.localhost");
 
-        // An explicit worktree_label replaces the directory name.
-        let resolved = labels(&root, &settings(Some("shop"), Some("pr-42"))).unwrap();
-        assert_eq!(resolved.worktree, "pr-42");
-        assert!(labels(&root, &settings(Some("shop"), Some("PR 42"))).is_err());
+        // A linked worktree adds its own component.
+        let resolved = labels(&linked, &settings(Some("shop"))).unwrap();
+        assert_eq!(resolved.worktree.as_deref(), Some("shop-pr-42"));
+        assert_eq!(
+            resolved.suffix("localhost").unwrap(),
+            "shop-pr-42.shop.localhost"
+        );
 
-        // Without a namespace the hashed default is sanitized into a label,
-        // which stays stable and unique but is not memorable.
-        let resolved = labels(&root, &settings(None, None)).unwrap();
-        assert!(resolved.project.starts_with("shop-"), "{resolved:?}");
-        validate_label("project", &resolved.project).unwrap();
+        // Without an explicit namespace the project is named after the primary
+        // checkout's directory, from either checkout, so the two agree.
+        assert_eq!(
+            labels(&primary, &settings(None))
+                .unwrap()
+                .project
+                .as_deref(),
+            Some("shop")
+        );
+        assert_eq!(
+            labels(&linked, &settings(None)).unwrap().project.as_deref(),
+            Some("shop")
+        );
+
+        // A project root nested in a monorepo takes its checkout's names.
+        let nested = linked.join("packages").join("api");
+        std::fs::create_dir_all(&nested).unwrap();
+        let resolved = labels(&nested, &settings(None)).unwrap();
+        assert_eq!(resolved.project.as_deref(), Some("shop"));
+        assert_eq!(resolved.worktree.as_deref(), Some("shop-pr-42"));
+    }
+
+    /// Pitchfork reads `worktree_label` from the checkout's own configuration
+    /// rather than from the file mise registers, so mise reads it there too.
+    #[test]
+    fn a_checkouts_own_config_names_the_worktree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, linked) = checkout_pair(tmp.path());
+        std::fs::write(linked.join("pitchfork.toml"), "worktree_label = 'pr-42'\n").unwrap();
+        let resolved = labels(&linked, &settings(Some("shop"))).unwrap();
+        assert_eq!(resolved.worktree.as_deref(), Some("pr-42"));
+        // The highest-precedence file wins, as it does for `namespace`.
+        std::fs::write(
+            linked.join("pitchfork.local.toml"),
+            "worktree_label = 'mine'\n",
+        )
+        .unwrap();
+        assert_eq!(
+            labels(&linked, &settings(Some("shop")))
+                .unwrap()
+                .worktree
+                .as_deref(),
+            Some("mine")
+        );
+        // A label that cannot be one is folded, not rejected: pitchfork does
+        // the same, and refusing would break a checkout that already works.
+        std::fs::write(
+            linked.join("pitchfork.local.toml"),
+            "worktree_label = 'PR 42'\n",
+        )
+        .unwrap();
+        assert_eq!(
+            labels(&linked, &settings(Some("shop")))
+                .unwrap()
+                .worktree
+                .as_deref(),
+            Some("pr-42")
+        );
     }
 }

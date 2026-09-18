@@ -47,11 +47,6 @@ pub(crate) struct DaemonSettings {
     /// Keep linked git worktrees of one repository in separate namespaces.
     #[serde(default)]
     pub namespace_per_worktree: Option<bool>,
-    /// The hostname component that separates this checkout from the project's
-    /// other checkouts. Belongs in a worktree's `mise.local.toml`, because the
-    /// tracked `mise.toml` is shared by every checkout.
-    #[serde(default)]
-    pub worktree_label: Option<String>,
 }
 
 impl DaemonSettings {
@@ -65,9 +60,6 @@ impl DaemonSettings {
         }
         if other.namespace_per_worktree.is_some() {
             self.namespace_per_worktree = other.namespace_per_worktree;
-        }
-        if other.worktree_label.is_some() {
-            self.worktree_label = other.worktree_label;
         }
     }
 
@@ -306,12 +298,45 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             )?,
         );
     }
-    // The first claimant of an ambiguous key kept its export while it looked
-    // unique; drop it now so neither side is handed the other's endpoint.
+    // The first claimant of an ambiguous key or hostname kept it while it
+    // looked unique; drop it now so neither side is handed the other's
+    // endpoint, and so mise never advertises a hostname the proxy refuses.
     for daemon in set.daemons.values_mut() {
         daemon
             .exports
             .retain(|key, _| !state.ambiguous.contains(key));
+        if let Some(host) = &daemon.host
+            && state.ambiguous_hosts.contains(host)
+        {
+            if let Some(base) = env_var_base(&daemon.name) {
+                daemon.exports.shift_remove(&format!("{base}_URL"));
+            }
+            urls::withdraw(&mut daemon.table);
+            daemon.host = None;
+        }
+    }
+    // A preset's exports are its declared interface; `<NAME>_PORT` and
+    // `<NAME>_URL` are a convenience derived from a name. When a custom
+    // daemon's name lands on a preset's variable, such as a daemon called
+    // `database` beside a Postgres preset, the convenience gives way rather
+    // than silently replacing the endpoint the preset published.
+    let preset_keys: std::collections::BTreeSet<String> = set
+        .daemons
+        .values()
+        .filter(|d| d.preset.is_some())
+        .flat_map(|d| d.exports.keys().cloned())
+        .collect();
+    for daemon in set.daemons.values_mut().filter(|d| d.preset.is_none()) {
+        let name = daemon.name.clone();
+        daemon.exports.retain(|key, _| {
+            if preset_keys.contains(key) {
+                warn_once!(
+                    "[daemons] {name} would export {key}, which a preset already sets; the preset's value is kept. Rename {name} to get its own variable."
+                );
+                return false;
+            }
+            true
+        });
     }
     set.labels = state.labels;
     for root in set
@@ -368,6 +393,10 @@ struct LoadState {
     /// Port variables already taken, so two names cannot normalize onto one key.
     keys: BTreeMap<String, String>,
     ambiguous: std::collections::BTreeSet<String>,
+    /// Hostnames already taken, so two daemons cannot claim one endpoint.
+    hosts: BTreeMap<String, String>,
+    /// Hostnames two daemons derived independently; neither keeps it.
+    ambiguous_hosts: std::collections::BTreeSet<String>,
     /// Hostname components per project root, including roots reached by import.
     labels: IndexMap<PathBuf, urls::RootLabels>,
 }
@@ -524,13 +553,6 @@ fn build(
     if table.get("run").and_then(toml::Value::as_str).is_none() {
         bail!("[daemons.{name}] requires run, task, preset, or project");
     }
-    let proxy = urls::proxy_settings();
-    let host = urls::apply(
-        name,
-        &mut table,
-        &state.labels(&root, settings)?,
-        &proxy.tld,
-    )?;
     let claim = match request {
         Some(PortRequest::Passthrough(value)) => {
             table.insert("port".into(), value);
@@ -544,6 +566,28 @@ fn build(
     };
     if let Some(claim) = claim {
         table.insert("port".into(), expected_port(claim.port));
+    }
+    let proxy = urls::proxy_settings();
+    let urls::Applied { mut host, .. } = urls::apply(
+        name,
+        &mut table,
+        &state.labels(&root, settings)?,
+        &proxy.tld,
+    )?;
+    // The proxy cannot route two daemons to one hostname, and pitchfork routes
+    // neither side of a collision rather than choosing. mise withholds the URL
+    // for the same pair, so it never advertises an endpoint the proxy refuses.
+    // Both daemons still run, and still have their ports.
+    if let Some(claimed) = host.clone()
+        && let Some(other) = state.hosts.insert(claimed.clone(), name.to_string())
+        && other != name
+    {
+        warn_once!(
+            "[daemons] {other} and {name} both resolve to {claimed}, so pitchfork routes neither. Give one of them a different proxy label, or set proxy = false on it."
+        );
+        state.ambiguous_hosts.insert(claimed);
+        urls::withdraw(&mut table);
+        host = None;
     }
     // Without these a custom daemon's endpoint would reach pitchfork and
     // nothing else: `mise env` would export nothing, and the process
@@ -1381,12 +1425,9 @@ mod tests {
         ]);
         let set = load(&config).unwrap();
         assert!(set.daemons["postgres"].tool.is_none());
-        // The preset's Postgres variables are gone with the preset; a custom
-        // daemon only gets the endpoint variables mise derives for it.
-        assert_eq!(
-            set.daemons["postgres"].exports.keys().collect::<Vec<_>>(),
-            vec!["POSTGRES_URL"]
-        );
+        // The preset's Postgres variables are gone with the preset, and this
+        // custom daemon configures no port, so it gets no endpoint of its own.
+        assert!(set.daemons["postgres"].exports.is_empty());
         assert_eq!(
             set.daemons["postgres"].table["run"].as_str(),
             Some("echo custom")
@@ -1690,20 +1731,12 @@ mod tests {
             set.daemons["api"].table["depends"][0].as_str(),
             Some("mirror/worker")
         );
-        // The referenced project installs and exports for its own daemon. This
-        // project's own `api` still exports its hostname.
+        // The referenced project installs and exports for its own daemon, and
+        // neither daemon here configures a port, so nothing is exported.
         let mut requests = ToolRequestSet::default();
         set.add_tool_requests(&mut requests).unwrap();
         assert!(requests.tools.is_empty());
-        let exported: Vec<_> = set
-            .env_entries()
-            .into_iter()
-            .filter_map(|(d, _)| match d {
-                EnvDirective::Val(key, _, _) => Some(key),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(exported, vec!["API_URL".to_string()]);
+        assert!(set.env_entries().is_empty());
     }
 
     #[test]
@@ -2163,15 +2196,12 @@ mod tests {
         let mut merged = DaemonSettings {
             namespace: Some("entiredb".into()),
             namespace_per_worktree: Some(true),
-            worktree_label: Some("main".into()),
         };
         merged.merge(DaemonSettings {
             namespace: None,
             namespace_per_worktree: Some(false),
-            worktree_label: None,
         });
         assert_eq!(merged.namespace.as_deref(), Some("entiredb"));
-        assert_eq!(merged.worktree_label.as_deref(), Some("main"));
         assert!(!merged.namespace_per_worktree());
         assert!(DaemonSettings::default().namespace_per_worktree());
     }
@@ -2342,23 +2372,25 @@ mod tests {
             Some(3000)
         );
 
-        // A daemon with no port mise resolved exports only its hostname.
+        // Pitchfork routes only a daemon that configures a port, so one
+        // without a port gets neither variable.
         let set = load(&files(&[(
             root.join("mise.toml").to_str().unwrap(),
             "[daemons.api]\nrun = 'server'\n",
         )]))
         .unwrap();
-        assert_eq!(
-            set.daemons["api"].exports.keys().collect::<Vec<_>>(),
-            vec!["API_URL"]
-        );
-        // Opting out of the proxy leaves nothing to export.
+        assert!(set.daemons["api"].exports.is_empty());
+        assert!(set.daemons["api"].host.is_none());
+        // Opting out of the proxy leaves only the port.
         let set = load(&files(&[(
             root.join("mise.toml").to_str().unwrap(),
-            "[daemons.api]\nrun = 'server'\nproxy = false\n",
+            "[daemons.api]\nrun = 'server'\nport = 3000\nproxy = false\n",
         )]))
         .unwrap();
-        assert!(set.daemons["api"].exports.is_empty());
+        assert_eq!(
+            set.daemons["api"].exports.keys().collect::<Vec<_>>(),
+            vec!["API_PORT"]
+        );
         // The exports reach the environment mise renders.
         let set = load(&files(&[(
             root.join("mise.toml").to_str().unwrap(),
@@ -2713,38 +2745,41 @@ three = ["two", "c"]
     fn a_hostname_names_the_daemon_the_checkout_and_the_project() {
         let tmp = tempfile::tempdir().unwrap();
         let (primary, linked) = checkout_pair(tmp.path());
-        let body = "[daemons_settings]\nnamespace = 'shop'\n[daemons.api]\nrun = 'server'\n";
+        let body =
+            "[daemons_settings]\nnamespace = 'shop'\n[daemons.api]\nrun = 'server'\nport = 3000\n";
         let host = |root: &Path| {
             let set = load(&files(&[(root.join("mise.toml").to_str().unwrap(), body)])).unwrap();
-            set.daemons["api"].host.clone().unwrap()
+            set.daemons["api"].host.clone()
         };
-        // Only the worktree component moves; the daemon and project components
-        // are what make the hostname predictable from the configuration.
-        assert_eq!(host(&primary), "api.shop.shop.localhost");
-        assert_eq!(host(&linked), "api.shop-pr-42.shop.localhost");
-
-        // An explicit label replaces the checkout directory's name, which is
-        // what a worktree named after a branch wants.
-        let set = load(&files(&[(
-            linked.join("mise.toml").to_str().unwrap(),
-            "[daemons_settings]\nnamespace = 'shop'\nworktree_label = 'pr-42'\n[daemons.api]\nrun = 'server'\n",
-        )]))
-        .unwrap();
+        // The primary checkout's daemons sit directly under the project. A
+        // worktree component here would be a hostname pitchfork cannot route.
+        assert_eq!(host(&primary).as_deref(), Some("api.shop.localhost"));
+        // A linked worktree adds its own component, named after its directory.
         assert_eq!(
-            set.daemons["api"].host.as_deref(),
-            Some("api.pr-42.shop.localhost")
+            host(&linked).as_deref(),
+            Some("api.shop-pr-42.shop.localhost")
         );
-        // A label that cannot be a DNS name is rejected rather than repaired,
-        // because the user typed it.
-        assert!(
-            load(&files(&[(
-                linked.join("mise.toml").to_str().unwrap(),
-                "[daemons_settings]\nworktree_label = 'PR 42'\n[daemons.api]\nrun = 'server'\n",
-            )]))
-            .unwrap_err()
-            .to_string()
-            .contains("worktree_label")
-        );
+
+        // Pitchfork reads `worktree_label` from the checkout's own pitchfork
+        // configuration, so mise reads it from there too and the two agree.
+        std::fs::write(linked.join("pitchfork.toml"), "worktree_label = 'pr-42'\n").unwrap();
+        assert_eq!(host(&linked).as_deref(), Some("api.pr-42.shop.localhost"));
+
+        // Without an explicit namespace the project is named after the primary
+        // checkout's directory, which is the same from either checkout.
+        let bare = "[daemons.api]\nrun = 'server'\nport = 3000\n";
+        for root in [&primary, &linked] {
+            let set = load(&files(&[(root.join("mise.toml").to_str().unwrap(), bare)])).unwrap();
+            assert!(
+                set.daemons["api"]
+                    .host
+                    .as_deref()
+                    .unwrap()
+                    .ends_with("shop.localhost"),
+                "{:?}",
+                set.daemons["api"].host
+            );
+        }
     }
 
     #[test]
@@ -2755,19 +2790,19 @@ three = ["two", "c"]
             primary.join("mise.toml").to_str().unwrap(),
             "[daemons_settings]\nnamespace = 'shop'\n\
              [daemons.api]\nrun = 'server'\nport = 3000\n\
-             [daemons.web]\nrun = 'web'\nproxy = 'front'\n\
+             [daemons.web]\nrun = 'web'\nport = 5173\nproxy = 'front'\n\
              [daemons.cache]\nrun = 'cache'\nproxy = false\nport = 6380\n",
         )]))
         .unwrap();
         assert_eq!(set.daemons["api"].exports["API_PORT"], "3000");
         assert_eq!(
             set.daemons["api"].exports["API_URL"],
-            "https://api.shop.shop.localhost"
+            "https://api.shop.localhost"
         );
-        // A custom label replaces only the daemon's own component.
+        // A declared label replaces only the daemon's own component.
         assert_eq!(
             set.daemons["web"].exports["WEB_URL"],
-            "https://front.shop.shop.localhost"
+            "https://front.shop.localhost"
         );
         // An opted-out daemon keeps its port and gets no URL at all.
         assert_eq!(set.daemons["cache"].exports["CACHE_PORT"], "6380");
@@ -2776,7 +2811,7 @@ three = ["two", "c"]
         // The URLs reach the environment mise renders.
         assert!(set.env_entries().iter().any(|(d, _)| matches!(
             d,
-            EnvDirective::Val(k, v, _) if k == "API_URL" && v == "https://api.shop.shop.localhost"
+            EnvDirective::Val(k, v, _) if k == "API_URL" && v == "https://api.shop.localhost"
         )));
     }
 
@@ -2791,7 +2826,7 @@ three = ["two", "c"]
             )]))
         };
         let set = load_body(
-            "[daemons.api]\nrun = 'server'\nproxy = 'front'\nproxy_tls = 'passthrough'\n",
+            "[daemons.api]\nrun = 'server'\nport = 3000\nproxy = 'front'\nproxy_tls = 'passthrough'\n",
         )
         .unwrap();
         // Both keys reach pitchfork, with the label normalized to what mise
@@ -2800,19 +2835,24 @@ three = ["two", "c"]
         assert_eq!(table["proxy"].as_str(), Some("front"));
         assert_eq!(table["proxy_tls"].as_str(), Some("passthrough"));
         assert_eq!(
-            load_body("[daemons.api]\nrun = 'server'\nproxy = false\n")
+            load_body("[daemons.api]\nrun = 'server'\nport = 3000\nproxy = false\n")
                 .unwrap()
                 .daemons["api"]
                 .table["proxy"]
                 .as_bool(),
             Some(false)
         );
+        // `proxy = true` turns routing back on for a daemon a preset opted out
+        // of, which is how a Postgres preset is put behind an HTTP proxy.
+        let set =
+            load_body("[daemons.db]\npreset = 'postgres'\nversion = '18'\nproxy = true\n").unwrap();
+        assert_eq!(set.daemons["db"].host.as_deref(), Some("db.shop.localhost"));
         for invalid in [
-            "[daemons.api]\nrun = 'server'\nproxy = true\n",
-            "[daemons.api]\nrun = 'server'\nproxy = 'Front'\n",
-            "[daemons.api]\nrun = 'server'\nproxy = 'front_end'\n",
-            "[daemons.api]\nrun = 'server'\nproxy_tls = 'reencrypt'\n",
-            "[daemons.api]\nrun = 'server'\nproxy = false\nproxy_tls = 'terminate'\n",
+            "[daemons.api]\nrun = 'server'\nport = 3000\nproxy = 3000\n",
+            "[daemons.api]\nrun = 'server'\nport = 3000\nproxy = 'Front'\n",
+            "[daemons.api]\nrun = 'server'\nport = 3000\nproxy = 'front_end'\n",
+            "[daemons.api]\nrun = 'server'\nport = 3000\nproxy_tls = 'reencrypt'\n",
+            "[daemons.api]\nrun = 'server'\nport = 3000\nproxy = false\nproxy_tls = 'terminate'\n",
         ] {
             assert!(load_body(invalid).is_err(), "{invalid:?}");
         }
@@ -2825,7 +2865,7 @@ three = ["two", "c"]
         let mirror = tmp.path().join("mirror");
         referenced_project(
             &mirror,
-            "[daemons_settings]\nnamespace = 'mirror'\n[daemons.worker]\nrun = 'exec worker'\n",
+            "[daemons_settings]\nnamespace = 'mirror'\n[daemons.worker]\nrun = 'exec worker'\nport = 4000\n",
         );
         let root = tmp.path().join("app");
         std::fs::create_dir_all(root.join(".git")).unwrap();
@@ -2833,7 +2873,7 @@ three = ["two", "c"]
             root.join("mise.toml").to_str().unwrap(),
             &format!(
                 "[daemons_settings]\nnamespace = 'app'\n\
-                 [daemons.worker]\nrun = 'exec worker'\n\
+                 [daemons.worker]\nrun = 'exec worker'\nport = 4000\n\
                  [daemons.remote]\nproject = '{}'\nname = 'worker'\n",
                 mirror.display()
             ),
@@ -2843,12 +2883,90 @@ three = ["two", "c"]
         // project, so it must not make this project's `worker` look ambiguous.
         assert_eq!(
             set.daemons["worker"].exports["WORKER_URL"],
-            "https://worker.app.app.localhost"
+            "https://worker.app.localhost"
         );
         assert!(set.env_entries().iter().any(|(d, _)| matches!(
             d,
             EnvDirective::Val(k, _, _) if k == "WORKER_URL"
         )));
+    }
+
+    #[test]
+    fn two_daemons_cannot_share_one_hostname() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (primary, _) = checkout_pair(tmp.path());
+        let load_body = |body: &str| {
+            load(&files(&[(
+                primary.join("mise.toml").to_str().unwrap(),
+                &format!("[daemons_settings]\nnamespace = 'shop'\n{body}"),
+            )]))
+        };
+
+        // Pitchfork routes neither side of a label collision rather than
+        // choosing, so mise withholds both URLs instead of advertising an
+        // endpoint the proxy refuses. Both daemons still run on their ports.
+        for body in [
+            // A declared label landing on another daemon's name.
+            "[daemons.api]\nrun = 'a'\nport = 3000\n[daemons.web]\nrun = 'b'\nport = 3001\nproxy = 'api'\n",
+            // The same, declared first.
+            "[daemons.web]\nrun = 'b'\nport = 3001\nproxy = 'api'\n[daemons.api]\nrun = 'a'\nport = 3000\n",
+            // Two names folding onto one label.
+            "[daemons.web-ui]\nrun = 'a'\nport = 3000\n[daemons.web_ui]\nrun = 'b'\nport = 3001\n",
+            // Two declarations naming one label.
+            "[daemons.web]\nrun = 'b'\nport = 3001\nproxy = 'front'\n[daemons.api]\nrun = 'a'\nport = 3000\nproxy = 'front'\n",
+        ] {
+            let set = load_body(body).unwrap();
+            for daemon in set.daemons.values() {
+                assert!(daemon.host.is_none(), "{} in {body:?}", daemon.name);
+                assert_eq!(daemon.table["proxy"].as_bool(), Some(false), "{body:?}");
+                assert!(
+                    !daemon.exports.keys().any(|key| key.ends_with("_URL")),
+                    "{body:?}"
+                );
+            }
+            // The ports are untouched; only the hostname is withheld.
+            assert!(set.daemons.values().all(|d| d.port.is_some()), "{body:?}");
+        }
+
+        // A project whose labels do not collide keeps both hostnames.
+        let set = load_body(
+            "[daemons.api]\nrun = 'a'\nport = 3000\n[daemons.web]\nrun = 'b'\nport = 3001\n",
+        )
+        .unwrap();
+        assert_eq!(
+            set.daemons["api"].host.as_deref(),
+            Some("api.shop.localhost")
+        );
+        assert_eq!(
+            set.daemons["web"].host.as_deref(),
+            Some("web.shop.localhost")
+        );
+    }
+
+    #[test]
+    fn a_presets_export_is_not_replaced_by_a_derived_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (primary, _) = checkout_pair(tmp.path());
+        let set = load(&files(&[(
+            primary.join("mise.toml").to_str().unwrap(),
+            "[daemons_settings]\nnamespace = 'shop'\n\
+             [daemons.db]\npreset = 'postgres'\nversion = '18'\n\
+             [daemons.database]\nrun = 'gateway'\nport = 8080\n",
+        )]))
+        .unwrap();
+        // The preset publishes DATABASE_URL; the daemon called `database` would
+        // derive the same name for its hostname. The preset keeps it.
+        assert!(
+            set.daemons["db"].exports["DATABASE_URL"].starts_with("postgresql://"),
+            "{:?}",
+            set.daemons["db"].exports
+        );
+        assert!(!set.daemons["database"].exports.contains_key("DATABASE_URL"));
+        // The daemon still runs and keeps its hostname; only the variable goes.
+        assert_eq!(
+            set.daemons["database"].host.as_deref(),
+            Some("database.shop.localhost")
+        );
     }
 
     #[test]

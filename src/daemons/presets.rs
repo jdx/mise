@@ -135,8 +135,12 @@ pub(crate) fn expand(
             proxied.insert(key.into(), value.clone());
         }
     }
+    // The resolved port has to be on the table before the proxy is read: a
+    // daemon without one is never routed, and a preset always has one.
+    proxied.insert("port".into(), super::expected_port(port));
     let proxy = super::urls::proxy_settings();
-    let host = super::urls::apply(name, &mut proxied, extras.labels, &proxy.tld)?;
+    let super::urls::Applied { host, .. } =
+        super::urls::apply(name, &mut proxied, extras.labels, &proxy.tld)?;
     let mut context = tera::Context::new();
     context.insert("data", &quote(data.to_string_lossy()));
     context.insert("port", &port);
@@ -321,8 +325,8 @@ mod tests {
 
     fn labels() -> super::super::urls::RootLabels {
         super::super::urls::RootLabels {
-            project: "shop".into(),
-            worktree: "main".into(),
+            project: Some("shop".into()),
+            worktree: Some("main".into()),
         }
     }
     #[test]

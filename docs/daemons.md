@@ -563,16 +563,17 @@ which port its neighbours ended up on. For anything that speaks HTTP, pitchfork'
 reverse proxy removes that step: it routes a stable hostname to whatever port the
 daemon actually bound, and mise derives the same hostname while configuration loads.
 
-Each daemon is reachable at:
+Every daemon that configures a `port` is reachable at:
 
 ```
-<daemon>.<worktree>.<project>.<tld>
+<daemon>.<project>.<tld>              in the primary checkout
+<daemon>.<worktree>.<project>.<tld>   in a linked git worktree
 ```
 
-The daemon component is the daemon's own name, the worktree component separates
-concurrent checkouts, and the project component comes from the project's pitchfork
-namespace. A project with `namespace = "shop"` checked out at `~/src/shop` therefore
-serves its `api` daemon at `https://api.shop.shop.localhost`, and a linked worktree at
+The daemon component is the daemon's own name, the project component comes from the
+project's pitchfork namespace, and a linked worktree adds a component of its own. A
+project with `namespace = "shop"` checked out at `~/src/shop` therefore serves its
+`api` daemon at `https://api.shop.localhost`, and a linked worktree at
 `~/src/shop-pr-42` serves the same daemon at `https://api.shop-pr-42.shop.localhost`.
 Both can run at once, and neither URL changes when a port moves.
 
@@ -594,46 +595,33 @@ table. Databases keep `port = "auto"` instead: the proxy speaks HTTP, and a Post
 or Redis client does not, so the `postgres` and `redis` presets opt out of it and keep
 exporting `PGPORT`, `DATABASE_URL`, and `REDIS_URL`.
 
-### Naming the worktree
-
-The worktree component defaults to the name of the checkout directory, which is also
-pitchfork's own default. Set `worktree_label` to name it yourself, for example after
-the branch rather than the directory:
-
-```toml
-# mise.local.toml, in the worktree
-[daemons_settings]
-worktree_label = "pr-42"
-```
-
-It belongs in a `mise.local.toml` inside the worktree, because a tracked `mise.toml`
-is shared by every checkout of the repository and a label has to differ between them.
-The label must be a DNS label: lowercase letters, digits and `-`, up to 63 characters,
-not starting or ending with `-`. Mise repairs names it derives itself, such as a
-directory called `shop_v2`, but rejects a label you typed that cannot be one.
-
-Give the project an explicit `[daemons_settings] namespace` to get a readable project
-component. The project component uses that namespace before any per-worktree suffix,
-so `namespace_per_worktree` keeps separating daemon IDs while the worktree component
-does the separating in hostnames. Without an explicit namespace, mise falls back to
-the hashed namespace it generates for the main checkout, which is stable across
-worktrees and unique but not memorable.
+A daemon without a `port` is never routed and gets no URL. So does one that opts out.
 
 ### Per-daemon proxy settings
 
 A daemon can take a different hostname label, or opt out of the proxy entirely:
 
 ```toml
-# https://front.shop.shop.localhost, not https://web.…
+# https://front.shop.localhost, not https://web.…
 [daemons.web]
 run = "npm run dev"
+port = 5173
 proxy = "front"
 
 # No hostname and no WORKER_URL; reachable only on its port.
 [daemons.worker]
 run = "npm run worker"
+port = 9000
 proxy = false
 ```
+
+**Set `proxy = false` on any daemon that does not speak HTTP.** The proxy serves
+HTTP, so a custom Redis or Postgres daemon would otherwise be given an `https://`
+hostname and a `REDIS_URL` or `DATABASE_URL` pointing at it, which is not what a
+client of that database expects. The database presets already do this for you.
+
+`proxy = true` turns routing back on for a daemon that a preset opted out of, using
+the daemon's own name as the label.
 
 `proxy_tls` chooses what the proxy does with TLS for that daemon. The default,
 `"terminate"`, means the proxy serves HTTPS and forwards plain HTTP to the daemon.
@@ -643,12 +631,39 @@ it unbroken:
 ```toml
 [daemons.api]
 run = "npm run dev:https"
+port = 3000
 proxy_tls = "passthrough"
 ```
 
 Both keys are forwarded to pitchfork unchanged. Hostname routing needs pitchfork
 2.26.0 or later; an older supervisor starts the daemons normally but does not serve
 the hostnames.
+
+### Naming the project and the worktree
+
+The project component is the explicit `[daemons_settings] namespace`, before any
+per-worktree suffix, so `namespace_per_worktree` keeps separating daemon IDs while
+the worktree component does the separating in hostnames. Without an explicit
+namespace, both mise and pitchfork name the project after the primary checkout's
+directory.
+
+The worktree component is the linked worktree's directory name. To name it yourself,
+set `worktree_label` in a pitchfork configuration file inside that worktree, which is
+where pitchfork reads it:
+
+```toml
+# pitchfork.local.toml, in the worktree
+worktree_label = "pr-42"
+```
+
+Mise reads the key from the same place, so the URL it exports and the hostname the
+proxy serves stay the same. Use `pitchfork.local.toml` and gitignore it: a tracked
+file is shared by every checkout, and a worktree label has to differ between them.
+
+Labels are folded to lowercase letters, digits and `-`. Two daemons, worktrees or
+projects whose names fold to one label collide, and pitchfork routes neither; mise
+withholds both URLs for the same pair and warns, rather than exporting an endpoint
+the proxy refuses. The daemons still run on their ports.
 
 ### Seeing the URLs
 
@@ -661,18 +676,19 @@ mise daemons urls
 
 ```
 ~/src/shop-pr-42
-Daemon         URL                               Port  Proxy      Status
-shop/api       https://api.pr-42.shop.localhost  3117  terminate  running
-shop/web       https://front.pr-42.shop.localhost  -   passthrough  running
-shop/postgres  -                                 5679  off        running
+Daemon         URL                                 Port  Proxy        Status
+shop/api       https://api.pr-42.shop.localhost    3117  terminate    running
+shop/web       https://front.pr-42.shop.localhost  5173  passthrough  running
+shop/postgres  -                                   5679  off          running
   stack:   https://pr-42.shop.localhost
   project: https://shop.localhost
 ```
 
-The proxy column is the daemon's `proxy_tls` mode, or `off` when it set
-`proxy = false`. Such a daemon is listed with its port alone rather than omitted, so a
-database is visible here too. `mise daemons ls --json` carries the same information in
-its `host`, `url`, and `proxy` fields.
+The proxy column is the daemon's `proxy_tls` mode, or `off` when it has no hostname.
+Such a daemon is listed with its port alone rather than omitted, so a database is
+visible here too. `mise daemons ls --json` carries the same information in its `host`,
+`url`, and `proxy` fields. The primary checkout has no stack page of its own; its
+stack is the project.
 
 ### Where the scheme and port come from
 

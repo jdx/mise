@@ -571,8 +571,14 @@ fn print_urls(
             ]);
         }
         table.print()?;
-        miseprintln!("  stack:   {}", proxy.stack_url(labels));
-        miseprintln!("  project: {}", proxy.project_url(labels));
+        // The primary checkout has no stack page of its own; its stack is the
+        // project, so only a worktree prints both.
+        if let Some(stack) = proxy.stack_url(labels) {
+            miseprintln!("  stack:   {stack}");
+        }
+        if let Some(project) = proxy.project_url(labels) {
+            miseprintln!("  project: {project}");
+        }
     }
     Ok(())
 }

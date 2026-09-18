@@ -639,21 +639,54 @@ pub(crate) fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     None
 }
 
-/// The checkout directory `path` belongs to: the directory holding its `.git`,
-/// whether that is a main checkout's directory or a linked worktree's file.
+/// Where a path sits in a git repository: which checkout holds it, and the
+/// primary checkout of the repository that checkout belongs to.
 ///
-/// Callers naming a working copy want this rather than the project root, which
-/// in a monorepo is often several levels below it. Returns None outside any
-/// git repository. A submodule is its own working copy, so its directory is
-/// returned rather than the checkout containing it.
-pub(crate) fn checkout_root(path: &Path) -> Option<PathBuf> {
+/// Both are needed to name a working copy: the primary identifies the project
+/// across all its checkouts, and the linked worktree, when there is one,
+/// distinguishes this copy from the others.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Checkout {
+    /// The main checkout's directory, or None for a worktree of a bare
+    /// repository, which has no ordinary checkout.
+    pub primary: Option<PathBuf>,
+    /// This linked worktree's own directory, when `path` is inside one.
+    pub worktree: Option<PathBuf>,
+}
+
+/// Resolve `path`'s checkout without running git.
+pub(crate) fn checkout_of(path: &Path) -> Checkout {
     for dir in path.ancestors() {
         let dotgit = dir.join(".git");
-        if dotgit.is_dir() || dotgit.is_file() {
-            return Some(dir.to_path_buf());
+        if dotgit.is_dir() {
+            // The main checkout, or a nested independent repository; either way
+            // the search stops rather than consulting an outer repository.
+            return Checkout {
+                primary: Some(dir.to_path_buf()),
+                worktree: None,
+            };
+        }
+        if !dotgit.is_file() {
+            continue;
+        }
+        if worktree_gitdir(&dotgit).is_some() {
+            return Checkout {
+                primary: main_checkout_root(&dotgit),
+                worktree: Some(dir.to_path_buf()),
+            };
+        }
+        // A submodule belongs to whatever checkout contains it, so keep
+        // walking: the same submodule in two worktrees is two working copies.
+        // Any other `.git` file is an independent repository and ends the walk
+        // exactly as a `.git` directory does.
+        if !is_submodule_gitdir(&dotgit) {
+            return Checkout {
+                primary: Some(dir.to_path_buf()),
+                worktree: None,
+            };
         }
     }
-    None
+    Checkout::default()
 }
 
 /// Whether `path` sits inside a linked git worktree.

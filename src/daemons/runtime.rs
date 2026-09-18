@@ -545,7 +545,7 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
     // resolves. Say which release understands these keys.
     if set.daemons.values().any(|d| d.host.is_some()) || !set.labels.is_empty() {
         header.push_str(&format!(
-            "# Hostname routing (proxy labels, worktree_label) needs pitchfork {}.\n",
+            "# Hostname routing (per-daemon proxy labels) needs pitchfork {}.\n",
             crate::daemons::urls::REQUIRED_PITCHFORK
         ));
     }
@@ -600,19 +600,6 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
         );
     }
     let mut doc = toml::Table::new();
-    // Pitchfork composes each daemon's hostname from its `proxy` label, this
-    // label, and the project's namespace. Its own default is the checkout
-    // directory's name, so an unchanged label is left out rather than pinned:
-    // that keeps the generated file stable when a worktree is renamed. It is
-    // written first because TOML requires bare values before any table.
-    if let Some(labels) = set.labels.get(&state.root)
-        && labels.worktree != crate::daemons::urls::default_worktree_label(&state.root)
-    {
-        doc.insert(
-            "worktree_label".into(),
-            toml::Value::String(labels.worktree.clone()),
-        );
-    }
     doc.insert(
         "settings".into(),
         toml::Value::Table(toml::Table::from_iter([(
@@ -701,7 +688,6 @@ mod tests {
 
     fn settings(namespace: &str, per_worktree: bool) -> DaemonSettings {
         DaemonSettings {
-            worktree_label: None,
             namespace: Some(namespace.to_string()),
             namespace_per_worktree: Some(per_worktree),
         }
@@ -867,7 +853,7 @@ mod tests {
     #[test]
     fn the_generated_config_carries_hostname_routing() {
         let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("shop-pr-42");
+        let root = tmp.path().join("shop");
         std::fs::create_dir_all(&root).unwrap();
         let daemon = |name: &str, proxy: toml::Value, host: Option<&str>| super::super::Daemon {
             name: name.to_string(),
@@ -889,14 +875,14 @@ mod tests {
             port: None,
             host: host.map(str::to_string),
         };
-        let mut set = DaemonSet {
+        let set = DaemonSet {
             daemons: indexmap::IndexMap::from_iter([
                 (
                     "api".to_string(),
                     daemon(
                         "api",
                         toml::Value::String("front".into()),
-                        Some("front.pr-42.shop.localhost"),
+                        Some("front.shop.localhost"),
                     ),
                 ),
                 (
@@ -906,21 +892,15 @@ mod tests {
             ]),
             ..Default::default()
         };
-        set.labels.insert(
-            root.clone(),
-            super::super::urls::RootLabels {
-                project: "shop".into(),
-                worktree: "pr-42".into(),
-            },
-        );
         let state = State {
             namespace: "shop".into(),
             root: root.clone(),
             ..State::default()
         };
         let rendered = render(&set, &state).unwrap();
-        // Both keys reach pitchfork verbatim, so it routes and terminates TLS
-        // the way the declaration asked.
+        // Both keys reach pitchfork verbatim, so it routes each daemon and
+        // handles TLS the way the declaration asked. The hostname itself is
+        // pitchfork's to derive; mise only supplies the label.
         let parsed: toml::Table = toml::from_str(&rendered).unwrap();
         assert_eq!(parsed["daemons"]["api"]["proxy"].as_str(), Some("front"));
         assert_eq!(
@@ -928,38 +908,7 @@ mod tests {
             Some("passthrough")
         );
         assert_eq!(parsed["daemons"]["cache"]["proxy"].as_bool(), Some(false));
-        // The checkout directory is `shop-pr-42`, so an explicit `pr-42` label
-        // differs from pitchfork's default and has to be written out.
-        assert_eq!(parsed["worktree_label"].as_str(), Some("pr-42"));
         assert!(rendered.contains("needs pitchfork"), "{rendered}");
-
-        // A label matching the directory name is pitchfork's own default, so
-        // the generated file does not pin it.
-        set.labels.insert(
-            root.clone(),
-            super::super::urls::RootLabels {
-                project: "shop".into(),
-                worktree: "shop-pr-42".into(),
-            },
-        );
-        let rendered = render(&set, &state).unwrap();
-        let parsed: toml::Table = toml::from_str(&rendered).unwrap();
-        assert!(!parsed.contains_key("worktree_label"), "{rendered}");
-
-        // A label belonging to some other root, as an imported project's would
-        // be, must not be written into this root's file.
-        let mut other = set.clone();
-        other.labels.clear();
-        other.labels.insert(
-            root.join("elsewhere"),
-            super::super::urls::RootLabels {
-                project: "other".into(),
-                worktree: "somewhere-else".into(),
-            },
-        );
-        let rendered = render(&other, &state).unwrap();
-        let parsed: toml::Table = toml::from_str(&rendered).unwrap();
-        assert!(!parsed.contains_key("worktree_label"), "{rendered}");
     }
 
     #[test]
