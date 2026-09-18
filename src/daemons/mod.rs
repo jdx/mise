@@ -350,7 +350,12 @@ fn port_env_var(name: &str) -> Option<String> {
     // is an invalid identifier and would break the whole activation, not just
     // that variable. Such a name was legal before this export existed, so it
     // keeps working and only goes without the variable.
-    if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+    //
+    // Only a leading digit is disqualifying. Names are letters, digits, `.`,
+    // `_` and `-`, and cannot lead with `-`, so every other first character
+    // either is a letter or becomes the underscore that `.api` turns into
+    // `_API_PORT`, which a shell accepts.
+    if name.starts_with(|c: char| c.is_ascii_digit()) {
         warn_once!(
             "[daemons] {name} starts with a digit, so its port cannot be exported as a shell variable; rename it to start with a letter to get one"
         );
@@ -1174,6 +1179,15 @@ three = ["two", "c"]
         // Both still have their ports; only the variable is withheld.
         assert_eq!(set.daemons["web-ui"].port.unwrap().port, 3000);
         assert_eq!(set.daemons["web_ui"].port.unwrap().port, 3001);
+
+        // A leading punctuation character becomes an underscore, which a shell
+        // accepts, so such a name still gets its variable.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.\".api\"]\nrun = 'a'\nport = 3000\n",
+        )]))
+        .unwrap();
+        assert_eq!(set.daemons[".api"].exports["_API_PORT"], "3000");
 
         // A shell cannot export a name starting with a digit, but that name was
         // legal before this export existed, so it keeps working without one.
