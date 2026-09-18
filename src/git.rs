@@ -1281,6 +1281,74 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
     }
 
     #[test]
+    fn in_linked_worktree_requires_real_worktree_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+
+        // A real linked worktree, and a nested path inside it.
+        let main = base.join("main");
+        let wt = base.join("wt");
+        std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
+        std::fs::create_dir_all(wt.join("packages/api")).unwrap();
+        std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
+        )
+        .unwrap();
+        assert!(super::in_linked_worktree(&wt));
+        assert!(super::in_linked_worktree(&wt.join("packages/api")));
+        assert!(!super::in_linked_worktree(&main));
+        assert!(!super::in_linked_worktree(&base));
+
+        // A worktree of a bare repository still counts: it has no main checkout
+        // to map onto, but it is a separate working copy.
+        let bare = base.join("bare.git");
+        let bare_wt = base.join("bare-wt");
+        std::fs::create_dir_all(bare.join("worktrees/bare-wt")).unwrap();
+        std::fs::create_dir_all(&bare_wt).unwrap();
+        std::fs::write(bare.join("worktrees/bare-wt/commondir"), "../..\n").unwrap();
+        std::fs::write(
+            bare_wt.join(".git"),
+            format!("gitdir: {}\n", bare.join("worktrees/bare-wt").display()),
+        )
+        .unwrap();
+        assert!(super::in_linked_worktree(&bare_wt));
+
+        // `git clone --separate-git-dir` whose git dir happens to sit directly
+        // under a directory named `worktrees`. The directory exists and is a
+        // real git dir, so only the absence of `commondir` distinguishes it;
+        // misreading it would move a single checkout off its base port.
+        let sep = base.join("sep-checkout");
+        let sep_git = base.join("worktrees/sep.git");
+        std::fs::create_dir_all(sep_git.join("refs")).unwrap();
+        std::fs::create_dir_all(&sep).unwrap();
+        std::fs::write(sep_git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(sep_git.join("config"), "[core]\n").unwrap();
+        std::fs::write(sep.join(".git"), format!("gitdir: {}\n", sep_git.display())).unwrap();
+        assert!(!super::in_linked_worktree(&sep));
+
+        // A submodule points under `modules/`, and a pruned worktree marker
+        // names a directory that no longer exists.
+        let sub = base.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(
+            sub.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/modules/sub").display()),
+        )
+        .unwrap();
+        assert!(!super::in_linked_worktree(&sub));
+        let pruned = base.join("pruned");
+        std::fs::create_dir_all(&pruned).unwrap();
+        std::fs::write(
+            pruned.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/worktrees/gone").display()),
+        )
+        .unwrap();
+        assert!(!super::in_linked_worktree(&pruned));
+    }
+
+    #[test]
     fn worktree_main_checkout_equivalent() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().canonicalize().unwrap();
