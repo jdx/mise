@@ -396,8 +396,19 @@ pub(crate) fn apply(
             bail!("[daemons.{name}].proxy must be a hostname label, true, or false; got {other}")
         }
     };
-    if matches!(proxy, Proxy::Disabled) && tls.is_some() {
-        bail!("[daemons.{name}] sets proxy_tls but proxy = false, so nothing is proxied");
+    if tls.is_some() {
+        // `proxy_tls` says what the proxy should do with TLS for this daemon,
+        // so it is a mistake on one the proxy will never route. Writing it out
+        // beside the `proxy = false` this produces would put the very pair
+        // rejected above into the generated configuration.
+        if matches!(proxy, Proxy::Disabled) {
+            bail!("[daemons.{name}] sets proxy_tls but proxy = false, so nothing is proxied");
+        }
+        if !routable {
+            bail!(
+                "[daemons.{name}] sets proxy_tls but configures no port, so pitchfork never routes it; give it a port or drop proxy_tls"
+            );
+        }
     }
     // A daemon with no port is not routed, so writing a label for it would
     // leave the generated configuration claiming something mise does not
@@ -409,7 +420,7 @@ pub(crate) fn apply(
         Proxy::Derived => sanitize_label(name),
     };
     let Some(label) = label else {
-        table.insert("proxy".into(), toml::Value::Boolean(false));
+        withdraw(table);
         return Ok(Applied { host: None });
     };
     // The label is written out even when mise derived it, so pitchfork routes
@@ -420,8 +431,10 @@ pub(crate) fn apply(
         .map(|suffix| format!("{label}.{suffix}"))
         .filter(|host| hostname_fits(host));
     // A name too long for DNS is no name at all, and pitchfork refuses it too.
+    // Nothing the declaration asked for causes this, so it is withdrawn rather
+    // than reported.
     if host.is_none() {
-        table.insert("proxy".into(), toml::Value::Boolean(false));
+        withdraw(table);
     }
     Ok(Applied { host })
 }
@@ -431,6 +444,9 @@ pub(crate) fn apply(
 /// hostname, and the daemon keeps running on its port.
 pub(crate) fn withdraw(table: &mut toml::Table) {
     table.insert("proxy".into(), toml::Value::Boolean(false));
+    // `proxy_tls` beside `proxy = false` is the pair `apply` refuses when a
+    // declaration writes it, so the generated file must not carry it either.
+    table.remove("proxy_tls");
 }
 
 #[cfg(test)]
@@ -616,6 +632,10 @@ mod tests {
         let (host, table) = parse("proxy = 'web'").unwrap();
         assert!(host.is_none());
         assert_eq!(table["proxy"].as_bool(), Some(false));
+        // Declaring how the proxy should handle TLS for a daemon it will never
+        // route is the same mistake as declaring it beside proxy = false.
+        assert!(parse("proxy_tls = 'terminate'").is_err());
+        assert!(parse("proxy = true\nproxy_tls = 'terminate'").is_err());
 
         for mode in ["terminate", "passthrough"] {
             let (_, table) = parse(&format!("port = 3000\nproxy_tls = '{mode}'")).unwrap();
@@ -646,8 +666,15 @@ mod tests {
         let applied = apply(&long, &mut table, &labels, &"d".repeat(MAX_LABEL_LEN)).unwrap();
         assert!(applied.host.is_none(), "{:?}", applied.host);
         // And the generated configuration agrees, rather than asking the proxy
-        // to route a name it will refuse.
+        // to route a name it will refuse. Nothing the declaration asked for
+        // caused this, so a declared TLS mode is withdrawn with it rather than
+        // left beside a proxy = false the loader would have rejected.
+        let mut table: toml::Table =
+            toml::from_str("port = 3000\nproxy_tls = 'passthrough'").unwrap();
+        let applied = apply(&long, &mut table, &labels, &"d".repeat(MAX_LABEL_LEN)).unwrap();
+        assert!(applied.host.is_none());
         assert_eq!(table["proxy"].as_bool(), Some(false));
+        assert!(!table.contains_key("proxy_tls"), "{table:?}");
         // The same labels fit under an ordinary TLD.
         let mut table: toml::Table = toml::from_str("port = 3000").unwrap();
         assert!(

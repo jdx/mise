@@ -5966,6 +5966,9 @@
                 },
                 {
                   "required": ["preset"]
+                },
+                {
+                  "required": ["project"]
                 }
               ]
             },
