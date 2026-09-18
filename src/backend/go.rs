@@ -196,25 +196,32 @@ impl Backend for GoBackend {
         // Module versions carry the `v` prefix that listing strips off.
         let version = format!("v{}", version.trim_start_matches('v'));
         let tool_name = self.tool_name();
+        // One full pass per route, not one per candidate: a package path's first
+        // candidates are not the module root, and spending the timeout on a
+        // `go list` miss for one of those would strand the request before the
+        // proxy is ever asked about the path that listing already resolved.
+        // Listing and `@latest` are laid out the same way.
         timeout::run_with_timeout_async(
             async || {
-                for mod_path in module_path_candidates(&tool_name) {
-                    if !proxies.is_empty() {
-                        let endpoint =
-                            format!("{}/@v/{version}.info", encode_module_path(&mod_path));
-                        if let ProxyVersionInfoResult::Found(info) =
-                            query_proxy_version_metadata(&proxies, &endpoint).await
-                        {
-                            return Ok(info.time);
-                        }
+                let candidates = module_path_candidates(&tool_name);
+                for mod_path in &candidates {
+                    if proxies.is_empty() {
+                        break;
                     }
-                    // Fall through to `go list` on a proxy miss, the way listing
-                    // and `@latest` do. A private module under the default
-                    // `proxy,direct` GOPROXY is not on the proxy, and reporting
-                    // no date there would hand the cutoff an undated version to
-                    // treat as eligible — the exact gap this exists to close.
+                    let endpoint = format!("{}/@v/{version}.info", encode_module_path(mod_path));
+                    if let ProxyVersionInfoResult::Found(info) =
+                        query_proxy_version_metadata(&proxies, &endpoint).await
+                    {
+                        return Ok(info.time);
+                    }
+                }
+                // A private module under the default `proxy,direct` GOPROXY is
+                // not on the proxy, and reporting no date for it would hand the
+                // cutoff an undated version to treat as eligible — the exact gap
+                // this exists to close.
+                for mod_path in &candidates {
                     if let Some(metadata) = self
-                        .fetch_go_module_version_metadata(config, &mod_path, &version)
+                        .fetch_go_module_version_metadata(config, mod_path, &version)
                         .await
                     {
                         return Ok(metadata.time);

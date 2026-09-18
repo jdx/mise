@@ -51,13 +51,16 @@ mise caps how many versions of a module it reports release dates for, on either
 route: the newest 100 through a module proxy, and the newest 10 when it has to
 reach the module over VCS, where each date costs its own round trip. That cap
 shows up in `mise ls-remote`, which lists the older versions without a date.
-[`minimum_release_age`](/configuration/settings.html#minimum_release_age) still
-applies exactly, on both routes: before mise settles on a version it has no date
-for, it reads that one version's date and moves further back while the answer is
-newer than the cutoff. A cutoff deep enough to reach past the dated versions
-therefore costs one extra query per version it skips, which is why a long cutoff
-such as `90d` can make the first resolution of a module with many releases
-noticeably slower over VCS. Requesting `latest` usually avoids all of it — mise
+The cap does not weaken
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age): on
+both routes, before mise settles on a version it has no date for, it reads that
+one version's date and moves further back while the answer is newer than the
+cutoff. A cutoff deep enough to reach past the dated versions therefore costs one
+extra query per version it skips, which is why a long cutoff such as `90d` can
+make the first resolution of a module with many releases noticeably slower over
+VCS. If one of those reads fails outright — an unreachable proxy, a VCS host that
+times out — mise warns and allows the version rather than failing the install, so
+a version can still slip past the cutoff on a bad network. Requesting `latest` usually avoids all of it — mise
 asks for `latest` directly, in one query — though when that answer is itself
 newer than the cutoff, mise falls back to the version list and dates candidates
 from there.

@@ -3037,10 +3037,23 @@ pub(crate) trait Backend: Debug + Send + Sync {
         before: Timestamp,
     ) -> eyre::Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let id = self.id();
         let hidden: Vec<VersionInfo> = self
             .list_remote_versions_with_info_with_selection_options(config, &opts, false)
             .await?
             .into_iter()
+            .map(|mut v| {
+                // A version the listing could not afford to date may still have
+                // been dated on demand while the cutoff was applied. Without
+                // that, the versions this message exists to name are exactly the
+                // ones it cannot see.
+                if v.created_at.is_none()
+                    && let Some(created_at) = on_demand_release_date(id, &v.version)
+                {
+                    v.created_at = created_at;
+                }
+                v
+            })
             .filter(|v| {
                 v.created_at_timestamp()
                     .is_some_and(|created| created >= before)
@@ -3162,22 +3175,30 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 // Already checked against the cutoff by `filter_by_date`.
                 break;
             }
-            let created_at = match self.fetch_version_created_at(config, candidate).await {
-                Ok(created_at) => created_at,
-                Err(err) => {
-                    // Allow a version whose date could not be read, the same as
-                    // one from a backend that has no dates at all. These lookups
-                    // reach the network one candidate at a time, so failing the
-                    // resolution here would turn a slow proxy or VCS host into
-                    // an install error for a request that resolved fine before
-                    // the cutoff could be checked at all. Say so, though: it
-                    // means this version went in unchecked.
-                    warn!(
-                        "{}@{candidate}: could not read its release date to check the {before} cutoff, allowing it: {err:#}",
-                        self.id()
-                    );
-                    None
-                }
+            // Reuse an answer this run already paid for; the error message
+            // below asks for the same versions again.
+            let created_at = match on_demand_release_date(self.id(), candidate) {
+                Some(created_at) => created_at,
+                None => match self.fetch_version_created_at(config, candidate).await {
+                    Ok(created_at) => {
+                        remember_on_demand_release_date(self.id(), candidate, created_at.clone());
+                        created_at
+                    }
+                    Err(err) => {
+                        // Allow a version whose date could not be read, the same as
+                        // one from a backend that has no dates at all. These lookups
+                        // reach the network one candidate at a time, so failing the
+                        // resolution here would turn a slow proxy or VCS host into
+                        // an install error for a request that resolved fine before
+                        // the cutoff could be checked at all. Say so, though: it
+                        // means this version went in unchecked.
+                        warn!(
+                            "{}@{candidate}: could not read its release date to check the {before} cutoff, allowing it: {err:#}",
+                            self.id()
+                        );
+                        None
+                    }
+                },
             };
             let info = VersionInfo {
                 version: candidate.clone(),
@@ -5106,6 +5127,28 @@ mod latest_version_tests {
     }
 
     #[tokio::test]
+    async fn test_cutoff_reads_each_release_date_once() {
+        let config = Config::get().await.unwrap();
+        let backend = partially_dated_backend("test-lazy-dates-memo")
+            .with_lazy_dates(&[("3.0.0", "2025-12-01"), ("2.0.0", "2025-01-01")]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        for _ in 0..2 {
+            assert_eq!(
+                backend
+                    .latest_version(&config, Some("latest".to_string()), Some(before))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some("2.0.0")
+            );
+        }
+        // Each date costs a network round trip, and the second resolution — or
+        // the error message explaining the cutoff — must not pay for it again.
+        assert_eq!(backend.lazy_date_calls(), 2);
+    }
+
+    #[tokio::test]
     async fn test_cutoff_allows_a_version_whose_date_lookup_fails() {
         let config = Config::get().await.unwrap();
         // An unreachable proxy or VCS host must not turn into a resolution
@@ -6182,6 +6225,33 @@ struct SharedHookEnv {
     /// completing since then makes it stale.
     generation: u64,
     env: IndexMap<String, String>,
+}
+
+/// Release dates read one version at a time during this run, keyed by backend
+/// id and version.
+///
+/// `Backend::fetch_version_created_at` goes to the network, and two separate
+/// things need each answer: the walk that applies a release-age cutoff, and the
+/// error message that explains which versions the cutoff hid. Without a shared
+/// record the message re-reads the cached listing, where those versions are
+/// still undated, and falls back to a bare "no versions found" — dropping the
+/// remedy that tells the user which version to pin or how to lower the cutoff.
+type OnDemandReleaseDates = HashMap<(String, String), Option<String>>;
+static ON_DEMAND_RELEASE_DATES: LazyLock<Mutex<OnDemandReleaseDates>> =
+    LazyLock::new(Default::default);
+
+fn remember_on_demand_release_date(backend_id: &str, version: &str, created_at: Option<String>) {
+    if let Ok(mut dates) = ON_DEMAND_RELEASE_DATES.lock() {
+        dates.insert((backend_id.to_string(), version.to_string()), created_at);
+    }
+}
+
+fn on_demand_release_date(backend_id: &str, version: &str) -> Option<Option<String>> {
+    ON_DEMAND_RELEASE_DATES
+        .lock()
+        .ok()?
+        .get(&(backend_id.to_string(), version.to_string()))
+        .cloned()
 }
 
 static POSTINSTALL_ENV: LazyLock<TokioMutex<Option<SharedHookEnv>>> =
