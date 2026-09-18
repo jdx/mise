@@ -26,6 +26,9 @@ daemon_state_dir() {
   local root="${1:-$PWD}" state
   state=$(jq -r --arg root "$root" 'select(.root == $root) | input_filename' "$MISE_STATE_DIR"/daemons/*/state.json)
   test -n "$state" || fail "no daemon state directory for $root"
+  # One root means one directory; anything else would put us back to picking one
+  # arbitrarily, and a multi-line "$state" would silently build a garbled path.
+  test "$(echo "$state" | wc -l)" -eq 1 || fail "several daemon state directories for $root: $state"
   echo "${state%/state.json}"
 }
 cat >mise.toml <<'TOML'
