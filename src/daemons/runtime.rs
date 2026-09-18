@@ -28,6 +28,41 @@ pub(crate) struct State {
     /// project roots on this machine detect a conflict before starting.
     #[serde(default)]
     pub ports: BTreeMap<String, PortClaim>,
+    /// Fingerprint of the other projects' state files as of the last conflict
+    /// check. A shell hook runs on every prompt, so an unchanged neighbourhood
+    /// is recognised from metadata instead of re-reading and parsing each one.
+    #[serde(default)]
+    pub ports_scan: String,
+}
+
+/// Cheap summary of the other projects' state files: their names, sizes and
+/// modification times, without opening any of them.
+///
+/// This is a hint for skipping redundant work on the shell-hook path, not a
+/// guarantee: a rewrite of the same length within one timestamp tick looks
+/// unchanged. Missing one costs a delayed hint rather than a wrong port, and an
+/// explicit start scans regardless.
+fn siblings_fingerprint(mine: &Path) -> String {
+    let Ok(entries) = std::fs::read_dir(crate::dirs::STATE.join("daemons")) else {
+        return String::new();
+    };
+    let mut seen: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.path() != mine)
+        .filter_map(|e| {
+            let state = e.path().join("state.json");
+            let meta = std::fs::metadata(&state).ok()?;
+            let stamp = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos())
+                .unwrap_or_default();
+            Some(format!("{}:{}:{stamp}", state.display(), meta.len()))
+        })
+        .collect();
+    seen.sort();
+    crate::hash::hash_to_str(&seen)
 }
 
 pub(crate) struct Runtime {
@@ -412,6 +447,7 @@ impl Runtime {
             bin: self.bin.clone(),
             config_hash: String::new(),
             ports,
+            ports_scan: String::new(),
         };
         for daemon in set.daemons.values() {
             let id = format!("{}/{}", state.namespace, daemon.name);
@@ -428,11 +464,18 @@ impl Runtime {
         // background, where an opaque error is easiest to miss. Explicit starts
         // force registration and would be covered either way.
         //
-        // The cost is a directory read and a few small state files per hook for
-        // a project that declares ports at all; the liveness probe that follows
-        // only runs once a port actually matches.
-        self.check_port_conflicts(root, &state.ports, starting)
-            .await?;
+        // A shell hook reaches this on every prompt, so the neighbourhood is
+        // fingerprinted from metadata first: unchanged siblings and unchanged
+        // claims of our own can only give the answer they gave last time. The
+        // liveness probe beyond that runs only once a port actually matches.
+        state.ports_scan = siblings_fingerprint(&state_dir(root));
+        if force_registration
+            || state.ports_scan != previous.ports_scan
+            || state.ports != previous.ports
+        {
+            self.check_port_conflicts(root, &state.ports, starting)
+                .await?;
+        }
         if !force_registration
             && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
@@ -719,6 +762,48 @@ mod tests {
                 .iter()
                 .any(|(s, _, _)| s.root == theirs)
         );
+    }
+
+    #[test]
+    fn the_fingerprint_notices_a_neighbour_changing() {
+        // The hook skips the scan when this is unchanged, so it has to move for
+        // anything that could change the answer.
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = tmp.path().join("mine");
+        let other = tmp.path().join("other");
+        let write = |root: &Path, port: u16| {
+            let state = State {
+                root: root.to_path_buf(),
+                ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(port))]),
+                ..State::default()
+            };
+            let dir = state_dir(root);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("state.json"),
+                serde_json::to_vec_pretty(&state).unwrap(),
+            )
+            .unwrap();
+        };
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+
+        let before = siblings_fingerprint(&state_dir(&mine));
+        assert_eq!(before, siblings_fingerprint(&state_dir(&mine)), "stable");
+
+        // A project appearing must be noticed.
+        write(&other, 5432);
+        let appeared = siblings_fingerprint(&state_dir(&mine));
+        assert_ne!(before, appeared);
+
+        // So must that project rewriting its claims.
+        write(&other, 15432);
+        assert_ne!(appeared, siblings_fingerprint(&state_dir(&mine)));
+
+        // Our own state file is not a neighbour, so it never moves the value.
+        let neighbours = siblings_fingerprint(&state_dir(&mine));
+        write(&mine, 6379);
+        assert_eq!(neighbours, siblings_fingerprint(&state_dir(&mine)));
     }
 
     #[test]

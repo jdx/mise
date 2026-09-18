@@ -392,7 +392,9 @@ project never reserves a port, so two projects can still take turns on a default
 such as 5432 exactly as before. The check only probes a root whose port actually
 matches, and it leaves the port available when that project's supervisor cannot be
 reached. It also runs for an automatic start whose configuration has not changed, since
-that is exactly when another project can take a port that was free last time. Only the
+that is exactly when another project can take a port that was free last time. On that
+path mise first compares the other projects' state files by size and timestamp, so an
+unchanged neighbourhood costs no reading or parsing. Only the
 daemons a command actually starts are checked, so an unrelated one whose port is busy
 elsewhere never blocks them: `mise daemons start redis` ignores a conflict on this
 project's Postgres. It is a diagnostic rather than a reservation: two projects starting at the same
