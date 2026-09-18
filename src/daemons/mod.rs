@@ -3051,6 +3051,48 @@ three = ["two", "c"]
         );
     }
 
+    /// A group can name a daemon this project imported. The set keys an import
+    /// by its qualified ID, so a group member carrying the local name has to be
+    /// resolved through the aliases before it reaches the generated config.
+    #[test]
+    fn a_group_can_name_an_imported_daemon() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'mirror'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let root = tmp.path().join("app");
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons_settings]\nnamespace = 'app'\n\
+                 [daemons.api]\nrun = 'exec api'\n\
+                 [daemons.remote]\nproject = '{}'\nname = 'worker'\n\
+                 [daemon_groups]\nstack = ['api', 'remote']\n",
+                mirror.display()
+            ),
+        )]))
+        .unwrap();
+        let group = set.for_root(&root.canonicalize().unwrap());
+        let group = group.group("stack").expect("the group is declared here");
+        assert!(
+            group.daemons.iter().any(|d| d == "api"),
+            "{:?}",
+            group.daemons
+        );
+        assert!(
+            group.daemons.iter().any(|d| d == "remote"),
+            "an imported member must survive expansion: {:?}",
+            group.daemons
+        );
+        // The member reaches pitchfork as the qualified ID the project that
+        // owns it registers, not as a name in this project's file.
+        assert_eq!(set.aliases["remote"], "mirror/worker");
+    }
+
     #[test]
     fn a_presets_export_is_not_replaced_by_a_derived_one() {
         let tmp = tempfile::tempdir().unwrap();
