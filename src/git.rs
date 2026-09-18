@@ -639,6 +639,23 @@ pub(crate) fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// The checkout directory `path` belongs to: the directory holding its `.git`,
+/// whether that is a main checkout's directory or a linked worktree's file.
+///
+/// Callers naming a working copy want this rather than the project root, which
+/// in a monorepo is often several levels below it. Returns None outside any
+/// git repository. A submodule is its own working copy, so its directory is
+/// returned rather than the checkout containing it.
+pub(crate) fn checkout_root(path: &Path) -> Option<PathBuf> {
+    for dir in path.ancestors() {
+        let dotgit = dir.join(".git");
+        if dotgit.is_dir() || dotgit.is_file() {
+            return Some(dir.to_path_buf());
+        }
+    }
+    None
+}
+
 /// Whether `path` sits inside a linked git worktree.
 ///
 /// Unlike [`main_checkout_equivalent`] this also accepts worktrees of a bare

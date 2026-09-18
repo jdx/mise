@@ -373,3 +373,70 @@ assert "test -n '$wt_pg' && test '$wt_pg' != 5432"
 assert "test \"\$(mise env -s bash | sed -n 's/^export API_PORT=//p' | tr -d \"'\\\"\")\" = '$wt_api'"
 assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"api\") | .port'" "$wt_api"
 assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"api\") | .port_auto'" "true"
+
+# Hostnames separate the same project's checkouts without moving a port, so an
+# HTTP service can be addressed by URL while a database keeps its port.
+mkdir -p "$HOME/url-shop/.git"
+cd "$HOME/url-shop"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "shop"
+[daemons.api]
+run = "sleep 30"
+[daemons.api.port]
+auto = true
+base = 3000
+[daemons.web]
+run = "sleep 30"
+proxy = "front"
+proxy_tls = "passthrough"
+[daemons.db]
+preset = "postgres"
+version = "18"
+port = "auto"
+[env]
+APP_BASE_URL = "{{ env.API_URL }}"
+TOML
+assert_contains "mise env -s bash" "API_URL='https://api.url-shop.shop.localhost'"
+assert_contains "mise env -s bash" "APP_BASE_URL='https://api.url-shop.shop.localhost'"
+# A per-daemon label replaces only that daemon's own component.
+assert_contains "mise env -s bash" "WEB_URL='https://front.url-shop.shop.localhost'"
+# A database is not an HTTP service, so the preset opts out and keeps its port.
+assert_not_contains "mise env -s bash" "DB_URL="
+assert_contains "mise env -s bash" "PGPORT=5432"
+assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"api\") | .url'" "https://api.url-shop.shop.localhost"
+assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"db\") | .proxy'" "off"
+assert_contains "mise daemons urls" "https://front.url-shop.shop.localhost"
+assert_contains "mise daemons urls" "stack:   https://url-shop.shop.localhost"
+
+# A linked worktree serves the same daemons at its own hostnames.
+mkdir -p "$HOME/url-shop/.git/worktrees/wt"
+printf 'ref: refs/heads/main\n' >"$HOME/url-shop/.git/HEAD"
+printf '../..\n' >"$HOME/url-shop/.git/worktrees/wt/commondir"
+mkdir -p "$HOME/url-shop-pr-42"
+printf 'gitdir: %s\n' "$HOME/url-shop/.git/worktrees/wt" >"$HOME/url-shop-pr-42/.git"
+cp mise.toml "$HOME/url-shop-pr-42/mise.toml"
+cd "$HOME/url-shop-pr-42"
+assert_contains "mise env -s bash" "API_URL='https://api.url-shop-pr-42.shop.localhost'"
+# worktree_label names the checkout itself, so it belongs in mise.local.toml.
+cat >mise.local.toml <<'TOML'
+[daemons_settings]
+worktree_label = "pr-42"
+TOML
+assert_contains "mise env -s bash" "API_URL='https://api.pr-42.shop.localhost'"
+# The generated pitchfork config carries what the proxy needs to route it.
+mise daemons start api
+state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+generated="$(dirname "$state")/pitchfork.toml"
+assert_contains "cat '$generated'" 'worktree_label = "pr-42"'
+assert_contains "cat '$generated'" 'proxy = "front"'
+assert_contains "cat '$generated'" 'proxy_tls = "passthrough"'
+assert_contains "cat '$generated'" 'proxy = false'
+# A label that cannot be a DNS name is rejected rather than quietly repaired.
+cat >mise.local.toml <<'TOML'
+[daemons_settings]
+worktree_label = "PR 42"
+TOML
+assert_fail_contains "mise env -s bash 2>&1" 'worktree_label'

@@ -69,11 +69,12 @@ pub(crate) fn with_init(steps: &[String], run: &str) -> String {
 }
 
 /// The declaration fields mise interprets itself rather than forwarding to
-/// pitchfork: setup steps to run before the daemon, and the port already
-/// resolved for this project root.
+/// pitchfork: setup steps to run before the daemon, the port already resolved
+/// for this project root, and the hostname components that root contributes.
 pub(crate) struct Extras<'a> {
     pub init: &'a [String],
     pub port: Option<PortClaim>,
+    pub labels: &'a super::urls::RootLabels,
 }
 
 pub(crate) fn expand(
@@ -121,12 +122,28 @@ pub(crate) fn expand(
         bail!("Postgres database must contain only letters, numbers, and underscores");
     }
     let data = state_dir(root).join("data").join(name);
+    // Resolve the proxy before rendering, so a preset's own default label and a
+    // user override both reach `{{ url }}`. `proxy` and `proxy_tls` are the two
+    // override keys that have to be applied early; everything else in
+    // `overrides` still wins at the end, where it cannot change the URL.
+    let mut proxied = preset.daemon.clone();
+    for key in ["proxy", "proxy_tls"] {
+        if let Some(value) = overrides.get(key) {
+            proxied.insert(key.into(), value.clone());
+        }
+    }
+    let proxy = super::urls::proxy_settings();
+    let host = super::urls::apply(name, &mut proxied, extras.labels, &proxy.tld)?;
     let mut context = tera::Context::new();
     context.insert("data", &quote(data.to_string_lossy()));
     context.insert("port", &port);
     context.insert("database", database);
+    if let Some(host) = &host {
+        context.insert("url", &proxy.url(host));
+        context.insert("host", host);
+    }
     let mut renderer = crate::tera::get_tera(Some(root));
-    let mut table = preset.daemon;
+    let mut table = proxied;
     for (_, value) in table.iter_mut() {
         if let toml::Value::String(text) = value {
             *text = crate::tera::render_str(&mut renderer, text, &context)?;
@@ -136,8 +153,19 @@ pub(crate) fn expand(
         *command = in_tool_env(command.as_str());
     }
     let mut exports = preset.exports;
-    for value in exports.values_mut() {
-        *value = crate::tera::render_str(&mut renderer, value, &context)?;
+    for (key, value) in exports.iter_mut() {
+        *value = crate::tera::render_str(&mut renderer, value, &context).map_err(|err| {
+            // `url` and `host` are the only context values a declaration can
+            // take away, so name that cause rather than reporting a bare
+            // template error about an undefined variable.
+            if host.is_none() {
+                eyre::eyre!(
+                    "[daemons.{name}] sets proxy = false, but the {preset_name} preset derives {key} from the proxy hostname; drop proxy = false, or set {key} yourself in [env]"
+                )
+            } else {
+                eyre::Report::from(err)
+            }
+        })?;
     }
     // Overrides use pitchfork's shell-command semantics verbatim. In particular,
     // callers can use `setup && exec server` without an extra shell or an `exec`
@@ -161,6 +189,10 @@ pub(crate) fn expand(
     table.insert("run".into(), toml::Value::String(with_init(&steps, &run)));
     table.insert("port".into(), super::expected_port(port));
     table.insert("mise".into(), toml::Value::Boolean(true));
+    // `proxy` and `proxy_tls` were already normalized above; re-applying the raw
+    // override here would undo that.
+    overrides.remove("proxy");
+    overrides.remove("proxy_tls");
     table.extend(overrides);
     Ok(Daemon {
         name: name.into(),
@@ -173,6 +205,7 @@ pub(crate) fn expand(
         exports,
         imported: false,
         port: Some(claim),
+        host,
     })
 }
 
@@ -282,6 +315,13 @@ pub(crate) fn initialize(preset_name: &str, data: &Path, database: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn labels() -> super::super::urls::RootLabels {
+        super::super::urls::RootLabels {
+            project: "shop".into(),
+            worktree: "main".into(),
+        }
+    }
     #[test]
     fn presets_render_local_persistent_daemons() {
         for (name, _) in PRESETS {
@@ -293,6 +333,7 @@ mod tests {
                 Extras {
                     init: &[],
                     port: None,
+                    labels: &labels(),
                 },
                 Path::new("/project/mise.toml"),
                 Path::new("/project"),
@@ -316,6 +357,7 @@ mod tests {
             Extras {
                 init: &[],
                 port: Some(PortClaim::fixed(5433)),
+                labels: &labels(),
             },
             Path::new("/p/mise.toml"),
             Path::new("/p"),

@@ -30,6 +30,7 @@ enum Commands {
     Restart(Args),
     #[usage(visible_alias = "list")]
     Ls(List),
+    Urls(UrlsArgs),
     Logs(Args),
     Status(Args),
     Tui(TuiArgs),
@@ -56,6 +57,17 @@ struct TuiArgs {
 /// List project daemons without starting a supervisor or registering configuration.
 #[derive(Debug, Default, usage_rs::Args)]
 struct List {
+    #[usage(long)]
+    json: bool,
+}
+
+/// Show each project daemon's stable hostname URL and the port behind it.
+///
+/// Hostnames do not move between git worktrees, so an HTTP service can be
+/// addressed by URL while concurrent checkouts keep separate ports.
+#[derive(Debug, Default, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct UrlsArgs {
     #[usage(long)]
     json: bool,
 }
@@ -89,6 +101,7 @@ impl Daemons {
             Some(Commands::Status(args)) => ("status", args.args, false),
             Some(Commands::Tui(args)) => ("tui", args.args, false),
             Some(Commands::Ls(list)) => ("ls", vec![], list.json),
+            Some(Commands::Urls(list)) => ("urls", vec![], list.json),
             None => ("ls", vec![], self.list.json),
         };
         let config = Config::get().await?;
@@ -136,6 +149,7 @@ impl Daemons {
             warn!("[daemons.{name}] is unavailable: {err}");
         }
         let install = matches!(action, "start" | "restart");
+        let proxy = daemons::urls::proxy_settings();
         // A positional argument naming a declared group stays unqualified: a
         // group is resolved against each project's own [daemon_groups], so
         // pinning it to one namespace would make it select nothing.
@@ -292,6 +306,9 @@ impl Daemons {
         };
         let mut pending = Vec::new();
         let mut rows = Vec::new();
+        // The hostname components each listed root contributes, for the stack
+        // and project pages `mise daemons urls` prints alongside the daemons.
+        let mut listed_roots: Vec<(PathBuf, daemons::urls::RootLabels)> = Vec::new();
         let mut matched = false;
         let mut root_entries: Vec<_> = roots
             .into_iter()
@@ -334,7 +351,24 @@ impl Daemons {
             // this has to stay that project's complete set: registering only the
             // daemon this project imported would delete its siblings from the
             // configuration it shares, orphaning any that were running.
-            let set = scoped.daemons()?.for_root(&root);
+            let mut set = scoped.daemons()?.for_root(&root);
+            // A nearer configuration in this project's own hierarchy can
+            // redefine a daemon name, taking it over from the ancestor that
+            // declared it. That ancestor is reloaded from its own hierarchy,
+            // which cannot see the override, so the name is dropped here
+            // instead; registering it in both places would start two processes
+            // for one daemon. Only ancestry works this way: a project reached
+            // by `project =` keeps every daemon it declares, whatever names
+            // this one happens to reuse.
+            if project_root.starts_with(&root) {
+                set.daemons.retain(|_, daemon| {
+                    let owned = |other: &daemons::Daemon| {
+                        other.name == daemon.name && other.root == daemon.root
+                    };
+                    loaded.daemons.values().any(owned)
+                        || !loaded.daemons.values().any(|o| o.name == daemon.name)
+                });
+            }
             // What this invocation may act on, which for another project's root
             // is only what it imported or inherited.
             let requested = loaded.for_root(&root);
@@ -352,7 +386,10 @@ impl Daemons {
             }
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
-            if action == "ls" {
+            if matches!(action, "ls" | "urls") {
+                if let Some(labels) = set.labels.get(&root) {
+                    listed_roots.push((root.clone(), labels.clone()));
+                }
                 let desired = set
                     .namespace_for(&root)
                     .unwrap_or(previous.namespace.as_str());
@@ -407,7 +444,8 @@ impl Daemons {
                     } else {
                         None
                     };
-                    rows.push(serde_json::json!({ "id": id, "name": name, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()) }));
+                    let host = daemon.and_then(|d| d.host.as_deref());
+                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(|d| match &d.host { Some(_) => "proxied", None => "off" }) }));
                 }
                 continue;
             }
@@ -480,10 +518,10 @@ impl Daemons {
         for (runtime, root, forwarded, _project_lock) in pending {
             runtime.exec(&root, forwarded).await?;
         }
-        if action == "ls" {
+        if matches!(action, "ls" | "urls") {
             if json {
                 miseprintln!("{}", serde_json::to_string_pretty(&rows)?);
-            } else {
+            } else if action == "ls" {
                 let mut table =
                     crate::ui::table::MiseTable::new(false, &["Daemon", "Status", "Source"]);
                 for row in rows {
@@ -494,12 +532,52 @@ impl Daemons {
                     ]);
                 }
                 table.print()?;
+            } else {
+                print_urls(&rows, &listed_roots, proxy)?;
             }
         } else if !matched {
             bail!("no matching project daemons; define [daemons] in mise.toml");
         }
         Ok(())
     }
+}
+
+/// Print every daemon's stable hostname next to the port it actually binds,
+/// grouped by project root, followed by the pages pitchfork serves for the
+/// whole stack. A daemon with `proxy = false` is listed with its port alone, so
+/// a database is visible here rather than looking absent.
+fn print_urls(
+    rows: &[serde_json::Value],
+    roots: &[(PathBuf, daemons::urls::RootLabels)],
+    proxy: &daemons::urls::ProxySettings,
+) -> Result<()> {
+    for (root, labels) in roots {
+        let display = crate::file::display_path(root);
+        miseprintln!("{display}");
+        let mut table =
+            crate::ui::table::MiseTable::new(false, &["Daemon", "URL", "Port", "Proxy", "Status"]);
+        for row in rows
+            .iter()
+            .filter(|row| row["root"].as_str().map(std::path::Path::new) == Some(root.as_path()))
+        {
+            table.add_row(vec![
+                comfy_table::Cell::new(row["id"].as_str().unwrap_or_default()),
+                comfy_table::Cell::new(row["url"].as_str().unwrap_or("-")),
+                comfy_table::Cell::new(
+                    row["port"]
+                        .as_u64()
+                        .map(|port| port.to_string())
+                        .unwrap_or_else(|| "-".into()),
+                ),
+                comfy_table::Cell::new(row["proxy"].as_str().unwrap_or("off")),
+                comfy_table::Cell::new(row["status"].as_str().unwrap_or_default()),
+            ]);
+        }
+        table.print()?;
+        miseprintln!("  stack:   {}", proxy.stack_url(labels));
+        miseprintln!("  project: {}", proxy.project_url(labels));
+    }
+    Ok(())
 }
 
 fn matches_name(id: &str, name: &str) -> bool {

@@ -42,6 +42,26 @@
         }
       ]
     },
+    "daemon_proxy": {
+      "description": "Hostname label the reverse proxy routes to this daemon, or false to opt out. Defaults to the daemon's name. The full hostname is <proxy>.<worktree_label>.<project>.<tld>.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        {
+          "type": "boolean",
+          "const": false,
+          "description": "Opt out of the reverse proxy; no hostname and no URL export."
+        }
+      ]
+    },
+    "daemon_proxy_tls": {
+      "description": "Whether the proxy terminates TLS for this daemon or passes the connection through to it.",
+      "type": "string",
+      "enum": ["terminate", "passthrough"]
+    },
     "task_dependency_item": {
       "description": "task name and args",
       "oneOf": [
@@ -5927,6 +5947,12 @@
                     }
                   }
                 ]
+              },
+              "proxy": {
+                "$ref": "#/$defs/daemon_proxy"
+              },
+              "proxy_tls": {
+                "$ref": "#/$defs/daemon_proxy_tls"
               }
             },
             "additionalProperties": true
@@ -5958,6 +5984,12 @@
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
+              },
+              "proxy": {
+                "$ref": "#/$defs/daemon_proxy"
+              },
+              "proxy_tls": {
+                "$ref": "#/$defs/daemon_proxy_tls"
               }
             },
             "additionalProperties": true
@@ -5997,6 +6029,12 @@
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
+              },
+              "proxy": {
+                "$ref": "#/$defs/daemon_proxy"
+              },
+              "proxy_tls": {
+                "$ref": "#/$defs/daemon_proxy_tls"
               }
             },
             "additionalProperties": true
@@ -6032,6 +6070,12 @@
           "type": "boolean",
           "default": true,
           "description": "Append a worktree-specific suffix to an explicit namespace when the project root is a linked git worktree."
+        },
+        "worktree_label": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+          "maxLength": 63,
+          "description": "Hostname component that separates this checkout from the project's others. Defaults to the checkout directory's name; set it in a worktree's mise.local.toml."
         }
       },
       "additionalProperties": false

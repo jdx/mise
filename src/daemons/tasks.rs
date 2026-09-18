@@ -337,6 +337,7 @@ mod tests {
                             exports: Default::default(),
                             imported: false,
                             port: None,
+                            host: None,
                         },
                     )
                 })

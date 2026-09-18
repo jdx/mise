@@ -6,6 +6,8 @@ tool = "redis"
 [options]
 
 [daemon]
+# The reverse proxy speaks HTTP; a database client does not.
+proxy = false
 ready_cmd = "redis-cli -h 127.0.0.1 -p {{ port }} ping"
 run = "redis-server --bind 127.0.0.1 --port {{ port }} --dir {{ data }} --appendonly yes"
 
