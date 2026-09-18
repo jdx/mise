@@ -368,12 +368,18 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
     }
     let mut groups = toml::Table::new();
     for group in &set.groups {
-        // Qualified IDs keep the group bound to this project's namespace.
+        // Qualified IDs keep the group bound to this project's namespace. A member
+        // this project no longer owns, because a nearer config redefined that name,
+        // has no ID here, and pitchfork rejects a group naming an undefined daemon.
         let members = group
             .daemons
             .iter()
+            .filter(|name| set.daemons.contains_key(*name))
             .map(|name| toml::Value::String(format!("{}/{name}", state.namespace)))
             .collect::<Vec<_>>();
+        if members.is_empty() {
+            continue;
+        }
         groups.insert(
             group.name.clone(),
             toml::Value::Table(toml::Table::from_iter([(
@@ -502,6 +508,17 @@ mod tests {
         assert!(rendered.contains("[groups.web]"), "{rendered}");
         assert!(rendered.contains("\"proj/api\""), "{rendered}");
         assert!(rendered.contains("\"proj/worker\""), "{rendered}");
+        // A member this project no longer owns is left out rather than rendered as
+        // an ID pitchfork cannot resolve.
+        let mut overridden = set.clone();
+        overridden.groups[0].daemons.push("elsewhere".into());
+        let rendered = render(&overridden, &state).unwrap();
+        assert!(rendered.contains("[groups.web]"), "{rendered}");
+        assert!(!rendered.contains("elsewhere"), "{rendered}");
+        // A group left with no members of its own is dropped entirely.
+        let mut empty = set.clone();
+        empty.groups[0].daemons = vec!["elsewhere".into()];
+        assert!(!render(&empty, &state).unwrap().contains("[groups"));
         // Without groups the section is omitted entirely.
         let bare = DaemonSet {
             groups: Vec::new(),
