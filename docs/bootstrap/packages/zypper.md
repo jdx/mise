@@ -39,9 +39,10 @@ fails if the manager is unavailable.
   already-installed packages. Missing packages are skipped.
 - Commands retain zypper's configured dependency, license, and signature policies.
   Non-interactive mode fails if a required confirmation cannot be answered.
-- Reboot-required (102) and package-manager-restart-required (103) exit codes
-  produce warnings. Other nonzero statuses, including skipped repositories and
-  failed RPM scripts, are reported as errors.
+- Reboot-required (102) produces a warning. Package-manager-restart-required
+  (103) warns and retries the same command up to twice; a third 103 is an error.
+  Other nonzero statuses, including skipped repositories and failed RPM scripts,
+  are reported as errors.
 
 ## Version selection
 

@@ -12,6 +12,7 @@ use crate::system::sudo;
 /// openSUSE and SUSE Linux Enterprise packages via zypper.
 pub(crate) struct ZypperManager;
 
+/// Build package operands, allowing downgrades only when a pin is requested.
 fn package_args(command: &str, pkgs: &[PackageRequest]) -> Vec<String> {
     let mut args = vec!["--non-interactive".to_string(), command.to_string()];
     if command == "install" && pkgs.iter().any(|pkg| pkg.version.is_some()) {
@@ -26,30 +27,41 @@ fn package_args(command: &str, pkgs: &[PackageRequest]) -> Vec<String> {
     args
 }
 
+/// Run through sudo, retrying package-manager restarts at most twice.
 fn run(args: &[String], opts: &InstallOpts) -> Result<()> {
     if opts.dry_run {
         miseprintln!("{}", sudo::argv("zypper", args).join(" "));
         return Ok(());
     }
-    match sudo::run("zypper", args, &[]) {
-        Err(err) => {
-            // These are successful transactions with an informational status.
-            // Do not swallow missing packages (104), skipped repositories (106),
-            // or failed RPM scripts (107).
-            match err.downcast_ref::<Error>() {
-                Some(Error::ScriptFailed(_, Some(status), _)) => match status.code() {
-                    Some(102) => warn!("zypper: a system reboot is required"),
-                    Some(103) => warn!("zypper: restart the package manager and rerun the command"),
+    let mut retries = 0;
+    loop {
+        match sudo::run("zypper", args, &[]) {
+            Err(err) => {
+                // These are successful transactions with an informational status.
+                // Do not swallow missing packages (104), skipped repositories (106),
+                // or failed RPM scripts (107).
+                match err.downcast_ref::<Error>() {
+                    Some(Error::ScriptFailed(_, Some(status), _)) => match status.code() {
+                        Some(102) => warn!("zypper: a system reboot is required"),
+                        Some(103) if retries < 2 => {
+                            retries += 1;
+                            warn!(
+                                "zypper: package manager restart required; retrying command ({retries}/2)"
+                            );
+                            continue;
+                        }
+                        _ => return Err(err),
+                    },
                     _ => return Err(err),
-                },
-                _ => return Err(err),
+                }
+                return Ok(());
             }
-            Ok(())
+            result => return result,
         }
-        result => result,
     }
 }
 
+/// Refresh enabled repositories using the same error and retry policy.
 fn refresh(opts: &InstallOpts) -> Result<()> {
     run(
         &["--non-interactive".to_string(), "refresh".to_string()],
@@ -57,6 +69,7 @@ fn refresh(opts: &InstallOpts) -> Result<()> {
     )
 }
 
+/// Reconcile RPM version-release records without ordering opaque versions.
 fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
     // RPM can report multiple installed versions of a package (e.g. kernels).
     // Any matching version satisfies a pin, independently of output order.
@@ -73,7 +86,10 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
                 Some(versions) => {
                     let matching = versions.iter().find(|version| {
                         request.version.as_ref().is_none_or(|requested| {
-                            **version == requested || version.starts_with(&format!("{requested}-"))
+                            **version == requested
+                                || version
+                                    .rsplit_once('-')
+                                    .is_some_and(|(version, _)| version == requested)
                         })
                     });
                     match matching {
@@ -97,16 +113,19 @@ fn parse_rpm_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStat
 
 #[async_trait(?Send)]
 impl SystemPackageManager for ZypperManager {
+    /// Registry key used in bootstrap package declarations.
     fn name(&self) -> &str {
         "zypper"
     }
 
+    /// Both the transaction tool and local RPM query tool are required.
     fn is_available(&self) -> bool {
         cfg!(target_os = "linux")
             && crate::file::which("zypper").is_some()
             && crate::file::which("rpm").is_some()
     }
 
+    /// Explain the missing platform or executable prerequisite.
     fn unavailable_reason(&self) -> String {
         if !cfg!(target_os = "linux") {
             "only available on linux".to_string()
@@ -117,6 +136,7 @@ impl SystemPackageManager for ZypperManager {
         }
     }
 
+    /// Inspect local state without privilege elevation or repository access.
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         if pkgs.is_empty() {
             return Ok(vec![]);
@@ -148,6 +168,7 @@ impl SystemPackageManager for ZypperManager {
         ))
     }
 
+    /// Install missing or mismatched requests, optionally refreshing first.
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if pkgs.is_empty() {
             return Ok(());
@@ -158,6 +179,7 @@ impl SystemPackageManager for ZypperManager {
         run(&package_args("install", pkgs), opts)
     }
 
+    /// Refresh and reconcile the installed requests selected by the driver.
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if pkgs.is_empty() {
             return Ok(());
@@ -168,10 +190,12 @@ impl SystemPackageManager for ZypperManager {
         run(&package_args("install", pkgs), opts)
     }
 
+    /// Enable declarative absent-state reconciliation.
     fn supports_remove(&self) -> bool {
         true
     }
 
+    /// Remove installed requests without refreshing repository metadata.
     async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if pkgs.is_empty() {
             return Ok(());
@@ -204,6 +228,7 @@ mod tests {
             req("bash", Some("5.2")),
             req("bash", Some("5.2.37-1.1")),
             req("kernel-default", Some("6.12.1")),
+            req("bash", Some("5.2.37-2")),
         ];
         let output = "git\t2.49.0-1.1\npackage missing is not installed\nbash\t5.2.37-2.1\nkernel-default\t6.12.1-1.1\nkernel-default\t6.13.0-1.1\n";
         let statuses = parse_rpm_query(output, &requests);
@@ -213,7 +238,7 @@ mod tests {
         for index in [1, 2] {
             assert_eq!(statuses[index].state, PackageState::Missing);
         }
-        for index in [5, 6] {
+        for index in [5, 6, 8] {
             assert_eq!(
                 statuses[index].state,
                 PackageState::VersionMismatch {

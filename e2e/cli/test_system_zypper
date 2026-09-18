@@ -27,6 +27,10 @@ echo "$*" >> "$HOME/zypper-log"
 if [ "$2" = refresh ]; then
   exit "${ZYPPER_REFRESH_EXIT:-0}"
 fi
+if [ -f "$HOME/zypper-restart" ]; then
+  rm "$HOME/zypper-restart"
+  exit 103
+fi
 exit "${ZYPPER_EXIT:-0}"
 SH
 cat >"$HOME/zypper-bin/sudo" <<'SH'
@@ -83,11 +87,23 @@ assert_succeed "mise bootstrap packages apply --yes"
 assert "cat '$HOME/zypper-log'" '--non-interactive remove -- git'
 
 # Reboot/restart notifications succeed; real errors must propagate.
-for code in 0 102 103; do
+for code in 0 102; do
   assert_succeed "ZYPPER_EXIT=$code mise bootstrap packages apply zypper:missing --yes"
 done
 assert_contains "ZYPPER_EXIT=102 mise bootstrap packages apply zypper:missing --yes 2>&1" 'zypper: a system reboot is required'
-assert_contains "ZYPPER_EXIT=103 mise bootstrap packages apply zypper:missing --yes 2>&1" 'zypper: restart the package manager and rerun the command'
+# A restart reruns exactly the same transaction, with a bounded retry count.
+: >"$HOME/zypper-log"
+touch "$HOME/zypper-restart"
+assert_contains "mise bootstrap packages apply zypper:missing --yes 2>&1" 'zypper: package manager restart required; retrying command (1/2)'
+assert "cat '$HOME/zypper-log'" $'--non-interactive install -- missing\n--non-interactive install -- missing'
+: >"$HOME/zypper-log"
+assert_fail "ZYPPER_EXIT=103 mise bootstrap packages apply zypper:missing --yes"
+assert "cat '$HOME/zypper-log'" $'--non-interactive install -- missing\n--non-interactive install -- missing\n--non-interactive install -- missing'
+# A real error on the retry must also propagate immediately.
+: >"$HOME/zypper-log"
+touch "$HOME/zypper-restart"
+assert_fail "ZYPPER_EXIT=8 mise bootstrap packages apply zypper:missing --yes"
+assert "cat '$HOME/zypper-log'" $'--non-interactive install -- missing\n--non-interactive install -- missing'
 for code in 4 7 8 104 105 106 107; do
   assert_fail "ZYPPER_EXIT=$code mise bootstrap packages apply zypper:missing --yes"
 done
