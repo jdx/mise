@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, mas, winget) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, macos-app, mas, scoop, winget) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -21,6 +21,7 @@ pub(crate) mod mas;
 pub(crate) mod nix;
 pub(crate) mod pacman;
 pub(crate) mod plugin;
+pub(crate) mod scoop;
 pub(crate) mod winget;
 
 /// A single package entry from `[bootstrap.packages]` — the part after the
@@ -73,7 +74,6 @@ pub(crate) enum PackageState {
     },
     Missing,
     /// installed, but a manager-owned record needs local repair
-    #[cfg_attr(windows, allow(dead_code))]
     NeedsRepair {
         installed: String,
     },
@@ -213,6 +213,30 @@ pub(crate) trait SystemPackageManager: Send + Sync {
         false
     }
 
+    /// Query installed state with manager-specific declarative options.
+    ///
+    /// `macos-app` resolves no metadata of its own, so its status query needs
+    /// the inline declaration the same way its install does. Managers without
+    /// additional package options use the ordinary query unchanged.
+    async fn installed_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        _manager_options: &ManagerPackageOptions,
+    ) -> Result<Vec<PackageStatus>> {
+        self.installed(pkgs).await
+    }
+
+    /// Upgrade with manager-specific declarative options, for the same reason
+    /// [`Self::installed_with_options`] exists.
+    async fn upgrade_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        _manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        self.upgrade(pkgs, opts).await
+    }
+
     /// Install with manager-specific declarative options. Managers without
     /// additional package options use the ordinary install path unchanged.
     async fn install_with_options(
@@ -246,6 +270,80 @@ pub(crate) trait SystemPackageManager: Send + Sync {
     fn is_plugin(&self) -> bool {
         false
     }
+
+    /// The package a `[bootstrap.packages]` name resolves to, when this
+    /// manager accepts more than one spelling for a single package.
+    ///
+    /// `[bootstrap.packages]` keys on the literal spec, so `winget:Git.Git`
+    /// and `winget:git.git` are two config entries even though WinGet matches
+    /// both to one package. The default `None` compares names verbatim, which
+    /// is right for apt, dnf, pacman and apk: there two spellings really are
+    /// two packages, and a config may legitimately declare both. A manager
+    /// that folds spellings returns the folded form, and
+    /// [`check_name_conflicts`] rejects entries that fold together but
+    /// disagree about the package.
+    fn package_identity(&self, _name: &str) -> Option<String> {
+        None
+    }
+}
+
+/// Rejects two `[bootstrap.packages]` entries that name one package but
+/// disagree about it.
+///
+/// A manager that folds spellings (see
+/// [`SystemPackageManager::package_identity`]) receives one [`PackageRequest`]
+/// per spelling, each carrying its own desired state and version pin. Neither
+/// disagreement has a defined outcome, so both are rejected rather than
+/// silently resolved:
+///
+/// * On state, the driver computes its removal and install sets from the same
+///   pre-removal status snapshot and removes first. An absent declaration
+///   therefore wins for a package that is installed and a present one wins for
+///   a package that is missing — the result follows the machine rather than
+///   the config.
+/// * On version, both pins reach the manager in a single invocation, and which
+///   pin survives is that manager's arbitrary ordering.
+pub(crate) fn check_name_conflicts(
+    manager: &dyn SystemPackageManager,
+    pkgs: &[PackageRequest],
+) -> Result<()> {
+    let mgr = manager.name();
+    let identities = pkgs
+        .iter()
+        .map(|pkg| manager.package_identity(&pkg.name))
+        .collect::<Vec<_>>();
+    for (index, pkg) in pkgs.iter().enumerate() {
+        let Some(identity) = &identities[index] else {
+            continue;
+        };
+        let rest = pkgs[index + 1..].iter().zip(&identities[index + 1..]);
+        for (other, other_identity) in rest {
+            if other_identity.as_ref() != Some(identity) {
+                continue;
+            }
+            if pkg.desired != other.desired {
+                let (present, absent) = match pkg.desired {
+                    PackageDesiredState::Present => (&pkg.name, &other.name),
+                    PackageDesiredState::Absent => (&other.name, &pkg.name),
+                };
+                eyre::bail!(
+                    "[bootstrap.packages]: '{mgr}:{present}' and '{mgr}:{absent}' name the same \
+                     package but ask for opposite states; declare it once"
+                );
+            }
+            if pkg.desired == PackageDesiredState::Present && pkg.version != other.version {
+                eyre::bail!(
+                    "[bootstrap.packages]: '{mgr}:{}' and '{mgr}:{}' name the same package but \
+                     ask for different versions ({} and {}); declare it once",
+                    pkg.name,
+                    other.name,
+                    pkg.version.as_deref().unwrap_or("latest"),
+                    other.version.as_deref().unwrap_or("latest"),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
@@ -257,12 +355,15 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(brew::BrewManager::new()),
         #[cfg(unix)]
         Arc::new(brew::BrewCaskManager::new()),
+        #[cfg(unix)]
+        Arc::new(brew::BrewCaskManager::new_macos_app()),
         Arc::new(dnf::DnfManager::new()),
         Arc::new(flatpak::FlatpakManager::new()),
         Arc::new(flatpak::FlatpakManager::new_user()),
         Arc::new(mas::MasManager::new()),
         Arc::new(nix::NixManager),
         Arc::new(pacman::PacmanManager::new()),
+        Arc::new(scoop::ScoopManager::new()),
         Arc::new(winget::WingetManager::new()),
     ]
 }
@@ -298,4 +399,142 @@ pub(crate) fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         }
     }
     managers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Stands in for apt/dnf/pacman/apk, where two spellings are two packages.
+    struct VerbatimManager;
+
+    #[async_trait(?Send)]
+    impl SystemPackageManager for VerbatimManager {
+        fn name(&self) -> &str {
+            "verbatim"
+        }
+        fn is_available(&self) -> bool {
+            true
+        }
+        fn unavailable_reason(&self) -> String {
+            unreachable!()
+        }
+        async fn installed(&self, _pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
+            unreachable!()
+        }
+        async fn install(&self, _pkgs: &[PackageRequest], _opts: &InstallOpts) -> Result<()> {
+            unreachable!()
+        }
+    }
+
+    /// Stands in for winget/scoop, where names fold to one package.
+    struct FoldingManager;
+
+    #[async_trait(?Send)]
+    impl SystemPackageManager for FoldingManager {
+        fn name(&self) -> &str {
+            "folding"
+        }
+        fn is_available(&self) -> bool {
+            true
+        }
+        fn unavailable_reason(&self) -> String {
+            unreachable!()
+        }
+        fn package_identity(&self, name: &str) -> Option<String> {
+            Some(name.to_ascii_lowercase())
+        }
+        async fn installed(&self, _pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
+            unreachable!()
+        }
+        async fn install(&self, _pkgs: &[PackageRequest], _opts: &InstallOpts) -> Result<()> {
+            unreachable!()
+        }
+    }
+
+    fn request(name: &str, version: Option<&str>, desired: PackageDesiredState) -> PackageRequest {
+        PackageRequest {
+            name: name.to_string(),
+            version: version.map(str::to_string),
+            tap_url: None,
+            desired,
+        }
+    }
+
+    #[test]
+    fn folded_names_with_opposite_states_are_rejected() {
+        let pkgs = vec![
+            request("Git.Git", None, PackageDesiredState::Present),
+            request("git.git", None, PackageDesiredState::Absent),
+        ];
+        let err = check_name_conflicts(&FoldingManager, &pkgs).unwrap_err();
+        let msg = err.to_string();
+        // both spellings are named, so the config lines are findable
+        assert!(msg.contains("'folding:Git.Git'"), "{msg}");
+        assert!(msg.contains("'folding:git.git'"), "{msg}");
+        assert!(msg.contains("opposite states"), "{msg}");
+
+        // the pair is rejected whichever order it is declared in
+        let reversed = vec![pkgs[1].clone(), pkgs[0].clone()];
+        assert_eq!(
+            check_name_conflicts(&FoldingManager, &reversed)
+                .unwrap_err()
+                .to_string(),
+            msg
+        );
+    }
+
+    #[test]
+    fn folded_names_with_different_versions_are_rejected() {
+        let pkgs = vec![
+            request("Git.Git", Some("2.43.0"), PackageDesiredState::Present),
+            request("git.git", None, PackageDesiredState::Present),
+        ];
+        let msg = check_name_conflicts(&FoldingManager, &pkgs)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("different versions (2.43.0 and latest)"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn folded_names_that_agree_are_left_alone() {
+        let present = vec![
+            request("Git.Git", Some("2.43.0"), PackageDesiredState::Present),
+            request("git.git", Some("2.43.0"), PackageDesiredState::Present),
+        ];
+        assert!(check_name_conflicts(&FoldingManager, &present).is_ok());
+
+        // two absent declarations carry no version to disagree about
+        let absent = vec![
+            request("Git.Git", None, PackageDesiredState::Absent),
+            request("git.git", Some("2.43.0"), PackageDesiredState::Absent),
+        ];
+        assert!(check_name_conflicts(&FoldingManager, &absent).is_ok());
+    }
+
+    #[test]
+    fn verbatim_names_that_differ_only_by_case_are_two_packages() {
+        let pkgs = vec![
+            request("Git", None, PackageDesiredState::Present),
+            request("git", None, PackageDesiredState::Absent),
+        ];
+        assert!(check_name_conflicts(&VerbatimManager, &pkgs).is_ok());
+    }
+
+    #[test]
+    fn winget_folds_package_ids() {
+        let winget = winget::WingetManager::new();
+        assert_eq!(
+            winget.package_identity("Git.Git"),
+            Some("git.git".to_string())
+        );
+    }
+
+    #[test]
+    fn apt_compares_package_names_verbatim() {
+        assert_eq!(apt::AptManager::new().package_identity("Git"), None);
+    }
 }

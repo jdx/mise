@@ -142,6 +142,29 @@ pub(super) fn validate_cask_path_component(kind: &str, value: &str) -> Result<()
     Ok(())
 }
 
+/// Cache directory for a staged download, scoped to the manager that owns it.
+///
+/// Keyed on the manager as well as the token and version: `brew-cask` and
+/// `macos-app` can declare the same token at the same version from different
+/// URLs, and staging runs before `lock_app_mutations`, so a shared path lets
+/// two concurrent installs `remove_all` each other's tree and stage the wrong
+/// payload. Install records are already split per manager for this reason.
+///
+/// The downloaded archive needs no such split: its name already includes a hash
+/// of the URL, so two managers share that file only when it is the same
+/// download, and each still verifies it against its own `sha256`.
+pub(super) fn cask_staging_dir(cask: &Cask, kind: &str) -> PathBuf {
+    crate::dirs::CACHE
+        .join("system-brew")
+        .join(kind)
+        .join(format!(
+            "{}-{}-{}",
+            cask.manager.label(),
+            cask.token,
+            cask.version
+        ))
+}
+
 pub(super) async fn fetch_and_stage(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
     if cask.url.ends_with(".git") {
         return fetch_git_clone_and_stage(cask, pr).await;
@@ -154,16 +177,10 @@ pub(super) async fn fetch_git_clone_and_stage(
     cask: &Cask,
     pr: Option<&dyn SingleReport>,
 ) -> Result<PathBuf> {
-    let extract_dir = crate::dirs::CACHE
-        .join("system-brew")
-        .join("cask-extract")
-        .join(format!("{}-{}", cask.token, cask.version));
+    let extract_dir = cask_staging_dir(cask, "cask-extract");
     file::remove_all(&extract_dir)?;
     file::create_dir_all(&extract_dir)?;
-    let clone_dir = crate::dirs::CACHE
-        .join("system-brew")
-        .join("cask-git-clone")
-        .join(format!("{}-{}", cask.token, cask.version));
+    let clone_dir = cask_staging_dir(cask, "cask-git-clone");
     file::remove_all(&clone_dir)?;
     let mut clone_opts = CloneOptions::default();
     if let Some(branch) = cask.url_specs.branch.as_deref() {
@@ -230,7 +247,7 @@ pub(super) fn git_only_path_source(
 
 pub(super) async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {
     let filename = archive_filename(&cask.url)
-        .ok_or_else(|| eyre!("brew-cask:{}: URL has no file name", cask.token))?;
+        .ok_or_else(|| eyre!("{}:{}: URL has no file name", cask.label(), cask.token))?;
     let cache_dir = crate::dirs::CACHE.join("system-brew").join("casks");
     file::create_dir_all(&cache_dir)?;
     let url_hash = &hash::hash_sha256_to_str(&cask.url)[..12];
@@ -251,7 +268,11 @@ pub(super) async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) ->
     match cask.sha256.as_deref() {
         Some("no_check") => {}
         Some(sha256) => hash::ensure_checksum(&archive, sha256, pr, "sha256")?,
-        None => bail!("brew-cask:{}: cask metadata has no sha256", cask.token),
+        None => bail!(
+            "{}:{}: no sha256 to verify the download against",
+            cask.label(),
+            cask.token
+        ),
     }
     Ok(archive)
 }
@@ -261,10 +282,7 @@ pub(super) fn extract_archive(
     archive: &Path,
     pr: Option<&dyn SingleReport>,
 ) -> Result<PathBuf> {
-    let extract_dir = crate::dirs::CACHE
-        .join("system-brew")
-        .join("cask-extract")
-        .join(format!("{}-{}", cask.token, cask.version));
+    let extract_dir = cask_staging_dir(cask, "cask-extract");
     file::remove_all(&extract_dir)?;
     file::create_dir_all(&extract_dir)?;
     let filename = archive
@@ -288,7 +306,8 @@ pub(super) fn extract_archive(
             }
         } else if !format.is_archive() {
             bail!(
-                "brew-cask:{}: unsupported archive type for {}",
+                "{}:{}: unsupported archive type for {}",
+                cask.label(),
                 cask.token,
                 filename
             );

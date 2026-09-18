@@ -19,7 +19,7 @@
 //! machine-global settings and resources, not mise's per-project toolset.
 
 #[cfg(unix)]
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -162,6 +162,15 @@ pub(crate) struct PackageOptionsTomlConfig {
     /// Adopt an identical existing cask artifact instead of replacing it.
     #[serde(default)]
     pub adopt: Option<bool>,
+    /// `macos-app` only: direct download URL for the app archive.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// `macos-app` only: expected sha256 of the download.
+    #[serde(default)]
+    pub sha256: Option<String>,
+    /// `macos-app` only: bundle to install out of the archive, e.g. "Nuvio.app".
+    #[serde(default)]
+    pub artifact: Option<String>,
     #[serde(default)]
     pub state: PackageDesiredStateTomlConfig,
 }
@@ -185,6 +194,29 @@ impl PackageTomlConfig {
     fn adopt(&self) -> Option<bool> {
         match self {
             Self::Options(options) => options.adopt,
+            Self::Version(_) => None,
+        }
+    }
+
+    /// The inline app declaration on this entry, if it carries one.
+    ///
+    /// `url` is what marks an entry as inline-declared; the other fields are
+    /// validated against it by `AppSpec::parse`.
+    fn app_fields(&self) -> Option<(&str, Option<&str>, Option<&str>, &str)> {
+        match self {
+            Self::Options(options) => options
+                .url
+                .as_deref()
+                .map(str::trim)
+                .filter(|url| !url.is_empty())
+                .map(|url| {
+                    (
+                        url,
+                        options.sha256.as_deref(),
+                        options.artifact.as_deref(),
+                        options.version.as_str(),
+                    )
+                }),
             Self::Version(_) => None,
         }
     }
@@ -392,12 +424,134 @@ pub(crate) enum ManagerPackageOptions {
     None,
     #[cfg(unix)]
     BrewCask { adopt: BTreeSet<String> },
+    /// Inline app declarations, keyed by package name. `macos-app` resolves no
+    /// metadata of its own, so the declaration reaches the installer here.
+    #[cfg(unix)]
+    MacosApp {
+        specs: BTreeMap<String, AppSpec>,
+        adopt: BTreeSet<String>,
+    },
 }
 
 impl ManagerPackageOptions {
     #[cfg(unix)]
     pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
-        matches!(self, Self::BrewCask { adopt } if adopt.contains(name))
+        match self {
+            Self::BrewCask { adopt } | Self::MacosApp { adopt, .. } => adopt.contains(name),
+            Self::None => false,
+        }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn macos_app_spec(&self, name: &str) -> Option<&AppSpec> {
+        match self {
+            Self::MacosApp { specs, .. } => specs.get(name),
+            _ => None,
+        }
+    }
+}
+
+/// An app bundle declared inline in `[bootstrap.packages]`, standing in for the
+/// cask definition that `brew-cask` would have fetched.
+#[cfg(unix)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AppSpec {
+    pub url: String,
+    pub sha256: String,
+    pub artifact: String,
+    pub version: String,
+}
+
+/// Validate an inline app declaration, returning its checksum and artifact.
+///
+/// Every field is required: without a checksum there is nothing to verify the
+/// download against, and without an artifact name mise cannot tell which bundle
+/// in the archive to install.
+///
+/// Platform-independent on purpose. A config shared across machines should
+/// report a malformed declaration wherever it is read — otherwise a bad
+/// checksum surfaces on Windows as a generic unknown-manager warning, which
+/// diagnoses the wrong thing.
+pub(crate) fn validate_app_declaration<'a>(
+    name: &str,
+    url: &str,
+    sha256: Option<&'a str>,
+    artifact: Option<&'a str>,
+    version: &str,
+) -> eyre::Result<(&'a str, &'a str)> {
+    // A plain http download is still integrity-checked, because `sha256` is
+    // mandatory and verified, so this warns rather than refuses — an internal
+    // mirror over http is a real case for this manager. It does not cover a
+    // redirect from https to http: mise's download client applies no redirect
+    // policy, which is shared behaviour well outside this manager.
+    if !url.starts_with("https://") {
+        warn!(
+            "macos-app:{name}: '{url}' is not https; the download is verified by its sha256, but prefer https where the host offers it"
+        );
+    }
+    let Some(sha256) = sha256 else {
+        eyre::bail!("macos-app:{name}: 'url' requires 'sha256'");
+    };
+    // A URL ending in `.git` is cloned rather than downloaded, and a clone has
+    // no archive to hash, so `fetch_and_stage` never reaches the checksum step.
+    // Accepting one would record a `sha256` that is never verified and install
+    // an unchecked bundle from a declaration that looks pinned — this manager's
+    // entire integrity story is that digest. Checked against the interpolated
+    // URL because that is the string the fetcher dispatches on.
+    if url.replace("{{version}}", version).ends_with(".git") {
+        eyre::bail!(
+            "macos-app:{name}: 'url' must be a direct download of the artifact; a '.git' URL is cloned and cannot be verified against 'sha256'"
+        );
+    }
+    // `no_check` is a Homebrew sentinel that makes the shared fetcher skip
+    // verification. It exists for casks whose URL serves a moving target, which
+    // an inline declaration never is — accepting it here would silently drop
+    // the verification this manager requires. Demanding a well-formed digest
+    // also catches a truncated or mistyped one before the download, not after.
+    if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        eyre::bail!("macos-app:{name}: 'sha256' must be a 64-character hex digest; got '{sha256}'");
+    }
+    let Some(artifact) = artifact.map(str::trim).filter(|a| !a.is_empty()) else {
+        eyre::bail!("macos-app:{name}: 'url' requires 'artifact' naming the bundle to install");
+    };
+    if version.trim().is_empty() {
+        eyre::bail!("macos-app:{name}: 'version' must not be blank");
+    }
+    // Rejected rather than trimmed: the version is interpolated into `url` and
+    // joined into install-record paths, so a value that validates must be
+    // exactly the value that gets used. Trimming here would let " latest "
+    // past the check below and put the padded form on disk.
+    if version != version.trim() {
+        eyre::bail!(
+            "macos-app:{name}: 'version' must not have leading or trailing whitespace; got '{version}'"
+        );
+    }
+    if version == "latest" {
+        eyre::bail!(
+            "macos-app:{name}: 'url' requires an explicit 'version'; mise cannot discover versions for a direct download"
+        );
+    }
+    Ok((sha256, artifact))
+}
+
+#[cfg(unix)]
+impl AppSpec {
+    /// Build a validated declaration. See [`validate_app_declaration`] for the
+    /// rules and why every field is required.
+    pub(crate) fn parse(
+        name: &str,
+        url: &str,
+        sha256: Option<&str>,
+        artifact: Option<&str>,
+        version: &str,
+    ) -> eyre::Result<Self> {
+        let (sha256, artifact) = validate_app_declaration(name, url, sha256, artifact, version)?;
+        Ok(Self {
+            url: url.replace("{{version}}", version),
+            sha256: sha256.to_string(),
+            artifact: artifact.to_string(),
+            version: version.to_string(),
+        })
     }
 }
 
@@ -468,7 +622,14 @@ pub(crate) fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest
 pub(crate) fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    resolve_managers(by_mgr, IndexMap::new(), true)
+    resolve_managers(
+        by_mgr,
+        IndexMap::new(),
+        ResolveOpts {
+            strict: true,
+            applies_together: true,
+        },
+    )
 }
 
 pub(crate) fn attach_brew_tap_urls(
@@ -493,7 +654,7 @@ pub(crate) fn attach_brew_tap_urls(
 /// warn (forward compatibility) and are skipped. The
 /// `system_packages.managers` setting restricts which managers are used at
 /// all.
-pub(crate) fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
+pub(crate) fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackages>> {
     let brew_taps = brew_taps_from_config(config);
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps, true)
 }
@@ -600,7 +761,7 @@ fn packages_from_config_files_and_tracked_config_files(
     merge_manager_packages(
         &mut by_mgr,
         &mut manager_options,
-        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps, false),
+        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps, false)?,
     );
 
     let mut tracked_brew_taps = current_brew_taps;
@@ -610,10 +771,17 @@ fn packages_from_config_files_and_tracked_config_files(
     merge_manager_packages(
         &mut by_mgr,
         &mut manager_options,
-        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps, false),
+        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps, false)?,
     );
 
-    resolve_managers(by_mgr, manager_options, false)
+    resolve_managers(
+        by_mgr,
+        manager_options,
+        ResolveOpts {
+            strict: false,
+            applies_together: false,
+        },
+    )
 }
 
 #[cfg(unix)]
@@ -654,7 +822,7 @@ fn merge_manager_packages(
 }
 
 /// Aggregate `[bootstrap.packages]` across a specific set of config files.
-pub(crate) fn packages_from_config_files(config_files: &ConfigMap) -> Vec<ManagerPackages> {
+pub(crate) fn packages_from_config_files(config_files: &ConfigMap) -> Result<Vec<ManagerPackages>> {
     packages_from_config_files_with_brew_taps(config_files, &IndexMap::new(), true)
 }
 
@@ -662,10 +830,18 @@ fn packages_from_config_files_with_brew_taps(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
     filter_env: bool,
-) -> Vec<ManagerPackages> {
+) -> Result<Vec<ManagerPackages>> {
     let (requests, options) =
         package_requests_from_config_files(config_files, brew_taps, filter_env);
-    resolve_managers(requests, options, false).expect("non-strict resolve is infallible")
+    resolve_managers(
+        requests,
+        options,
+        ResolveOpts {
+            strict: false,
+            // `filter_env == false` is the prune union across environments
+            applies_together: filter_env,
+        },
+    )
 }
 
 fn package_requests_from_config_files(
@@ -682,6 +858,10 @@ fn package_requests_from_config_files(
     let brew_adopt = brew_adopt_from_config_files(config_files);
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
+    #[cfg(unix)]
+    let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
+    #[cfg(unix)]
+    let mut app_adopt = BTreeSet::new();
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
@@ -705,14 +885,55 @@ fn package_requests_from_config_files(
                     None
                 };
                 let adopt_requested = package.adopt();
-                if adopt_requested.is_some() && mgr != "brew-cask" {
+                if adopt_requested.is_some() && mgr != "brew-cask" && mgr != "macos-app" {
                     warn!(
-                        "[bootstrap.packages]: adopt is only supported for brew-cask entries; ignoring it for '{spec}'"
+                        "[bootstrap.packages]: adopt is only supported for brew-cask and macos-app entries; ignoring it for '{spec}'"
                     );
                 }
                 #[cfg(unix)]
                 if mgr == "brew-cask" && adopt_requested.unwrap_or(brew_adopt) {
                     cask_adopt.insert(name.clone());
+                }
+                // Shape is validated on every platform: a config shared across
+                // machines should report a misplaced or incomplete declaration
+                // wherever it is read, not only where macos-app can run.
+                let app_declaration = package.app_fields();
+                if app_declaration.is_some() && mgr != "macos-app" {
+                    warn!(
+                        "[bootstrap.packages]: url/sha256/artifact are only supported for macos-app entries; ignoring them for '{spec}'"
+                    );
+                } else if app_declaration.is_none() && mgr == "macos-app" {
+                    warn!(
+                        "[bootstrap.packages]: macos-app entry '{spec}' needs 'url', 'sha256', 'artifact', and 'version'"
+                    );
+                    continue;
+                }
+                if mgr == "macos-app"
+                    && let Some((url, sha256, artifact, declared_version)) = app_declaration
+                {
+                    // Validated on every platform, exactly once: AppSpec::parse
+                    // runs the same checks, so off unix — where no spec is built
+                    // — the validator is called directly instead.
+                    #[cfg(not(unix))]
+                    if let Err(err) =
+                        validate_app_declaration(&name, url, sha256, artifact, declared_version)
+                    {
+                        warn!("[bootstrap.packages]: {err}");
+                        continue;
+                    }
+                    #[cfg(unix)]
+                    match AppSpec::parse(&name, url, sha256, artifact, declared_version) {
+                        Ok(spec) => {
+                            app_specs.insert(name.clone(), spec);
+                            if adopt_requested.unwrap_or(false) {
+                                app_adopt.insert(name.clone());
+                            }
+                        }
+                        Err(err) => {
+                            warn!("[bootstrap.packages]: {err}");
+                            continue;
+                        }
+                    }
                 }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
@@ -725,13 +946,24 @@ fn package_requests_from_config_files(
         }
     }
     #[cfg(unix)]
-    let options = if cask_adopt.is_empty() {
-        IndexMap::new()
-    } else {
-        IndexMap::from([(
-            "brew-cask".to_string(),
-            ManagerPackageOptions::BrewCask { adopt: cask_adopt },
-        )])
+    let options = {
+        let mut options = IndexMap::new();
+        if !cask_adopt.is_empty() {
+            options.insert(
+                "brew-cask".to_string(),
+                ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+            );
+        }
+        if !app_specs.is_empty() {
+            options.insert(
+                "macos-app".to_string(),
+                ManagerPackageOptions::MacosApp {
+                    specs: app_specs,
+                    adopt: app_adopt,
+                },
+            );
+        }
+        options
     };
     #[cfg(not(unix))]
     let options = IndexMap::new();
@@ -1770,10 +2002,41 @@ fn packages_from_specs_with_config_files(
     let package_configs = package_configs_from_config_files(config_files);
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
+    #[cfg(unix)]
+    let mut app_specs: BTreeMap<String, AppSpec> = BTreeMap::new();
+    #[cfg(unix)]
+    let mut app_adopt = BTreeSet::new();
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     for spec in specs {
         let (mgr, name) = parse_spec(spec)?;
         validate_package_name(&mgr, &name)?;
+        // An explicit `macos-app:<name>` still needs its declaration, which
+        // only the config carries. Without it there is no URL to install from,
+        // and no Homebrew cask to fall back to.
+        #[cfg(unix)]
+        let mut app_version = None;
+        #[cfg(unix)]
+        if mgr == "macos-app" {
+            let configured = package_configs
+                .get(&format!("{mgr}:{name}"))
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "macos-app:{name} is not declared in [bootstrap.packages]; it needs url, sha256, artifact, and an explicit version"
+                    )
+                })?;
+            let (url, sha256, artifact, version) =
+                configured.app_fields().ok_or_else(|| {
+                    eyre::eyre!(
+                        "macos-app:{name} is missing 'url'; macos-app entries need url, sha256, artifact, and an explicit version"
+                    )
+                })?;
+            let parsed = AppSpec::parse(&name, url, sha256, artifact, version)?;
+            app_version = Some(parsed.version.clone());
+            app_specs.insert(name.clone(), parsed);
+            if configured.adopt().unwrap_or(false) {
+                app_adopt.insert(name.clone());
+            }
+        }
         let tap_url = if is_brew_manager(&mgr) {
             brew_tap_name(&name).and_then(|tap| brew_taps.get(tap).cloned())
         } else {
@@ -1799,10 +2062,14 @@ fn packages_from_specs_with_config_files(
                 cask_adopt.insert(name.clone());
             }
         }
+        #[cfg(unix)]
+        let version = app_version;
+        #[cfg(not(unix))]
+        let version = None;
         let requests = by_mgr.entry(mgr).or_default();
         let request = PackageRequest {
             name,
-            version: None,
+            version,
             tap_url,
             desired: packages::PackageDesiredState::Present,
         };
@@ -1811,17 +2078,35 @@ fn packages_from_specs_with_config_files(
         }
     }
     #[cfg(unix)]
-    let options = if cask_adopt.is_empty() {
-        IndexMap::new()
-    } else {
-        IndexMap::from([(
-            "brew-cask".to_string(),
-            ManagerPackageOptions::BrewCask { adopt: cask_adopt },
-        )])
+    let options = {
+        let mut options = IndexMap::new();
+        if !cask_adopt.is_empty() {
+            options.insert(
+                "brew-cask".to_string(),
+                ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+            );
+        }
+        if !app_specs.is_empty() {
+            options.insert(
+                "macos-app".to_string(),
+                ManagerPackageOptions::MacosApp {
+                    specs: app_specs,
+                    adopt: app_adopt,
+                },
+            );
+        }
+        options
     };
     #[cfg(not(unix))]
     let options = IndexMap::new();
-    resolve_managers(by_mgr, options, true)
+    resolve_managers(
+        by_mgr,
+        options,
+        ResolveOpts {
+            strict: true,
+            applies_together: true,
+        },
+    )
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -1928,11 +2213,30 @@ fn brew_adopt_from_config_files(config_files: &ConfigMap) -> bool {
     adopt
 }
 
+#[derive(Clone, Copy)]
+struct ResolveOpts {
+    /// Unknown or settings-excluded managers are hard errors rather than
+    /// warnings that skip the entry.
+    strict: bool,
+    /// Whether these requests are declarations that apply together on one host.
+    ///
+    /// Prune deliberately unions declarations across environments so it can
+    /// protect whatever any environment declares. Entries that are never active
+    /// at the same time do not contradict each other, and an unrelated
+    /// manager's entries must not block a prune, so that union is not checked
+    /// for one package declared under two spellings.
+    applies_together: bool,
+}
+
 fn resolve_managers(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
     mut manager_options: IndexMap<String, ManagerPackageOptions>,
-    strict: bool,
+    opts: ResolveOpts,
 ) -> eyre::Result<Vec<ManagerPackages>> {
+    let ResolveOpts {
+        strict,
+        applies_together,
+    } = opts;
     let enabled = crate::config::Settings::get()
         .system_packages
         .managers
@@ -1952,12 +2256,20 @@ fn resolve_managers(
             );
         }
         match managers.get(&name) {
-            Some(manager) => out.push(ManagerPackages {
-                manager: manager.clone(),
-                requests,
-                options: manager_options.shift_remove(&name).unwrap_or_default(),
-                disabled,
-            }),
+            Some(manager) => {
+                // Two spellings of one package that disagree resolve by
+                // machine state rather than by config, so reject the pair
+                // wherever requests are aggregated — `status` included.
+                if applies_together {
+                    packages::check_name_conflicts(manager.as_ref(), &requests)?;
+                }
+                out.push(ManagerPackages {
+                    manager: manager.clone(),
+                    requests,
+                    options: manager_options.shift_remove(&name).unwrap_or_default(),
+                    disabled,
+                });
+            }
             None => {
                 if strict {
                     bail!(
@@ -2071,7 +2383,7 @@ mod tests {
                 "pacman:libreoffice-fresh" = { state = "absent" }
             "#,
         )])?;
-        let pacman = packages_from_config_files(&config_files)
+        let pacman = packages_from_config_files(&config_files)?
             .into_iter()
             .find(|packages| packages.manager.name() == "pacman")
             .unwrap();
@@ -2140,7 +2452,7 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
@@ -2148,6 +2460,333 @@ mod tests {
         assert_eq!(casks.requests.len(), 2);
         assert!(casks.options.brew_cask_adopt("textmate"));
         assert!(!casks.options.brew_cask_adopt("replace-me"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_declaration_reaches_manager_options() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}-arm64.dmg", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app", adopt = true }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files)?;
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app")
+            .unwrap();
+        assert_eq!(apps.requests.len(), 1);
+        let spec = apps.options.macos_app_spec("nuvio").unwrap();
+        // {{version}} is interpolated so a release bump is a one-field edit.
+        assert_eq!(spec.url, "https://example.com/Nuvio-1.1.20-arm64.dmg");
+        assert_eq!(
+            spec.sha256,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(spec.artifact, "Nuvio.app");
+        assert_eq!(spec.version, "1.1.20");
+        assert!(apps.options.brew_cask_adopt("nuvio"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_explicit_cli_spec_carries_its_declaration() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio-{{version}}.dmg", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app", adopt = true }
+            "#,
+        )])?;
+
+        // `mise bootstrap packages apply macos-app:nuvio` must resolve the same
+        // declaration a full bootstrap would; there is no Homebrew fallback.
+        let packages =
+            packages_from_specs_with_config_files(&["macos-app:nuvio".to_string()], &config_files)?;
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app")
+            .unwrap();
+        let spec = apps.options.macos_app_spec("nuvio").unwrap();
+        assert_eq!(spec.url, "https://example.com/Nuvio-1.1.20.dmg");
+        assert_eq!(spec.version, "1.1.20");
+        assert!(apps.options.brew_cask_adopt("nuvio"));
+        // The pinned version must reach the request, or status compares
+        // against nothing.
+        assert_eq!(apps.requests[0].version.as_deref(), Some("1.1.20"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_explicit_cli_spec_without_a_declaration_is_an_error() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[("mise.toml", "[tools]\n")])?;
+        let err = match packages_from_specs_with_config_files(
+            &["macos-app:nuvio".to_string()],
+            &config_files,
+        ) {
+            Ok(_) => panic!("expected an error for an undeclared macos-app spec"),
+            Err(err) => err.to_string(),
+        };
+        assert!(
+            err.contains("not declared in [bootstrap.packages]"),
+            "{err}"
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_declaration_requires_every_field() {
+        let missing_sha = AppSpec::parse(
+            "nuvio",
+            "https://example.com/a.dmg",
+            None,
+            Some("Nuvio.app"),
+            "1.0.0",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(missing_sha.contains("requires 'sha256'"), "{missing_sha}");
+
+        let missing_artifact = AppSpec::parse(
+            "nuvio",
+            "https://example.com/a.dmg",
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+            None,
+            "1.0.0",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            missing_artifact.contains("requires 'artifact'"),
+            "{missing_artifact}"
+        );
+
+        // mise cannot discover versions for a direct download, so "latest" has
+        // no meaning here and must be rejected rather than silently pinned.
+        let latest = AppSpec::parse(
+            "nuvio",
+            "https://example.com/a.dmg",
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+            Some("Nuvio.app"),
+            "latest",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(latest.contains("explicit 'version'"), "{latest}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_rejects_blank_declaration_fields() -> Result<()> {
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let url = "https://example.com/a.dmg";
+
+        // Presence is not enough: a whitespace-only value is not a declaration.
+        assert!(validate_app_declaration("n", url, Some(digest), Some("   "), "1.0.0").is_err());
+        assert!(validate_app_declaration("n", url, Some(digest), Some("N.app"), "  ").is_err());
+
+        // Padded values are rejected, not trimmed: the version is interpolated
+        // into `url` and joined into install-record paths, so " latest " must
+        // not slip past the latest check and land on disk in padded form.
+        assert!(
+            validate_app_declaration("n", url, Some(digest), Some("N.app"), " latest ").is_err()
+        );
+        assert!(
+            validate_app_declaration("n", url, Some(digest), Some("N.app"), " 1.0.0 ").is_err()
+        );
+        assert!(validate_app_declaration("n", url, Some(digest), Some("N.app"), "1.0.0").is_ok());
+
+        // A blank url reads as no declaration at all, so the entry gets the
+        // "needs url, sha256, artifact and version" diagnosis rather than
+        // being accepted and failing later at download time.
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "macos-app:nuvio" = { version = "1.1.20", url = "   ", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app" }
+            "#,
+        )])?;
+        let packages = packages_from_config_files(&config_files)?;
+        let apps = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "macos-app");
+        assert!(apps.is_none_or(|apps| apps.requests.is_empty()));
+        Ok(())
+    }
+
+    #[test]
+    fn macos_app_declaration_is_validated_on_every_platform() {
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+        // Not gated on unix: a config shared across machines must report a
+        // malformed declaration wherever it is read. Otherwise a bad checksum
+        // surfaces on Windows as a generic unknown-manager warning.
+        assert!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                None,
+                Some("N.app"),
+                "1.0.0"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some("no_check"),
+                Some("N.app"),
+                "1.0.0"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some(&digest[..32]),
+                Some("N.app"),
+                "1.0.0"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some(digest),
+                None,
+                "1.0.0"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some(digest),
+                Some("N.app"),
+                "latest"
+            )
+            .is_err()
+        );
+
+        assert_eq!(
+            validate_app_declaration(
+                "nuvio",
+                "https://example.com/a.dmg",
+                Some(digest),
+                Some("N.app"),
+                "1.0.0"
+            )
+            .unwrap(),
+            (digest, "N.app")
+        );
+    }
+
+    /// A `.git` URL is cloned rather than downloaded, so it never reaches the
+    /// checksum step. Accepting one would record a `sha256` that is never
+    /// verified and install an unchecked bundle from a declaration that looks
+    /// pinned.
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_rejects_a_git_url() {
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let err = AppSpec::parse(
+            "nuvio",
+            "https://example.com/nuvio.git",
+            Some(digest),
+            Some("N.app"),
+            "1.0.0",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("must be a direct download"), "{err}");
+
+        // Checked against the interpolated URL, because that is the string the
+        // fetcher dispatches on — a template alone would miss this.
+        let interpolated = AppSpec::parse(
+            "nuvio",
+            "https://example.com/{{version}}",
+            Some(digest),
+            Some("N.app"),
+            "nuvio.git",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            interpolated.contains("must be a direct download"),
+            "{interpolated}"
+        );
+
+        // An ordinary download is unaffected, including one whose path merely
+        // contains "git".
+        assert!(
+            AppSpec::parse(
+                "nuvio",
+                "https://example.com/gitkraken.dmg",
+                Some(digest),
+                Some("N.app"),
+                "1.0.0",
+            )
+            .is_ok()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_requires_a_real_digest() {
+        let url = "https://example.com/a.dmg";
+        let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+        // `no_check` makes the shared fetcher skip verification entirely, which
+        // would defeat the integrity guarantee this manager promises.
+        let no_check = AppSpec::parse("nuvio", url, Some("no_check"), Some("N.app"), "1.0.0")
+            .unwrap_err()
+            .to_string();
+        assert!(no_check.contains("64-character hex digest"), "{no_check}");
+
+        // A truncated or mistyped digest is caught before the download.
+        let truncated = AppSpec::parse("nuvio", url, Some(&digest[..32]), Some("N.app"), "1.0.0")
+            .unwrap_err()
+            .to_string();
+        assert!(truncated.contains("64-character hex digest"), "{truncated}");
+
+        let not_hex = format!("{}zz", &digest[..62]);
+        assert!(AppSpec::parse("nuvio", url, Some(&not_hex), Some("N.app"), "1.0.0").is_err());
+
+        let spec = AppSpec::parse("nuvio", url, Some(digest), Some("N.app"), "1.0.0").unwrap();
+        assert_eq!(spec.sha256, digest);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_app_rejects_inline_url_on_other_managers() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "brew-cask:nuvio" = { version = "1.1.20", url = "https://example.com/Nuvio.dmg", sha256 = "abc", artifact = "Nuvio.app" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files)?;
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        // The entry still installs as an ordinary cask; the inline fields are
+        // ignored with a warning rather than silently changing its source.
+        assert_eq!(casks.requests.len(), 1);
+        assert!(casks.options.macos_app_spec("nuvio").is_none());
         Ok(())
     }
 
@@ -2218,7 +2857,7 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
@@ -2246,7 +2885,7 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
@@ -2313,6 +2952,142 @@ mod tests {
         Ok(())
     }
 
+    /// Prune unions declarations across environments so it can protect whatever
+    /// any environment declares, which means entries that are never active at
+    /// the same time land in one list. They are not in conflict, and an
+    /// unrelated manager's entries must not block a brew prune.
+    #[cfg(unix)]
+    #[test]
+    fn the_prune_union_is_not_checked_for_folded_names() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:jq" = "latest"
+                "winget:Git.Git" = { env = "prod" }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "winget:git.git" = { state = "absent", env = "dev" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        assert_eq!(brew.requests.len(), 1);
+        Ok(())
+    }
+
+    /// The same union, but with both spellings in one config file, which is the
+    /// shape that reaches the `filter_env`-gated aggregation rather than the
+    /// merge of current and tracked configs.
+    #[cfg(unix)]
+    #[test]
+    fn the_prune_union_is_not_checked_within_one_config() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:jq" = "latest"
+                "winget:Git.Git" = { env = "prod" }
+                "winget:git.git" = { state = "absent", env = "dev" }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:ffmpeg" = "latest"
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        assert_eq!(brew.requests.len(), 2);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn folded_package_names_that_disagree_are_rejected() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "winget:Git.Git" = "latest"
+                "winget:git.git" = { state = "absent" }
+            "#,
+        )])?;
+
+        let Err(err) = packages_from_config_files(&config_files) else {
+            panic!("expected the conflicting winget declarations to be rejected");
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("'winget:Git.Git'"), "{msg}");
+        assert!(msg.contains("'winget:git.git'"), "{msg}");
+        Ok(())
+    }
+
+    /// Case folding is a property of the manager, not of `[bootstrap.packages]`:
+    /// apt really does package `Git` and `git` separately.
+    #[cfg(unix)]
+    #[test]
+    fn verbatim_package_names_that_differ_only_by_case_are_kept() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:Git" = "latest"
+                "apt:git" = { state = "absent" }
+            "#,
+        )])?;
+
+        let apt = packages_from_config_files(&config_files)?
+            .into_iter()
+            .find(|mp| mp.manager.name() == "apt")
+            .unwrap();
+        assert_eq!(apt.requests.len(), 2);
+        Ok(())
+    }
+
+    /// The guard runs after host filtering, so using `os` to pick between two
+    /// spellings is still a config with one declaration per host.
+    #[cfg(unix)]
+    #[test]
+    fn folded_package_names_filtered_apart_by_os_are_not_a_conflict() -> Result<()> {
+        let current_os = crate::cli::version::OS.as_str();
+        let inactive_os = if current_os == "linux" {
+            "macos"
+        } else {
+            "linux"
+        };
+        let config = format!(
+            r#"
+                [bootstrap.packages]
+                "winget:Git.Git" = {{ os = "{current_os}" }}
+                "winget:git.git" = {{ state = "absent", os = "{inactive_os}" }}
+            "#
+        );
+        let (_dir, config_files) = config_map_from_toml(&[("mise.toml", &config)])?;
+
+        let winget = packages_from_config_files(&config_files)?
+            .into_iter()
+            .find(|mp| mp.manager.name() == "winget")
+            .unwrap();
+        assert_eq!(winget.requests.len(), 1);
+        assert_eq!(winget.requests[0].name, "Git.Git");
+        Ok(())
+    }
+
     #[cfg(unix)]
     #[test]
     fn test_packages_from_config_files_filters_os_and_arch() -> Result<()> {
@@ -2339,7 +3114,7 @@ mod tests {
         );
         let (_dir, config_files) = config_map_from_toml(&[("config.toml", &config)])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let brew = packages
             .into_iter()
             .find(|mp| mp.manager.name() == "brew")
@@ -2365,6 +3140,9 @@ mod tests {
             env: vec!["desktop".to_string(), "work".to_string()],
             adopt: None,
             state: PackageDesiredStateTomlConfig::Present,
+            url: None,
+            sha256: None,
+            artifact: None,
         });
 
         assert!(package.is_env_supported(&["work".to_string()]));
@@ -2397,7 +3175,7 @@ mod tests {
             "#,
         )])?;
 
-        assert!(packages_from_config_files(&config_files).is_empty());
+        assert!(packages_from_config_files(&config_files)?.is_empty());
         let packages = packages_from_config_files_and_tracked_config_files(
             &config_files,
             &ConfigMap::default(),

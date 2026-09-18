@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 #[cfg(panic = "abort")]
 use std::sync::TryLockError;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
@@ -473,6 +473,9 @@ const PIPE_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 /// Maximum amount of stdout retained for commands whose output is hidden
 /// behind a progress indicator. The tail is replayed if the command fails.
 const FAILURE_OUTPUT_TAIL_BYTES: usize = 64 * 1024;
+/// How much of the child's final stderr line the failure carries. Long enough
+/// for a loader or compiler diagnostic, short enough to stay on one row.
+const STDERR_TAIL_MAX_CHARS: usize = 300;
 const FAILURE_OUTPUT_TRUNCATED_NOTICE: &str = "[output truncated; showing last 64 KiB]";
 
 #[derive(Default)]
@@ -958,6 +961,10 @@ impl<'a> CmdLineRunner<'a> {
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
 
         let mut failure_output = self.failure_output_tail();
+        // The child's last word, kept for the error itself. The live output is
+        // long gone by the time anyone reads `exit code 127`, and under
+        // `--quiet` it was never printed at all.
+        let mut last_stderr: Option<String> = None;
         let mut status = None;
         // Once ExitStatus arrives we set a deadline and switch to recv_timeout
         // so a grandchild that inherited the pipes can't hang us forever
@@ -997,6 +1004,9 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
+                    if !line.trim().is_empty() {
+                        last_stderr = Some(line.clone());
+                    }
                     if self.stderr_as_stdout
                         && self.on_stderr.is_none()
                         && let Some(output) = &mut failure_output
@@ -1047,10 +1057,11 @@ impl<'a> CmdLineRunner<'a> {
             if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
                 bail!("timed out after {duration:?}");
             }
-            self.on_error(
-                failure_output.map_or_else(Vec::new, FailureOutputTail::into_output),
-                status,
-            )?;
+            let mut output = failure_output.map_or_else(Vec::new, FailureOutputTail::into_output);
+            if let Some(line) = last_stderr {
+                output.push((line, OutputSource::Stderr));
+            }
+            self.on_error(output, status)?;
         }
 
         Ok(())
@@ -1069,11 +1080,11 @@ impl<'a> CmdLineRunner<'a> {
         if is_cancelled() {
             return Err(crate::errors::Error::TaskInterrupted.into());
         }
-        let read_lock = RAW_LOCK.read().await;
+        let read_lock = raw_read_lock().await;
         debug!("$ {self}");
         if Settings::get().raw || self.raw {
             drop(read_lock);
-            let _write_lock = RAW_LOCK.write().await;
+            let _write_lock = raw_write_lock().await;
             return self.execute_raw_async_with_cancel_check(is_cancelled).await;
         }
         #[cfg(unix)]
@@ -1155,6 +1166,10 @@ impl<'a> CmdLineRunner<'a> {
 
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
         let mut failure_output = self.failure_output_tail();
+        // The child's last word, kept for the error itself. The live output is
+        // long gone by the time anyone reads `exit code 127`, and under
+        // `--quiet` it was never printed at all.
+        let mut last_stderr: Option<String> = None;
         let mut status = None;
         let mut wait = Box::pin(cp.wait());
         loop {
@@ -1190,6 +1205,9 @@ impl<'a> CmdLineRunner<'a> {
                         }
                         ChildProcessOutput::Stderr(line) => {
                             let line = self.redactor.redact(&line);
+                            if !line.trim().is_empty() {
+                                last_stderr = Some(line.clone());
+                            }
                             if self.stderr_as_stdout
                                 && self.on_stderr.is_none()
                                 && let Some(output) = &mut failure_output
@@ -1246,6 +1264,9 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 ChildProcessOutput::Stderr(line) => {
                     let line = self.redactor.redact(&line);
+                    if !line.trim().is_empty() {
+                        last_stderr = Some(line.clone());
+                    }
                     if self.stderr_as_stdout
                         && self.on_stderr.is_none()
                         && let Some(output) = &mut failure_output
@@ -1271,10 +1292,11 @@ impl<'a> CmdLineRunner<'a> {
             if let Some(duration) = timeout_guard.as_ref().and_then(|g| g.timed_out()) {
                 bail!("timed out after {duration:?}");
             }
-            self.on_error(
-                failure_output.map_or_else(Vec::new, FailureOutputTail::into_output),
-                status,
-            )?;
+            let mut output = failure_output.map_or_else(Vec::new, FailureOutputTail::into_output);
+            if let Some(line) = last_stderr {
+                output.push((line, OutputSource::Stderr));
+            }
+            self.on_error(output, status)?;
         }
 
         Ok(())
@@ -1298,7 +1320,7 @@ impl<'a> CmdLineRunner<'a> {
         max_output_bytes: usize,
         pipe_drain_timeout: Duration,
     ) -> Result<(String, String)> {
-        let _read_lock = RAW_LOCK.read().await;
+        let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
         // These commands are non-interactive probes: nothing reads stdin and
@@ -1479,7 +1501,7 @@ impl<'a> CmdLineRunner<'a> {
 
     /// Run the command and return stdout, even when raw mode is enabled.
     pub(crate) async fn read(mut self) -> Result<String> {
-        let _read_lock = RAW_LOCK.read().await;
+        let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
         #[cfg(unix)]
@@ -1539,7 +1561,7 @@ impl<'a> CmdLineRunner<'a> {
 
     #[cfg(unix)]
     pub(crate) async fn read_bounded(mut self, max_output_bytes: usize) -> Result<String> {
-        let _read_lock = RAW_LOCK.read().await;
+        let _read_lock = raw_read_lock().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
         #[cfg(unix)]
@@ -1908,9 +1930,9 @@ impl<'a> CmdLineRunner<'a> {
                     // via pr.println. Reporters that already showed stdout as it
                     // arrived would only duplicate it here.
                     let stdout_only: String = output
-                        .into_iter()
+                        .iter()
                         .filter(|(_, source)| matches!(source, OutputSource::Stdout))
-                        .map(|(line, _)| line)
+                        .map(|(line, _)| line.as_str())
                         .collect::<Vec<_>>()
                         .join("\n");
                     if !stdout_only.trim().is_empty() {
@@ -1922,7 +1944,11 @@ impl<'a> CmdLineRunner<'a> {
                 // eprintln!("{}", output);
             }
         }
-        Err(ScriptFailed(self.get_program(), Some(status)))?
+        Err(ScriptFailed(
+            self.get_program(),
+            Some(status),
+            stderr_tail_for_error(&output),
+        ))?
     }
 
     fn replay_captured_stderr(&self, output: &[(String, OutputSource)]) {
@@ -1946,16 +1972,83 @@ impl<'a> CmdLineRunner<'a> {
     }
 }
 
-fn raw_read_lock_blocking() -> tokio::sync::RwLockReadGuard<'static, ()> {
+/// Number of threads spinning in [`raw_write_lock_blocking`].
+///
+/// These helpers poll `try_write`/`try_read` rather than awaiting, because their
+/// callers are sync. `try_write` never registers as a waiting writer, so without
+/// this counter a steady stream of readers starves them: `try_read` succeeds
+/// whenever no writer *currently holds* the lock, which is every time the writer
+/// is between polls. Readers check this first and yield to a pending writer, which
+/// is what makes an exclusive acquisition finish in bounded time.
+static RAW_WRITERS_WAITING: AtomicUsize = AtomicUsize::new(0);
+
+/// Decrements [`RAW_WRITERS_WAITING`] however the writer leaves its loop.
+struct RawWriterWaiting;
+
+impl RawWriterWaiting {
+    fn new() -> Self {
+        RAW_WRITERS_WAITING.fetch_add(1, Ordering::AcqRel);
+        Self
+    }
+}
+
+impl Drop for RawWriterWaiting {
+    fn drop(&mut self) {
+        RAW_WRITERS_WAITING.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Async counterpart of [`raw_read_lock_blocking`].
+///
+/// Awaiting `RAW_LOCK` directly would queue behind an *async* writer but not a sync
+/// one, whose `try_write` polls tokio never sees. Consulting the counter makes both
+/// kinds of writer visible to both kinds of reader.
+///
+/// Acquires first and re-checks, rather than checking then acquiring: a writer that
+/// registers during the gap between those two steps would otherwise be bypassed by a
+/// reader that had already passed the check. Releasing the guard on that path leaves
+/// only the case where the reader held the lock before the writer arrived, which no
+/// amount of gating can avoid — an `RwLock` writer always waits for current readers.
+pub(crate) async fn raw_read_lock() -> tokio::sync::RwLockReadGuard<'static, ()> {
+    loop {
+        let guard = RAW_LOCK.read().await;
+        if RAW_WRITERS_WAITING.load(Ordering::Acquire) == 0 {
+            return guard;
+        }
+        drop(guard);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Async counterpart of [`raw_write_lock_blocking`]. Registers as a waiting writer so
+/// sync readers yield to it, then queues on the lock as usual.
+pub(crate) async fn raw_write_lock() -> tokio::sync::RwLockWriteGuard<'static, ()> {
+    let _waiting = RawWriterWaiting::new();
+    RAW_LOCK.write().await
+}
+
+/// Take the shared side of [`RAW_LOCK`]. Held while an ordinary command runs, so a
+/// `--raw` command (or vfox's `cmd.stream`) waits for it before taking the terminal.
+///
+/// Yields to a writer already waiting, so exclusive acquisition cannot be starved.
+pub(crate) fn raw_read_lock_blocking() -> tokio::sync::RwLockReadGuard<'static, ()> {
     loop {
         if let Ok(guard) = RAW_LOCK.try_read() {
-            return guard;
+            // Acquire-then-verify, for the reason given on `raw_read_lock`.
+            if RAW_WRITERS_WAITING.load(Ordering::Acquire) == 0 {
+                return guard;
+            }
+            drop(guard);
         }
         thread::sleep(Duration::from_millis(10));
     }
 }
 
-fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static, ()> {
+/// Take the exclusive side of [`RAW_LOCK`], blocking until no other command holds
+/// it. Used by `--raw` commands and by vfox's `cmd.stream`, which needs the same
+/// exclusivity so an interactive plugin child owns the terminal. (#13254)
+pub(crate) fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static, ()> {
+    let _waiting = RawWriterWaiting::new();
     loop {
         if let Ok(guard) = RAW_LOCK.try_write() {
             return guard;
@@ -1983,6 +2076,31 @@ impl Debug for CmdLineRunner<'_> {
 enum OutputSource {
     Stdout,
     Stderr,
+}
+
+/// The last thing the child said on stderr, for the error that ends the run.
+///
+/// One line: an error is rendered on a single row in places like the install
+/// summary, and the whole stream was already streamed to the reporter. Callers
+/// that route stderr to stdout (`stderr_as_stdout`) replay their output in full
+/// instead, so nothing here is the only copy.
+fn stderr_tail_for_error(output: &[(String, OutputSource)]) -> Option<String> {
+    let line = output
+        .iter()
+        .rev()
+        .find(|(line, source)| matches!(source, OutputSource::Stderr) && !line.trim().is_empty())
+        .map(|(line, _)| line.trim())?;
+    // By character, not by byte: a diagnostic in a non-ASCII locale would
+    // otherwise lose two thirds of its length to UTF-8 encoding.
+    let end = line
+        .char_indices()
+        .nth(STDERR_TAIL_MAX_CHARS)
+        .map_or(line.len(), |(index, _)| index);
+    if end < line.len() {
+        Some(format!("{}…", &line[..end]))
+    } else {
+        Some(line.to_string())
+    }
 }
 
 fn captured_output_lines(
@@ -2106,6 +2224,101 @@ mod tests {
     use crate::config::Config;
     use crate::ui::progress_report::SingleReport;
 
+    // `cmd.stream` takes the exclusive side of RAW_LOCK while `os.execute` takes the
+    // shared side. Because both poll rather than await, a steady stream of readers
+    // starved the writer: a trivial `cmd.stream` child waited 8s behind three
+    // plugins looping on `os.execute`. Readers must yield to a pending writer. (#13254)
+    #[test]
+    fn raw_read_lock_yields_to_a_waiting_writer() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+
+        let waiting = super::RawWriterWaiting::new();
+        let acquired = Arc::new(AtomicBool::new(false));
+        let flag = acquired.clone();
+        let reader = std::thread::spawn(move || {
+            let _guard = super::raw_read_lock_blocking();
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !acquired.load(Ordering::SeqCst),
+            "reader acquired the shared lock while a writer was waiting"
+        );
+
+        drop(waiting);
+        reader.join().unwrap();
+        assert!(acquired.load(Ordering::SeqCst));
+    }
+
+    // The counter must govern the async path too: mise's own installs acquire the
+    // shared side with `RAW_LOCK.read().await`, which queues behind an async writer
+    // but cannot see a sync one polling `try_write`. (#13254)
+    #[tokio::test]
+    async fn raw_read_lock_async_yields_to_a_waiting_writer() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+
+        let waiting = super::RawWriterWaiting::new();
+        let acquired = Arc::new(AtomicBool::new(false));
+        let flag = acquired.clone();
+        let reader = tokio::spawn(async move {
+            let _guard = super::raw_read_lock().await;
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !acquired.load(Ordering::SeqCst),
+            "async reader acquired the shared lock while a writer was waiting"
+        );
+
+        drop(waiting);
+        reader.await.unwrap();
+        assert!(acquired.load(Ordering::SeqCst));
+    }
+
+    // Readers acquire then verify, so a writer registering mid-acquisition is not
+    // bypassed. Exercising that interleaving deterministically would need a test-only
+    // injection point between the two steps; this covers the property it protects —
+    // continuous reader churn must not keep a writer out. (#13254)
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn raw_write_lock_is_not_starved_by_reader_churn() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::{Duration, Instant};
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let churn: Vec<_> = (0..4)
+            .map(|_| {
+                let stop = stop.clone();
+                tokio::spawn(async move {
+                    while !stop.load(Ordering::SeqCst) {
+                        let guard = super::raw_read_lock().await;
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                        drop(guard);
+                    }
+                })
+            })
+            .collect();
+
+        // Let the readers get going so the writer arrives mid-churn.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let started = Instant::now();
+        drop(super::raw_write_lock().await);
+        let waited = started.elapsed();
+
+        stop.store(true, Ordering::SeqCst);
+        for task in churn {
+            task.await.unwrap();
+        }
+        assert!(
+            waited < Duration::from_secs(5),
+            "writer waited {waited:?} behind churning readers"
+        );
+    }
+
     #[derive(Debug, Default)]
     struct RecordingReport {
         lines: Mutex<Vec<String>>,
@@ -2177,6 +2390,82 @@ mod tests {
             *callback_lines.lock().unwrap(),
             vec!["callback failure".to_string()]
         );
+    }
+
+    /// A command that fails during an install has already said why on stderr.
+    /// The error that ends the run carried only the exit status, so under
+    /// `--quiet` — where the reporter prints nothing — the reason was lost.
+    /// See: <https://github.com/jdx/mise/discussions/13306>
+    #[test]
+    fn test_failure_error_names_the_last_stderr_line() {
+        let err = super::CmdLineRunner::new("sh")
+            .args([
+                "-c",
+                "printf 'noise\n' >&2; printf 'error while loading shared libraries: libncurses.so.6\n' >&2; exit 127",
+            ])
+            .execute()
+            .unwrap_err();
+
+        let message = err.to_string();
+        assert!(
+            message.contains("exit code 127"),
+            "expected the exit status, got {message:?}"
+        );
+        assert!(
+            message.contains("last stderr: error while loading shared libraries: libncurses.so.6"),
+            "expected the child's last stderr line, got {message:?}"
+        );
+    }
+
+    #[test]
+    fn test_failure_error_without_stderr_is_unchanged() {
+        let err = super::CmdLineRunner::new("sh")
+            .args(["-c", "exit 3"])
+            .execute()
+            .unwrap_err();
+
+        let message = err.to_string();
+        assert_eq!(message, "sh exited with non-zero status: exit code 3");
+    }
+
+    #[test]
+    fn test_stderr_tail_for_error_ignores_stdout_and_blank_lines() {
+        let output = vec![
+            ("the reason".to_string(), super::OutputSource::Stderr),
+            ("   ".to_string(), super::OutputSource::Stderr),
+            ("later stdout".to_string(), super::OutputSource::Stdout),
+        ];
+
+        assert_eq!(
+            super::stderr_tail_for_error(&output),
+            Some("the reason".to_string())
+        );
+        assert_eq!(super::stderr_tail_for_error(&[]), None);
+    }
+
+    #[test]
+    fn test_stderr_tail_for_error_truncates_by_character_not_byte() {
+        let line = "あ".repeat(super::STDERR_TAIL_MAX_CHARS + 10);
+        let output = vec![(line, super::OutputSource::Stderr)];
+
+        let tail = super::stderr_tail_for_error(&output).unwrap();
+        assert!(tail.ends_with('…'));
+        // Counting bytes would have cut a diagnostic in a non-ASCII locale at a
+        // third of the documented limit.
+        assert_eq!(
+            tail.chars().count(),
+            super::STDERR_TAIL_MAX_CHARS + 1,
+            "expected {} characters plus the ellipsis",
+            super::STDERR_TAIL_MAX_CHARS
+        );
+    }
+
+    #[test]
+    fn test_stderr_tail_for_error_keeps_a_line_at_the_limit_whole() {
+        let line = "あ".repeat(super::STDERR_TAIL_MAX_CHARS);
+        let output = vec![(line.clone(), super::OutputSource::Stderr)];
+
+        assert_eq!(super::stderr_tail_for_error(&output), Some(line));
     }
 
     #[test]

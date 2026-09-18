@@ -373,7 +373,7 @@ pub(crate) async fn plan(
             )?;
         }
     }
-    for manager_packages in super::packages_from_config(config) {
+    for manager_packages in super::packages_from_config(config)? {
         let manager = manager_packages.manager;
         let manager_name = manager.name().to_string();
         let unavailable = if manager_packages.disabled {
@@ -396,7 +396,10 @@ pub(crate) async fn plan(
 
         let supports_version_pins = manager.supports_version_pins();
         let supports_remove = manager.supports_remove();
-        for status in manager.installed(&manager_packages.requests).await? {
+        for status in manager
+            .installed_with_options(&manager_packages.requests, &manager_packages.options)
+            .await?
+        {
             let id = ResourceId::new("package", format!("{manager_name}:{}", status.request.name));
             let desired = desired_package(&status.request);
             let (current, action) = package_resource_state(
@@ -547,7 +550,7 @@ pub(crate) async fn plan(
     for resource in unavailable_files {
         plan.insert(resource)?;
     }
-    let builtin_packages = super::packages_from_config(config)
+    let builtin_packages = super::packages_from_config(config)?
         .into_iter()
         .filter(|packages| !packages.manager.is_plugin())
         .flat_map(|packages| {

@@ -198,7 +198,11 @@ impl Install {
         let Ok(config) = Config::get().await else {
             return;
         };
-        let mgrs = crate::system::packages_from_config(&config);
+        // a contradictory declaration is reported by the commands that act
+        // on packages; a passing hint stays quiet about it
+        let Ok(mgrs) = crate::system::packages_from_config(&config) else {
+            return;
+        };
         if mgrs.is_empty() {
             return;
         }
@@ -240,7 +244,11 @@ impl Install {
             if !available.contains(mp.manager.name()) {
                 continue;
             }
-            match mp.manager.installed(&mp.requests).await {
+            match mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await
+            {
                 Ok(statuses) => {
                     missing += statuses
                         .iter()

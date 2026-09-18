@@ -32,8 +32,8 @@ pub(crate) enum Error {
     PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
     VersionNotInstalled(Box<BackendArg>, String),
-    #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
-    ScriptFailed(String, Option<ExitStatus>),
+    #[error("{} exited with non-zero status: {}{}", .0, render_exit_status(.1), render_stderr_tail(.2))]
+    ScriptFailed(String, Option<ExitStatus>, Option<String>),
     #[error("task interrupted before process start")]
     TaskInterrupted,
     #[error(
@@ -65,6 +65,24 @@ fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {
         };
     }
     "no exit status".into()
+}
+
+/// The child's own last word, appended to the bare exit status.
+///
+/// A command that fails during an install has already written the reason to
+/// stderr — `error while loading shared libraries: libncurses.so.6` — and the
+/// progress reporter prints it as it arrives. But the error that ends the run
+/// carried only `exit code 127`, and under `--quiet` the live output never
+/// appeared at all, so the one line that explains the failure was gone by the
+/// time anyone read it.
+///
+/// Kept to a single line so every consumer that renders an error on one row —
+/// the install summary's `✗ … · failed: …` — stays on one row.
+fn render_stderr_tail(tail: &Option<String>) -> String {
+    match tail {
+        Some(tail) if !tail.trim().is_empty() => format!("; last stderr: {tail}"),
+        _ => String::new(),
+    }
 }
 
 fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> String {
@@ -135,7 +153,7 @@ pub(crate) fn split_install_result(
 
 impl Error {
     pub(crate) fn get_exit_status(err: &Report) -> Option<i32> {
-        if let Some(Error::ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
+        if let Some(Error::ScriptFailed(_, Some(status), _)) = err.downcast_ref::<Error>() {
             status.code()
         } else {
             None
@@ -149,7 +167,7 @@ impl Error {
         err.downcast_ref::<Error>().is_some_and(|err| {
             matches!(
                 err,
-                Error::ScriptFailed(_, Some(status))
+                Error::ScriptFailed(_, Some(status), _)
                     if status.signal() == Some(nix::sys::signal::SIGINT as i32)
             )
         })
@@ -166,7 +184,7 @@ impl Error {
         err.downcast_ref::<Error>().is_some_and(|err| {
             matches!(
                 err,
-                Error::ScriptFailed(_, Some(status))
+                Error::ScriptFailed(_, Some(status), _)
                     if status.code() == Some(STATUS_CONTROL_C_EXIT)
             )
         })
@@ -223,7 +241,7 @@ mod windows_tests {
     #[test]
     fn detects_a_console_interrupt() {
         let status = ExitStatus::from_raw(STATUS_CONTROL_C_EXIT as u32);
-        let err = Report::new(Error::ScriptFailed("cmd".into(), Some(status)));
+        let err = Report::new(Error::ScriptFailed("cmd".into(), Some(status), None));
 
         assert!(Error::is_sigint(&err));
     }
@@ -231,7 +249,7 @@ mod windows_tests {
     #[test]
     fn does_not_treat_an_ordinary_failure_as_an_interrupt() {
         let status = ExitStatus::from_raw(1);
-        let err = Report::new(Error::ScriptFailed("cmd".into(), Some(status)));
+        let err = Report::new(Error::ScriptFailed("cmd".into(), Some(status), None));
 
         assert!(!Error::is_sigint(&err));
     }
@@ -245,7 +263,7 @@ mod tests {
     #[test]
     fn detects_sigint_script_failure() {
         let status = ExitStatus::from_raw(nix::sys::signal::SIGINT as i32);
-        let err = Report::new(Error::ScriptFailed("sh".into(), Some(status)));
+        let err = Report::new(Error::ScriptFailed("sh".into(), Some(status), None));
 
         assert!(Error::is_sigint(&err));
     }
@@ -253,7 +271,7 @@ mod tests {
     #[test]
     fn does_not_treat_exit_code_as_sigint() {
         let status = ExitStatus::from_raw(2 << 8);
-        let err = Report::new(Error::ScriptFailed("sh".into(), Some(status)));
+        let err = Report::new(Error::ScriptFailed("sh".into(), Some(status), None));
 
         assert!(!Error::is_sigint(&err));
     }

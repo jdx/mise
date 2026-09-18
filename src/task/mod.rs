@@ -1103,6 +1103,54 @@ fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     parse_task_usage_raw(file, &hoist_root_usage_mounts(&raw).unwrap_or(raw))
 }
 
+/// Render a usage spec failure with the detail its `Display` leaves behind.
+///
+/// `UsageErr::InvalidInput` displays as the bare "Invalid usage config" whatever went wrong:
+/// the message naming it, the offending span and the spec text itself all live in the
+/// diagnostic, which neither eyre nor a derived `Debug` asks for. Going through the reporter
+/// is what turns a spec error back into something that names a line.
+pub(crate) fn render_usage_err(err: usage::error::UsageErr) -> String {
+    format!("{:?}", usage::miette::Error::from(err))
+}
+
+/// Parse a task's `usage` field, naming the task and what was wrong with its spec.
+pub(crate) fn parse_task_usage_field(task_name: &str, spec: &str) -> Result<usage::Spec> {
+    spec.parse::<usage::Spec>().map_err(|err| {
+        eyre!(
+            "invalid usage spec for task '{task_name}'\n{}",
+            render_usage_err(err)
+        )
+    })
+}
+
+/// Parse a task script's usage spec, warning with the detail and falling back to an empty spec.
+///
+/// A file task's spec failing must not take the whole task load down, the same way one
+/// unrecognised `#MISE` key does not: every task in the project is parsed in one loop.
+fn parse_task_script_usage_or_warn(file: &Path) -> usage::Spec {
+    match parse_task_script_usage(file) {
+        Ok(spec) => spec,
+        // Reading the script is the first thing this does, and a script that was discovered
+        // and has since been deleted or made unreadable fails there. Calling that an invalid
+        // spec sends the reader to look at lines that are fine.
+        Err(usage::error::UsageErr::IO(err)) => {
+            warn!(
+                "could not read task file {}: {err}",
+                file::display_path(file)
+            );
+            usage::Spec::default()
+        }
+        Err(err) => {
+            warn!(
+                "invalid usage spec in task file {}\n{}",
+                file::display_path(file),
+                render_usage_err(err)
+            );
+            usage::Spec::default()
+        }
+    }
+}
+
 fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
     let mut spec: usage::Spec = raw.parse()?;
     if spec.bin.is_empty()
@@ -1405,6 +1453,11 @@ impl Task {
         // trace!("task info: {:#?}", info);
 
         task.description = p.parse_str("description").unwrap_or_default();
+        // The loaders that build file tasks call `resolve_task_template` on the result, so a
+        // template named here is applied the same way a `mise.toml` task's `extends` is. Only
+        // the header parser was missing the field, which made `#MISE extends="..."` an unknown
+        // key: warned about and dropped.
+        task.extends = p.parse_str("extends");
         // Check for multiple alias fields before parsing
         let alias_fields: Vec<&str> = ["alias", "aliases"]
             .iter()
@@ -2021,15 +2074,7 @@ impl Task {
             clear_usage_env(&mut env);
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
-            let spec = parse_task_script_usage(&file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(&file)
-                    )
-                })
-                .unwrap_or_default();
-            (spec, vec![])
+            (parse_task_script_usage_or_warn(&file), vec![])
         } else {
             let scripts_only = self.run_script_strings();
             let parser_dir = match cwd {
@@ -2094,14 +2139,7 @@ impl Task {
     ) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
-            parse_task_script_usage(&file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(&file)
-                    )
-                })
-                .unwrap_or_default()
+            parse_task_script_usage_or_warn(&file)
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(dir)
@@ -2121,14 +2159,7 @@ impl Task {
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
         let mut spec = if let Some(file) = self.file_path_raw() {
-            parse_task_script_usage(&file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(&file)
-                    )
-                })
-                .unwrap_or_default()
+            parse_task_script_usage_or_warn(&file)
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(self.config_root.clone())
@@ -2468,6 +2499,7 @@ impl Task {
             .map(|directive| (directive, self.config_source.clone()))
             .collect();
         directives.extend(self.overlay_vars.iter().cloned());
+        directives = bind_literal_vars_first(directives);
         let template_env: EnvMap = tera_ctx
             .get("env")
             .and_then(|v| serde::Deserialize::deserialize(v.clone()).ok())
@@ -3031,6 +3063,122 @@ impl Task {
     }
 }
 
+/// Bind a task's literal vars before resolving the rest of them.
+///
+/// A task's vars are the concatenation of every layer that contributed one: a task template
+/// named with `extends`, a workspace-root task default, a `[tasks.<name>]` overlay on a file
+/// task, and the task's own table. Each directive renders against the vars resolved before it,
+/// so a var written in one layer could not read a value a later layer supplied. Most visibly,
+/// a var defined by a task template could not read the value the task passed it and silently
+/// fell back to its `default()` instead.
+///
+/// Resolving the literal values up front removes that ordering dependence without changing
+/// which value wins. A name is only hoisted when every directive that assigns it and actually
+/// runs is a plain literal from the same config file; the last of those is the one that wins
+/// today, and it still does, since it moves to the front and the copies it already overrode
+/// are dropped with it. Sharing a config file matters because [`EnvResults::resolve`] drops
+/// directives by their source in safe mode, so hoisting an assignment the resolver then drops
+/// would delete the copies that would have run.
+///
+/// This reads the list the way [`Task::resolve_task_vars`] resolves it, with
+/// [`ToolsFilter::NonToolsOnly`]: a `tools = true` directive never runs, so it neither wins a
+/// name nor keeps a literal that does run from being hoisted past it.
+fn bind_literal_vars_first(
+    directives: Vec<(EnvDirective, PathBuf)>,
+) -> Vec<(EnvDirective, PathBuf)> {
+    /// The var this directive assigns, or `None` when it can assign names not known until it
+    /// runs — a dotenv file, a sourced script, a module.
+    fn assigned_name(directive: &EnvDirective) -> Option<&str> {
+        match directive {
+            EnvDirective::Val(k, _, _)
+            | EnvDirective::Default(k, _, _)
+            | EnvDirective::Rm(k, _)
+            | EnvDirective::Required(k, _)
+            | EnvDirective::Age { key: k, .. } => Some(k),
+            EnvDirective::File(..)
+            | EnvDirective::Path(..)
+            | EnvDirective::Source(..)
+            | EnvDirective::Module(..)
+            | EnvDirective::PythonVenv { .. } => None,
+        }
+    }
+
+    /// A directive [`ToolsFilter::NonToolsOnly`] discards, so nothing it says about a name
+    /// counts: it is invisible to every rule below and stays where it is.
+    fn never_runs(directive: &EnvDirective) -> bool {
+        directive.options().tools
+    }
+
+    /// A value that renders to itself and records nothing else, so where it resolves cannot
+    /// change what it produces. A redacted literal is excluded: dropping the copies it
+    /// overrode would drop their redactions with them.
+    fn is_plain_literal(directive: &EnvDirective) -> bool {
+        matches!(
+            directive,
+            EnvDirective::Val(_, value, opts)
+                if !contains_template_syntax(value) && opts.redact.is_none()
+        )
+    }
+
+    let mut running = directives
+        .iter()
+        .filter(|(directive, _)| !never_runs(directive))
+        .peekable();
+    // One directive that assigns names we cannot see is enough to make any reordering
+    // unsound: it could be the assignment that wins for a name we were about to hoist.
+    if running
+        .clone()
+        .any(|(directive, _)| assigned_name(directive).is_none())
+    {
+        return directives;
+    }
+    // Nothing that runs can read a var, so the order the literals resolve in cannot matter.
+    if running.all(|(directive, _)| is_plain_literal(directive)) {
+        return directives;
+    }
+
+    // Per name, the literal to hoist and the file it came from, or `None` once anything
+    // disqualifies the name.
+    let mut winners: IndexMap<&str, Option<(usize, &Path)>> = IndexMap::new();
+    for (i, (directive, source)) in directives.iter().enumerate() {
+        if never_runs(directive) {
+            continue;
+        }
+        let Some(name) = assigned_name(directive) else {
+            continue;
+        };
+        let winner = match winners.get(name).copied() {
+            None => is_plain_literal(directive).then_some((i, source.as_path())),
+            Some(None) => None,
+            Some(Some((_, first_source))) => (is_plain_literal(directive)
+                && first_source == source.as_path())
+            .then_some((i, source.as_path())),
+        };
+        winners.insert(name, winner);
+    }
+    let hoisted: HashSet<String> = winners
+        .iter()
+        .filter(|(_, winner)| winner.is_some())
+        .map(|(name, _)| name.to_string())
+        .collect();
+    let prelude: Vec<(EnvDirective, PathBuf)> = winners
+        .values()
+        .flatten()
+        .map(|&(i, _)| directives[i].clone())
+        .collect();
+    if prelude.is_empty() {
+        return directives;
+    }
+
+    prelude
+        .into_iter()
+        .chain(directives.into_iter().filter(|(directive, _)| {
+            never_runs(directive)
+                || !assigned_name(directive).is_some_and(|name| hoisted.contains(name))
+        }))
+        .collect()
+}
+
 pub(crate) fn clear_usage_env(env: &mut EnvMap) {
     env.retain(|key, _| !is_usage_env_key(key));
 }
@@ -3542,23 +3690,27 @@ where
             let Some(matcher) = task_name_glob(pat).ok() else {
                 return Ok(vec![]);
             };
-            let exact: Vec<&T> = self
+            // Keys that match without extension stripping suppress only the
+            // extension-bearing task that shares their identity, e.g. a file
+            // task `hello.sh` next to a toml task `hello` (#10298). Tasks in
+            // other groups keep matching through the stripped form (#13273).
+            let exact_keys: HashSet<&str> = self
                 .iter()
                 .filter(|(name, _)| task_name_matches(&matcher, name, false))
-                .map(|(_, task)| task)
-                .unique()
+                .map(|(name, _)| name.as_str())
                 .collect();
-            if !exact.is_empty() {
-                return Ok(exact);
-            }
-            let ext_stripped: Vec<&T> = self
+            let matched: Vec<&T> = self
                 .iter()
-                .filter(|(name, _)| task_name_matches(&matcher, name, true))
+                .filter(|(name, _)| {
+                    exact_keys.contains(name.as_str())
+                        || (task_name_matches(&matcher, name, true)
+                            && !exact_keys.contains(strip_extension(name)))
+                })
                 .map(|(_, task)| task)
                 .unique()
                 .collect();
-            if !ext_stripped.is_empty() {
-                return Ok(ext_stripped);
+            if !matched.is_empty() {
+                return Ok(matched);
             }
             if self.keys().any(|k| k.starts_with("//")) {
                 return self.get_matching(&format!("//{pat}"));
@@ -3652,20 +3804,33 @@ where
             path_matches && task_matches
         };
 
-        // Prefer exact task-name matches; fall back to extension-stripped matches
-        // only when no key matched exactly.
-        let exact: Vec<&T> = self
+        // The extension-stripped form of a key, keeping any monorepo path
+        // prefix (which may itself contain dots) intact.
+        let stripped_key = |k: &str| -> String {
+            match k.split_once(':') {
+                Some((path, task)) => format!("{path}:{}", strip_extension(task)),
+                None => strip_extension(k).to_string(),
+            }
+        };
+
+        // Keys that match without extension stripping suppress only the
+        // extension-bearing task that shares their identity, e.g. a file task
+        // `//pkg:hello.sh` next to a toml task `//pkg:hello` (#10298). A task
+        // in another package still matches through its stripped form, so one
+        // package declaring the task in toml no longer removes every other
+        // package's file task from a glob (#13273).
+        let exact_keys: HashSet<&str> = self
             .iter()
             .filter(|(k, _)| entry_matches(k.as_str(), false))
-            .map(|(_, t)| t)
-            .unique()
+            .map(|(k, _)| k.as_str())
             .collect();
-        if !exact.is_empty() {
-            return Ok(exact);
-        }
         Ok(self
             .iter()
-            .filter(|(k, _)| entry_matches(k.as_str(), true))
+            .filter(|(k, _)| {
+                exact_keys.contains(k.as_str())
+                    || (entry_matches(k.as_str(), true)
+                        && !exact_keys.contains(stripped_key(k).as_str()))
+            })
             .map(|(_, t)| t)
             .unique()
             .collect())
@@ -3763,6 +3928,195 @@ pub(crate) async fn parse_usage_values_from_task(
 
 #[cfg(test)]
 mod tests {
+    mod literal_var_binding {
+        use super::super::bind_literal_vars_first;
+        use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+        use std::path::PathBuf;
+
+        fn val(key: &str, value: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::Val(key.into(), value.into(), Default::default()),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn redacted(key: &str, value: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::Val(
+                    key.into(),
+                    value.into(),
+                    EnvDirectiveOptions {
+                        redact: Some(true),
+                        ..Default::default()
+                    },
+                ),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn tools(key: &str, value: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::Val(
+                    key.into(),
+                    value.into(),
+                    EnvDirectiveOptions {
+                        tools: true,
+                        ..Default::default()
+                    },
+                ),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn from(source: &str, directive: (EnvDirective, PathBuf)) -> (EnvDirective, PathBuf) {
+            (directive.0, PathBuf::from(source))
+        }
+
+        fn file(path: &str) -> (EnvDirective, PathBuf) {
+            (
+                EnvDirective::File(path.into(), Default::default()),
+                PathBuf::from("mise.toml"),
+            )
+        }
+
+        fn order(directives: Vec<(EnvDirective, PathBuf)>) -> Vec<String> {
+            bind_literal_vars_first(directives)
+                .into_iter()
+                .map(|(directive, _)| directive.to_string())
+                .collect()
+        }
+
+        /// The reported shape: a task template's var reads a value the task supplies, which
+        /// the task declares after it. Fails before the fix, where `wrap` renders first and
+        /// takes the `default()` branch.
+        #[test]
+        fn a_literal_binds_before_the_var_that_reads_it() {
+            assert_eq!(
+                order(vec![val("wrap", "--opt={{vars.opt}}"), val("opt", "task")]),
+                ["opt=task", "wrap=--opt={{vars.opt}}"]
+            );
+        }
+
+        /// A task overriding a template's literal default: only the winning assignment is
+        /// hoisted, so the template's own copy cannot clobber it again part way through.
+        #[test]
+        fn only_the_last_literal_for_a_name_survives() {
+            assert_eq!(
+                order(vec![
+                    val("name", "template"),
+                    val("greeting", "hello {{vars.name}}"),
+                    val("name", "task"),
+                ]),
+                ["name=task", "greeting=hello {{vars.name}}"]
+            );
+        }
+
+        /// The inverse direction stays intact: a templated var is never moved, so it still
+        /// resolves after whatever it reads.
+        #[test]
+        fn a_templated_value_keeps_its_place() {
+            assert_eq!(
+                order(vec![val("base", "/opt"), val("path", "{{vars.base}}/bin")]),
+                ["base=/opt", "path={{vars.base}}/bin"]
+            );
+        }
+
+        /// A name a `default` directive also assigns keeps its declaration order, since
+        /// `default` reads what resolved before it and hoisting would change its answer.
+        #[test]
+        fn a_name_a_default_assigns_is_left_alone() {
+            assert_eq!(
+                order(vec![
+                    val("mode", ""),
+                    val("cmd", "run --{{vars.mode}}"),
+                    (
+                        EnvDirective::Default("mode".into(), "fast".into(), Default::default()),
+                        PathBuf::from("mise.toml"),
+                    ),
+                ]),
+                ["mode=", "cmd=run --{{vars.mode}}", "mode default=fast"]
+            );
+        }
+
+        /// A redacted literal is left where it is: hoisting it would drop the redaction that
+        /// the copies it overrode registered.
+        #[test]
+        fn a_redacted_literal_is_left_alone() {
+            assert_eq!(
+                order(vec![
+                    redacted("token", "secret"),
+                    val("arg", "--token={{vars.token}}"),
+                ]),
+                ["token=secret", "arg=--token={{vars.token}}"]
+            );
+        }
+
+        /// `resolve_task_vars` resolves with `NonToolsOnly`, so a `tools = true` value never
+        /// runs and cannot win the name. Hoisting it would delete the copies that do run.
+        #[test]
+        fn a_tools_value_never_wins_a_name() {
+            assert_eq!(
+                order(vec![
+                    val("mode", "template"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    tools("mode", "tool"),
+                ]),
+                ["mode=template", "cmd=run --{{vars.mode}}", "mode=tool"]
+            );
+        }
+
+        /// For the same reason it is not a competitor either: a literal that does run is
+        /// still hoisted past it.
+        #[test]
+        fn a_tools_value_does_not_block_a_hoist() {
+            assert_eq!(
+                order(vec![
+                    tools("mode", "tool"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    val("mode", "task"),
+                ]),
+                ["mode=task", "mode=tool", "cmd=run --{{vars.mode}}"]
+            );
+        }
+
+        /// Safe mode drops directives by the config file they came from, so a name assigned
+        /// from two files keeps its order rather than risk hoisting the one that is dropped.
+        #[test]
+        fn a_name_assigned_from_two_files_is_left_alone() {
+            assert_eq!(
+                order(vec![
+                    val("mode", "base"),
+                    val("cmd", "run --{{vars.mode}}"),
+                    from("overlay.toml", val("mode", "overlay")),
+                ]),
+                ["mode=base", "cmd=run --{{vars.mode}}", "mode=overlay"]
+            );
+        }
+
+        /// A dotenv file can assign any name, so nothing moves past it.
+        #[test]
+        fn a_dotenv_file_stops_every_hoist() {
+            assert_eq!(
+                order(vec![
+                    val("cmd", "run --{{vars.mode}}"),
+                    file(".env"),
+                    val("mode", "fast"),
+                ]),
+                [
+                    "cmd=run --{{vars.mode}}".to_string(),
+                    format!("_.file = \"{}\"", crate::file::display_path(".env")),
+                    "mode=fast".to_string(),
+                ]
+            );
+        }
+
+        /// Nothing to gain when no value can read another, so the list is handed back as is.
+        #[test]
+        fn a_list_of_only_literals_is_untouched() {
+            assert_eq!(order(vec![val("a", "1"), val("b", "2")]), ["a=1", "b=2"]);
+        }
+    }
+
     mod header_key_paths {
         use super::super::{
             extract_usage_from_comments, merge_header_value, parse_mise_header_toml,
@@ -5427,6 +5781,7 @@ echo "hello world"
 
         // Create a file task with ALL possible header fields
         let script_content = r#"#!/usr/bin/env bash
+#MISE extends="base-template"
 #MISE description="Test task with all fields"
 #MISE aliases=["alias1", "alias2"]
 #MISE depends=["dep1", "dep2"]
@@ -5460,6 +5815,7 @@ echo "test"
             .await
             .unwrap();
 
+        assert_eq!(task.extends, Some("base-template".to_string()));
         assert_eq!(task.description, "Test task with all fields");
         assert_eq!(task.aliases, vec!["alias1", "alias2"]);
         assert_eq!(task.depends.len(), 2);

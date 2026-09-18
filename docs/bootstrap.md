@@ -195,7 +195,7 @@ exclusive.
 
 Use `mise bootstrap --update` to refresh system package manager metadata
 before installing packages (apk: `--update-cache`, apt: `apt-get update`,
-winget: `winget source update`) and
+scoop: `scoop update`, winget: `winget source update`) and
 update declared repositories. Check the [repo update rules](/bootstrap/repos.html)
 for clean-worktree and fast-forward requirements.
 
@@ -306,7 +306,7 @@ want to check one part without installing anything.
 | [`[bootstrap.services]`](/bootstrap/services.html)                      | User services on Linux, macOS, and Windows; existing Linux system services  |
 | [`[bootstrap.compose]`](/bootstrap/compose.html)                        | Docker Compose project lifecycle                                            |
 | [`[bootstrap.plugins]`](/bootstrap/packages/plugins.html)               | Package manager plugins                                                     |
-| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, or winget       |
+| [`[bootstrap.packages]`](/bootstrap/packages/)                          | OS packages from apk, apt, dnf, pacman, brew, flatpak, mas, scoop, winget   |
 | [`[bootstrap.repos]`](/bootstrap/repos.html)                            | Git repos cloned before dotfiles are applied                                |
 | [`[dotfiles]`](/dotfiles.html)                                          | Tracking dotfiles, creating files from sources, and editing blocks or lines |
 | [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html)              | mise activation snippets in shell startup files                             |

@@ -34,6 +34,18 @@ class TestFileHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             content = '#!/usr/bin/env bash\necho "running mytask"\n'
             self.wfile.write(content.encode('utf-8'))
+        elif self.path == '/test/extends-task':
+            # A remote task whose header names a task template, to check that the
+            # template is resolved for tasks fetched at run time
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            content = (
+                '#!/usr/bin/env bash\n'
+                '#MISE extends="shared"\n'
+                'echo "extends-task FOO=$FOO"\n'
+            )
+            self.wfile.write(content.encode('utf-8'))
         elif self.path == '/test/remote-changing':
             TestFileHandler.changing_remote_revision += 1
             revision = TestFileHandler.changing_remote_revision

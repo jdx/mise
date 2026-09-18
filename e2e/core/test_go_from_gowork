@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Read go version from go.work (idiomatic version file, opt-in)
+
+mise settings set idiomatic_version_file_enable_tools go
+
+# in workspace mode the go command consults go.work's toolchain line, not the member
+# modules' go.mod, so go.work is the file that decides the version
+cat >go.work <<GOWORK
+go 1.24.0
+
+toolchain go1.24.3
+
+use (
+    ./api
+    ./worker
+)
+GOWORK
+assert "mise current go" "1.24.3"
+assert_not_contains "mise current go 2>&1" "deprecated"
+
+# go.work wins over a go.mod alongside it, matching Go's own precedence
+cat >go.mod <<GOMOD
+module example.com/m
+
+toolchain go1.21.4
+GOMOD
+assert "mise current go" "1.24.3"
+
+# ...and over a member module's go.mod further down, which is the shape a real workspace
+# has. Go does not consult a member's directives in workspace mode, so neither does mise --
+# otherwise the nearer file would win and mise would pick a different toolchain than go.
+rm go.mod
+mkdir -p api
+cat >api/go.mod <<GOMOD
+module example.com/api
+
+toolchain go1.21.4
+GOMOD
+assert "mise --cd api current go" "1.24.3"
+
+# GOWORK picks the workspace the same way it does for go, and it has to reach both files:
+# whichever of go.work and go.mod is not the one Go would consult must go quiet, or the two
+# answer at once and the nearer file wins by accident.
+
+# off: there is no workspace, so the member go.mod applies again...
+assert "GOWORK=off mise --cd api current go" "1.21.4"
+
+# ...and the go.work in the tree is just a file
+assert "GOWORK=off mise current go" ""
+
+# an absolute path names the workspace wherever it lives. Naming this one changes nothing.
+assert "GOWORK=$PWD/go.work mise current go" "1.24.3"
+
+# naming a different workspace means the go.work in the tree is not Go's workspace file, so
+# mise selects nothing rather than pinning a toolchain go is ignoring
+mkdir -p other
+cat >other/go.work <<GOWORK
+go 1.24.0
+toolchain go1.19.9
+GOWORK
+assert "GOWORK=$PWD/other/go.work mise current go" ""
+
+# go refuses to run at all on a relative GOWORK ("invalid GOWORK: not an absolute path"), so
+# it names no workspace and mise ignores it rather than acting on a setting go rejects. The
+# relative spelling below would otherwise select other/go.work's go1.19.9.
+assert "GOWORK=./other/go.work mise current go" "1.24.3"
+
+# an absolute path that does not exist still turns workspace mode on -- go selects the
+# workspace first and only fails when it reads it -- so the member go.mod stays unread
+assert "GOWORK=$PWD/nope/go.work mise --cd api current go" ""
+
+# go.work's own `go` line is a floor, not the version the workspace is built with, so it
+# is not read -- including the full patch version `go work init` writes. The member go.mod
+# is still not consulted, so there is nothing left to resolve.
+cat >go.work <<GOWORK
+go 1.24.0
+
+use ./api
+GOWORK
+assert "mise --cd api current go" ""
+assert_not_contains "mise --cd api current go 2>&1" "deprecated"
+
+# a toolchain that is not a fully-qualified toolchain name is not a pin
+cat >go.work <<GOWORK
+go 1.24.0
+toolchain default
+GOWORK
+assert "mise --cd api current go" ""

@@ -5,12 +5,14 @@ socialDescription: "Explore task options for commands, dependencies, arguments, 
 
 # Task Configuration
 
-This is an exhaustive list of the configuration options available for tasks in `mise.toml` or as
-file tasks.
+Use this reference to configure task commands, dependencies, inputs, and execution settings.
+For a starting example, see [TOML tasks](/tasks/toml-tasks) or [file tasks](/tasks/file-tasks).
+To share settings across tasks, use [task templates](/tasks/templates).
 
 ## Task properties
 
-All examples use the toml-task format rather than file tasks, but they apply to both except where otherwise noted.
+The examples use `[tasks.<name>]` in `mise.toml`. Unless noted otherwise, the same properties
+are available in file-task `#MISE` headers.
 
 ### `run`
 
@@ -294,8 +296,9 @@ run = [
 
 - **Type**: `{ [key]: string | int | bool | directive }`
 
-Variables specific to this task. Task-local vars override config vars while rendering the task, but
-are not exported to the task process as environment variables.
+Values available through <span v-pre>`{{ vars.NAME }}`</span> when mise renders this task.
+Task-local values override config vars and vars inherited from a task template. They are not
+exported as environment variables; use [`env`](#env) for values the task process should inherit.
 
 ```mise-toml
 [vars]
@@ -303,11 +306,20 @@ mode = "headless"
 
 [tasks.test]
 vars = { mode = "headed" }
-run = "./scripts/test-e2e.sh --{{ vars.mode }}"
+run = "echo --mode={{ vars.mode }}"
 ```
 
-See [configuration variables](/configuration/vars.html) for supported directives,
-precedence, and redaction.
+`mise run test` prints `--mode=headed`. Other tasks still use the config value, `headless`,
+unless they define their own override.
+
+Overrides apply to references in the task's templated fields, including inherited fields.
+They do not recalculate top-level vars that were already resolved during config loading.
+See [variable resolution](/configuration/vars.html#what-a-task-local-var-can-change) for an
+example, and [task template vars](/tasks/templates.html#parameterizing-a-template-with-vars)
+for sharing a command with different values in each task.
+
+See [configuration variables](/configuration/vars.html#value-directives) for value directives
+and redaction.
 
 ### `tools`
 

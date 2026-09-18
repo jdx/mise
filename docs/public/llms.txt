@@ -14,7 +14,7 @@
 ## Configuration
 
 - [mise.toml](https://mise.jdx.dev/configuration.html): A project's mise.toml declares tools, environment variables, and tasks. Global configuration supplies personal defaults; project and local files override them.
-- [Variables](https://mise.jdx.dev/configuration/vars.html): [vars] defines values that can be reused in mise configuration templates. Vars are similar to environment variables, but mise does not export them to child processes.
+- [Variables](https://mise.jdx.dev/configuration/vars.html): Define shared configuration values in [vars] and reference them with {{ vars.NAME }} in a Tera template.
 - [Project Diagnostics](https://mise.jdx.dev/configuration/project-diagnostics.html): mise doctor project runs named checks from your project's configuration and reports every result. Use it to check requirements that tool versions alone cannot establish, such as whether a compiler can…
 - [Settings](https://mise.jdx.dev/configuration/settings.html): Settings control mise itself, such as installation concurrency and task output. Application environment variables belong in [env].
 - [Configuration Environments](https://mise.jdx.dev/configuration/environments.html): Config environments select additional files such as mise.development.toml and mise.production.toml. The base mise.toml still loads, and the selected file overrides values at the same directory level.
@@ -73,7 +73,7 @@
 - [Overview](https://mise.jdx.dev/bootstrap.html): mise bootstrap applies the machine setup declared in your mise configuration: packages, files, services, repositories, shell setup, tools, and a final task.
 - [Set Up a Machine](https://mise.jdx.dev/bootstrap/setup.html): Keep editing your dotfiles where they are. This guide shows how to save local history, restore a file, and optionally share your setup through a Git repository.
 - [Remote Hosts](https://mise.jdx.dev/bootstrap/remote.html): mise bootstrap remote applies a bootstrap project to one or more machines through the locally installed OpenSSH client.
-- [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): Declare shared host packages in [bootstrap.packages], then apply them with mise bootstrap packages apply or the full bootstrap.
+- [Bootstrap Packages](https://mise.jdx.dev/bootstrap/packages/): Use [bootstrap.packages] to declare native libraries, build dependencies, and applications shared by the whole machine.
 - [apk](https://mise.jdx.dev/bootstrap/packages/apk.html): System packages for Alpine Linux.
 - [apt](https://mise.jdx.dev/bootstrap/packages/apt.html): System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
 - [AUR](https://mise.jdx.dev/bootstrap/packages/aur.html): The aur manager installs packages from the Arch User Repository with yay or paru.
@@ -82,6 +82,7 @@
 - [brew](https://mise.jdx.dev/bootstrap/packages/brew.html): Homebrew formulae and casks — without requiring Homebrew to be installed.
 - [nix](https://mise.jdx.dev/bootstrap/packages/nix.html): The nix bootstrap package manager installs packages into the current user's normal Nix profile. It works on Linux and macOS with Nix on PATH, independently of whether the operating system is NixOS.
 - [mas](https://mise.jdx.dev/bootstrap/packages/mas.html): Mac App Store apps via the mas CLI.
+- [Scoop](https://mise.jdx.dev/bootstrap/packages/scoop.html): Windows command-line tools and applications via Scoop.
 - [Package Plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins extend [bootstrap.packages] without adding a manager to mise core. They are useful for machine-global state owned by another tool, such as VS Code extensions, Helm plugins,…
 - [Linux Users and Groups](https://mise.jdx.dev/bootstrap/accounts.html): [bootstrap.groups] and [bootstrap.users] declaratively manage local Linux accounts. mise applies groups before users and applies accounts before privileged files, so a managed file can safely refer to…
 - [System Files](https://mise.jdx.dev/bootstrap/files.html): [bootstrap.files] and [bootstrap.directories] declaratively manage absolute paths that may require root privileges. They are separate from [dotfiles], which manages files in a user's home directory.
@@ -116,10 +117,10 @@
 - [TOML Tasks](https://mise.jdx.dev/tasks/toml-tasks.html): Tasks can be defined in mise.toml files in different ways. Trivial tasks can be written into a [tasks] section, while more detailed tasks each get their own section.
 - [File Tasks](https://mise.jdx.dev/tasks/file-tasks.html): In addition to defining tasks in config files, you can define them as standalone script files in one of the following directories.
 - [Task Arguments](https://mise.jdx.dev/tasks/task-arguments.html): Define arguments when a task needs named inputs, validation, help, or completions. Without a usage specification, mise forwards extra command-line arguments to the underlying command; see argument…
-- [Task Configuration](https://mise.jdx.dev/tasks/task-configuration.html): This is an exhaustive list of the configuration options available for tasks in mise.toml or as file tasks.
+- [Task Configuration](https://mise.jdx.dev/tasks/task-configuration.html): Use this reference to configure task commands, dependencies, inputs, and execution settings. For a starting example, see TOML tasks or file tasks. To share settings across tasks, use task templates.
 - [Task Caching](https://mise.jdx.dev/tasks/caching.html): Use ordinary sources and outputs checks to skip work that is already up to date. Enable experimental artifact caching when you also need to reuse successful results after switching inputs or deleting…
 - [Remote Cache Protocol](https://mise.jdx.dev/tasks/remote-cache-protocol.html): [!WARNING] Remote build caching is experimental. This document defines protocol version 1 for mise task artifact caching.
-- [Task Templates](https://mise.jdx.dev/tasks/templates.html): Task templates let you define reusable task definitions that multiple tasks can extend. They are particularly useful in monorepos or projects with similar task patterns across components.
+- [Task Templates](https://mise.jdx.dev/tasks/templates.html): Define a task template when several tasks share commands, tools, environment variables, or dependencies. Each task selects a template with extends and supplies the settings that differ.
 - [Monorepo Tasks](https://mise.jdx.dev/tasks/monorepo.html): mise supports monorepo-style task organization with target path syntax. This lets you manage tasks across multiple projects in a single repository, where each project can have its own mise.toml with…
 - [Sandboxing](https://mise.jdx.dev/sandboxing.html): mise can restrict filesystem, network, and environment access for commands launched by mise exec and mise run. Restrictions use the host operating system, with different support on Linux and macOS.
 
@@ -145,6 +146,7 @@
 - [Errors](https://mise.jdx.dev/errors.html): This page lists common error messages mise emits, what causes them, and how to fix them. It complements Troubleshooting, which is organized by symptom (wrong tool version, slow prompts, activation…
 - [Tips & Tricks](https://mise.jdx.dev/tips-and-tricks.html): Short recipes for common workflows. Each section links to the full guide when setup or platform details matter. Start with Getting Started if you have not yet configured a project.
 - [Cookbook](https://mise.jdx.dev/mise-cookbook/): These recipes combine tools, environment variables, and tasks for specific workflows. Start with the recipe closest to your project, then adapt its paths, versions, and application commands.
+- [Bazel](https://mise.jdx.dev/mise-cookbook/bazel.html): Use mise to install the Bazel version declared in a project's .bazelversion file. This avoids repeating the version in mise.toml.
 - [C++](https://mise.jdx.dev/mise-cookbook/cpp.html): Use mise to install build tools and define the configure/build cycle. A C or C++ compiler must already be available, for example through your operating system's development tools.
 - [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Install mise inside an image, use it to run project commands, or preinstall tools outside user home directories for shared development containers.
 - [Node](https://mise.jdx.dev/mise-cookbook/nodejs.html): Use mise to select Node.js and your package manager, then run the scripts and dependencies declared by the project.

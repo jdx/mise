@@ -566,7 +566,13 @@ impl Doctor {
 
     /// same diagnostics as [`Self::analyze_system_packages`] for `doctor -J`
     async fn system_packages_json(&mut self, config: &Arc<Config>) -> Option<serde_json::Value> {
-        let mgrs = crate::system::packages_from_config(config);
+        let mgrs = match crate::system::packages_from_config(config) {
+            Ok(mgrs) => mgrs,
+            Err(err) => {
+                self.errors.push(format!("{err:#}"));
+                return None;
+            }
+        };
         if mgrs.is_empty() {
             return None;
         }
@@ -590,7 +596,11 @@ impl Doctor {
                 );
                 continue;
             }
-            match mp.manager.installed(&mp.requests).await {
+            match mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await
+            {
                 Ok(statuses) => {
                     let missing = statuses
                         .iter()
@@ -1009,7 +1019,16 @@ impl Doctor {
     }
 
     async fn analyze_system_packages(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
-        let mgrs = crate::system::packages_from_config(config);
+        // a contradictory [bootstrap.packages] declaration is exactly the kind
+        // of thing doctor exists to report, so it lands in the error list
+        // rather than aborting the rest of the diagnostics
+        let mgrs = match crate::system::packages_from_config(config) {
+            Ok(mgrs) => mgrs,
+            Err(err) => {
+                self.errors.push(format!("{err:#}"));
+                return Ok(());
+            }
+        };
         if mgrs.is_empty() {
             return Ok(());
         }
@@ -1029,7 +1048,11 @@ impl Doctor {
                 ));
                 continue;
             }
-            match mp.manager.installed(&mp.requests).await {
+            match mp
+                .manager
+                .installed_with_options(&mp.requests, &mp.options)
+                .await
+            {
                 Ok(statuses) => {
                     let missing = statuses
                         .iter()

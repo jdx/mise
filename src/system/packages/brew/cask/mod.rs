@@ -45,7 +45,7 @@ use app_version::*;
 use artifacts::*;
 use fetch::*;
 use flight::*;
-pub(super) use model::Cask;
+pub(super) use model::{Cask, CaskManager};
 use paths::*;
 use running::*;
 use state::*;
@@ -62,7 +62,16 @@ const DEFAULT_APP_DIR: &str = "/Applications";
 const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
 const MAX_NESTED_CASK_ARCHIVES: usize = 16;
 
-pub(crate) struct BrewCaskManager {}
+/// Drives the cask install pipeline for one of two managers.
+///
+/// `brew-cask` resolves metadata from Homebrew and shares its Caskroom;
+/// `macos-app` takes an inline declaration and records ownership under mise's
+/// own state directory. Everything between those two ends — download, checksum,
+/// extraction, adoption, and the app swap — is identical, so both are the same
+/// manager configured differently, as with `flatpak` and `flatpak-user`.
+pub(crate) struct BrewCaskManager {
+    manager: CaskManager,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InstallMode {
@@ -82,13 +91,16 @@ fn should_skip_installed(cask: &Cask, version: &str, mode: InstallMode) -> bool 
 fn installed_skip_reason(
     cask: &Cask,
     artifacts: &CaskArtifacts,
+    previous: Option<&CaskReceipt>,
     version: Option<&str>,
     mode: InstallMode,
 ) -> Result<Option<&'static str>> {
     if mode == InstallMode::Upgrade && cask.version == "latest" {
         return Ok(Some("skipped: cask version is latest"));
     }
-    if version.is_some_and(|version| should_skip_installed(cask, version, mode)) {
+    if version.is_some_and(|version| should_skip_installed(cask, version, mode))
+        && declared_apps_are_owned(cask, artifacts, previous)?
+    {
         return Ok(Some(if mode == InstallMode::Install {
             "already installed"
         } else {
@@ -98,7 +110,7 @@ fn installed_skip_reason(
     if mode != InstallMode::Upgrade || !cask.auto_updates {
         return Ok(None);
     }
-    let Some(receipt) = previous_receipt(cask)? else {
+    let Some(receipt) = previous else {
         return Ok(Some("skipped: no installed app ownership record"));
     };
     if receipt.version == cask.version {
@@ -301,7 +313,13 @@ impl CaskArtifacts {
     fn print_install_plan(&self, cask: &Cask) -> Result<()> {
         miseprintln!("install cask {}/{}", cask.token, cask.version);
         for app in &self.apps {
-            miseprintln!("link app {}", app.target_name()?);
+            // Resolved, not raw: an absolute target in cask metadata is
+            // relocated into the app directory override, so printing the
+            // declared name would name a path the install never touches.
+            miseprintln!(
+                "link app {}",
+                app_target_path(app.target_name()?)?.display()
+            );
         }
         for binary in &self.binaries {
             miseprintln!("link binary {}", binary.target_name()?);
@@ -512,7 +530,15 @@ impl CaskPrunePlan {
 
 impl BrewCaskManager {
     pub(crate) fn new() -> Self {
-        Self {}
+        Self {
+            manager: CaskManager::BrewCask,
+        }
+    }
+
+    pub(crate) fn new_macos_app() -> Self {
+        Self {
+            manager: CaskManager::MacosApp,
+        }
     }
 
     /// Processes current-version cask requests in the selected install mode.
@@ -525,11 +551,17 @@ impl BrewCaskManager {
         manager_options: &ManagerPackageOptions,
         mode: InstallMode,
     ) -> Result<()> {
-        if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
+        if self.manager.uses_homebrew_caskroom()
+            && let Some(p) = pkgs.iter().find(|p| p.version.is_some())
+        {
             bail!("brew casks are installed at their current version ('{p}')");
         }
         if opts.dry_run {
-            prefix::bootstrap(true)?;
+            // Gated like the real install: previewing a macos-app apply must
+            // not create a Homebrew prefix that applying it never would.
+            if self.manager.uses_homebrew_caskroom() {
+                prefix::bootstrap(true)?;
+            }
             for pkg in pkgs {
                 self.install_one(pkg, opts, None, manager_options, mode)
                     .await?;
@@ -538,8 +570,10 @@ impl BrewCaskManager {
         }
         let mpr = MultiProgressReport::get();
         mpr.init_footer(false, "install", pkgs.len());
+        prewarm_downloads(pkgs, mode, &mpr, self.manager, manager_options).await;
         for pkg in pkgs {
-            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
+            let pr: Box<dyn SingleReport> =
+                mpr.add(&format!("{}:{}", self.manager.label(), pkg.name));
             match self
                 .install_one(pkg, opts, Some(&*pr), manager_options, mode)
                 .await
@@ -557,6 +591,20 @@ impl BrewCaskManager {
         }
         mpr.footer_finish();
         Ok(())
+    }
+
+    /// Resolve the metadata for one request.
+    ///
+    /// An inline declaration short-circuits the Homebrew lookup entirely. A
+    /// `macos-app` request without one is a config error, not a reason to go
+    /// asking Homebrew about a token it has never heard of.
+    async fn resolve_cask(
+        &self,
+        req: &PackageRequest,
+        manager_options: &ManagerPackageOptions,
+        provision_ruby: bool,
+    ) -> Result<Cask> {
+        resolve_cask_for(self.manager, req, manager_options, provision_ruby).await
     }
 
     /// Starts a top-level cask operation with an empty dependency ancestry.
@@ -585,13 +633,19 @@ impl BrewCaskManager {
         manager_options: &ManagerPackageOptions,
         mode: InstallMode,
     ) -> Result<String> {
-        let cask = fetch_cask(req, !opts.dry_run).await?;
+        let cask = self
+            .resolve_cask(req, manager_options, !opts.dry_run)
+            .await?;
         if ancestors.contains(&cask.token) {
             bail!("brew-cask:{}: dependency cycle detected", cask.token);
         }
         let mut ancestors = ancestors.clone();
         ancestors.insert(cask.token.clone());
-        if let Some(version) = homebrew_installed_version(&cask.token)? {
+        // Only the Homebrew-backed manager shares the Caskroom, so only it can
+        // find a token that Homebrew itself owns.
+        if cask.manager.uses_homebrew_caskroom()
+            && let Some(version) = homebrew_installed_version(&cask.token)?
+        {
             info!(
                 "brew-cask:{}: installed and managed by Homebrew; leaving unchanged",
                 cask.token
@@ -604,14 +658,23 @@ impl BrewCaskManager {
         // can mutate anything, including when producing a dry-run plan.
         artifacts.app_target_paths()?;
         let installed_version = mise_installed_cask_version(&cask)?;
-        if let Some(reason) =
-            installed_skip_reason(&cask, &artifacts, installed_version.as_deref(), mode)?
-        {
+        // Read before the download for the fast-path skip and the dry-run
+        // plan only. Anything that mutates must use the read taken under the
+        // installation lock below, since another process can install or
+        // retarget this token while the archive is in flight.
+        let pre_download_ownership = previous_receipt(&cask)?;
+        if let Some(reason) = installed_skip_reason(
+            &cask,
+            &artifacts,
+            pre_download_ownership.as_ref(),
+            installed_version.as_deref(),
+            mode,
+        )? {
             info!("brew-cask:{}: {reason}", cask.token);
             return Ok(reason.to_string());
         }
         for conflict in &cask.conflicts_with.cask {
-            if !installed_versions(conflict).is_empty() {
+            if !installed_versions(cask.manager, conflict).is_empty() {
                 bail!(
                     "brew-cask:{}: conflicts with installed cask {}",
                     cask.token,
@@ -652,11 +715,16 @@ impl BrewCaskManager {
             ))
             .await?;
         }
+        // brew-cask defers to Homebrew by token, which macos-app cannot do: the
+        // conflict is at the shared app directory, not the token.
         if opts.dry_run {
+            warn_existing_app_targets(&cask, pre_download_ownership.as_ref(), &artifacts.apps)?;
             artifacts.print_install_plan(&cask)?;
             return Ok(cask.version);
         }
-        prefix::bootstrap(false)?;
+        if cask.manager.uses_homebrew_caskroom() {
+            prefix::bootstrap(false)?;
+        }
         let stage = fetch_and_stage(&cask, pr).await?;
         // Keyed by the requested name, not `cask.token`. The two differ for a
         // tap-qualified name, a trusted alias, or an old token, and the request
@@ -664,16 +732,26 @@ impl BrewCaskManager {
         // token instead would miss the opt-in and replace the bundle, costing
         // the app its macOS TCC grants; it would also conflate two casks from
         // different taps that share a token.
-        let adopt = manager_options.brew_cask_adopt(&req.name) && installed_version.is_none();
+        let adopt_requested = manager_options.brew_cask_adopt(&req.name);
+        let adopt = adopt_requested && installed_version.is_none();
         if adopt && !cask.auto_updates {
-            validate_adoptable_apps(&stage, &artifacts.apps)?;
+            validate_adoptable_apps(cask.manager, &stage, &artifacts.apps)?;
         }
-        let _caskroom_lock = lock_caskroom()?;
+        // Both managers install into the same application directory, so the
+        // shared lock is taken first, then the manager's own records lock.
+        let _app_lock = lock_app_mutations()?;
+        let _caskroom_lock = lock_caskroom(cask.manager)?;
         recover_flight_backups()?;
-        ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
+        if cask.manager.uses_homebrew_caskroom() {
+            ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
+        }
+        // Re-read under the lock: another process may have installed or
+        // retargeted this token while the archive was downloading.
+        let locked_ownership = previous_receipt(&cask)?;
         if let Some(reason) = installed_skip_reason(
             &cask,
             &artifacts,
+            locked_ownership.as_ref(),
             mise_installed_cask_version(&cask)?.as_deref(),
             mode,
         )? {
@@ -687,8 +765,8 @@ impl BrewCaskManager {
         let previous_flight_symlinks = previous_flight_symlink_targets(&cask)?;
         let previous_flight_directories = previous_flight_directory_targets(&cask)?;
         let previous_generic = previous_generic_targets(&cask)?;
-        let caskroom_token = caskroom_token_dir(&cask.token);
-        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        let caskroom_token = caskroom_token_dir(cask.manager, &cask.token);
+        let caskroom = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
         let tmp_caskroom = caskroom_tmp_dir(&cask);
         file::remove_all(&tmp_caskroom)?;
         file::create_dir_all(&tmp_caskroom)?;
@@ -703,7 +781,7 @@ impl BrewCaskManager {
         flight_targets.receipt_caskroom = Some(caskroom.clone());
         flight_targets.previous_symlinks = previous_flight_symlinks.iter().cloned().collect();
         flight_targets.previous_directories = previous_flight_directories.into_iter().collect();
-        write_cask_journal(&journal)?;
+        write_cask_journal(cask.manager, &journal)?;
         let current_completions = artifacts.completion_target_paths(&cask)?;
         for target in &current_completions {
             ensure_completion_target_replaceable(&cask, &artifacts, target)?;
@@ -721,7 +799,7 @@ impl BrewCaskManager {
         )?;
         execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         if has_lifecycle_hook(&cask, "preflight") {
-            record_cask_action(&mut journal, "preflight_hook")?;
+            record_cask_action(cask.manager, &mut journal, "preflight_hook")?;
         }
         // Homebrew leaves artifacts from the installed version available to
         // preflight. Back them up only after preflight so guards and commands
@@ -735,7 +813,7 @@ impl BrewCaskManager {
             &tmp_caskroom,
             &artifacts.installers,
             &mut flight_targets,
-            |index| record_cask_action(&mut journal, &format!("installer[{index}]")),
+            |index| record_cask_action(cask.manager, &mut journal, &format!("installer[{index}]")),
         )?;
         // Preflight, hooks, and installers may have launched a self-updating
         // app since the last skip check. Check before copying and again at the
@@ -751,15 +829,57 @@ impl BrewCaskManager {
         }
         let mut metadata_only_apps = Vec::new();
         for (index, app) in artifacts.apps.iter().enumerate() {
-            match install_app(
+            // Resolved per app: one declaration can own one target and not
+            // another, and a changed artifact name points at a target that no
+            // receipt covers.
+            // Decided from the receipt read under the lock, not the
+            // pre-download one: a concurrent retarget would otherwise leave a
+            // stale receipt claiming the old target is still owned, and this
+            // replacement would skip adoption entirely.
+            let require_unowned = requires_unowned_target(
+                &cask,
+                locked_ownership.as_ref(),
+                &app_target_path(app.target_name()?)?,
+            );
+            // Taking over an unowned target is opt-in. brew-cask keeps its own
+            // rule, keyed on the token having no installed version.
+            let adopt = if cask.manager.uses_homebrew_caskroom() {
+                adopt
+            } else {
+                adopt_requested && require_unowned
+            };
+            // Nothing durable has happened yet if the journal is still empty,
+            // which is what makes the cleanup below safe.
+            let journal_empty = journal.completed.is_empty();
+            let installed = install_app(
                 &stage,
                 &tmp_caskroom,
                 app,
-                !cask.auto_updates,
-                adopt,
-                !cask.auto_updates,
-                defer_running,
-            )? {
+                AppInstallOptions {
+                    manager: cask.manager,
+                    require_unowned,
+                    keep_caskroom_copy: !cask.auto_updates,
+                    adopt,
+                    verify_adopt: !cask.auto_updates,
+                    defer_if_running: defer_running,
+                },
+            )
+            .inspect_err(|_| {
+                // A refusal happens before anything is staged, so the
+                // transaction directory is still empty and should not be left
+                // behind. `remove_dir` fails on a non-empty directory, which
+                // preserves the partial state a genuine mid-install failure
+                // leaves for recovery.
+                let _ = file::remove_dir(&tmp_caskroom);
+                if journal_empty {
+                    // A pending journal makes the next apply report the package
+                    // as not installed, which skips the already-installed fast
+                    // path and replaces an identical bundle — revoking its TCC
+                    // grants for a refusal that changed nothing.
+                    let _ = remove_cask_journals(cask.manager, &cask.token);
+                }
+            })?;
+            match installed {
                 AppInstall::Installed {
                     metadata_only: true,
                 } => metadata_only_apps.push(app_target_path(app.target_name()?)?),
@@ -770,23 +890,27 @@ impl BrewCaskManager {
                     return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
                 }
             }
-            record_cask_action(&mut journal, &format!("app[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("app[{index}]"))?;
         }
         for (index, pkg) in artifacts.pkgs.iter().enumerate() {
             install_pkg(&stage, pkg)?;
-            record_cask_action(&mut journal, &format!("pkg[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("pkg[{index}]"))?;
         }
         for (index, font) in artifacts.fonts.iter().enumerate() {
             stage_font(&stage, &tmp_caskroom, font)?;
-            record_cask_action(&mut journal, &format!("font[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("font[{index}]"))?;
         }
         for (index, wrapper) in artifacts.command_wrappers.iter().enumerate() {
             stage_command_wrapper(&tmp_caskroom, &appdir, &cask, wrapper)?;
-            record_cask_action(&mut journal, &format!("command_wrapper[{index}]"))?;
+            record_cask_action(
+                cask.manager,
+                &mut journal,
+                &format!("command_wrapper[{index}]"),
+            )?;
         }
         for (index, artifact) in artifacts.generic.iter().enumerate() {
             install_generic_artifact(&stage, &tmp_caskroom, artifact, &mut flight_targets)?;
-            record_cask_action(&mut journal, &format!("artifact[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("artifact[{index}]"))?;
         }
         execute_flight_steps_recording(
             &cask,
@@ -799,7 +923,7 @@ impl BrewCaskManager {
         )?;
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         if has_lifecycle_hook(&cask, "postflight") {
-            record_cask_action(&mut journal, "postflight_hook")?;
+            record_cask_action(cask.manager, &mut journal, "postflight_hook")?;
         }
         if artifacts
             .binaries
@@ -810,15 +934,19 @@ impl BrewCaskManager {
         }
         for (index, binary) in artifacts.binaries.iter().enumerate() {
             stage_binary(&stage, &tmp_caskroom, &cask, &artifacts.apps, binary)?;
-            record_cask_action(&mut journal, &format!("binary[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("binary[{index}]"))?;
         }
         for (index, completion) in artifacts.completions.iter().enumerate() {
             stage_completion(&stage, &tmp_caskroom, &cask, &artifacts.apps, completion)?;
-            record_cask_action(&mut journal, &format!("completion[{index}]"))?;
+            record_cask_action(cask.manager, &mut journal, &format!("completion[{index}]"))?;
         }
         for (index, generated) in artifacts.generated_completions.iter().enumerate() {
             stage_generated_completions(&stage, &tmp_caskroom, &cask, &artifacts.apps, generated)?;
-            record_cask_action(&mut journal, &format!("generated_completion[{index}]"))?;
+            record_cask_action(
+                cask.manager,
+                &mut journal,
+                &format!("generated_completion[{index}]"),
+            )?;
         }
         let current_binaries = artifacts.binary_targets()?;
         let current_fonts = artifacts.font_target_paths()?;
@@ -865,7 +993,7 @@ impl BrewCaskManager {
         if let Err(err) = link_transaction.commit() {
             warn!("brew-cask: failed to remove artifact link backups: {err:#}");
         }
-        record_cask_action(&mut journal, "activated")?;
+        record_cask_action(cask.manager, &mut journal, "activated")?;
         remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
         remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
         remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
@@ -878,7 +1006,7 @@ impl BrewCaskManager {
             flight_targets.installed_directories(),
         )?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
-        remove_cask_journals(&cask.token)?;
+        remove_cask_journals(cask.manager, &cask.token)?;
         file::remove_all(stage)?;
         Ok(cask.version)
     }
@@ -1000,25 +1128,44 @@ impl GeneratedCompletionArtifact {
 #[async_trait(?Send)]
 impl SystemPackageManager for BrewCaskManager {
     fn name(&self) -> &str {
-        "brew-cask"
+        self.manager.label()
     }
 
     fn is_available(&self) -> bool {
-        cfg!(any(target_os = "macos", target_os = "linux"))
+        match self.manager {
+            // Linux gets font casks; an .app bundle is macOS-only.
+            CaskManager::BrewCask => cfg!(any(target_os = "macos", target_os = "linux")),
+            CaskManager::MacosApp => cfg!(target_os = "macos"),
+        }
     }
 
     fn unavailable_reason(&self) -> String {
-        "only available on macos and linux".to_string()
+        match self.manager {
+            CaskManager::BrewCask => "only available on macos and linux".to_string(),
+            CaskManager::MacosApp => "only available on macos".to_string(),
+        }
     }
 
     fn supports_version_pins(&self) -> bool {
-        false
+        // A cask exists only at its current version, so a pin cannot be
+        // installed. An inline declaration names its own URL and checksum, so
+        // the pin is the only thing it can install.
+        !self.manager.uses_homebrew_caskroom()
     }
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
+        self.installed_with_options(pkgs, &ManagerPackageOptions::None)
+            .await
+    }
+
+    async fn installed_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<Vec<PackageStatus>> {
         let mut statuses = Vec::with_capacity(pkgs.len());
         for req in pkgs {
-            let cask = fetch_cask(req, false).await?;
+            let cask = self.resolve_cask(req, manager_options, false).await?;
             statuses.push(PackageStatus {
                 request: req.clone(),
                 state: package_state(req, &cask)?,
@@ -1051,14 +1198,202 @@ impl SystemPackageManager for BrewCaskManager {
 
     /// Explicitly upgrades casks, assessing live versions for owned self-updating apps.
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        self.install_with_manager_options(
-            pkgs,
-            opts,
-            &ManagerPackageOptions::None,
-            InstallMode::Upgrade,
-        )
-        .await
+        self.upgrade_with_options(pkgs, opts, &ManagerPackageOptions::None)
+            .await
     }
+
+    async fn upgrade_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        self.install_with_manager_options(pkgs, opts, manager_options, InstallMode::Upgrade)
+            .await
+    }
+}
+
+/// Build a `Cask` from an inline `macos-app` declaration.
+///
+/// This stands in for `fetch_cask`: the rest of the pipeline consumes a `Cask`
+/// and does not care whether the metadata came from Homebrew or from config.
+/// Only the fields an app install reads are populated — there is no Ruby source,
+/// no tap, no dependencies, and no lifecycle hooks to evaluate.
+fn declared_app_cask(name: &str, spec: &crate::system::AppSpec) -> Result<Cask> {
+    validate_cask_path_component("package name", name)?;
+    // `version` is joined into the install-record and journal paths, so it is
+    // validated exactly as fetched cask metadata is by `validate_cask_identity`.
+    validate_cask_path_component("version", &spec.version)?;
+    Ok(Cask {
+        token: name.to_string(),
+        aliases: Vec::new(),
+        old_tokens: Vec::new(),
+        version: spec.version.clone(),
+        // An inline declaration pins one artifact, so mise always owns the
+        // installed bundle and never defers to an app's own updater.
+        auto_updates: false,
+        url: spec.url.clone(),
+        url_specs: Default::default(),
+        sha256: Some(spec.sha256.clone()),
+        artifacts: vec![serde_json::json!({ "app": [spec.artifact.clone()] })],
+        depends_on: Default::default(),
+        conflicts_with: Default::default(),
+        ruby_source_path: None,
+        ruby_source_checksum: None,
+        tap_git_head: None,
+        raw_base: None,
+        manager: CaskManager::MacosApp,
+    })
+}
+
+/// Download cask archives concurrently before the serial install loop runs.
+///
+/// Placement cannot be parallelised: it mounts DMGs, writes into the app
+/// directory, and holds the caskroom lock. Downloading can be, and
+/// `fetch_archive` writes to a content-addressed cache keyed on the URL, so
+/// warming it first lets the serial pass find every artifact already present.
+/// This mirrors what the formula path does with bottles (see
+/// `super::fetch::concurrently` in brew/mod.rs) and what Homebrew's own
+/// `DownloadQueue` does: downloads in parallel, installs consuming them in
+/// order.
+///
+/// The same gates the install path applies are applied here, so an up-to-date
+/// cask is not downloaded just to be skipped a moment later. They are called
+/// rather than reimplemented; if a future gate is added and this pass misses
+/// it, the cost is a wasted download, never a wrong install, because the serial
+/// pass still decides what actually happens.
+///
+/// Every failure is swallowed. This is an optimisation, and the serial pass
+/// reports the real error with its proper context and progress reporting.
+/// Resolve where one request's metadata comes from.
+///
+/// Free-standing so the prewarm pass resolves exactly as installation does.
+/// Asking Homebrew for a `macos-app` token would download whatever unrelated
+/// cask happens to share the name, and report it under the wrong manager.
+async fn resolve_cask_for(
+    manager: CaskManager,
+    req: &PackageRequest,
+    manager_options: &ManagerPackageOptions,
+    provision_ruby: bool,
+) -> Result<Cask> {
+    if let Some(spec) = manager_options.macos_app_spec(&req.name) {
+        return declared_app_cask(&req.name, spec);
+    }
+    if !manager.uses_homebrew_caskroom() {
+        bail!(
+            "macos-app:{}: no inline declaration found; macos-app entries require url, sha256, artifact, and an explicit version",
+            req.name
+        );
+    }
+    fetch_cask(req, provision_ruby).await
+}
+
+async fn prewarm_downloads(
+    pkgs: &[PackageRequest],
+    mode: InstallMode,
+    mpr: &MultiProgressReport,
+    manager: CaskManager,
+    manager_options: &ManagerPackageOptions,
+) {
+    let jobs = crate::jobs::normalize(crate::config::Settings::get().jobs);
+    if jobs <= 1 || pkgs.len() <= 1 {
+        return;
+    }
+
+    // Resolve metadata first. `fetch_cask` reads a cached JSON document, and
+    // `provision_ruby: false` keeps this pass free of side effects: a
+    // third-party tap cask simply resolves to nothing here and falls through to
+    // the serial path, which provisions properly.
+    let mut candidates = Vec::new();
+    for pkg in pkgs {
+        let Ok(cask) = resolve_cask_for(manager, pkg, manager_options, false).await else {
+            continue;
+        };
+        // git-backed casks clone instead of downloading an archive
+        if cask.url.ends_with(".git") {
+            continue;
+        }
+        // Only a definite "not installed by Homebrew" is worth downloading for.
+        // An error here (ambiguous Homebrew metadata, say) means the serial pass
+        // is about to report a repair, so downloading first would be waste.
+        if cask.manager.uses_homebrew_caskroom()
+            && !matches!(homebrew_installed_version(&cask.token), Ok(None))
+        {
+            continue;
+        }
+        let Ok(artifacts) = cask_artifacts(&cask) else {
+            continue;
+        };
+        // unsupported on this platform: the install path rejects it, so
+        // downloading would be pure waste
+        if validate_platform_support(&cask, &artifacts).is_err() {
+            continue;
+        }
+        // conflicts with something already installed: likewise rejected
+        if cask
+            .conflicts_with
+            .cask
+            .iter()
+            .any(|conflict| !installed_versions(cask.manager, conflict).is_empty())
+        {
+            continue;
+        }
+        // Same again: defer to the serial pass on any error rather than guessing.
+        // `.ok()` here would turn a real failure into "not installed" and feed
+        // the wrong input to the skip check below.
+        let Ok(installed) = mise_installed_cask_version(&cask) else {
+            continue;
+        };
+        // Ownership is per target, so the skip check needs the receipt as well
+        // as the version. An unreadable receipt defers to the serial pass for
+        // the same reason an unreadable version does.
+        let Ok(previous) = previous_receipt(&cask) else {
+            continue;
+        };
+        if !matches!(
+            installed_skip_reason(
+                &cask,
+                &artifacts,
+                previous.as_ref(),
+                installed.as_deref(),
+                mode
+            ),
+            Ok(None)
+        ) {
+            continue;
+        }
+        candidates.push(cask);
+    }
+
+    if candidates.len() <= 1 {
+        return;
+    }
+
+    // Report each download. Without this the footer sits at 0/N for the whole
+    // pass with no byte progress, which on a cold multi-cask run looks stalled
+    // precisely when this optimisation is doing the most work.
+    let reports: Vec<Box<dyn SingleReport>> = candidates
+        .iter()
+        // Labelled from the cask, not hardcoded: prewarm resolves macos-app
+        // declarations too, and reporting those under brew-cask names a
+        // manager the download has nothing to do with.
+        .map(|cask| mpr.add(&format!("{}:{} (download)", cask.label(), cask.token)))
+        .collect();
+
+    let futures: Vec<_> = candidates
+        .iter()
+        .zip(reports.iter())
+        .map(|(cask, pr)| async move {
+            match fetch_archive(cask, Some(&**pr)).await {
+                Ok(_) => pr.finish_with_message("downloaded".to_string()),
+                // Swallowed on purpose: this is an optimisation, and the serial
+                // pass reports the real error with its full context.
+                Err(_) => pr.finish_with_message("deferred".to_string()),
+            }
+        })
+        .collect();
+    let mut running = super::fetch::concurrently(futures, jobs);
+    while running.next().await.is_some() {}
 }
 
 /// Abandons an upgrade whose self-updating app is running. Failing instead
@@ -1070,7 +1405,7 @@ fn leave_running_app(
     stage: &Path,
 ) -> Result<String> {
     flight_targets.rollback()?;
-    remove_cask_journals(&cask.token)?;
+    remove_cask_journals(cask.manager, &cask.token)?;
     file::remove_all(tmp_caskroom)?;
     file::remove_all(stage)?;
     let reason = "skipped: installed app started running during the upgrade and updates itself";
@@ -1087,17 +1422,50 @@ enum AppInstall {
     Running,
 }
 
+/// How a single app bundle should be swapped into the app directory.
+#[derive(Debug, Clone, Copy)]
+struct AppInstallOptions {
+    /// Manager driving this install, for diagnostics.
+    manager: CaskManager,
+    /// Keep the durable staged copy beside the install record rather than
+    /// replacing it with a symlink to the installed bundle.
+    keep_caskroom_copy: bool,
+    /// Take over an identical bundle already at the target instead of
+    /// replacing it, preserving the TCC grants keyed to its path.
+    adopt: bool,
+    /// Compare fingerprints before adopting. Skipped for self-updating apps,
+    /// whose on-disk bundle legitimately differs from the declared artifact.
+    verify_adopt: bool,
+    /// Abandon the swap when the installed app is running, leaving it alone.
+    defer_if_running: bool,
+    /// Refuse to replace a bundle that appears at the target. Checked again
+    /// here because the early check runs before the download, and the target is
+    /// shared — Homebrew, another declaration, or a person can create it while
+    /// the archive is in flight.
+    require_unowned: bool,
+}
+
 fn install_app(
     stage: &Path,
     caskroom: &Path,
     app: &AppArtifact,
-    keep_caskroom_copy: bool,
-    adopt: bool,
-    verify_adopt: bool,
-    defer_if_running: bool,
+    opts: AppInstallOptions,
 ) -> Result<AppInstall> {
-    let source = find_app(stage, &app.source)
-        .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
+    let AppInstallOptions {
+        manager,
+        require_unowned,
+        keep_caskroom_copy,
+        adopt,
+        verify_adopt,
+        defer_if_running,
+    } = opts;
+    let source = find_app(stage, &app.source).ok_or_else(|| {
+        eyre!(
+            "{}: app artifact '{}' was not found",
+            manager.label(),
+            app.source
+        )
+    })?;
     let caskroom_app = caskroom.join(app_bundle_name(app.target_name()?)?);
     file::remove_all(&caskroom_app)?;
     let logical_target = app_target_path(app.target_name()?)?;
@@ -1109,25 +1477,75 @@ fn install_app(
     let parent = ensure_trusted_appdir(
         logical_target
             .parent()
-            .ok_or_else(|| eyre!("brew-cask: app target has no parent directory"))?,
+            .ok_or_else(|| eyre!("{}: app target has no parent directory", manager.label()))?,
     )?;
     let name = logical_target
         .file_name()
-        .ok_or_else(|| eyre!("brew-cask: app target has no filename"))?
+        .ok_or_else(|| eyre!("{}: app target has no filename", manager.label()))?
         .to_owned();
+    // Re-checked at the last possible moment, against the verified directory
+    // descriptor rather than a pathname, so nothing that appears during the
+    // download is silently replaced.
+    //
+    // An app at a target this entry does not own is never taken over
+    // implicitly, even when its contents match. Adoption records ownership and
+    // so authorizes every later replacement, which is not a claim to make on a
+    // bundle Homebrew or another declaration still owns. `adopt = true` is the
+    // explicit consent, and the branch below verifies the bundle is identical
+    // before recording anything.
+    //
+    // Measure the target through the verified directory descriptor. Every step
+    // of the walk is relative to `parent.fd`, so no pathname is resolved and a
+    // component replaced after `ensure_trusted_appdir` cannot make us
+    // fingerprint a different tree from the one `exists_at` found and the swap
+    // below will touch. `logical_target` stays the path shown to the user.
+    let source_fingerprint = || cask_target_fingerprint(&source);
+    let target_fingerprint = || cask_target_fingerprint_at(&parent.fd, &name);
+    if require_unowned && !adopt && exists_at(&parent.fd, &name)? {
+        return Err(unowned_target_error(manager, &logical_target));
+    }
     if adopt && exists_at(&parent.fd, &name)? {
-        if verify_adopt {
-            let source_fingerprint = cask_target_fingerprint(&source)?;
-            let target_fingerprint = cask_target_fingerprint(&logical_target)?;
-            if source_fingerprint != target_fingerprint {
-                bail!(
-                    "brew-cask: cannot adopt '{}': existing artifact is not identical to the cask artifact",
-                    logical_target.display()
-                );
-            }
+        if verify_adopt && source_fingerprint()? != target_fingerprint()? {
+            bail!(
+                "{}: cannot adopt '{}': existing artifact is not identical to the declared artifact",
+                manager.label(),
+                logical_target.display()
+            );
         }
         return Ok(AppInstall::Installed {
             metadata_only: true,
+        });
+    }
+
+    // An entry that owns this target is allowed to replace what is at it, but
+    // doing so when the bundle on disk already matches the staged artifact buys
+    // nothing and costs every Privacy & Security grant keyed to the app's
+    // identity at this path — the exact harm this manager exists to avoid.
+    //
+    // Reinstalling an owned target is reached whenever the recorded version is
+    // not trusted. The common case is an interrupted run leaving a pending
+    // transaction journal: that masks the receipt's version, so the "already
+    // installed" check never fires, while the receipt still proves ownership
+    // and so clears the unowned-target refusal. Comparing here keeps the
+    // bundle, and its grants, when a swap would change nothing.
+    //
+    // Scoped to managers that arbitrate by receipt. `brew-cask` owns its target
+    // by token against Homebrew's Caskroom and keeps its existing behaviour.
+    if !manager.uses_homebrew_caskroom()
+        && !require_unowned
+        && exists_at(&parent.fd, &name)?
+        && source_fingerprint()? == target_fingerprint()?
+    {
+        info!(
+            "{}: keeping the identical bundle already at {}",
+            manager.label(),
+            logical_target.display()
+        );
+        // `ditto` would have created this on the install path.
+        file::create_dir_all(caskroom)?;
+        file::make_symlink(&logical_target, &caskroom_app)?;
+        return Ok(AppInstall::Installed {
+            metadata_only: !keep_caskroom_copy,
         });
     }
 
@@ -1144,14 +1562,33 @@ fn install_app(
         file::remove_all(&caskroom_app)?;
         return Ok(AppInstall::Running);
     }
-    activate_app_at(
+    // The earlier checks concluded this entry may put a bundle here. Only an
+    // entry that owns the target may replace what is at it; otherwise the swap
+    // must refuse anything that appeared while the copies ran.
+    if let Err(err) = activate_app_at(
         &parent,
         &name,
         &tmp_name,
         &old_name,
         &caskroom_app,
         &logical_target,
-    )?;
+        !require_unowned,
+    ) {
+        if err.downcast_ref::<AppTargetCollision>().is_none() {
+            // A real activation failure. The swap may already have happened and
+            // only the caskroom symlink failed, so leave both staged copies in
+            // place for recovery and report what actually went wrong.
+            return Err(err);
+        }
+        // Nothing was activated, so the staged copies are safe to discard.
+        let _ = remove_all_at(&parent.fd, &tmp_name);
+        let _ = file::remove_all(&caskroom_app);
+        return Err(err.wrap_err(format!(
+            "{}: '{}' was created by something else while this app was being staged; it was left untouched",
+            manager.label(),
+            logical_target.display()
+        )));
+    }
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
     let relative = Path::new(".").join(&name);
     let _ = run_in_trusted_dir(
@@ -1169,17 +1606,107 @@ fn install_app(
     })
 }
 
-fn validate_adoptable_apps(stage: &Path, apps: &[AppArtifact]) -> Result<()> {
+/// Whether the previous receipt records `target` as an app this entry owns.
+///
+/// Ownership is per target, not per token. A receipt proves this entry owns the
+/// paths that receipt records — not any path the declaration later points at.
+/// Changing `artifact`, or changing the app directory, names a target the
+/// receipt never covered; replacing it would clobber an app this entry has
+/// never owned, while the stale receipt makes the token look installed.
+fn app_target_is_owned(previous: Option<&CaskReceipt>, target: &Path) -> bool {
+    previous.is_some_and(|receipt| {
+        receipt
+            .apps
+            .iter()
+            .chain(&receipt.metadata_only_apps)
+            .any(|owned| owned == target)
+    })
+}
+
+/// Whether this entry must refuse to replace whatever is at `target`.
+fn requires_unowned_target(cask: &Cask, previous: Option<&CaskReceipt>, target: &Path) -> bool {
+    !cask.manager.uses_homebrew_caskroom() && !app_target_is_owned(previous, target)
+}
+
+/// Whether every app this declaration installs is already recorded as owned.
+///
+/// A same-version change to `artifact`, or to the app directory, leaves the
+/// recorded version matching while pointing at a target no receipt covers. The
+/// package is then reported installed and skipped, so the new target is never
+/// installed and the unowned-target policy never runs. Treating that as not
+/// installed is what makes a retarget take effect.
+///
+/// Always true for `brew-cask`, which arbitrates by token against Homebrew's
+/// Caskroom; this changes nothing there.
+fn declared_apps_are_owned(
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    previous: Option<&CaskReceipt>,
+) -> Result<bool> {
+    for app in &artifacts.apps {
+        if requires_unowned_target(cask, previous, &app_target_path(app.target_name()?)?) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Flag app targets a plan cannot predict the outcome for.
+///
+/// Whether apply adopts the bundle in place or refuses depends on comparing it
+/// against the staged artifact, which a dry run has not downloaded. Say that,
+/// rather than let the plan imply a clean install.
+fn warn_existing_app_targets(
+    cask: &Cask,
+    previous: Option<&CaskReceipt>,
+    apps: &[AppArtifact],
+) -> Result<()> {
+    let manager = cask.manager;
+    for app in apps {
+        let target = app_target_path(app.target_name()?)?;
+        if requires_unowned_target(cask, previous, &target) && target.symlink_metadata().is_ok() {
+            warn!(
+                "{}: an app already exists at {} and is not owned by this entry; \
+                 apply will refuse unless adopt = true, which takes it over only \
+                 if it is identical to the download",
+                manager.label(),
+                target.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn unowned_target_error(manager: CaskManager, target: &Path) -> eyre::Report {
+    eyre!(
+        "{}: '{}' already exists and is not owned by this entry; set adopt = true \
+         to take it over if it is identical to the download, or remove it to \
+         install a different build. mise will not replace it silently, because \
+         swapping a bundle revokes the app's macOS Privacy & Security grants \
+         (Accessibility, Screen Recording, Full Disk Access, etc.) and strands \
+         any other manager's record of it",
+        manager.label(),
+        target.display()
+    )
+}
+
+fn validate_adoptable_apps(manager: CaskManager, stage: &Path, apps: &[AppArtifact]) -> Result<()> {
     for app in apps {
         let target = app_target_path(app.target_name()?)?;
         if target.symlink_metadata().is_err() {
             continue;
         }
-        let source = find_app(stage, &app.source)
-            .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
+        let source = find_app(stage, &app.source).ok_or_else(|| {
+            eyre!(
+                "{}: app artifact '{}' was not found",
+                manager.label(),
+                app.source
+            )
+        })?;
         if cask_target_fingerprint(&source)? != cask_target_fingerprint(&target)? {
             bail!(
-                "brew-cask: cannot adopt '{}': existing artifact is not identical to the cask artifact",
+                "{}: cannot adopt '{}': existing artifact is not identical to the declared artifact",
+                manager.label(),
                 target.display()
             );
         }
@@ -1204,6 +1731,7 @@ fn activate_app_at(
     old_name: &std::ffi::OsStr,
     caskroom_app: &Path,
     logical_target: &Path,
+    allow_replace: bool,
 ) -> Result<()> {
     if exists_at(&parent.fd, name)? {
         // Same class of pain as `brew reinstall --cask`: TCC is keyed to the
@@ -1217,7 +1745,7 @@ fn activate_app_at(
             logical_target.display()
         );
     }
-    swap_app_at(parent, name, tmp_name, old_name)?;
+    swap_app_at(parent, name, tmp_name, old_name, allow_replace)?;
     replace_caskroom_app_with_symlink(caskroom_app, logical_target)
 }
 
@@ -1248,12 +1776,63 @@ fn replace_caskroom_app_with_symlink(caskroom_app: &Path, target: &Path) -> Resu
 /// activation fails. All operations are `*at`-relative to the verified
 /// descriptor, so no application directory pathname is ever re-resolved.
 #[cfg(unix)]
+/// An app appeared at the destination while this entry staged its own bundle.
+///
+/// Typed so the caller can tell it apart from an ordinary activation failure:
+/// only this one means nothing was activated and the staged copies are safe to
+/// discard.
+#[derive(Debug)]
+struct AppTargetCollision;
+
+impl std::fmt::Display for AppTargetCollision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("an app appeared at the destination while this one was being staged")
+    }
+}
+
+impl std::error::Error for AppTargetCollision {}
+
 fn swap_app_at(
     parent: &TrustedOperationParent,
     name: &std::ffi::OsStr,
     tmp_name: &std::ffi::OsStr,
     old_name: &std::ffi::OsStr,
+    allow_replace: bool,
 ) -> Result<()> {
+    if !allow_replace {
+        // This entry does not own the target, so the checks above concluded
+        // nothing was there. Copying the bundle takes long enough for Homebrew
+        // or a person to create one since, and the swap below would move it
+        // aside and then delete it.
+        //
+        // `mkdirat` claims the name atomically: it either creates the directory
+        // or fails with EEXIST, with no window between testing and taking. The
+        // rename that follows replaces only this empty directory, which POSIX
+        // allows for an empty target. A platform no-replace rename
+        // (`RENAME_NOREPLACE`, `RENAME_EXCL`) would express this in one step,
+        // but neither is portable across the targets mise ships.
+        match nix::sys::stat::mkdirat(
+            &parent.fd,
+            name,
+            nix::sys::stat::Mode::from_bits_truncate(0o755),
+        ) {
+            Ok(()) => {}
+            Err(nix::errno::Errno::EEXIST) => return Err(AppTargetCollision.into()),
+            Err(err) => return Err(err.into()),
+        }
+        if let Err(err) = nix::fcntl::renameat(&parent.fd, tmp_name, &parent.fd, name) {
+            // Drop the placeholder, or a later apply reads the empty bundle
+            // left behind as a foreign app and refuses.
+            let _ = nix::unistd::unlinkat(&parent.fd, name, nix::unistd::UnlinkatFlags::RemoveDir);
+            return Err(err).wrap_err_with(|| {
+                format!(
+                    "brew-cask: failed to activate {}",
+                    Path::new(name).display()
+                )
+            });
+        }
+        return Ok(());
+    }
     // Atomic swap: rename the existing target aside before putting the new one
     // in place so a failure leaves the old app intact rather than nothing.
     remove_app_at(parent, old_name)?;
@@ -2343,10 +2922,10 @@ fn generic_artifact_target_path(target: &str) -> Result<PathBuf> {
 
 /// The receipt of the currently installed version, if there is one.
 fn previous_receipt(cask: &Cask) -> Result<Option<CaskReceipt>> {
-    let Some(version) = installed_version(&cask.token) else {
+    let Some(version) = installed_version(cask.manager, &cask.token) else {
         return Ok(None);
     };
-    read_receipt(&caskroom_version_dir(&cask.token, &version))
+    read_receipt(&caskroom_version_dir(cask.manager, &cask.token, &version))
 }
 
 fn previous_generic_targets(cask: &Cask) -> Result<Vec<CaskTargetRecord>> {
@@ -2662,7 +3241,7 @@ fn remove_obsolete_fonts(
     previous_targets: &[PathBuf],
     current_targets: &[PathBuf],
 ) -> Result<()> {
-    let token_dir = file::desymlink_path(&caskroom_token_dir(&cask.token));
+    let token_dir = file::desymlink_path(&caskroom_token_dir(cask.manager, &cask.token));
     for target in previous_targets {
         if current_targets.contains(target) {
             continue;
@@ -2805,7 +3384,7 @@ fn ensure_completion_target_replaceable(
     }
     let link_target = std::fs::read_link(target)?;
     let resolved = resolve_symlink_target(target, link_target);
-    let token_dir = caskroom_token_dir(&cask.token);
+    let token_dir = caskroom_token_dir(cask.manager, &cask.token);
     if path_starts_with_resolved_root(&resolved, &token_dir) {
         return Ok(());
     }
@@ -3164,7 +3743,7 @@ fn remove_obsolete_completions(
     previous_targets: &[PathBuf],
     current_targets: &[PathBuf],
 ) -> Result<()> {
-    let token_dir = caskroom_token_dir(&cask.token);
+    let token_dir = caskroom_token_dir(cask.manager, &cask.token);
     let prefix = prefix::prefix();
     for target in previous_targets {
         if current_targets.contains(target) || !target.starts_with(&prefix) {
@@ -3386,7 +3965,7 @@ fn expand_command_wrapper_content(value: &str, appdir: &Path) -> String {
 }
 
 fn expand_command_wrapper_value(value: &str, appdir: &Path, cask: &Cask) -> String {
-    let staged_path = caskroom_version_dir(&cask.token, &cask.version);
+    let staged_path = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
     expand_cask_template(value, &staged_path, appdir, Some(&cask.version))
 }
 
@@ -3455,7 +4034,7 @@ fn generated_caskroom_artifact(root: &Path, cask: &Cask, source: &str) -> Option
     let prefix = prefix::prefix();
     let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
     let source = PathBuf::from(source);
-    let final_caskroom = caskroom_version_dir(&cask.token, &cask.version);
+    let final_caskroom = caskroom_version_dir(cask.manager, &cask.token, &cask.version);
     let relative = source.strip_prefix(final_caskroom).ok()?;
     if relative
         .components()

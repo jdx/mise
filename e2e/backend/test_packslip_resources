@@ -273,3 +273,17 @@ if [ "$(id -u)" != 0 ]; then
   assert_contains "mise completion bash --tool probe" "complete -W 'shipped' probe"
   chmod -R u+w ../3.0.0
 fi
+
+# A skill the packslip declares that the install does not hold is reported,
+# not dropped. Silently, it reads as a tool that declares no skill at all,
+# which is what a fetch that failed at install time leaves behind.
+cd ../project-1.0.0
+mv ../1.0.0/skill/SKILL.md ../1.0.0/skill/SKILL.md.gone
+assert_contains "mise skills ls 2>&1" "declares a skill probe that is not installed"
+assert_contains "mise skills ls 2>&1" "the active tools declare skills, but none are installed"
+assert "mise skills ls --json 2>/dev/null" "[]"
+assert_contains "mise skills sync --dir ../skills 2>&1" "declares a skill probe that is not installed"
+# The setting that kept it off disk is the reason worth naming.
+assert_contains "env MISE_SKILLS_FETCH=0 mise skills ls 2>&1" "skills.fetch is off"
+mv ../1.0.0/skill/SKILL.md.gone ../1.0.0/skill/SKILL.md
+assert_contains "mise skills ls" "probe"

@@ -118,6 +118,61 @@ mise settings add idiomatic_version_file_disable_files node:package.json
 
 :::
 
+### `package.json`
+
+With idiomatic version files enabled for `node`, mise reads `devEngines.runtime` when its
+`name` is `node`:
+
+```json [package.json]
+{
+  "devEngines": {
+    "runtime": { "name": "node", "version": "22.14.0" }
+  }
+}
+```
+
+This selects Node.js 22.14.0. `devEngines.runtime` accepts an object or an array; mise reads
+the first entry in an array. See the [Bun](/lang/bun.html#version-files) and
+[Deno](/lang/deno.html#version-files) guides for other runtimes.
+
+mise does not read `engines.node`: it describes compatible Node.js versions, not the version
+to use for development. If a project only has an `engines` range, select a version explicitly:
+
+```sh
+mise use node@22
+```
+
+### Package-manager versions in `package.json`
+
+Enable idiomatic version files separately for each package manager you use, for example:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools pnpm
+```
+
+For `npm`, `pnpm`, and `yarn`, mise reads a matching `devEngines.packageManager` declaration,
+then falls back to the top-level `packageManager` field:
+
+```json [package.json]
+{
+  "packageManager": "pnpm@9.1.0"
+}
+```
+
+This selects pnpm 9.1.0. The equivalent `devEngines` declaration is:
+
+```json [package.json]
+{
+  "devEngines": {
+    "packageManager": { "name": "pnpm", "version": "9.1.0" }
+  }
+}
+```
+
+`devEngines.packageManager` also accepts an array; mise reads its first entry.
+The declaration's name must match the enabled tool. For Bun's runtime and package-manager
+precedence, see [Bun version files](/lang/bun.html#version-files).
+
 ## Default node packages
 
 ::: warning Planned deprecation
