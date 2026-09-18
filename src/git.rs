@@ -653,10 +653,19 @@ pub(crate) fn in_linked_worktree(path: &Path) -> bool {
             // search stops rather than consulting an outer repository.
             return false;
         }
-        // A submodule's `.git` file is not a worktree marker, but a submodule
-        // may itself sit inside a linked worktree, so keep walking up.
-        if dotgit.is_file() && worktree_gitdir(&dotgit).is_some() {
-            return true;
+        if dotgit.is_file() {
+            if worktree_gitdir(&dotgit).is_some() {
+                return true;
+            }
+            // A submodule belongs to whatever checkout contains it, and the
+            // same submodule in two worktrees is two working copies, so keep
+            // walking. Any other `.git` file is an independent repository, so
+            // stop exactly as a nested `.git` directory does.
+            let submodule = read_gitdir(&dotgit)
+                .is_some_and(|g| g.components().any(|c| c.as_os_str() == "modules"));
+            if !submodule {
+                return false;
+            }
         }
     }
     false
@@ -670,13 +679,7 @@ pub(crate) fn in_linked_worktree(path: &Path) -> bool {
 /// what distinguishes them; a path that merely contains a `worktrees` component
 /// elsewhere is not a worktree.
 fn worktree_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
-    let contents = std::fs::read_to_string(dotgit_file).ok()?;
-    let gitdir = PathBuf::from(contents.strip_prefix("gitdir:")?.trim());
-    let gitdir = if gitdir.is_relative() {
-        dotgit_file.parent()?.join(gitdir)
-    } else {
-        gitdir
-    };
+    let gitdir = read_gitdir(dotgit_file)?;
     if gitdir.parent()?.file_name() != Some(OsStr::new("worktrees")) {
         return None;
     }
@@ -703,10 +706,28 @@ fn worktree_common_dir(gitdir: &Path) -> Option<PathBuf> {
         common
     };
     let common = common.canonicalize().ok()?;
+    // git puts a worktree's private dir at `<common>/worktrees/<name>`, so the
+    // pointer must lead back to the directory it sits under. Without this a
+    // forged `commondir` could name an unrelated repository.
+    if common != gitdir.parent()?.parent()?.canonicalize().ok()? {
+        return None;
+    }
     // `HEAD` marks a git common dir, present both in an ordinary `.git` and at
     // the top of a bare repository. Requiring it stops an arbitrary existing
     // directory from passing as the repository a worktree belongs to.
     common.join("HEAD").is_file().then_some(common)
+}
+
+/// The git dir a `.git` *file* names, resolved against that file's own
+/// directory when the recorded path is relative.
+fn read_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
+    let contents = std::fs::read_to_string(dotgit_file).ok()?;
+    let gitdir = PathBuf::from(contents.strip_prefix("gitdir:")?.trim());
+    Some(if gitdir.is_relative() {
+        dotgit_file.parent()?.join(gitdir)
+    } else {
+        gitdir
+    })
 }
 
 /// Resolves a linked worktree's `.git` file to the root of the main checkout
@@ -1354,15 +1375,20 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         .unwrap();
         assert!(!super::in_linked_worktree(&forged));
 
-        // Pointing it at a directory that exists but holds no git metadata is
-        // still not a worktree; a bare existing path must not confer an offset.
-        std::fs::create_dir_all(base.join("fake/not-a-repo")).unwrap();
-        std::fs::write(forged_git.join("commondir"), "../../not-a-repo\n").unwrap();
+        // Pointing it at a real repository elsewhere is still not a worktree:
+        // the pointer must lead back to the dir the private dir sits under, so
+        // borrowing an unrelated repo's metadata confers nothing.
+        std::fs::create_dir_all(base.join("fake/other-repo")).unwrap();
+        std::fs::write(base.join("fake/other-repo/HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(forged_git.join("commondir"), "../../other-repo\n").unwrap();
         assert!(!super::in_linked_worktree(&forged));
 
-        // It becomes a worktree only once the target looks like a git common
-        // dir, which is what separates the cases.
-        std::fs::write(base.join("fake/not-a-repo/HEAD"), "ref: refs/heads/main\n").unwrap();
+        // Correct target, but no git metadata there yet.
+        std::fs::write(forged_git.join("commondir"), "../..\n").unwrap();
+        assert!(!super::in_linked_worktree(&forged));
+
+        // Both conditions met is what finally makes it a worktree.
+        std::fs::write(base.join("fake/HEAD"), "ref: refs/heads/main\n").unwrap();
         assert!(super::in_linked_worktree(&forged));
 
         // A submodule points under `modules/`, and a pruned worktree marker
@@ -1383,6 +1409,35 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         )
         .unwrap();
         assert!(!super::in_linked_worktree(&pruned));
+
+        // A submodule inside a linked worktree is still inside it. The same
+        // submodule in two worktrees is two working copies, so the walk must
+        // continue past its marker rather than calling it a primary checkout.
+        let wt_sub = wt.join("sub");
+        std::fs::create_dir_all(&wt_sub).unwrap();
+        std::fs::write(
+            wt_sub.join(".git"),
+            format!(
+                "gitdir: {}\n",
+                main.join(".git/worktrees/wt/modules/sub").display()
+            ),
+        )
+        .unwrap();
+        assert!(super::in_linked_worktree(&wt_sub));
+
+        // An independent repository nested in a worktree is its own single
+        // copy, so it stops the walk like a nested `.git` directory would.
+        let nested = wt.join("vendored");
+        let nested_git = base.join("vendored-git");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&nested_git).unwrap();
+        std::fs::write(nested_git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            nested.join(".git"),
+            format!("gitdir: {}\n", nested_git.display()),
+        )
+        .unwrap();
+        assert!(!super::in_linked_worktree(&nested));
     }
 
     #[test]
