@@ -369,6 +369,20 @@ impl Daemons {
                 let starting = set.restricted_to(&starting);
                 runtime::validate_tools(&starting, &scoped, &ts).await?;
                 starting.validate_tasks(&scoped).await?;
+                // Checked against this root's own configuration. The guard
+                // earlier used the invoking project's view, which cannot see an
+                // import that a referenced project itself could not resolve.
+                if let Some((name, import)) = set.blocked.iter().find(|(name, _)| {
+                    set.daemons
+                        .get(*name)
+                        .is_some_and(|blocked| starting.contains(blocked))
+                }) {
+                    bail!(
+                        "daemon {name:?} in {} depends on [daemons.{import}], which is unavailable: {}",
+                        root.display(),
+                        set.import_errors[import]
+                    );
+                }
             }
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime.prepare(&root, &set, true, !foreign).await?;

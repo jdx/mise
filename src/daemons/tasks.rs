@@ -150,19 +150,6 @@ pub(crate) async fn start(
         let scoped = runtime::config_for_root(config, &project).await?;
         let set = scoped.daemons()?;
         let keys = required(&tasks, set)?;
-        // Pitchfork starts a daemon's dependencies with it, so the check has to
-        // cover what comes along, not only what the task named.
-        let starting = set.with_dependencies(&keys.iter().cloned().collect::<Vec<_>>());
-        if let Some((name, import)) = set.blocked.iter().find(|(name, _)| {
-            set.daemons
-                .get(*name)
-                .is_some_and(|blocked| starting.contains(blocked))
-        }) {
-            bail!(
-                "daemon {name:?} depends on [daemons.{import}], which is unavailable: {}",
-                set.import_errors[import]
-            );
-        }
         for key in keys {
             let daemon = &set.daemons[&key];
             if daemon.imported {
@@ -233,6 +220,22 @@ pub(crate) async fn start(
         };
         runtime::validate_tools(&starting, &scoped, &ts).await?;
         starting.validate_tasks(&scoped).await?;
+        // Checked against this root's own configuration, so a referenced
+        // project whose own import is unavailable is caught too. Pitchfork
+        // starts a daemon's dependencies with it, so the check covers what
+        // comes along and not only what was named.
+        let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        if let Some((name, import)) = set.blocked.iter().find(|(name, _)| {
+            set.daemons
+                .get(*name)
+                .is_some_and(|blocked| will_start.contains(blocked))
+        }) {
+            bail!(
+                "daemon {name:?} in {} depends on [daemons.{import}], which is unavailable: {}",
+                root.display(),
+                set.import_errors[import]
+            );
+        }
         // Let the configuration hash short-circuit re-registration. Forcing it
         // would re-probe `pitchfork usage` and re-run `config add` on every
         // `mise run` of a task that requires daemons, even when nothing about
