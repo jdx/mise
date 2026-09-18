@@ -174,8 +174,15 @@ pub(crate) async fn start(
         for (root, names) in &wanted {
             let scoped = runtime::config_for_root(config, root).await?;
             let set = scoped.daemons()?.for_root(root);
-            set.validate_tasks(&scoped).await?;
             let starting = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+            // Narrowed for another project's root exactly as the real run
+            // narrows it, so an unrelated daemon of theirs cannot fail a
+            // dry run that the run itself would have completed.
+            if foreign.contains(root) {
+                starting.validate_tasks(&scoped).await?;
+            } else {
+                set.validate_tasks(&scoped).await?;
+            }
             super::ensure_not_blocked(&set, &starting, Some(root))?;
             for name in names {
                 info!("[dry-run] would start daemon {name} in {}", root.display());

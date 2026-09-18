@@ -506,6 +506,21 @@ same name decides `<NAME>_URL`, described in
 [Stable URLs per worktree](#stable-urls-per-worktree), so a name that withholds one
 withholds both.
 
+Two daemons in one project cannot share a port, and mise says so when the configuration
+loads rather than letting the second fail to bind. Two instances of one preset are the
+usual way to reach this, since they share a base port: give the second its own `port`,
+or its own `base` when both use `port = "auto"`.
+
+```toml
+[daemons]
+postgres = "18"
+
+[daemons.analytics]
+preset = "postgres"
+version = "18"
+port = { auto = true, base = 5500 }
+```
+
 Use `port` rather than `ready_port` with `port = "auto"`. A literal `ready_port` cannot
 follow an allocated port, whereas `port` is what mise resolves and pins.
 

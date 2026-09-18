@@ -315,6 +315,29 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             daemon.host = None;
         }
     }
+    // Two daemons in one project can resolve to one port: `auto` derives it
+    // from the project root, so two presets of the same kind share a base, and
+    // two explicit ports can simply be equal. Mise pins the number it resolved
+    // and turns pitchfork's bumping off, so the second daemon would fail to
+    // bind at start with nothing naming the first. Checked once every daemon is
+    // built, because a preset's port is resolved on its own path.
+    let mut claimed_ports: BTreeMap<(PathBuf, u16), String> = BTreeMap::new();
+    for daemon in set.daemons.values() {
+        let Some(claim) = daemon.port else {
+            continue;
+        };
+        if let Some(other) =
+            claimed_ports.insert((daemon.root.clone(), claim.port), daemon.name.clone())
+            && other != daemon.name
+        {
+            bail!(
+                "daemons {other} and {} both use port {} in {}; give one of them its own port, or a different `base` if they use port = \"auto\"",
+                daemon.name,
+                claim.port,
+                daemon.root.display()
+            );
+        }
+    }
     // A preset's exports are its declared interface; `<NAME>_PORT` and
     // `<NAME>_URL` are a convenience derived from a name. When a custom
     // daemon's name lands on a preset's variable, such as a daemon called
@@ -400,6 +423,7 @@ struct LoadState {
     hosts: BTreeMap<String, (PathBuf, String)>,
     /// Hostnames two daemons derived independently; neither keeps it.
     ambiguous_hosts: std::collections::BTreeSet<String>,
+
     /// Hostname components per project root, including roots reached by import.
     labels: IndexMap<PathBuf, urls::RootLabels>,
 }
@@ -1464,8 +1488,10 @@ mod tests {
         );
         let config = files(&[(
             "/project/mise.toml",
-            "[daemons]\npostgres = '18'\n[daemons.analytics]\npreset = 'postgres'\nversion = '17'\n",
+            "[daemons]\npostgres = '18'\n[daemons.analytics]\npreset = 'postgres'\nversion = '17'\nport = 5433\n",
         )]);
+        // A second instance needs its own port; this is about the tool
+        // conflict two versions of one preset produce.
         let set = load(&config).unwrap();
         assert!(
             set.add_tool_requests(&mut ToolRequestSet::default())
@@ -2983,6 +3009,46 @@ three = ["two", "c"]
                 .any(|d| d.exports.contains_key("WEB_URL"))
         );
         assert_eq!(set.daemons["web"].exports["WEB_PORT"], "3001");
+    }
+
+    /// Mise pins the port it resolves and turns pitchfork's bumping off, so
+    /// two daemons handed one number would leave the second failing to bind
+    /// with nothing naming the first.
+    #[test]
+    fn two_daemons_cannot_claim_one_port() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (primary, _) = checkout_pair(tmp.path());
+        let load_body = |body: &str| {
+            load(&files(&[(
+                primary.join("mise.toml").to_str().unwrap(),
+                body,
+            )]))
+        };
+        for body in [
+            // Two presets of one kind share a base, and `auto` derives the
+            // offset from the project root, which both have in common.
+            "[daemons.main]\npreset = 'postgres'\nversion = '18'\nport = 'auto'\n\
+             [daemons.analytics]\npreset = 'postgres'\nversion = '18'\nport = 'auto'\n",
+            // Two explicit ports can simply be equal.
+            "[daemons.api]\nrun = 'a'\nport = 3000\n[daemons.web]\nrun = 'b'\nport = 3000\n",
+            // As can two custom daemons given the same base.
+            "[daemons.api]\nrun = 'a'\n[daemons.api.port]\nauto = true\nbase = 3000\n\
+             [daemons.web]\nrun = 'b'\n[daemons.web.port]\nauto = true\nbase = 3000\n",
+        ] {
+            let err = load_body(body).unwrap_err().to_string();
+            assert!(err.contains("both use port"), "{body:?} produced {err}");
+        }
+        // Distinct bases are what makes a second instance work.
+        let set = load_body(
+            "[daemons.main]\npreset = 'postgres'\nversion = '18'\nport = 'auto'\n\
+             [daemons.analytics]\npreset = 'postgres'\nversion = '18'\n\
+             [daemons.analytics.port]\nauto = true\nbase = 5500\n",
+        )
+        .unwrap();
+        assert_ne!(
+            set.daemons["main"].port.unwrap().port,
+            set.daemons["analytics"].port.unwrap().port
+        );
     }
 
     #[test]
