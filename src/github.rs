@@ -592,9 +592,24 @@ impl fmt::Display for TokenSource {
 fn canonical_token_host(host: &str) -> &str {
     match host {
         "api.github.com" => "github.com",
+        // Repository file contents, authenticated by the same github.com token.
+        "raw.githubusercontent.com" => "github.com",
         h if is_ghe_com_api_host(h) => h.strip_prefix("api.").unwrap_or(h),
         other => other,
     }
+}
+
+/// Repository file contents, e.g. `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`.
+///
+/// A private repository's files are a 404 without a token and a 200 with one, so
+/// this host needs the same bearer token `api.github.com` gets. It is not an API
+/// host, so it gets no `x-github-api-version` header, and it is deliberately
+/// distinct from the release-asset hosts below: those URLs are pre-signed, and
+/// sending an Authorization header alongside the signature makes the storage
+/// backend reject the request. `resolve_token` enforces that separately by
+/// refusing to resolve a token for an asset host at all.
+pub(crate) fn is_github_raw_content_host(host: &str) -> bool {
+    host == "raw.githubusercontent.com"
 }
 
 fn is_github_release_asset_host(host: &str) -> bool {
@@ -902,6 +917,19 @@ pub(crate) fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
         } else {
             TOKEN_SOURCES.lock().unwrap().remove(host);
         }
+    }
+
+    // Not an API URL, so the block above skipped it, but a private repository's
+    // raw file still needs the token.
+    if !is_github_api_url(&url)
+        && url.host_str().is_some_and(is_github_raw_content_host)
+        && let Some((token, source)) = resolve_token(url.host_str().unwrap())
+    {
+        remember_token_source(url.host_str().unwrap(), &token, source);
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
+        );
     }
 
     if is_github_api_url(&url) && url.path().contains("/releases/assets/") {
@@ -1409,6 +1437,26 @@ something_else = "value"
         );
     }
 
+    /// A private repository's raw file is a 404 without a token and a 200 with
+    /// one, so this host does need the bearer token. Pinned separately from the
+    /// API hosts because it must NOT also receive the API version header, and
+    /// separately from the asset hosts, which must receive no token at all.
+    #[test]
+    fn test_raw_githubusercontent_uses_github_token() {
+        with_github_token(|| {
+            let headers =
+                get_headers("https://raw.githubusercontent.com/owner/repo/main/file.txt").unwrap();
+            assert!(
+                headers.contains_key(reqwest::header::AUTHORIZATION),
+                "raw.githubusercontent.com should carry the github.com token"
+            );
+            assert!(
+                !headers.contains_key("x-github-api-version"),
+                "raw.githubusercontent.com is not an API host"
+            );
+        });
+    }
+
     #[test]
     fn test_only_github_api_urls_use_github_token() {
         with_github_token(|| {
@@ -1416,7 +1464,6 @@ something_else = "value"
                 "https://github.com/api/v3/repos/owner/repo/releases",
                 "https://github.com/cuotos/ecs-exec-pf/releases/download/v0.3.0/ecs-exec-pf_0.3.0_Linux_x86_64.tar.gz",
                 "https://github.example.com/owner/repo/releases/download/v1.0.0/file.tar.gz",
-                "https://raw.githubusercontent.com/owner/repo/main/file.txt",
                 "https://objects.githubusercontent.com/github-production-release-asset",
                 "https://objects-origin.githubusercontent.com/github-production-release-asset",
                 "https://release-assets.githubusercontent.com/github-production-release-asset",

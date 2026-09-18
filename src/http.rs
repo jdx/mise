@@ -1909,7 +1909,14 @@ pub(crate) fn error_code(e: &Report) -> Option<u16> {
 }
 
 fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
-    if crate::github::is_github_api_url(url) {
+    // raw.githubusercontent.com is not an API host, but a private repository's
+    // files are a 404 without the token, so it is routed here too. `get_headers`
+    // decides what each host actually gets.
+    if crate::github::is_github_api_url(url)
+        || url
+            .host_str()
+            .is_some_and(crate::github::is_github_raw_content_host)
+    {
         return crate::github::get_headers(url.as_str());
     }
 
