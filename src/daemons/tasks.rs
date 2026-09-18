@@ -148,7 +148,14 @@ pub(crate) async fn start(
             continue;
         }
         let previous = runtime::read_state(&root)?;
-        let (scoped, ts) = runtime::toolset(&scoped, install_tools).await?;
+        let (scoped, ts) = if install_tools {
+            runtime::toolset(&scoped, true).await?
+        } else {
+            // Keeps the install path out of this future entirely, so callers
+            // inside a spawned task can await it.
+            let ts = runtime::toolset_resolved(&scoped, false).await?;
+            (scoped, ts)
+        };
         let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
         runtime::validate_tools(&set, &scoped, &ts).await?;
         set.validate_tasks(&scoped).await?;

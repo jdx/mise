@@ -841,17 +841,15 @@ impl Run {
         // Start the daemons these tasks require and wait for pitchfork to
         // report them ready, before any task body runs. Daemons are a
         // dependency of the task, so `--skip-deps` skips them too; that is also
-        // what stops a task-backed daemon, which runs `mise run --skip-deps`,
-        // from starting itself. A dry run still validates the names.
+        // what stops a task-backed daemon from starting itself. A dry run still
+        // validates the names.
+        //
+        // This covers the tasks the run resolves up front. A subtask reached
+        // through a `run = [{ task = ... }]` entry is resolved later, inside a
+        // spawned task, and its daemons are not started; see the note in
+        // docs/daemons.md.
         if !self.skip_deps {
-            // Task entries are resolved once the run is in flight, inside a
-            // spawned task, so their daemons have to be collected here with
-            // everyone else's.
-            let mut daemon_tasks = resolved_tasks.clone();
-            daemon_tasks.extend(
-                crate::task::task_list::resolve_task_entries(&config, &resolved_tasks).await?,
-            );
-            crate::daemons::tasks::start(&config, &daemon_tasks, self.dry_run, !self.skip_tools)
+            crate::daemons::tasks::start(&config, &resolved_tasks, self.dry_run, !self.skip_tools)
                 .await?;
         }
 

@@ -313,6 +313,10 @@ An unknown name fails the run.
 `--dry-run` still validates names and the experimental setting, but starts nothing.
 Safe mode blocks task daemon startup.
 
+A subtask reached through a `run = [{ task = "..." }]` entry is resolved after the
+run has started, so its own `daemons` are not started. Declare the requirement on
+the task you invoke.
+
 For setup, readiness checks, and daemon lifecycle details, see the
 [daemon guide](/daemons.html#tasks-that-require-daemons).
 

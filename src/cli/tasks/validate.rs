@@ -240,7 +240,7 @@ impl TasksValidate {
         issues.extend(self.validate_missing_references(task, all_tasks));
 
         // 1b. Validate required daemon references
-        issues.extend(Self::validate_daemon_references(task, config));
+        issues.extend(Self::validate_daemon_references(task, config).await);
 
         // 2. Validate usage spec parsing
         issues.extend(self.validate_usage_spec(task, config).await);
@@ -286,12 +286,38 @@ impl TasksValidate {
     /// A `daemons` entry naming something no `[daemons]` section declares fails
     /// the run, so it belongs here with the other missing references. A name
     /// still holding a template is left alone; it is resolved per invocation.
-    fn validate_daemon_references(task: &Task, config: &Arc<Config>) -> Vec<ValidationIssue> {
+    async fn validate_daemon_references(task: &Task, config: &Arc<Config>) -> Vec<ValidationIssue> {
         let Some(daemons) = &task.daemons else {
             return vec![];
         };
-        let Ok(set) = config.daemons() else {
-            return vec![];
+        // Resolve in the task's own project, the scope a run uses. In a
+        // monorepo the daemon may be declared by a subproject, or a same-named
+        // one in the caller's project may not be the one that would start.
+        let invalid = |err: eyre::Report| {
+            vec![ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Error,
+                category: "invalid-daemon-config".to_string(),
+                message: format!("cannot read [daemons] for this task: {err}"),
+                details: Some("fix the [daemons] declarations this task depends on".to_string()),
+            }]
+        };
+        // Resolve in the task's own project, the scope a run uses. In a
+        // monorepo the daemon may be declared by a subproject, or a same-named
+        // one in the caller's project may not be the one that would start.
+        let scoped = match &task.config_root {
+            Some(root) => crate::daemons::runtime::config_for_root(config, root).await,
+            None => Ok(config.clone()),
+        };
+        // A malformed declaration fails the run, so it has to fail validation
+        // too rather than being reported as no issues at all.
+        let scoped = match scoped {
+            Ok(scoped) => scoped,
+            Err(err) => return invalid(err),
+        };
+        let set = match scoped.daemons() {
+            Ok(set) => set,
+            Err(err) => return invalid(eyre::eyre!("{err}")),
         };
         daemons
             .names()

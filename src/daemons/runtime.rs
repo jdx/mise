@@ -60,10 +60,17 @@ pub(crate) async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result
     Ok(config.with_config_files(files))
 }
 
-pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
-    let mut config = config.clone();
+/// Build the daemon toolset without installing anything.
+///
+/// Kept separate from [`toolset`] so callers that must not install can avoid the
+/// install path entirely. That path reaches code which is not `Send`, and a
+/// caller inside a spawned task would not compile if this future contained it.
+pub(crate) async fn toolset_resolved(
+    config: &Arc<Config>,
+    include_pitchfork: bool,
+) -> Result<Toolset> {
     let pitchfork: ToolArg = "pitchfork".parse()?;
-    let args = if install
+    let args = if include_pitchfork
         && !config
             .get_tool_request_set()
             .await?
@@ -78,15 +85,20 @@ pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<
     // specific requests it has to fetch, so an already-satisfied project costs
     // no network round trip -- which matters when this runs on every `mise run`
     // of a task that requires daemons.
-    let mut ts = ToolsetBuilder::new()
+    Ok(ToolsetBuilder::new()
         .with_args(&args)
         .with_default_to_latest(true)
         .with_resolve_options(crate::toolset::ResolveOptions {
             offline: true,
             ..Default::default()
         })
-        .build(&config)
-        .await?;
+        .build(config)
+        .await?)
+}
+
+pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
+    let mut config = config.clone();
+    let mut ts = toolset_resolved(&config, install).await?;
     if install {
         let (_, missing) = ts
             .install_missing_versions(&mut config, &Default::default())

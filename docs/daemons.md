@@ -133,6 +133,13 @@ The daemon's readiness check is configured on `[daemons.core]`, not on the task.
 A daemon's `task` cannot be combined with `run` or `preset`, and `args` requires
 `task`. The referenced task must exist when daemons are registered.
 
+::: warning Subtasks do not start daemons
+A task requirement is honored for the tasks a run resolves up front, including
+their `depends`. A subtask reached through a `run = [{ task = "..." }]` entry is
+resolved once the run is already executing, and its own `daemons` are not started.
+Declare the requirement on the task you invoke.
+:::
+
 A daemon invokes its task with `mise run`, so that task's `depends` tasks run
 before it, as they would on the command line. Its own `daemons` requirements are
 the one exception: starting those would start this daemon again, so mise skips
