@@ -107,8 +107,15 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         let init = take_init(&mut table, &name)?;
         let task = take_string(&mut table, "task")?;
         let args = take_args(&mut table, &name)?;
-        if preset.is_some() && (task.is_some() || args.is_some()) {
-            bail!("[daemons.{name}] cannot combine preset with task");
+        if preset.is_some() {
+            // Name the key actually present; `args` without `task` is a
+            // different mistake from `preset` with `task`.
+            if task.is_some() {
+                bail!("[daemons.{name}] cannot combine preset with task");
+            }
+            if args.is_some() {
+                bail!("[daemons.{name}] args requires task, which a preset cannot use");
+            }
         }
         let daemon = if let Some(preset) = preset {
             let version = version
@@ -510,6 +517,26 @@ mod tests {
                 "{body}"
             );
         }
+    }
+
+    #[test]
+    fn conflict_errors_name_the_key_that_is_set() {
+        // `args` without `task` is a different mistake from `preset` with
+        // `task`, so the message must not blame a key the user never wrote.
+        let err = load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\nargs = ['--flag']\n",
+        )]))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("args requires task"), "{err}");
+        let err = load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\ntask = 'dev'\n",
+        )]))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("cannot combine preset with task"), "{err}");
     }
 
     #[test]

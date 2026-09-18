@@ -114,23 +114,21 @@ pub(crate) async fn start(
         by_project.entry(project).or_default().push(task.clone());
     }
     // A daemon root can be shared by several projects, so collect the whole
-    // request before touching pitchfork.
-    let mut wanted: IndexMap<PathBuf, (Arc<Config>, IndexSet<String>)> = IndexMap::new();
+    // request before touching pitchfork. Only the names travel: each root's
+    // configuration is loaded from the invoking config below, not from the
+    // config of whichever task happened to name the daemon first.
+    let mut wanted: IndexMap<PathBuf, IndexSet<String>> = IndexMap::new();
     for (project, tasks) in by_project {
         let scoped = runtime::config_for_root(config, &project).await?;
         let set = scoped.daemons()?;
         for name in required(&tasks, set)? {
             let root = set.daemons[&name].root.clone();
-            wanted
-                .entry(root)
-                .or_insert_with(|| (scoped.clone(), IndexSet::new()))
-                .1
-                .insert(name);
+            wanted.entry(root).or_default().insert(name);
         }
     }
     if dry_run {
-        for (root, (scoped, names)) in &wanted {
-            let scoped = runtime::config_for_root(scoped, root).await?;
+        for (root, names) in &wanted {
+            let scoped = runtime::config_for_root(config, root).await?;
             scoped
                 .daemons()?
                 .for_root(root)
@@ -142,8 +140,8 @@ pub(crate) async fn start(
         }
         return Ok(());
     }
-    for (root, (scoped, names)) in wanted {
-        let scoped = runtime::config_for_root(&scoped, &root).await?;
+    for (root, names) in wanted {
+        let scoped = runtime::config_for_root(config, &root).await?;
         // The generated pitchfork configuration describes every daemon in the
         // project, not only the ones this run starts.
         let set = scoped.daemons()?.for_root(&root);
