@@ -76,57 +76,62 @@ run = "npm run dev"
 depends = ["pipeline"]
 ```
 
-Run `mise daemons start pipeline` to start the worker, or `mise daemons start api`
-to start the API with the worker as a dependency. Use the local name `pipeline`
-in lifecycle commands and `depends`; mise resolves it to the worker's full daemon
-ID. A fixed namespace is optional when using `project` references.
+After reviewing the referenced project's configuration, trust it and start the
+worker from your application:
 
-`project` accepts an absolute path, or a path relative to the project root of the
-configuration file that declares it. That is the declaring file's own project, so
-a `project` inherited from a parent configuration resolves against the parent's
-root, not the directory you are in. For a nested file such as
-`.config/mise/config.toml` it is the project root, not the file's directory. `name` selects the daemon in the referenced
-project; omit it when the local and remote names match. Mise reads the referenced
-project's parent configuration files too, so inherited daemon declarations and
-settings are available.
+```sh
+mise trust ../mirror-pipeline
+mise daemons start pipeline
+```
 
-The referenced project must already be trusted. Run `mise trust <dir>` after
-reviewing it. Mise will not trust it for you, even from commands such as `mise run`
-that implicitly trust the configuration they are running, because `project` would
-otherwise grant a directory lasting trust without asking.
+Run `mise daemons start api` to start the API and its worker dependency. Use the
+local name `pipeline` in commands and `depends`; mise resolves it to the worker's
+full daemon ID. You do not need to configure a namespace to use a project reference.
 
-The table accepts only `project` and `name`. A daemon runs under one registration
-in its own project, so it cannot be given per-importer `env` or other overrides;
-if the referenced daemon needs values from your project, it has to read them from
-its own configuration or environment.
+### Paths and configuration
+
+`project` accepts an absolute path or a path relative to the declaring
+configuration's project root. Inherited references resolve against their parent
+project's root. A reference in `.config/mise/config.toml` also resolves against the
+project root, rather than the configuration file's directory.
+
+`name` selects the daemon in the referenced project and defaults to the local
+name. The referenced project can inherit daemon declarations and settings from
+its parent configuration files. Reference the project that defines the daemon;
+a reference cannot point to another reference.
+
+All referenced configuration must already be trusted, including inherited files.
+If additional trust is needed, mise reports the path and the `mise trust` command
+to use after reviewing it. Running `mise run` or `mise daemons start` does not
+implicitly trust another project's configuration.
+
+A reference table accepts only `project` and `name`. Configure environment
+variables and other daemon options in the project that defines the daemon.
 
 ### Environment and lifecycle
 
-The worker runs in its owning project, with that project's tools, environment,
+The worker runs in its own project with that project's tools, environment,
 namespace, and data directories. Importing a database preset does not add its
-exported variables, such as `DATABASE_URL`, to the application's environment.
-Configure the application's connection separately.
+exported variables, such as `DATABASE_URL`, to your application's environment.
+Configure the application's database connection separately.
 
-Lifecycle commands select the daemons you imported and start their dependencies
-as needed. Other daemons in the referenced project remain registered and can
-continue running; importing one daemon does not give your project control over
-all of them.
+Start and restart install missing tools in each project and start the selected
+daemons and their dependencies. Other daemons in the referenced project remain
+registered and can continue running independently.
 
-Automatic lifecycle does not cross projects. Shell hooks register and start only
-this project's own daemons, because registering another project's configuration
-from here would rewrite it with just the daemons you imported. Use
-`mise daemons start` for an imported daemon.
+Automatic start and stop apply only to the current project's own daemons. Use
+`mise daemons start` to start an imported daemon.
 
-If a checkout is missing or untrusted, `mise daemons` reports the expected
-directory and the `project` setting to update. Every other command keeps working:
-the imported daemon is dropped, and your own daemons, tools, and environment are
-unaffected. A teammate without that checkout can still run `mise run` and `mise x`.
+If a referenced checkout is missing or untrusted, daemon commands report the
+problem and how to resolve it. Commands such as `mise run` and `mise x` can still
+run without that import, so teammates can work without checking out every service.
 
 ## Namespaces
 
 A daemon's full ID is `<namespace>/<name>`. By default, mise derives the namespace
 from the project directory name and a hash of its path to separate checkouts.
-Set `namespace` when you need a stable ID for a qualified dependency:
+Set `namespace` to give daemons predictable IDs that other projects can use in
+`depends`:
 
 ```toml
 [daemons_settings]
@@ -137,15 +142,19 @@ preset = "postgres"
 version = "18"
 ```
 
-The database's ID is `services/db`. Another daemon can use
+In the main checkout, the database's ID is `services/db`. Another daemon can use
 `depends = ["services/db"]` once that database is registered with pitchfork.
 Use a [`project` reference](#daemons-from-another-project) when mise should also
 load and register the other project's configuration.
 
-Namespace names accept ASCII letters, numbers, `.`, `_`, and `-`. They cannot be
-empty, equal `.`, start or end with `-`, or contain `..` or `--`. An explicit
-`[daemons_settings].namespace` takes precedence over `namespace` in the project's
-`pitchfork.toml`, which in turn takes precedence over the generated default.
+Namespace names can contain ASCII letters, numbers, `.`, `_`, and `-`. They cannot
+be empty, equal `.`, start or end with `-`, or contain `..` or `--`.
+
+Mise chooses the namespace in this order:
+
+1. `namespace` in `[daemons_settings]`
+2. `namespace` in the project's `pitchfork.toml`
+3. The generated default
 
 Stop the project's daemons before changing its namespace. The next start adopts
 the new namespace and removes the old IDs from mise's state.
@@ -168,8 +177,8 @@ mise ignores those tables with a warning.
 
 Linked Git worktrees get a path-specific suffix on an explicit namespace. With
 `namespace = "services"`, the main checkout uses `services` and a linked worktree
-uses `services-<hash>`, where the hash is 16 hex characters, so IDs in a worktree
-are noticeably longer. Each checkout therefore has separate daemon IDs and state.
+uses `services-<hash>`, where `<hash>` is a 16-character hexadecimal hash of the
+worktree path. Each checkout has separate daemon IDs and state.
 
 A literal dependency on `services/db` always refers to that exact ID; it does not
 follow the current worktree's suffix. Prefer a local daemon name or a `project`

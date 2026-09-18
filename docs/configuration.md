@@ -624,13 +624,17 @@ run = "npm run dev"
 project = "../workers"
 ```
 
+The `api` daemon runs in this project; `worker` uses the `worker` declaration in
+`../workers`. A reference accepts only `project` and an optional `name` to select a
+differently named daemon.
+
 A higher-precedence declaration replaces the complete same-name daemon. Explicit
-environment variables override preset exports. See [Daemons](/daemons) for preset
-options, dependencies, and lifecycle commands.
+environment variables override preset exports. See [Daemons](/daemons) for presets,
+[project references](/daemons#daemons-from-another-project), and lifecycle commands.
 
 ### `[daemons_settings]`
 
-Configure the namespace used to identify a project's daemons:
+Set the namespace used in daemon IDs such as `my-app/api`:
 
 ```toml
 [daemons_settings]
