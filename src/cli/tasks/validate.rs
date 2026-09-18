@@ -287,6 +287,12 @@ impl TasksValidate {
     /// the run, so it belongs here with the other missing references. A name
     /// still holding a template is left alone; it is resolved per invocation.
     async fn validate_daemon_references(task: &Task, config: &Arc<Config>) -> Vec<ValidationIssue> {
+        // `false` and an empty list request nothing, so a run never reads
+        // `[daemons]` for this task and neither should validation: a malformed
+        // section elsewhere must not fail a task that would run fine.
+        if !crate::daemons::tasks::declares_daemons(task) {
+            return vec![];
+        }
         let Some(daemons) = &task.daemons else {
             return vec![];
         };

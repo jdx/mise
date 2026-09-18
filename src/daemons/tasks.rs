@@ -13,7 +13,10 @@ use indexmap::{IndexMap, IndexSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-fn declares_daemons(task: &Task) -> bool {
+/// Whether a task asks for any daemon. `false` and an empty list ask for none,
+/// so such a task never touches daemon configuration and must not be judged
+/// against it.
+pub(crate) fn declares_daemons(task: &Task) -> bool {
     match &task.daemons {
         None | Some(crate::task::TaskDaemons::All(false)) => false,
         Some(crate::task::TaskDaemons::Names(names)) => !names.is_empty(),

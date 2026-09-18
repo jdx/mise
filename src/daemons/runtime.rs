@@ -85,7 +85,7 @@ pub(crate) async fn toolset_resolved(
     // specific requests it has to fetch, so an already-satisfied project costs
     // no network round trip -- which matters when this runs on every `mise run`
     // of a task that requires daemons.
-    Ok(ToolsetBuilder::new()
+    ToolsetBuilder::new()
         .with_args(&args)
         .with_default_to_latest(true)
         .with_resolve_options(crate::toolset::ResolveOptions {
@@ -93,7 +93,7 @@ pub(crate) async fn toolset_resolved(
             ..Default::default()
         })
         .build(config)
-        .await?)
+        .await
 }
 
 pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
