@@ -31,6 +31,30 @@ To select one, run `mise use go:github.com/DarthSim/hivemind@VERSION`, replacing
 `VERSION` with a listed release. mise writes the resulting executable into its
 own installation directory instead of your ordinary `GOBIN`.
 
+### Version discovery and release dates
+
+For `latest`, mise first queries the module proxy or `go list` directly for the
+latest stable release. This avoids listing every version and fetching a release
+date for each one, which can time out on modules with many tags.
+
+Commands such as `mise ls-remote` and version requests such as `@1` still use the
+full version list. To keep these lookups fast, mise fetches release dates for
+only the newest 100 versions through a module proxy, or the newest 10 through
+`go list`. All versions remain in the list; versions outside these limits have
+no release date.
+
+::: warning Release-age filtering
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age) allows
+versions with no known release date. If a module publishes more than 100
+versions through a proxy, or 10 through `go list`, within the configured age
+window, mise may select a version newer than the cutoff. For example, a `90d`
+window may not be fully enforced for a module with more than 10 releases in
+that period when discovery uses `go list`.
+
+The direct `latest` query includes a release date, but if that release is too
+recent, mise falls back to the full list and the same limitation applies.
+:::
+
 ### Private modules
 
 Private modules use Go's normal VCS authentication. Export `GOPRIVATE`, or
@@ -47,18 +71,7 @@ Go uses `GOPRIVATE` as the default for both `GONOPROXY` and `GONOSUMDB`. If you
 configure those variables separately, set each one according to the proxy and
 checksum-database privacy you need.
 
-mise caps how many versions of a module it reports release dates for, on either
-route: the newest 100 through a module proxy, where a date is one cheap request
-among many in flight, and the newest 10 when it has to reach the module over
-VCS, where each date is its own round trip. A version with no date is always
-eligible, so
-[`minimum_release_age`](/configuration/settings.html#minimum_release_age) cannot
-hide a version older than whatever the listing dated. Both caps are ample for
-its 24h default. Raise it to a long cutoff, such as `90d`, and a module that
-published more than 10 releases (over VCS) or 100 releases (through a proxy)
-inside that window may still resolve to a version newer than the cutoff.
-Requesting `latest` avoids the cap — mise asks for `latest` directly, in one
-query, and that answer carries a date.
+### Pinned versions
 
 You can also pin a specific Go module version, including an unreleased
 pseudo-version:
