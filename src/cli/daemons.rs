@@ -143,6 +143,12 @@ impl Daemons {
                 if name.contains('/') {
                     return Ok(resolved);
                 }
+                // A bare name can be a group, which `selects` expands against
+                // the project that declares it. Qualifying it would turn it
+                // into a daemon ID that names nothing.
+                if loaded.groups.iter().any(|group| group.name == *name) {
+                    return Ok(resolved);
+                }
                 let owner = loaded
                     .daemons
                     .values()
@@ -257,11 +263,20 @@ impl Daemons {
                 candidates.namespaces.extend(set.namespaces);
                 owner_configs.insert(root.clone(), scoped);
             }
+            // Expanded the same way selection expands them, so starting a
+            // group gathers the daemons it names rather than nothing.
             let requested = root_ids
                 .iter()
-                .flatten()
-                .filter(|id| names.is_empty() || names.iter().any(|name| matches_name(id, name)))
-                .cloned()
+                .zip(&root_sets)
+                .flat_map(|(ids, set)| {
+                    let root_selectors = effective_selectors(&selectors, set, action);
+                    ids.iter()
+                        .filter(move |id| {
+                            root_selectors.is_empty()
+                                || root_selectors.iter().any(|s| selects(set, id, s))
+                        })
+                        .cloned()
+                })
                 .collect::<Vec<_>>();
             let starting = candidates.with_dependencies(&requested);
             // Dropping a dependency on an unresolved import keeps the generated
@@ -311,10 +326,15 @@ impl Daemons {
                 Some(scoped) => scoped,
                 None => runtime::config_for_root(&config, &root).await?,
             };
-            let foreign = root != project_root;
             // What this invocation may act on, which for another project's root
-            // is only what it imported or inherited.
+            // is only what it imported.
             let requested = loaded.for_root(&root);
+            // Another project's root, reached only because a daemon was imported
+            // from it. An ancestor of this project is not that: its daemons are
+            // declared in this project's own hierarchy, and the merged view is
+            // what decides which of them a nearer config has taken over.
+            let foreign = !requested.daemons.is_empty()
+                && requested.daemons.values().all(|daemon| daemon.imported);
             // Which daemons a root owns comes from the merged view, the same way
             // the auto lifecycle and task-required daemons resolve them, so a
             // name a nearer project redefines is registered and started once.
