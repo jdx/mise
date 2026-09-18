@@ -529,6 +529,9 @@ List project daemons without starting a supervisor or registering configuration.
 \fIAliases: \fRlist
 .RE
 .TP
+\fBdaemons urls\fR
+Show each project daemon's stable hostname URL and the port behind it.
+.TP
 \fBdaemons logs\fR
 Arguments passed to pitchfork; daemon names may be short or qualified.
 .TP
@@ -3905,6 +3908,21 @@ Print help
 List project daemons without starting a supervisor or registering configuration.
 .PP
 \fBUsage:\fR mise daemons ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS URLS"
+Show each project daemon's stable hostname URL and the port behind it.
+
+Hostnames do not move between git worktrees, so an HTTP service can be
+addressed by URL while concurrent checkouts keep separate ports.
+.PP
+\fBUsage:\fR mise daemons urls [OPTIONS]
 .PP
 \fBOptions:\fR
 .PP

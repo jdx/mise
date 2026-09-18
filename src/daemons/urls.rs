@@ -8,7 +8,7 @@
 //! `port = "auto"`: the proxy speaks HTTP, and a Postgres client does not.
 use super::DaemonSettings;
 use eyre::{Result, bail};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 /// Pitchfork release that understands `worktree_label` and per-daemon `proxy`.
@@ -98,11 +98,23 @@ pub(crate) fn proxy_settings() -> &'static ProxySettings {
     &SETTINGS
 }
 
+/// Where pitchfork keeps the user's own configuration, honouring the same
+/// overrides it does, so a relocated config directory is not silently ignored.
+fn user_config_dir() -> PathBuf {
+    if let Some(dir) = crate::env::var_path("PITCHFORK_CONFIG_DIR") {
+        return dir;
+    }
+    match crate::env::var_path("XDG_CONFIG_HOME") {
+        Some(dir) => dir.join("pitchfork"),
+        None => crate::dirs::HOME.join(".config").join("pitchfork"),
+    }
+}
+
 fn read_proxy_settings() -> ProxySettings {
     let mut settings = ProxySettings::default();
     for path in [
         Path::new("/etc/pitchfork/config.toml").to_path_buf(),
-        crate::dirs::HOME.join(".config/pitchfork/config.toml"),
+        user_config_dir().join("config.toml"),
     ] {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
@@ -209,7 +221,14 @@ pub(crate) fn sanitize_label(value: &str) -> String {
     } else {
         trimmed
     };
-    trimmed.chars().take(63).collect::<String>()
+    // Cutting at 63 can land just after a separator, which would leave a label
+    // ending in `-`; that is not a name DNS accepts.
+    trimmed
+        .chars()
+        .take(63)
+        .collect::<String>()
+        .trim_end_matches('-')
+        .to_string()
 }
 
 /// The checkout a project root belongs to, which is what distinguishes two
@@ -322,6 +341,10 @@ mod tests {
         assert_eq!(sanitize_label("My_Api.v2"), "my-api-v2");
         assert_eq!(sanitize_label("--"), "mise");
         assert_eq!(sanitize_label(&"a".repeat(80)).len(), 63);
+        // Truncation must not leave a trailing separator behind.
+        let cut = sanitize_label(&format!("{}-{}", "a".repeat(62), "b".repeat(5)));
+        assert_eq!(cut, "a".repeat(62));
+        validate_label("label", &cut).unwrap();
         assert!(validate_label("label", "api-2").is_ok());
         for invalid in ["", "-api", "api-", "API", "my_api", &"a".repeat(64)] {
             assert!(validate_label("label", invalid).is_err(), "{invalid:?}");
