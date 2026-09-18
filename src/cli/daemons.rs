@@ -216,6 +216,7 @@ impl Daemons {
             let runtime = runtime?;
             if install {
                 runtime::validate_tools(&set, &scoped, &ts).await?;
+                set.validate_tasks(&scoped).await?;
             }
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime.prepare(&root, &set, true).await?;

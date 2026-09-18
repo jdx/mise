@@ -180,6 +180,81 @@ version = "18"
 TOML
 assert_contains "mise daemons ls 2>&1 || true" 'invalid daemon name'
 
+# Dry runs validate task-backed daemons without starting pitchfork.
+cat >mise.toml <<'TOML'
+[tasks.dev]
+daemons = ["api"]
+run = "echo dev"
+[daemons.api]
+task = "missing"
+TOML
+assert_fail_contains "mise run --dry-run dev 2>&1" 'daemon api runs unknown task "missing"'
+
+# A task that requires daemons starts them through pitchfork before it runs, and
+# the task the daemon supervises keeps its own depends.
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[tasks.dev]
+daemons = ["api"]
+run = "echo dev-ran"
+[tasks.build]
+run = "echo built"
+[tasks."dev:core"]
+depends = ["build"]
+run = "echo core"
+[daemons.api]
+run = "sleep 30"
+[daemons.core]
+task = "dev:core"
+TOML
+: >"$DAEMON_LOG"
+assert_contains "mise run dev" 'dev-ran'
+assert_contains "cat '$DAEMON_LOG'" 'args=start '
+assert_contains "cat '$DAEMON_LOG'" '/api'
+assert_not_contains "cat '$DAEMON_LOG'" '/core'
+generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+# The supervised task runs through plain `mise run`, so its depends still run;
+# a marker in the daemon environment is what stops the recursion instead.
+assert_not_contains "cat '$generated'" 'skip-deps'
+assert_contains "cat '$generated'" 'MISE_DAEMON_TASK'
+# The marker makes that nested run skip daemons rather than fail on them.
+assert_contains "MISE_DAEMON_TASK=1 mise run dev" 'dev-ran'
+: >"$DAEMON_LOG"
+assert "test ! -s '$DAEMON_LOG'"
+assert_contains "MISE_DAEMON_TASK=1 mise run dev" 'dev-ran'
+assert "test ! -s '$DAEMON_LOG'"
+
+# An unknown daemon name fails the run and `mise tasks validate`.
+cat >mise.toml <<'TOML'
+[tasks.dev]
+daemons = ["nope"]
+run = "echo dev"
+TOML
+assert_fail_contains "mise run dev 2>&1" 'not defined in [daemons]'
+assert_fail_contains "mise tasks validate 2>&1" 'missing-daemon'
+
+# Daemon names are templates, like task dependencies.
+cat >mise.toml <<'TOML'
+[vars]
+db = "postgres"
+[tasks.dev]
+daemons = ["{{ vars.db }}"]
+run = "echo dev"
+[daemons]
+postgres = "18"
+TOML
+assert_contains "mise tasks info dev" 'postgres'
+assert_succeed "mise tasks validate"
+
+# An empty daemon requirement is a no-op and does not require experimental mode.
+cat >mise.toml <<'TOML'
+[tasks.dev]
+daemons = []
+run = "echo dev"
+TOML
+assert_succeed "MISE_EXPERIMENTAL=0 mise run --dry-run dev"
+
 # Preset tool requests obey their declaring configuration's lock policy.
 cat >mise.toml <<'TOML'
 [tool_config]

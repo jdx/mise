@@ -60,10 +60,17 @@ pub(crate) async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result
     Ok(config.with_config_files(files))
 }
 
-pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
-    let mut config = config.clone();
+/// Build the daemon toolset without installing anything.
+///
+/// Kept separate from [`toolset`] so callers that must not install can avoid the
+/// install path entirely. That path reaches code which is not `Send`, and a
+/// caller inside a spawned task would not compile if this future contained it.
+pub(crate) async fn toolset_resolved(
+    config: &Arc<Config>,
+    include_pitchfork: bool,
+) -> Result<Toolset> {
     let pitchfork: ToolArg = "pitchfork".parse()?;
-    let args = if install
+    let args = if include_pitchfork
         && !config
             .get_tool_request_set()
             .await?
@@ -74,11 +81,24 @@ pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<
     } else {
         vec![]
     };
-    let mut ts = ToolsetBuilder::new()
+    // Resolve from what is on disk. `install_missing_versions` re-resolves the
+    // specific requests it has to fetch, so an already-satisfied project costs
+    // no network round trip -- which matters when this runs on every `mise run`
+    // of a task that requires daemons.
+    ToolsetBuilder::new()
         .with_args(&args)
         .with_default_to_latest(true)
-        .build(&config)
-        .await?;
+        .with_resolve_options(crate::toolset::ResolveOptions {
+            offline: true,
+            ..Default::default()
+        })
+        .build(config)
+        .await
+}
+
+pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<Config>, Toolset)> {
+    let mut config = config.clone();
+    let mut ts = toolset_resolved(&config, install).await?;
     if install {
         let (_, missing) = ts
             .install_missing_versions(&mut config, &Default::default())
@@ -350,9 +370,14 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
             daemon.source.to_string_lossy().replace(['\r', '\n'], " ")
         ));
         let mut table = daemon.table.clone();
-        // Ensure mise x sees the profile that generated this definition, even at boot.
+        // Ensure mise sees the profile that generated this definition, even at
+        // boot. A task-backed daemon runs mise itself rather than being wrapped
+        // in `mise x`, so it needs the profile even though it sets mise = false;
+        // without it a supervisor restart would resolve the task against the
+        // default configuration.
         if !state.profile.is_empty()
-            && table.get("mise").and_then(toml::Value::as_bool) != Some(false)
+            && (daemon.task.is_some()
+                || table.get("mise").and_then(toml::Value::as_bool) != Some(false))
         {
             let env = table
                 .entry("env".to_string())
@@ -484,6 +509,7 @@ mod tests {
                 toml::Value::String(format!("run {name}")),
             )]),
             preset: None,
+            task: None,
             tool: None,
             exports: Default::default(),
         };
@@ -525,6 +551,43 @@ mod tests {
             ..set
         };
         assert!(!render(&bare, &state).unwrap().contains("[groups"));
+    }
+
+    #[test]
+    fn task_daemons_carry_the_profile_despite_opting_out_of_mise() {
+        let daemon = |task: Option<&str>, mise: bool| super::super::Daemon {
+            name: "core".into(),
+            source: PathBuf::from("/project/mise.toml"),
+            root: PathBuf::from("/project"),
+            table: toml::Table::from_iter([
+                ("run".into(), toml::Value::String("server".into())),
+                ("mise".into(), toml::Value::Boolean(mise)),
+            ]),
+            preset: None,
+            task: task.map(str::to_string),
+            tool: None,
+            exports: Default::default(),
+        };
+        let state = State {
+            profile: vec!["dev".into()],
+            ..State::default()
+        };
+        let rendered = |d: super::super::Daemon| {
+            render(
+                &DaemonSet {
+                    daemons: indexmap::IndexMap::from_iter([("core".to_string(), d)]),
+                    groups: Vec::new(),
+                },
+                &state,
+            )
+            .unwrap()
+        };
+        // A task daemon runs mise itself, so it needs the profile that resolved
+        // the task even though pitchfork is told not to wrap it.
+        assert!(rendered(daemon(Some("dev"), false)).contains("MISE_ENV = \"dev\""));
+        // A daemon that is not mise at all still opts out.
+        assert!(!rendered(daemon(None, false)).contains("MISE_ENV"));
+        assert!(rendered(daemon(None, true)).contains("MISE_ENV = \"dev\""));
     }
 
     #[test]

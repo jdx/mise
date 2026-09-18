@@ -25,6 +25,8 @@ pub(crate) struct TaskTemplate {
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
+    pub daemons: Option<crate::task::TaskDaemons>,
+    #[serde(default)]
     pub env: EnvList,
     #[serde(default, deserialize_with = "deserialize_vars")]
     pub vars: EnvList,
@@ -185,6 +187,11 @@ impl Task {
         // wait_for: local overrides completely if non-empty
         if self.wait_for.is_empty() && !template.wait_for.is_empty() {
             self.wait_for = template.wait_for.clone();
+        }
+
+        // daemons: local overrides; use template only if local not set
+        if self.daemons.is_none() {
+            self.daemons = template.daemons.clone();
         }
 
         // dir: local overrides; use template only if local not set
@@ -392,6 +399,29 @@ mod tests {
         task.merge_extended_template(&template);
 
         assert_eq!(task.usage, "flag \"--shared <v>\"\nflag \"--own <v>\"");
+    }
+
+    #[test]
+    fn daemons_are_inherited_but_never_override_the_task() {
+        use crate::task::TaskDaemons;
+        let template = TaskTemplate {
+            daemons: Some(TaskDaemons::Names(vec!["postgres".into()])),
+            ..Default::default()
+        };
+        // Nothing declared locally, so the template supplies the requirement.
+        let mut task = Task::default();
+        task.merge_extended_template(&template);
+        assert_eq!(
+            task.daemons,
+            Some(TaskDaemons::Names(vec!["postgres".to_string()]))
+        );
+        // A local declaration wins, including one that asks for nothing.
+        let mut task = Task {
+            daemons: Some(TaskDaemons::All(false)),
+            ..Default::default()
+        };
+        task.merge_extended_template(&template);
+        assert_eq!(task.daemons, Some(TaskDaemons::All(false)));
     }
 
     #[test]

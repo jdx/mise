@@ -109,6 +109,18 @@ impl TasksInfo {
         if !task.depends_post.is_empty() {
             info::inline_section("Depends post", task.depends_post.iter().join(", "))?;
         }
+        match &task.daemons {
+            Some(crate::task::TaskDaemons::All(true)) => {
+                info::inline_section("Daemons", "all")?;
+            }
+            Some(crate::task::TaskDaemons::One(name)) => {
+                info::inline_section("Daemons", name)?;
+            }
+            Some(crate::task::TaskDaemons::Names(names)) if !names.is_empty() => {
+                info::inline_section("Daemons", names.join(", "))?;
+            }
+            _ => {}
+        }
         if let Some(dir) = &task.dir {
             info::inline_section("Directory", display_path(dir))?;
         }
@@ -162,6 +174,7 @@ impl TasksInfo {
             "config_sources": task.config_sources(),
             "depends": task.depends,
             "depends_post": task.depends_post,
+            "daemons": task.daemons,
             "wait_for": task.wait_for,
             "env": task
                 .env

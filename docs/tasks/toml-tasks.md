@@ -170,6 +170,34 @@ depends = ['build']
 
 There are other ways to specify dependencies; see [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post).
 
+### Daemons <Badge type="warning" text="experimental" />
+
+Use `daemons` when a task needs a service that should keep running between task
+invocations. mise starts the service through pitchfork and waits for readiness
+before running the task.
+
+```mise-toml
+[settings]
+experimental = true
+
+[daemons]
+postgres = "18"
+
+[tasks.test]
+daemons = "postgres"
+run = "npm test"
+```
+
+`mise run test` starts PostgreSQL if needed, waits for it to be ready, and runs
+the test script. Later runs reuse the database. It stays running after the tests
+finish; stop it with `mise daemons stop postgres`.
+
+Use a list such as `daemons = ["postgres", "redis"]` for multiple declared services,
+or `daemons = true` for all daemons in the task's project configuration.
+See the [daemon guide](/daemons.html) for prerequisites and service configuration,
+and the [`daemons` reference](/tasks/task-configuration.html#daemons) for name
+resolution and dependency flags.
+
 ### Environment variables
 
 You can specify environment variables for a task:

@@ -838,6 +838,21 @@ impl Run {
             }
         }
 
+        // Start the daemons these tasks require and wait for pitchfork to
+        // report them ready, before any task body runs. Daemons are a
+        // dependency of the task, so `--skip-deps` skips them too; that is also
+        // what stops a task-backed daemon from starting itself. A dry run still
+        // validates the names.
+        //
+        // This covers the tasks the run resolves up front. A subtask reached
+        // through a `run = [{ task = ... }]` entry is resolved later, inside a
+        // spawned task, and its daemons are not started; see the note in
+        // docs/daemons.md.
+        if !self.skip_deps {
+            crate::daemons::tasks::start(&config, &resolved_tasks, self.dry_run, !self.skip_tools)
+                .await?;
+        }
+
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {
             Some(duration::parse_duration(timeout_str)?)
