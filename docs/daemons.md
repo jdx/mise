@@ -131,11 +131,12 @@ A preset renders its resolved port into its own conventional variables, so
 `port = "auto"` moves `PGPORT`, `DATABASE_URL`, and `REDIS_URL` with it. A custom daemon
 has no such convention, so mise exports `<NAME>_PORT`, upper-cased with punctuation
 replaced by underscores. `[daemons.api]` exports `API_PORT`, and `[daemons.web-ui]`
-exports `WEB_UI_PORT`. Because punctuation collapses, two daemons whose names differ
-only by it, such as `web-ui` and `web_ui`, would claim one variable and are rejected
-rather than allowed to replace each other. A daemon that exports a port must also be
-named starting with a letter or underscore, since a shell cannot export a variable
-beginning with a digit. This applies to an integer `port` as well, so a custom daemon's
+exports `WEB_UI_PORT`. The variable is a convenience, so a name that cannot produce one
+costs only the variable and never the daemon. Two daemons whose names differ only by
+punctuation, such as `web-ui` and `web_ui`, would claim the same variable, so neither
+exports it and mise warns. A name beginning with a digit cannot be a shell variable at
+all, so it goes without one and mise warns. Both daemons run normally in either case,
+and the ports still reach pitchfork. This applies to an integer `port` as well, so a custom daemon's
 port is always visible to `mise env`, to `mise x`, and to the daemon's own process.
 Pitchfork additionally injects `$PORT` into the process it starts.
 
