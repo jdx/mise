@@ -212,9 +212,37 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
     // that can prune lacks it. The empty sibling lock file is left in place,
     // the way every other mise lock file is.
     lock.release_legacy();
-    crate::file::remove_all(cwd)?;
+    if let Err(err) = delete_state_dir(cwd) {
+        // One unreadable or busy file must not end the run: the other entries
+        // are independent, and `state.json` survives a partial delete, so this
+        // one is still found next time.
+        warn!("keeping {}: {err:#}", display_path(cwd));
+        return Ok(Outcome::Kept);
+    }
     drop(lock);
     Ok(Outcome::Removed)
+}
+
+/// Deletes a state directory, leaving `state.json` until everything else is
+/// gone.
+///
+/// A delete can fail part way through, on a file that is busy or unreadable.
+/// `state.json` is what makes a directory an entry at all, so removing it first
+/// would turn a partial failure into a directory no later prune can see, and
+/// one that a `prepare()` for a restored project would then build on top of.
+/// Removed last, a partial failure leaves an entry that is still selected,
+/// still reported, and still retried.
+fn delete_state_dir(dir: &Path) -> Result<()> {
+    let state = dir.join("state.json");
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path == state {
+            continue;
+        }
+        crate::file::remove_all(path)?;
+    }
+    crate::file::remove_all(&state)?;
+    crate::file::remove_all(dir)
 }
 
 #[cfg(test)]
@@ -339,6 +367,34 @@ mod tests {
         // A lock file is not a state directory, so it is never itself an entry.
         std::fs::write(&lock, "").unwrap();
         assert_eq!(scan(&base).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_partial_delete_leaves_an_entry_that_is_still_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
+        // Stand in for a file that cannot be removed: a directory entry that
+        // read_dir reports and remove_all then fails on.
+        let busy = dir.join("data");
+        let mut perms = std::fs::metadata(&busy).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o500);
+        }
+        std::fs::set_permissions(&busy, perms).unwrap();
+
+        // Root, and platforms that ignore the mode, delete it anyway; both
+        // outcomes are correct, and neither may leave a directory that no
+        // later prune can see.
+        match delete_state_dir(&dir) {
+            Err(_) => {
+                assert!(dir.join("state.json").exists());
+                assert_eq!(orphans(&base).unwrap().len(), 1);
+            }
+            Ok(()) => assert!(!dir.exists()),
+        }
     }
 
     #[test]
