@@ -1056,6 +1056,44 @@ pub(crate) fn read_checksum(install_path: &Path) -> Option<String> {
     }
 }
 
+/// What a locked install was last verified against: a checksum when
+/// `mise.lock` published one for this platform, otherwise the URL -- two
+/// checksumless resolutions would otherwise both record "no checksum" and
+/// compare equal even if the resolved asset changed.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct LockedChecksumMarker {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) checksum: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) url: Option<String>,
+}
+
+/// Store what `mise.lock` pinned for a tool version at `marker_path` (kept
+/// separate from `checksum_file_path`: a rolling release writes its own
+/// current-content checksum there, a different value than what `mise.lock`
+/// pins, and the two must not overwrite each other), so a later `--locked`
+/// run can detect drift.
+pub(crate) fn write_locked_checksum(
+    marker_path: &Path,
+    marker: &LockedChecksumMarker,
+) -> Result<()> {
+    file::write(marker_path, toml::to_string(marker)?)?;
+    Ok(())
+}
+
+/// Read the stored locked-checksum marker from `marker_path`. `None` for a
+/// missing file and for one that fails to parse -- both are treated as "not
+/// yet verified" by callers, never as "trust it."
+pub(crate) fn read_locked_checksum(marker_path: &Path) -> Option<LockedChecksumMarker> {
+    if marker_path.exists() {
+        file::read_to_string(marker_path)
+            .ok()
+            .and_then(|body| toml::from_str(&body).ok())
+    } else {
+        None
+    }
+}
+
 pub(crate) fn reset() {
     *INSTALL_STATE_PLUGINS
         .lock()
@@ -1100,8 +1138,10 @@ pub(crate) fn reset_tools() {
 #[cfg(test)]
 mod tests {
     use super::{
-        InstallStateTool, incomplete_marker, lock_tool_version, merge_plugin_tools,
-        normalize_version_for_sort, read_tool_manifest_from, scan_versions, tool_version_lock,
+        InstallStateTool, LockedChecksumMarker, incomplete_marker, lock_tool_version,
+        merge_plugin_tools, normalize_version_for_sort, read_checksum, read_locked_checksum,
+        read_tool_manifest_from, scan_versions, tool_version_lock, write_checksum,
+        write_locked_checksum,
     };
     use crate::args::BackendArg;
     use crate::plugins::PluginType;
@@ -1118,6 +1158,28 @@ mod tests {
         std::fs::write(&path, "").unwrap();
 
         assert!(read_tool_manifest_from(&path).is_none());
+    }
+
+    #[test]
+    fn locked_checksum_marker_is_independent_of_the_rolling_one() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let install_path = tempdir.path();
+        let marker_path = install_path.join(".mise.lock-checksum");
+
+        // Both markers live in the same install dir; one write must not
+        // clobber the other.
+        write_checksum(install_path, "sha256:rolling").unwrap();
+        let marker = LockedChecksumMarker {
+            checksum: Some("sha256:locked".to_string()),
+            url: None,
+        };
+        write_locked_checksum(&marker_path, &marker).unwrap();
+
+        assert_eq!(
+            read_checksum(install_path),
+            Some("sha256:rolling".to_string())
+        );
+        assert_eq!(read_locked_checksum(&marker_path), Some(marker));
     }
 
     #[test]

@@ -17,6 +17,14 @@ uv = "0.12.10"
             mise install
             $exitCode = $LASTEXITCODE
             $exitCode | Should -Be 0
+            # Before the fixture server below starts running from this python --
+            # a later --locked reinstall can't replace an interpreter that's in use.
+            mise lock
+            $exitCode = $LASTEXITCODE
+            $exitCode | Should -Be 0
+            mise install --locked
+            $exitCode = $LASTEXITCODE
+            $exitCode | Should -Be 0
             $python = mise which python
             $exitCode = $LASTEXITCODE
             $exitCode | Should -Be 0

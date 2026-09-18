@@ -1209,6 +1209,35 @@ impl Backend for HttpBackend {
         }
     }
 
+    /// A hand-edited url can drift from what mise.lock pinned without a
+    /// re-lock. Checked before an existing install is uninstalled to make
+    /// room for this one, so a failed --locked validation costs nothing.
+    async fn verify_locked_url(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        if !ctx.locked {
+            return Ok(());
+        }
+        let raw_opts = tv.request.options();
+        let opts = HttpOptions::new(&raw_opts);
+        let Some(url_template) = opts.url() else {
+            return Ok(());
+        };
+        let url = template_string(&url_template, tv);
+        let platform_key = self.get_platform_key();
+        if let Some(pinned_url) = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.url.as_ref())
+            && pinned_url != &url
+        {
+            eyre::bail!(
+                "{} resolves to {url} under --locked, but mise.lock pins {pinned_url} for platform {platform_key}\n\
+                hint: Run `mise lock` to update the lockfile, or disable locked mode",
+                tv.style()
+            );
+        }
+        Ok(())
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,
@@ -1333,6 +1362,26 @@ impl Backend for HttpBackend {
                     && (!check_symlink || !is_runtime_symlink(&install_path))
             }
         }
+    }
+
+    /// Uses `lookup_install_path`, matching where this backend actually
+    /// installs, rather than the generic `install_path()`. `shared_extraction`
+    /// makes that path a symlink/junction an unrelated install can share, so
+    /// the marker anchors beside it, not inside -- detected from the link
+    /// itself, since `mise uninstall` doesn't read `mise.toml`.
+    fn checksum_marker_path(&self, tv: &ToolVersion) -> PathBuf {
+        let install_path = Self::lookup_install_path(tv);
+        if !file::is_symlink_or_junction(&install_path) {
+            return install_path.join(".mise.lock-checksum");
+        }
+        let marker_name = install_path
+            .file_name()
+            .map(|name| format!(".{}.lock-checksum", name.to_string_lossy()))
+            .unwrap_or_else(|| ".mise.lock-checksum".to_string());
+        install_path
+            .parent()
+            .map(|parent| parent.join(marker_name))
+            .unwrap_or(install_path)
     }
 
     async fn list_bin_paths(
@@ -1660,6 +1709,66 @@ mod tests {
         assert_eq!(
             HttpBackend::install_path_for(&tv, "abcdef123456"),
             destination
+        );
+    }
+
+    #[test]
+    fn checksum_marker_path_matches_the_hash_suffixed_install_directory() {
+        let version = "1.0/beta:2";
+        let tv = http_test_tv(version);
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-absolute-version".to_string(),
+                Some("http:absolute-version".to_string()),
+                "absolute-version".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+
+        let install_path = HttpBackend::lookup_install_path(&tv);
+        let marker_path = backend.checksum_marker_path(&tv);
+
+        // A fresh tv's generic install path lacks the hash suffix and would
+        // miss the directory the http backend actually installs into.
+        assert_ne!(marker_path, tv.install_path());
+        // Not a shared_extraction symlink, so the marker lives inside it.
+        assert_eq!(marker_path, install_path.join(".mise.lock-checksum"));
+    }
+
+    #[test]
+    fn checksum_marker_path_avoids_the_shared_extraction_cache_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let tv = http_test_tv_with_installs("1.0.0", Some(temp.path().to_path_buf()));
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-absolute-version".to_string(),
+                Some("http:absolute-version".to_string()),
+                "absolute-version".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+
+        // Simulate the symlink directly rather than setting the option: `mise
+        // uninstall` can't read `mise.toml`, so only the link itself is reliable.
+        let install_path = HttpBackend::lookup_install_path(&tv);
+        file::create_dir_all(install_path.parent().unwrap()).unwrap();
+        let cache_target = temp.path().join("cache-target");
+        file::create_dir_all(&cache_target).unwrap();
+        file::make_symlink(&cache_target, &install_path).unwrap();
+
+        let marker_path = backend.checksum_marker_path(&tv);
+
+        // The marker must not live inside (or as) that shared path.
+        assert_ne!(marker_path, install_path);
+        assert_eq!(marker_path.parent(), install_path.parent());
+        assert_eq!(
+            marker_path.file_name().unwrap().to_str().unwrap(),
+            format!(
+                ".{}.lock-checksum",
+                install_path.file_name().unwrap().to_str().unwrap()
+            )
         );
     }
 

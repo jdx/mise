@@ -2981,7 +2981,51 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
-        Ok(self.is_version_installed(config, tv, check_symlink))
+        Ok(self.is_version_installed(config, tv, check_symlink)
+            && !self.locked_checksum_drifted(config, tv))
+    }
+
+    /// Whether `--locked` mode is in effect for this request, combining the
+    /// invocation-wide setting with the tool's own config-root policy.
+    fn invocation_locked(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        config.invocation_locked_for(tv.request.source(), Settings::get().locked)
+            || tv.request.tool_config_locked(config, true)
+    }
+
+    /// Full path to this backend's checksum drift marker file. Defaults to a
+    /// fixed name inside the generic install path; a backend whose on-disk
+    /// layout differs (a hash-suffixed dir, an install path that symlinks
+    /// into shared content) overrides this to anchor somewhere unique to
+    /// this install alone.
+    fn checksum_marker_path(&self, tv: &ToolVersion) -> PathBuf {
+        tv.install_path().join(".mise.lock-checksum")
+    }
+
+    /// Whether an install's recorded checksum no longer matches what `mise.lock`
+    /// now pins for this platform (e.g. `mise lock` re-resolved the same version
+    /// to a different asset without removing the stale install). Scoped to
+    /// `--locked` mode so ordinary installs are unaffected.
+    fn locked_checksum_drifted(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        if !self.supports_lockfile_url() || tv.request.source().is_tool_stub() {
+            return false;
+        }
+        if !self.invocation_locked(config, tv) {
+            return false;
+        }
+        let Some(platform) = tv.lock_platforms.get(&self.get_platform_key()) else {
+            return false;
+        };
+        if platform.checksum.is_none() && platform.url.is_none() {
+            return false;
+        }
+        // A missing marker (pre-fix install) counts as drifted, not trusted.
+        let stored = install_state::read_locked_checksum(&self.checksum_marker_path(tv));
+        match platform.checksum.as_deref() {
+            Some(checksum) => stored.and_then(|m| m.checksum).as_deref() != Some(checksum),
+            // No checksum: fall back to the URL, so two checksumless
+            // resolutions don't compare equal despite a different asset.
+            None => stored.and_then(|m| m.url).as_deref() != platform.url.as_deref(),
+        }
     }
 
     /// Bring an installed but unsatisfied version back in line with its
@@ -3814,6 +3858,8 @@ pub trait Backend: Debug + Send + Sync {
                 );
             }
         }
+        // Before --force below can uninstall a working install to make room.
+        self.verify_locked_url(&ctx, &tv).await?;
 
         // A rolling release (e.g. a `nightly` tag) keeps the same version string,
         // so its install dir already existing does NOT mean it's up-to-date.
@@ -3954,6 +4000,18 @@ pub trait Backend: Debug + Send + Sync {
                 return Err(e);
             }
         };
+
+        // Record what the lockfile expected, so a later `--locked` run can tell
+        // stale from fresh. A dropped write would masquerade as permanent drift.
+        if let Some(platform) = tv.lock_platforms.get(&self.get_platform_key())
+            && (platform.checksum.is_some() || platform.url.is_some())
+        {
+            let marker = install_state::LockedChecksumMarker {
+                checksum: platform.checksum.clone(),
+                url: platform.url.clone(),
+            };
+            install_state::write_locked_checksum(&self.checksum_marker_path(&tv), &marker)?;
+        }
 
         let install_path = tv.install_path();
         let mut update_install_state = false;
@@ -4193,6 +4251,14 @@ pub trait Backend: Debug + Send + Sync {
         Ok(())
     }
 
+    /// Whether a `--locked` install's resolved request still matches what
+    /// `mise.lock` pinned. Only a backend whose resolution can drift from the
+    /// lock without re-running `mise lock` (e.g. HTTP's templated url) has
+    /// anything to check here; the default is a no-op.
+    async fn verify_locked_url(&self, _ctx: &InstallContext, _tv: &ToolVersion) -> Result<()> {
+        Ok(())
+    }
+
     /// Finalize backend-specific install identity before the generic installer
     /// acquires locks or creates paths derived from the tool version.
     async fn prepare_install_version(
@@ -4232,6 +4298,9 @@ pub trait Backend: Debug + Send + Sync {
         if !dryrun {
             self.uninstall_version_impl(config, pr, tv).await?;
         }
+        // Resolved before removal: a symlink-dependent marker path (e.g.
+        // HTTP's shared_extraction) can't be found once the link is gone.
+        let marker_path = self.checksum_marker_path(tv);
         let rmdir = |dir: &Path| {
             if dryrun {
                 // Not `exists()`, which resolves a link: a dry run has to name the entry the real
@@ -4249,6 +4318,9 @@ pub trait Backend: Debug + Send + Sync {
         }
         rmdir(&tv.cache_path())?;
         if !dryrun {
+            // A no-op unless the marker lived outside the install path just
+            // removed -- otherwise it lingers and blocks the dir from emptying.
+            file::remove_file_async_if_exists(marker_path).await?;
             self.cleanup_empty_installs_dir();
         }
         Ok(())
