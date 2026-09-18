@@ -291,6 +291,7 @@ impl TasksLs {
                 "source": task.config_source,
                 "config_sources": task.config_sources(),
                 "depends": task.depends,
+                "daemons": task.daemons,
                 "depends_post": task.depends_post,
                 "wait_for": task.wait_for,
                 "env": env_strs,

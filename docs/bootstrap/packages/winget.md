@@ -16,6 +16,9 @@ Use the package identifier shown by `winget search`, not a display name. mise
 passes the identifier to WinGet with `--id` and `--exact`, so bootstrap never
 accepts an ambiguous fuzzy match.
 
+WinGet package IDs are case-insensitive; use a consistent spelling to avoid
+[conflicting declarations](/bootstrap/packages/#semantics).
+
 ## Commands
 
 ```sh

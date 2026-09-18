@@ -622,7 +622,14 @@ pub(crate) fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest
 pub(crate) fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    resolve_managers(by_mgr, IndexMap::new(), true)
+    resolve_managers(
+        by_mgr,
+        IndexMap::new(),
+        ResolveOpts {
+            strict: true,
+            applies_together: true,
+        },
+    )
 }
 
 pub(crate) fn attach_brew_tap_urls(
@@ -647,7 +654,7 @@ pub(crate) fn attach_brew_tap_urls(
 /// warn (forward compatibility) and are skipped. The
 /// `system_packages.managers` setting restricts which managers are used at
 /// all.
-pub(crate) fn packages_from_config(config: &Config) -> Vec<ManagerPackages> {
+pub(crate) fn packages_from_config(config: &Config) -> Result<Vec<ManagerPackages>> {
     let brew_taps = brew_taps_from_config(config);
     packages_from_config_files_with_brew_taps(&config.config_files, &brew_taps, true)
 }
@@ -754,7 +761,7 @@ fn packages_from_config_files_and_tracked_config_files(
     merge_manager_packages(
         &mut by_mgr,
         &mut manager_options,
-        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps, false),
+        packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps, false)?,
     );
 
     let mut tracked_brew_taps = current_brew_taps;
@@ -764,10 +771,17 @@ fn packages_from_config_files_and_tracked_config_files(
     merge_manager_packages(
         &mut by_mgr,
         &mut manager_options,
-        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps, false),
+        packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps, false)?,
     );
 
-    resolve_managers(by_mgr, manager_options, false)
+    resolve_managers(
+        by_mgr,
+        manager_options,
+        ResolveOpts {
+            strict: false,
+            applies_together: false,
+        },
+    )
 }
 
 #[cfg(unix)]
@@ -808,7 +822,7 @@ fn merge_manager_packages(
 }
 
 /// Aggregate `[bootstrap.packages]` across a specific set of config files.
-pub(crate) fn packages_from_config_files(config_files: &ConfigMap) -> Vec<ManagerPackages> {
+pub(crate) fn packages_from_config_files(config_files: &ConfigMap) -> Result<Vec<ManagerPackages>> {
     packages_from_config_files_with_brew_taps(config_files, &IndexMap::new(), true)
 }
 
@@ -816,10 +830,18 @@ fn packages_from_config_files_with_brew_taps(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
     filter_env: bool,
-) -> Vec<ManagerPackages> {
+) -> Result<Vec<ManagerPackages>> {
     let (requests, options) =
         package_requests_from_config_files(config_files, brew_taps, filter_env);
-    resolve_managers(requests, options, false).expect("non-strict resolve is infallible")
+    resolve_managers(
+        requests,
+        options,
+        ResolveOpts {
+            strict: false,
+            // `filter_env == false` is the prune union across environments
+            applies_together: filter_env,
+        },
+    )
 }
 
 fn package_requests_from_config_files(
@@ -2077,7 +2099,14 @@ fn packages_from_specs_with_config_files(
     };
     #[cfg(not(unix))]
     let options = IndexMap::new();
-    resolve_managers(by_mgr, options, true)
+    resolve_managers(
+        by_mgr,
+        options,
+        ResolveOpts {
+            strict: true,
+            applies_together: true,
+        },
+    )
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -2184,11 +2213,30 @@ fn brew_adopt_from_config_files(config_files: &ConfigMap) -> bool {
     adopt
 }
 
+#[derive(Clone, Copy)]
+struct ResolveOpts {
+    /// Unknown or settings-excluded managers are hard errors rather than
+    /// warnings that skip the entry.
+    strict: bool,
+    /// Whether these requests are declarations that apply together on one host.
+    ///
+    /// Prune deliberately unions declarations across environments so it can
+    /// protect whatever any environment declares. Entries that are never active
+    /// at the same time do not contradict each other, and an unrelated
+    /// manager's entries must not block a prune, so that union is not checked
+    /// for one package declared under two spellings.
+    applies_together: bool,
+}
+
 fn resolve_managers(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
     mut manager_options: IndexMap<String, ManagerPackageOptions>,
-    strict: bool,
+    opts: ResolveOpts,
 ) -> eyre::Result<Vec<ManagerPackages>> {
+    let ResolveOpts {
+        strict,
+        applies_together,
+    } = opts;
     let enabled = crate::config::Settings::get()
         .system_packages
         .managers
@@ -2208,12 +2256,20 @@ fn resolve_managers(
             );
         }
         match managers.get(&name) {
-            Some(manager) => out.push(ManagerPackages {
-                manager: manager.clone(),
-                requests,
-                options: manager_options.shift_remove(&name).unwrap_or_default(),
-                disabled,
-            }),
+            Some(manager) => {
+                // Two spellings of one package that disagree resolve by
+                // machine state rather than by config, so reject the pair
+                // wherever requests are aggregated — `status` included.
+                if applies_together {
+                    packages::check_name_conflicts(manager.as_ref(), &requests)?;
+                }
+                out.push(ManagerPackages {
+                    manager: manager.clone(),
+                    requests,
+                    options: manager_options.shift_remove(&name).unwrap_or_default(),
+                    disabled,
+                });
+            }
             None => {
                 if strict {
                     bail!(
@@ -2327,7 +2383,7 @@ mod tests {
                 "pacman:libreoffice-fresh" = { state = "absent" }
             "#,
         )])?;
-        let pacman = packages_from_config_files(&config_files)
+        let pacman = packages_from_config_files(&config_files)?
             .into_iter()
             .find(|packages| packages.manager.name() == "pacman")
             .unwrap();
@@ -2396,7 +2452,7 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
@@ -2418,7 +2474,7 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let apps = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "macos-app")
@@ -2557,7 +2613,7 @@ mod tests {
                 "macos-app:nuvio" = { version = "1.1.20", url = "   ", sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", artifact = "Nuvio.app" }
             "#,
         )])?;
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let apps = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "macos-app");
@@ -2722,7 +2778,7 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
@@ -2801,7 +2857,7 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
@@ -2829,7 +2885,7 @@ mod tests {
             "#,
         )])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let casks = packages
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
@@ -2896,6 +2952,142 @@ mod tests {
         Ok(())
     }
 
+    /// Prune unions declarations across environments so it can protect whatever
+    /// any environment declares, which means entries that are never active at
+    /// the same time land in one list. They are not in conflict, and an
+    /// unrelated manager's entries must not block a brew prune.
+    #[cfg(unix)]
+    #[test]
+    fn the_prune_union_is_not_checked_for_folded_names() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:jq" = "latest"
+                "winget:Git.Git" = { env = "prod" }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "winget:git.git" = { state = "absent", env = "dev" }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        assert_eq!(brew.requests.len(), 1);
+        Ok(())
+    }
+
+    /// The same union, but with both spellings in one config file, which is the
+    /// shape that reaches the `filter_env`-gated aggregation rather than the
+    /// merge of current and tracked configs.
+    #[cfg(unix)]
+    #[test]
+    fn the_prune_union_is_not_checked_within_one_config() -> Result<()> {
+        let (_current_dir, current) = config_map_from_toml(&[(
+            "current.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:jq" = "latest"
+                "winget:Git.Git" = { env = "prod" }
+                "winget:git.git" = { state = "absent", env = "dev" }
+            "#,
+        )])?;
+        let (_tracked_dir, tracked) = config_map_from_toml(&[(
+            "tracked.toml",
+            r#"
+                [bootstrap.packages]
+                "brew:ffmpeg" = "latest"
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files_and_tracked_config_files(&current, &tracked)?;
+        let brew = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew")
+            .unwrap();
+        assert_eq!(brew.requests.len(), 2);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn folded_package_names_that_disagree_are_rejected() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "winget:Git.Git" = "latest"
+                "winget:git.git" = { state = "absent" }
+            "#,
+        )])?;
+
+        let Err(err) = packages_from_config_files(&config_files) else {
+            panic!("expected the conflicting winget declarations to be rejected");
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("'winget:Git.Git'"), "{msg}");
+        assert!(msg.contains("'winget:git.git'"), "{msg}");
+        Ok(())
+    }
+
+    /// Case folding is a property of the manager, not of `[bootstrap.packages]`:
+    /// apt really does package `Git` and `git` separately.
+    #[cfg(unix)]
+    #[test]
+    fn verbatim_package_names_that_differ_only_by_case_are_kept() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "apt:Git" = "latest"
+                "apt:git" = { state = "absent" }
+            "#,
+        )])?;
+
+        let apt = packages_from_config_files(&config_files)?
+            .into_iter()
+            .find(|mp| mp.manager.name() == "apt")
+            .unwrap();
+        assert_eq!(apt.requests.len(), 2);
+        Ok(())
+    }
+
+    /// The guard runs after host filtering, so using `os` to pick between two
+    /// spellings is still a config with one declaration per host.
+    #[cfg(unix)]
+    #[test]
+    fn folded_package_names_filtered_apart_by_os_are_not_a_conflict() -> Result<()> {
+        let current_os = crate::cli::version::OS.as_str();
+        let inactive_os = if current_os == "linux" {
+            "macos"
+        } else {
+            "linux"
+        };
+        let config = format!(
+            r#"
+                [bootstrap.packages]
+                "winget:Git.Git" = {{ os = "{current_os}" }}
+                "winget:git.git" = {{ state = "absent", os = "{inactive_os}" }}
+            "#
+        );
+        let (_dir, config_files) = config_map_from_toml(&[("mise.toml", &config)])?;
+
+        let winget = packages_from_config_files(&config_files)?
+            .into_iter()
+            .find(|mp| mp.manager.name() == "winget")
+            .unwrap();
+        assert_eq!(winget.requests.len(), 1);
+        assert_eq!(winget.requests[0].name, "Git.Git");
+        Ok(())
+    }
+
     #[cfg(unix)]
     #[test]
     fn test_packages_from_config_files_filters_os_and_arch() -> Result<()> {
@@ -2922,7 +3114,7 @@ mod tests {
         );
         let (_dir, config_files) = config_map_from_toml(&[("config.toml", &config)])?;
 
-        let packages = packages_from_config_files(&config_files);
+        let packages = packages_from_config_files(&config_files)?;
         let brew = packages
             .into_iter()
             .find(|mp| mp.manager.name() == "brew")
@@ -2983,7 +3175,7 @@ mod tests {
             "#,
         )])?;
 
-        assert!(packages_from_config_files(&config_files).is_empty());
+        assert!(packages_from_config_files(&config_files)?.is_empty());
         let packages = packages_from_config_files_and_tracked_config_files(
             &config_files,
             &ConfigMap::default(),

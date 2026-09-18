@@ -272,6 +272,7 @@ export const sidebar: SidebarItem[] = [
         link: "/mise-cookbook/",
         collapsed: true,
         items: [
+          { text: "Bazel", link: "/mise-cookbook/bazel" },
           { text: "C++", link: "/mise-cookbook/cpp" },
           { text: "Docker", link: "/mise-cookbook/docker" },
           { text: "Node", link: "/mise-cookbook/nodejs" },
