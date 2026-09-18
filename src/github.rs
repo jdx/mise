@@ -608,8 +608,11 @@ fn canonical_token_host(host: &str) -> &str {
 /// sending an Authorization header alongside the signature makes the storage
 /// backend reject the request. `resolve_token` enforces that separately by
 /// refusing to resolve a token for an asset host at all.
-pub(crate) fn is_github_raw_content_host(host: &str) -> bool {
-    host == "raw.githubusercontent.com"
+pub(crate) fn is_github_raw_content_url(url: &url::Url) -> bool {
+    // https only. A token must never ride a cleartext request, and nothing
+    // legitimately fetches raw content over http: the scheme check costs
+    // nothing and closes the downgrade.
+    url.scheme() == "https" && url.host_str() == Some("raw.githubusercontent.com")
 }
 
 fn is_github_release_asset_host(host: &str) -> bool {
@@ -821,7 +824,12 @@ fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String,
         return Some((token, TokenSource::TokensFile));
     }
 
-    let is_ghcom = host == "github.com" || host == "api.github.com";
+    // Classify through the canonical host so every github.com-backed service is
+    // covered by one rule. raw.githubusercontent.com is the case that matters:
+    // treated as an enterprise host it would be handed
+    // MISE_GITHUB_ENTERPRISE_TOKEN below, sending a credential for a private
+    // GHES instance to a public GitHub service.
+    let is_ghcom = canonical_token_host(host) == "github.com";
     let lookup_hosts = token_lookup_hosts(host);
 
     // 1. Enterprise token (non-github.com only)
@@ -922,10 +930,10 @@ pub(crate) fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
     // Not an API URL, so the block above skipped it, but a private repository's
     // raw file still needs the token.
     if !is_github_api_url(&url)
-        && url.host_str().is_some_and(is_github_raw_content_host)
-        && let Some((token, source)) = resolve_token(url.host_str().unwrap())
+        && is_github_raw_content_url(&url)
+        && let Some((token, source)) = resolve_token("raw.githubusercontent.com")
     {
-        remember_token_source(url.host_str().unwrap(), &token, source);
+        remember_token_source("raw.githubusercontent.com", &token, source);
         headers.insert(
             reqwest::header::AUTHORIZATION,
             HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
@@ -1435,6 +1443,41 @@ something_else = "value"
             token_lookup_hosts("github.example.com"),
             vec!["github.example.com"]
         );
+    }
+
+    /// An enterprise token is scoped to a private GHES instance and must never
+    /// be sent to a public github.com service. raw.githubusercontent.com is the
+    /// trap: it is neither `github.com` nor `api.github.com` literally, so a
+    /// host-string comparison classifies it as enterprise and leaks the token.
+    #[test]
+    fn test_enterprise_token_is_not_sent_to_public_raw_content() {
+        // Takes the env lock, snapshots the token vars, restores them on drop.
+        let _guard = GithubTokenGuard::new();
+        // Only an enterprise token configured, which is the leaking case.
+        env::remove_var("GITHUB_TOKEN");
+        env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", "ghes-secret");
+
+        for host in ["raw.githubusercontent.com", "github.com", "api.github.com"] {
+            if let Some((token, _)) = resolve_token(host) {
+                assert_ne!(
+                    token, "ghes-secret",
+                    "{host} must not receive MISE_GITHUB_ENTERPRISE_TOKEN"
+                );
+            }
+        }
+    }
+
+    /// The token must never ride a cleartext request.
+    #[test]
+    fn test_raw_githubusercontent_over_http_gets_no_token() {
+        with_github_token(|| {
+            let headers =
+                get_headers("http://raw.githubusercontent.com/owner/repo/main/file.txt").unwrap();
+            assert!(
+                !headers.contains_key(reqwest::header::AUTHORIZATION),
+                "an http raw-content URL must not carry the token"
+            );
+        });
     }
 
     /// A private repository's raw file is a 404 without a token and a 200 with
