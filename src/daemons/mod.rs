@@ -92,6 +92,10 @@ pub(crate) struct DaemonSet {
     /// Local key -> qualified ID for imported daemons, so a daemon renamed on
     /// the way in can still be selected by the name this project gave it.
     pub aliases: IndexMap<String, String>,
+    /// Daemons that depend on an import which could not be resolved, mapping the
+    /// daemon's key to the import's local key. Starting one would run it without
+    /// something it declared it needs, so the command refuses instead.
+    pub blocked: IndexMap<String, String>,
     /// Imports that could not be resolved, by local key.
     ///
     /// Daemons load on every command, so a sibling project that is missing or
@@ -244,9 +248,13 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // project could not act on. An imported daemon's own `depends` is relative
     // to its project and is checked when that project loads.
     let unresolved = set.import_errors.clone();
-    for daemon in set.daemons.values_mut().filter(|d| !d.imported) {
-        rewrite_depends(&mut daemon.table, &imported_ids, &unresolved)?;
+    let mut blocked: IndexMap<String, String> = IndexMap::new();
+    for (key, daemon) in set.daemons.iter_mut().filter(|(_, d)| !d.imported) {
+        if let Some(missing) = rewrite_depends(&mut daemon.table, &imported_ids, &unresolved)? {
+            blocked.insert(key.clone(), missing);
+        }
     }
+    set.blocked = blocked;
     Ok(set)
 }
 
@@ -586,10 +594,11 @@ fn rewrite_depends(
     table: &mut toml::Table,
     imported: &IndexMap<String, String>,
     unresolved: &IndexMap<String, String>,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let Some(depends) = table.get_mut("depends") else {
-        return Ok(());
+        return Ok(None);
     };
+    let mut missing: Option<String> = None;
     let rewrite = |value: &mut toml::Value| {
         if let Some(name) = value.as_str()
             && let Some(id) = imported.get(name)
@@ -600,12 +609,14 @@ fn rewrite_depends(
     let dangling = |value: &toml::Value| {
         value
             .as_str()
-            .is_some_and(|name| unresolved.contains_key(name))
+            .filter(|name| unresolved.contains_key(*name))
+            .map(str::to_string)
     };
     let mut empty = false;
     match depends {
         toml::Value::String(_) => {
-            if dangling(depends) {
+            if let Some(name) = dangling(depends) {
+                missing = Some(name);
                 empty = true;
             } else {
                 rewrite(depends);
@@ -615,7 +626,8 @@ fn rewrite_depends(
             if entries.iter().any(|entry| entry.as_str().is_none()) {
                 bail!("daemon depends must be a string or an array of strings");
             }
-            entries.retain(|entry| !dangling(entry));
+            missing = entries.iter().find_map(dangling);
+            entries.retain(|entry| dangling(entry).is_none());
             entries.iter_mut().for_each(rewrite);
             empty = entries.is_empty();
         }
@@ -626,7 +638,7 @@ fn rewrite_depends(
     if empty {
         table.remove("depends");
     }
-    Ok(())
+    Ok(missing)
 }
 
 /// The daemon names and qualified IDs a table's `depends` refers to.
@@ -764,6 +776,7 @@ impl DaemonSet {
                 .collect(),
             aliases: self.aliases.clone(),
             import_errors: self.import_errors.clone(),
+            blocked: self.blocked.clone(),
         }
     }
 
@@ -809,6 +822,7 @@ impl DaemonSet {
             namespaces: self.namespaces.clone(),
             aliases: self.aliases.clone(),
             import_errors: self.import_errors.clone(),
+            blocked: self.blocked.clone(),
         }
     }
 
@@ -854,6 +868,7 @@ impl DaemonSet {
             namespaces: self.namespaces.clone(),
             aliases: self.aliases.clone(),
             import_errors: self.import_errors.clone(),
+            blocked: self.blocked.clone(),
         }
     }
 
@@ -1278,6 +1293,8 @@ mod tests {
             "[daemons.pipeline]\nproject = '../mirror-pipeline'\n[daemons.api]\nrun = 'exec api'\n",
         )]);
         let set = load(&config).unwrap();
+        // Nothing depends on the unresolved import here, so nothing is blocked.
+        assert!(set.blocked.is_empty());
         // The local daemon still loads, so env and tool resolution are unaffected.
         assert!(set.daemons.contains_key("api"));
         assert!(!set.daemons.contains_key("pipeline"));
@@ -1558,8 +1575,10 @@ mod tests {
         // trusted, and that branch would have granted it durably.
         assert!(!crate::config::config_file::is_path_trusted(&config_path));
         // A dependency on an import that never resolved would name a daemon
-        // pitchfork cannot find, so it is dropped rather than registered.
+        // pitchfork cannot find, so it is dropped rather than registered, and
+        // the daemon that needed it is recorded so starting it can refuse.
         assert!(!set.daemons["api"].table.contains_key("depends"));
+        assert_eq!(set.blocked.get("api").map(String::as_str), Some("worker"));
 
         // Trusting it makes the same configuration import.
         crate::config::config_file::trust(&config_path).unwrap();

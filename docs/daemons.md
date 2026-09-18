@@ -277,7 +277,9 @@ Naming the unavailable daemon fails and explains why, so `mise daemons start
 pipeline` reports the expected directory and the setting to update. Other daemon
 commands warn and continue, so you can still list and stop your own daemons. A
 `depends` entry pointing at the unavailable daemon is dropped rather than
-registered, because there is no daemon ID to point it at.
+registered, because there is no daemon ID to point it at. Starting a daemon that
+declared that dependency fails and names the unavailable import, rather than
+running it without something it said it needs.
 
 An untrusted checkout is reported separately from a missing one, and mise never
 trusts it for you. Run `mise trust` on the path it names after reviewing it.

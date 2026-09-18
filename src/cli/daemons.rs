@@ -123,9 +123,12 @@ impl Daemons {
         // names it. Someone whose sibling checkout is missing can still list and
         // stop their own daemons; they are told what is unavailable and why.
         if let Some((name, err)) = loaded.import_errors.iter().find(|(name, _)| {
+            // Only a bare name can be the key a project gave an import. An
+            // unresolved import never got a qualified ID, so a request that has
+            // one names some other daemon and must be taken literally.
             requested_names
                 .iter()
-                .any(|requested| requested == *name || requested.rsplit('/').next() == Some(name))
+                .any(|requested| requested == *name && !requested.contains('/'))
         }) {
             bail!("cannot resolve [daemons.{name}]: {err}");
         }
@@ -230,7 +233,21 @@ impl Daemons {
                 .filter(|id| names.is_empty() || names.iter().any(|name| matches_name(id, name)))
                 .cloned()
                 .collect::<Vec<_>>();
-            candidates.with_dependencies(&requested)
+            let starting = candidates.with_dependencies(&requested);
+            // Dropping a dependency on an unresolved import keeps the generated
+            // config valid, but starting the daemon anyway would run it without
+            // something it declared it needs. Say which import is missing.
+            if let Some((name, import)) = loaded
+                .blocked
+                .iter()
+                .find(|(name, _)| starting.find(name).is_some())
+            {
+                bail!(
+                    "daemon {name:?} depends on [daemons.{import}], which is unavailable: {}",
+                    loaded.import_errors[import]
+                );
+            }
+            starting
         } else {
             daemons::DaemonSet::default()
         };
