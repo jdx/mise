@@ -5189,6 +5189,11 @@
                         "minimum": 0,
                         "description": "write ThrottleInterval in seconds"
                       },
+                      "process_type": {
+                        "type": "string",
+                        "enum": ["Background", "Standard", "Adaptive", "Interactive"],
+                        "description": "write ProcessType, the scheduling band launchd runs the job in"
+                      },
                       "queue_directories": {
                         "type": "array",
                         "description": "write QueueDirectories (absolute paths; `~` and `~/` are expanded)",

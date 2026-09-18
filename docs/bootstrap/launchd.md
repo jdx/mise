@@ -47,12 +47,20 @@ as pipes and redirections need an explicitly invoked shell or a wrapper script.
 | `keep_alive_on_failure`   | `KeepAlive = { SuccessfulExit = false }` |
 | `start_interval`          | `StartInterval`                          |
 | `throttle_interval`       | `ThrottleInterval`                       |
+| `process_type`            | `ProcessType`                            |
 | `start_calendar_interval` | `StartCalendarInterval`                  |
 | `queue_directories`       | `QueueDirectories`                       |
 | `environment`             | `EnvironmentVariables`                   |
 | `working_directory`       | `WorkingDirectory`                       |
 | `stdout_path`             | `StandardOutPath`                        |
 | `stderr_path`             | `StandardErrorPath`                      |
+
+`process_type` is the scheduling band launchd puts the job in: `Background`,
+`Standard`, `Adaptive` or `Interactive`. `Background` is the usual choice for
+work that should yield to the user, since launchd throttles CPU and disk I/O for
+that band. The value is matched case-insensitively and written in launchd's own
+spelling; anything else is an error, because launchd ignores a `ProcessType` it
+does not recognize and the job would silently run in the default band.
 
 `keep_alive` and `keep_alive_on_failure` are mutually exclusive. Set only one:
 the former keeps the process running after any exit, while the latter restarts
