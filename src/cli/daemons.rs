@@ -112,6 +112,11 @@ impl Daemons {
                 .await;
         }
         let loaded = config.daemons()?;
+        // Other commands carry on without an import they cannot resolve; this is
+        // the command that exists to act on daemons, so it says what is wrong.
+        if let Some((name, err)) = loaded.import_errors.first() {
+            bail!("cannot resolve [daemons.{name}]: {err}");
+        }
         // The loop below shadows `root` with each project root it prepares.
         let project_root = root.to_path_buf();
         let mut roots = loaded.roots();
@@ -336,7 +341,7 @@ impl Daemons {
                 runtime::validate_tools(&starting, &scoped, &ts).await?;
             }
             let (state, _project_lock) = if install {
-                let (state, lock) = runtime.prepare(&root, &set, true).await?;
+                let (state, lock) = runtime.prepare(&root, &set, true, !foreign).await?;
                 (state, Some(lock))
             } else {
                 (previous, None)

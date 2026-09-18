@@ -57,7 +57,14 @@ pub(crate) async fn emit(
     let roots: Vec<_> = set
         .roots()
         .into_iter()
-        .filter(|root| set.for_root(root).auto())
+        .filter(|root| {
+            let scoped = set.for_root(root);
+            // Preparing a root rewrites its generated pitchfork file whole, and
+            // this project only knows the daemons it imported from another one.
+            // Registering that here would deregister the sibling's own daemons,
+            // so automatic lifecycle stops at this project's boundary.
+            scoped.auto() && !scoped.daemons.values().any(|daemon| daemon.imported)
+        })
         .collect();
     for (root, bin) in &previous.roots {
         if !roots.contains(root) {
@@ -85,7 +92,7 @@ pub(crate) async fn emit(
                 env: env.clone(),
             };
             runtime::validate_tools(&scoped_set, config, ts).await?;
-            let (_state, _lock) = runtime.prepare(&root, &scoped_set, force).await?;
+            let (_state, _lock) = runtime.prepare(&root, &scoped_set, force, true).await?;
             Ok::<_, eyre::Report>(runtime.bin)
         }
         .await;

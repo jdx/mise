@@ -78,6 +78,13 @@ pub(crate) struct DaemonSet {
     /// Local key -> qualified ID for imported daemons, so a daemon renamed on
     /// the way in can still be selected by the name this project gave it.
     pub aliases: IndexMap<String, String>,
+    /// Imports that could not be resolved, by local key.
+    ///
+    /// Daemons load on every command, so a sibling project that is missing or
+    /// not trusted must not take `mise x`, `mise run` or the activation hook
+    /// down with it. The failure is carried here and reported by `mise daemons`,
+    /// which is the command that can act on it.
+    pub import_errors: IndexMap<String, String>,
 }
 
 /// Validate a pitchfork identifier component. Daemon names and namespaces reach
@@ -160,7 +167,15 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         if let Declaration::Definition(table) = &declaration
             && table.contains_key("project")
         {
-            let (key, daemon) = import(&name, table.clone(), &source, &root, &mut set.namespaces)?;
+            let spec = parse_import(&name, table.clone())?;
+            let (key, daemon) = match import(&name, &spec, &source, &root, &mut set.namespaces) {
+                Ok(imported) => imported,
+                Err(err) => {
+                    debug!("[daemons.{name}] import failed: {err:#}");
+                    set.import_errors.insert(name, format!("{err:#}"));
+                    continue;
+                }
+            };
             // Two imports can resolve to one qualified ID when their projects
             // share a namespace. Inserting the second would replace the first
             // and leave both local names pointing at the later project.
@@ -303,6 +318,12 @@ fn hierarchy_config_paths(dir: &Path) -> Result<Vec<PathBuf>> {
         .into_iter()
         .rev()
     {
+        // Honour the same ignore rules ordinary loading does, so a config the
+        // user has told mise to skip is skipped here too rather than read and
+        // reported as an error.
+        if crate::config::config_dir_is_ignored(&ancestor, false) {
+            continue;
+        }
         // Within one directory this helper lists the highest-precedence file
         // first, which is the opposite of the order wanted here. It also lists
         // `.tool-versions`, which is not TOML and would fail to parse; only a
@@ -311,21 +332,29 @@ fn hierarchy_config_paths(dir: &Path) -> Result<Vec<PathBuf>> {
             crate::config::config_paths_in_dir(&ancestor)
                 .into_iter()
                 .rev()
-                .filter(|path| path.extension().is_some_and(|ext| ext == "toml")),
+                .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+                .filter(|path| !crate::config::config_path_is_ignored(path, false)),
         );
     }
+    // Two paths can reach one file through a symlinked prefix; reading it twice
+    // would merge its settings onto themselves.
+    let mut seen = std::collections::HashSet::new();
+    paths.retain(|path| seen.insert(crate::file::desymlink_path(path)));
     Ok(paths)
 }
 
 /// Pull a daemon definition out of another project so it runs with that
 /// project's root, state, and `mise x` environment rather than this one's.
-fn import(
-    local_name: &str,
-    mut table: toml::Table,
-    source: &Path,
-    root: &Path,
-    namespaces: &mut IndexMap<PathBuf, String>,
-) -> Result<(String, Daemon)> {
+/// What a `project =` declaration asks for, before anything is read from disk.
+struct Import {
+    project: String,
+    remote_name: String,
+}
+
+/// Check the declaration itself. This is this project's own configuration, so a
+/// mistake here is fatal like any other config error; only what has to be read
+/// from the other project is allowed to fail softly.
+fn parse_import(local_name: &str, mut table: toml::Table) -> Result<Import> {
     let project = take_string(&mut table, "project")?
         .ok_or_else(|| eyre::eyre!("[daemons.{local_name}].project must be a string"))?;
     let remote_name = take_string(&mut table, "name")?.unwrap_or_else(|| local_name.to_string());
@@ -335,7 +364,25 @@ fn import(
             "[daemons.{local_name}] declares {unexpected:?} alongside project; define the daemon in the referenced project instead"
         );
     }
-    let expanded = crate::file::replace_path(&project);
+    Ok(Import {
+        project,
+        remote_name,
+    })
+}
+
+fn import(
+    local_name: &str,
+    spec: &Import,
+    source: &Path,
+    root: &Path,
+    namespaces: &mut IndexMap<PathBuf, String>,
+) -> Result<(String, Daemon)> {
+    let Import {
+        project,
+        remote_name,
+    } = spec;
+    let remote_name = remote_name.as_str();
+    let expanded = crate::file::replace_path(project);
     let dir = if expanded.is_absolute() {
         expanded
     } else {
@@ -374,8 +421,23 @@ fn import(
     let mut settings: IndexMap<PathBuf, DaemonSettings> = IndexMap::new();
     let mut available: Vec<String> = Vec::new();
     for path in &paths {
-        // `MiseToml::from_file` runs the same trust gate as ordinary config
-        // loading, so an untrusted sibling project cannot be pulled in silently.
+        // Require trust that already exists rather than letting the parse
+        // establish it. `mise x`, `mise run`, `mise install`, `mise watch` and
+        // `mise daemons start` mark the active config implicitly trusted, and
+        // that branch would grant durable trust to whatever directory `project`
+        // names, with no prompt, so a later `cd` into it would run its env,
+        // hooks and templates. Safe mode makes config inert, so it needs no
+        // trust of its own.
+        if !Settings::safe_mode()
+            && !cfg!(test)
+            && !crate::config::config_file::is_path_trusted(path)
+        {
+            bail!(
+                "[daemons.{local_name}].project points at {}, which is not trusted; run `mise trust {}` after reviewing it",
+                dir.display(),
+                dir.display()
+            );
+        }
         let cf = crate::config::config_file::mise_toml::MiseToml::from_file(path)?;
         let remote_root = crate::config::config_file::config_root::config_root(path);
         if let Some(file_settings) = cf.daemon_settings() {
@@ -549,6 +611,7 @@ impl DaemonSet {
                 .map(|(r, n)| (r.clone(), n.clone()))
                 .collect(),
             aliases: self.aliases.clone(),
+            import_errors: self.import_errors.clone(),
         }
     }
 
@@ -593,6 +656,7 @@ impl DaemonSet {
                 .collect(),
             namespaces: self.namespaces.clone(),
             aliases: self.aliases.clone(),
+            import_errors: self.import_errors.clone(),
         }
     }
 
@@ -637,6 +701,7 @@ impl DaemonSet {
                 .collect(),
             namespaces: self.namespaces.clone(),
             aliases: self.aliases.clone(),
+            import_errors: self.import_errors.clone(),
         }
     }
 
@@ -868,6 +933,32 @@ mod tests {
     }
 
     #[test]
+    fn an_unresolvable_import_does_not_break_other_commands() {
+        // Daemons load on every command. A sibling that is not checked out must
+        // leave `mise x`, `mise run` and the activation hook working.
+        let tmp = tempfile::tempdir().unwrap();
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.pipeline]\nproject = '../mirror-pipeline'\n[daemons.api]\nrun = 'exec api'\n",
+        )]);
+        let set = load(&config).unwrap();
+        // The local daemon still loads, so env and tool resolution are unaffected.
+        assert!(set.daemons.contains_key("api"));
+        assert!(!set.daemons.contains_key("pipeline"));
+        // The failure is kept so `mise daemons` can report it with the path.
+        let err = &set.import_errors["pipeline"];
+        assert!(err.contains("mirror-pipeline"), "{err}");
+        assert!(err.contains("[daemons.pipeline].project"), "{err}");
+        assert!(
+            set.add_tool_requests(&mut ToolRequestSet::default())
+                .is_ok(),
+            "tool resolution must survive an unresolvable import"
+        );
+    }
+
+    #[test]
     fn missing_referenced_projects_name_the_path_and_the_setting() {
         let tmp = tempfile::tempdir().unwrap();
         let app = tmp.path().join("app");
@@ -877,7 +968,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../mirror-pipeline'\n",
         )]);
-        let err = load(&config).unwrap_err().to_string();
+        let err = load(&config).unwrap().import_errors["worker"].clone();
         assert!(err.contains(&tmp.path().join("mirror-pipeline").display().to_string()));
         assert!(err.contains("[daemons.worker].project"));
 
@@ -887,12 +978,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../empty'\n",
         )]);
-        assert!(
-            load(&config)
-                .unwrap_err()
-                .to_string()
-                .contains("mise configuration")
-        );
+        assert!(load(&config).unwrap().import_errors["worker"].contains("mise configuration"));
 
         referenced_project(
             &tmp.path().join("other"),
@@ -902,7 +988,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../other'\n",
         )]);
-        let err = load(&config).unwrap_err().to_string();
+        let err = load(&config).unwrap().import_errors["worker"].clone();
         assert!(err.contains("[daemons.worker]"), "{err}");
         assert!(err.contains("build"), "{err}");
     }
@@ -1177,9 +1263,7 @@ mod tests {
             "[daemons.worker]\nproject = '../middle'\n",
         )]);
         assert!(
-            load(&config)
-                .unwrap_err()
-                .to_string()
+            load(&config).unwrap().import_errors["worker"]
                 .contains("reference the project that declares it")
         );
         let config = files(&[(

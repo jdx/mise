@@ -194,16 +194,28 @@ impl Runtime {
         Ok(false)
     }
 
+    /// Register a root's daemons.
+    ///
+    /// `owns_profile` is false when another project is preparing this root
+    /// because it imported a daemon from it. The environment profile belongs to
+    /// the project that owns the root, so the importer neither imposes its own
+    /// nor is told that the two conflict.
     pub(crate) async fn prepare(
         &self,
         root: &Path,
         set: &DaemonSet,
         force_registration: bool,
+        owns_profile: bool,
     ) -> Result<(State, fslock::LockFile)> {
         let lock = crate::lock_file::LockFile::at(&state_dir(root).join("project.lock")).lock()?;
         let previous = read_state(root)?;
-        let profile = crate::env::MISE_ENV.clone();
-        if !previous.namespace.is_empty()
+        let profile = if owns_profile {
+            crate::env::MISE_ENV.clone()
+        } else {
+            previous.profile.clone()
+        };
+        if owns_profile
+            && !previous.namespace.is_empty()
             && previous.profile != profile
             && self.active(root, &previous).await?
         {

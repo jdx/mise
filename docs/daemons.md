@@ -81,10 +81,21 @@ to start the API with the worker as a dependency. Use the local name `pipeline`
 in lifecycle commands and `depends`; mise resolves it to the worker's full daemon
 ID. A fixed namespace is optional when using `project` references.
 
-`project` accepts an absolute path or a path relative to the project root. `name`
-selects the daemon in the referenced project; omit it when the local and remote
-names match. The referenced configuration must be trusted. Mise reads its parent
-configuration files too, so inherited daemon declarations and settings are available.
+`project` accepts an absolute path or a path relative to the directory of the
+configuration file that declares it. `name` selects the daemon in the referenced
+project; omit it when the local and remote names match. Mise reads the referenced
+project's parent configuration files too, so inherited daemon declarations and
+settings are available.
+
+The referenced project must already be trusted. Run `mise trust <dir>` after
+reviewing it. Mise will not trust it for you, even from commands such as `mise run`
+that implicitly trust the configuration they are running, because `project` would
+otherwise grant a directory lasting trust without asking.
+
+The table accepts only `project` and `name`. A daemon runs under one registration
+in its own project, so it cannot be given per-importer `env` or other overrides;
+if the referenced daemon needs values from your project, it has to read them from
+its own configuration or environment.
 
 ### Environment and lifecycle
 
@@ -98,8 +109,15 @@ as needed. Other daemons in the referenced project remain registered and can
 continue running; importing one daemon does not give your project control over
 all of them.
 
-If a checkout is missing, mise reports the expected directory and the `project`
-setting to update. Adjust that path to match your local checkout layout.
+Automatic lifecycle does not cross projects. Shell hooks register and start only
+this project's own daemons, because registering another project's configuration
+from here would rewrite it with just the daemons you imported. Use
+`mise daemons start` for an imported daemon.
+
+If a checkout is missing or untrusted, `mise daemons` reports the expected
+directory and the `project` setting to update. Every other command keeps working:
+the imported daemon is dropped, and your own daemons, tools, and environment are
+unaffected. A teammate without that checkout can still run `mise run` and `mise x`.
 
 ## Namespaces
 
@@ -147,7 +165,8 @@ mise ignores those tables with a warning.
 
 Linked Git worktrees get a path-specific suffix on an explicit namespace. With
 `namespace = "services"`, the main checkout uses `services` and a linked worktree
-uses `services-<hash>`. Each checkout therefore has separate daemon IDs and state.
+uses `services-<hash>`, where the hash is 16 hex characters, so IDs in a worktree
+are noticeably longer. Each checkout therefore has separate daemon IDs and state.
 
 A literal dependency on `services/db` always refers to that exact ID; it does not
 follow the current worktree's suffix. Prefer a local daemon name or a `project`
