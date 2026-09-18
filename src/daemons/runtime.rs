@@ -165,7 +165,7 @@ impl Runtime {
         }
     }
 
-    async fn active(&self, root: &Path, state: &State) -> Result<bool> {
+    pub(crate) async fn active(&self, root: &Path, state: &State) -> Result<bool> {
         for id in &state.ids {
             if let Ok(value) = self.status(root, id).await
                 && matches!(

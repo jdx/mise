@@ -613,11 +613,37 @@ See [Tasks](/tasks/) for the full list of configuration options.
 
 ### `[daemons]`
 
-Experimental custom processes and managed Postgres/Redis presets share one section. Higher-precedence declarations replace the complete same-name daemon; explicit environment variables override preset exports. A daemon table with `project` runs a daemon that a sibling project declares, under that project's namespace and root. See [daemons](/daemons).
+Define background processes, managed PostgreSQL or Redis instances, and references
+to daemons in other projects. Daemon management requires `experimental = true`.
+
+```toml
+[daemons.api]
+run = "npm run dev"
+
+[daemons.worker]
+project = "../workers"
+```
+
+A higher-precedence declaration replaces the complete same-name daemon. Explicit
+environment variables override preset exports. See [Daemons](/daemons) for preset
+options, dependencies, and lifecycle commands.
 
 ### `[daemons_settings]`
 
-Project-wide daemon options. `namespace` replaces the hashed pitchfork namespace with a fixed one so other projects can name these daemons; `namespace_per_worktree` (default `true`) keeps linked git worktrees of one repository apart. See [daemons](/daemons#namespaces).
+Configure the namespace used to identify a project's daemons:
+
+```toml
+[daemons_settings]
+namespace = "my-app"
+namespace_per_worktree = true # default
+```
+
+Without an explicit namespace, mise derives one from the project path. Linked Git
+worktrees append a unique suffix to an explicit namespace by default.
+
+These settings merge by key across project configuration files and are inherited
+by child projects. They are ignored in global and system configuration. See
+[Namespaces](/daemons#namespaces) for naming rules, inheritance, and worktree behavior.
 
 ## Environment variables
 

@@ -184,18 +184,28 @@ impl Daemons {
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if action == "ls" {
-                // Currently declared daemons are listed under the namespace the
-                // next start will register them under, which is the configured
-                // one. Previously registered IDs keep the namespace they were
-                // registered with, so their status still resolves.
-                let listed = set
+                let desired = set
                     .namespace_for(&root)
                     .unwrap_or(previous.namespace.as_str());
+                // Keep active daemons visible under their registered IDs until
+                // they can be stopped. Otherwise show only the new namespace.
+                let active = if !previous.namespace.is_empty() && desired != previous.namespace {
+                    match &runtime {
+                        Ok(runtime) => runtime.active(&root, &previous).await?,
+                        Err(_) => false,
+                    }
+                } else {
+                    false
+                };
+                let listed = if active { &previous.namespace } else { desired };
                 let mut ids: Vec<String> = previous
                     .ids
                     .iter()
                     .filter(|id| {
-                        !foreign || visible.find(id.rsplit('/').next().unwrap_or(id)).is_some()
+                        id.rsplit_once('/')
+                            .is_some_and(|(namespace, _)| namespace == listed)
+                            && (!foreign
+                                || visible.find(id.rsplit('/').next().unwrap_or(id)).is_some())
                     })
                     .cloned()
                     .collect();

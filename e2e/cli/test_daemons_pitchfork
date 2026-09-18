@@ -37,6 +37,24 @@ assert_contains "mise daemons ls --json" '"status": "running"'
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" 'another daemon profile is active'
 mise daemons stop
 
+# A namespace change lists each daemon once and preserves active IDs until stopped.
+cp mise.toml original.toml
+cat >>mise.toml <<'TOML'
+[daemons_settings]
+namespace = "renamed"
+TOML
+assert "test $(mise daemons ls --json | jq length) -eq 1"
+assert_contains "mise daemons ls --json" '"id": "renamed/api"'
+mise daemons start
+cp original.toml mise.toml
+assert "test $(mise daemons ls --json | jq length) -eq 1"
+assert_contains "mise daemons ls --json" '"id": "renamed/api"'
+assert_contains "mise daemons ls --json" '"status": "running"'
+mise daemons stop
+assert "test $(mise daemons ls --json | jq length) -eq 1"
+mise daemons start
+mise daemons stop
+
 # An explicit start restores a registration removed outside mise.
 registration=$(pitchfork config list --json | jq -r '.[0].config[0]')
 pitchfork config remove "$registration"

@@ -605,9 +605,12 @@ impl DaemonSet {
             .daemons
             .values()
             .filter(|d| {
-                names
-                    .iter()
-                    .any(|name| name == &d.name || name.rsplit('/').next() == Some(&d.name))
+                names.iter().any(|name| {
+                    name == &d.name
+                        || self
+                            .namespace_for(&d.root)
+                            .is_some_and(|namespace| name == &format!("{namespace}/{}", d.name))
+                })
             })
             .map(|d| d.name.clone())
             .collect();
@@ -1000,6 +1003,23 @@ mod tests {
         let mut names: Vec<_> = starting.daemons.values().map(|d| d.name.clone()).collect();
         names.sort();
         assert_eq!(names, ["api", "cache", "db"]);
+    }
+
+    #[test]
+    fn qualified_selection_requires_the_daemons_namespace() {
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons_settings]\nnamespace = 'app'\n[daemons.worker]\nrun = 'exec worker'\n[daemons.api]\nrun = 'exec api'\n",
+        )]);
+        let set = load(&config).unwrap();
+        let selected = set.with_dependencies(&["mirror/worker".into(), "api".into()]);
+        assert!(selected.find("worker").is_none());
+        assert!(selected.find("api").is_some());
+        assert!(
+            set.with_dependencies(&["app/worker".into()])
+                .find("worker")
+                .is_some()
+        );
     }
 
     #[test]
