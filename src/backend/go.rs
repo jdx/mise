@@ -173,6 +173,58 @@ impl Backend for GoBackend {
         .await
     }
 
+    /// Date one version, for the versions `_list_remote_versions` left undated.
+    ///
+    /// Listing caps how many versions it dates because a date can cost a VCS
+    /// round trip; this pays that cost for the one version a release-age cutoff
+    /// is actually deciding on.
+    async fn fetch_version_created_at(
+        &self,
+        config: &Arc<Config>,
+        version: &str,
+    ) -> eyre::Result<Option<String>> {
+        if Settings::get().offline() {
+            trace!("Skipping Go module release date for {version} due to offline mode");
+            return Ok(None);
+        }
+        let env = self.dependency_env(config).await?;
+        let proxies = if go_native_resolution_enabled(&env) {
+            vec![]
+        } else {
+            parse_goproxy(env.get("GOPROXY").map(String::as_str))
+        };
+        // Module versions carry the `v` prefix that listing strips off.
+        let version = format!("v{}", version.trim_start_matches('v'));
+        let tool_name = self.tool_name();
+        timeout::run_with_timeout_async(
+            async || {
+                for mod_path in module_path_candidates(&tool_name) {
+                    let metadata = if proxies.is_empty() {
+                        self.fetch_go_module_version_metadata(config, &mod_path, &version)
+                            .await
+                    } else {
+                        let endpoint =
+                            format!("{}/@v/{version}.info", encode_module_path(&mod_path));
+                        match query_proxy_version_metadata(&proxies, &endpoint).await {
+                            ProxyVersionInfoResult::Found(info) => Some(info),
+                            // A failing proxy is not a missing version, but
+                            // either way there is no date to report.
+                            ProxyVersionInfoResult::NotFound | ProxyVersionInfoResult::Error => {
+                                None
+                            }
+                        }
+                    };
+                    if let Some(metadata) = metadata {
+                        return Ok(metadata.time);
+                    }
+                }
+                Ok(None)
+            },
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await
+    }
+
     async fn resolve_exact_version(
         &self,
         _config: &Arc<Config>,
@@ -509,6 +561,33 @@ impl GoBackend {
                 None => bare(version),
             })
             .collect()
+    }
+
+    /// Read one module version's metadata through `go list`.
+    async fn fetch_go_module_version_metadata(
+        &self,
+        config: &Arc<Config>,
+        mod_path: &str,
+        version: &str,
+    ) -> Option<GoModuleVersionMetadata> {
+        let env = self.go_list_env(config).await.ok()?;
+        let go = self.spawn_program(config, None, "go").await;
+        let target = format!("{mod_path}@{version}");
+        let raw = match crate::cmd::cmd_read_async(
+            &go,
+            &["list", "-mod=readonly", "-m", "-json", target.as_str()],
+            env,
+        )
+        .await
+        {
+            Ok(raw) => raw,
+            Err(err) => {
+                // Candidates that are not the module root miss routinely.
+                debug!("go list metadata failed for {target}: {err:#}");
+                return None;
+            }
+        };
+        serde_json::from_str::<GoModuleVersionMetadata>(&raw).ok()
     }
 
     /// Resolve `@latest` for the module-path candidates through the module proxies.
