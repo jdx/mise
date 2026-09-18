@@ -409,7 +409,6 @@ mod tests {
     use super::*;
     use crate::config::config_file::ConfigFile;
     use crate::config::config_file::mise_toml::MiseToml;
-    use std::path::Path;
     use std::sync::Arc;
 
     fn files(entries: &[(&str, &str)]) -> crate::config::ConfigMap {
@@ -497,7 +496,8 @@ mod tests {
             ("/parent/mise.toml", "[daemons.ops]\nrun = 'ops'\n"),
         ]))
         .unwrap();
-        let other = loaded.for_root(Path::new("/parent"));
+        // Roots are absolutized, so derive them instead of hardcoding a path.
+        let other = loaded.for_root(&loaded.daemons["ops"].root.clone());
         assert!(!selects(
             &other,
             "parent/ops",
@@ -505,7 +505,7 @@ mod tests {
         ));
         // The same word given positionally still selects that project's daemon.
         assert!(selects(&other, "parent/ops", &Selector::Name("ops".into())));
-        let owner = loaded.for_root(Path::new("/parent/child"));
+        let owner = loaded.for_root(&loaded.daemons["api"].root.clone());
         assert!(selects(&owner, "child/api", &Selector::Group("ops".into())));
     }
 
@@ -519,20 +519,20 @@ mod tests {
             ("/parent/mise.toml", "[daemons.inherited]\nrun = 'x'\n"),
         ]))
         .unwrap();
-        let child = effective_selectors(&[], &loaded.for_root(Path::new("/parent/child")), "start");
-        assert_eq!(child, [Selector::Group("default".into())]);
-        // The parent declares no default, so a bare start keeps every daemon.
-        let parent = effective_selectors(&[], &loaded.for_root(Path::new("/parent")), "start");
-        assert!(parent.is_empty());
-        // Only start has the default-group shorthand.
-        let stop = effective_selectors(&[], &loaded.for_root(Path::new("/parent/child")), "stop");
-        assert!(stop.is_empty());
-        // An explicit request is never replaced by the default group.
-        let explicit = effective_selectors(
-            &[Selector::Name("extra".into())],
-            &loaded.for_root(Path::new("/parent/child")),
-            "start",
+        let child = loaded.for_root(&loaded.daemons["web"].root.clone());
+        let parent = loaded.for_root(&loaded.daemons["inherited"].root.clone());
+        assert_eq!(
+            effective_selectors(&[], &child, "start"),
+            [Selector::Group("default".into())]
         );
-        assert_eq!(explicit, [Selector::Name("extra".into())]);
+        // The parent declares no default, so a bare start keeps every daemon.
+        assert!(effective_selectors(&[], &parent, "start").is_empty());
+        // Only start has the default-group shorthand.
+        assert!(effective_selectors(&[], &child, "stop").is_empty());
+        // An explicit request is never replaced by the default group.
+        assert_eq!(
+            effective_selectors(&[Selector::Name("extra".into())], &child, "start"),
+            [Selector::Name("extra".into())]
+        );
     }
 }

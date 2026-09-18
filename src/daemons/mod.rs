@@ -516,8 +516,10 @@ daemons = ["core", "core2"]
         assert_eq!(set.group("explicit").unwrap().daemons, ["core", "core2"]);
         assert_eq!(set.expand("default").unwrap().len(), 4);
         assert!(set.expand("postgres").is_none());
-        assert_eq!(set.for_root(Path::new("/project")).groups.len(), 3);
-        assert!(set.for_root(Path::new("/other")).groups.is_empty());
+        // Roots are absolutized, so derive them instead of hardcoding a path.
+        let root = set.daemons["postgres"].root.clone();
+        assert_eq!(set.for_root(&root).groups.len(), 3);
+        assert!(set.for_root(root.parent().unwrap()).groups.is_empty());
     }
 
     #[test]
@@ -534,18 +536,15 @@ daemons = ["core", "core2"]
         ]))
         .unwrap();
         assert_eq!(set.groups.len(), 2);
+        let child = set.daemons["web"].root.clone();
+        let parent = set.daemons["api"].root.clone();
+        assert_ne!(child, parent);
         assert_eq!(
-            set.for_root(Path::new("/parent/child"))
-                .group("default")
-                .unwrap()
-                .daemons,
+            set.for_root(&child).group("default").unwrap().daemons,
             ["web"]
         );
         assert_eq!(
-            set.for_root(Path::new("/parent"))
-                .group("default")
-                .unwrap()
-                .daemons,
+            set.for_root(&parent).group("default").unwrap().daemons,
             ["api"]
         );
     }
