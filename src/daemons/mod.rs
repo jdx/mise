@@ -552,12 +552,17 @@ impl DaemonSet {
         }
     }
 
-    /// Translate a name typed on the command line. An imported daemon answers to
-    /// the key this project gave it as well as to its qualified ID.
+    /// Resolve a local declaration or import alias to its qualified ID.
+    /// A local name must not also select a same-named daemon from another root.
     pub(crate) fn resolve_alias(&self, name: &str) -> String {
         self.aliases
             .get(name)
             .cloned()
+            .or_else(|| {
+                let daemon = self.daemons.get(name)?;
+                let namespace = self.namespace_for(&daemon.root)?;
+                Some(format!("{namespace}/{}", daemon.name))
+            })
             .unwrap_or_else(|| name.to_string())
     }
 

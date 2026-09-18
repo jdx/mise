@@ -31,7 +31,7 @@ TOML
 assert "test ! -f '$PITCHFORK_CONFIG_DIR/config.toml'"
 assert_contains "mise daemons ls --json" '"status": "available"'
 assert "test ! -f '$PITCHFORK_CONFIG_DIR/config.toml'"
-mise daemons start
+mise daemons start api
 assert_contains "mise daemons ls --json" '"status": "running"'
 # A second profile cannot overwrite a running project.
 assert_contains "MISE_ENV=alternate mise daemons start 2>&1 || true" 'another daemon profile is active'
@@ -60,7 +60,7 @@ assert "test $(mise daemons ls --json | jq length) -eq 2"
 assert_contains "mise daemons ls --json" '"id": "renamed/api"'
 assert_contains "mise daemons ls --json" '"id": "next/extra"'
 assert_contains "mise daemons ls --json" '"status": "running"'
-mise daemons stop
+mise daemons stop api
 assert_contains "mise daemons ls --json" '"id": "next/api"'
 cp original.toml mise.toml
 assert "test $(mise daemons ls --json | jq length) -eq 1"
@@ -234,8 +234,15 @@ depends = ["pipeline"]
 [daemons.pipeline]
 project = "../import-owner"
 name = "worker"
+[daemons.worker]
+run = "exec sleep 600"
+ready_delay = 0
 TOML
 cd ../import-app
+# The local worker must not select or validate the imported worker.
+mise daemons start worker
+assert_contains "pitchfork status app/worker --json" '"status": "running"'
+mise daemons stop worker
 assert_contains "mise daemons start api 2>&1 || true" 'daemon worker requires node@1'
 assert "test $(pitchfork status app/api --json | jq -r .status) != running"
 # Register the owner's full dependency chain before starting the app.

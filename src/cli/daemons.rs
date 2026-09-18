@@ -119,11 +119,40 @@ impl Daemons {
             roots.push(root.to_path_buf());
         }
         let (names, flags) = split_args(action, &args)?;
+        let install = matches!(action, "start" | "restart");
         let names: Vec<String> = names
             .iter()
-            .map(|name| loaded.resolve_alias(name))
-            .collect();
-        let install = matches!(action, "start" | "restart");
+            .map(|name| {
+                let resolved = loaded.resolve_alias(name);
+                if name.contains('/') {
+                    return Ok(resolved);
+                }
+                let owner = loaded
+                    .daemons
+                    .values()
+                    .find(|daemon| {
+                        loaded.namespace_for(&daemon.root).is_some_and(|namespace| {
+                            resolved == format!("{namespace}/{}", daemon.name)
+                        })
+                    })
+                    .map(|daemon| daemon.root.as_path())
+                    .unwrap_or(root);
+                let previous = runtime::read_state(owner)?;
+                // Bare names still address registered daemons after a namespace
+                // edit, so users can stop them before the next start migrates.
+                // Explicit qualified IDs always retain their literal meaning.
+                let namespace = if !install && !previous.namespace.is_empty() {
+                    previous.namespace
+                } else {
+                    match loaded.namespace_for(owner) {
+                        Some(namespace) => namespace.to_owned(),
+                        None => runtime::namespace(owner)?,
+                    }
+                };
+                let daemon_name = resolved.rsplit('/').next().unwrap_or(&resolved);
+                Ok(format!("{namespace}/{daemon_name}"))
+            })
+            .collect::<Result<_>>()?;
         let mut root_ids = Vec::new();
         for root in &roots {
             let previous = runtime::read_state(root)?;
