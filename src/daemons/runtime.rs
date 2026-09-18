@@ -62,6 +62,34 @@ pub(crate) fn read_state(root: &Path) -> Result<State> {
 /// same instant can both see the port free. Binding is the real arbiter, and the
 /// loser still gets its own bind error; the check exists to replace that opaque
 /// failure with one naming the other project whenever it can.
+/// The claims to record for a project, carrying forward those of daemons that
+/// are no longer declared.
+///
+/// A daemon dropped from the configuration keeps its id so it can still be
+/// queried and stopped, which means it may still be running and holding its
+/// port. Discarding its claim would hide that port from every other project's
+/// scan, and the next project to resolve it would be told the port is free. A
+/// claim is dropped only when the daemon is still declared and no longer has a
+/// port mise resolves, since nothing manages one for it any more. Stale entries
+/// cost nothing because a conflict is only reported once the daemon holding the
+/// port answers as running.
+fn carry_port_claims(
+    previous: &BTreeMap<String, PortClaim>,
+    set: &DaemonSet,
+) -> BTreeMap<String, PortClaim> {
+    let mut ports: BTreeMap<String, PortClaim> = previous
+        .iter()
+        .filter(|(name, _)| !set.daemons.contains_key(*name))
+        .map(|(name, claim)| (name.clone(), *claim))
+        .collect();
+    ports.extend(
+        set.daemons
+            .values()
+            .filter_map(|d| d.port.map(|claim| (d.name.clone(), claim))),
+    );
+    ports
+}
+
 /// The subset of a project's claims belonging to daemons this operation will
 /// launch. Registration covers the whole project, so checking every claim would
 /// let one project's Postgres on 5432 block `mise daemons start redis`, which
@@ -366,6 +394,16 @@ impl Runtime {
         } else {
             namespace(root)?
         };
+        // A daemon dropped from the configuration keeps its id so it can still
+        // be queried and stopped, which means it may still be running and
+        // holding its port. Its claim is kept for the same reason: discarding it
+        // would hide that port from every other project's scan, and the next
+        // project to resolve it would be told the port is free. A claim is
+        // dropped only when the daemon is still declared and no longer has a
+        // port mise resolves, since nothing manages one for it any more. Stale
+        // entries cost nothing because a conflict is only reported once the
+        // daemon holding the port answers as running.
+        let ports = carry_port_claims(&previous.ports, set);
         let mut state = State {
             root: root.into(),
             profile,
@@ -373,11 +411,7 @@ impl Runtime {
             ids: previous.ids,
             bin: self.bin.clone(),
             config_hash: String::new(),
-            ports: set
-                .daemons
-                .values()
-                .filter_map(|d| d.port.map(|claim| (d.name.clone(), claim)))
-                .collect(),
+            ports,
         };
         for daemon in set.daemons.values() {
             let id = format!("{}/{}", state.namespace, daemon.name);
@@ -685,6 +719,47 @@ mod tests {
                 .iter()
                 .any(|(s, _, _)| s.root == theirs)
         );
+    }
+
+    #[test]
+    fn a_removed_daemon_keeps_its_claim_while_it_may_still_run() {
+        let with_port = |name: &str, port: u16| super::super::Daemon {
+            name: name.to_string(),
+            source: PathBuf::from("/project/mise.toml"),
+            root: PathBuf::from("/project"),
+            table: toml::Table::new(),
+            preset: None,
+            task: None,
+            tool: None,
+            exports: Default::default(),
+            port: Some(PortClaim::fixed(port)),
+        };
+        let set = |daemons: Vec<super::super::Daemon>| DaemonSet {
+            daemons: daemons.into_iter().map(|d| (d.name.clone(), d)).collect(),
+            ..Default::default()
+        };
+        let previous = BTreeMap::from([
+            ("postgres".to_string(), PortClaim::fixed(5432)),
+            ("redis".to_string(), PortClaim::fixed(6379)),
+        ]);
+
+        // Redis is dropped from the config but keeps its id, so it may still be
+        // running. Losing its claim would tell the next project 6379 is free.
+        let kept = carry_port_claims(&previous, &set(vec![with_port("postgres", 5432)]));
+        assert_eq!(kept["redis"].port, 6379, "a removed daemon keeps its claim");
+        assert_eq!(kept["postgres"].port, 5432);
+
+        // A redeclared daemon takes its current port, not the recorded one.
+        let moved = carry_port_claims(&previous, &set(vec![with_port("redis", 6400)]));
+        assert_eq!(moved["redis"].port, 6400);
+
+        // Still declared but no longer holding a mise-resolved port: nothing
+        // manages one for it, so the stale claim goes.
+        let mut bare = with_port("redis", 0);
+        bare.port = None;
+        let dropped = carry_port_claims(&previous, &set(vec![bare]));
+        assert!(!dropped.contains_key("redis"));
+        assert_eq!(dropped["postgres"].port, 5432);
     }
 
     #[test]
