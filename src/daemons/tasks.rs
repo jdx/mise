@@ -150,6 +150,10 @@ pub(crate) async fn start(
         let scoped = runtime::config_for_root(config, &project).await?;
         let set = scoped.daemons()?;
         let keys = required(&tasks, set)?;
+        // Pitchfork starts a daemon's dependencies with it, so this covers what
+        // comes along and not only what the task named.
+        let starting = set.with_dependencies(&keys.iter().cloned().collect::<Vec<_>>());
+        super::ensure_not_blocked(set, &starting, None)?;
         for key in keys {
             let daemon = &set.daemons[&key];
             if daemon.imported {
@@ -169,11 +173,10 @@ pub(crate) async fn start(
     if dry_run {
         for (root, names) in &wanted {
             let scoped = runtime::config_for_root(config, root).await?;
-            scoped
-                .daemons()?
-                .for_root(root)
-                .validate_tasks(&scoped)
-                .await?;
+            let set = scoped.daemons()?.for_root(root);
+            set.validate_tasks(&scoped).await?;
+            let starting = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+            super::ensure_not_blocked(&set, &starting, Some(root))?;
             for name in names {
                 info!("[dry-run] would start daemon {name} in {}", root.display());
             }
@@ -220,22 +223,10 @@ pub(crate) async fn start(
         };
         runtime::validate_tools(&starting, &scoped, &ts).await?;
         starting.validate_tasks(&scoped).await?;
-        // Checked against this root's own configuration, so a referenced
-        // project whose own import is unavailable is caught too. Pitchfork
-        // starts a daemon's dependencies with it, so the check covers what
-        // comes along and not only what was named.
+        // This root's own configuration, which is the only view that knows
+        // about imports the referenced project itself declares.
         let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
-        if let Some((name, import)) = set.blocked.iter().find(|(name, _)| {
-            set.daemons
-                .get(*name)
-                .is_some_and(|blocked| will_start.contains(blocked))
-        }) {
-            bail!(
-                "daemon {name:?} in {} depends on [daemons.{import}], which is unavailable: {}",
-                root.display(),
-                set.import_errors[import]
-            );
-        }
+        super::ensure_not_blocked(&set, &will_start, Some(&root))?;
         // Let the configuration hash short-circuit re-registration. Forcing it
         // would re-probe `pitchfork usage` and re-run `config add` on every
         // `mise run` of a task that requires daemons, even when nothing about

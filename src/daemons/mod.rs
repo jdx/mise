@@ -399,6 +399,36 @@ fn settings_for(settings: &IndexMap<PathBuf, DaemonSettings>, root: &Path) -> Da
     resolved
 }
 
+/// Refuse to start a daemon whose `depends` named an import that could not be
+/// resolved. The dangling entry is dropped so nothing unresolvable is
+/// registered, which is exactly why starting it anyway would run it without
+/// something it declared.
+///
+/// Called with each view that can hold the answer, because no single one holds
+/// all of it: the invoking project's merged configuration knows about imports
+/// declared there, and each owning root's own configuration knows about the
+/// imports that project declares.
+pub(crate) fn ensure_not_blocked(
+    set: &DaemonSet,
+    starting: &DaemonSet,
+    root: Option<&Path>,
+) -> Result<()> {
+    let Some((name, import)) = set.blocked.iter().find(|(name, _)| {
+        set.daemons
+            .get(*name)
+            .is_some_and(|blocked| starting.contains(blocked))
+    }) else {
+        return Ok(());
+    };
+    let project = root
+        .map(|root| format!(" in {}", root.display()))
+        .unwrap_or_default();
+    bail!(
+        "daemon {name:?}{project} depends on [daemons.{import}], which is unavailable: {}",
+        set.import_errors[import]
+    );
+}
+
 /// Config files that apply to a directory, lowest precedence first.
 ///
 /// A referenced project is later reloaded through its whole configuration
@@ -1551,6 +1581,34 @@ mod tests {
             imported.namespace_for(&mirror.canonicalize().unwrap()),
             Some("shared")
         );
+    }
+
+    #[test]
+    fn starting_a_daemon_whose_import_is_unavailable_is_refused() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.pipeline]\nproject = '../gone'\n[daemons.api]\nrun = 'exec api'\ndepends = ['pipeline']\n[daemons.web]\nrun = 'exec web'\n",
+        )]);
+        let set = load(&config).unwrap();
+        // Starting the daemon that lost the dependency is refused, naming the
+        // import and why it is unavailable.
+        let err = ensure_not_blocked(&set, &set.with_dependencies(&["api".into()]), None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("[daemons.pipeline]"), "{err}");
+        assert!(err.contains("gone"), "{err}");
+        // A daemon that never depended on it is unaffected.
+        assert!(ensure_not_blocked(&set, &set.with_dependencies(&["web".into()]), None).is_ok());
+        // The owning project is named when one is given, since the daemon can
+        // belong to a project other than the one being run.
+        let err = ensure_not_blocked(&set, &set.with_dependencies(&["api".into()]), Some(&app))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(&app.display().to_string()), "{err}");
     }
 
     #[test]

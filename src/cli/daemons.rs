@@ -237,19 +237,7 @@ impl Daemons {
             // Dropping a dependency on an unresolved import keeps the generated
             // config valid, but starting the daemon anyway would run it without
             // something it declared it needs. Say which import is missing.
-            if let Some((name, import)) = loaded.blocked.iter().find(|(name, _)| {
-                // Match the blocked daemon itself, not merely its name: another
-                // project's daemon can share it and is unaffected.
-                loaded
-                    .daemons
-                    .get(*name)
-                    .is_some_and(|blocked| starting.contains(blocked))
-            }) {
-                bail!(
-                    "daemon {name:?} depends on [daemons.{import}], which is unavailable: {}",
-                    loaded.import_errors[import]
-                );
-            }
+            daemons::ensure_not_blocked(loaded, &starting, None)?;
             starting
         } else {
             daemons::DaemonSet::default()
@@ -369,20 +357,9 @@ impl Daemons {
                 let starting = set.restricted_to(&starting);
                 runtime::validate_tools(&starting, &scoped, &ts).await?;
                 starting.validate_tasks(&scoped).await?;
-                // Checked against this root's own configuration. The guard
-                // earlier used the invoking project's view, which cannot see an
-                // import that a referenced project itself could not resolve.
-                if let Some((name, import)) = set.blocked.iter().find(|(name, _)| {
-                    set.daemons
-                        .get(*name)
-                        .is_some_and(|blocked| starting.contains(blocked))
-                }) {
-                    bail!(
-                        "daemon {name:?} in {} depends on [daemons.{import}], which is unavailable: {}",
-                        root.display(),
-                        set.import_errors[import]
-                    );
-                }
+                // This root's own configuration, which the check above cannot
+                // see: a referenced project declares its own imports.
+                daemons::ensure_not_blocked(&set, &starting, Some(&root))?;
             }
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime.prepare(&root, &set, true, !foreign).await?;
