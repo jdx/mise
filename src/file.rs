@@ -2295,6 +2295,8 @@ pub(crate) fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
             tmp.path(),
             archive.to_path_buf()
         )
+        // Display licenses without an interactive pager before accepting them.
+        .env("PAGER", "cat")
         // DMGs can require license acceptance even with -quiet. Supply one
         // answer directly so unattended installs do not wait for terminal input.
         .stdin_bytes("Y\n")
@@ -2825,6 +2827,7 @@ set -eu
 case "$1" in
   attach)
     if [[ "$6" == *licensed.dmg ]]; then
+      [[ "${PAGER:-}" == cat ]] || exit 45
       IFS= read -r -t 2 answer || exit 42
       [[ "$answer" == Y ]] || exit 43
     fi
@@ -2846,6 +2849,7 @@ esac
             &std::env::var_os("PATH").unwrap_or_default(),
         ));
         env.set("PATH", std::env::join_paths(paths)?);
+        env.set("PAGER", "less");
         let dest = tmp.path().join("extracted");
 
         un_dmg(&tmp.path().join(archive), &dest)?;
