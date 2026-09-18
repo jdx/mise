@@ -144,10 +144,12 @@ impl Daemons {
                     return Ok(resolved);
                 }
                 // A bare name can be a group, which `selects` expands against
-                // the project that declares it. Qualifying it would turn it
-                // into a daemon ID that names nothing.
+                // the project that declares it. Keep it bare: another project
+                // may use the same word for a daemon, and qualifying it here
+                // would pick that daemon everywhere and expand the group
+                // nowhere.
                 if loaded.groups.iter().any(|group| group.name == *name) {
-                    return Ok(resolved);
+                    return Ok(name.clone());
                 }
                 let owner = loaded
                     .daemons
