@@ -3012,7 +3012,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         };
         let filter = !self.include_prereleases(selection_opts);
         let versions = self.fuzzy_match_filter(versions, query, filter);
-        Ok(self.version_order(selection_opts)?.order(versions))
+        let mut versions = self.version_order(selection_opts)?.order(versions);
+        // Every caller that resolves a request — `latest`, a prefix, a partial
+        // version — takes the last entry of this list, so the cutoff has to be
+        // exact by the time it is returned.
+        if let Some(before) = before_date {
+            self.drop_matches_hidden_by_cutoff(config, &mut versions, before, selection_opts)
+                .await?;
+        }
+        Ok(versions)
     }
 
     /// Remote versions the release-age cutoff excluded, in listing order.
@@ -3108,10 +3116,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 }
             };
             matches = self.version_order(selection_opts)?.order(matches);
-        }
-        if let Some(before) = before_date {
-            self.drop_matches_hidden_by_cutoff(config, &mut matches, before, selection_opts)
-                .await?;
+            // `list_versions_matching_with_selection_options` already did this
+            // for the list above; this branch built its own.
+            if let Some(before) = before_date {
+                self.drop_matches_hidden_by_cutoff(config, &mut matches, before, selection_opts)
+                    .await?;
+            }
         }
         Ok(find_match_in_list(&matches, query))
     }
@@ -3121,9 +3131,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// `VersionInfo::filter_by_date` keeps an undated version, so a backend that
     /// could only afford to date part of its listing stops honoring the cutoff
     /// past that point. Ask [`Backend::fetch_version_created_at`] for the dates
-    /// that decide the outcome: `find_match_in_list` takes the last entry, so
-    /// only the trailing candidates need one, and the walk stops at the first
-    /// candidate that survives.
+    /// that decide the outcome: resolution takes the last entry of an ordered
+    /// candidate list, so only the trailing candidates need one, and the walk
+    /// stops at the first candidate that survives.
     ///
     /// The check on what gets returned is exact; picking the *newest* eligible
     /// version is not. A backend whose version order is not chronological can
@@ -5031,6 +5041,40 @@ mod latest_version_tests {
         // One query per version the cutoff hid, and the walk stops at 2.0.0
         // rather than dating 1.0.0, which the listing already dated.
         assert_eq!(backend.lazy_date_calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_resolves_dates_for_a_prefix_request() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-cutoff-prefix-path")
+            .with_stable_result(None)
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2024-01-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "1.0.1".to_string(),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "1.0.2".to_string(),
+                    ..Default::default()
+                },
+            ])
+            .with_lazy_dates(&[("1.0.2", "2025-12-01"), ("1.0.1", "2025-01-01")]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        // A prefix request resolves through `list_versions_matching_with_opts`
+        // and takes the last match, so the cutoff has to be exact there too.
+        assert_eq!(
+            backend
+                .list_versions_matching_with_opts(&config, "1.0", Some(before), false)
+                .await
+                .unwrap(),
+            vec!["1.0.0".to_string(), "1.0.1".to_string()]
+        );
     }
 
     #[tokio::test]

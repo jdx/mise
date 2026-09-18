@@ -199,22 +199,24 @@ impl Backend for GoBackend {
         timeout::run_with_timeout_async(
             async || {
                 for mod_path in module_path_candidates(&tool_name) {
-                    let metadata = if proxies.is_empty() {
-                        self.fetch_go_module_version_metadata(config, &mod_path, &version)
-                            .await
-                    } else {
+                    if !proxies.is_empty() {
                         let endpoint =
                             format!("{}/@v/{version}.info", encode_module_path(&mod_path));
-                        match query_proxy_version_metadata(&proxies, &endpoint).await {
-                            ProxyVersionInfoResult::Found(info) => Some(info),
-                            // A failing proxy is not a missing version, but
-                            // either way there is no date to report.
-                            ProxyVersionInfoResult::NotFound | ProxyVersionInfoResult::Error => {
-                                None
-                            }
+                        if let ProxyVersionInfoResult::Found(info) =
+                            query_proxy_version_metadata(&proxies, &endpoint).await
+                        {
+                            return Ok(info.time);
                         }
-                    };
-                    if let Some(metadata) = metadata {
+                    }
+                    // Fall through to `go list` on a proxy miss, the way listing
+                    // and `@latest` do. A private module under the default
+                    // `proxy,direct` GOPROXY is not on the proxy, and reporting
+                    // no date there would hand the cutoff an undated version to
+                    // treat as eligible — the exact gap this exists to close.
+                    if let Some(metadata) = self
+                        .fetch_go_module_version_metadata(config, &mod_path, &version)
+                        .await
+                    {
                         return Ok(metadata.time);
                     }
                 }
