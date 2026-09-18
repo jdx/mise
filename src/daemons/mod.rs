@@ -1948,6 +1948,46 @@ mod tests {
     }
 
     #[test]
+    fn a_nearer_failure_is_not_hidden_by_an_ancestor_that_resolved() {
+        let _serial = import_lock();
+        // The child redefines a word its parent imported successfully, and the
+        // child's own reference cannot be read. The nearest declaration decides,
+        // so the word means the failure and not the parent's daemon.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'remote'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.pipeline]\nproject = '../gone'\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                &format!(
+                    "[daemons.pipeline]\nproject = {}\nname = 'worker'\n",
+                    toml::Value::String(mirror.to_string_lossy().into_owned())
+                ),
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        assert!(matches!(
+            set.resolve_bare(&child, "pipeline"),
+            Some(BareName::Unresolved(_))
+        ));
+        assert!(!set.imported_in(&child, "pipeline"));
+        // Nothing kept the parent's masked declaration, so no walk from any
+        // root can answer the word with the daemon it would have imported.
+        assert!(set.resolve_bare(&parent, "pipeline").is_none());
+        assert!(set.imported_as("pipeline").is_none());
+    }
+
+    #[test]
     fn a_broken_import_does_not_disturb_a_working_one() {
         let _serial = import_lock();
         // A project can reach one import that resolves and one that does not.
