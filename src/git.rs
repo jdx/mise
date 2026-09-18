@@ -727,6 +727,11 @@ fn is_submodule_gitdir(dotgit_file: &Path) -> bool {
     let Some(gitdir) = read_gitdir(dotgit_file) else {
         return false;
     };
+    // A marker naming a git dir that is not there says nothing about what
+    // encloses this directory, so it is not taken as a submodule.
+    if !gitdir.is_dir() {
+        return false;
+    }
     let mut dir = gitdir.as_path();
     while let Some(parent) = dir.parent() {
         if dir.file_name() == Some(OsStr::new("modules")) {
@@ -1449,6 +1454,10 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
             ),
         )
         .unwrap();
+        // The marker names a git dir that does not exist yet, which says
+        // nothing about what encloses this directory.
+        assert!(!super::in_linked_worktree(&wt_sub));
+        std::fs::create_dir_all(main.join(".git/worktrees/wt/modules/sub")).unwrap();
         assert!(super::in_linked_worktree(&wt_sub));
 
         // An unrelated repository whose git dir merely sits under a directory
