@@ -81,8 +81,11 @@ to start the API with the worker as a dependency. Use the local name `pipeline`
 in lifecycle commands and `depends`; mise resolves it to the worker's full daemon
 ID. A fixed namespace is optional when using `project` references.
 
-`project` accepts an absolute path or a path relative to the directory of the
-configuration file that declares it. `name` selects the daemon in the referenced
+`project` accepts an absolute path, or a path relative to the project root of the
+configuration file that declares it. That is the declaring file's own project, so
+a `project` inherited from a parent configuration resolves against the parent's
+root, not the directory you are in. For a nested file such as
+`.config/mise/config.toml` it is the project root, not the file's directory. `name` selects the daemon in the referenced
 project; omit it when the local and remote names match. Mise reads the referenced
 project's parent configuration files too, so inherited daemon declarations and
 settings are available.

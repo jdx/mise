@@ -432,10 +432,14 @@ fn import(
             && !cfg!(test)
             && !crate::config::config_file::is_path_trusted(path)
         {
+            // The untrusted file can be an ancestor of the referenced project,
+            // so name the root that actually needs trusting; trusting the
+            // project directory would not cover it.
+            let untrusted = crate::config::config_file::config_root::config_root(path);
             bail!(
-                "[daemons.{local_name}].project points at {}, which is not trusted; run `mise trust {}` after reviewing it",
-                dir.display(),
-                dir.display()
+                "[daemons.{local_name}].project needs {}, which is not trusted; run `mise trust {}` after reviewing it",
+                crate::file::display_path(path),
+                untrusted.display()
             );
         }
         let cf = crate::config::config_file::mise_toml::MiseToml::from_file(path)?;
