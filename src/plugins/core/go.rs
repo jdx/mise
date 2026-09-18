@@ -282,10 +282,17 @@ impl Backend for GoPlugin {
     }
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
         let v = match path.file_name() {
+            // In workspace mode a member module's own directives are not consulted, so a
+            // `go.mod` covered by a workspace yields nothing and the `go.work` decides.
+            Some(name) if name == "go.mod" && go_workspace_file(path).is_some() => String::new(),
             Some(name) if name == "go.mod" => parse_gomod(
                 &file::read_to_string(path)?,
                 Settings::get().idiomatic_version_file_ignore_minimum_versions,
             ),
+            // ...and a `go.work` that is not the workspace Go would use is not a version
+            // source either, so the two arms can never both go quiet or both answer.
+            Some(name) if name == "go.work" && !is_active_workspace(path) => String::new(),
+            Some(name) if name == "go.work" => parse_gowork(&file::read_to_string(path)?),
             _ => {
                 // .go-version
                 let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
@@ -425,6 +432,134 @@ fn is_go_toolchain_version(v: &str) -> bool {
     regex!(r"^[0-9]+\.[0-9]+\.[0-9]+$").is_match(v)
 }
 
+/// Value of the first `<keyword> <value>` directive, ignoring `//` line comments.
+///
+/// `go.mod` and `go.work` share this line-oriented directive grammar, so one reader serves
+/// both files.
+fn directive_value(body: &str, keyword: &str) -> Option<String> {
+    body.lines().find_map(|line| {
+        let line = line.split("//").next().unwrap_or("");
+        let mut parts = line.split_whitespace();
+        if parts.next() == Some(keyword) {
+            parts.next().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// The `toolchain goX.Y.Z` directive, when it names a real, fully-qualified toolchain.
+fn toolchain_directive(body: &str) -> Option<String> {
+    directive_value(body, "toolchain")
+        .and_then(|v| v.strip_prefix("go").map(|s| s.to_string()))
+        .filter(|v| is_go_toolchain_version(v))
+}
+
+/// How `GOWORK` picks the workspace, mirroring the `go` command.
+enum GoWorkspace {
+    /// `GOWORK=off`: there is no workspace, so `go.mod` decides and any `go.work` lying
+    /// around is not Go's workspace file either.
+    Off,
+    /// `GOWORK=<absolute file>`: this file is the workspace, wherever it lives.
+    File(PathBuf),
+    /// The default (`auto`, empty, or unset): search upwards for a `go.work`.
+    Search,
+}
+
+fn go_workspace() -> GoWorkspace {
+    match env::var("GOWORK").as_deref() {
+        Ok("off") => GoWorkspace::Off,
+        Ok("" | "auto") | Err(_) => GoWorkspace::Search,
+        // Go requires an explicit `GOWORK` to be absolute and refuses to run otherwise
+        // ("go: invalid GOWORK: not an absolute path"). A relative value therefore names no
+        // workspace at all, so mise ignores it rather than honouring a setting that would
+        // stop `go` from running. Go does not require a `.work` suffix, and neither does
+        // this -- and it does not require the file to exist either: the workspace is
+        // selected first, and only reading it fails.
+        Ok(explicit) if Path::new(explicit).is_absolute() => {
+            GoWorkspace::File(PathBuf::from(explicit))
+        }
+        Ok(_) => GoWorkspace::Search,
+    }
+}
+
+/// Whether `path` is the workspace file `GOWORK` names.
+///
+/// Compared by canonical path so two spellings of one file -- a symlinked checkout, a path
+/// through `..` -- do not read as different workspaces. A `GOWORK` naming a file that does
+/// not exist canonicalizes to nothing and so matches nothing, which is the intent: the
+/// workspace is real as far as selection goes, but no file mise reads is it.
+fn is_named_workspace(path: &Path, named: &Path) -> bool {
+    match (path.canonicalize(), named.canonicalize()) {
+        (Ok(path), Ok(named)) => path == named,
+        _ => false,
+    }
+}
+
+/// The `go.work` that puts `go_mod` in workspace mode, if there is one.
+///
+/// Workspace mode is not a merge: the `go` command "consults the `toolchain` and `go` lines
+/// in the current workspace's `go.work` file or, when there is no workspace, the main
+/// module's `go.mod` file". A member module's own directives are not consulted at all, so a
+/// `go.mod` under a workspace is not a version source for mise either. Without this, a
+/// member module nearer the working directory would outrank the workspace above it, and
+/// mise would activate a different toolchain from the one `go` selects.
+///
+/// Go looks for the workspace by walking up from the working directory. mise only ever
+/// reads config files at or above the working directory, so walking up from the `go.mod`
+/// reaches the same `go.work`, and stops at the same ceiling as the rest of mise's config
+/// discovery.
+fn go_workspace_file(go_mod: &Path) -> Option<PathBuf> {
+    match go_workspace() {
+        GoWorkspace::Off => None,
+        // Naming a workspace is what turns workspace mode on, whether or not the file is
+        // there. `go` selects it the same way and only fails later, when it reads it.
+        GoWorkspace::File(named) => Some(named),
+        GoWorkspace::Search => file::all_dirs(go_mod.parent()?, &env::MISE_CEILING_PATHS)
+            .ok()?
+            .into_iter()
+            .map(|dir| dir.join("go.work"))
+            .find(|p| p.is_file()),
+    }
+}
+
+/// Whether a discovered `go.work` is the workspace Go would actually use.
+///
+/// mise finds config files by walking up from the working directory, which is also how Go
+/// finds a workspace -- but only when `GOWORK` leaves it to that search. `GOWORK=off` means
+/// a `go.work` in the tree is just a file, and `GOWORK=<file>` means some *other* `go.work`
+/// is the workspace. Reading a discovered file in either case would pin the toolchain from a
+/// workspace the `go` command is ignoring.
+///
+/// A `GOWORK=<file>` outside the directories mise reads is never discovered, so mise selects
+/// no version rather than the wrong one; pin it in `mise.toml` if that is your setup.
+fn is_active_workspace(go_work: &Path) -> bool {
+    match go_workspace() {
+        GoWorkspace::Off => false,
+        GoWorkspace::File(named) => is_named_workspace(go_work, &named),
+        GoWorkspace::Search => true,
+    }
+}
+
+/// Parse a `go.work` file into a Go version request for idiomatic version resolution.
+///
+/// A workspace's `go.work` decides the toolchain for every module in it: the `go` command
+/// "consults the `toolchain` and `go` lines in the current workspace's `go.work` file or,
+/// when there is no workspace, the main module's `go.mod` file". In workspace mode the
+/// member modules' own directives are not consulted at all, so reading `go.mod` there
+/// answers a question Go never asks.
+///
+/// Only `toolchain` is read. `go.work`'s own `go` line is a floor -- it "only has an effect
+/// when the default toolchain is older than the suggested toolchain" -- which is the same
+/// kind of declaration as `go.mod`'s deprecated `go` directive, not the version the
+/// workspace is built with. `ignore_minimums` therefore has nothing to switch off here.
+///
+/// Returns an empty string when there is no usable `toolchain` line, so the caller skips
+/// the file rather than erroring or pinning a wrong version.
+fn parse_gowork(body: &str) -> String {
+    toolchain_directive(body).unwrap_or_default()
+}
+
 /// Parse a `go.mod` file into a Go version request for idiomatic version resolution.
 ///
 /// `toolchain goX.Y.Z` is the *exact* toolchain the module builds and tests with (what
@@ -442,27 +577,11 @@ fn is_go_toolchain_version(v: &str) -> bool {
 /// missing directive) so the caller skips the file rather than erroring or pinning a
 /// wrong version.
 fn parse_gomod(body: &str, ignore_minimums: bool) -> String {
-    // Value of the first `<keyword> <value>` directive, ignoring `//` line comments.
-    let directive_value = |keyword: &str| -> Option<String> {
-        body.lines().find_map(|line| {
-            let line = line.split("//").next().unwrap_or("");
-            let mut parts = line.split_whitespace();
-            if parts.next() == Some(keyword) {
-                parts.next().map(|s| s.to_string())
-            } else {
-                None
-            }
-        })
-    };
-
     // A fully-qualified `toolchain goX.Y.Z` pin is the only non-deprecated source. A
     // malformed/partial/pre-release toolchain (e.g. `toolchain default`,
     // `toolchain go1.22`, `toolchain go1.22rc1`) is not a real toolchain name, so it
     // falls through to the `go` directive rather than discarding the file.
-    if let Some(toolchain) = directive_value("toolchain")
-        .and_then(|v| v.strip_prefix("go").map(|s| s.to_string()))
-        .filter(|v| is_go_toolchain_version(v))
-    {
+    if let Some(toolchain) = toolchain_directive(body) {
         return toolchain;
     }
 
@@ -470,7 +589,7 @@ fn parse_gomod(body: &str, ignore_minimums: bool) -> String {
         return String::new();
     }
 
-    match directive_value("go").filter(|v| is_go_directive_version(v)) {
+    match directive_value(body, "go").filter(|v| is_go_directive_version(v)) {
         Some(minimum) => {
             deprecated_at!(
                 "2026.8.10",
@@ -602,5 +721,44 @@ mod tests {
         assert_eq!(parse_gomod("go 1.21\ntoolchain default\n", true), "");
         assert_eq!(parse_gomod("go 1.21\ntoolchain go1.21.4\n", true), "1.21.4");
         assert_eq!(parse_gomod("toolchain go1.21.4\n", true), "1.21.4");
+    }
+
+    #[test]
+    fn test_parse_gowork() {
+        // the `toolchain` pin is what a workspace declares, and the `use` block around it
+        // does not get in the way
+        assert_eq!(
+            parse_gowork(indoc! {r#"
+                go 1.24.0
+
+                toolchain go1.24.3
+
+                use (
+                    ./api
+                    ./worker
+                )
+            "#}),
+            "1.24.3"
+        );
+        // inline `//` comments and extra whitespace are ignored
+        assert_eq!(
+            parse_gowork("toolchain   go1.24.3   // set by go work use\n"),
+            "1.24.3"
+        );
+        // `go.work`'s own `go` line is a floor, not the version the workspace is built
+        // with, so a workspace without a `toolchain` line yields nothing -- including when
+        // the `go` line carries a full patch version, which `go work init` writes
+        assert_eq!(parse_gowork("go 1.24.0\n"), "");
+        assert_eq!(parse_gowork("go 1.24\n"), "");
+        // `godebug` shares the `go` prefix but is a different directive
+        assert_eq!(parse_gowork("godebug default=go1.24\n"), "");
+        // a toolchain that is not a real, fully-qualified toolchain name is not a pin, and
+        // there is no `go` directive to fall back to
+        assert_eq!(parse_gowork("go 1.24.0\ntoolchain default\n"), "");
+        assert_eq!(parse_gowork("go 1.24.0\ntoolchain go1.24\n"), "");
+        assert_eq!(parse_gowork("go 1.24.0\ntoolchain go1.24rc1\n"), "");
+        // an empty or directive-less file is skipped
+        assert_eq!(parse_gowork(""), "");
+        assert_eq!(parse_gowork("use ./api\n"), "");
     }
 }

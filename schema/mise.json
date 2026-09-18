@@ -3370,6 +3370,20 @@
         }
       }
     },
+    "daemon_init": {
+      "description": "idempotent setup commands run before the daemon's long-running process",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
     "task_props": {
       "description": "common task properties",
       "properties": {
@@ -3425,6 +3439,26 @@
               "type": "array",
               "items": {
                 "$ref": "#/$defs/task_dependency_item"
+              }
+            }
+          ]
+        },
+        "daemons": {
+          "description": "[experimental] project daemons that must be running and ready before this task runs",
+          "oneOf": [
+            {
+              "description": "true requires every daemon declared in [daemons]",
+              "type": "boolean"
+            },
+            {
+              "description": "name of a daemon declared in [daemons]",
+              "type": "string"
+            },
+            {
+              "description": "names of daemons declared in [daemons]",
+              "type": "array",
+              "items": {
+                "type": "string"
               }
             }
           ]
@@ -5855,11 +5889,24 @@
             "type": "object",
             "required": ["run"],
             "not": {
-              "required": ["preset"]
+              "anyOf": [
+                {
+                  "required": ["preset"]
+                },
+                {
+                  "required": ["task"]
+                },
+                {
+                  "required": ["args"]
+                }
+              ]
             },
             "properties": {
               "run": {
                 "type": "string"
+              },
+              "init": {
+                "$ref": "#/$defs/daemon_init"
               },
               "mise": {
                 "type": "boolean"
@@ -5883,7 +5930,48 @@
           },
           {
             "type": "object",
+            "required": ["task"],
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["run"]
+                },
+                {
+                  "required": ["preset"]
+                }
+              ]
+            },
+            "properties": {
+              "task": {
+                "description": "mise task run as this daemon's long-running process",
+                "type": "string"
+              },
+              "args": {
+                "description": "arguments passed to the task after `--`",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "init": {
+                "$ref": "#/$defs/daemon_init"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
             "required": ["preset", "version"],
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["task"]
+                },
+                {
+                  "required": ["args"]
+                }
+              ]
+            },
             "properties": {
               "preset": {
                 "type": "string",
@@ -5900,6 +5988,9 @@
               },
               "run": {
                 "type": "string"
+              },
+              "init": {
+                "$ref": "#/$defs/daemon_init"
               }
             },
             "additionalProperties": true

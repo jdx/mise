@@ -1,4 +1,18 @@
 backends = ["aqua:bazelbuild/bazel", "asdf:rajatvig/asdf-bazel"]
 description = "a fast, scalable, multi-language and extensible build system"
+# `.bazelversion` is bazelisk's pin of the exact Bazel release a project builds with.
+# Bazelisk also accepts values that name no particular release (`latest`, `latest-1`,
+# `last_green`, `last_rc`, `rolling`), resolve to a moving target (`8.x`, `8.*`), or point
+# somewhere mise cannot install from (a commit hash, or `<FORK>/<VERSION>`). The regex
+# matches a concrete release only, so those forms yield no version and mise stays out of
+# the way rather than failing to resolve or warning about an unsupported semver range.
+#
+# `\A` is what keeps this to the version bazelisk itself would use: bazelisk scans one line
+# (`scanner.Scan()` once) and ignores the rest of the file. The parser collects every match,
+# so a `(?m)^` here would turn a second line into a second version request for the same
+# tool, and would read past a first line that is deliberately not a release.
+idiomatic_files = [
+  { path = ".bazelversion", version_regex = '''(?m)\A[ \t]*v?([0-9]+\.[0-9]+(?:\.[0-9]+)?[0-9A-Za-z.-]*)[ \t]*\r?$''' },
+]
 test = { cmd = "bazel --version", expected = "bazel {{version}}" }
 version_order = "semver"

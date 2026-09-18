@@ -100,6 +100,26 @@
             }
           ]
         },
+        "daemons": {
+          "description": "[experimental] project daemons that must be running and ready before this task runs",
+          "oneOf": [
+            {
+              "description": "true requires every daemon declared in [daemons]",
+              "type": "boolean"
+            },
+            {
+              "description": "name of a daemon declared in [daemons]",
+              "type": "string"
+            },
+            {
+              "description": "names of daemons declared in [daemons]",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
         "depends_post": {
           "oneOf": [
             {

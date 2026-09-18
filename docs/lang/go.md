@@ -30,17 +30,57 @@ plugin with the same name can change the behavior; use `mise plugins ls` to
 check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/go.rs)
 for backend details.
 
-## `.go-version` file support
+## Go version files {#go-version-file-support}
 
-Enable Go's idiomatic files explicitly:
+Enable Go idiomatic version files to select a version from `.go-version`, `go.mod`, or `go.work`:
 
 ```sh
 mise settings add idiomatic_version_file_enable_tools go
 ```
 
-mise can read `.go-version` or the `toolchain goX.Y.Z` declaration in `go.mod`.
-The `go` directive is a minimum compatibility requirement; reading it as a version
-request is [deprecated](/configuration.html#which-fields-mise-reads).
+For `go.mod` and `go.work`, mise reads a `toolchain goX.Y.Z` directive as an exact version
+request. For example, this `go.work` selects Go 1.24.3 for a workspace containing the `api` and
+`worker` modules:
+
+```text
+go 1.24.0
+
+toolchain go1.24.3
+
+use (
+    ./api
+    ./worker
+)
+```
+
+The `go` directive declares a minimum required version. mise ignores it in `go.work`; reading it
+from `go.mod` is deprecated (see [Which fields mise reads](/configuration.html#which-fields-mise-reads)).
+
+### Workspaces and `GOWORK`
+
+When a workspace is active, mise uses its `go.work` instead of the `go.mod` files beneath it,
+including when you run mise from a module subdirectory. If the workspace has no supported
+`toolchain` directive, neither file supplies a version. Use `toolchain goX.Y.Z` with a full
+release version; mise does not read `toolchain default`, partial versions, or release candidates.
+
+The `GOWORK` environment variable controls workspace selection:
+
+| `GOWORK` value          | mise behavior                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Unset, empty, or `auto` | Search the current directory and its parents for `go.work`, within mise's configuration search paths.                   |
+| `off`                   | Ignore `go.work` and read `go.mod`.                                                                                     |
+| Absolute path           | Use only the named workspace file, if mise discovers it; ignore other `go.work` files and do not fall back to `go.mod`. |
+
+::: tip Workspace discovery limits
+Setting `GOWORK` does not make mise read files outside its configuration search paths. If the
+named workspace is outside those paths or does not exist, it supplies no version. Set the Go
+version in `mise.toml` for a workspace outside those paths.
+
+mise ignores a relative `GOWORK` path and uses its default workspace search. Go rejects relative
+paths, so use an absolute path when setting `GOWORK`.
+:::
+
+### Go toolchain selection
 
 Go also has its own [toolchain selection](https://go.dev/doc/toolchain), controlled
 by `GOTOOLCHAIN` and module/workspace declarations. It may use a different
