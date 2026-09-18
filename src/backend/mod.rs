@@ -3162,9 +3162,26 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 // Already checked against the cutoff by `filter_by_date`.
                 break;
             }
+            let created_at = match self.fetch_version_created_at(config, candidate).await {
+                Ok(created_at) => created_at,
+                Err(err) => {
+                    // Allow a version whose date could not be read, the same as
+                    // one from a backend that has no dates at all. These lookups
+                    // reach the network one candidate at a time, so failing the
+                    // resolution here would turn a slow proxy or VCS host into
+                    // an install error for a request that resolved fine before
+                    // the cutoff could be checked at all. Say so, though: it
+                    // means this version went in unchecked.
+                    warn!(
+                        "{}@{candidate}: could not read its release date to check the {before} cutoff, allowing it: {err:#}",
+                        self.id()
+                    );
+                    None
+                }
+            };
             let info = VersionInfo {
                 version: candidate.clone(),
-                created_at: self.fetch_version_created_at(config, candidate).await?,
+                created_at,
                 ..Default::default()
             };
             if !info.hidden_by_date(before) {
@@ -4863,6 +4880,8 @@ mod latest_version_tests {
         /// Dates this backend will only hand over one version at a time, the
         /// way `go:` does for a module it has to reach over VCS.
         lazy_dates: BTreeMap<String, String>,
+        /// Make every date lookup fail, the way an unreachable proxy or VCS host does.
+        lazy_dates_fail: bool,
         stable_calls: AtomicUsize,
         stable_info_calls: AtomicUsize,
         list_calls: AtomicUsize,
@@ -4889,6 +4908,7 @@ mod latest_version_tests {
                 ],
                 listing_keys: &[],
                 lazy_dates: BTreeMap::new(),
+                lazy_dates_fail: false,
                 stable_calls: AtomicUsize::new(0),
                 stable_info_calls: AtomicUsize::new(0),
                 list_calls: AtomicUsize::new(0),
@@ -4901,6 +4921,11 @@ mod latest_version_tests {
                 .iter()
                 .map(|(version, date)| (version.to_string(), date.to_string()))
                 .collect();
+            self
+        }
+
+        fn with_failing_lazy_dates(mut self) -> Self {
+            self.lazy_dates_fail = true;
             self
         }
 
@@ -4971,6 +4996,9 @@ mod latest_version_tests {
             version: &str,
         ) -> eyre::Result<Option<String>> {
             self.lazy_date_calls.fetch_add(1, Ordering::SeqCst);
+            if self.lazy_dates_fail {
+                bail!("simulated release-date lookup failure");
+            }
             Ok(self.lazy_dates.get(version).cloned())
         }
 
@@ -5075,6 +5103,27 @@ mod latest_version_tests {
                 .unwrap(),
             vec!["1.0.0".to_string(), "1.0.1".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_allows_a_version_whose_date_lookup_fails() {
+        let config = Config::get().await.unwrap();
+        // An unreachable proxy or VCS host must not turn into a resolution
+        // error for a request that resolved before the cutoff was checkable.
+        let backend = partially_dated_backend("test-lazy-dates-unreachable")
+            .with_lazy_dates(&[("3.0.0", "2025-12-01")])
+            .with_failing_lazy_dates();
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+        assert_eq!(backend.lazy_date_calls(), 1);
     }
 
     #[tokio::test]
@@ -5774,6 +5823,7 @@ mod latest_version_tests {
             remote_versions: vec![],
             listing_keys: &[],
             lazy_dates: BTreeMap::new(),
+            lazy_dates_fail: false,
             stable_calls: AtomicUsize::new(0),
             stable_info_calls: AtomicUsize::new(0),
             list_calls: AtomicUsize::new(0),
