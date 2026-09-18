@@ -98,15 +98,37 @@ pub(crate) fn proxy_settings() -> &'static ProxySettings {
     &SETTINGS
 }
 
-/// Where pitchfork keeps the user's own configuration, honouring the same
-/// overrides it does, so a relocated config directory is not silently ignored.
+/// Where pitchfork keeps the user's own configuration. Deliberately not
+/// XDG-aware: pitchfork resolves this as `PITCHFORK_CONFIG_DIR` or
+/// `~/.config/pitchfork` and ignores `XDG_CONFIG_HOME`, so honouring it here
+/// would read a different file from the one serving the URL.
 fn user_config_dir() -> PathBuf {
-    if let Some(dir) = crate::env::var_path("PITCHFORK_CONFIG_DIR") {
-        return dir;
-    }
-    match crate::env::var_path("XDG_CONFIG_HOME") {
-        Some(dir) => dir.join("pitchfork"),
-        None => crate::dirs::HOME.join(".config").join("pitchfork"),
+    crate::env::var_path("PITCHFORK_CONFIG_DIR")
+        .unwrap_or_else(|| crate::dirs::HOME.join(".config").join("pitchfork"))
+}
+
+/// Read a boolean the way pitchfork does. Its settings resolver accepts several
+/// spellings and compares them without regard to case, so `HTTPS=FALSE` has to
+/// mean here what it means there; treating it as true would export a URL whose
+/// scheme the proxy never serves.
+fn env_flag(value: &str) -> Option<bool> {
+    let value = value.trim();
+    match value {
+        "1" => Some(true),
+        "0" | "" => Some(false),
+        _ if ["true", "yes", "y", "on"]
+            .iter()
+            .any(|known| value.eq_ignore_ascii_case(known)) =>
+        {
+            Some(true)
+        }
+        _ if ["false", "no", "n", "off"]
+            .iter()
+            .any(|known| value.eq_ignore_ascii_case(known)) =>
+        {
+            Some(false)
+        }
+        _ => None,
     }
 }
 
@@ -158,8 +180,8 @@ fn read_proxy_settings() -> ProxySettings {
 /// them. Taken as a closure so the precedence can be tested without touching
 /// the process environment.
 fn apply_proxy_env(settings: &mut ProxySettings, var: impl Fn(&str) -> Option<String>) {
-    if let Some(https) = var("PITCHFORK_PROXY_HTTPS") {
-        settings.https = !matches!(https.trim(), "0" | "false" | "no" | "off");
+    if let Some(https) = var("PITCHFORK_PROXY_HTTPS").as_deref().and_then(env_flag) {
+        settings.https = https;
     }
     if let Some(port) = var("PITCHFORK_PROXY_PORT")
         .and_then(|p| p.trim().parse::<u16>().ok())
@@ -170,7 +192,10 @@ fn apply_proxy_env(settings: &mut ProxySettings, var: impl Fn(&str) -> Option<St
     if let Some(tld) = var("PITCHFORK_PROXY_TLD").filter(|t| !t.trim().is_empty()) {
         settings.tld = tld.trim().to_string();
     }
-    if var("PITCHFORK_PROXY_LAN").is_some_and(|v| !matches!(v.trim(), "0" | "false" | "no" | "off"))
+    if var("PITCHFORK_PROXY_LAN")
+        .as_deref()
+        .and_then(env_flag)
+        .unwrap_or(false)
         || var("PITCHFORK_PROXY_LAN_IP").is_some_and(|ip| !ip.trim().is_empty())
     {
         settings.tld = "local".into();
@@ -402,6 +427,33 @@ mod tests {
             matches!(key, "PITCHFORK_PROXY_LAN").then(|| "1".to_string())
         });
         assert_eq!(lan.tld, "local");
+
+        // Pitchfork compares these spellings without regard to case, so mise
+        // must read `FALSE` and `Off` as it does rather than as "not empty".
+        for spelling in ["FALSE", "False", "no", "N", "Off", "0", ""] {
+            let mut cased = ProxySettings::default();
+            apply_proxy_env(&mut cased, |key| {
+                matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| spelling.to_string())
+            });
+            assert!(!cased.https, "{spelling:?} must turn HTTPS off");
+        }
+        for spelling in ["TRUE", "Yes", "y", "On", "1"] {
+            let mut cased = ProxySettings {
+                https: false,
+                ..ProxySettings::default()
+            };
+            apply_proxy_env(&mut cased, |key| {
+                matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| spelling.to_string())
+            });
+            assert!(cased.https, "{spelling:?} must turn HTTPS on");
+        }
+        // A spelling neither side recognises leaves the setting alone rather
+        // than guessing at it.
+        let mut unknown = ProxySettings::default();
+        apply_proxy_env(&mut unknown, |key| {
+            matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| "maybe".to_string())
+        });
+        assert!(unknown.https);
     }
 
     #[test]
