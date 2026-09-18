@@ -134,6 +134,8 @@ fn env_flag(value: &str) -> Option<bool> {
 
 fn read_proxy_settings() -> ProxySettings {
     let mut settings = ProxySettings::default();
+    // Accumulated across the layers and applied once at the end; see below.
+    let mut lan = false;
     for path in [
         Path::new("/etc/pitchfork/config.toml").to_path_buf(),
         user_config_dir().join("config.toml"),
@@ -162,24 +164,34 @@ fn read_proxy_settings() -> ProxySettings {
         if let Some(tld) = proxy.get("tld").and_then(toml::Value::as_str) {
             settings.tld = tld.to_string();
         }
-        // LAN mode forces mDNS, which only resolves under `.local`.
-        if proxy.get("lan").and_then(toml::Value::as_bool) == Some(true)
-            || proxy
-                .get("lan_ip")
-                .and_then(toml::Value::as_str)
-                .is_some_and(|ip| !ip.is_empty())
-        {
-            settings.tld = "local".into();
+        if let Some(value) = proxy.get("lan").and_then(toml::Value::as_bool) {
+            lan = value;
+        }
+        // Setting an address is how pitchfork documents pinning LAN mode on.
+        if let Some(ip) = proxy.get("lan_ip").and_then(toml::Value::as_str) {
+            lan = lan || !ip.is_empty();
         }
     }
-    apply_proxy_env(&mut settings, |key| crate::env::var(key).ok());
+    lan = apply_proxy_env(&mut settings, lan, |key| crate::env::var(key).ok());
+    // Applied once, after every layer. Doing it inside the loop would let a
+    // later file's `tld` undo an earlier layer's LAN mode, which pitchfork
+    // resolves the other way round: it settles the settings first, then the
+    // proxy forces the mDNS TLD.
+    if lan {
+        settings.tld = "local".into();
+    }
     settings
 }
 
 /// Environment variables win over both files, exactly as pitchfork resolves
-/// them. Taken as a closure so the precedence can be tested without touching
-/// the process environment.
-fn apply_proxy_env(settings: &mut ProxySettings, var: impl Fn(&str) -> Option<String>) {
+/// them. Returns whether LAN mode is on after this layer, which the caller
+/// applies once every layer has been read. `var` is taken as a closure so the
+/// precedence can be tested without touching the process environment.
+fn apply_proxy_env(
+    settings: &mut ProxySettings,
+    mut lan: bool,
+    var: impl Fn(&str) -> Option<String>,
+) -> bool {
     if let Some(https) = var("PITCHFORK_PROXY_HTTPS").as_deref().and_then(env_flag) {
         settings.https = https;
     }
@@ -192,14 +204,13 @@ fn apply_proxy_env(settings: &mut ProxySettings, var: impl Fn(&str) -> Option<St
     if let Some(tld) = var("PITCHFORK_PROXY_TLD").filter(|t| !t.trim().is_empty()) {
         settings.tld = tld.trim().to_string();
     }
-    if var("PITCHFORK_PROXY_LAN")
-        .as_deref()
-        .and_then(env_flag)
-        .unwrap_or(false)
-        || var("PITCHFORK_PROXY_LAN_IP").is_some_and(|ip| !ip.trim().is_empty())
-    {
-        settings.tld = "local".into();
+    if let Some(value) = var("PITCHFORK_PROXY_LAN").as_deref().and_then(env_flag) {
+        lan = value;
     }
+    if let Some(ip) = var("PITCHFORK_PROXY_LAN_IP") {
+        lan = lan || !ip.trim().is_empty();
+    }
+    lan
 }
 
 /// Reject a label that cannot survive as a DNS name. Pitchfork puts the label
@@ -412,7 +423,7 @@ mod tests {
             "PITCHFORK_PROXY_TLD" => Some("test".to_string()),
             _ => None,
         };
-        apply_proxy_env(&mut settings, env);
+        apply_proxy_env(&mut settings, false, env);
         assert_eq!(
             settings,
             ProxySettings {
@@ -421,18 +432,31 @@ mod tests {
                 tld: "test".into()
             }
         );
-        // LAN mode forces the mDNS TLD whatever the files or `tld` asked for.
-        let mut lan = ProxySettings::default();
-        apply_proxy_env(&mut lan, |key| {
+        // LAN mode forces the mDNS TLD whatever the files or `tld` asked for,
+        // and it is applied after every layer rather than inside one, so a
+        // later `tld` cannot undo it.
+        let mut lan = ProxySettings {
+            tld: "test".into(),
+            ..ProxySettings::default()
+        };
+        assert!(apply_proxy_env(&mut lan, false, |key| {
             matches!(key, "PITCHFORK_PROXY_LAN").then(|| "1".to_string())
-        });
-        assert_eq!(lan.tld, "local");
+        }));
+        assert_eq!(lan.tld, "test", "the caller applies the mDNS TLD, not this");
+        // An explicit `false` in the environment turns off a file's LAN mode.
+        assert!(!apply_proxy_env(&mut lan, true, |key| {
+            matches!(key, "PITCHFORK_PROXY_LAN").then(|| "off".to_string())
+        }));
+        // Pinning an address implies it.
+        assert!(apply_proxy_env(&mut lan, false, |key| {
+            matches!(key, "PITCHFORK_PROXY_LAN_IP").then(|| "192.168.1.42".to_string())
+        }));
 
         // Pitchfork compares these spellings without regard to case, so mise
         // must read `FALSE` and `Off` as it does rather than as "not empty".
         for spelling in ["FALSE", "False", "no", "N", "Off", "0", ""] {
             let mut cased = ProxySettings::default();
-            apply_proxy_env(&mut cased, |key| {
+            apply_proxy_env(&mut cased, false, |key| {
                 matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| spelling.to_string())
             });
             assert!(!cased.https, "{spelling:?} must turn HTTPS off");
@@ -442,7 +466,7 @@ mod tests {
                 https: false,
                 ..ProxySettings::default()
             };
-            apply_proxy_env(&mut cased, |key| {
+            apply_proxy_env(&mut cased, false, |key| {
                 matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| spelling.to_string())
             });
             assert!(cased.https, "{spelling:?} must turn HTTPS on");
@@ -450,7 +474,7 @@ mod tests {
         // A spelling neither side recognises leaves the setting alone rather
         // than guessing at it.
         let mut unknown = ProxySettings::default();
-        apply_proxy_env(&mut unknown, |key| {
+        apply_proxy_env(&mut unknown, false, |key| {
             matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| "maybe".to_string())
         });
         assert!(unknown.https);
