@@ -621,8 +621,11 @@ The `api` daemon runs in this project; `worker` uses the `worker` declaration in
 differently named daemon.
 
 A higher-precedence declaration replaces the complete same-name daemon. Explicit
-environment variables override preset exports. See [Daemons](/daemons) for presets,
-[project references](/daemons#daemons-from-another-project), and lifecycle commands.
+environment variables override preset exports. `proxy` sets the daemon's hostname
+label or opts it out with `false`, and `proxy_tls` chooses `"terminate"` or
+`"passthrough"`. See [Daemons](/daemons) for presets,
+[project references](/daemons#daemons-from-another-project),
+[stable URLs](/daemons#stable-urls-per-worktree), and lifecycle commands.
 
 ### `[daemons_settings]`
 
@@ -632,18 +635,19 @@ Set the namespace used in daemon IDs such as `my-app/api`:
 [daemons_settings]
 namespace = "my-app"
 namespace_per_worktree = true # default
+worktree_label = "pr-42"      # defaults to the checkout directory's name
 ```
 
 Without an explicit namespace, mise derives one from the project path. Linked Git
 worktrees append a unique suffix to an explicit namespace by default.
 
+`worktree_label` names this checkout in the hostnames daemons are reachable at. It
+belongs in a worktree's `mise.local.toml`, because a tracked `mise.toml` is shared by
+every checkout. See [Stable URLs per worktree](/daemons#stable-urls-per-worktree).
+
 These settings merge by key across project configuration files and are inherited
 by child projects. They are ignored in global and system configuration. See
 [Namespaces](/daemons#namespaces) for naming rules, inheritance, and worktree behavior.
-
-### `[daemon_groups]`
-
-Experimental named sets of project daemons. Each member is a daemon or another group declared in the same project, so a group never selects daemons outside it. Group names work wherever `mise daemons` accepts a daemon name. See [daemons](/daemons#groups).
 
 ### `[daemon_groups]`
 
