@@ -872,6 +872,15 @@ impl DaemonSet {
         }
     }
 
+    /// Whether this set holds that exact daemon, matched by owning project and
+    /// name. A name alone is unique only within one project, so two projects can
+    /// each have an `api` and only one of them is the daemon in question.
+    pub(crate) fn contains(&self, daemon: &Daemon) -> bool {
+        self.daemons
+            .values()
+            .any(|d| d.name == daemon.name && d.root == daemon.root)
+    }
+
     /// Look a daemon up by the name it carries inside its own project. Imported
     /// daemons are keyed by qualified ID, so the map key is not always the name.
     pub(crate) fn find(&self, name: &str) -> Option<&Daemon> {
@@ -1542,6 +1551,36 @@ mod tests {
             imported.namespace_for(&mirror.canonicalize().unwrap()),
             Some("shared")
         );
+    }
+
+    #[test]
+    fn a_daemon_is_identified_by_its_project_not_just_its_name() {
+        let _serial = import_lock();
+        // Two projects can each declare `api`. Matching on the name alone made a
+        // check about one of them fire for the other.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'remote'\n[daemons.api]\nrun = 'exec remote api'\n",
+        );
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.remote_api]\nproject = '../mirror'\nname = 'api'\n[daemons.api]\nrun = 'exec local api'\n",
+        )]);
+        let set = load(&config).unwrap();
+        let local = &set.daemons["api"];
+        let imported = &set.daemons["remote/api"];
+        assert_eq!(local.name, imported.name);
+        assert_ne!(local.root, imported.root);
+        // A set holding only one of them contains that one and not the other.
+        let only_imported = set.with_dependencies(&["remote/api".into()]);
+        assert!(only_imported.contains(imported));
+        assert!(!only_imported.contains(local));
+        // `find` cannot tell them apart, which is why `contains` exists.
+        assert!(only_imported.find("api").is_some());
     }
 
     #[test]

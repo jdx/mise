@@ -237,11 +237,14 @@ impl Daemons {
             // Dropping a dependency on an unresolved import keeps the generated
             // config valid, but starting the daemon anyway would run it without
             // something it declared it needs. Say which import is missing.
-            if let Some((name, import)) = loaded
-                .blocked
-                .iter()
-                .find(|(name, _)| starting.find(name).is_some())
-            {
+            if let Some((name, import)) = loaded.blocked.iter().find(|(name, _)| {
+                // Match the blocked daemon itself, not merely its name: another
+                // project's daemon can share it and is unaffected.
+                loaded
+                    .daemons
+                    .get(*name)
+                    .is_some_and(|blocked| starting.contains(blocked))
+            }) {
                 bail!(
                     "daemon {name:?} depends on [daemons.{import}], which is unavailable: {}",
                     loaded.import_errors[import]
