@@ -51,15 +51,71 @@ pub(crate) fn state_dir(root: &Path) -> PathBuf {
 /// first leaves a window for another process to write fresh state into the
 /// doomed directory, and Windows refuses to delete a file whose handle is still
 /// open. As a sibling it stays valid through the removal.
-pub(crate) fn lock_file(root: &Path) -> PathBuf {
-    let dir = state_dir(root);
-    lock_file_for_state_dir(&dir)
-}
-
-/// [`lock_file`] for a state directory whose project root may no longer exist.
+///
+/// Takes the state directory, not the project root, because prune works on
+/// state whose root no longer exists.
 pub(crate) fn lock_file_for_state_dir(dir: &Path) -> PathBuf {
     let name = dir.file_name().unwrap_or_default().to_string_lossy();
     dir.with_file_name(format!("{name}.lock"))
+}
+
+/// Where mise versions before the lock moved out of the state directory
+/// coordinate. Still taken alongside [`lock_file_for_state_dir`] so that a
+/// daemon start from an older mise and a prune from this one continue to
+/// exclude each other. Removable once no supported version locks this path.
+pub(crate) fn legacy_lock_file_for_state_dir(dir: &Path) -> PathBuf {
+    dir.join("project.lock")
+}
+
+/// Both locks guarding one project's daemon state, held together.
+///
+/// Acquired sibling first, then legacy, by everything that takes both, so they
+/// cannot deadlock against each other.
+pub(crate) struct ProjectLock {
+    _sibling: fslock::LockFile,
+    legacy: Option<fslock::LockFile>,
+}
+
+impl ProjectLock {
+    /// Waits for both locks. Used by `prepare()`, which must not give up.
+    pub(crate) fn acquire(root: &Path) -> Result<Self> {
+        let dir = state_dir(root);
+        Ok(Self {
+            _sibling: crate::lock_file::LockFile::at(&lock_file_for_state_dir(&dir)).lock()?,
+            legacy: Some(
+                crate::lock_file::LockFile::at(&legacy_lock_file_for_state_dir(&dir)).lock()?,
+            ),
+        })
+    }
+
+    /// Takes both locks or neither, without waiting. Used by prune, which skips
+    /// state another process is using rather than blocking behind it.
+    pub(crate) fn try_acquire(dir: &Path) -> Result<Option<Self>> {
+        let Some(sibling) =
+            crate::lock_file::LockFile::at(&lock_file_for_state_dir(dir)).try_lock()?
+        else {
+            return Ok(None);
+        };
+        let Some(legacy) =
+            crate::lock_file::LockFile::at(&legacy_lock_file_for_state_dir(dir)).try_lock()?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            _sibling: sibling,
+            legacy: Some(legacy),
+        }))
+    }
+
+    /// Releases the legacy lock, keeping the sibling one.
+    ///
+    /// The legacy lock file lives inside the directory prune is about to
+    /// delete, and Windows will not remove a file whose handle is still open.
+    /// The sibling lock still excludes every mise version that has it, which is
+    /// every version that can prune.
+    pub(crate) fn release_legacy(&mut self) {
+        self.legacy.take();
+    }
 }
 
 pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {

@@ -139,9 +139,7 @@ pub(crate) fn describe(entries: &[(Entry, u64)]) -> Vec<String> {
 pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<Outcome> {
     // The root is gone, so pitchfork runs from the state directory instead.
     let cwd = &entry.dir;
-    let Some(lock) =
-        crate::lock_file::LockFile::at(&super::lock_file_for_state_dir(cwd)).try_lock()?
-    else {
+    let Some(mut lock) = super::ProjectLock::try_acquire(cwd)? else {
         warn!(
             "keeping {}: another mise process holds its daemon lock",
             display_path(cwd)
@@ -209,10 +207,11 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         );
         return Ok(Outcome::Kept);
     }
-    // The lock is a sibling of this directory, so it stays valid through the
-    // deletion: nothing else can prepare this state until the lock is dropped,
-    // which happens only once there is nothing left to protect. The empty lock
-    // file is left in place, the way every other mise lock file is.
+    // The legacy lock file lives inside this directory, so it goes before the
+    // directory does; the sibling lock is held across the deletion, and nothing
+    // that can prune lacks it. The empty sibling lock file is left in place,
+    // the way every other mise lock file is.
+    lock.release_legacy();
     crate::file::remove_all(cwd)?;
     drop(lock);
     Ok(Outcome::Removed)
@@ -303,8 +302,7 @@ mod tests {
         let dir = write_state(&base, "gone", &gone, &[("db/one", 1)]);
         let entry = orphans(&base).unwrap().remove(0);
 
-        let held = crate::lock_file::LockFile::at(&super::super::lock_file_for_state_dir(&dir))
-            .try_lock()
+        let held = super::super::ProjectLock::try_acquire(&dir)
             .unwrap()
             .unwrap();
         assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
@@ -328,8 +326,15 @@ mod tests {
         // directory that is on its way out.
         assert_eq!(lock.parent(), dir.parent());
         assert!(!lock.starts_with(&dir));
-
+        // The lock an older mise takes is still honored, so a start from one
+        // and a prune from this version continue to exclude each other.
+        let legacy = super::super::legacy_lock_file_for_state_dir(&dir);
+        let held = crate::lock_file::LockFile::at(&legacy).try_lock().unwrap();
         let entry = orphans(&base).unwrap().remove(0);
+        assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
+        assert!(dir.join("state.json").exists());
+        drop(held);
+
         assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
         // A lock file is not a state directory, so it is never itself an entry.
         std::fs::write(&lock, "").unwrap();

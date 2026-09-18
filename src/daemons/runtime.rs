@@ -199,8 +199,8 @@ impl Runtime {
         root: &Path,
         set: &DaemonSet,
         force_registration: bool,
-    ) -> Result<(State, fslock::LockFile)> {
-        let lock = crate::lock_file::LockFile::at(&super::lock_file(root)).lock()?;
+    ) -> Result<(State, super::ProjectLock)> {
+        let lock = super::ProjectLock::acquire(root)?;
         let previous = read_state(root)?;
         let profile = crate::env::MISE_ENV.clone();
         if !previous.namespace.is_empty()
