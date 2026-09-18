@@ -124,9 +124,14 @@ pub(crate) struct DaemonSet {
     pub daemons: IndexMap<String, Daemon>,
     /// Resolved pitchfork namespace for every project root in this set.
     pub namespaces: IndexMap<PathBuf, String>,
-    /// Local key -> qualified ID for imported daemons, so a daemon renamed on
-    /// the way in can still be selected by the name this project gave it.
-    pub aliases: IndexMap<String, String>,
+    /// (declaring root, local key) -> qualified ID for imported daemons, so a
+    /// daemon renamed on the way in can still be selected by the name this
+    /// project gave it.
+    ///
+    /// Keyed by root because the name is only meaningful in the project that
+    /// chose it: another project may use the same word for a daemon of its own
+    /// or for a group, and must not be answered with this project's import.
+    pub aliases: IndexMap<(PathBuf, String), String>,
     /// Daemons that depend on an import which could not be resolved, mapping the
     /// daemon's key to the import's local key. Starting one would run it without
     /// something it declared it needs, so the command refuses instead.
@@ -222,7 +227,9 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     }
     let mut set = DaemonSet::default();
     // Local name -> qualified ID, so `depends` can name an imported daemon short.
-    let mut imported_ids: IndexMap<String, String> = IndexMap::new();
+    // Keyed by the importing root: a name means an import only in the project
+    // that declared it, and a daemon elsewhere may use the same word.
+    let mut imported_ids: IndexMap<(PathBuf, String), String> = IndexMap::new();
     for (name, (declaration, source, root)) in declarations {
         validate_name("daemon", &name)?;
         if let Declaration::Definition(table) = &declaration
@@ -249,8 +256,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                     daemon.root.display()
                 );
             }
-            imported_ids.insert(name.clone(), key.clone());
-            set.aliases.insert(name, key.clone());
+            imported_ids.insert((root.clone(), name.clone()), key.clone());
+            set.aliases.insert((root.clone(), name), key.clone());
             set.daemons.insert(key, daemon);
             continue;
         }
@@ -292,7 +299,14 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let unresolved = set.import_errors.clone();
     let mut blocked: IndexMap<String, String> = IndexMap::new();
     for (key, daemon) in set.daemons.iter_mut().filter(|(_, d)| !d.imported) {
-        if let Some(missing) = rewrite_depends(&mut daemon.table, &imported_ids, &unresolved)? {
+        // Only the imports this daemon's own project declared can rename its
+        // dependencies.
+        let imports: IndexMap<String, String> = imported_ids
+            .iter()
+            .filter(|((root, _), _)| *root == daemon.root)
+            .map(|((_, name), id)| (name.clone(), id.clone()))
+            .collect();
+        if let Some(missing) = rewrite_depends(&mut daemon.table, &imports, &unresolved)? {
             blocked.insert(key.clone(), missing);
         }
     }
@@ -803,9 +817,10 @@ fn load_groups(
         // in that project's configuration under its own namespace, so naming it
         // here would produce a group mise expands and the registered one does
         // not. Say so rather than silently dropping the member.
+        let group_root = groups[&key].root.clone();
         if let Some(member) = daemons
             .iter()
-            .find(|member| set.aliases.contains_key(*member))
+            .find(|member| set.imported_in(&group_root, member))
         {
             let name = &groups[&key].name;
             bail!(
@@ -981,7 +996,12 @@ impl DaemonSet {
                 .filter(|(r, _)| r.as_path() == root)
                 .map(|(r, n)| (r.clone(), n.clone()))
                 .collect(),
-            aliases: self.aliases.clone(),
+            aliases: self
+                .aliases
+                .iter()
+                .filter(|((r, _), _)| r.as_path() == root)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             import_errors: self.import_errors.clone(),
             blocked: self.blocked.clone(),
             groups: self
@@ -996,15 +1016,30 @@ impl DaemonSet {
     /// Resolve a local declaration or import alias to its qualified ID.
     /// A local name must not also select a same-named daemon from another root.
     pub(crate) fn resolve_alias(&self, name: &str) -> String {
-        self.aliases
-            .get(name)
-            .cloned()
+        self.imported_as(name)
+            .map(str::to_string)
             .or_else(|| {
                 let daemon = self.daemons.get(name)?;
                 let namespace = self.namespace_for(&daemon.root)?;
                 Some(format!("{namespace}/{}", daemon.name))
             })
             .unwrap_or_else(|| name.to_string())
+    }
+
+    /// The qualified ID a name refers to when some project in this set imported
+    /// a daemon under it. Callers holding a root-scoped set ask about that
+    /// project alone, which is the question worth asking.
+    pub(crate) fn imported_as(&self, name: &str) -> Option<&str> {
+        self.aliases
+            .iter()
+            .find(|((_, key), _)| key == name)
+            .map(|(_, id)| id.as_str())
+    }
+
+    /// Whether `root` imported a daemon under this name.
+    pub(crate) fn imported_in(&self, root: &Path, name: &str) -> bool {
+        self.aliases
+            .contains_key(&(root.to_path_buf(), name.to_string()))
     }
 
     /// The pitchfork namespace for a project root, when this set declares daemons for it.
@@ -1051,7 +1086,17 @@ impl DaemonSet {
         let by_id: IndexMap<_, _> = self.daemons.values().map(|d| (qualified(d), d)).collect();
         let mut keep: indexmap::IndexSet<String> = by_id
             .iter()
-            .filter(|(id, d)| names.iter().any(|name| name == *id || name == &d.name))
+            .filter(|(id, daemon)| {
+                names.iter().any(|name| {
+                    name == *id
+                        // A bare name means the daemon that key refers to, not
+                        // every daemon that happens to carry it: another project
+                        // can have one of its own with the same name.
+                        || self.daemons.get(name).is_some_and(|exact| {
+                            exact.name == daemon.name && exact.root == daemon.root
+                        })
+                })
+            })
             .map(|(id, _)| id.clone())
             .collect();
         let mut queue: Vec<String> = keep.iter().cloned().collect();
@@ -1804,6 +1849,44 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains(&app.display().to_string()), "{err}");
+    }
+
+    #[test]
+    fn an_import_belongs_to_the_project_that_declared_it() {
+        let _serial = import_lock();
+        // A parent imports `ops`; the child uses that word for a group of its
+        // own. The parent's import must not answer for the child's name, and
+        // the child's group must not be rejected as an imported member.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(&mirror, "[daemons.worker]\nrun = 'exec worker'\n");
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\n[daemon_groups]\nops = ['api']\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                &format!(
+                    "[daemons.ops]\nproject = {}\nname = 'worker'\n",
+                    toml::Value::String(mirror.to_string_lossy().into_owned())
+                ),
+            ),
+        ]);
+        // The child's group loads: the parent's import is not its member.
+        let set = load(&config).unwrap();
+        assert_eq!(set.expand("ops"), Some(["api".to_string()].as_slice()));
+        // Each project is asked about its own name.
+        assert!(set.imported_in(&parent, "ops"));
+        assert!(!set.imported_in(&child, "ops"));
+        // A bare name selects the daemon that key refers to, not every daemon
+        // carrying it, so the child's `api` does not drag in a namesake.
+        let starting = set.with_dependencies(&["api".to_string()]);
+        assert_eq!(starting.daemons.len(), 1);
+        assert_eq!(starting.daemons["api"].root, child);
     }
 
     #[test]

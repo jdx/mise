@@ -285,8 +285,10 @@ mod tests {
         worker.root = PathBuf::from("/mirror");
         worker.imported = true;
         set.daemons.insert("mirror/worker".into(), worker);
-        set.aliases
-            .insert("pipeline".into(), "mirror/worker".into());
+        set.aliases.insert(
+            (PathBuf::from("/project"), "pipeline".into()),
+            "mirror/worker".into(),
+        );
         set.namespaces
             .insert(PathBuf::from("/mirror"), "mirror".into());
         set.namespaces

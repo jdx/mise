@@ -146,8 +146,10 @@ impl Daemons {
                 // A name this project imported means that import, whatever the
                 // word means elsewhere. Checked before groups, because another
                 // project may use it for a group and leaving it bare would
-                // expand that group instead of starting the import.
-                if loaded.aliases.contains_key(name) {
+                // expand that group instead of starting the import. Asked of
+                // this project only: an ancestor's import must not shadow a
+                // group declared here.
+                if loaded.imported_in(&project_root, name) {
                     return Ok(resolved);
                 }
                 // A bare name can be a group, which `selects` expands against
