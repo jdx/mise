@@ -336,6 +336,12 @@ impl Runtime {
         Ok(())
     }
 
+    /// Register this project's daemons with pitchfork.
+    ///
+    /// `starting` names the daemons the caller is about to launch, and only
+    /// their ports are conflict checked. Passing an empty slice checks nothing,
+    /// which is correct when a caller launches nothing but silently drops the
+    /// diagnostic if a future caller forgets to fill it in.
     pub(crate) async fn prepare(
         &self,
         root: &Path,

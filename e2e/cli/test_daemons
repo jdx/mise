@@ -17,6 +17,14 @@ esac
 SH
 chmod u+x ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
+
+# Several projects register over the course of this test, so the generated file
+# has to be picked by the root it records. `find -print -quit` returns whichever
+# hash-named directory readdir happens to yield first.
+generated_for() {
+  dirname "$(find "$MISE_STATE_DIR/daemons" -name state.json \
+    -exec jq -r --arg root "$1" 'select(.root == $root) | input_filename' {} +)"
+}
 cat >mise.toml <<'TOML'
 [tools]
 pitchfork = "system"
@@ -60,7 +68,7 @@ mise daemons start
 assert_contains "cat '$DAEMON_LOG'" 'config add'
 assert_contains "cat '$DAEMON_LOG'" '/api'
 assert "test ! -f pitchfork.toml"
-generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+generated="$(generated_for "$PWD")/pitchfork.toml"
 assert_contains "cat '$generated'" 'mise = true'
 assert_not_contains "cat '$generated'" 'MISE_ENV = ""'
 assert_contains "cat '$generated'" '{{ env.SOMETHING }}'
@@ -90,7 +98,7 @@ mise daemons start two-cluster
 started=$(grep 'args=start ' "$DAEMON_LOG")
 assert_contains "echo '$started'" '/postgres'
 assert_contains "echo '$started'" '/core2'
-generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+generated="$(generated_for "$PWD")/pitchfork.toml"
 assert_contains "cat '$generated'" '[groups.two-cluster]'
 assert_contains "cat '$generated'" '[groups.default]'
 # A bare start selects the default group instead of every daemon.
@@ -246,7 +254,7 @@ assert_contains "mise run dev" 'dev-ran'
 assert_contains "cat '$DAEMON_LOG'" 'args=start '
 assert_contains "cat '$DAEMON_LOG'" '/api'
 assert_not_contains "cat '$DAEMON_LOG'" '/core'
-generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
+generated="$(generated_for "$PWD")/pitchfork.toml"
 # The supervised task runs through plain `mise run`, so its depends still run;
 # a marker in the daemon environment is what stops the recursion instead.
 assert_not_contains "cat '$generated'" 'skip-deps'
