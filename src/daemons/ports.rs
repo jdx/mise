@@ -300,6 +300,33 @@ mod tests {
     }
 
     #[test]
+    fn every_worktree_of_a_bare_repository_is_offset() {
+        // A bare repo plus worktrees has no ordinary checkout, so nothing holds
+        // slot 0. Each worktree still gets its own stable slot.
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = tmp.path().join("repo.git");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let mut slots = Vec::new();
+        for name in ["main", "feature"] {
+            let private = bare.join("worktrees").join(name);
+            std::fs::create_dir_all(&private).unwrap();
+            std::fs::write(private.join("commondir"), "../..\n").unwrap();
+            let root = tmp.path().join(name);
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(
+                root.join(".git"),
+                format!("gitdir: {}\n", private.display()),
+            )
+            .unwrap();
+            assert!(!is_primary(&root), "{name} is a worktree");
+            slots.push(slot(&root));
+        }
+        assert!(slots.iter().all(|s| *s != 0), "none keeps the base port");
+        assert_ne!(slots[0], slots[1]);
+    }
+
+    #[test]
     fn only_a_worktrees_gitdir_moves_off_the_base_port() {
         let tmp = tempfile::tempdir().unwrap();
         // A submodule and a separate-git-dir clone each have a .git *file*, but

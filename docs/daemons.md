@@ -31,8 +31,8 @@ port = 5433
 A string selects a preset matching the entry name. A table with `run` defines a
 custom process. A table with `preset` and `version` selects a preset for any instance
 name, and remaining fields override its pitchfork daemon definition. For presets,
-`port` is an integer or `"auto"`. Custom daemons accept the same values, or pitchfork's
-structured `port` configuration.
+`port` is an integer or `"auto"`; presets do not accept pitchfork's structured `port`
+table. Custom daemons accept an integer, `"auto"`, or that structured configuration.
 User-provided strings retain pitchfork template syntax; mise renders only the
 embedded preset templates.
 
@@ -103,8 +103,10 @@ port = { auto = true, base = 3000 }
 
 The primary checkout keeps the base port, so a single-checkout project is unchanged:
 `PGPORT` stays `5432` and the API stays on `3000`. Each linked git worktree gets a
-stable offset derived from its path, so the same worktree always resolves to the same
-port across invocations.
+stable offset derived from its path, so the same worktree resolves to the same port
+across invocations of a given mise build. Once a daemon has started, its port is
+recorded and reused, which is what guarantees it cannot move underneath a running
+process.
 
 Offsets are hashed into 511 slots rather than assigned in sequence, so two worktrees
 can land on the same slot before the slots run out. This is uncommon and stays that way
@@ -119,6 +121,22 @@ nested in a monorepo such as `packages/api/mise.toml` still follows its worktree
 Sibling projects within one worktree keep separate ports. Only a checkout created by
 `git worktree add` is offset; a submodule, a `git clone --separate-git-dir`, and a
 project outside git are each the single copy of their project and keep the base port.
+
+A bare repository with worktrees beside it, a common layout for agent workflows, has no
+ordinary checkout, so every worktree is offset and none keeps the base port. Pin one
+with an explicit integer `port` in a config that is not shared with the other worktrees,
+such as a gitignored `mise.local.toml`.
+
+A preset renders its resolved port into its own conventional variables, so
+`port = "auto"` moves `PGPORT`, `DATABASE_URL`, and `REDIS_URL` with it. A custom daemon
+has no such convention, so mise exports `<NAME>_PORT`, upper-cased with punctuation
+replaced by underscores. `[daemons.api]` exports `API_PORT`, and `[daemons.web-ui]`
+exports `WEB_UI_PORT`. This applies to an integer `port` as well, so a custom daemon's
+port is always visible to `mise env`, to `mise x`, and to the daemon's own process.
+Pitchfork additionally injects `$PORT` into the process it starts.
+
+Use `port` rather than `ready_port` with `port = "auto"`. A literal `ready_port` cannot
+follow an allocated port, whereas `port` is what mise resolves and pins.
 
 `base` sets the port the primary checkout uses. It defaults to the preset's port and
 is required for custom daemons, which have no default to offset. `stride` sets the
@@ -151,6 +169,11 @@ mise daemons ls --json
 
 Because the allocation is persisted, a future change to how offsets are derived cannot
 move a daemon that is already running. Editing `base` or `stride` does re-derive it.
+
+The pin is created by the first start, not by declaring `port = "auto"`, so a worktree
+that has never started a daemon reports whatever the current derivation yields. To drop
+a pin and re-derive, stop the daemon and delete `state.json` from that project's
+directory under `$MISE_STATE_DIR/daemons/`.
 Starting a daemon fails when another project root on this machine is _running_ a
 daemon on the same port, naming that root. Liveness is what matters, and it is checked
 for the daemon holding the port rather than the project around it, so an unrelated
