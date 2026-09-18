@@ -691,13 +691,27 @@ mod tests {
         assert!(live_database_lock(&dir).is_some());
     }
 
+    /// An exit status that means failure, built the way each platform builds
+    /// one: `from_raw` takes a wait status on Unix and an exit code on Windows.
+    fn failure() -> std::process::ExitStatus {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(256)
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            std::process::ExitStatus::from_raw(1)
+        }
+    }
+
     #[test]
     fn pitchfork_forgetting_something_it_never_knew_is_not_a_failure() {
-        use std::os::unix::process::ExitStatusExt;
         let args = vec!["stop".to_string(), "ns/db".to_string()];
         let failed = |stderr: &str| {
             Ok(std::process::Output {
-                status: std::process::ExitStatus::from_raw(256),
+                status: failure(),
                 stdout: vec![],
                 stderr: stderr.as_bytes().to_vec(),
             })
