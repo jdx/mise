@@ -104,23 +104,63 @@ fn port_field(name: &str, table: &toml::Table, key: &str) -> Result<Option<u16>>
         .transpose()
 }
 
-/// A linked git worktree stores `gitdir:` in a `.git` *file*; the primary
-/// checkout has a `.git` directory, and a project outside git has neither.
-/// Both of the latter are the single well-known copy of the project, so they
-/// take slot 0 and the default single-checkout experience is unchanged.
+/// Whether this project root sits inside a linked git worktree.
+///
+/// A project root is the directory holding `mise.toml`, which is often nested
+/// well below the checkout (`/repo/packages/api`), so the enclosing checkout is
+/// found by walking ancestors rather than looking beside the config. The first
+/// `.git` encountered decides: a directory is the primary checkout, and a file
+/// names the real git directory.
+///
+/// Only a `gitdir:` under a `worktrees/` directory is a linked worktree. A
+/// submodule points into `.git/modules/`, and `git clone --separate-git-dir`
+/// points somewhere else entirely; both are the single copy of their project and
+/// must keep the base port.
+fn in_linked_worktree(root: &Path) -> bool {
+    for dir in root.ancestors() {
+        let git = dir.join(".git");
+        // A directory here is the primary checkout; stop before any outer one.
+        if git.is_dir() {
+            return false;
+        }
+        if git.is_file() {
+            let Ok(content) = std::fs::read_to_string(&git) else {
+                // Unreadable marker: fall back to the well-known port rather
+                // than silently moving a single checkout off it.
+                return false;
+            };
+            let Some(target) = content
+                .lines()
+                .find_map(|line| line.trim().strip_prefix("gitdir:"))
+            else {
+                return false;
+            };
+            return Path::new(target.trim())
+                .components()
+                .any(|c| c.as_os_str() == "worktrees");
+        }
+    }
+    false
+}
+
+/// Whether this root keeps the base port. The primary checkout, a project
+/// outside git, a submodule, and a separate-git-dir clone are each the single
+/// copy of their project, so they take slot 0 and the default single-checkout
+/// experience is unchanged.
 pub(crate) fn is_primary(root: &Path) -> bool {
-    !root.join(".git").is_file()
+    !in_linked_worktree(root)
 }
 
 /// The slot for a project root: 0 for a primary checkout, otherwise a stable
 /// value in 1..SLOTS derived from the canonical root path.
 pub(crate) fn slot(root: &Path) -> u16 {
-    if is_primary(root) {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    if is_primary(&root) {
         return 0;
     }
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     // hash_to_str renders a u64 siphash as hex; reuse it so the slot and the
-    // state directory agree on how a root is identified.
+    // state directory agree on how a root is identified. The root, not the
+    // checkout, is hashed, so sibling projects in one worktree stay distinct.
     let hash = u64::from_str_radix(&crate::hash::hash_to_str(&root), 16).unwrap_or_default();
     1 + u16::try_from(hash % u64::from(SLOTS - 1)).unwrap_or_default()
 }
@@ -166,7 +206,12 @@ mod tests {
     fn worktree(dir: &Path, name: &str) -> std::path::PathBuf {
         let root = dir.join(name);
         std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join(".git"), format!("gitdir: {}\n", dir.display())).unwrap();
+        // A real linked worktree points into the main checkout's worktrees dir.
+        std::fs::write(
+            root.join(".git"),
+            format!("gitdir: {}/.git/worktrees/{name}\n", dir.display()),
+        )
+        .unwrap();
         root
     }
 
@@ -251,6 +296,53 @@ mod tests {
                 .port,
             3000
         );
+    }
+
+    #[test]
+    fn nested_project_roots_inherit_their_checkout() {
+        // A mise.toml well below the checkout root is the common case in a
+        // monorepo. The enclosing worktree decides, not the config directory.
+        let tmp = tempfile::tempdir().unwrap();
+        let wt = worktree(tmp.path(), "feature");
+        let nested = wt.join("packages").join("api");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert!(!is_primary(&nested), "nested root is still in the worktree");
+        assert_ne!(slot(&nested), 0);
+
+        // Sibling projects inside one worktree stay distinct from each other
+        // and from the same project in another worktree.
+        let sibling = wt.join("packages").join("web");
+        std::fs::create_dir_all(&sibling).unwrap();
+        assert_ne!(slot(&nested), slot(&sibling));
+        let other_wt = worktree(tmp.path(), "second");
+        let other_nested = other_wt.join("packages").join("api");
+        std::fs::create_dir_all(&other_nested).unwrap();
+        assert_ne!(slot(&nested), slot(&other_nested));
+
+        // The primary checkout keeps the base port at any depth.
+        let primary = tmp.path().join("primary");
+        std::fs::create_dir_all(primary.join(".git")).unwrap();
+        let primary_nested = primary.join("packages").join("api");
+        std::fs::create_dir_all(&primary_nested).unwrap();
+        assert_eq!(slot(&primary_nested), 0);
+    }
+
+    #[test]
+    fn only_a_worktrees_gitdir_moves_off_the_base_port() {
+        let tmp = tempfile::tempdir().unwrap();
+        // A submodule and a separate-git-dir clone each have a .git *file*, but
+        // both are the single copy of their project and keep the base port.
+        for target in [
+            "/repo/.git/modules/sub",
+            "/elsewhere/detached-git-dir",
+            "not a gitdir line",
+        ] {
+            let root = tmp.path().join(format!("c{}", target.len()));
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(root.join(".git"), format!("gitdir: {target}\n")).unwrap();
+            assert!(is_primary(&root), "{target} must keep the base port");
+            assert_eq!(slot(&root), 0);
+        }
     }
 
     #[test]

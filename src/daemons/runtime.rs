@@ -47,17 +47,20 @@ pub(crate) fn read_state(root: &Path) -> Result<State> {
 }
 
 /// Fail before registering configuration when another project root on this
-/// machine has already claimed one of our ports. Two checkouts of the same
-/// project landing on the same slot is rare but silent otherwise: the second
-/// daemon would fail to bind, or worse, connect to the first one's data.
-pub(crate) fn check_port_conflicts(root: &Path, ports: &BTreeMap<String, PortClaim>) -> Result<()> {
-    if ports.is_empty() {
-        return Ok(());
-    }
-    let mine = state_dir(root);
+/// machine is *running* a daemon on one of our ports. Two checkouts landing on
+/// the same port is otherwise silent: the second daemon fails to bind, or worse,
+/// connects to the first one's data.
+///
+/// Liveness matters. A `state.json` outlives the daemon it describes, so a
+/// stopped project must not hold a port hostage; before this check existed, two
+/// projects could take turns on the default 5432 and that has to keep working.
+/// The cheap scan therefore only selects candidates, and the liveness probe runs
+/// solely for a root whose port actually matches.
+fn claimed_ports(mine: &Path) -> Vec<(State, String, u16)> {
     let Ok(entries) = std::fs::read_dir(crate::dirs::STATE.join("daemons")) else {
-        return Ok(());
+        return Vec::new();
     };
+    let mut found = Vec::new();
     for entry in entries.flatten() {
         let dir = entry.path();
         if dir == mine || !dir.is_dir() {
@@ -69,27 +72,15 @@ pub(crate) fn check_port_conflicts(root: &Path, ports: &BTreeMap<String, PortCla
         let Ok(other) = serde_json::from_slice::<State>(&other) else {
             continue;
         };
-        // A removed checkout keeps no claim; its data directory can be reused.
-        if other.root == root || !other.root.is_dir() {
+        // A removed checkout keeps no claim; its ports are free to reuse.
+        if !other.root.is_dir() {
             continue;
         }
-        for (name, claim) in ports {
-            if let Some((other_name, _)) = other
-                .ports
-                .iter()
-                .find(|(_, other_claim)| other_claim.port == claim.port)
-            {
-                bail!(
-                    "daemon {name} would use port {}, already claimed by {other_name} in {}. \
-                     Set an explicit port on one of them, or use port = {{ auto = true, base = <port> }} \
-                     to move this project's range.",
-                    claim.port,
-                    other.root.display()
-                );
-            }
+        for (name, claim) in other.ports.clone() {
+            found.push((other.clone(), name, claim.port));
         }
     }
-    Ok(())
+    found
 }
 
 pub(crate) fn write_if_changed(path: &Path, content: &[u8]) -> Result<bool> {
@@ -247,6 +238,39 @@ impl Runtime {
         Ok(false)
     }
 
+    /// See [`claimed_ports`]: only a port that another root is actively serving
+    /// is a conflict.
+    async fn check_port_conflicts(
+        &self,
+        root: &Path,
+        ports: &BTreeMap<String, PortClaim>,
+    ) -> Result<()> {
+        if ports.is_empty() {
+            return Ok(());
+        }
+        for (other, other_name, port) in claimed_ports(&state_dir(root)) {
+            if other.root == root {
+                continue;
+            }
+            let Some((name, _)) = ports.iter().find(|(_, claim)| claim.port == port) else {
+                continue;
+            };
+            // Probing costs a pitchfork call per matching root, so it runs only
+            // here. An unreachable supervisor leaves the port available rather
+            // than blocking a start that used to work.
+            if !self.active(&other.root, &other).await.unwrap_or(false) {
+                continue;
+            }
+            bail!(
+                "daemon {name} would use port {port}, in use by {other_name} running in {}. \
+                 Stop it, set an explicit port on one of them, or use \
+                 port = {{ auto = true, base = <port> }} to move this project's range.",
+                other.root.display()
+            );
+        }
+        Ok(())
+    }
+
     pub(crate) async fn prepare(
         &self,
         root: &Path,
@@ -306,7 +330,18 @@ impl Runtime {
         }
         // Past the fast path, so this runs on an explicit start or restart and
         // whenever the rendered configuration changed, never on every prompt.
-        check_port_conflicts(root, &state.ports)?;
+        // Projects hold different project locks, so without a shared one two
+        // roots resolving to the same port could both scan, see nothing, and
+        // publish. This is held until the claim is durable below.
+        let _ports_lock = (!state.ports.is_empty())
+            .then(|| {
+                crate::lock_file::LockFile::at(
+                    &crate::dirs::STATE.join("daemons").join("ports.lock"),
+                )
+                .lock()
+            })
+            .transpose()?;
+        self.check_port_conflicts(root, &state.ports).await?;
         self.supports_external_config(root).await?;
         write_if_changed(&file, content.as_bytes())?;
         if set.daemons.is_empty() {
@@ -510,41 +545,75 @@ mod tests {
     }
 
     #[test]
-    fn conflicting_ports_name_the_other_project_root() {
+    fn only_live_roots_with_a_matching_port_become_conflict_candidates() {
         let tmp = tempfile::tempdir().unwrap();
         let mine = tmp.path().join("mine");
         let theirs = tmp.path().join("theirs");
         std::fs::create_dir_all(&mine).unwrap();
         std::fs::create_dir_all(&theirs).unwrap();
-        let claim = PortClaim::fixed(5432);
-        let ports = BTreeMap::from([("db".to_string(), claim)]);
+        let write_state = |root: &Path, port: u16| {
+            let state = State {
+                root: root.to_path_buf(),
+                ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(port))]),
+                ..State::default()
+            };
+            let dir = state_dir(root);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("state.json"),
+                serde_json::to_vec_pretty(&state).unwrap(),
+            )
+            .unwrap();
+        };
+        write_state(&theirs, 5432);
+        write_state(&mine, 5432);
 
-        let other = State {
+        // Our own state directory never reports against us.
+        let found = claimed_ports(&state_dir(&mine));
+        let ours: Vec<_> = found.iter().filter(|(s, _, _)| s.root == mine).collect();
+        assert!(ours.is_empty(), "own claim must be skipped");
+        let theirs_found: Vec<_> = found
+            .iter()
+            .filter(|(s, name, port)| s.root == theirs && name == "db" && *port == 5432)
+            .collect();
+        assert_eq!(theirs_found.len(), 1, "live sibling claim must be reported");
+
+        // A checkout that no longer exists holds no claim, so its port is
+        // reusable rather than reserved forever.
+        std::fs::remove_dir_all(&theirs).unwrap();
+        assert!(
+            !claimed_ports(&state_dir(&mine))
+                .iter()
+                .any(|(s, _, _)| s.root == theirs)
+        );
+    }
+
+    #[test]
+    fn a_stopped_daemon_does_not_reserve_its_port() {
+        // The scan deliberately reports a candidate without consulting
+        // liveness; `Runtime::check_port_conflicts` probes before failing, so a
+        // stopped project cannot hold a default port hostage. Two projects
+        // taking turns on 5432 has to keep working.
+        let tmp = tempfile::tempdir().unwrap();
+        let theirs = tmp.path().join("stopped");
+        std::fs::create_dir_all(&theirs).unwrap();
+        let state = State {
             root: theirs.clone(),
-            ports: ports.clone(),
+            ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(5432))]),
             ..State::default()
         };
         let dir = state_dir(&theirs);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("state.json"),
-            serde_json::to_vec_pretty(&other).unwrap(),
+            serde_json::to_vec_pretty(&state).unwrap(),
         )
         .unwrap();
-
-        let err = check_port_conflicts(&mine, &ports).unwrap_err().to_string();
-        assert!(err.contains("5432"), "{err}");
-        assert!(err.contains(&theirs.display().to_string()), "{err}");
-        // A different port in the same project is fine, and so is our own state.
-        check_port_conflicts(
-            &mine,
-            &BTreeMap::from([("db".to_string(), PortClaim::fixed(5433))]),
-        )
-        .unwrap();
-        check_port_conflicts(&theirs, &ports).unwrap();
-        // A checkout that no longer exists holds no claim.
-        std::fs::remove_dir_all(&theirs).unwrap();
-        check_port_conflicts(&mine, &ports).unwrap();
+        let found = claimed_ports(&state_dir(tmp.path()));
+        assert!(
+            found.iter().any(|(s, _, p)| s.root == theirs && *p == 5432),
+            "a persisted claim is only a candidate, not a verdict"
+        );
     }
 
     #[test]

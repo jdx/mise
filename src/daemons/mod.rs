@@ -402,7 +402,13 @@ mod tests {
         std::fs::create_dir_all(primary.join(".git")).unwrap();
         let linked = tmp.path().join("worktree");
         std::fs::create_dir_all(&linked).unwrap();
-        std::fs::write(linked.join(".git"), "gitdir: /elsewhere\n").unwrap();
+        // A linked worktree's marker points into the main checkout's worktrees
+        // directory; that is what distinguishes it from a submodule.
+        std::fs::write(
+            linked.join(".git"),
+            format!("gitdir: {}/.git/worktrees/worktree\n", primary.display()),
+        )
+        .unwrap();
 
         let body = "[daemons.db]\npreset = 'postgres'\nversion = '18'\nport = 'auto'\n[daemons.api]\nrun = 'server'\n[daemons.api.port]\nauto = true\nbase = 3000\n";
         let ports = |root: &Path| {

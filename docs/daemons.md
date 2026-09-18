@@ -104,9 +104,13 @@ port = { auto = true, base = 3000 }
 The primary checkout keeps the base port, so a single-checkout project is unchanged:
 `PGPORT` stays `5432` and the API stays on `3000`. Each linked git worktree gets a
 stable offset derived from its path, so the same worktree always resolves to the same
-port and two worktrees do not collide. A worktree is recognised by its `.git` entry
-being a file rather than a directory; a project outside git is treated as the only
-copy and also keeps the base port.
+port and two worktrees do not collide.
+
+The enclosing checkout decides, not the directory holding `mise.toml`, so a config
+nested in a monorepo such as `packages/api/mise.toml` still follows its worktree.
+Sibling projects within one worktree keep separate ports. Only a checkout created by
+`git worktree add` is offset; a submodule, a `git clone --separate-git-dir`, and a
+project outside git are each the single copy of their project and keep the base port.
 
 `base` sets the port the primary checkout uses. It defaults to the preset's port and
 is required for custom daemons, which have no default to offset. `stride` sets the
@@ -139,9 +143,11 @@ mise daemons ls --json
 
 Because the allocation is persisted, a future change to how offsets are derived cannot
 move a daemon that is already running. Editing `base` or `stride` does re-derive it.
-Starting a daemon fails when another project root on this machine has already claimed
-the same port, naming that root; give one of them an explicit port or a different
-`base`.
+Starting a daemon fails when another project root on this machine is _running_ a
+daemon on the same port, naming that root. Liveness is what matters: a stopped project
+never reserves a port, so two projects can still take turns on a default port such as
+5432 exactly as before. The check only probes a root whose port actually matches, and
+it leaves the port available when that project's supervisor cannot be reached.
 
 ## Data and configuration
 
