@@ -1233,6 +1233,25 @@ impl DaemonSet {
         Ok(())
     }
 
+    /// The daemons pitchfork starts when a shell joins this project's session,
+    /// together with everything they depend on. `auto` is passed through to the
+    /// generated configuration and pitchfork acts on it, so mise mirrors the
+    /// rule here to check a start it is about to hand over.
+    pub(crate) fn auto_starting(&self) -> Self {
+        let names: Vec<String> = self
+            .daemons
+            .iter()
+            .filter(|(_, d)| {
+                d.table
+                    .get("auto")
+                    .and_then(toml::Value::as_array)
+                    .is_some_and(|a| a.iter().any(|v| v.as_str() == Some("start")))
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        self.with_dependencies(&names)
+    }
+
     pub(crate) fn auto(&self) -> bool {
         self.daemons.values().any(|d| {
             d.table
@@ -1985,6 +2004,41 @@ mod tests {
         // root can answer the word with the daemon it would have imported.
         assert!(set.resolve_bare(&parent, "pipeline").is_none());
         assert!(set.imported_as("pipeline").is_none());
+    }
+
+    #[test]
+    fn the_auto_lifecycle_checks_only_what_it_starts() {
+        let _serial = import_lock();
+        // The shell hook registers the whole project but pitchfork only starts
+        // the `auto = ["start"]` daemons, so a blocked daemon nobody starts must
+        // not take the project's automatic lifecycle down with it.
+        let app = tempfile::tempdir().unwrap();
+        let root = app.path().to_path_buf();
+        let config = files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'exec api'\nauto = ['start', 'stop']\ndepends = ['pipeline']\n\
+             [daemons.manual]\nrun = 'exec manual'\ndepends = ['other']\n\
+             [daemons.pipeline]\nproject = '../gone'\n[daemons.other]\nproject = '../gone'\n",
+        )]);
+        let set = load(&config).unwrap();
+        let starting = set.auto_starting();
+        assert!(starting.daemons.contains_key("api"));
+        assert!(!starting.daemons.contains_key("manual"));
+        let err = ensure_not_blocked(&set, &starting, Some(&root))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("\"api\""), "{err}");
+        assert!(err.contains("[daemons.pipeline]"), "{err}");
+        // Only the daemon nobody starts is blocked: the hook stays out of it.
+        let config = files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'exec api'\nauto = ['start']\n\
+             [daemons.manual]\nrun = 'exec manual'\ndepends = ['other']\n\
+             [daemons.other]\nproject = '../gone'\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert!(set.blocked.contains_key("manual"));
+        assert!(ensure_not_blocked(&set, &set.auto_starting(), Some(&root)).is_ok());
     }
 
     #[test]
