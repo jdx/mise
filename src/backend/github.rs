@@ -68,6 +68,10 @@ const ADDITIONAL_ASSETS_STATE_FILENAME: &str = ".mise-additional-assets.toml";
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct AdditionalAssetsInstallState {
     patterns: Vec<String>,
+    // TOML arrays can't hold a `null` element, so an absent checksum is an
+    // empty string rather than `None` -- checksums are never empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    checksums: Vec<String>,
 }
 
 const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
@@ -471,14 +475,20 @@ impl Backend for UnifiedGitBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
-        if !self.is_version_installed(config, tv, check_symlink) {
+        if !self.is_version_installed(config, tv, check_symlink)
+            || self.locked_checksum_drifted(config, tv)
+        {
             return Ok(false);
         }
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let patterns = self
             .options(&raw_opts)
             .additional_asset_patterns_for_target(&PlatformTarget::from_current());
-        Ok(self.additional_assets_install_state_matches(tv, &patterns))
+        Ok(self.additional_assets_install_state_matches(
+            tv,
+            &patterns,
+            self.invocation_locked(config, tv),
+        ))
     }
 
     async fn install_operation_count(&self, tv: &ToolVersion, ctx: &InstallContext) -> usize {
@@ -926,6 +936,22 @@ impl Backend for UnifiedGitBackend {
             }
         };
 
+        // Snapshot the lockfile's own checksums before install enriches
+        // tv.lock_platforms with ones computed for assets that had none
+        // published -- that computed value never gets persisted back to
+        // mise.lock, so comparing against it later would drift forever.
+        let locked_additional_checksums: Vec<Option<String>> = tv
+            .lock_platforms
+            .get(&platform_key)
+            .map(|platform| {
+                platform
+                    .additional_artifacts
+                    .iter()
+                    .map(|a| a.checksum.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         // Download and install
         self.download_and_install(ctx, &mut tv, &asset, &opts)
             .await?;
@@ -938,7 +964,11 @@ impl Backend for UnifiedGitBackend {
                 .additional_artifacts
                 .truncate(additional_assets.len());
         }
-        self.write_additional_assets_install_state(&tv, &additional_patterns)?;
+        self.write_additional_assets_install_state(
+            &tv,
+            &additional_patterns,
+            &locked_additional_checksums,
+        )?;
 
         Ok(tv)
     }
@@ -1141,25 +1171,49 @@ impl UnifiedGitBackend {
             })
     }
 
+    /// `locked` also compares each additional asset's recorded checksum against
+    /// the current lockfile entry, so a pattern-preserving asset swap under
+    /// `--locked` is not mistaken for an unchanged install.
     fn additional_assets_install_state_matches(
         &self,
         tv: &ToolVersion,
         patterns: &[String],
+        locked: bool,
     ) -> bool {
         let state_path = tv.install_path().join(ADDITIONAL_ASSETS_STATE_FILENAME);
         if !state_path.exists() {
             return patterns.is_empty();
         }
-        file::read_to_string(&state_path)
+        let Some(state) = file::read_to_string(&state_path)
             .ok()
             .and_then(|body| toml::from_str::<AdditionalAssetsInstallState>(&body).ok())
-            .is_some_and(|state| state.patterns == patterns)
+        else {
+            return false;
+        };
+        if state.patterns != patterns {
+            return false;
+        }
+        if !locked {
+            return true;
+        }
+        match tv.lock_platforms.get(&self.get_platform_key()) {
+            Some(platform) if !platform.additional_artifacts.is_empty() => {
+                let lock_checksums: Vec<_> = platform
+                    .additional_artifacts
+                    .iter()
+                    .map(|a| a.checksum.clone().unwrap_or_default())
+                    .collect();
+                state.checksums == lock_checksums
+            }
+            _ => true,
+        }
     }
 
     fn write_additional_assets_install_state(
         &self,
         tv: &ToolVersion,
         patterns: &[String],
+        checksums: &[Option<String>],
     ) -> Result<()> {
         let state_path = tv.install_path().join(ADDITIONAL_ASSETS_STATE_FILENAME);
         if patterns.is_empty() {
@@ -1170,6 +1224,10 @@ impl UnifiedGitBackend {
         }
         let state = AdditionalAssetsInstallState {
             patterns: patterns.to_vec(),
+            checksums: checksums
+                .iter()
+                .map(|c| c.clone().unwrap_or_default())
+                .collect(),
         };
         file::write(state_path, toml::to_string(&state)?)
     }
@@ -3196,23 +3254,145 @@ mod tests {
         tv.install_path = Some(install_path);
         let patterns = vec!["base-*.tar.gz".to_string(), "extra-*.tar.gz".to_string()];
 
-        assert!(backend.additional_assets_install_state_matches(&tv, &[]));
-        assert!(!backend.additional_assets_install_state_matches(&tv, &patterns));
+        assert!(backend.additional_assets_install_state_matches(&tv, &[], false));
+        assert!(!backend.additional_assets_install_state_matches(&tv, &patterns, false));
 
         backend
-            .write_additional_assets_install_state(&tv, &patterns)
+            .write_additional_assets_install_state(&tv, &patterns, &[])
             .unwrap();
-        assert!(backend.additional_assets_install_state_matches(&tv, &patterns));
+        assert!(backend.additional_assets_install_state_matches(&tv, &patterns, false));
         assert!(!backend.additional_assets_install_state_matches(
             &tv,
             &["extra-*.tar.gz".to_string(), "base-*.tar.gz".to_string()],
+            false,
         ));
-        assert!(!backend.additional_assets_install_state_matches(&tv, &[]));
+        assert!(!backend.additional_assets_install_state_matches(&tv, &[], false));
 
         backend
-            .write_additional_assets_install_state(&tv, &[])
+            .write_additional_assets_install_state(&tv, &[], &[])
             .unwrap();
-        assert!(backend.additional_assets_install_state_matches(&tv, &[]));
+        assert!(backend.additional_assets_install_state_matches(&tv, &[], false));
+    }
+
+    #[test]
+    fn test_additional_assets_install_state_detects_locked_checksum_drift() {
+        let backend = create_test_backend();
+        let backend_arg = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend_arg, "1.0.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("install");
+        file::create_dir_all(&install_path).unwrap();
+        let mut tv = ToolVersion::new(request, "1.0.0".to_string());
+        tv.install_path = Some(install_path);
+        let patterns = vec!["extra-*.tar.gz".to_string()];
+        let platform_key = backend.get_platform_key();
+
+        tv.lock_platforms.insert(
+            platform_key.clone(),
+            PlatformInfo {
+                additional_artifacts: vec![ArtifactInfo {
+                    checksum: Some("sha256:old".to_string()),
+                    url: "https://example.com/extra-1.0.0.tar.gz".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        );
+        backend
+            .write_additional_assets_install_state(
+                &tv,
+                &patterns,
+                &[Some("sha256:old".to_string())],
+            )
+            .unwrap();
+
+        // Unchanged lock checksum: still matches under --locked.
+        assert!(backend.additional_assets_install_state_matches(&tv, &patterns, true));
+        // Not locked: pattern match alone is enough, checksum is not consulted.
+        assert!(backend.additional_assets_install_state_matches(&tv, &patterns, false));
+
+        // The lock is re-resolved to a different asset for the same pattern.
+        tv.lock_platforms
+            .get_mut(&platform_key)
+            .unwrap()
+            .additional_artifacts[0]
+            .checksum = Some("sha256:new".to_string());
+        assert!(!backend.additional_assets_install_state_matches(&tv, &patterns, true));
+        assert!(backend.additional_assets_install_state_matches(&tv, &patterns, false));
+    }
+
+    #[test]
+    fn test_additional_assets_install_state_checksumless_asset_is_stable() {
+        let backend = create_test_backend();
+        let backend_arg = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend_arg, "1.0.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let install_path = tmp.path().join("install");
+        file::create_dir_all(&install_path).unwrap();
+        let mut tv = ToolVersion::new(request, "1.0.0".to_string());
+        tv.install_path = Some(install_path);
+        let patterns = vec!["extra-*.tar.gz".to_string()];
+        let platform_key = backend.get_platform_key();
+
+        // The lockfile has no published checksum for this asset.
+        tv.lock_platforms.insert(
+            platform_key.clone(),
+            PlatformInfo {
+                additional_artifacts: vec![ArtifactInfo {
+                    checksum: None,
+                    url: "https://example.com/extra-1.0.0.tar.gz".to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        );
+
+        // install_version_ snapshots checksums straight from the lockfile
+        // before installing -- not from a copy enriched with a checksum
+        // computed in-process for local verification, which never gets
+        // persisted back to mise.lock under --locked.
+        let locked_checksums: Vec<Option<String>> = tv
+            .lock_platforms
+            .get(&platform_key)
+            .unwrap()
+            .additional_artifacts
+            .iter()
+            .map(|a| a.checksum.clone())
+            .collect();
+        assert_eq!(locked_checksums, vec![None]);
+
+        // Installing enriches the in-memory artifact with that computed
+        // checksum, same as download_verify_and_install_additional_asset does.
+        tv.lock_platforms
+            .get_mut(&platform_key)
+            .unwrap()
+            .additional_artifacts[0]
+            .checksum = Some("blake3:computed-locally".to_string());
+
+        // The state file must record the pre-enrichment snapshot, not the
+        // now-mutated tv -- otherwise every later --locked run, which
+        // re-reads the still-checksumless lockfile, would see a mismatch
+        // and reinstall forever.
+        backend
+            .write_additional_assets_install_state(&tv, &patterns, &locked_checksums)
+            .unwrap();
+
+        // A later run resolves tv fresh from the unchanged lockfile: checksum
+        // is None again, matching what was recorded.
+        tv.lock_platforms
+            .get_mut(&platform_key)
+            .unwrap()
+            .additional_artifacts[0]
+            .checksum = None;
+        assert!(backend.additional_assets_install_state_matches(&tv, &patterns, true));
     }
 
     #[test]
