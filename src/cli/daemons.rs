@@ -184,6 +184,9 @@ impl Daemons {
             // auto lifecycle and task-required daemons resolve them, so a name a
             // nearer project redefines is registered and started once.
             let scoped = runtime::config_for_root(&config, &root).await?;
+            // Seeded before the toolset is built, so this project installs tools for
+            // the daemons it registers and not for a name a nearer project took over.
+            scoped.seed_daemons(root_set.clone());
             let set = &root_set;
             let previous = runtime::read_state(&root)?;
             if set.daemons.is_empty() && previous.ids.is_empty() {
