@@ -75,6 +75,9 @@ pub(crate) struct Extras<'a> {
     pub init: &'a [String],
     pub port: Option<PortClaim>,
     pub labels: &'a super::urls::RootLabels,
+    /// True when this daemon belongs to a project referenced with `project =`.
+    /// Its exports go to that project's environment, not the one loading it.
+    pub imported: bool,
 }
 
 pub(crate) fn expand(
@@ -203,7 +206,7 @@ pub(crate) fn expand(
         task: None,
         tool: Some((tool, version.into())),
         exports,
-        imported: false,
+        imported: extras.imported,
         port: Some(claim),
         host,
     })
@@ -334,6 +337,7 @@ mod tests {
                     init: &[],
                     port: None,
                     labels: &labels(),
+                    imported: false,
                 },
                 Path::new("/project/mise.toml"),
                 Path::new("/project"),
@@ -358,6 +362,7 @@ mod tests {
                 init: &[],
                 port: Some(PortClaim::fixed(5433)),
                 labels: &labels(),
+                imported: false,
             },
             Path::new("/p/mise.toml"),
             Path::new("/p"),

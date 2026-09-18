@@ -477,7 +477,7 @@ pub(crate) fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) 
         return namespace(root);
     };
     crate::daemons::validate_id("namespace", explicit)?;
-    if settings.is_none_or(|s| s.namespace_per_worktree()) && is_linked_worktree(root) {
+    if settings.is_none_or(|s| s.namespace_per_worktree()) && crate::git::in_linked_worktree(root) {
         // Linked worktrees of one repository share the configuration that names
         // the namespace, so an unsuffixed namespace would make two checkouts
         // fight over the same pitchfork daemon IDs and state directory.
@@ -487,31 +487,6 @@ pub(crate) fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) 
         ));
     }
     Ok(explicit.into())
-}
-
-/// Whether `root` sits in a linked git worktree rather than the main checkout.
-///
-/// A linked worktree's `.git` is a file pointing into the main repository's
-/// `worktrees/` directory, which is what `git rev-parse --git-common-dir`
-/// reports as a path outside the worktree. Reading the file directly keeps this
-/// out of subprocess territory: namespaces are resolved on every config load,
-/// including the activation hook. A submodule also uses a `.git` file, but it
-/// points at `modules/`, so only `worktrees/` counts here.
-fn is_linked_worktree(root: &Path) -> bool {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    for dir in root.ancestors() {
-        let git = dir.join(".git");
-        if git.is_dir() {
-            return false;
-        }
-        if git.is_file() {
-            return std::fs::read_to_string(&git).is_ok_and(|s| {
-                s.trim().starts_with("gitdir:")
-                    && (s.contains("/worktrees/") || s.contains("\\worktrees\\"))
-            });
-        }
-    }
-    false
 }
 
 pub(crate) fn namespace(root: &Path) -> Result<String> {
@@ -630,8 +605,8 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
     // directory's name, so an unchanged label is left out rather than pinned:
     // that keeps the generated file stable when a worktree is renamed. It is
     // written first because TOML requires bare values before any table.
-    if let Some((root, labels)) = set.labels.first()
-        && labels.worktree != crate::daemons::urls::default_worktree_label(root)
+    if let Some(labels) = set.labels.get(&state.root)
+        && labels.worktree != crate::daemons::urls::default_worktree_label(&state.root)
     {
         doc.insert(
             "worktree_label".into(),
@@ -757,15 +732,18 @@ mod tests {
     fn linked_worktrees_get_their_own_namespace_unless_disabled() {
         let tmp = tempfile::tempdir().unwrap();
         let main = tmp.path().join("repo");
-        std::fs::create_dir_all(main.join(".git").join("worktrees").join("feature")).unwrap();
+        let private = main.join(".git").join("worktrees").join("feature");
+        std::fs::create_dir_all(&private).unwrap();
+        // A real linked worktree's private directory points back at the shared
+        // git dir; without that pointer this is a lookalike, and namespacing
+        // now agrees with port allocation in rejecting one.
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
+        std::fs::write(main.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
         let worktree = tmp.path().join("feature");
         std::fs::create_dir(&worktree).unwrap();
         std::fs::write(
             worktree.join(".git"),
-            format!(
-                "gitdir: {}\n",
-                main.join(".git/worktrees/feature").display()
-            ),
+            format!("gitdir: {}\n", private.display()),
         )
         .unwrap();
 
@@ -797,6 +775,19 @@ mod tests {
         std::fs::write(submodule.join(".git"), "gitdir: ../repo/.git/modules/sub\n").unwrap();
         assert_eq!(
             resolve_namespace(&submodule, Some(&settings("entiredb", true))).unwrap(),
+            "entiredb"
+        );
+        // A `.git` file that only looks like a worktree's is not one, and the
+        // same check decides this for namespaces and for `port = "auto"`.
+        let forged = tmp.path().join("forged");
+        std::fs::create_dir(&forged).unwrap();
+        std::fs::write(
+            forged.join(".git"),
+            format!("gitdir: {}\n", main.join(".git/worktrees/pruned").display()),
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_namespace(&forged, Some(&settings("entiredb", true))).unwrap(),
             "entiredb"
         );
     }
@@ -924,6 +915,7 @@ mod tests {
         );
         let state = State {
             namespace: "shop".into(),
+            root: root.clone(),
             ..State::default()
         };
         let rendered = render(&set, &state).unwrap();
@@ -951,6 +943,21 @@ mod tests {
             },
         );
         let rendered = render(&set, &state).unwrap();
+        let parsed: toml::Table = toml::from_str(&rendered).unwrap();
+        assert!(!parsed.contains_key("worktree_label"), "{rendered}");
+
+        // A label belonging to some other root, as an imported project's would
+        // be, must not be written into this root's file.
+        let mut other = set.clone();
+        other.labels.clear();
+        other.labels.insert(
+            root.join("elsewhere"),
+            super::super::urls::RootLabels {
+                project: "other".into(),
+                worktree: "somewhere-else".into(),
+            },
+        );
+        let rendered = render(&other, &state).unwrap();
         let parsed: toml::Table = toml::from_str(&rendered).unwrap();
         assert!(!parsed.contains_key("worktree_label"), "{rendered}");
     }

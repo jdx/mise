@@ -257,6 +257,10 @@ impl Daemons {
                 let declarations = scoped.daemons()?;
                 for dependency_root in declarations.roots() {
                     if !roots.contains(&dependency_root) {
+                        // All three stay in step: they are zipped per root
+                        // below, and a shorter one would silently drop the
+                        // roots discovered here from registration and start.
+                        root_sets.push(loaded.for_root(&dependency_root));
                         roots.push(dependency_root);
                         root_ids.push(Vec::new());
                     }

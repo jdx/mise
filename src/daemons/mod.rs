@@ -295,7 +295,15 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         let settings = settings_for(&settings, &root);
         set.daemons.insert(
             name.clone(),
-            build(&name, declaration, source, root, &settings, &mut state)?,
+            build(
+                &name,
+                declaration,
+                source,
+                root,
+                &settings,
+                &mut state,
+                false,
+            )?,
         );
     }
     // The first claimant of an ambiguous key kept its export while it looked
@@ -383,6 +391,7 @@ fn build(
     root: PathBuf,
     settings: &DaemonSettings,
     state: &mut LoadState,
+    imported: bool,
 ) -> Result<Daemon> {
     let (preset, version, mut table) = match declaration {
         Declaration::Preset(version) => (Some(name.to_string()), Some(version), toml::Table::new()),
@@ -453,6 +462,7 @@ fn build(
                 init: &init,
                 port: claim,
                 labels: &state.labels(&root, settings)?,
+                imported,
             },
             &source,
             &root,
@@ -538,8 +548,12 @@ fn build(
     // Without these a custom daemon's endpoint would reach pitchfork and
     // nothing else: `mise env` would export nothing, and the process
     // could only discover it through pitchfork's own injection.
+    // An imported daemon exports into the project that declares it, never into
+    // this one, so it must not claim a variable here: doing so would make a
+    // local daemon of the same name look ambiguous and strip its exports.
     let mut exports = IndexMap::new();
-    if (claim.is_some() || host.is_some())
+    if !imported
+        && (claim.is_some() || host.is_some())
         && let Some(base) = env_var_base(name)
     {
         match state.keys.insert(base.clone(), name.to_string()) {
@@ -583,7 +597,7 @@ fn build(
         task,
         tool: None,
         exports,
-        imported: false,
+        imported,
         port: claim,
         host,
     })
@@ -824,15 +838,15 @@ fn import(
         );
     }
     let remote_settings = settings_for(&settings, &remote_root);
-    let mut daemon = build(
+    let daemon = build(
         remote_name,
         declaration,
         remote_source,
         remote_root.clone(),
         &remote_settings,
         state,
+        true,
     )?;
-    daemon.imported = true;
     let namespace = runtime::resolve_namespace(&remote_root, Some(&remote_settings))?;
     let id = format!("{namespace}/{}", daemon.name);
     namespaces.insert(remote_root, namespace);
@@ -1164,7 +1178,15 @@ impl DaemonSet {
             aliases: self.aliases.clone(),
             import_errors: self.import_errors.clone(),
             blocked: self.blocked.clone(),
-            labels: self.labels.clone(),
+            // Narrowed like `namespaces`: the generated pitchfork config carries
+            // one `worktree_label`, and copying every root's labels here would
+            // let an imported project's checkout name reach this one's file.
+            labels: self
+                .labels
+                .iter()
+                .filter(|(r, _)| r.as_path() == root)
+                .map(|(r, l)| (r.clone(), l.clone()))
+                .collect(),
             groups: self
                 .groups
                 .iter()
@@ -2794,6 +2816,39 @@ three = ["two", "c"]
         ] {
             assert!(load_body(invalid).is_err(), "{invalid:?}");
         }
+    }
+
+    #[test]
+    fn an_imported_daemon_does_not_claim_this_projects_variables() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'mirror'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let root = tmp.path().join("app");
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons_settings]\nnamespace = 'app'\n\
+                 [daemons.worker]\nrun = 'exec worker'\n\
+                 [daemons.remote]\nproject = '{}'\nname = 'worker'\n",
+                mirror.display()
+            ),
+        )]))
+        .unwrap();
+        // The import shares the remote daemon's name. Its exports belong to that
+        // project, so it must not make this project's `worker` look ambiguous.
+        assert_eq!(
+            set.daemons["worker"].exports["WORKER_URL"],
+            "https://worker.app.app.localhost"
+        );
+        assert!(set.env_entries().iter().any(|(d, _)| matches!(
+            d,
+            EnvDirective::Val(k, _, _) if k == "WORKER_URL"
+        )));
     }
 
     #[test]
