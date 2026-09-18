@@ -177,7 +177,7 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                         let key = port_env_var(&name)?;
                         if let Some(other) = port_keys.insert(key.clone(), name.clone()) {
                             bail!(
-                                "daemons {other} and {name} both export {key};                                  their names differ only by punctuation, so one port                                  would silently replace the other. Rename one of them."
+                                "daemons {other} and {name} both export {key}; their names differ only by punctuation, so one port would silently replace the other. Rename one of them."
                             );
                         }
                         IndexMap::from([(key, c.port.to_string())])
@@ -201,7 +201,7 @@ fn port_env_var(name: &str) -> Result<String> {
     // break the whole activation, so this is refused at config load instead.
     if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
         bail!(
-            "[daemons.{name}] exports a port, so its name must start with a letter              or underscore; a variable name cannot start with a digit"
+            "[daemons.{name}] exports a port, so its name must start with a letter or underscore; a variable name cannot start with a digit"
         );
     }
     let base: String = name
@@ -514,6 +514,9 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(clash.contains("WEB_UI_PORT"), "{clash}");
+        // A wrapped source literal can carry its indentation into the message,
+        // which reads as a gapped sentence.
+        assert!(!clash.contains("  "), "gapped message: {clash}");
         // A shell cannot export a name starting with a digit.
         assert!(
             load(&files(&[(
@@ -524,6 +527,13 @@ mod tests {
             .to_string()
             .contains("must start with a letter")
         );
+        let digits = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.9api]\nrun = 'a'\nport = 3000\n",
+        )]))
+        .unwrap_err()
+        .to_string();
+        assert!(!digits.contains("  "), "gapped message: {digits}");
         // That name is still fine when mise resolves no port for it.
         assert!(
             load(&files(&[(
