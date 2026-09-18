@@ -106,6 +106,48 @@ assert_contains "cat '$DAEMON_LOG'" '/core2'
 assert_fail_contains "mise daemons start --group backend 2>&1" 'no [daemon_groups] entry named'
 assert_fail_contains "mise daemons start missing-group 2>&1" 'no matching project daemons'
 
+# A bare start covers a project without a default group, even when an inherited
+# project has one.
+group_base=$PWD
+mkdir -p group-parent/child
+cd group-parent
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.parent-a]
+run = "sleep 30"
+[daemons.parent-b]
+run = "sleep 30"
+[daemon_groups]
+default = ["parent-a"]
+TOML
+cd child
+cat >mise.toml <<'TOML'
+[daemons.child-a]
+run = "sleep 30"
+TOML
+: >"$DAEMON_LOG"
+mise daemons start
+started=$(grep 'args=start ' "$DAEMON_LOG")
+# The parent honors its own default group.
+assert_contains "echo '$started'" '/parent-a'
+assert_not_contains "echo '$started'" '/parent-b'
+# The child declares none, so all of its daemons still start.
+assert_contains "echo '$started'" '/child-a'
+# restart uses the default group the same way; stop still covers everything.
+: >"$DAEMON_LOG"
+mise daemons restart
+restarted=$(grep 'args=restart ' "$DAEMON_LOG")
+assert_contains "echo '$restarted'" '/parent-a'
+assert_not_contains "echo '$restarted'" '/parent-b'
+: >"$DAEMON_LOG"
+mise daemons stop
+stopped=$(grep 'args=stop ' "$DAEMON_LOG")
+assert_contains "echo '$stopped'" '/parent-b'
+# A removed group points at ls rather than failing silently.
+assert_fail_contains "mise daemons stop --group gone 2>&1" 'mise daemons ls'
+cd "$group_base"
+
 cat >mise.toml <<'TOML'
 [daemons.api]
 run = "sleep 30"

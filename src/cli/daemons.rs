@@ -142,9 +142,15 @@ impl Daemons {
         // declared in [daemon_groups] are accepted here.
         for group in &groups {
             if !root_sets.iter().any(|set| set.group(group).is_some()) {
-                bail!(
-                    "no [daemon_groups] entry named {group:?}; declare the group in [daemon_groups] or use pitchfork directly for its own groups"
-                );
+                // A group is an alias in the configuration, not persisted state, so a
+                // removed one cannot be expanded. Daemons it started are still tracked
+                // by name, which is the way back to them.
+                let hint = if install {
+                    "declare the group in [daemon_groups] or use pitchfork directly for its own groups"
+                } else {
+                    "declare the group in [daemon_groups], or run `mise daemons ls` to name daemons a removed group started"
+                };
+                bail!("no [daemon_groups] entry named {group:?}; {hint}");
             }
         }
         // Validate the entire request before any root installs tools or changes state.
@@ -517,6 +523,31 @@ mod tests {
         assert!(selects(&other, "parent/ops", &Selector::Name("ops".into())));
         let owner = loaded.for_root(&loaded.daemons["api"].root.clone());
         assert!(selects(&owner, "child/api", &Selector::Group("ops".into())));
+    }
+
+    #[test]
+    fn a_positional_name_resolves_in_each_project_separately() {
+        // `web` is a group in the child and a daemon in the parent.
+        let loaded = daemons::load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemon_groups]\nweb = ['api']\n",
+            ),
+            ("/parent/mise.toml", "[daemons.web]\nrun = 'web'\n"),
+        ]))
+        .unwrap();
+        let child = loaded.for_root(&loaded.daemons["api"].root.clone());
+        let parent = loaded.for_root(&loaded.daemons["web"].root.clone());
+        let positional = Selector::Name("web".into());
+        // In the child it is the group, so it reaches the member and not the rest.
+        assert!(selects(&child, "child/api", &positional));
+        assert!(!selects(&child, "child/worker", &positional));
+        // In the parent the same word is the daemon of that name.
+        assert!(selects(&parent, "parent/web", &positional));
+        // --group stays a group everywhere, so it never reaches the parent daemon.
+        let group = Selector::Group("web".into());
+        assert!(selects(&child, "child/api", &group));
+        assert!(!selects(&parent, "parent/web", &group));
     }
 
     #[test]

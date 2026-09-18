@@ -19,18 +19,25 @@ pub(crate) enum Declaration {
 }
 
 /// `[daemon_groups]` entry: a bare list of members or a table with `daemons`.
+/// The table form, matching `additionalProperties: false` in schema/mise.json.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GroupTable {
+    daemons: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum GroupDeclaration {
     List(Vec<String>),
-    Table { daemons: Vec<String> },
+    Table(GroupTable),
 }
 
 impl GroupDeclaration {
     fn members(&self) -> &[String] {
         match self {
             GroupDeclaration::List(members) => members,
-            GroupDeclaration::Table { daemons } => daemons,
+            GroupDeclaration::Table(table) => &table.daemons,
         }
     }
 }
@@ -535,6 +542,46 @@ daemons = ["core", "core2"]
         let root = set.daemons["postgres"].root.clone();
         assert_eq!(set.for_root(&root).groups.len(), 3);
         assert!(set.for_root(root.parent().unwrap()).groups.is_empty());
+    }
+
+    #[test]
+    fn groups_nest_more_than_one_level() {
+        let set = load(&files(&[(
+            "/project/mise.toml",
+            r#"
+[daemons.a]
+run = 'a'
+[daemons.b]
+run = 'b'
+[daemons.c]
+run = 'c'
+[daemon_groups]
+one = ["a"]
+two = ["one", "b"]
+three = ["two", "c"]
+"#,
+        )]))
+        .unwrap();
+        assert_eq!(set.group("three").unwrap().daemons, ["a", "b", "c"]);
+        // A cycle is still caught through three levels.
+        let err = load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.a]\nrun = 'a'\n[daemon_groups]\none = ['two']\ntwo = ['three']\nthree = ['one']\n",
+        )]))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("references itself"), "{err}");
+    }
+
+    #[test]
+    fn the_table_form_rejects_unknown_keys() {
+        let err = load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'api'\n[daemon_groups.web]\ndaemons = ['api']\ndeamons = ['api']\n",
+        )]))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("daemon_groups"), "{err}");
     }
 
     #[test]

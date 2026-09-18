@@ -77,6 +77,25 @@ mise daemons stop --group two-cluster
 mise daemons logs default
 ```
 
+A positional name is resolved by each project in its own terms: it selects that
+project's group of that name, or failing that a daemon of that name. So if one
+project declares a group `web` and another declares a daemon `web`, the one name
+selects the group in the first and the daemon in the second. `--group` only ever
+selects a group, and never a daemon that happens to share its name.
+
+When a nearer project redefines a daemon, the group that named it keeps its member,
+but selection stays per project, so the group no longer reaches that daemon. With a
+parent declaring `default = ["postgres", "api"]` and a child redefining `postgres`,
+`mise daemons start default` from the child starts `api` alone. The redefined
+`postgres` belongs to the child, which starts it through its own daemons rather
+than the parent's group. Declare the group in the project that owns the daemons if
+you want one command to cover both.
+
+A group is an alias in the configuration rather than persisted state, so removing
+one leaves nothing to expand. Daemons it started are still tracked by name: `mise
+daemons ls` lists them, and `mise daemons stop` without names stops every daemon
+the project is tracking.
+
 A group name may not repeat a daemon name in the same project, and a group must
 have at least one member. `--group` is accepted only for groups declared in
 `[daemon_groups]`; a pitchfork group defined elsewhere is rejected because it can
