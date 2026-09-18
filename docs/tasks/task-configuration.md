@@ -277,6 +277,49 @@ Supports the same argument, environment variable, and optional dependency syntax
 - `wait_for = ["setup"]` — matches by name, regardless of args or env overrides. If another task runs `depends = ["DEBUG=1 setup"]`, this will still match and wait for it.
 - `wait_for = ["setup arg1"]` or `wait_for = ["DEBUG=1 setup"]` — matches only tasks running with that exact args/env configuration.
 
+### `daemons` <Badge type="warning" text="experimental" />
+
+- **Type**: `bool | string | string[]`
+
+[Project daemons](/daemons.html) that must be running and ready before task
+execution. Requires `experimental = true` and pitchfork 2.25.0 or later.
+
+| Value                   | Requirement                                      |
+| ----------------------- | ------------------------------------------------ |
+| `"postgres"`            | One named daemon.                                |
+| `["postgres", "redis"]` | Each named daemon.                               |
+| `true`                  | All daemons in the task's project configuration. |
+| `false` or omitted      | No daemon requirement.                           |
+
+```mise-toml
+[daemons]
+postgres = "18"
+
+[tasks.test]
+daemons = "postgres"
+run = "npm test"
+```
+
+mise starts the requested daemons through pitchfork and waits for readiness before
+any task body runs. Already-running daemons are reused and remain running after
+the task exits; use `mise daemons stop` to stop them.
+
+Names must match `[daemons]` entries in the task's own project configuration
+hierarchy, including inherited declarations. In a monorepo, a dependency task in
+another subproject resolves its names there, not in the calling project's config.
+An unknown name fails the run.
+
+`--skip-deps` and the `task.skip_depends` setting skip daemon requirements.
+`--dry-run` still validates names and the experimental setting, but starts nothing.
+Safe mode blocks task daemon startup.
+
+A subtask reached through a `run = [{ task = "..." }]` entry is resolved after the
+run has started, so its own `daemons` are not started. Declare the requirement on
+the task you invoke.
+
+For setup, readiness checks, and daemon lifecycle details, see the
+[daemon guide](/daemons.html#tasks-that-require-daemons).
+
 ### `env`
 
 - **Type**: `{ [key]: string | int | bool }`
