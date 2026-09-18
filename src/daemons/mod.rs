@@ -393,8 +393,11 @@ struct LoadState {
     /// Port variables already taken, so two names cannot normalize onto one key.
     keys: BTreeMap<String, String>,
     ambiguous: std::collections::BTreeSet<String>,
-    /// Hostnames already taken, so two daemons cannot claim one endpoint.
-    hosts: BTreeMap<String, String>,
+    /// Hostnames already taken, each with the daemon holding it, so two
+    /// daemons cannot claim one endpoint. A daemon is identified by its root
+    /// and its name: two projects whose directories share a basename derive
+    /// one project label, so the names alone do not tell them apart.
+    hosts: BTreeMap<String, (PathBuf, String)>,
     /// Hostnames two daemons derived independently; neither keeps it.
     ambiguous_hosts: std::collections::BTreeSet<String>,
     /// Hostname components per project root, including roots reached by import.
@@ -579,11 +582,15 @@ fn build(
     // for the same pair, so it never advertises an endpoint the proxy refuses.
     // Both daemons still run, and still have their ports.
     if let Some(claimed) = host.clone()
-        && let Some(other) = state.hosts.insert(claimed.clone(), name.to_string())
-        && other != name
+        && let Some((other_root, other)) = state
+            .hosts
+            .insert(claimed.clone(), (root.clone(), name.to_string()))
+        && (other_root != root || other != name)
     {
         warn_once!(
-            "[daemons] {other} and {name} both resolve to {claimed}, so pitchfork routes neither. Give one of them a different proxy label, or set proxy = false on it."
+            "[daemons] {other} in {} and {name} in {} both resolve to {claimed}, so pitchfork routes neither. Give one of them a different proxy label, or set proxy = false on it.",
+            other_root.display(),
+            root.display()
         );
         state.ambiguous_hosts.insert(claimed);
         urls::withdraw(&mut table);
@@ -2941,6 +2948,41 @@ three = ["two", "c"]
             set.daemons["web"].host.as_deref(),
             Some("web.shop.localhost")
         );
+    }
+
+    /// Two projects whose directories share a basename derive one project
+    /// label, so a same-named daemon in each lands on one hostname. The names
+    /// are identical, so only the roots tell the two claims apart.
+    #[test]
+    fn two_projects_sharing_a_directory_name_collide_on_hostname() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("one").join("api");
+        std::fs::create_dir_all(mirror.join(".git")).unwrap();
+        referenced_project(&mirror, "[daemons.web]\nrun = 'exec web'\nport = 3000\n");
+        let root = tmp.path().join("two").join("api");
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.web]\nrun = 'exec web'\nport = 3001\n\
+                 [daemons.remote]\nproject = '{}'\nname = 'web'\n",
+                mirror.display()
+            ),
+        )]))
+        .unwrap();
+        // Both are called `web` under a project called `api`, so neither is
+        // routed and neither exports a URL. Their ports are untouched.
+        for daemon in set.daemons.values() {
+            assert!(daemon.host.is_none(), "{} kept a hostname", daemon.name);
+            assert_eq!(daemon.table["proxy"].as_bool(), Some(false));
+        }
+        assert!(
+            !set.daemons
+                .values()
+                .any(|d| d.exports.contains_key("WEB_URL"))
+        );
+        assert_eq!(set.daemons["web"].exports["WEB_PORT"], "3001");
     }
 
     #[test]
