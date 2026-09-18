@@ -91,7 +91,7 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
         </div>
         <div class="bootstrap-connector"><span aria-hidden="true">↓</span> <code>mise bootstrap</code></div>
         <div class="bootstrap-resources">
-          <div><strong>Packages</strong><span>brew · apt · winget</span></div>
+          <div><strong>Packages</strong><span>brew · apt · scoop · winget</span></div>
           <div><strong>Repositories</strong><span>Project checkouts</span></div>
           <div><strong>Dotfiles</strong><span>Link · copy · template</span></div>
           <div><strong>Services</strong><span>Background processes</span></div>
@@ -108,7 +108,7 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
           platform-specific settings to keep machine setup alongside your tools.
         </p>
         <ul class="landing-checklist">
-          <li>Packages through brew, apt, dnf, pacman, apk, mas, and winget</li>
+          <li>Packages through brew, apt, dnf, pacman, apk, mas, scoop, and winget</li>
           <li>Dotfiles as symlinks, copies, or templates, plus single-line edits</li>
           <li>Remote hosts over SSH with <code>mise bootstrap remote</code></li>
         </ul>

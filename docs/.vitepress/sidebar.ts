@@ -135,6 +135,7 @@ export const sidebar: SidebarItem[] = [
           { text: "brew", link: "/bootstrap/packages/brew" },
           { text: "nix", link: "/bootstrap/packages/nix" },
           { text: "mas", link: "/bootstrap/packages/mas" },
+          { text: "Scoop", link: "/bootstrap/packages/scoop" },
           {
             text: "Package Plugins",
             link: "/bootstrap/packages/plugins",
@@ -272,6 +273,7 @@ export const sidebar: SidebarItem[] = [
         link: "/mise-cookbook/",
         collapsed: true,
         items: [
+          { text: "Bazel", link: "/mise-cookbook/bazel" },
           { text: "C++", link: "/mise-cookbook/cpp" },
           { text: "Docker", link: "/mise-cookbook/docker" },
           { text: "Node", link: "/mise-cookbook/nodejs" },

@@ -83,6 +83,7 @@
 - [brew](https://mise.jdx.dev/bootstrap/packages/brew.html): Homebrew formulae and casks — without requiring Homebrew to be installed.
 - [nix](https://mise.jdx.dev/bootstrap/packages/nix.html): The nix bootstrap package manager installs packages into the current user's normal Nix profile. It works on Linux and macOS with Nix on PATH, independently of whether the operating system is NixOS.
 - [mas](https://mise.jdx.dev/bootstrap/packages/mas.html): Mac App Store apps via the mas CLI.
+- [Scoop](https://mise.jdx.dev/bootstrap/packages/scoop.html): Windows command-line tools and applications via Scoop.
 - [Package Plugins](https://mise.jdx.dev/bootstrap/packages/plugins.html): Package manager plugins extend [bootstrap.packages] without adding a manager to mise core. They are useful for machine-global state owned by another tool, such as VS Code extensions, Helm plugins,…
 - [Linux Users and Groups](https://mise.jdx.dev/bootstrap/accounts.html): [bootstrap.groups] and [bootstrap.users] declaratively manage local Linux accounts. mise applies groups before users and applies accounts before privileged files, so a managed file can safely refer to…
 - [System Files](https://mise.jdx.dev/bootstrap/files.html): [bootstrap.files] and [bootstrap.directories] declaratively manage absolute paths that may require root privileges. They are separate from [dotfiles], which manages files in a user's home directory.
@@ -146,6 +147,7 @@
 - [Errors](https://mise.jdx.dev/errors.html): This page lists common error messages mise emits, what causes them, and how to fix them. It complements Troubleshooting, which is organized by symptom (wrong tool version, slow prompts, activation…
 - [Tips & Tricks](https://mise.jdx.dev/tips-and-tricks.html): Short recipes for common workflows. Each section links to the full guide when setup or platform details matter. Start with Getting Started if you have not yet configured a project.
 - [Cookbook](https://mise.jdx.dev/mise-cookbook/): These recipes combine tools, environment variables, and tasks for specific workflows. Start with the recipe closest to your project, then adapt its paths, versions, and application commands.
+- [Bazel](https://mise.jdx.dev/mise-cookbook/bazel.html): Use mise to install the Bazel version declared in a project's .bazelversion file. This avoids repeating the version in mise.toml.
 - [C++](https://mise.jdx.dev/mise-cookbook/cpp.html): Use mise to install build tools and define the configure/build cycle. A C or C++ compiler must already be available, for example through your operating system's development tools.
 - [Docker](https://mise.jdx.dev/mise-cookbook/docker.html): Install mise inside an image, use it to run project commands, or preinstall tools outside user home directories for shared development containers.
 - [Node](https://mise.jdx.dev/mise-cookbook/nodejs.html): Use mise to select Node.js and your package manager, then run the scripts and dependencies declared by the project.

@@ -69,7 +69,7 @@ pub(super) async fn perform_build(opts: BuildOptions, include_global: bool) -> R
         let oci = merged_oci_config(&config);
         reject_unsupported_system_defaults(&config.config_files)?;
         let files = system::files::files_from_config_files(&config.config_files);
-        let packages = system::packages_from_config_files(&config.config_files);
+        let packages = system::packages_from_config_files(&config.config_files)?;
         return Builder::new(config.clone(), ts, oci, opts)
             .with_dotfiles(files)
             .with_system_packages(packages)
@@ -81,7 +81,7 @@ pub(super) async fn perform_build(opts: BuildOptions, include_global: bool) -> R
     let oci = merged_oci_config_from(project_files.values());
     reject_unsupported_system_defaults(&project_files)?;
     let files = system::files::files_from_config_files(&project_files);
-    let packages = system::packages_from_config_files(&project_files);
+    let packages = system::packages_from_config_files(&project_files)?;
     Builder::new(config.clone(), ts, oci, opts)
         .with_dotfiles(files)
         .with_system_packages(packages)

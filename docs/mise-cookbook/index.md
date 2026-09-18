@@ -11,6 +11,7 @@ expects to exist.
 
 | Workflow                                                       | Recipe                                                  |
 | -------------------------------------------------------------- | ------------------------------------------------------- |
+| Select Bazel from a project version file                       | [Bazel](/mise-cookbook/bazel.html)                      |
 | Configure and build a CMake project                            | [C++](/mise-cookbook/cpp.html)                          |
 | Install mise and share tools in containers                     | [Docker](/mise-cookbook/docker.html)                    |
 | Run npm scripts or select a package manager                    | [Node.js](/mise-cookbook/nodejs.html)                   |

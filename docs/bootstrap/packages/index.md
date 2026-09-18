@@ -65,6 +65,7 @@ explains its prerequisites, package names, and version support.
 | `flatpak-user`  | Linux with `flatpak` on `PATH`; user scope                         | [Flatpak](/bootstrap/packages/flatpak.html)         |
 | `nix`           | Linux and macOS with `nix` on `PATH`; user profile                 | [Nix](/bootstrap/packages/nix.html)                 |
 | `mas`           | macOS with `mas` on `PATH`                                         | [Mac App Store](/bootstrap/packages/mas.html)       |
+| `scoop`         | Windows with Scoop's `scoop` shim on `PATH`                        | [Scoop](/bootstrap/packages/scoop.html)             |
 | `winget`        | Windows with `winget` on `PATH`                                    | [WinGet](/bootstrap/packages/winget.html)           |
 | Package plugins | Defined by each plugin                                             | [Package plugins](/bootstrap/packages/plugins.html) |
 
@@ -104,15 +105,22 @@ for a machine-wide selection.
 
 ### Remove a package declaratively
 
-`pacman` and `zypper` support `state = "absent"`:
+`pacman`, `scoop`, and `zypper` support `state = "absent"`:
 
 ```toml
 [bootstrap.packages]
 "pacman:libreoffice-fresh" = { state = "absent" }
+"scoop:neovim" = { state = "absent" }
 ```
 
 If the package is installed, `status --missing` reports drift and `apply`
-removes it. Other built-in managers currently support only the default
+removes it. One exception: an app installed only in Scoop's global scope is
+outside the user scope mise manages. `apply` removes every other Scoop entry in
+the batch, then fails with the elevated `scoop uninstall --global` command to
+run for that one. See
+[Scoop availability and scope](/bootstrap/packages/scoop.html#availability-and-scope).
+
+Other built-in managers currently support only the default
 `state = "present"`. Removing an entry from the configuration does not itself
 uninstall a package; see [Import and prune](#import-and-prune).
 
@@ -143,6 +151,14 @@ host packages; it does not install them. Run `mise bootstrap packages apply`,
 Unknown managers produce a warning and a package-plugin installation hint.
 Their entries are ignored, allowing a configuration to include managers a
 particular mise installation does not yet support.
+
+Declare each package using a consistent spelling across your configuration
+files. WinGet package IDs and Scoop app names are case-insensitive; Scoop bucket
+prefixes do not distinguish installed apps. If active declarations refer to the
+same package but specify different versions or states, mise reports an error.
+Declare the package once, or make the keys use the same spelling so the normal
+configuration-hierarchy override applies. Entries excluded by `os` or `env`
+selectors do not participate in this check.
 
 ## Commands
 
@@ -193,7 +209,8 @@ The manager determines which version is available and how it is installed.
 Version pins remain subject to the manager's capabilities. For example, apk,
 apt, dnf, and zypper honor configured pins. AUR, pacman, brew, brew-cask, flatpak,
 flatpak-user, and mas cannot install pins, so pinned entries are skipped with a
-warning. See the manager's guide for details.
+warning. [`scoop`](/bootstrap/packages/scoop.html) installs pins but cannot hold
+them, so `upgrade` skips its pinned entries. See the manager's guide for details.
 
 For `macos-app`, there is no version discovery: update the declaration yourself
 before applying or upgrading it. See [Update a declared app](#update-a-declared-app).

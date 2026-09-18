@@ -58,7 +58,7 @@ impl SystemUpgrade {
     async fn run_inner(self) -> Result<()> {
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
-            system::packages_from_config(&config)
+            system::packages_from_config(&config)?
         } else {
             let config = Config::get().await?;
             system::packages_from_specs_with_config(&self.packages, Some(&config))?
