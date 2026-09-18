@@ -435,7 +435,7 @@ impl Daemons {
                         None
                     };
                     let host = daemon.and_then(|d| d.host.as_deref());
-                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(|d| match &d.host { Some(_) => "proxied", None => "off" }) }));
+                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(proxy_mode) }));
                 }
                 continue;
             }
@@ -571,6 +571,20 @@ fn print_urls(
         miseprintln!("  project: {}", proxy.project_url(labels));
     }
     Ok(())
+}
+
+/// How the proxy treats a daemon: `off` when it opted out, otherwise what it
+/// does with TLS. Pitchfork terminates TLS unless the daemon asked it not to,
+/// so an unset `proxy_tls` reports that default rather than nothing.
+fn proxy_mode(daemon: &daemons::Daemon) -> &str {
+    if daemon.host.is_none() {
+        return "off";
+    }
+    daemon
+        .table
+        .get("proxy_tls")
+        .and_then(toml::Value::as_str)
+        .unwrap_or("terminate")
 }
 
 fn matches_name(id: &str, name: &str) -> bool {

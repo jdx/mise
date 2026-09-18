@@ -408,6 +408,8 @@ assert_not_contains "mise env -s bash" "DB_URL="
 assert_contains "mise env -s bash" "PGPORT=5432"
 assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"api\") | .url'" "https://api.url-shop.shop.localhost"
 assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"db\") | .proxy'" "off"
+assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"web\") | .proxy'" "passthrough"
+assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"api\") | .proxy'" "terminate"
 assert_contains "mise daemons urls" "https://front.url-shop.shop.localhost"
 assert_contains "mise daemons urls" "stack:   https://url-shop.shop.localhost"
 

@@ -661,14 +661,16 @@ mise daemons urls
 
 ```
 ~/src/shop-pr-42
-Daemon              URL                                    Port  Proxy    Status
-shop/api            https://api.pr-42.shop.localhost       3117  proxied  running
-shop/postgres       -                                      5679  off      running
+Daemon         URL                               Port  Proxy      Status
+shop/api       https://api.pr-42.shop.localhost  3117  terminate  running
+shop/web       https://front.pr-42.shop.localhost  -   passthrough  running
+shop/postgres  -                                 5679  off        running
   stack:   https://pr-42.shop.localhost
   project: https://shop.localhost
 ```
 
-A daemon with `proxy = false` is listed with its port alone rather than omitted, so a
+The proxy column is the daemon's `proxy_tls` mode, or `off` when it set
+`proxy = false`. Such a daemon is listed with its port alone rather than omitted, so a
 database is visible here too. `mise daemons ls --json` carries the same information in
 its `host`, `url`, and `proxy` fields.
 
