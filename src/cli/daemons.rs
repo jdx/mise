@@ -483,8 +483,11 @@ impl Daemons {
                 // see: a referenced project declares its own imports.
                 daemons::ensure_not_blocked(&set, &starting, Some(&root))?;
             }
+            let launching = starting_names(&set, &ids, &root_selectors);
             let (state, _project_lock) = if install {
-                let (state, lock) = runtime.prepare(&root, &set, true, !foreign).await?;
+                let (state, lock) = runtime
+                    .prepare(&root, &set, true, !foreign, &launching)
+                    .await?;
                 (state, Some(lock))
             } else {
                 (previous, None)
@@ -625,6 +628,21 @@ fn proxy_mode(daemon: &daemons::Daemon) -> &str {
         .get("proxy_tls")
         .and_then(toml::Value::as_str)
         .unwrap_or("terminate")
+}
+
+/// Daemon names this invocation will launch, so only their ports are conflict
+/// checked. Selectors are matched against qualified ids, exactly as the daemon
+/// selection does: a bare name never matches a selector written as
+/// `<namespace>/<name>`, which would drop that daemon from the check while it
+/// still started.
+fn starting_names(set: &daemons::DaemonSet, ids: &[String], selectors: &[Selector]) -> Vec<String> {
+    ids.iter()
+        .filter(|id| selectors.is_empty() || selectors.iter().any(|s| selects(set, id, s)))
+        .filter_map(|id| {
+            let name = id.rsplit('/').next().unwrap_or(id);
+            set.daemons.contains_key(name).then(|| name.to_string())
+        })
+        .collect()
 }
 
 fn matches_name(id: &str, name: &str) -> bool {
@@ -782,6 +800,33 @@ mod tests {
                 (path, cf)
             })
             .collect()
+    }
+
+    #[test]
+    fn qualified_selectors_still_reach_the_port_check() {
+        let set = daemons::load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\n[daemons.web]\nrun = 'web'\n",
+        )]))
+        .unwrap();
+        let ids = ["ns/api".to_string(), "ns/web".to_string()];
+
+        // Selecting by qualified id must still reach the conflict check. A bare
+        // name never matches such a selector, so filtering on names would have
+        // returned nothing here while the daemon was still started.
+        let qualified = [Selector::Name("ns/api".to_string())];
+        assert_eq!(starting_names(&set, &ids, &qualified), ["api"]);
+
+        // The short spelling selects the same daemon, and only that one.
+        let bare = [Selector::Name("api".to_string())];
+        assert_eq!(starting_names(&set, &ids, &bare), ["api"]);
+
+        // No selectors means everything this root would launch.
+        assert_eq!(starting_names(&set, &ids, &[]), ["api", "web"]);
+
+        // An id with no matching daemon contributes nothing.
+        let stale = ["ns/gone".to_string()];
+        assert!(starting_names(&set, &stale, &[]).is_empty());
     }
 
     #[test]

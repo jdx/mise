@@ -105,8 +105,12 @@ pub(crate) async fn emit(
             // make belongs here: a daemon whose dependency was dropped with an
             // unreadable import would otherwise start without what it declared.
             super::ensure_not_blocked(&scoped_set, &scoped_set.auto_starting(), Some(&root))?;
+            // Only the daemons this hook will actually start.
+            let auto_start = scoped_set.auto_start_names();
             // Only this project's own roots reach here, so it owns the profile.
-            let (_state, _lock) = runtime.prepare(&root, &scoped_set, force, true).await?;
+            let (_state, _lock) = runtime
+                .prepare(&root, &scoped_set, force, true, &auto_start)
+                .await?;
             Ok::<_, eyre::Report>(runtime.bin)
         }
         .await;

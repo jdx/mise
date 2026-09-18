@@ -1078,7 +1078,12 @@ fn env_var_base(name: &str) -> Option<String> {
     // is an invalid identifier and would break the whole activation, not just
     // that variable. Such a name was legal before these exports existed, so it
     // keeps working and only goes without the variables.
-    if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+    //
+    // Only a leading digit is disqualifying. Names are letters, digits, `.`,
+    // `_` and `-`, and cannot lead with `-`, so every other first character
+    // either is a letter or becomes the underscore that `.api` turns into
+    // `_API_PORT`, which a shell accepts.
+    if name.starts_with(|c: char| c.is_ascii_digit()) {
         warn_once!(
             "[daemons] {name} starts with a digit, so its port and URL cannot be exported as shell variables; rename it to start with a letter to get them"
         );
@@ -1566,6 +1571,23 @@ impl DaemonSet {
             .map(|(key, _)| key.clone())
             .collect();
         self.with_dependencies(&names)
+    }
+
+    /// Names of the daemons opted into automatic start, which is what a shell
+    /// hook actually launches and so the only ports worth conflict checking
+    /// there. Unlike `auto_starting`, this is the daemons themselves, without
+    /// the dependencies pitchfork brings along.
+    pub(crate) fn auto_start_names(&self) -> Vec<String> {
+        self.daemons
+            .values()
+            .filter(|d| {
+                d.table
+                    .get("auto")
+                    .and_then(toml::Value::as_array)
+                    .is_some_and(|a| a.iter().any(|v| v.as_str() == Some("start")))
+            })
+            .map(|d| d.name.clone())
+            .collect()
     }
 
     pub(crate) fn auto(&self) -> bool {
@@ -2808,6 +2830,15 @@ mod tests {
         // Both still have their ports; only the variable is withheld.
         assert_eq!(set.daemons["web-ui"].port.unwrap().port, 3000);
         assert_eq!(set.daemons["web_ui"].port.unwrap().port, 3001);
+
+        // A leading punctuation character becomes an underscore, which a shell
+        // accepts, so such a name still gets its variables.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.\".api\"]\nrun = 'a'\nport = 3000\n",
+        )]))
+        .unwrap();
+        assert_eq!(set.daemons[".api"].exports["_API_PORT"], "3000");
 
         // A shell cannot export a name starting with a digit, but that name was
         // legal before this export existed, so it keeps working without one.
