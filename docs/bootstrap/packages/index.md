@@ -155,9 +155,9 @@ Declare each package using a consistent spelling across your configuration
 files. WinGet package IDs and Scoop app names are case-insensitive; Scoop bucket
 prefixes do not distinguish installed apps. If active declarations refer to the
 same package but specify different versions or states, mise reports an error.
-Remove the duplicate or use the same configuration key to override an earlier
-declaration. Entries excluded by `os` or `env` selectors do not participate in
-this check.
+Declare the package once, or make the keys use the same spelling so the normal
+configuration-hierarchy override applies. Entries excluded by `os` or `env`
+selectors do not participate in this check.
 
 ## Commands
 
