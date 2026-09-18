@@ -283,6 +283,13 @@ impl Daemons {
 impl Prune {
     async fn run(self) -> Result<()> {
         let base = daemons::prune::base_dir();
+        // Said here, where someone is reading prune's output, rather than from
+        // the scan itself, which runs on ordinary commands too.
+        for entry in daemons::prune::scan(&base)? {
+            if let Some(why) = entry.unreadable_root() {
+                warn!("{why}");
+            }
+        }
         let orphans = daemons::prune::orphans(&base)?;
         if orphans.is_empty() {
             info!(
@@ -401,11 +408,17 @@ impl Prune {
 /// Points at daemon state whose project directory no longer exists. The current
 /// project cannot be among them: it is the directory mise is running in. Nothing
 /// is deleted here; pruning is always explicit.
+///
+/// Counts only what a plain `mise daemons prune` would remove. State that needs
+/// a person to look at it is not something to nag about on every start.
 fn hint_prunable_state() {
     let Ok(orphans) = daemons::prune::orphans(&daemons::prune::base_dir()) else {
         return;
     };
-    let count = orphans.len();
+    let count = orphans
+        .iter()
+        .filter(|entry| entry.ambiguity().is_none())
+        .count();
     if count == 0 {
         return;
     }

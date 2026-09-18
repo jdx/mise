@@ -43,13 +43,33 @@ impl Entry {
             Ok(_) => false,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
             Err(err) => {
-                warn!(
+                // Reported by whoever is about to act on this, not here:
+                // `mise daemons start` asks the same question on every run and
+                // has no business complaining about another project's volume.
+                debug!(
                     "keeping {}: cannot read {}: {err}",
                     display_path(&self.dir),
                     display_path(&self.state.root)
                 );
                 false
             }
+        }
+    }
+
+    /// Why this entry's root could not be examined, if it could not.
+    ///
+    /// Distinct from [`Self::ambiguity`]: nothing can be decided about such an
+    /// entry at all, so it is not a prune candidate. Worth saying once, where
+    /// somebody is looking at prune's output, rather than on every command that
+    /// happens to scan.
+    pub(crate) fn unreadable_root(&self) -> Option<String> {
+        match std::fs::symlink_metadata(&self.state.root) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => Some(format!(
+                "keeping {}: cannot read {}: {err}",
+                display_path(&self.dir),
+                display_path(&self.state.root)
+            )),
+            _ => None,
         }
     }
 
@@ -75,14 +95,19 @@ impl Entry {
     /// carry a spelling its directory was not named from. Hence a question
     /// rather than a refusal, which would strand that state forever.
     pub(crate) fn ambiguity(&self) -> Option<String> {
-        if let Some(existing) = self.state.root.ancestors().skip(1).find(|p| p.exists())
-            && std::fs::read_dir(existing).is_ok_and(|mut dir| dir.next().is_none())
-        {
-            return Some(format!(
-                "{} is empty, so {} may be an unmounted volume rather than a deleted project",
-                display_path(existing),
-                display_path(&self.state.root)
-            ));
+        if let Some(existing) = self.state.root.ancestors().skip(1).find(|p| p.exists()) {
+            let looks_unmounted = match std::fs::read_dir(existing) {
+                Ok(mut dir) => dir.next().is_none(),
+                // A mount point nobody else may read is still a mount point.
+                Err(_) => true,
+            };
+            if looks_unmounted {
+                return Some(format!(
+                    "{} is empty or unreadable, so {} may be an unmounted volume rather than a deleted project",
+                    display_path(existing),
+                    display_path(&self.state.root)
+                ));
+            }
         }
         if super::state_dir(&self.state.root).file_name() != self.dir.file_name() {
             return Some(format!(
@@ -244,14 +269,36 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
     if let Some(runtime) = runtime {
         match runtime.supervisor_up(cwd).await {
             Ok(true) if !entry.state.ids.is_empty() => {
-                let mut args = vec!["stop".to_string()];
-                args.extend(entry.state.ids.iter().cloned());
-                if let Err(err) = tolerate_unknown(runtime.raw_output(cwd, &args).await, &args) {
-                    warn!(
-                        "keeping {}: cannot stop its daemons: {err:#}",
-                        display_path(cwd)
-                    );
-                    return Ok(Outcome::Kept);
+                // One id at a time: `state.ids` keeps every id this project
+                // ever declared, and pitchfork asked to stop a list it cannot
+                // fully resolve may refuse the whole list, leaving a live
+                // daemon running on data that is about to go.
+                for id in &entry.state.ids {
+                    let args = ["stop".to_string(), id.clone()];
+                    if let Err(err) = runtime.raw_output(cwd, &args).await {
+                        warn!("keeping {}: cannot stop {id}: {err:#}", display_path(cwd));
+                        return Ok(Outcome::Kept);
+                    }
+                }
+                // What settles it is the supervisor's own answer, not whether
+                // stop reported success: an id it has forgotten cannot be
+                // stopped and does not need to be, and any id still alive is a
+                // process writing to the data below.
+                for id in &entry.state.ids {
+                    let Ok(status) = runtime.status(cwd, id).await else {
+                        continue;
+                    };
+                    if matches!(
+                        status["status"].as_str(),
+                        Some("running" | "waiting" | "stopping")
+                    ) {
+                        warn!(
+                            "keeping {}: {id} is still {}",
+                            display_path(cwd),
+                            status["status"].as_str().unwrap_or("alive")
+                        );
+                        return Ok(Outcome::Kept);
+                    }
                 }
             }
             Ok(_) => {}
@@ -314,11 +361,14 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
 /// error.
 ///
 /// Forgetting something pitchfork has never heard of is the outcome prune
-/// wants, but pitchfork reports it as a failure. `state.ids` keeps every daemon
-/// id a project ever declared, and `prepare()` may already have unregistered
-/// the configuration, so "no such daemon" and "not registered" are ordinary
-/// here. Treating them as errors would make an entry permanently unprunable,
-/// with `rm -rf` as the only way out.
+/// wants, but pitchfork reports it as a failure. `prepare()` may already have
+/// unregistered a configuration file, so "not registered" is ordinary here.
+/// Treating it as an error would make an entry permanently unprunable, with
+/// `rm -rf` as the only way out.
+///
+/// Used only where the result can be checked another way or cannot cost data:
+/// whether daemons are stopped is settled by asking the supervisor, never by
+/// reading a message.
 fn tolerate_unknown(output: Result<std::process::Output>, args: &[String]) -> Result<()> {
     let output = output?;
     if output.status.success() {
@@ -343,22 +393,61 @@ fn tolerate_unknown(output: Result<std::process::Output>, args: &[String]) -> Re
 /// there is one.
 ///
 /// Database daemons drop a lock file beside their data while they are alive:
-/// PostgreSQL writes `postmaster.pid`, CockroachDB and others keep a comparable
-/// marker. Its presence does not prove a live process, since a crash leaves it
-/// behind, but its absence is the cheap confirmation that nothing is obviously
-/// running, and the whole question only arises when the supervisor is down.
+/// PostgreSQL writes `postmaster.pid`, and other engines keep a comparable
+/// marker. A crash leaves the file behind, so its presence alone proves
+/// nothing, which is why the process it names has to be asked about too. A
+/// marker naming a process that is gone is not a reason to keep data forever.
 fn live_database_lock(dir: &Path) -> Option<PathBuf> {
     walkdir::WalkDir::new(dir.join("data"))
         .max_depth(2)
         .into_iter()
         .filter_map(Result::ok)
         .map(|entry| entry.path().to_path_buf())
-        .find(|path| {
+        .filter(|path| {
             path.file_name().is_some_and(|name| {
                 let name = name.to_string_lossy();
                 name == "postmaster.pid" || name.ends_with(".pid") || name == "LOCK"
             })
         })
+        .find(|path| marker_names_a_live_process(path))
+}
+
+/// Whether a lock file names a process that is still around.
+///
+/// A pid file's first line is the pid, which is all that can be checked without
+/// knowing the engine. A marker that holds no pid at all, such as a RocksDB or
+/// Pebble `LOCK`, says nothing either way; those are treated as live, since a
+/// file with no pid in it is the one case where there is nothing to disprove.
+fn marker_names_a_live_process(path: &Path) -> bool {
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return true;
+    };
+    let Some(pid) = contents
+        .lines()
+        .next()
+        .and_then(|line| line.trim().parse::<i32>().ok())
+    else {
+        return true;
+    };
+    process_is_alive(pid)
+}
+
+#[cfg(unix)]
+fn process_is_alive(pid: i32) -> bool {
+    // Signal 0 performs the permission and existence checks without sending
+    // anything. `EPERM` means the process is there and owned by someone else.
+    match nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None) {
+        Ok(()) => true,
+        Err(nix::errno::Errno::EPERM) => true,
+        Err(_) => false,
+    }
+}
+
+#[cfg(windows)]
+fn process_is_alive(_pid: i32) -> bool {
+    // No cheap equivalent here, and the presets that write these files are
+    // Unix-only for now, so the file is taken at its word.
+    true
 }
 
 /// Deletes a project's daemon state and data, under both locks.
@@ -523,6 +612,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn a_partial_delete_leaves_an_entry_that_is_still_found() {
+        use std::os::unix::fs::MetadataExt;
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
@@ -537,14 +627,20 @@ mod tests {
         let lock = super::super::ProjectLock::try_acquire(&dir)
             .unwrap()
             .unwrap();
-        // Running as root deletes it anyway; both outcomes are correct, and
-        // neither may leave state that no later prune can see.
-        match delete_state_dir(&dir, lock) {
-            Err(_) => {
-                assert!(dir.join("state.json").exists());
-                assert_eq!(orphans(&base).unwrap().len(), 1);
-            }
-            Ok(()) => assert!(!dir.join("state.json").exists()),
+        let result = delete_state_dir(&dir, lock);
+        // Root ignores the mode, so which outcome is correct depends on who is
+        // running the test; asserting the wrong one, or either, would let this
+        // pass without exercising anything.
+        if std::fs::metadata(tmp.path()).unwrap().uid() == 0 {
+            result.unwrap();
+            assert!(!dir.join("state.json").exists());
+        } else {
+            assert!(
+                result.is_err(),
+                "a directory it cannot read must not vanish"
+            );
+            assert!(dir.join("state.json").exists());
+            assert_eq!(orphans(&base).unwrap().len(), 1);
         }
     }
 
@@ -705,14 +801,59 @@ mod tests {
     }
 
     #[test]
-    fn a_live_database_lock_keeps_state_when_the_supervisor_is_down() {
+    fn a_database_lock_counts_only_while_its_process_does() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
         let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[]);
+        let marker = dir.join("data/postgres/postmaster.pid");
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
         assert!(live_database_lock(&dir).is_none());
-        std::fs::create_dir_all(dir.join("data/postgres")).unwrap();
-        std::fs::write(dir.join("data/postgres/postmaster.pid"), "123").unwrap();
-        assert!(live_database_lock(&dir).is_some());
+
+        // PostgreSQL's file, with the pid on the first line.
+        std::fs::write(&marker, format!("{}\n/data\n", std::process::id())).unwrap();
+        assert_eq!(live_database_lock(&dir).as_deref(), Some(marker.as_path()));
+
+        // A crash leaves the same file behind naming a process that is gone,
+        // which must not keep the state forever.
+        std::fs::write(&marker, format!("{}\n/data\n", i32::MAX)).unwrap();
+        assert!(live_database_lock(&dir).is_none());
+
+        // A marker with no pid in it, such as RocksDB's, cannot be disproved.
+        let lock = dir.join("data/crdb/LOCK");
+        std::fs::create_dir_all(lock.parent().unwrap()).unwrap();
+        std::fs::write(&lock, "").unwrap();
+        assert_eq!(live_database_lock(&dir).as_deref(), Some(lock.as_path()));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_ancestor_that_cannot_be_read_is_treated_as_a_mount_point() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let mount = tmp.path().join("mnt");
+        std::fs::create_dir(&mount).unwrap();
+        write_state(&base, "unreadable", &mount.join("project"), &[]);
+        // Searchable but not listable, which is what a mount point owned by
+        // somebody else looks like: the path below it still answers "not
+        // found", while its contents cannot be counted.
+        let mut perms = std::fs::metadata(&mount).unwrap().permissions();
+        perms.set_mode(0o111);
+        std::fs::set_permissions(&mount, perms).unwrap();
+
+        let entries = orphans(&base).unwrap();
+        let ambiguity = entries.first().map(|entry| entry.ambiguity());
+
+        let mut perms = std::fs::metadata(&mount).unwrap().permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(&mount, perms).unwrap();
+
+        // Root reads it regardless and finds it empty, which reaches the same
+        // answer by the other route.
+        let ambiguity =
+            ambiguity.expect("the root itself is still missing, so this is a candidate");
+        let why = ambiguity.expect("an ancestor that cannot be listed must reach a person");
+        assert!(why.contains("unmounted volume"), "{why}");
     }
 
     /// An exit status that means failure, built the way each platform builds

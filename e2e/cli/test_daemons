@@ -10,7 +10,23 @@ case "$1" in
   usage)
     if [[ ${OLD_PITCHFORK:-0} == 1 ]]; then echo 'cmd start {}'; else echo 'cmd config help="External files" {'; fi
     ;;
-  status) exit 1 ;;
+  status)
+    # $2 is the daemon id. RUNNING_ID names one the supervisor still reports as
+    # running, which is how a partial stop is simulated.
+    if [[ -n ${RUNNING_ID:-} && $2 == "$RUNNING_ID" ]]; then
+      printf '{"status":"running","pid":4242}\n'
+    else
+      exit 1
+    fi
+    ;;
+  stop)
+    # Pitchfork validating the whole list up front and refusing it: the failure
+    # says nothing about whether the daemons it did know are stopped.
+    if [[ -n ${STOP_FAILS:-} ]]; then
+      echo "no such daemon $STOP_FAILS" >&2
+      exit 1
+    fi
+    ;;
   supervisor) printf '{"status":"%s"}\n' "${SUPERVISOR_STATUS:-down}" ;;
   project) echo '[]' ;;
 esac
@@ -281,3 +297,29 @@ cd "$HOME"
 rm -rf "$HOME/mountish/project"
 assert_contains "mise daemons prune --yes 2>&1" 'unmounted volume'
 assert "test -f '$ambiguous_state'"
+
+# A stop that pitchfork refuses must not let the data go while a daemon runs.
+mkdir -p "$HOME/still-running"
+cd "$HOME/still-running"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+run = "sleep 30"
+TOML
+mise daemons start
+running_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+running_id=$(jq -r '.ids[0]' "$running_state")
+cd "$HOME"
+rm -rf "$HOME/still-running"
+# The supervisor is up, the stop is refused for an id it has forgotten, and the
+# remaining daemon is still running: the state must survive.
+export SUPERVISOR_STATUS=up STOP_FAILS="gone/other" RUNNING_ID="$running_id"
+assert_contains "mise daemons prune --yes 2>&1" 'is still running'
+assert "test -f '$running_state'"
+
+# With nothing running any more, the same state prunes.
+unset RUNNING_ID
+mise daemons prune --yes
+assert "test ! -f '$running_state'"
+unset SUPERVISOR_STATUS STOP_FAILS
