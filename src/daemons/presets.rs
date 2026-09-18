@@ -40,11 +40,33 @@ pub(crate) fn quote(value: impl AsRef<str>) -> String {
     format!("'{}'", value.as_ref().replace('\'', "'\\''"))
 }
 
+/// Wrap a command so it runs inside the project's tool environment. Needed
+/// wherever pitchfork is told not to wrap the daemon itself in `mise x`.
+pub(crate) fn in_tool_env(command: &str) -> String {
+    format!(
+        "{} x -- sh -c {}",
+        quote(crate::env::MISE_BIN.to_string_lossy()),
+        quote(command)
+    )
+}
+
+/// Chain idempotent setup steps in front of the long-running command, using
+/// pitchfork's shell-command semantics: every step must succeed before the
+/// process that keeps running is reached. Returns `run` unchanged when there is
+/// nothing to set up.
+pub(crate) fn with_init(steps: &[String], run: &str) -> String {
+    if steps.is_empty() {
+        return run.to_string();
+    }
+    format!("{} && {run}", steps.join(" && "))
+}
+
 pub(crate) fn expand(
     name: &str,
     preset_name: &str,
     version: &str,
     mut overrides: toml::Table,
+    init: &[String],
     source: &Path,
     root: &Path,
 ) -> Result<Daemon> {
@@ -104,11 +126,7 @@ pub(crate) fn expand(
         }
     }
     if let Some(toml::Value::String(command)) = table.get_mut("ready_cmd") {
-        *command = format!(
-            "{} x -- sh -c {}",
-            quote(crate::env::MISE_BIN.to_string_lossy()),
-            quote(command.as_str())
-        );
+        *command = in_tool_env(command.as_str());
     }
     let mut exports = preset.exports;
     for value in exports.values_mut() {
@@ -123,16 +141,17 @@ pub(crate) fn expand(
             table.get("run").and_then(toml::Value::as_str).unwrap()
         )
     });
-    table.insert(
-        "run".into(),
-        toml::Value::String(format!(
-            "{} daemons __init {} {} {} && {run}",
-            quote(crate::env::MISE_BIN.to_string_lossy()),
-            quote(preset_name),
-            quote(data.to_string_lossy()),
-            quote(database)
-        )),
-    );
+    // Database initialization always comes first; user `init` steps run after
+    // it, once the data directory exists.
+    let mut steps = vec![format!(
+        "{} daemons __init {} {} {}",
+        quote(crate::env::MISE_BIN.to_string_lossy()),
+        quote(preset_name),
+        quote(data.to_string_lossy()),
+        quote(database)
+    )];
+    steps.extend(init.iter().cloned());
+    table.insert("run".into(), toml::Value::String(with_init(&steps, &run)));
     table.insert(
         "port".into(),
         toml::Value::Table(toml::Table::from_iter([
@@ -151,6 +170,7 @@ pub(crate) fn expand(
         root: root.into(),
         table,
         preset: Some(preset_name.into()),
+        task: None,
         tool: Some((tool, version.into())),
         exports,
         imported: false,
@@ -271,6 +291,7 @@ mod tests {
                 name,
                 "latest",
                 toml::Table::new(),
+                &[],
                 Path::new("/project/mise.toml"),
                 Path::new("/project"),
             )
@@ -290,6 +311,7 @@ mod tests {
             "postgres",
             "18",
             overrides,
+            &[],
             Path::new("/p/mise.toml"),
             Path::new("/p"),
         )

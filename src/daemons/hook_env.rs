@@ -92,6 +92,15 @@ pub(crate) async fn emit(
                 env: env.clone(),
             };
             runtime::validate_tools(&scoped_set, config, ts).await?;
+            // Task references belong to the declaring project's task list, the
+            // same scope the other two callers validate against. Loading that
+            // scope costs a config hierarchy read, so only do it when a daemon
+            // actually names a task; this runs on every prompt.
+            if scoped_set.daemons.values().any(|d| d.task.is_some()) {
+                let scoped_config = runtime::config_for_root(config, &root).await?;
+                scoped_set.validate_tasks(&scoped_config).await?;
+            }
+            // Only this project's own roots reach here, so it owns the profile.
             let (_state, _lock) = runtime.prepare(&root, &scoped_set, force, true).await?;
             Ok::<_, eyre::Report>(runtime.bin)
         }

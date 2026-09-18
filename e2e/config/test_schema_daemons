@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+mise use -g node@24 npm:ajv-cli@5.0.0
+validate="mise x npm:ajv-cli@5.0.0 -- ajv validate --spec=draft2020 -s '$ROOT/schema/mise.json' -d daemons.json"
+
+cat >daemons.json <<'JSON'
+{"daemons":{"api":{"task":"dev","args":[]}}}
+JSON
+assert_succeed "$validate"
+
+for declaration in \
+  '{"run":"exec api","args":[]}' \
+  '{"preset":"postgres","version":"18","args":[]}'; do
+  printf '{"daemons":{"api":%s}}\n' "$declaration" >daemons.json
+  assert_fail "$validate"
+done

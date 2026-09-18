@@ -151,6 +151,14 @@ Unknown managers produce a warning and a package-plugin installation hint.
 Their entries are ignored, allowing a configuration to include managers a
 particular mise installation does not yet support.
 
+Declare each package using a consistent spelling across your configuration
+files. WinGet package IDs and Scoop app names are case-insensitive; Scoop bucket
+prefixes do not distinguish installed apps. If active declarations refer to the
+same package but specify different versions or states, mise reports an error.
+Declare the package once, or make the keys use the same spelling so the normal
+configuration-hierarchy override applies. Entries excluded by `os` or `env`
+selectors do not participate in this check.
+
 ## Commands
 
 ### Apply or record packages

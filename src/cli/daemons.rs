@@ -336,9 +336,11 @@ impl Daemons {
                 // Validate what this invocation will start, plus whatever those
                 // daemons depend on, since pitchfork starts dependencies with
                 // them. An unrelated daemon is registered but not started, so a
-                // missing tool of its own must not fail this command.
+                // missing tool or task reference of its own must not fail this
+                // command.
                 let starting = set.restricted_to(&starting);
                 runtime::validate_tools(&starting, &scoped, &ts).await?;
+                starting.validate_tasks(&scoped).await?;
             }
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime.prepare(&root, &set, true, !foreign).await?;

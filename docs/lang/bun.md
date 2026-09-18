@@ -29,6 +29,33 @@ plugin with the same name can change the behavior; use `mise plugins ls` to
 check for overrides. See the [core implementation](https://github.com/jdx/mise/blob/main/src/plugins/core/bun.rs)
 for backend details.
 
+## Version files
+
+Enable [idiomatic version files](/configuration.html#idiomatic-version-files) to read
+`.bun-version` or a version declaration in `package.json`:
+
+```sh
+mise settings add idiomatic_version_file_enable_tools bun
+```
+
+For example, this `package.json` selects Bun 1.2.0:
+
+```json [package.json]
+{
+  "devEngines": {
+    "runtime": { "name": "bun", "version": "1.2.0" }
+  }
+}
+```
+
+mise checks `devEngines.runtime` first, then falls back to `devEngines.packageManager` and
+the top-level `packageManager` field (for example, `"packageManager": "bun@1.2.0"`).
+
+`devEngines` runtime and package-manager declarations can be objects or arrays; mise reads
+the first entry in an array. The `engines` compatibility fields are not used to select a version.
+See [package-manager versions](/lang/node.html#package-manager-versions-in-package-json)
+for the package-manager declaration formats.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `bun` backend.

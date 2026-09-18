@@ -638,6 +638,36 @@ impl<'de> Deserialize<'de> for TaskRustCacheConfig {
     }
 }
 
+/// Project daemons a task requires: `true` for every daemon declared in the
+/// project, or an explicit name or list of names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum TaskDaemons {
+    All(bool),
+    One(String),
+    Names(Vec<String>),
+}
+
+impl TaskDaemons {
+    /// The names written in the declaration. Empty for `true` and `false`,
+    /// which name no daemon.
+    pub(crate) fn names(&self) -> &[String] {
+        match self {
+            Self::All(_) => &[],
+            Self::One(name) => std::slice::from_ref(name),
+            Self::Names(names) => names.as_slice(),
+        }
+    }
+
+    fn names_mut(&mut self) -> &mut [String] {
+        match self {
+            Self::All(_) => &mut [],
+            Self::One(name) => std::slice::from_mut(name),
+            Self::Names(names) => names.as_mut_slice(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Task {
@@ -669,6 +699,10 @@ pub(crate) struct Task {
     pub confirm: Option<TaskConfirm>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
+    /// Project daemons that must be running and ready before this task's body
+    /// starts. Skipped along with dependencies under `--skip-deps`.
+    #[serde(default)]
+    pub daemons: Option<TaskDaemons>,
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends_post: Vec<TaskDep>,
     #[serde(default, deserialize_with = "deserialize_arr")]
@@ -1486,6 +1520,13 @@ impl Task {
             })
             .transpose()?;
         task.depends = parse_task_dependencies(&mut p, "depends")?;
+        task.daemons = p
+            .get_raw("daemons")
+            .map(|v| {
+                TaskDaemons::deserialize(v.clone())
+                    .map_err(|e| eyre!("failed to parse daemons field in task header: {e}"))
+            })
+            .transpose()?;
         task.depends_post = parse_task_dependencies(&mut p, "depends_post")?;
         task.wait_for = parse_task_dependencies(&mut p, "wait_for")?;
         task.env = p.parse_env("env")?.unwrap_or_default();
@@ -2647,6 +2688,12 @@ impl Task {
         self.depends.extend(other.depends);
         self.depends_post.extend(other.depends_post);
         self.wait_for.extend(other.wait_for);
+        // A `[tasks.<name>] daemons` overlay replaces the file task's own
+        // declaration rather than extending it, so a `true` or a shorter list
+        // in the overlay means what it says.
+        if other.daemons.is_some() {
+            self.daemons = other.daemons;
+        }
         if other.dir.is_some() {
             self.dir = other.dir;
         }
@@ -2745,6 +2792,7 @@ impl Task {
             || contains_template_syntax(&self.description)
             || self.sources.iter().any(|s| contains_template_syntax(s))
             || self.outputs.has_tera_template()
+            || daemons_have_template(self.daemons.as_ref())
             || deps_have_template(&self.depends)
             || deps_have_template(&self.depends_post)
             || deps_have_template(&self.wait_for)
@@ -2825,6 +2873,7 @@ impl Task {
         render_task_deps(&mut self.depends, &mut tera, &tera_ctx, true)?;
         render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, true)?;
         render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, true)?;
+        render_task_daemons(self.daemons.as_mut(), &mut tera, &tera_ctx, true)?;
         if let Some(dir) = &mut self.dir
             && contains_template_syntax(dir)
         {
@@ -2885,6 +2934,10 @@ impl Task {
         }) || has_usage_deps(&self.depends_raw)
             || has_usage_deps(&self.depends_post_raw)
             || has_usage_deps(&self.wait_for_raw)
+            || self
+                .daemons
+                .as_ref()
+                .is_some_and(|d| d.names().iter().any(|n| tera_template_has_usage_ref(n)))
     }
 
     pub(crate) async fn render_runtime_templates_with_usage(
@@ -2958,6 +3011,10 @@ impl Task {
             self.wait_for = raw.clone();
             render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, false)?;
         }
+        // Daemon names are plain strings, so the first pass left a name holding
+        // a usage reference literal and this one renders it in place; there is
+        // no parsed form to restore from.
+        render_task_daemons(self.daemons.as_mut(), &mut tera, &tera_ctx, false)?;
         Ok(())
     }
 
@@ -3430,6 +3487,7 @@ impl Default for Task {
             config_root: None,
             confirm: None,
             depends: vec![],
+            daemons: None,
             depends_post: vec![],
             wait_for: vec![],
             env: Default::default(),
@@ -3842,6 +3900,30 @@ pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
     tera_template_has_usage_ref(&dep.task)
         || dep.args.iter().any(|a| tera_template_has_usage_ref(a))
         || dep.env.values().any(|v| tera_template_has_usage_ref(v))
+}
+
+fn daemons_have_template(daemons: Option<&TaskDaemons>) -> bool {
+    daemons.is_some_and(|d| d.names().iter().any(|n| contains_template_syntax(n)))
+}
+
+/// Render the daemon names a task requires. `skip_usage` defers a name holding
+/// a `{{usage.*}}` reference to the pass that has the argument values.
+fn render_task_daemons(
+    daemons: Option<&mut TaskDaemons>,
+    tera: &mut TeraEngine,
+    ctx: &tera::Context,
+    skip_usage: bool,
+) -> Result<()> {
+    let Some(daemons) = daemons else {
+        return Ok(());
+    };
+    for name in daemons.names_mut() {
+        if !contains_template_syntax(name) || (skip_usage && tera_template_has_usage_ref(name)) {
+            continue;
+        }
+        *name = render_str(tera, name, ctx)?;
+    }
+    Ok(())
 }
 
 fn render_task_deps(
@@ -5767,6 +5849,37 @@ echo "hello world"
         assert!(result.is_ok());
     }
 
+    #[test]
+    fn toml_overlay_replaces_a_file_task_daemon_requirement() {
+        use super::TaskDaemons;
+        let overlay = |daemons: Option<TaskDaemons>| {
+            let mut task = Task {
+                daemons: Some(TaskDaemons::Names(vec!["postgres".into()])),
+                ..Default::default()
+            };
+            task.merge_toml_overlay(Task {
+                daemons,
+                ..Default::default()
+            });
+            task.daemons
+        };
+        // The overlay replaces rather than extends, so a shorter list and an
+        // explicit opt-out both mean what they say.
+        assert_eq!(
+            overlay(Some(TaskDaemons::Names(vec!["nats".into()]))),
+            Some(TaskDaemons::Names(vec!["nats".to_string()]))
+        );
+        assert_eq!(
+            overlay(Some(TaskDaemons::All(false))),
+            Some(TaskDaemons::All(false))
+        );
+        // An overlay that says nothing leaves the file task's declaration.
+        assert_eq!(
+            overlay(None),
+            Some(TaskDaemons::Names(vec!["postgres".to_string()]))
+        );
+    }
+
     #[tokio::test]
     #[cfg(unix)]
     async fn test_parses_all_fields() {
@@ -5785,6 +5898,7 @@ echo "hello world"
 #MISE description="Test task with all fields"
 #MISE aliases=["alias1", "alias2"]
 #MISE depends=["dep1", "dep2"]
+#MISE daemons=["postgres"]
 #MISE depends_post=["post1"]
 #MISE wait_for=["wait1"]
 #MISE env={TEST_VAR="value"}
@@ -5819,6 +5933,10 @@ echo "test"
         assert_eq!(task.description, "Test task with all fields");
         assert_eq!(task.aliases, vec!["alias1", "alias2"]);
         assert_eq!(task.depends.len(), 2);
+        assert_eq!(
+            task.daemons,
+            Some(super::TaskDaemons::Names(vec!["postgres".to_string()]))
+        );
         assert_eq!(task.depends_post.len(), 1);
         assert_eq!(task.wait_for.len(), 1);
         assert_eq!(task.dir, Some("/some/dir".to_string()));

@@ -397,6 +397,7 @@ impl ServerHandler for MiseServer {
                             .map(|source| source.to_string_lossy())
                             .collect::<Vec<_>>(),
                         "depends": task.depends.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
+                        "daemons": task.daemons,
                         "depends_post": task.depends_post.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
                         "wait_for": task.wait_for.iter().map(|d| d.task.clone()).collect::<Vec<_>>(),
                         "env": json!({}), // EnvList is not directly iterable, keeping empty for now

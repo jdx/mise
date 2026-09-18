@@ -543,7 +543,7 @@ mise dot track ~/.zshrc     # track a live file where it is
 mise dot untrack ~/.zshrc   # stop tracking it; the file stays
 mise dot add ~/.zshrc       # capture a live file into dotfiles.root
 mise dot add --changed      # capture all changed copy-mode files
-mise dot edit ~/.zshrc      # edit the managed source or owning config
+mise dot edit ~/.zshrc      # edit the source, the tracked file, or the owning config
 mise dot edit --apply ~/.zshrc
 
 mise dot save                    # checkpoint the tracked files now
