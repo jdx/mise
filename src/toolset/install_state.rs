@@ -1011,6 +1011,32 @@ pub(crate) fn read_checksum(install_path: &Path) -> Option<String> {
     }
 }
 
+/// Path to the locked-checksum marker for a specific tool version. Kept
+/// separate from `checksum_file_path`: a rolling release writes its own
+/// current-content checksum there, which is a different value than what
+/// `mise.lock` pins, and the two must not overwrite each other.
+fn locked_checksum_file_path(install_path: &Path) -> PathBuf {
+    install_path.join(".mise.lock-checksum")
+}
+
+/// Store the checksum `mise.lock` pinned for a tool version, so a later
+/// `--locked` run can detect drift.
+pub(crate) fn write_locked_checksum(install_path: &Path, checksum: &str) -> Result<()> {
+    let path = locked_checksum_file_path(install_path);
+    file::write(&path, checksum)?;
+    Ok(())
+}
+
+/// Read the stored locked-checksum marker for a tool version
+pub(crate) fn read_locked_checksum(install_path: &Path) -> Option<String> {
+    let path = locked_checksum_file_path(install_path);
+    if path.exists() {
+        file::read_to_string(&path).ok()
+    } else {
+        None
+    }
+}
+
 pub(crate) fn reset() {
     *INSTALL_STATE_PLUGINS
         .lock()
@@ -1056,7 +1082,8 @@ pub(crate) fn reset_tools() {
 mod tests {
     use super::{
         InstallStateTool, lock_tool_version, merge_plugin_tools, normalize_version_for_sort,
-        read_tool_manifest_from, tool_version_lock,
+        read_checksum, read_locked_checksum, read_tool_manifest_from, tool_version_lock,
+        write_checksum, write_locked_checksum,
     };
     use crate::plugins::PluginType;
     use itertools::Itertools;
@@ -1072,6 +1099,27 @@ mod tests {
         std::fs::write(&path, "").unwrap();
 
         assert!(read_tool_manifest_from(&path).is_none());
+    }
+
+    #[test]
+    fn locked_checksum_marker_is_independent_of_the_rolling_one() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let install_path = tempdir.path();
+
+        // A rolling release (e.g. vfox) and a locked install both keep a
+        // checksum marker in the same install dir, but for different
+        // purposes -- one write must not clobber the other.
+        write_checksum(install_path, "sha256:rolling").unwrap();
+        write_locked_checksum(install_path, "sha256:locked").unwrap();
+
+        assert_eq!(
+            read_checksum(install_path),
+            Some("sha256:rolling".to_string())
+        );
+        assert_eq!(
+            read_locked_checksum(install_path),
+            Some("sha256:locked".to_string())
+        );
     }
 
     #[test]

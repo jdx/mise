@@ -2855,7 +2855,48 @@ pub(crate) trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
-        Ok(self.is_version_installed(config, tv, check_symlink))
+        Ok(self.is_version_installed(config, tv, check_symlink)
+            && !self.locked_checksum_drifted(config, tv))
+    }
+
+    /// Whether `--locked` mode is in effect for this request, combining the
+    /// invocation-wide setting with the tool's own config-root policy.
+    fn invocation_locked(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        config.invocation_locked_for(tv.request.source(), Settings::get().locked)
+            || tv.request.tool_config_locked(config, true)
+    }
+
+    /// Where this backend's checksum drift marker lives. Defaults to the
+    /// generic install path; a backend whose actual on-disk layout can differ
+    /// from that generic path (e.g. a version-derived hash suffix) overrides
+    /// this to match wherever it actually installs.
+    fn checksum_marker_path(&self, tv: &ToolVersion) -> PathBuf {
+        tv.install_path()
+    }
+
+    /// Whether an install's recorded checksum no longer matches what `mise.lock`
+    /// now pins for this platform (e.g. `mise lock` re-resolved the same version
+    /// to a different asset without removing the stale install). Scoped to
+    /// `--locked` mode so ordinary installs are unaffected.
+    fn locked_checksum_drifted(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
+        if !self.supports_lockfile_url() || tv.request.source().is_tool_stub() {
+            return false;
+        }
+        if !self.invocation_locked(config, tv) {
+            return false;
+        }
+        let Some(lock_checksum) = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|p| p.checksum.as_ref())
+        else {
+            return false;
+        };
+        // No marker means either a pre-fix install or one this function never
+        // covered; treat it like a rolling version with no stored checksum
+        // and assume outdated rather than silently trusting it.
+        install_state::read_locked_checksum(&self.checksum_marker_path(tv))
+            .is_none_or(|stored| stored != *lock_checksum)
     }
 
     async fn is_install_satisfied_or_false(
@@ -3668,6 +3709,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 return Err(e);
             }
         };
+
+        // Record what the lockfile expected, so a later `--locked` run can tell
+        // stale from fresh. A dropped write would masquerade as permanent drift.
+        if let Some(checksum) = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|p| p.checksum.as_ref())
+        {
+            install_state::write_locked_checksum(&self.checksum_marker_path(&tv), checksum)?;
+        }
 
         let install_path = tv.install_path();
         let mut update_install_state = false;

@@ -1328,6 +1328,13 @@ impl Backend for HttpBackend {
         }
     }
 
+    // A version containing `:` or `/` gets a hash-suffixed directory name
+    // (see `sanitize_install_version_name`) that the generic install path
+    // does not include until `install_path` is resolved and cached.
+    fn checksum_marker_path(&self, tv: &ToolVersion) -> PathBuf {
+        Self::lookup_install_path(tv)
+    }
+
     async fn list_bin_paths(
         &self,
         _config: &Arc<Config>,
@@ -1613,6 +1620,30 @@ mod tests {
         assert_eq!(
             HttpBackend::install_path_for(&tv, "abcdef123456"),
             destination
+        );
+    }
+
+    #[test]
+    fn checksum_marker_path_matches_the_hash_suffixed_install_directory() {
+        let version = "1.0/beta:2";
+        let tv = http_test_tv(version);
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-absolute-version".to_string(),
+                Some("http:absolute-version".to_string()),
+                "absolute-version".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+
+        // The generic install path has no hash suffix for a fresh tv (no
+        // install_path field set yet), so a marker written/read there would
+        // miss the directory the http backend actually installs into.
+        assert_ne!(backend.checksum_marker_path(&tv), tv.install_path());
+        assert_eq!(
+            backend.checksum_marker_path(&tv),
+            HttpBackend::lookup_install_path(&tv)
         );
     }
 
