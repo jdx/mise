@@ -3050,7 +3050,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 if v.created_at.is_none()
                     && let Some(created_at) = on_demand_release_date(id, &v.version)
                 {
-                    v.created_at = created_at;
+                    v.created_at = Some(created_at);
                 }
                 v
             })
@@ -3178,10 +3178,14 @@ pub(crate) trait Backend: Debug + Send + Sync {
             // Reuse an answer this run already paid for; the error message
             // below asks for the same versions again.
             let created_at = match on_demand_release_date(self.id(), candidate) {
-                Some(created_at) => created_at,
+                Some(created_at) => Some(created_at),
                 None => match self.fetch_version_created_at(config, candidate).await {
                     Ok(created_at) => {
-                        remember_on_demand_release_date(self.id(), candidate, created_at.clone());
+                        remember_on_demand_release_date(
+                            self.id(),
+                            candidate,
+                            created_at.as_deref(),
+                        );
                         created_at
                     }
                     Err(err) => {
@@ -5149,6 +5153,28 @@ mod latest_version_tests {
     }
 
     #[tokio::test]
+    async fn test_cutoff_retries_a_version_it_could_not_date() {
+        let config = Config::get().await.unwrap();
+        // No date for 3.0.0: offline, an unreachable source and unparseable
+        // metadata all look like this. Holding onto that answer would leave the
+        // version unchecked for the rest of the process.
+        let backend = partially_dated_backend("test-lazy-dates-inconclusive");
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        for _ in 0..2 {
+            assert_eq!(
+                backend
+                    .latest_version(&config, Some("latest".to_string()), Some(before))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some("3.0.0")
+            );
+        }
+        assert_eq!(backend.lazy_date_calls(), 2);
+    }
+
+    #[tokio::test]
     async fn test_cutoff_allows_a_version_whose_date_lookup_fails() {
         let config = Config::get().await.unwrap();
         // An unreachable proxy or VCS host must not turn into a resolution
@@ -6236,17 +6262,29 @@ struct SharedHookEnv {
 /// record the message re-reads the cached listing, where those versions are
 /// still undated, and falls back to a bare "no versions found" — dropping the
 /// remedy that tells the user which version to pin or how to lower the cutoff.
-type OnDemandReleaseDates = HashMap<(String, String), Option<String>>;
+///
+/// Only an answer is kept, never the absence of one. "No date" is what a
+/// backend reports for an offline run, a source that could not be reached and
+/// metadata it could not parse, and holding onto that would keep a version
+/// unchecked for the rest of the process. A release date that was read, on the
+/// other hand, describes a release that already happened and cannot change.
+type OnDemandReleaseDates = HashMap<(String, String), String>;
 static ON_DEMAND_RELEASE_DATES: LazyLock<Mutex<OnDemandReleaseDates>> =
     LazyLock::new(Default::default);
 
-fn remember_on_demand_release_date(backend_id: &str, version: &str, created_at: Option<String>) {
+fn remember_on_demand_release_date(backend_id: &str, version: &str, created_at: Option<&str>) {
+    let Some(created_at) = created_at else {
+        return;
+    };
     if let Ok(mut dates) = ON_DEMAND_RELEASE_DATES.lock() {
-        dates.insert((backend_id.to_string(), version.to_string()), created_at);
+        dates.insert(
+            (backend_id.to_string(), version.to_string()),
+            created_at.to_string(),
+        );
     }
 }
 
-fn on_demand_release_date(backend_id: &str, version: &str) -> Option<Option<String>> {
+fn on_demand_release_date(backend_id: &str, version: &str) -> Option<String> {
     ON_DEMAND_RELEASE_DATES
         .lock()
         .ok()?
