@@ -252,7 +252,10 @@ delegating to Homebrew. mise also supports structured `preflight_steps` and
 paths with Homebrew's recursive default, `run` operations using Homebrew's
 serialized command bases, arguments, environment, guards, and sudo setting, and
 `terminate_process` operations with Homebrew-compatible name/full matching,
-retries, notices, and failure policy.
+retries, notices, and failure policy. Manpage artifacts are intentionally not
+linked into the prefix. Metadata evaluation does not inspect extracted archive
+contents, so manpages dynamically enumerated from staged files declare no
+artifacts.
 Structured `copy` and `symlink` steps support Homebrew path bases, templates,
 guards, source globs, replacement, and sudo behavior. External paths created by
 lifecycle steps are recorded in the mise receipt and restored if the install
