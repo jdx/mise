@@ -276,7 +276,9 @@ confirmed is kept with a message saying why:
   these, and `--yes` skips them entirely:
   - A path under a volume that is not mounted reports "not found" exactly as a deleted
     project does. Prune asks when the first directory that does exist above the project
-    is empty, which is what an unmounted mount point looks like.
+    is empty or cannot be listed, and when the project's own parent directory is gone
+    as well. Between them those cover a mount point left behind empty and one that
+    disappeared with its volume, as happens on macOS and with a Windows drive letter.
   - A project reached through a symlink has its state named for the symlink's target,
     so deleting only the symlink leaves a live project whose recorded root reads as
     missing. Prune asks when the recorded path is not the one its directory was named
@@ -286,8 +288,11 @@ confirmed is kept with a message saying why:
 - If stopping a daemon or unregistering its configuration fails, that state is kept for
   a later run rather than deleted while a process may still be writing to it. Pitchfork
   reporting that it never knew the daemon or the configuration is not a failure.
-- If the supervisor is down but a database lock file such as `postmaster.pid` is still
-  present, the data is kept: a crashed supervisor can leave its database running.
+- Every daemon the project ever declared is checked with pitchfork, whether or not the
+  supervisor is up, because a crashed supervisor can leave a database running. The data
+  is kept unless pitchfork reports the daemon as not running or does not know it at all;
+  a timeout or an answer that cannot be read keeps it. A database lock file such as
+  `postmaster.pid` naming a live process keeps it too.
 - Pruning needs pitchfork itself. Without it nothing can be stopped or unregistered, and
   deleting the state would destroy the record a later run needs.
 - State whose `state.json` cannot be read or parsed is reported and skipped.

@@ -80,11 +80,14 @@ impl Entry {
     /// neither can be settled by looking harder, so each is put to a person
     /// instead: never removed without an explicit answer, and never by `--yes`.
     ///
-    /// An unmounted mount point is an ordinary empty directory, and a path
-    /// under it reports `NotFound` exactly as a deleted project does. What the
-    /// filesystem can still say is whether the first ancestor that does exist
-    /// is empty, which is what an unmounted mount point looks like and what a
-    /// deleted project's parent almost never is.
+    /// A volume that is not mounted reports `NotFound` under it exactly as a
+    /// deleted project does, and it goes missing in two shapes. Some mounts
+    /// leave their mount point behind as an empty directory; others take the
+    /// whole thing with them, as macOS does with `/Volumes/Name` and Windows
+    /// with a drive letter. So two signs stand in for it: the first ancestor
+    /// that still exists is empty or cannot be listed, or the project's own
+    /// parent is gone as well. Deleting a project removes the project, not the
+    /// directory it sat in.
     ///
     /// A project reached through a symlink has its state directory named for
     /// the canonical target while an older `prepare()` recorded the alias, so
@@ -95,6 +98,15 @@ impl Entry {
     /// carry a spelling its directory was not named from. Hence a question
     /// rather than a refusal, which would strand that state forever.
     pub(crate) fn ambiguity(&self) -> Option<String> {
+        if let Some(parent) = self.state.root.parent()
+            && !parent.exists()
+        {
+            return Some(format!(
+                "{} is gone as well, so {} may be an unmounted volume rather than a deleted project",
+                display_path(parent),
+                display_path(&self.state.root)
+            ));
+        }
         if let Some(existing) = self.state.root.ancestors().skip(1).find(|p| p.exists()) {
             let looks_unmounted = match std::fs::read_dir(existing) {
                 Ok(mut dir) => dir.next().is_none(),
@@ -268,6 +280,10 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
     }
     if let Some(runtime) = runtime {
         match runtime.supervisor_up(cwd).await {
+            // A supervisor that is down cannot be asked to stop anything, but
+            // it did not necessarily take its children with it, so the daemons
+            // are checked either way below.
+            Ok(false) => {}
             Ok(true) if !entry.state.ids.is_empty() => {
                 // One id at a time: `state.ids` keeps every id this project
                 // ever declared, and pitchfork asked to stop a list it cannot
@@ -280,16 +296,6 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                         return Ok(Outcome::Kept);
                     }
                 }
-                // What settles it is the supervisor's own answer, not whether
-                // stop reported success: an id it has forgotten cannot be
-                // stopped and does not need to be, and any id still alive is a
-                // process writing to the data below.
-                for id in &entry.state.ids {
-                    if let Err(err) = confirm_stopped(runtime, cwd, id).await {
-                        warn!("keeping {}: {err:#}", display_path(cwd));
-                        return Ok(Outcome::Kept);
-                    }
-                }
             }
             Ok(_) => {}
             Err(err) => {
@@ -297,6 +303,16 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                     "keeping {}: cannot establish supervisor status: {err:#}",
                     display_path(cwd)
                 );
+                return Ok(Outcome::Kept);
+            }
+        }
+        // Whatever the supervisor said about itself, every id this project ever
+        // declared has to be accounted for: a supervisor that crashed can leave
+        // a database running, and not every database writes a lock file to find
+        // it by. Redis, for one, does not.
+        for id in &entry.state.ids {
+            if let Err(err) = confirm_stopped(runtime, cwd, id).await {
+                warn!("keeping {}: {err:#}", display_path(cwd));
                 return Ok(Outcome::Kept);
             }
         }
@@ -744,6 +760,25 @@ mod tests {
             .find(|e| e.dir == dir)
             .unwrap();
         assert_eq!(entry.ambiguity(), None);
+    }
+
+    #[test]
+    fn a_root_whose_parent_is_gone_too_is_flagged_for_a_person() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        // An unplugged disk takes its whole mount point with it on macOS, and a
+        // drive letter does the same on Windows, so the first existing ancestor
+        // is an ordinary busy directory.
+        let volumes = tmp.path().join("Volumes");
+        std::fs::create_dir(&volumes).unwrap();
+        std::fs::create_dir(volumes.join("Another")).unwrap();
+        write_state(&base, "unplugged", &volumes.join("Disk/project"), &[]);
+
+        let entry = orphans(&base).unwrap().remove(0);
+        let why = entry
+            .ambiguity()
+            .expect("an unplugged disk must reach a person");
+        assert!(why.contains("unmounted volume"), "{why}");
     }
 
     #[test]
