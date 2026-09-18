@@ -423,16 +423,23 @@ fn names_something_unknown(stderr: &str) -> bool {
         .any(|phrase| lowered.contains(phrase))
 }
 
-/// Whether a pitchfork failure is it saying it has never heard of `id`.
+/// Whether a pitchfork failure is it saying it has no such daemon, this one.
 ///
-/// The same phrases, but they have to be about this daemon. "No such file or
-/// directory" is what a missing socket reports too, and a daemon nobody can
-/// reach is not a daemon that has stopped.
+/// Three things have to line up, because the only thing this permits is
+/// deleting the data. The message has to say something is missing, it has to
+/// say the missing thing is a daemon, and it has to name this one. Requiring
+/// the word is what keeps an I/O error out: "No such file or directory:
+/// .../db.sock" says something is missing and carries the short name of
+/// `ns/db` in the path, and a daemon whose socket has gone is unreachable
+/// rather than stopped.
 fn names_this_as_unknown(stderr: &str, id: &str) -> bool {
     if !names_something_unknown(stderr) {
         return false;
     }
     let lowered = stderr.to_lowercase();
+    if !lowered.contains("daemon") {
+        return false;
+    }
     let name = id.rsplit('/').next().unwrap_or(id).to_lowercase();
     lowered.contains(&id.to_lowercase()) || lowered.contains(&name)
 }
@@ -1011,6 +1018,17 @@ mod tests {
             "ns/db"
         ));
         assert!(!names_this_as_unknown("daemon ns/other not found", "ns/db"));
+        // The shape that matters: an I/O error can say something is missing and
+        // carry the daemon's short name in a path, and a daemon whose socket is
+        // gone is unreachable rather than stopped.
+        assert!(!names_this_as_unknown(
+            "No such file or directory: /run/pitchfork/db.sock",
+            "ns/db"
+        ));
+        assert!(!names_this_as_unknown(
+            "failed to connect: no such file or directory (/tmp/ns/db/sock)",
+            "ns/db"
+        ));
         assert!(tolerate_unknown(failed("no such config"), &args).is_ok());
         assert!(tolerate_unknown(failed("permission denied"), &args).is_err());
         // Phrases that turn up in real failures are not tolerated: treating one

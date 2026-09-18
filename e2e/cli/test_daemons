@@ -16,6 +16,9 @@ case "$1" in
     # for a supervisor that fails for some other reason than not knowing the id.
     if [[ ${STATUS_BROKEN:-} == silent ]]; then
       exit 1
+    elif [[ ${STATUS_BROKEN:-} == path ]]; then
+      echo "No such file or directory: /run/pitchfork/${2##*/}.sock" >&2
+      exit 1
     elif [[ -n ${STATUS_BROKEN:-} ]]; then
       echo 'supervisor socket timed out' >&2
       exit 1
@@ -506,6 +509,13 @@ rm -rf "$HOME/forgotten"
 export UNKNOWN_ID="$forgotten_id"
 assert_contains "mise daemons prune --yes 2>&1" 'cannot check'
 assert "test -f '$forgotten_state'"
+
+# An I/O error can carry both a missing-file phrase and the daemon's short name
+# in a path, which is not pitchfork saying it has no such daemon.
+export STATUS_BROKEN=path SUPERVISOR_STATUS=up
+assert_contains "mise daemons prune --yes 2>&1" 'cannot check'
+assert "test -f '$forgotten_state'"
+unset STATUS_BROKEN SUPERVISOR_STATUS
 
 # With the supervisor up, the same answer is one pitchfork is able to give.
 SUPERVISOR_STATUS=up mise daemons prune --yes
