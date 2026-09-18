@@ -275,8 +275,13 @@ fn delete_state_dir(entry: &Entry, mut lock: super::ProjectLock) -> Result<()> {
     // `remove_dir`, not a recursive delete: it fails if anything was written
     // back here, which is exactly the case that must not be deleted.
     if let Err(err) = std::fs::remove_dir(dir) {
-        // Put the entry back so a later run finishes what this one started.
-        let _ = crate::daemons::runtime::write_if_changed(&state_file, &entry.raw);
+        // Put the entry back so a later run finishes what this one started --
+        // but only if nothing else has: a `prepare()` that wrote its own
+        // `state.json` here is why this removal failed, and its state is
+        // current where these bytes are stale.
+        if !state_file.exists() {
+            let _ = crate::daemons::runtime::write_if_changed(&state_file, &entry.raw);
+        }
         return Err(eyre::eyre!(err).wrap_err(format!("failed to remove {}", display_path(dir))));
     }
     drop(lock);
@@ -455,6 +460,29 @@ mod tests {
         assert!(delete_state_dir(&entry, lock).is_err());
         assert!(dir.join("state.json").exists());
         assert_eq!(orphans(&base).unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_restore_never_overwrites_newer_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[]);
+        let entry = orphans(&base).unwrap().remove(0);
+        let lock = super::super::ProjectLock::try_acquire(&dir)
+            .unwrap()
+            .unwrap();
+        // What a prepare() racing the last unlinks leaves behind: its own
+        // state.json, plus a file that makes the directory removal fail.
+        std::fs::write(dir.join("pitchfork.toml"), "[daemons]\n").unwrap();
+        let fresh = br#"{"root":"/somewhere/else"}"#;
+        std::fs::write(dir.join("state.json"), fresh).unwrap();
+
+        assert!(delete_state_dir(&entry, lock).is_err());
+        assert_eq!(
+            std::fs::read(dir.join("state.json")).unwrap(),
+            fresh,
+            "the newer state must survive"
+        );
     }
 
     #[test]
