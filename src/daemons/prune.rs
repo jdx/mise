@@ -129,11 +129,18 @@ pub(crate) fn scan(base: &Path) -> Result<Vec<Entry>> {
                 continue;
             }
         };
-        // The lock files guarding these directories sit beside them, and a
-        // path under a file is not a missing file, so they would otherwise be
-        // reported as unreadable state.
-        if !dir.is_dir() {
-            continue;
+        // The lock files guarding these directories sit beside them, and a path
+        // under a file is not a missing file, so they would otherwise be
+        // reported as unreadable state. `is_dir` would answer false for a
+        // metadata error too, which is the way to skip a real state directory
+        // without anyone hearing about it.
+        match std::fs::metadata(&dir) {
+            Ok(metadata) if metadata.is_dir() => {}
+            Ok(_) => continue,
+            Err(err) => {
+                warn!("cannot read {}: {err}", display_path(&dir));
+                continue;
+            }
         }
         let path = dir.join("state.json");
         let bytes = match std::fs::read(&path) {
@@ -635,6 +642,30 @@ mod tests {
             .find(|e| e.state.root.starts_with(&projects))
             .unwrap();
         assert_eq!(entry.ambiguity(), None);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn state_that_cannot_be_examined_is_reported_and_skipped() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        write_state(&base, "gone", &tmp.path().join("gone"), &[]);
+        // Readable but not searchable: `read_dir` still lists the entry while
+        // every `metadata` call on it fails, which is the case `is_dir` would
+        // answer with a plain false.
+        let mut perms = std::fs::metadata(&base).unwrap().permissions();
+        perms.set_mode(0o400);
+        std::fs::set_permissions(&base, perms).unwrap();
+
+        let scanned = scan(&base);
+
+        let mut perms = std::fs::metadata(&base).unwrap().permissions();
+        perms.set_mode(0o700);
+        std::fs::set_permissions(&base, perms).unwrap();
+        // Skipped rather than fatal, and warned about rather than silent.
+        assert!(scanned.unwrap().is_empty());
+        assert_eq!(scan(&base).unwrap().len(), 1);
     }
 
     #[test]
