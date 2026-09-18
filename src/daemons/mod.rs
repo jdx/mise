@@ -1,5 +1,6 @@
 //! Project daemons: custom pitchfork definitions and embedded database presets.
 pub(crate) mod hook_env;
+pub(crate) mod ports;
 pub(crate) mod presets;
 pub(crate) mod runtime;
 pub(crate) mod tasks;
@@ -11,7 +12,9 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 use eyre::{Result, bail};
 use indexmap::IndexMap;
 use path_absolutize::Absolutize;
+use ports::{PortClaim, PortRequest};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -81,6 +84,9 @@ pub(crate) struct Daemon {
     /// True when this daemon was declared by another project and pulled in with
     /// `project =`. Its tools and exported environment belong to that project.
     pub imported: bool,
+    /// The resolved allocation for a `port = "auto"` daemon, persisted so it
+    /// survives a later change to the slot derivation.
+    pub port: Option<PortClaim>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -181,13 +187,21 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let mut set = DaemonSet::default();
     // Local name -> qualified ID, so `depends` can name an imported daemon short.
     let mut imported_ids: IndexMap<String, String> = IndexMap::new();
+    let mut ports = PortState::default();
     for (name, (declaration, source, root)) in declarations {
         validate_id("name", &name)?;
         if let Declaration::Definition(table) = &declaration
             && table.contains_key("project")
         {
             let spec = parse_import(&name, table.clone())?;
-            let (key, daemon) = match import(&name, &spec, &source, &root, &mut set.namespaces) {
+            let (key, daemon) = match import(
+                &name,
+                &spec,
+                &source,
+                &root,
+                &mut set.namespaces,
+                &mut ports,
+            ) {
                 Ok(imported) => imported,
                 Err(err) => {
                     debug!("[daemons.{name}] import failed: {err:#}");
@@ -212,8 +226,15 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             set.daemons.insert(key, daemon);
             continue;
         }
-        set.daemons
-            .insert(name.clone(), build(&name, declaration, source, root)?);
+        set.daemons.insert(
+            name.clone(),
+            build(&name, declaration, source, root, &mut ports)?,
+        );
+    }
+    // The first claimant of an ambiguous key kept its export while it looked
+    // unique; drop it now so neither side is handed the other's endpoint.
+    for daemon in set.daemons.values_mut() {
+        daemon.exports.retain(|key, _| !ports.ambiguous.contains(key));
     }
     for root in set
         .daemons
@@ -258,8 +279,25 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     Ok(set)
 }
 
+/// Port allocation state shared across one `load`, so two daemons cannot claim
+/// one slot or one exported variable without it being noticed.
+#[derive(Default)]
+struct PortState {
+    /// Previously persisted allocations, read once per project root.
+    claims: BTreeMap<PathBuf, BTreeMap<String, PortClaim>>,
+    /// Port variables already taken, so two names cannot normalize onto one key.
+    keys: BTreeMap<String, String>,
+    ambiguous: std::collections::BTreeSet<String>,
+}
+
 /// Turn one declaration into a daemon owned by `root`.
-fn build(name: &str, declaration: Declaration, source: PathBuf, root: PathBuf) -> Result<Daemon> {
+fn build(
+    name: &str,
+    declaration: Declaration,
+    source: PathBuf,
+    root: PathBuf,
+    ports: &mut PortState,
+) -> Result<Daemon> {
     let (preset, version, mut table) = match declaration {
         Declaration::Preset(version) => (Some(name.to_string()), Some(version), toml::Table::new()),
         Declaration::Definition(mut table) => {
@@ -267,6 +305,26 @@ fn build(name: &str, declaration: Declaration, source: PathBuf, root: PathBuf) -
             let version = take_string(&mut table, "version")?;
             (preset, version, table)
         }
+    };
+    let request = table
+        .remove("port")
+        .map(|value| ports::parse(name, value))
+        .transpose()?;
+    // `auto` resolution reuses the allocation recorded by the last start, so
+    // a change to the slot derivation cannot move a running daemon's port.
+    let persisted = if matches!(request, Some(PortRequest::Auto { .. })) {
+        ports
+            .claims
+            .entry(root.clone())
+            .or_insert_with(|| {
+                runtime::read_state(&root)
+                    .map(|s| s.ports)
+                    .unwrap_or_default()
+            })
+            .get(name)
+            .copied()
+    } else {
+        None
     };
     // `init`, `task` and `args` are mise concepts; pitchfork never sees them.
     let init = take_init(&mut table, name)?;
@@ -285,7 +343,33 @@ fn build(name: &str, declaration: Declaration, source: PathBuf, root: PathBuf) -
     if let Some(preset) = preset {
         let version =
             version.ok_or_else(|| eyre::eyre!("[daemons.{name}] requires version with preset"))?;
-        return presets::expand(name, &preset, &version, table, &init, &source, &root);
+        let claim = match request {
+            Some(PortRequest::Passthrough(_)) => bail!(
+                "[daemons.{name}].port must be an integer or \"auto\"; pitchfork's structured port is only available on custom daemons"
+            ),
+            Some(PortRequest::Fixed(port)) => Some(PortClaim::fixed(port)),
+            Some(PortRequest::Auto { base, stride }) => Some(ports::resolve(
+                name,
+                &root,
+                base,
+                stride,
+                Some(presets::default_port(&preset)?),
+                persisted,
+            )?),
+            None => None,
+        };
+        return presets::expand(
+            name,
+            &preset,
+            &version,
+            table,
+            presets::Extras {
+                init: &init,
+                port: claim,
+            },
+            &source,
+            &root,
+        );
     }
     if version.is_some() || table.contains_key("options") {
         bail!("[daemons.{name}] requires preset when specifying version or options");
@@ -343,20 +427,42 @@ fn build(name: &str, declaration: Declaration, source: PathBuf, root: PathBuf) -
     if table.get("run").and_then(toml::Value::as_str).is_none() {
         bail!("[daemons.{name}] requires run, task, preset, or project");
     }
-    if let Some(port) = table.get("port").and_then(toml::Value::as_integer) {
-        if !(1..=65535).contains(&port) {
-            bail!("daemon port must be an integer from 1 to 65535");
+    let claim = match request {
+        Some(PortRequest::Passthrough(value)) => {
+            table.insert("port".into(), value);
+            None
         }
-        table.insert(
-            "port".into(),
-            toml::Value::Table(toml::Table::from_iter([
-                (
-                    "expect".into(),
-                    toml::Value::Array(vec![toml::Value::Integer(port)]),
-                ),
-                ("bump".into(), toml::Value::Boolean(false)),
-            ])),
-        );
+        Some(PortRequest::Fixed(port)) => Some(PortClaim::fixed(port)),
+        Some(PortRequest::Auto { base, stride }) => {
+            Some(ports::resolve(name, &root, base, stride, None, persisted)?)
+        }
+        None => None,
+    };
+    if let Some(claim) = claim {
+        table.insert("port".into(), expected_port(claim.port));
+    }
+    // Without this a custom daemon's port would reach pitchfork and
+    // nothing else: `mise env` would export nothing, and the process
+    // could only discover it through pitchfork's own injection.
+    let mut port_export = IndexMap::new();
+    if let Some(c) = claim
+        && let Some(key) = port_env_var(name)
+    {
+        match ports.keys.insert(key.clone(), name.to_string()) {
+            // Two names collapsing onto one key is ambiguous, and
+            // picking a winner would hand somebody the wrong endpoint.
+            // Neither is exported and both daemons still run, because
+            // this convenience must not break a working project.
+            Some(other) => {
+                warn_once!(
+                    "[daemons] {other} and {name} both map to {key}; their names differ only by punctuation, so neither port is exported. Rename one of them."
+                );
+                ports.ambiguous.insert(key);
+            }
+            None => {
+                port_export.insert(key, c.port.to_string());
+            }
+        }
     }
     table
         .entry("mise".to_string())
@@ -376,8 +482,9 @@ fn build(name: &str, declaration: Declaration, source: PathBuf, root: PathBuf) -
         preset: None,
         task,
         tool: None,
-        exports: IndexMap::new(),
+        exports: port_export,
         imported: false,
+        port: claim,
     })
 }
 
@@ -472,6 +579,7 @@ fn import(
     source: &Path,
     root: &Path,
     namespaces: &mut IndexMap<PathBuf, String>,
+    ports: &mut PortState,
 ) -> Result<(String, Daemon)> {
     let Import {
         project,
@@ -573,7 +681,13 @@ fn import(
             dir.display()
         );
     }
-    let mut daemon = build(remote_name, declaration, remote_source, remote_root.clone())?;
+    let mut daemon = build(
+        remote_name,
+        declaration,
+        remote_source,
+        remote_root.clone(),
+        ports,
+    )?;
     daemon.imported = true;
     let namespace =
         runtime::resolve_namespace(&remote_root, Some(&settings_for(&settings, &remote_root)))?;
@@ -656,6 +770,45 @@ fn depends_names(table: &toml::Table) -> Vec<String> {
         .filter_map(|entry| entry.as_str())
         .map(str::to_string)
         .collect()
+}
+
+/// The variable a custom daemon's resolved port is exported as, so `mise env`,
+/// `mise x`, and the daemon's own process all see one endpoint. Presets export
+/// their tool's conventional variables instead.
+fn port_env_var(name: &str) -> Option<String> {
+    // A shell cannot export a name starting with a digit: `export 9API_PORT=1`
+    // is an invalid identifier and would break the whole activation, not just
+    // that variable. Such a name was legal before this export existed, so it
+    // keeps working and only goes without the variable.
+    if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+        warn_once!(
+            "[daemons] {name} starts with a digit, so its port cannot be exported as a shell variable; rename it to start with a letter to get one"
+        );
+        return None;
+    }
+    let base: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    Some(format!("{base}_PORT"))
+}
+
+/// Pitchfork's structured `port`, pinned to the port mise already rendered into
+/// the daemon's command line and `[env]` exports.
+pub(crate) fn expected_port(port: u16) -> toml::Value {
+    toml::Value::Table(toml::Table::from_iter([
+        (
+            "expect".into(),
+            toml::Value::Array(vec![toml::Value::Integer(i64::from(port))]),
+        ),
+        ("bump".into(), toml::Value::Boolean(false)),
+    ]))
 }
 
 /// Remove `init`, accepting one command or an ordered list of them.
@@ -1729,6 +1882,207 @@ mod tests {
         let set = load(&config).unwrap();
         let root = set.daemons["api"].root.clone();
         assert_eq!(set.namespace_for(&root), Some("entiredb"));
+    }
+
+    #[test]
+    fn auto_ports_separate_worktrees_but_leave_the_primary_checkout_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let primary = tmp.path().join("project");
+        std::fs::create_dir_all(primary.join(".git")).unwrap();
+        let linked = tmp.path().join("worktree");
+        std::fs::create_dir_all(&linked).unwrap();
+        // A linked worktree's marker points into the main checkout's worktrees
+        // directory, which carries a commondir pointer; that is what
+        // distinguishes it from a submodule.
+        let private = primary.join(".git").join("worktrees").join("worktree");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(primary.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
+        std::fs::write(
+            linked.join(".git"),
+            format!("gitdir: {}\n", private.display()),
+        )
+        .unwrap();
+
+        let body = "[daemons.db]\npreset = 'postgres'\nversion = '18'\nport = 'auto'\n[daemons.api]\nrun = 'server'\n[daemons.api.port]\nauto = true\nbase = 3000\n";
+        let ports = |root: &Path| {
+            let set = load(&files(&[(root.join("mise.toml").to_str().unwrap(), body)])).unwrap();
+            (
+                set.daemons["db"].port.unwrap().port,
+                set.daemons["api"].port.unwrap().port,
+            )
+        };
+
+        // The single well-known checkout keeps the well-known ports.
+        assert_eq!(ports(&primary), (5432, 3000));
+        let (db, api) = ports(&linked);
+        assert!(db > 5432 && db <= 5432 + ports::SLOTS);
+        assert!(api > 3000 && api <= 3000 + ports::SLOTS);
+        // Same root, same ports; and the port reaches the exports and the command.
+        assert_eq!(ports(&linked), (db, api));
+        let set = load(&files(&[(
+            linked.join("mise.toml").to_str().unwrap(),
+            body,
+        )]))
+        .unwrap();
+        assert_eq!(set.daemons["db"].exports["PGPORT"], db.to_string());
+        assert!(set.daemons["db"].exports["DATABASE_URL"].contains(&format!(":{db}/")));
+        assert!(
+            set.daemons["db"].table["run"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("-p {db}"))
+        );
+        assert_eq!(
+            set.daemons["api"].table["port"]["expect"][0].as_integer(),
+            Some(i64::from(api))
+        );
+    }
+
+    #[test]
+    fn custom_daemons_export_their_resolved_port() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'server'\nport = 3000\n[daemons.web-ui]\nrun = 'ui'\n[daemons.web-ui.port]\nauto = true\nbase = 4000\n",
+        )]))
+        .unwrap();
+        // Without an export the port would reach pitchfork only.
+        assert_eq!(set.daemons["api"].exports["API_PORT"], "3000");
+        // Punctuation is not valid in a variable name.
+        assert_eq!(set.daemons["web-ui"].exports["WEB_UI_PORT"], "4000");
+        // Two names that normalize onto one variable are ambiguous, so
+        // neither is exported and both daemons keep working. Failing the load
+        // would take `mise env` down for the whole project over a convenience.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.web-ui]\nrun = 'a'\nport = 3000\n[daemons.web_ui]\nrun = 'b'\nport = 3001\n",
+        )]))
+        .unwrap();
+        assert!(set.daemons["web-ui"].exports.is_empty());
+        assert!(set.daemons["web_ui"].exports.is_empty());
+        // Both still have their ports; only the variable is withheld.
+        assert_eq!(set.daemons["web-ui"].port.unwrap().port, 3000);
+        assert_eq!(set.daemons["web_ui"].port.unwrap().port, 3001);
+
+        // A shell cannot export a name starting with a digit, but that name was
+        // legal before this export existed, so it keeps working without one.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.9api]\nrun = 'a'\nport = 3000\n",
+        )]))
+        .unwrap();
+        assert!(set.daemons["9api"].exports.is_empty());
+        assert_eq!(set.daemons["9api"].port.unwrap().port, 3000);
+        assert_eq!(
+            set.daemons["9api"].table["port"]["expect"][0].as_integer(),
+            Some(3000)
+        );
+
+        // A daemon with no port mise resolved exports nothing.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'server'\n",
+        )]))
+        .unwrap();
+        assert!(set.daemons["api"].exports.is_empty());
+        // The exports reach the environment mise renders.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'server'\nport = 3000\n",
+        )]))
+        .unwrap();
+        assert!(set.env_entries().iter().any(
+            |(d, _)| matches!(d, EnvDirective::Val(k, v, _) if k == "API_PORT" && v == "3000")
+        ));
+    }
+
+    #[test]
+    fn a_persisted_allocation_wins_over_a_fresh_derivation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("wt");
+        std::fs::create_dir_all(&root).unwrap();
+        let private = tmp.path().join(".git").join("worktrees").join("wt");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(
+            tmp.path().join(".git").join("HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
+        std::fs::write(
+            root.join(".git"),
+            format!("gitdir: {}\n", private.display()),
+        )
+        .unwrap();
+
+        let body = "[daemons.api]\nrun = 'server'\n[daemons.api.port]\nauto = true\nbase = 3000\n";
+        let cfg = || files(&[(root.join("mise.toml").to_str().unwrap(), body)]);
+        let derived = load(&cfg()).unwrap().daemons["api"].port.unwrap();
+        assert_ne!(derived.port, 3000, "a worktree is offset");
+
+        // A recorded claim for the same base and stride is what the next load
+        // uses, so a started daemon cannot move when derivation changes.
+        let state = runtime::State {
+            root: root.clone(),
+            ports: std::collections::BTreeMap::from([(
+                "api".to_string(),
+                PortClaim {
+                    port: 3456,
+                    base: 3000,
+                    stride: 1,
+                },
+            )]),
+            ..Default::default()
+        };
+        let dir = state_dir(&root);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("state.json"),
+            serde_json::to_vec_pretty(&state).unwrap(),
+        )
+        .unwrap();
+        let set = load(&cfg()).unwrap();
+        assert_eq!(set.daemons["api"].port.unwrap().port, 3456);
+        assert_eq!(set.daemons["api"].exports["API_PORT"], "3456");
+        assert_eq!(
+            set.daemons["api"].table["port"]["expect"][0].as_integer(),
+            Some(3456)
+        );
+    }
+
+    #[test]
+    fn invalid_auto_port_declarations_are_rejected() {
+        // A custom daemon has no default port to offset.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\nport = 'auto'\n",
+        )]);
+        assert!(
+            load(&config)
+                .unwrap_err()
+                .to_string()
+                .contains("needs a base port")
+        );
+        // Presets do not take pitchfork's structured port.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\n[daemons.db.port]\nexpect = [5432]\n",
+        )]);
+        assert!(load(&config).is_err());
+        // Custom daemons still forward it verbatim.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\n[daemons.api.port]\nexpect = [3000, 3001]\nbump = true\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(
+            set.daemons["api"].table["port"]["bump"].as_bool(),
+            Some(true)
+        );
+        assert!(set.daemons["api"].port.is_none());
     }
 
     #[test]

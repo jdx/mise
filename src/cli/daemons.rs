@@ -345,6 +345,11 @@ impl Daemons {
                 for id in ids {
                     let name = id.rsplit('/').next().unwrap_or(&id);
                     let daemon = visible.find(name);
+                    // Fall back to the last recorded allocation for a daemon
+                    // that is no longer declared but may still be running.
+                    let claim = daemon
+                        .and_then(|d| d.port)
+                        .or_else(|| previous.ports.get(name).copied());
                     let status = if let Ok(runtime) = &runtime
                         && !previous.namespace.is_empty()
                     {
@@ -352,7 +357,7 @@ impl Daemons {
                     } else {
                         None
                     };
-                    rows.push(serde_json::json!({ "id": id, "name": name, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()) }));
+                    rows.push(serde_json::json!({ "id": id, "name": name, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()) }));
                 }
                 continue;
             }

@@ -336,6 +336,7 @@ mod tests {
                             tool: None,
                             exports: Default::default(),
                             imported: false,
+                            port: None,
                         },
                     )
                 })
