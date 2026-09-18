@@ -10,8 +10,32 @@ use crate::config::{Config, Settings};
 use crate::task::Task;
 use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+fn declares_daemons(task: &Task) -> bool {
+    match &task.daemons {
+        None | Some(crate::task::TaskDaemons::All(false)) => false,
+        Some(crate::task::TaskDaemons::Names(names)) => !names.is_empty(),
+        Some(_) => true,
+    }
+}
+
+fn project_for_task(project_root: Option<&Path>, task: &Task) -> Result<Option<PathBuf>> {
+    if !declares_daemons(task) {
+        return Ok(None);
+    }
+    task.config_root
+        .clone()
+        .or_else(|| project_root.map(Path::to_path_buf))
+        .map(Some)
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "task {} requires daemons but has no project root",
+                task.display_name
+            )
+        })
+}
 
 /// Daemon names required by `tasks`, in declaration order.
 pub(crate) fn required(tasks: &[Task], set: &DaemonSet) -> Result<IndexSet<String>> {
@@ -44,11 +68,7 @@ pub(crate) fn required(tasks: &[Task], set: &DaemonSet) -> Result<IndexSet<Strin
 /// `experimental` on, and the gate is the behavior worth pinning: a run whose
 /// tasks declare no daemons is never held to the requirement.
 pub(crate) fn gate(experimental: bool, tasks: &[Task]) -> Result<bool> {
-    let declared = tasks.iter().any(|task| match &task.daemons {
-        None | Some(crate::task::TaskDaemons::All(false)) => false,
-        Some(crate::task::TaskDaemons::Names(names)) => !names.is_empty(),
-        Some(_) => true,
-    });
+    let declared = tasks.iter().any(declares_daemons);
     if declared && !experimental {
         bail!("{}", super::EXPERIMENTAL);
     }
@@ -74,11 +94,7 @@ pub(crate) async fn start(config: &Arc<Config>, tasks: &[Task], dry_run: bool) -
     Settings::ensure_not_safe("starting task daemons")?;
     let mut by_project: IndexMap<PathBuf, Vec<Task>> = IndexMap::new();
     for task in tasks {
-        let Some(project) = task
-            .config_root
-            .clone()
-            .or_else(|| config.project_root.clone())
-        else {
+        let Some(project) = project_for_task(config.project_root.as_deref(), task)? else {
             continue;
         };
         by_project.entry(project).or_default().push(task.clone());
@@ -218,5 +234,15 @@ mod tests {
         assert!(!gate(false, &[task("test", None)]).unwrap());
         assert!(!gate(false, &[task("test", Some(TaskDaemons::All(false)))]).unwrap());
         assert!(!gate(false, &[task("test", Some(TaskDaemons::Names(vec![])))]).unwrap());
+    }
+
+    #[test]
+    fn daemon_requirement_without_project_root_errors() {
+        let task = task("server", Some(TaskDaemons::One("postgres".into())));
+        let err = project_for_task(None, &task).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "task server requires daemons but has no project root"
+        );
     }
 }
