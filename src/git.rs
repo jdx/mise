@@ -732,10 +732,14 @@ fn is_submodule_gitdir(dotgit_file: &Path) -> bool {
     if !gitdir.is_dir() {
         return false;
     }
+    // Every `modules` component is a candidate, not just the innermost. A
+    // submodule whose path is itself `modules/foo` lands at
+    // `.git/modules/modules/foo`, so stopping at the first match would inspect
+    // the container `.git/modules` and wrongly conclude this is not a submodule.
     let mut dir = gitdir.as_path();
     while let Some(parent) = dir.parent() {
-        if dir.file_name() == Some(OsStr::new("modules")) {
-            return parent.join("HEAD").is_file();
+        if dir.file_name() == Some(OsStr::new("modules")) && parent.join("HEAD").is_file() {
+            return true;
         }
         dir = parent;
     }
@@ -1459,6 +1463,23 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         assert!(!super::in_linked_worktree(&wt_sub));
         std::fs::create_dir_all(main.join(".git/worktrees/wt/modules/sub")).unwrap();
         assert!(super::in_linked_worktree(&wt_sub));
+
+        // A submodule whose own path is `modules/foo` nests the component:
+        // git stores it at `<enclosing>/modules/modules/foo`. The container
+        // `.git/modules` has no HEAD, so only looking past it finds the real
+        // enclosing git dir.
+        let nested_name = wt.join("modules/foo");
+        std::fs::create_dir_all(&nested_name).unwrap();
+        std::fs::create_dir_all(main.join(".git/worktrees/wt/modules/modules/foo")).unwrap();
+        std::fs::write(
+            nested_name.join(".git"),
+            format!(
+                "gitdir: {}\n",
+                main.join(".git/worktrees/wt/modules/modules/foo").display()
+            ),
+        )
+        .unwrap();
+        assert!(super::in_linked_worktree(&nested_name));
 
         // An unrelated repository whose git dir merely sits under a directory
         // named `modules` is not a submodule: the path before `modules` is not
