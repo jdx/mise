@@ -1163,15 +1163,28 @@ impl SystemPackageManager for BrewCaskManager {
         pkgs: &[PackageRequest],
         manager_options: &ManagerPackageOptions,
     ) -> Result<Vec<PackageStatus>> {
-        let mut statuses = Vec::with_capacity(pkgs.len());
-        for req in pkgs {
-            let cask = self.resolve_cask(req, manager_options, false).await?;
-            statuses.push(PackageStatus {
-                request: req.clone(),
-                state: package_state(req, &cask)?,
-            });
-        }
-        Ok(statuses)
+        // Resolving a cask is an HTTP read of its metadata document, so a serial
+        // loop waits on the network once per declared cask. The reads are
+        // independent, and `jobs` already governs this same tradeoff for
+        // formulae.
+        let jobs = crate::jobs::normalize(crate::config::Settings::get().jobs);
+        let futures: Vec<_> = pkgs
+            .iter()
+            .map(|req| async move {
+                let cask = self.resolve_cask(req, manager_options, false).await?;
+                Ok(PackageStatus {
+                    request: req.clone(),
+                    state: package_state(req, &cask)?,
+                })
+            })
+            .collect();
+
+        // Order is restored before any failure is surfaced, so the reported
+        // package depends on the request list rather than on network timing.
+        super::fetch::concurrently_in_order(futures, jobs)
+            .await
+            .into_iter()
+            .collect()
     }
 
     /// Installs casks with default manager options, preserving installed self-updaters.
@@ -1304,11 +1317,25 @@ async fn prewarm_downloads(
     // `provision_ruby: false` keeps this pass free of side effects: a
     // third-party tap cask simply resolves to nothing here and falls through to
     // the serial path, which provisions properly.
+    // Resolve concurrently for the same reason the downloads below are
+    // concurrent. A serial resolve pass reintroduces the per-cask network wait
+    // immediately ahead of the downloads this function exists to overlap, so
+    // the prewarm would not start until N round trips had already been paid.
+    let resolve_futures: Vec<_> = pkgs
+        .iter()
+        .map(|pkg| async move {
+            resolve_cask_for(manager, pkg, manager_options, false)
+                .await
+                .ok()
+        })
+        .collect();
+    let resolved: Vec<Option<Cask>> =
+        super::fetch::concurrently_in_order(resolve_futures, jobs).await;
+
+    // Order is preserved so the candidate list, and therefore the download
+    // order, still follows the declaration order.
     let mut candidates = Vec::new();
-    for pkg in pkgs {
-        let Ok(cask) = resolve_cask_for(manager, pkg, manager_options, false).await else {
-            continue;
-        };
+    for cask in resolved.into_iter().flatten() {
         // git-backed casks clone instead of downloading an archive
         if cask.url.ends_with(".git") {
             continue;

@@ -44,6 +44,34 @@ where
 
 /// Drive independent jobs concurrently and yield each result as soon as it
 /// completes, without requiring the futures to be `Send + 'static`.
+/// Run `futures` with at most `limit` in flight and return their outputs in the
+/// order the futures were given, not the order they finished.
+///
+/// `concurrently` yields on completion, which is the right default for work
+/// whose results are interchangeable. Callers that map results back onto a
+/// caller-supplied list need the original order restored, and doing that by
+/// hand at each call site is how an off-by-one silently attributes one
+/// package's result to another.
+pub(super) async fn concurrently_in_order<F, T>(futures: Vec<F>, limit: usize) -> Vec<T>
+where
+    F: Future<Output = T>,
+{
+    let indexed: Vec<_> = futures
+        .into_iter()
+        .enumerate()
+        .map(|(idx, fut)| async move { (idx, fut.await) })
+        .collect();
+    let mut slots: Vec<Option<T>> = (0..indexed.len()).map(|_| None).collect();
+    let mut running = concurrently(indexed, limit);
+    while let Some((idx, output)) = running.next().await {
+        slots[idx] = Some(output);
+    }
+    slots
+        .into_iter()
+        .map(|slot| slot.expect("every future yielded exactly one output"))
+        .collect()
+}
+
 pub(super) fn concurrently<F>(futures: Vec<F>, limit: usize) -> ConcurrentJobs<F>
 where
     F: Future,
@@ -86,6 +114,48 @@ pub(super) async fn fetch_bottle(
 
 #[cfg(test)]
 mod tests {
+    /// Completion order must not leak into the result order: these futures
+    /// finish in reverse, so a version that collected as they landed would
+    /// return the list backwards.
+    #[tokio::test]
+    async fn concurrently_in_order_returns_input_order() {
+        let futures: Vec<_> = (0..16usize)
+            .map(|i| async move {
+                tokio::time::sleep(std::time::Duration::from_millis((16 - i) as u64 * 5)).await;
+                i
+            })
+            .collect();
+        let out = super::concurrently_in_order(futures, 8).await;
+        assert_eq!(out, (0..16usize).collect::<Vec<_>>());
+    }
+
+    /// The bound is what makes it concurrent rather than serial, so the order
+    /// guarantee has to survive every limit, including a limit of one and a
+    /// limit larger than the job count.
+    #[tokio::test]
+    async fn concurrently_in_order_holds_at_every_limit() {
+        for limit in [1usize, 2, 5, 32] {
+            let futures: Vec<_> = (0..10usize)
+                .map(|i| async move {
+                    tokio::time::sleep(std::time::Duration::from_millis((10 - i) as u64 * 3)).await;
+                    i * 2
+                })
+                .collect();
+            let out = super::concurrently_in_order(futures, limit).await;
+            assert_eq!(
+                out,
+                (0..10usize).map(|i| i * 2).collect::<Vec<_>>(),
+                "limit {limit}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrently_in_order_handles_empty_input() {
+        let futures: Vec<std::future::Ready<usize>> = Vec::new();
+        assert!(super::concurrently_in_order(futures, 4).await.is_empty());
+    }
+
     use std::future::pending;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
