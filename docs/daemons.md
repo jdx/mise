@@ -104,7 +104,14 @@ port = { auto = true, base = 3000 }
 The primary checkout keeps the base port, so a single-checkout project is unchanged:
 `PGPORT` stays `5432` and the API stays on `3000`. Each linked git worktree gets a
 stable offset derived from its path, so the same worktree always resolves to the same
-port and two worktrees do not collide.
+port across invocations.
+
+Offsets are hashed into 511 slots rather than assigned in sequence, so two worktrees
+can land on the same slot before the slots run out. This is uncommon and stays that way
+in practice: around a 1% chance with four worktrees and 5% with eight. When it happens,
+starting the second daemon reports the other project by name if its daemon is running,
+and otherwise the daemon fails to bind as it would for any occupied port. Give one of
+the projects an explicit `base` to move it out of the way.
 
 The enclosing checkout decides, not the directory holding `mise.toml`, so a config
 nested in a monorepo such as `packages/api/mise.toml` still follows its worktree.

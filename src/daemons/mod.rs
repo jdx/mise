@@ -403,10 +403,14 @@ mod tests {
         let linked = tmp.path().join("worktree");
         std::fs::create_dir_all(&linked).unwrap();
         // A linked worktree's marker points into the main checkout's worktrees
-        // directory; that is what distinguishes it from a submodule.
+        // directory, which carries a commondir pointer; that is what
+        // distinguishes it from a submodule.
+        let private = primary.join(".git").join("worktrees").join("worktree");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
         std::fs::write(
             linked.join(".git"),
-            format!("gitdir: {}/.git/worktrees/worktree\n", primary.display()),
+            format!("gitdir: {}\n", private.display()),
         )
         .unwrap();
 

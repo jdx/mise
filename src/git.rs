@@ -677,7 +677,13 @@ fn worktree_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
     } else {
         gitdir
     };
-    (gitdir.parent()?.file_name() == Some(OsStr::new("worktrees"))).then_some(gitdir)
+    if gitdir.parent()?.file_name() != Some(OsStr::new("worktrees")) {
+        return None;
+    }
+    // The private dir must actually exist and carry `commondir`, so a stale or
+    // hand-written `gitdir:` pointing at a directory that merely sits under one
+    // named `worktrees` is not mistaken for a checkout.
+    gitdir.join("commondir").is_file().then_some(gitdir)
 }
 
 /// Resolves a linked worktree's `.git` file to the root of the main checkout

@@ -169,13 +169,18 @@ pub(crate) fn resolve(
 mod tests {
     use super::*;
 
+    /// A linked worktree as `git worktree add` leaves it: a `.git` file naming
+    /// a private dir under the main checkout's `worktrees/`, and that dir
+    /// carrying the `commondir` pointer back to the shared git dir.
     fn worktree(dir: &Path, name: &str) -> std::path::PathBuf {
+        let private = dir.join(".git").join("worktrees").join(name);
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
         let root = dir.join(name);
         std::fs::create_dir_all(&root).unwrap();
-        // A real linked worktree points into the main checkout's worktrees dir.
         std::fs::write(
             root.join(".git"),
-            format!("gitdir: {}/.git/worktrees/{name}\n", dir.display()),
+            format!("gitdir: {}\n", private.display()),
         )
         .unwrap();
         root
@@ -306,6 +311,9 @@ mod tests {
             // merely contains the word somewhere else is not a worktree.
             "/repo/worktrees/nested/.git/modules/sub",
             "/worktrees",
+            // Shaped like a worktree, but the private dir does not exist, so
+            // there is no checkout here to give its own port to.
+            "/repo/.git/worktrees/pruned",
         ] {
             let root = tmp.path().join(crate::hash::hash_to_str(&target));
             std::fs::create_dir_all(&root).unwrap();
