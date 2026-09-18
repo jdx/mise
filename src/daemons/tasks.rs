@@ -217,6 +217,7 @@ mod tests {
                     )
                 })
                 .collect(),
+            groups: Vec::new(),
         }
     }
 
