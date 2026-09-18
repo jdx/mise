@@ -258,8 +258,10 @@ impl Runtime {
             return Ok((state, lock));
         }
         self.supports_external_config(root).await?;
-        write_if_changed(&file, content.as_bytes())?;
-        if set.daemons.is_empty() {
+        // Pitchfork binds a registered file to its namespace. Detach the old
+        // mapping before registering the same file under a different name.
+        // The active check above ensures this cannot orphan running daemons.
+        if changed || set.daemons.is_empty() {
             self.output(
                 root,
                 &[
@@ -269,7 +271,9 @@ impl Runtime {
                 ],
             )
             .await?;
-        } else {
+        }
+        write_if_changed(&file, content.as_bytes())?;
+        if !set.daemons.is_empty() {
             self.output(
                 root,
                 &[

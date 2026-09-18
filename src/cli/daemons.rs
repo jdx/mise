@@ -210,14 +210,18 @@ impl Daemons {
                     .cloned()
                     .collect();
                 for name in visible.daemons.values().map(|d| &d.name) {
-                    let id = if listed.is_empty() {
+                    // An existing registration already represents this daemon.
+                    // New declarations always use the configured namespace,
+                    // even while other daemons still run under the old one.
+                    if ids.iter().any(|id| id.rsplit('/').next() == Some(name)) {
+                        continue;
+                    }
+                    let id = if desired.is_empty() {
                         name.clone()
                     } else {
-                        format!("{listed}/{name}")
+                        format!("{desired}/{name}")
                     };
-                    if !ids.contains(&id) {
-                        ids.push(id);
-                    }
+                    ids.push(id);
                 }
                 for id in ids {
                     let name = id.rsplit('/').next().unwrap_or(&id);

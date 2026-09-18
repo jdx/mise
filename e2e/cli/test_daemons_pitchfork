@@ -47,10 +47,19 @@ assert "test $(mise daemons ls --json | jq length) -eq 1"
 assert_contains "mise daemons ls --json" '"id": "renamed/api"'
 mise daemons start
 cp original.toml mise.toml
-assert "test $(mise daemons ls --json | jq length) -eq 1"
+cat >>mise.toml <<'TOML'
+[daemons_settings]
+namespace = "next"
+[daemons.extra]
+run = "exec sleep 600"
+TOML
+assert "test $(mise daemons ls --json | jq length) -eq 2"
 assert_contains "mise daemons ls --json" '"id": "renamed/api"'
+assert_contains "mise daemons ls --json" '"id": "next/extra"'
 assert_contains "mise daemons ls --json" '"status": "running"'
 mise daemons stop
+assert_contains "mise daemons ls --json" '"id": "next/api"'
+cp original.toml mise.toml
 assert "test $(mise daemons ls --json | jq length) -eq 1"
 mise daemons start
 mise daemons stop
