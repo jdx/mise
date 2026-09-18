@@ -17,6 +17,9 @@ under $MISE_STATE_DIR/daemons. Deleting a project (for example with
 unregisters their configuration, and deletes their data. State for projects
 that still exist is never removed.
 
+Prompts before deleting anything; pass the global --yes to prune
+non-interactively.
+
 ## Flags
 - **`-n --dry-run`** — Show what would be removed without deleting anything
 - **`-h --help`** — Print help

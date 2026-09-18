@@ -25,20 +25,39 @@ impl Entry {
 
     /// Whether the project this state belongs to no longer exists on disk.
     ///
-    /// Only a filesystem `NotFound` qualifies. `Path::is_dir` would answer
-    /// false for every metadata error, so an unplugged volume, an NFS share
-    /// that is down, or a directory mise cannot stat would read as a deleted
-    /// project and cost the user a database. Anything that is not a definite
-    /// absence keeps its state, as does a root that still exists but declares
-    /// no daemons any more: `prepare()` already unregisters its configuration,
-    /// and its data may still be wanted.
+    /// A missing path is necessary but not sufficient. `Path::is_dir` would
+    /// answer false for every metadata error, so a share that is down or a
+    /// directory mise cannot stat would read as a deleted project and cost the
+    /// user a database; only a definite `NotFound` counts. A root that still
+    /// exists keeps its state even when it declares no daemons any more:
+    /// `prepare()` already unregisters its configuration, and its data may
+    /// still be wanted.
+    ///
+    /// The recorded path also has to be the one that named this directory.
+    /// [`state_dir`](super::state_dir) hashes the canonical root while
+    /// `prepare()` records the raw one, so a project reached through a symlink
+    /// has an alias recorded against a directory named for its target.
+    /// Deleting only the alias leaves a live project whose root reads as
+    /// missing, and the hash is what tells the two apart: with the path gone,
+    /// canonicalization falls back to it unchanged, so a name that no longer
+    /// matches proves the recorded path was an alias for something else.
     pub(crate) fn orphaned(&self) -> bool {
         if self.state.root.as_os_str().is_empty() {
             return false;
         }
         match std::fs::symlink_metadata(&self.state.root) {
             Ok(_) => false,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                if super::state_dir(&self.state.root).file_name() != self.dir.file_name() {
+                    warn!(
+                        "keeping {}: {} is gone, but this state was created for a different path it pointed at, which may still exist",
+                        display_path(&self.dir),
+                        display_path(&self.state.root)
+                    );
+                    return false;
+                }
+                true
+            }
             Err(err) => {
                 warn!(
                     "keeping {}: cannot read {}: {err}",
@@ -48,6 +67,24 @@ impl Entry {
                 false
             }
         }
+    }
+
+    /// Whether the recorded root's absence might be a volume that is not
+    /// mounted rather than a project that was deleted.
+    ///
+    /// An unmounted mount point is an ordinary empty directory, and a path
+    /// under it reports `NotFound` exactly as a deleted project does, so the
+    /// filesystem cannot tell them apart. What it can say is whether the first
+    /// ancestor that does exist is empty, which is what an unmounted mount
+    /// point looks like and what the parent of a deleted project almost never
+    /// is. This does not decide anything by itself; it decides whether the
+    /// question has to reach a person.
+    pub(crate) fn root_may_be_unmounted(&self) -> bool {
+        let mut ancestors = self.state.root.ancestors().skip(1);
+        let Some(existing) = ancestors.find(|path| path.exists()) else {
+            return false;
+        };
+        std::fs::read_dir(existing).is_ok_and(|mut dir| dir.next().is_none())
     }
 }
 
@@ -67,23 +104,41 @@ pub(crate) fn base_dir() -> PathBuf {
 
 /// Every readable `state.json` directly below `base`, in path order.
 ///
-/// Directories without a state file (or with an unparsable one) are skipped:
-/// they were never fully prepared, and guessing at them could delete data mise
-/// does not understand.
+/// A directory without a state file was never fully prepared and is skipped
+/// silently. One whose state file cannot be read or parsed is skipped loudly:
+/// mise will not guess at data it does not understand, but such a directory can
+/// never be pruned either, so saying nothing would leave it invisible forever.
+/// One unreadable entry does not hide the rest.
 pub(crate) fn scan(base: &Path) -> Result<Vec<Entry>> {
     let Ok(read_dir) = std::fs::read_dir(base) else {
         return Ok(vec![]);
     };
     let mut entries = Vec::new();
     for entry in read_dir {
-        let dir = entry?.path();
+        let dir = match entry {
+            Ok(entry) => entry.path(),
+            Err(err) => {
+                warn!("skipping an entry of {}: {err}", display_path(base));
+                continue;
+            }
+        };
         let path = dir.join("state.json");
-        let Ok(bytes) = std::fs::read(&path) else {
-            continue;
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            // Not every directory here has one; only an existing file that
+            // cannot be read is worth reporting.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => {
+                warn!("cannot read {}: {err}", display_path(&path));
+                continue;
+            }
         };
         match serde_json::from_slice::<State>(&bytes) {
             Ok(state) => entries.push(Entry { dir, state }),
-            Err(err) => debug!("ignoring {}: {err}", display_path(&path)),
+            Err(err) => warn!(
+                "cannot understand {}, so it will not be pruned: {err}",
+                display_path(&path)
+            ),
         }
     }
     entries.sort_by(|a, b| a.dir.cmp(&b.dir));
@@ -171,7 +226,7 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
             Ok(true) if !entry.state.ids.is_empty() => {
                 let mut args = vec!["stop".to_string()];
                 args.extend(entry.state.ids.iter().cloned());
-                if let Err(err) = runtime.output(cwd, &args).await {
+                if let Err(err) = tolerate_unknown(runtime.raw_output(cwd, &args).await, &args) {
                     warn!(
                         "keeping {}: cannot stop its daemons: {err:#}",
                         display_path(cwd)
@@ -179,7 +234,20 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                     return Ok(Outcome::Kept);
                 }
             }
-            Ok(_) => {}
+            // A supervisor that is down did not necessarily take the daemons
+            // with it: a crash leaves the database process running on the very
+            // data this is about to delete, and its own lock file is the
+            // evidence mise has for that.
+            Ok(_) => {
+                if let Some(lock) = live_database_lock(cwd) {
+                    warn!(
+                        "keeping {}: {} is still there, so a database may be running without its supervisor",
+                        display_path(cwd),
+                        display_path(&lock)
+                    );
+                    return Ok(Outcome::Kept);
+                }
+            }
             Err(err) => {
                 warn!(
                     "keeping {}: cannot establish supervisor status: {err:#}",
@@ -193,17 +261,12 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         // would leave it pointing at a path nothing can discover again once
         // this directory is deleted.
         let config = entry.config_file();
-        if let Err(err) = runtime
-            .output(
-                cwd,
-                &[
-                    "config".into(),
-                    "remove".into(),
-                    config.to_string_lossy().into_owned(),
-                ],
-            )
-            .await
-        {
+        let args = [
+            "config".to_string(),
+            "remove".to_string(),
+            config.to_string_lossy().into_owned(),
+        ];
+        if let Err(err) = tolerate_unknown(runtime.raw_output(cwd, &args).await, &args) {
             warn!(
                 "keeping {}: cannot unregister {}: {err:#}",
                 display_path(cwd),
@@ -226,6 +289,60 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
         return Ok(Outcome::Kept);
     }
     Ok(Outcome::Removed)
+}
+
+/// Turns a pitchfork invocation into success, a tolerated non-failure, or an
+/// error.
+///
+/// Forgetting something pitchfork has never heard of is the outcome prune
+/// wants, but pitchfork reports it as a failure. `state.ids` keeps every daemon
+/// id a project ever declared, and `prepare()` may already have unregistered
+/// the configuration, so "no such daemon" and "not registered" are ordinary
+/// here. Treating them as errors would make an entry permanently unprunable,
+/// with `rm -rf` as the only way out.
+fn tolerate_unknown(output: Result<std::process::Output>, args: &[String]) -> Result<()> {
+    let output = output?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lowered = stderr.to_lowercase();
+    if [
+        "not found",
+        "no such",
+        "unknown",
+        "not registered",
+        "is not",
+    ]
+    .iter()
+    .any(|phrase| lowered.contains(phrase))
+    {
+        debug!("pitchfork {} had nothing to do: {stderr}", args.join(" "));
+        return Ok(());
+    }
+    eyre::bail!("pitchfork {}: {stderr}", args.join(" "))
+}
+
+/// The lock file of a database that is still running on this project's data, if
+/// there is one.
+///
+/// Database daemons drop a lock file beside their data while they are alive:
+/// PostgreSQL writes `postmaster.pid`, CockroachDB and others keep a comparable
+/// marker. Its presence does not prove a live process, since a crash leaves it
+/// behind, but its absence is the cheap confirmation that nothing is obviously
+/// running, and the whole question only arises when the supervisor is down.
+fn live_database_lock(dir: &Path) -> Option<PathBuf> {
+    walkdir::WalkDir::new(dir.join("data"))
+        .max_depth(2)
+        .into_iter()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().to_path_buf())
+        .find(|path| {
+            path.file_name().is_some_and(|name| {
+                let name = name.to_string_lossy();
+                name == "postmaster.pid" || name.ends_with(".pid") || name == "LOCK"
+            })
+        })
 }
 
 /// Deletes a project's daemon state and data, under both locks.
@@ -261,7 +378,10 @@ mod tests {
     use super::*;
 
     fn write_state(base: &Path, name: &str, root: &Path, data: &[(&str, usize)]) -> PathBuf {
-        let dir = base.join(name);
+        // Named by the hash of the canonical root, as `state_dir` names it.
+        let dir = base.join(crate::hash::hash_to_str(
+            &root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let state = State {
             root: root.to_path_buf(),
@@ -434,6 +554,117 @@ mod tests {
         // Without state.json it is no longer an entry, so it is neither
         // reported nor pruned again.
         assert!(scan(&base).unwrap().is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_deleted_alias_never_takes_its_live_target_with_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let project = tmp.path().join("project");
+        std::fs::create_dir(&project).unwrap();
+        let alias = tmp.path().join("alias");
+        std::os::unix::fs::symlink(&project, &alias).unwrap();
+
+        // What `prepare()` records when the project was reached through the
+        // alias: the raw path, against a directory named for the canonical one.
+        let dir = base.join(crate::hash::hash_to_str(&project));
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = State {
+            root: alias.clone(),
+            ..State::default()
+        };
+        std::fs::write(
+            dir.join("state.json"),
+            serde_json::to_vec_pretty(&state).unwrap(),
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join("data/db")).unwrap();
+
+        // Removing only the symlink leaves the project, and its database,
+        // entirely intact.
+        std::fs::remove_file(&alias).unwrap();
+        assert!(project.is_dir());
+        assert!(
+            orphans(&base).unwrap().is_empty(),
+            "a missing alias is not a deleted project"
+        );
+
+        // Even once the project is gone too, this state stays: the recorded
+        // path cannot be tied to the directory that holds it, so its absence
+        // proves nothing. That costs an unprunable directory for state written
+        // through an alias by an older mise; `prepare()` now records the
+        // canonical root, so nothing new lands in this state.
+        std::fs::remove_dir_all(&project).unwrap();
+        assert!(orphans(&base).unwrap().is_empty());
+
+        // The same project recorded canonically prunes normally.
+        write_state(&base, "canonical", &project, &[]);
+        assert_eq!(orphans(&base).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_root_under_an_empty_ancestor_is_flagged_for_a_person() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        // An unmounted mount point is an ordinary empty directory, and a path
+        // under it reports NotFound exactly as a deleted project does.
+        let mount = tmp.path().join("mnt");
+        std::fs::create_dir(&mount).unwrap();
+        write_state(&base, "unmounted", &mount.join("project"), &[]);
+        let entry = orphans(&base).unwrap().remove(0);
+        assert!(entry.root_may_be_unmounted());
+
+        // A deleted project leaves its parent behind with other things in it.
+        let projects = tmp.path().join("src");
+        std::fs::create_dir(&projects).unwrap();
+        std::fs::create_dir(projects.join("other-project")).unwrap();
+        write_state(&base, "deleted", &projects.join("project"), &[]);
+        let entry = orphans(&base)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.state.root.starts_with(&projects))
+            .unwrap();
+        assert!(!entry.root_may_be_unmounted());
+    }
+
+    #[test]
+    fn state_that_cannot_be_understood_is_reported_and_skipped() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        write_state(&base, "fine", &tmp.path().join("gone"), &[]);
+        std::fs::create_dir_all(base.join("corrupt")).unwrap();
+        std::fs::write(base.join("corrupt/state.json"), "{not json").unwrap();
+        // The readable entry is still found; the corrupt one is skipped, and
+        // `scan` warns rather than passing over it in silence.
+        assert_eq!(scan(&base).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_live_database_lock_keeps_state_when_the_supervisor_is_down() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[]);
+        assert!(live_database_lock(&dir).is_none());
+        std::fs::create_dir_all(dir.join("data/postgres")).unwrap();
+        std::fs::write(dir.join("data/postgres/postmaster.pid"), "123").unwrap();
+        assert!(live_database_lock(&dir).is_some());
+    }
+
+    #[test]
+    fn pitchfork_forgetting_something_it_never_knew_is_not_a_failure() {
+        use std::os::unix::process::ExitStatusExt;
+        let args = vec!["stop".to_string(), "ns/db".to_string()];
+        let failed = |stderr: &str| {
+            Ok(std::process::Output {
+                status: std::process::ExitStatus::from_raw(256),
+                stdout: vec![],
+                stderr: stderr.as_bytes().to_vec(),
+            })
+        };
+        assert!(tolerate_unknown(failed("daemon ns/db not found"), &args).is_ok());
+        assert!(tolerate_unknown(failed("no such config"), &args).is_ok());
+        assert!(tolerate_unknown(failed("permission denied"), &args).is_err());
     }
 
     #[test]

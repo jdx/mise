@@ -70,6 +70,9 @@ struct List {
 /// `git worktree remove`) leaves both behind. This stops those daemons,
 /// unregisters their configuration, and deletes their data. State for projects
 /// that still exist is never removed.
+///
+/// Prompts before deleting anything; pass the global --yes to prune
+/// non-interactively.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct Prune {
@@ -285,6 +288,27 @@ impl Prune {
                 "no daemon state from deleted projects under {}",
                 display_path(&base)
             );
+            return Ok(());
+        }
+        // A root under an unmounted volume is indistinguishable from a deleted
+        // one on disk, so that case is only ever decided by a person. Without
+        // anyone to ask, it is kept.
+        let (mounted, unmounted): (Vec<_>, Vec<_>) = orphans
+            .into_iter()
+            .partition(|entry| !entry.root_may_be_unmounted());
+        for entry in &unmounted {
+            let what = if self.dry_run || !Settings::get().yes {
+                "may be an unmounted volume rather than a deleted project"
+            } else {
+                "may be an unmounted volume rather than a deleted project; prune without --yes to decide"
+            };
+            warn!("{} {what}", display_path(&entry.state.root));
+        }
+        let mut orphans = mounted;
+        if !Settings::get().yes || self.dry_run {
+            orphans.extend(unmounted);
+        }
+        if orphans.is_empty() {
             return Ok(());
         }
         let sized: Vec<_> = orphans

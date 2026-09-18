@@ -93,8 +93,10 @@ To reset a database, stop its daemon, locate its data directory, and explicitly 
 that instance's data. Back up anything you want to retain first. Use the database's
 own migration tools to preserve data across incompatible upgrades.
 
-`mise daemons ls --json` reports `state_dir` and `data_size` for each daemon, so you
-can see what a project costs before deleting it.
+`mise daemons ls --json` reports `root`, `state_dir` and `data_size` on every daemon
+row. They describe the project the daemon belongs to, not the daemon itself, so rows
+from the same project repeat them. That is how you see what a project costs before
+deleting it.
 
 Higher-precedence declarations replace a same-name daemon completely. Inherited
 daemons retain their declaring project scope. One environment profile can be active
@@ -125,14 +127,28 @@ prompts with the total size first; pass `--yes` to prune non-interactively and
 longer declare any daemons. Starting daemons prints a notice when such leftover state
 exists but never removes it: deletion stays explicit.
 
-Every step has to be confirmed before anything is deleted. A project directory mise
-cannot read, such as one on an unplugged volume or an unreachable network mount, is kept
-rather than treated as deleted. A directory that reappears between the prompt and the
-deletion is kept. If stopping a daemon or unregistering its configuration fails, that
-state is kept for a later run rather than deleted while a process may still be writing
-to it. Pruning also needs pitchfork itself: without it nothing can be stopped or
-unregistered, and deleting the state would destroy the record a later run needs. Each
-case reports why it was kept.
+Every step has to be confirmed before anything is deleted, and whatever cannot be
+confirmed is kept with a message saying why:
+
+- A project directory mise cannot read, such as one on an unreachable network mount, is
+  kept. Only a definite "not found" counts as deleted.
+- A path under a volume that is not mounted reports "not found" exactly as a deleted
+  project does, so mise cannot tell them apart. When the first directory that does exist
+  above the project is empty, which is what an unmounted mount point looks like, the
+  decision goes to a person: `--yes` skips that state instead of deleting it.
+- A project reached through a symlink has its state named for the symlink's target, so
+  deleting only the symlink never takes the live project's data. State that an older
+  mise recorded under the symlink itself cannot be tied back to its directory and is kept
+  permanently; remove it by hand if you want it gone.
+- A directory that reappears between the prompt and the deletion is kept.
+- If stopping a daemon or unregistering its configuration fails, that state is kept for
+  a later run rather than deleted while a process may still be writing to it. Pitchfork
+  reporting that it never knew the daemon or the configuration is not a failure.
+- If the supervisor is down but a database lock file such as `postmaster.pid` is still
+  present, the data is kept: a crashed supervisor can leave its database running.
+- Pruning needs pitchfork itself. Without it nothing can be stopped or unregistered, and
+  deleting the state would destroy the record a later run needs.
+- State whose `state.json` cannot be read or parsed is reported and skipped.
 
 ## Automatic start and stop
 

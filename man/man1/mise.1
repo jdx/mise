@@ -3954,6 +3954,9 @@ under $MISE_STATE_DIR/daemons. Deleting a project (for example with
 `git worktree remove`) leaves both behind. This stops those daemons,
 unregisters their configuration, and deletes their data. State for projects
 that still exist is never removed.
+
+Prompts before deleting anything; pass the global \-\-yes to prune
+non\-interactively.
 .PP
 \fBUsage:\fR mise daemons prune [OPTIONS]
 .PP
