@@ -353,7 +353,12 @@ impl GoBackend {
                         }
                     }
                     // `@v/list` is unordered, so sort before fetching metadata:
-                    // only the newest versions get a `.info` request.
+                    // only the newest versions get a `.info` request. Ordering
+                    // these by semver is sound where it generally is not —
+                    // https://go.dev/ref/mod#versions requires module versions
+                    // to be semver, and the filter above has already dropped
+                    // anything `Versioning` cannot parse, so nothing here falls
+                    // back to arbitrary ordering.
                     versions.sort_by_cached_key(|v| Versioning::new(v.trim_start_matches('v')));
                     return Ok(Some(
                         fetch_proxy_version_infos(&proxies, path, &versions).await,
