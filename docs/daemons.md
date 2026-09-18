@@ -291,9 +291,15 @@ mise trust ../mirror-pipeline
 mise daemons start pipeline
 ```
 
-Run `mise daemons start api` to start the API and its worker dependency. Use the
-local name `pipeline` in commands and `depends`; mise resolves it to the worker's
-full daemon ID. You do not need to configure a namespace to use a project reference.
+Run `mise daemons start api` to start the API and its worker dependency: the
+referenced project is registered and started too, even though nothing named it.
+Use the local name `pipeline` in commands, in `depends`, and in a
+`[daemon_groups]` member; mise resolves it to the worker's full daemon ID. You do
+not need to configure a namespace to use a project reference.
+
+Starting resolves dependencies across projects, so a daemon here can depend on
+one there. Stopping and logs do not: they act on the daemons this project named,
+in the projects that own them.
 
 ### Paths and configuration
 

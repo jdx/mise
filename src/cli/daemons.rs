@@ -242,6 +242,9 @@ impl Daemons {
                 let declarations = scoped.daemons()?;
                 for dependency_root in declarations.roots() {
                     if !roots.contains(&dependency_root) {
+                        // Every root travels with its ids and its set; the three
+                        // are zipped below and a short list drops the tail.
+                        root_sets.push(declarations.for_root(&dependency_root));
                         roots.push(dependency_root);
                         root_ids.push(Vec::new());
                     }
@@ -302,10 +305,11 @@ impl Daemons {
             root_entries.sort_by(|a, b| a.0.cmp(&b.0));
         }
         for (root, ids, root_set) in root_entries {
-            if install
-                && starting.for_root(&root).daemons.is_empty()
-                && (!names.is_empty() || root != project_root)
-            {
+            // What this root contributes to the run: for a start that is the
+            // dependency closure, which already accounts for daemons in other
+            // projects that nothing named directly.
+            let in_closure = install && !starting.for_root(&root).daemons.is_empty();
+            if install && !in_closure && (!names.is_empty() || root != project_root) {
                 continue;
             }
             // Each root resolves the request against its own groups, so a `default`
@@ -314,7 +318,8 @@ impl Daemons {
             // validated against rather than the per-root reload used for tools and
             // the generated configuration.
             let root_selectors = effective_selectors(&selectors, &root_set, action);
-            if !root_selectors.is_empty()
+            if !in_closure
+                && !root_selectors.is_empty()
                 && !ids
                     .iter()
                     .any(|id| root_selectors.iter().any(|s| selects(&root_set, id, s)))
@@ -445,16 +450,21 @@ impl Daemons {
                 .ids
                 .iter()
                 .filter(|id| {
-                    root_selectors.is_empty() || root_selectors.iter().any(|s| selects(&set, id, s))
+                    if install {
+                        // The closure already answered this, including
+                        // dependencies in projects nothing named directly.
+                        set.find(id.rsplit('/').next().unwrap_or(id))
+                            .is_some_and(|daemon| starting.contains(daemon))
+                    } else {
+                        root_selectors.is_empty()
+                            || root_selectors.iter().any(|s| selects(&set, id, s))
+                    }
                 })
                 .cloned()
                 .collect();
-            if install {
-                selected.retain(|id| set.find(id.rsplit('/').next().unwrap_or(id)).is_some());
-            }
-            if foreign {
-                // Registering another project's daemons does not mean starting
-                // or stopping them; only the ones this project asked for.
+            if foreign && !install {
+                // Registering another project's daemons does not mean stopping
+                // them; only the ones this project asked for.
                 selected.retain(|id| {
                     requested
                         .find(id.rsplit('/').next().unwrap_or(id))

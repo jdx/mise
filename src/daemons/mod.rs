@@ -797,7 +797,13 @@ fn load_groups(
     }
     for key in groups.keys().cloned().collect::<Vec<_>>() {
         let daemons = expand_group(&groups, &key, &declares, &mut Vec::new())?;
-        groups[&key].daemons = daemons;
+        // A member can name a daemon this project imported, which is declared
+        // here under the local key but registered under its own project's
+        // qualified ID. Expand to the ID it answers to.
+        groups[&key].daemons = daemons
+            .into_iter()
+            .map(|member| set.aliases.get(&member).cloned().unwrap_or(member))
+            .collect();
     }
     set.groups = groups.into_values().collect();
     Ok(())
