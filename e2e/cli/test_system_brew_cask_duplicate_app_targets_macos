@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 root = Path(sys.argv[1]).resolve()
 prefix = root / "brew-prefix"
 requests = []
+BULK_PATH = "/api/cask.json"
 cases = {
     "case-only": ("Example.app", "example.app"),
     "unicode": ("Caf\u00e9.app", "Cafe\u0301.app"),
@@ -32,6 +33,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         requests.append(self.path)
+        # The bulk cask index is probed before the per-cask endpoint. This
+        # fixture does not publish one, which is an ordinary answer: mise falls
+        # back to the per-cask request below, which is what this test exercises.
+        # 404 rather than the 500 used for genuine violations, so a real
+        # dependency or archive fetch still fails loudly.
+        if self.path == BULK_PATH:
+            self.send_error(404)
+            return
         token = self.path.removeprefix("/api/cask/").removesuffix(".json")
         if self.path != f"/api/cask/{token}.json" or token not in cases:
             self.send_error(500, "must reject duplicate targets before fetching dependencies or archive")
@@ -71,7 +80,13 @@ try:
             assert "duplicate app target" in output, output
             assert second in output, output
             assert not prefix.exists(), "duplicate targets must fail before prefix or Caskroom creation"
-    assert set(requests) == {f"/api/cask/{token}.json" for token in cases}, requests
+    # Every cask is still resolved through its own endpoint, and nothing beyond
+    # that is fetched. The bulk probe is allowed but not required: it is a cache
+    # miss here, so whether it appears depends only on whether the cached index
+    # was already warm.
+    assert set(requests) - {BULK_PATH} == {
+        f"/api/cask/{token}.json" for token in cases
+    }, requests
 finally:
     server.shutdown()
     thread.join()
