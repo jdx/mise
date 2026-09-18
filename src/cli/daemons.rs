@@ -112,11 +112,6 @@ impl Daemons {
                 .await;
         }
         let loaded = config.daemons()?;
-        // Other commands carry on without an import they cannot resolve; this is
-        // the command that exists to act on daemons, so it says what is wrong.
-        if let Some((name, err)) = loaded.import_errors.first() {
-            bail!("cannot resolve [daemons.{name}]: {err}");
-        }
         // The loop below shadows `root` with each project root it prepares.
         let project_root = root.to_path_buf();
         let mut roots = loaded.roots();
@@ -124,6 +119,19 @@ impl Daemons {
             roots.push(root.to_path_buf());
         }
         let (requested_names, flags) = split_args(action, &args)?;
+        // An import that could not be resolved is fatal only when this command
+        // names it. Someone whose sibling checkout is missing can still list and
+        // stop their own daemons; they are told what is unavailable and why.
+        if let Some((name, err)) = loaded.import_errors.iter().find(|(name, _)| {
+            requested_names
+                .iter()
+                .any(|requested| requested == *name || requested.rsplit('/').next() == Some(name))
+        }) {
+            bail!("cannot resolve [daemons.{name}]: {err}");
+        }
+        for (name, err) in &loaded.import_errors {
+            warn!("[daemons.{name}] is unavailable: {err}");
+        }
         let install = matches!(action, "start" | "restart");
         let names: Vec<String> = requested_names
             .iter()

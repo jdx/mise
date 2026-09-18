@@ -265,9 +265,18 @@ registered and can continue running independently.
 Automatic start and stop apply only to the current project's own daemons. Use
 `mise daemons start` to start an imported daemon.
 
-If a referenced checkout is missing or untrusted, daemon commands report the
-problem and how to resolve it. Commands such as `mise run` and `mise x` can still
-run without that import, so teammates can work without checking out every service.
+If a referenced checkout is missing or untrusted, the import is dropped and the
+rest of your configuration is unaffected, so `mise run` and `mise x` keep working
+and teammates can work without checking out every service.
+
+Naming the unavailable daemon fails and explains why, so `mise daemons start
+pipeline` reports the expected directory and the setting to update. Other daemon
+commands warn and continue, so you can still list and stop your own daemons. A
+`depends` entry pointing at the unavailable daemon is dropped rather than
+registered, because there is no daemon ID to point it at.
+
+An untrusted checkout is reported separately from a missing one, and mise never
+trusts it for you. Run `mise trust` on the path it names after reviewing it.
 
 ## Namespaces
 

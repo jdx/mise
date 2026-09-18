@@ -243,8 +243,9 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // Runs even with nothing imported, because it also rejects a `depends` this
     // project could not act on. An imported daemon's own `depends` is relative
     // to its project and is checked when that project loads.
+    let unresolved = set.import_errors.clone();
     for daemon in set.daemons.values_mut().filter(|d| !d.imported) {
-        rewrite_depends(&mut daemon.table, &imported_ids)?;
+        rewrite_depends(&mut daemon.table, &imported_ids, &unresolved)?;
     }
     Ok(set)
 }
@@ -515,10 +516,7 @@ fn import(
         // names, with no prompt, so a later `cd` into it would run its env,
         // hooks and templates. Safe mode makes config inert, so it needs no
         // trust of its own.
-        if !Settings::safe_mode()
-            && !cfg!(test)
-            && !crate::config::config_file::is_path_trusted(path)
-        {
+        if !Settings::safe_mode() && !crate::config::config_file::is_path_trusted(path) {
             // The untrusted file can be an ancestor of the referenced project,
             // so name the root that actually needs trusting; trusting the
             // project directory would not cover it. Ask the same question
@@ -579,7 +577,16 @@ fn import(
 /// Rewrite short `depends` entries that name an imported daemon. Pitchfork
 /// resolves bare names inside one namespace, so an imported dependency only
 /// works when it is written out in full.
-fn rewrite_depends(table: &mut toml::Table, imported: &IndexMap<String, String>) -> Result<()> {
+///
+/// A dependency on an import that could not be resolved is dropped rather than
+/// written out, because there is no ID to write. Leaving the bare name would
+/// register a definition naming a daemon pitchfork cannot resolve; the import
+/// failure itself is reported separately, so the reason is not lost.
+fn rewrite_depends(
+    table: &mut toml::Table,
+    imported: &IndexMap<String, String>,
+    unresolved: &IndexMap<String, String>,
+) -> Result<()> {
     let Some(depends) = table.get_mut("depends") else {
         return Ok(());
     };
@@ -590,15 +597,34 @@ fn rewrite_depends(table: &mut toml::Table, imported: &IndexMap<String, String>)
             *value = toml::Value::String(id.clone());
         }
     };
+    let dangling = |value: &toml::Value| {
+        value
+            .as_str()
+            .is_some_and(|name| unresolved.contains_key(name))
+    };
+    let mut empty = false;
     match depends {
-        toml::Value::String(_) => rewrite(depends),
+        toml::Value::String(_) => {
+            if dangling(depends) {
+                empty = true;
+            } else {
+                rewrite(depends);
+            }
+        }
         toml::Value::Array(entries) => {
             if entries.iter().any(|entry| entry.as_str().is_none()) {
                 bail!("daemon depends must be a string or an array of strings");
             }
+            entries.retain(|entry| !dangling(entry));
             entries.iter_mut().for_each(rewrite);
+            empty = entries.is_empty();
         }
         _ => bail!("daemon depends must be a string or an array of strings"),
+    }
+    // Dropping the last entry leaves nothing to depend on, so drop the key too
+    // rather than registering an empty list.
+    if empty {
+        table.remove("depends");
     }
     Ok(())
 }
@@ -1137,6 +1163,24 @@ mod tests {
     /// A project whose daemons another project can import. The filename has to
     /// be one this build actually looks for; unit tests override the list.
     fn referenced_project(dir: &Path, body: &str) -> PathBuf {
+        let path = untrusted_project(dir, body);
+        // Importing requires trust that already exists. These fixtures stand in
+        // for projects the developer has reviewed and trusted.
+        crate::config::config_file::trust(dir).unwrap();
+        path
+    }
+
+    /// Every test that imports takes this lock. The paranoid-mode test changes a
+    /// global setting, and under `paranoid` a fixture's directory-level trust no
+    /// longer covers its config file, so an overlapping import would fail.
+    static IMPORT_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn import_lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::test::lock_ignoring_poison(&IMPORT_TESTS)
+    }
+
+    /// A referenced project the developer has never trusted.
+    fn untrusted_project(dir: &Path, body: &str) -> PathBuf {
         std::fs::create_dir_all(dir).unwrap();
         let path = dir.join(&*crate::env::MISE_DEFAULT_CONFIG_FILENAME);
         std::fs::write(&path, body).unwrap();
@@ -1145,6 +1189,7 @@ mod tests {
 
     #[test]
     fn referenced_project_daemons_belong_to_that_project() {
+        let _serial = import_lock();
         let tmp = tempfile::tempdir().unwrap();
         let mirror = tmp.path().join("mirror-pipeline");
         referenced_project(
@@ -1195,6 +1240,7 @@ mod tests {
 
     #[test]
     fn referenced_daemon_may_be_renamed_locally() {
+        let _serial = import_lock();
         let tmp = tempfile::tempdir().unwrap();
         let mirror = tmp.path().join("mirror");
         referenced_project(&mirror, "[daemons.worker]\nrun = 'exec worker'\n");
@@ -1221,6 +1267,7 @@ mod tests {
 
     #[test]
     fn an_unresolvable_import_does_not_break_other_commands() {
+        let _serial = import_lock();
         // Daemons load on every command. A sibling that is not checked out must
         // leave `mise x`, `mise run` and the activation hook working.
         let tmp = tempfile::tempdir().unwrap();
@@ -1247,6 +1294,7 @@ mod tests {
 
     #[test]
     fn missing_referenced_projects_name_the_path_and_the_setting() {
+        let _serial = import_lock();
         let tmp = tempfile::tempdir().unwrap();
         let app = tmp.path().join("app");
         std::fs::create_dir_all(&app).unwrap();
@@ -1282,6 +1330,7 @@ mod tests {
 
     #[test]
     fn referenced_projects_inherit_daemons_and_namespaces_from_parent_configs() {
+        let _serial = import_lock();
         // The referenced root is reloaded through its whole hierarchy when its
         // daemons are prepared, so discovery has to agree with that.
         let tmp = tempfile::tempdir().unwrap();
@@ -1339,6 +1388,7 @@ mod tests {
 
     #[test]
     fn two_imports_cannot_claim_one_daemon_id() {
+        let _serial = import_lock();
         let tmp = tempfile::tempdir().unwrap();
         for dir in ["one", "two"] {
             referenced_project(
@@ -1403,6 +1453,7 @@ mod tests {
 
     #[test]
     fn two_projects_cannot_claim_one_daemon_id() {
+        let _serial = import_lock();
         // Fixed namespaces make this reachable: an import resolves to the same
         // namespace as a daemon declared here, and both want the same ID.
         let tmp = tempfile::tempdir().unwrap();
@@ -1427,6 +1478,7 @@ mod tests {
 
     #[test]
     fn nested_referenced_projects_resolve_the_same_namespace_both_ways() {
+        let _serial = import_lock();
         // The namespace computed when importing has to be the one registered
         // when that root is prepared, or `depends` and `start` name an ID that
         // pitchfork never saw.
@@ -1476,7 +1528,68 @@ mod tests {
     }
 
     #[test]
+    fn an_untrusted_referenced_project_is_not_imported() {
+        let _serial = import_lock();
+        // This exercises the real trust gate. `mise x`, `mise run` and
+        // `mise daemons start` mark the active config implicitly trusted, and
+        // reading a sibling through that branch would grant it durable trust
+        // with no prompt.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        untrusted_project(&mirror, "[daemons.worker]\nrun = 'exec worker'\n");
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.worker]\nproject = '../mirror'\n[daemons.api]\nrun = 'exec api'\ndepends = ['worker']\n",
+        )]);
+        let config_path = mirror.join(&*crate::env::MISE_DEFAULT_CONFIG_FILENAME);
+        // `is_trusted` trusts everything under `cfg!(test)`, except in paranoid
+        // mode, where trust is bound to file contents and checked first. That is
+        // the only way to exercise this gate without the bypass.
+        let _paranoid = Paranoid::on();
+        let set = load(&config).unwrap();
+        assert!(set.find("worker").is_none());
+        let err = &set.import_errors["worker"];
+        assert!(err.contains("not trusted"), "{err}");
+        assert!(err.contains("mise trust"), "{err}");
+        // Trying did not trust it as a side effect, which is the whole point:
+        // the commands that reach here mark the active config implicitly
+        // trusted, and that branch would have granted it durably.
+        assert!(!crate::config::config_file::is_path_trusted(&config_path));
+        // A dependency on an import that never resolved would name a daemon
+        // pitchfork cannot find, so it is dropped rather than registered.
+        assert!(!set.daemons["api"].table.contains_key("depends"));
+
+        // Trusting it makes the same configuration import.
+        crate::config::config_file::trust(&config_path).unwrap();
+        let set = load(&config).unwrap();
+        assert_eq!(set.find("worker").map(|d| d.imported), Some(true));
+    }
+
+    /// Turns on `paranoid` for one test and restores the settings on drop, even
+    /// if the test panics.
+    struct Paranoid;
+
+    impl Paranoid {
+        fn on() -> Self {
+            use confique::Layer;
+            let mut settings = crate::config::settings::SettingsPartial::empty();
+            settings.paranoid = Some(true);
+            crate::config::Settings::reset(Some(settings));
+            Self
+        }
+    }
+
+    impl Drop for Paranoid {
+        fn drop(&mut self) {
+            crate::config::Settings::reset(None);
+        }
+    }
+
+    #[test]
     fn referenced_projects_with_tool_versions_files_still_import() {
+        let _serial = import_lock();
         // `.tool-versions` sits in the same config list but is not TOML; parsing
         // it would fail before the project's mise config is ever read.
         let tmp = tempfile::tempdir().unwrap();
@@ -1532,6 +1645,7 @@ mod tests {
 
     #[test]
     fn referenced_projects_cannot_be_chained_or_mixed_with_a_definition() {
+        let _serial = import_lock();
         let tmp = tempfile::tempdir().unwrap();
         let far = tmp.path().join("far");
         referenced_project(&far, "[daemons.worker]\nrun = 'exec worker'\n");
