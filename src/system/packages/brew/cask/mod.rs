@@ -1180,11 +1180,9 @@ impl SystemPackageManager for BrewCaskManager {
             .collect();
 
         // Order is restored before any failure is surfaced, so the reported
-        // package depends on the request list rather than on network timing.
-        super::fetch::concurrently_in_order(futures, jobs)
-            .await
-            .into_iter()
-            .collect()
+        // package depends on position rather than on network timing, and a
+        // failure stops new requests instead of costing the whole list.
+        super::fetch::concurrently_results_in_order(futures, jobs).await
     }
 
     /// Installs casks with default manager options, preserving installed self-updaters.

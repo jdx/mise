@@ -72,6 +72,60 @@ where
         .collect()
 }
 
+/// Like [`concurrently_in_order`], but for fallible work: stop admitting new
+/// jobs as soon as one fails.
+///
+/// A serial loop stops at its first failure, so nothing after it is ever
+/// requested. Collecting every result before reporting the error would give
+/// that up, and a single endpoint burning its timeout and retry budget would
+/// hold up the whole run. Cancelling pending work on the first failure, while
+/// still draining what is already in flight, is what the bottle path does.
+///
+/// The reported failure is the earliest by position among the jobs that
+/// actually ran. It is not always the one a fully serial pass would have
+/// reported, since a lower-positioned job may have been cancelled before it
+/// started, but it does not depend on which request lost a race either.
+pub(super) async fn concurrently_results_in_order<F, T, E>(
+    futures: Vec<F>,
+    limit: usize,
+) -> std::result::Result<Vec<T>, E>
+where
+    F: Future<Output = std::result::Result<T, E>>,
+{
+    let indexed: Vec<_> = futures
+        .into_iter()
+        .enumerate()
+        .map(|(idx, fut)| async move { (idx, fut.await) })
+        .collect();
+    let mut slots: Vec<Option<T>> = (0..indexed.len()).map(|_| None).collect();
+    let mut failure: Option<(usize, E)> = None;
+    let mut running = concurrently(indexed, limit);
+    while let Some((idx, result)) = running.next().await {
+        match result {
+            Ok(value) => slots[idx] = Some(value),
+            Err(err) => {
+                running.cancel_pending();
+                let earlier = match &failure {
+                    None => true,
+                    Some((previous, _)) => idx < *previous,
+                };
+                if earlier {
+                    failure = Some((idx, err));
+                }
+            }
+        }
+    }
+    if let Some((_, err)) = failure {
+        return Err(err);
+    }
+    // Only reachable when nothing failed, so nothing was cancelled and every
+    // slot was filled.
+    Ok(slots
+        .into_iter()
+        .map(|slot| slot.expect("every future yielded exactly one output"))
+        .collect())
+}
+
 pub(super) fn concurrently<F>(futures: Vec<F>, limit: usize) -> ConcurrentJobs<F>
 where
     F: Future,
@@ -148,6 +202,74 @@ mod tests {
                 "limit {limit}"
             );
         }
+    }
+
+    /// A failure must not cost the whole list: later jobs are never admitted.
+    #[tokio::test]
+    async fn concurrently_results_in_order_stops_admitting_work_after_a_failure() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let started = Arc::new(AtomicUsize::new(0));
+        let futures: Vec<_> = (0..50usize)
+            .map(|i| {
+                let started = Arc::clone(&started);
+                async move {
+                    started.fetch_add(1, Ordering::SeqCst);
+                    if i == 0 {
+                        return Err("boom");
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    Ok(i)
+                }
+            })
+            .collect();
+
+        assert_eq!(
+            super::concurrently_results_in_order(futures, 4).await,
+            Err("boom")
+        );
+        let started = started.load(Ordering::SeqCst);
+        assert!(
+            started < 50,
+            "admitted {started} of 50 jobs after a failure"
+        );
+    }
+
+    /// Which failure is reported must not depend on which one lost the race.
+    #[tokio::test]
+    async fn concurrently_results_in_order_prefers_the_earliest_failure() {
+        let futures: Vec<_> = (0..4usize)
+            .map(|i| async move {
+                // The earlier failure resolves last.
+                if i == 1 {
+                    tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                    return Err(1usize);
+                }
+                if i == 3 {
+                    return Err(3usize);
+                }
+                Ok(i)
+            })
+            .collect();
+        assert_eq!(
+            super::concurrently_results_in_order(futures, 4).await,
+            Err(1usize)
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrently_results_in_order_returns_input_order() {
+        let futures: Vec<_> = (0..12usize)
+            .map(|i| async move {
+                tokio::time::sleep(std::time::Duration::from_millis((12 - i) as u64 * 4)).await;
+                Ok::<usize, ()>(i)
+            })
+            .collect();
+        assert_eq!(
+            super::concurrently_results_in_order(futures, 6).await,
+            Ok((0..12usize).collect::<Vec<_>>())
+        );
     }
 
     #[tokio::test]
