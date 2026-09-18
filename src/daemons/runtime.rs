@@ -246,6 +246,7 @@ impl Runtime {
         let file = state_dir(root).join("pitchfork.toml");
         state.config_hash = crate::hash::hash_to_str(&content);
         if !force_registration
+            && !changed
             && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
         {

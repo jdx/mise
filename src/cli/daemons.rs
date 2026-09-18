@@ -148,17 +148,77 @@ impl Daemons {
                 bail!("no matching project daemons for {name:?}");
             }
         }
+        // Resolve dependencies against each owner's complete declarations, so
+        // imported daemons can bring their own local dependencies with them.
+        let mut owner_configs = std::collections::HashMap::new();
+        let starting = if install {
+            let mut candidates = daemons::DaemonSet::default();
+            let mut index = 0;
+            while index < roots.len() {
+                let root = roots[index].clone();
+                index += 1;
+                let scoped = runtime::config_for_root(&config, &root).await?;
+                let declarations = scoped.daemons()?;
+                for dependency_root in declarations.roots() {
+                    if !roots.contains(&dependency_root) {
+                        roots.push(dependency_root);
+                        root_ids.push(Vec::new());
+                    }
+                }
+                let set = declarations.for_root(&root);
+                for daemon in set.daemons.values() {
+                    let namespace = set.namespace_for(&root).unwrap_or_default();
+                    let id = format!("{namespace}/{}", daemon.name);
+                    if let Some(other) = candidates.daemons.insert(id.clone(), daemon.clone())
+                        && other.root != daemon.root
+                    {
+                        bail!(
+                            "daemon {id} is declared in both {} and {}; give the projects distinct namespaces",
+                            other.root.display(),
+                            daemon.root.display()
+                        );
+                    }
+                }
+                candidates.namespaces.extend(set.namespaces);
+                owner_configs.insert(root.clone(), scoped);
+            }
+            let requested = root_ids
+                .iter()
+                .flatten()
+                .filter(|id| names.is_empty() || names.iter().any(|name| matches_name(id, name)))
+                .cloned()
+                .collect::<Vec<_>>();
+            candidates.with_dependencies(&requested)
+        } else {
+            daemons::DaemonSet::default()
+        };
+        let mut pending = Vec::new();
         let mut rows = Vec::new();
         let mut matched = false;
-        for (root, ids) in roots.into_iter().zip(root_ids) {
-            if !names.is_empty()
+        let mut root_entries: Vec<_> = roots.into_iter().zip(root_ids).collect();
+        if install {
+            // Startup holds project locks until execution. Acquire them in a
+            // consistent order even when callers import the projects differently.
+            root_entries.sort_by(|a, b| a.0.cmp(&b.0));
+        }
+        for (root, ids) in root_entries {
+            if install {
+                if starting.for_root(&root).daemons.is_empty()
+                    && (!names.is_empty() || root != project_root)
+                {
+                    continue;
+                }
+            } else if !names.is_empty()
                 && !ids
                     .iter()
                     .any(|id| names.iter().any(|name| matches_name(id, name)))
             {
                 continue;
             }
-            let scoped = runtime::config_for_root(&config, &root).await?;
+            let scoped = match owner_configs.remove(&root) {
+                Some(scoped) => scoped,
+                None => runtime::config_for_root(&config, &root).await?,
+            };
             // Reload from the root's own hierarchy so the definition and its
             // `mise x` environment come from the project that owns it. The
             // generated pitchfork config for a root is rewritten wholesale, so
@@ -243,11 +303,7 @@ impl Daemons {
                 // daemons depend on, since pitchfork starts dependencies with
                 // them. An unrelated daemon is registered but not started, so a
                 // missing tool of its own must not fail this command.
-                let starting = if names.is_empty() {
-                    visible.clone()
-                } else {
-                    visible.with_dependencies(&names)
-                };
+                let starting = set.restricted_to(&starting);
                 runtime::validate_tools(&starting, &scoped, &ts).await?;
             }
             let (state, _project_lock) = if install {
@@ -291,8 +347,17 @@ impl Daemons {
                 let mut forwarded = vec![action.into()];
                 forwarded.extend(selected);
                 forwarded.extend(flags.clone());
-                runtime.exec(&root, forwarded).await?;
+                if install {
+                    pending.push((runtime, root, forwarded, _project_lock));
+                } else {
+                    runtime.exec(&root, forwarded).await?;
+                }
             }
+        }
+        // Register and validate every dependency root before pitchfork starts
+        // anything, regardless of the order projects appear in the config.
+        for (runtime, root, forwarded, _project_lock) in pending {
+            runtime.exec(&root, forwarded).await?;
         }
         if action == "ls" {
             if json {

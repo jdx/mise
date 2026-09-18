@@ -453,7 +453,7 @@ fn rewrite_depends(table: &mut toml::Table, imported: &IndexMap<String, String>)
     Ok(())
 }
 
-/// The bare daemon names a table's `depends` refers to.
+/// The daemon names and qualified IDs a table's `depends` refers to.
 fn depends_names(table: &toml::Table) -> Vec<String> {
     let Some(depends) = table.get("depends") else {
         return Vec::new();
@@ -466,9 +466,6 @@ fn depends_names(table: &toml::Table) -> Vec<String> {
     entries
         .into_iter()
         .filter_map(|entry| entry.as_str())
-        // A qualified ID names another project's daemon, which that project
-        // checks for itself.
-        .filter(|entry| !entry.contains('/'))
         .map(str::to_string)
         .collect()
 }
@@ -594,33 +591,34 @@ impl DaemonSet {
         }
     }
 
-    /// The daemons these names select, together with everything they depend on.
-    ///
-    /// Pitchfork starts a daemon's dependencies with it, so a caller checking
-    /// what a command is about to run has to include them. A dependency written
-    /// as a qualified ID belongs to another project and is checked when that
-    /// project's root is prepared, so only bare names are followed here.
+    /// The daemons these names select, together with their dependency closure.
+    /// Bare dependencies resolve within the declaring daemon's namespace;
+    /// qualified dependencies can select another loaded project's daemon.
     pub(crate) fn with_dependencies(&self, names: &[String]) -> Self {
-        let mut keep: indexmap::IndexSet<String> = self
-            .daemons
-            .values()
-            .filter(|d| {
-                names.iter().any(|name| {
-                    name == &d.name
-                        || self
-                            .namespace_for(&d.root)
-                            .is_some_and(|namespace| name == &format!("{namespace}/{}", d.name))
-                })
-            })
-            .map(|d| d.name.clone())
+        let qualified = |d: &Daemon| match self.namespace_for(&d.root) {
+            Some(namespace) => format!("{namespace}/{}", d.name),
+            None => d.name.clone(),
+        };
+        let by_id: IndexMap<_, _> = self.daemons.values().map(|d| (qualified(d), d)).collect();
+        let mut keep: indexmap::IndexSet<String> = by_id
+            .iter()
+            .filter(|(id, d)| names.iter().any(|name| name == *id || name == &d.name))
+            .map(|(id, _)| id.clone())
             .collect();
         let mut queue: Vec<String> = keep.iter().cloned().collect();
-        while let Some(name) = queue.pop() {
-            let Some(daemon) = self.find(&name) else {
+        while let Some(id) = queue.pop() {
+            let Some(daemon) = by_id.get(&id) else {
                 continue;
             };
             for dependency in depends_names(&daemon.table) {
-                if self.find(&dependency).is_some() && keep.insert(dependency.clone()) {
+                let dependency = if dependency.contains('/') {
+                    dependency
+                } else if let Some(namespace) = self.namespace_for(&daemon.root) {
+                    format!("{namespace}/{dependency}")
+                } else {
+                    dependency
+                };
+                if by_id.contains_key(&dependency) && keep.insert(dependency.clone()) {
                     queue.push(dependency);
                 }
             }
@@ -629,7 +627,7 @@ impl DaemonSet {
             daemons: self
                 .daemons
                 .iter()
-                .filter(|(_, d)| keep.contains(&d.name))
+                .filter(|(_, d)| keep.contains(&qualified(d)))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             namespaces: self.namespaces.clone(),
@@ -817,6 +815,9 @@ mod tests {
         // Only the named daemon is imported, and it keeps the referenced
         // project's namespace and root rather than this project's.
         assert!(!set.daemons.contains_key("idle"));
+        let starting = set.with_dependencies(&["api".into()]);
+        assert!(starting.daemons.contains_key("mirror/worker"));
+        assert!(starting.daemons.contains_key("api"));
         assert!(set.roots().contains(&mirror.canonicalize().unwrap()));
         assert_eq!(
             set.namespace_for(&mirror.canonicalize().unwrap()),

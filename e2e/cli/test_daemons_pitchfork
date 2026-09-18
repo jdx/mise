@@ -45,6 +45,9 @@ namespace = "renamed"
 TOML
 assert "test $(mise daemons ls --json | jq length) -eq 1"
 assert_contains "mise daemons ls --json" '"id": "renamed/api"'
+# An ordinary activation must update registration even if daemon definitions match.
+mise hook-env -s bash --shell-pid $$ >/dev/null
+assert_contains "pitchfork config list --json" '"namespace": "renamed"'
 mise daemons start
 cp original.toml mise.toml
 cat >>mise.toml <<'TOML'
@@ -205,3 +208,64 @@ assert "test $(pitchfork config list --json | jq length) -eq 1"
 # Synchronization belongs to start, even when there are no remaining daemons.
 mise daemons start 2>/dev/null || true
 assert "test $(pitchfork config list --json | jq length) -eq 0"
+
+# A named start prepares imported dependencies in their owning environment.
+mkdir -p ../import-app ../import-owner
+cat >../import-owner/mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+node = "system"
+[daemons_settings]
+namespace = "remote"
+[daemons.worker]
+preset = "redis"
+version = "1"
+tool = "node"
+TOML
+cat >../import-app/mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "app"
+[daemons.api]
+run = "exec sleep 600"
+ready_delay = 0
+depends = ["pipeline"]
+[daemons.pipeline]
+project = "../import-owner"
+name = "worker"
+TOML
+cd ../import-app
+assert_contains "mise daemons start api 2>&1 || true" 'daemon worker requires node@1'
+assert "test $(pitchfork status app/api --json | jq -r .status) != running"
+# Register the owner's full dependency chain before starting the app.
+cat >../import-owner/mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+node = "system"
+[daemons_settings]
+namespace = "remote"
+[daemons.worker]
+run = "exec sleep 600"
+ready_delay = 0
+depends = ["helper"]
+[daemons.helper]
+run = "exec sleep 600"
+ready_delay = 0
+[daemons.idle]
+run = "exec sleep 600"
+ready_delay = 0
+# This unimported namesake must not be selected for tool validation.
+[daemons.api]
+preset = "redis"
+version = "1"
+tool = "node"
+TOML
+mise daemons start api
+assert_contains "pitchfork status app/api --json" '"status": "running"'
+assert_contains "pitchfork status remote/worker --json" '"status": "running"'
+assert_contains "pitchfork status remote/helper --json" '"status": "running"'
+assert "test $(pitchfork status remote/idle --json | jq -r .status) != running"
+mise daemons stop
+cd ../import-owner
+mise daemons stop
