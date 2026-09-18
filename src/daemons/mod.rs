@@ -407,6 +407,7 @@ mod tests {
         // distinguishes it from a submodule.
         let private = primary.join(".git").join("worktrees").join("worktree");
         std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(primary.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::write(private.join("commondir"), "../..\n").unwrap();
         std::fs::write(
             linked.join(".git"),

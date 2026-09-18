@@ -175,6 +175,7 @@ mod tests {
     fn worktree(dir: &Path, name: &str) -> std::path::PathBuf {
         let private = dir.join(".git").join("worktrees").join(name);
         std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(dir.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::write(private.join("commondir"), "../..\n").unwrap();
         let root = dir.join(name);
         std::fs::create_dir_all(&root).unwrap();

@@ -703,7 +703,10 @@ fn worktree_common_dir(gitdir: &Path) -> Option<PathBuf> {
         common
     };
     let common = common.canonicalize().ok()?;
-    common.is_dir().then_some(common)
+    // `HEAD` marks a git common dir, present both in an ordinary `.git` and at
+    // the top of a bare repository. Requiring it stops an arbitrary existing
+    // directory from passing as the repository a worktree belongs to.
+    common.join("HEAD").is_file().then_some(common)
 }
 
 /// Resolves a linked worktree's `.git` file to the root of the main checkout
@@ -1297,6 +1300,7 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         let wt = base.join("wt");
         std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
         std::fs::create_dir_all(wt.join("packages/api")).unwrap();
+        std::fs::write(main.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
         std::fs::write(
             wt.join(".git"),
@@ -1314,6 +1318,7 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         let bare_wt = base.join("bare-wt");
         std::fs::create_dir_all(bare.join("worktrees/bare-wt")).unwrap();
         std::fs::create_dir_all(&bare_wt).unwrap();
+        std::fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::write(bare.join("worktrees/bare-wt/commondir"), "../..\n").unwrap();
         std::fs::write(
             bare_wt.join(".git"),
@@ -1349,10 +1354,15 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         .unwrap();
         assert!(!super::in_linked_worktree(&forged));
 
-        // The same layout becomes a worktree once `commondir` resolves, which
-        // is what separates the two cases.
-        std::fs::create_dir_all(base.join("fake/real-common")).unwrap();
-        std::fs::write(forged_git.join("commondir"), "../../real-common\n").unwrap();
+        // Pointing it at a directory that exists but holds no git metadata is
+        // still not a worktree; a bare existing path must not confer an offset.
+        std::fs::create_dir_all(base.join("fake/not-a-repo")).unwrap();
+        std::fs::write(forged_git.join("commondir"), "../../not-a-repo\n").unwrap();
+        assert!(!super::in_linked_worktree(&forged));
+
+        // It becomes a worktree only once the target looks like a git common
+        // dir, which is what separates the cases.
+        std::fs::write(base.join("fake/not-a-repo/HEAD"), "ref: refs/heads/main\n").unwrap();
         assert!(super::in_linked_worktree(&forged));
 
         // A submodule points under `modules/`, and a pruned worktree marker
@@ -1383,6 +1393,7 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         let wt = base.join("wt");
         std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
         std::fs::create_dir_all(wt.join("sub")).unwrap();
+        std::fs::write(main.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
         std::fs::write(
             wt.join(".git"),
@@ -1405,6 +1416,7 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         let bare_wt = base.join("bare-wt");
         std::fs::create_dir_all(bare.join("worktrees/bare-wt")).unwrap();
         std::fs::create_dir_all(&bare_wt).unwrap();
+        std::fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::write(bare.join("worktrees/bare-wt/commondir"), "../..\n").unwrap();
         std::fs::write(
             bare_wt.join(".git"),
