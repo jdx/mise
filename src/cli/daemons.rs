@@ -118,9 +118,9 @@ impl Daemons {
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
         }
-        let (names, flags) = split_args(action, &args)?;
+        let (requested_names, flags) = split_args(action, &args)?;
         let install = matches!(action, "start" | "restart");
-        let names: Vec<String> = names
+        let names: Vec<String> = requested_names
             .iter()
             .map(|name| {
                 let resolved = loaded.resolve_alias(name);
@@ -172,9 +172,9 @@ impl Daemons {
             root_ids.push(ids);
         }
         // Validate the entire request before any root installs tools or changes state.
-        for name in &names {
+        for (name, requested) in names.iter().zip(&requested_names) {
             if !root_ids.iter().flatten().any(|id| matches_name(id, name)) {
-                bail!("no matching project daemons for {name:?}");
+                bail!("no matching project daemons for {requested:?}");
             }
         }
         // Resolve dependencies against each owner's complete declarations, so
