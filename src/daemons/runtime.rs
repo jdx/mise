@@ -360,6 +360,16 @@ impl Runtime {
         let content = render(set, &state)?;
         let file = state_dir(root).join("pitchfork.toml");
         state.config_hash = crate::hash::hash_to_str(&content);
+        // Before the fast path, because an unchanged configuration is exactly
+        // when another project can take this one's port: `auto` lifecycle then
+        // hands pitchfork a session command and the daemon fails to bind in the
+        // background, where an opaque error is easiest to miss. Explicit starts
+        // force registration and would be covered either way.
+        //
+        // The cost is a directory read and a few small state files per hook for
+        // a project that declares ports at all; the liveness probe that follows
+        // only runs once a port actually matches.
+        self.check_port_conflicts(root, &state.ports).await?;
         if !force_registration
             && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
@@ -372,9 +382,6 @@ impl Runtime {
             )?;
             return Ok((state, lock));
         }
-        // Past the fast path, so this runs on an explicit start or restart and
-        // whenever the rendered configuration changed, never on every prompt.
-        self.check_port_conflicts(root, &state.ports).await?;
         self.supports_external_config(root).await?;
         write_if_changed(&file, content.as_bytes())?;
         if set.daemons.is_empty() {
