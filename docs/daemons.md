@@ -104,6 +104,10 @@ task's project configuration. Each name must match a `[daemons]` entry.
 In a monorepo, each task resolves daemon names in its own project's configuration
 hierarchy, including inherited declarations.
 
+A task can name a daemon imported from another project, by the name this project
+gave it or by its full ID. `true` covers only this project's own daemons, so a
+task asking for everything never reaches into a referenced project.
+
 Daemon startup is part of dependency handling: `--skip-deps` and the
 `task.skip_depends` setting skip it. `--dry-run` validates daemon names and the
 experimental setting, and reports what would start without starting anything.
