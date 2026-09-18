@@ -251,6 +251,9 @@ impl Daemons {
                 let root = roots[index].clone();
                 index += 1;
                 let scoped = runtime::config_for_root(&config, &root).await?;
+                if project_root.starts_with(&root) {
+                    scoped.seed_daemons(loaded.for_root(&root));
+                }
                 let declarations = scoped.daemons()?;
                 for dependency_root in declarations.roots() {
                     if !roots.contains(&dependency_root) {
@@ -345,30 +348,26 @@ impl Daemons {
                 Some(scoped) => scoped,
                 None => runtime::config_for_root(&config, &root).await?,
             };
-            // Reload from the root's own hierarchy so the definition and its
-            // `mise x` environment come from the project that owns it. The
-            // generated pitchfork config for a root is rewritten wholesale, so
-            // this has to stay that project's complete set: registering only the
-            // daemon this project imported would delete its siblings from the
-            // configuration it shares, orphaning any that were running.
-            let mut set = scoped.daemons()?.for_root(&root);
-            // A nearer configuration in this project's own hierarchy can
-            // redefine a daemon name, taking it over from the ancestor that
-            // declared it. That ancestor is reloaded from its own hierarchy,
-            // which cannot see the override, so the name is dropped here
-            // instead; registering it in both places would start two processes
-            // for one daemon. Only ancestry works this way: a project reached
-            // by `project =` keeps every daemon it declares, whatever names
-            // this one happens to reuse.
-            if project_root.starts_with(&root) {
-                set.daemons.retain(|_, daemon| {
-                    let owned = |other: &daemons::Daemon| {
-                        other.name == daemon.name && other.root == daemon.root
-                    };
-                    loaded.daemons.values().any(owned)
-                        || !loaded.daemons.values().any(|o| o.name == daemon.name)
-                });
-            }
+            // An ancestor of this project is already covered by the merged
+            // configuration, which is also what settles a name a nearer project
+            // redefined: the ancestor's own hierarchy cannot see the override,
+            // and registering the name in both places would start two processes
+            // for one daemon. Seeding it before the toolset is built keeps the
+            // tools and exported environment to the daemons this root registers.
+            //
+            // A project reached by `project =` is different. Only what was
+            // imported from it is in the merged view, and its generated
+            // pitchfork config is rewritten wholesale, so registering that
+            // subset would delete its siblings from the configuration it
+            // shares, orphaning any that were running. It is reloaded from its
+            // own hierarchy instead, which is also where its `mise x`
+            // environment comes from.
+            let set = if project_root.starts_with(&root) {
+                scoped.seed_daemons(root_set.clone());
+                root_set.clone()
+            } else {
+                scoped.daemons()?.for_root(&root)
+            };
             // What this invocation may act on, which for another project's root
             // is only what it imported or inherited.
             let requested = loaded.for_root(&root);

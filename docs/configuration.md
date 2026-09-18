@@ -645,6 +645,10 @@ by child projects. They are ignored in global and system configuration. See
 
 Experimental named sets of project daemons. Each member is a daemon or another group declared in the same project, so a group never selects daemons outside it. Group names work wherever `mise daemons` accepts a daemon name. See [daemons](/daemons#groups).
 
+### `[daemon_groups]`
+
+Experimental named sets of project daemons. Each member is a daemon or another group declared in the same project, so a group never selects daemons outside it. Group names work wherever `mise daemons` accepts a daemon name. See [daemons](/daemons#groups).
+
 ## Environment variables
 
 ::: tip
