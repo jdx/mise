@@ -179,6 +179,11 @@ pub(crate) async fn start(
         }
         return Ok(());
     }
+    // Pitchfork starts a daemon's dependencies with it, and a dependency can
+    // live in another project's root. Register every root first and start only
+    // once they all exist, so a local daemon listed before an imported one
+    // cannot start while that dependency is still unregistered.
+    let mut pending = Vec::new();
     for (root, names) in wanted {
         let scoped = runtime::config_for_root(config, &root).await?;
         // The generated pitchfork configuration describes every daemon in the
@@ -229,6 +234,11 @@ pub(crate) async fn start(
         if ids.is_empty() {
             continue;
         }
+        // The project lock rides along so every root stays held until the last
+        // one has started.
+        pending.push((rt, root, ids, _project_lock));
+    }
+    for (rt, root, ids, _project_lock) in pending {
         rt.exec(&root, [vec!["start".into()], ids].concat()).await?;
     }
     Ok(())
