@@ -321,13 +321,26 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // and turns pitchfork's bumping off, so the second daemon would fail to
     // bind at start with nothing naming the first. Checked once every daemon is
     // built, because a preset's port is resolved on its own path.
+    //
+    // Keyed by the canonical root, because that is what the port was derived
+    // from: two roots reaching one directory through different paths resolve to
+    // one port, and comparing the paths as written would call them distinct.
     let mut claimed_ports: BTreeMap<(PathBuf, u16), String> = BTreeMap::new();
+    let mut canonical: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
     for daemon in set.daemons.values() {
         let Some(claim) = daemon.port else {
             continue;
         };
-        if let Some(other) =
-            claimed_ports.insert((daemon.root.clone(), claim.port), daemon.name.clone())
+        let root = canonical
+            .entry(daemon.root.clone())
+            .or_insert_with(|| {
+                daemon
+                    .root
+                    .canonicalize()
+                    .unwrap_or_else(|_| daemon.root.clone())
+            })
+            .clone();
+        if let Some(other) = claimed_ports.insert((root, claim.port), daemon.name.clone())
             && other != daemon.name
         {
             bail!(
@@ -3038,6 +3051,28 @@ three = ["two", "c"]
             let err = load_body(body).unwrap_err().to_string();
             assert!(err.contains("both use port"), "{body:?} produced {err}");
         }
+        // A root reached through a symlink is the same directory, so it takes
+        // the same slot and the same port; comparing the paths as written
+        // would call the two daemons distinct and let the clash through.
+        #[cfg(unix)]
+        {
+            let link = tmp.path().join("linked");
+            std::os::unix::fs::symlink(&primary, &link).unwrap();
+            let err = load(&files(&[
+                (
+                    primary.join("mise.toml").to_str().unwrap(),
+                    "[daemons.api]\nrun = 'a'\n[daemons.api.port]\nauto = true\nbase = 3000\n",
+                ),
+                (
+                    link.join("mise.local.toml").to_str().unwrap(),
+                    "[daemons.web]\nrun = 'b'\n[daemons.web.port]\nauto = true\nbase = 3000\n",
+                ),
+            ]))
+            .unwrap_err()
+            .to_string();
+            assert!(err.contains("both use port 3000"), "{err}");
+        }
+
         // Distinct bases are what makes a second instance work.
         let set = load_body(
             "[daemons.main]\npreset = 'postgres'\nversion = '18'\nport = 'auto'\n\
