@@ -381,10 +381,12 @@ async fn confirm_stopped(runtime: &Runtime, cwd: &Path, id: &str) -> Result<()> 
         .map_err(|err| eyre::eyre!(err).wrap_err(format!("cannot check {id}")))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // Nothing to say about an id it does not have, either by saying so or
-        // by saying nothing at all. Any other complaint is a question left
-        // unanswered.
-        if stderr.trim().is_empty() || names_something_unknown(&stderr) {
+        // Tolerated only when pitchfork says which id it does not have. A
+        // failure that says nothing at all is a crash, and "No such file or
+        // directory" on its own is an ordinary I/O error -- a missing
+        // supervisor socket, say. Neither is pitchfork telling us the daemon is
+        // not running, and this is the last check before the data goes.
+        if names_this_as_unknown(&stderr, id) {
             debug!("pitchfork does not know {id}: {stderr}");
             return Ok(());
         }
@@ -402,14 +404,29 @@ async fn confirm_stopped(runtime: &Runtime, cwd: &Path, id: &str) -> Result<()> 
 }
 
 /// Whether a pitchfork failure is it saying it has never heard of something.
+///
+/// Deliberately narrow. Phrases like "unknown" or "is not" turn up in plenty of
+/// real failures, and tolerating one of those would delete a database whose
+/// daemon is still running.
 fn names_something_unknown(stderr: &str) -> bool {
     let lowered = stderr.to_lowercase();
-    // Deliberately narrow. Phrases like "unknown" or "is not" turn up in plenty
-    // of real failures, and tolerating one of those would delete a database
-    // whose daemon is still running.
     ["not found", "no such", "not registered"]
         .iter()
         .any(|phrase| lowered.contains(phrase))
+}
+
+/// Whether a pitchfork failure is it saying it has never heard of `id`.
+///
+/// The same phrases, but they have to be about this daemon. "No such file or
+/// directory" is what a missing socket reports too, and a daemon nobody can
+/// reach is not a daemon that has stopped.
+fn names_this_as_unknown(stderr: &str, id: &str) -> bool {
+    if !names_something_unknown(stderr) {
+        return false;
+    }
+    let lowered = stderr.to_lowercase();
+    let name = id.rsplit('/').next().unwrap_or(id).to_lowercase();
+    lowered.contains(&id.to_lowercase()) || lowered.contains(&name)
 }
 
 /// Turns a pitchfork invocation into success, a tolerated non-failure, or an
@@ -949,6 +966,16 @@ mod tests {
             })
         };
         assert!(tolerate_unknown(failed("daemon ns/db not found"), &args).is_ok());
+        // The status check asks for more: the message has to be about the
+        // daemon in hand, since the last thing after it is a recursive delete.
+        assert!(names_this_as_unknown("daemon ns/db not found", "ns/db"));
+        assert!(names_this_as_unknown("no such daemon: db", "ns/db"));
+        assert!(!names_this_as_unknown("", "ns/db"));
+        assert!(!names_this_as_unknown(
+            "No such file or directory (os error 2)",
+            "ns/db"
+        ));
+        assert!(!names_this_as_unknown("daemon ns/other not found", "ns/db"));
         assert!(tolerate_unknown(failed("no such config"), &args).is_ok());
         assert!(tolerate_unknown(failed("permission denied"), &args).is_err());
         // Phrases that turn up in real failures are not tolerated: treating one
