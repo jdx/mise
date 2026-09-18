@@ -103,6 +103,17 @@ pub(crate) struct Group {
     pub daemons: Vec<String>,
 }
 
+/// What a bare name resolves to for a project; see [`DaemonSet::resolve_bare`].
+pub(crate) enum BareName<'a> {
+    /// A group declared by this project or an ancestor, expanded per project.
+    Group,
+    /// A daemon reached with `project`, and the qualified ID it answers to.
+    Import(&'a str),
+    /// A `project` reference that could not be read, and why. Naming one is an
+    /// error; a name some nearer declaration claims never reaches this.
+    Unresolved(&'a str),
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Daemon {
     /// Name inside its own project; the key in the owning project's pitchfork config.
@@ -134,20 +145,25 @@ pub(crate) struct DaemonSet {
     pub daemons: IndexMap<String, Daemon>,
     /// Resolved pitchfork namespace for every project root in this set.
     pub namespaces: IndexMap<PathBuf, String>,
-    /// Local key -> qualified ID for imported daemons, so a daemon renamed on
-    /// the way in can still be selected by the name this project gave it.
-    pub aliases: IndexMap<String, String>,
+    /// (declaring root, local key) -> qualified ID for imported daemons, so a
+    /// daemon renamed on the way in can still be selected by the name this
+    /// project gave it.
+    ///
+    /// Keyed by root because the name is only meaningful in the project that
+    /// chose it: another project may use the same word for a daemon of its own
+    /// or for a group, and must not be answered with this project's import.
+    pub aliases: IndexMap<(PathBuf, String), String>,
     /// Daemons that depend on an import which could not be resolved, mapping the
     /// daemon's key to the import's local key. Starting one would run it without
     /// something it declared it needs, so the command refuses instead.
-    pub blocked: IndexMap<String, String>,
+    pub blocked: IndexMap<String, (String, String)>,
     /// Imports that could not be resolved, by local key.
     ///
     /// Daemons load on every command, so a sibling project that is missing or
     /// not trusted must not take `mise x`, `mise run` or the activation hook
     /// down with it. The failure is carried here and reported by `mise daemons`,
     /// which is the command that can act on it.
-    pub import_errors: IndexMap<String, String>,
+    pub import_errors: IndexMap<(PathBuf, String), String>,
     /// Group names are project scoped, so nested projects may each declare one
     /// with the same name. They stay in a root-aware list until `for_root`.
     pub groups: Vec<Group>,
@@ -155,21 +171,30 @@ pub(crate) struct DaemonSet {
     pub labels: IndexMap<PathBuf, urls::RootLabels>,
 }
 
-/// Validate a pitchfork identifier component. Daemon names and namespaces reach
-/// pitchfork verbatim, which rejects `--` among other things, and both end up in
-/// filesystem paths under the state directory.
-pub(crate) fn validate_id(kind: &str, value: &str) -> Result<()> {
-    if value.is_empty()
-        || value == "."
-        || value.contains("..")
-        || value.contains("--")
-        || value.starts_with('-')
-        || value.ends_with('-')
-        || !value
+/// Validate a name that reaches pitchfork verbatim. Pitchfork rejects `--`
+/// among other things, and these names land in filesystem paths under the
+/// state directory.
+fn validate_name(kind: &str, name: &str) -> Result<()> {
+    if name.is_empty()
+        || name == "."
+        || name.contains("..")
+        || name.contains("--")
+        || name.starts_with('-')
+        || name.ends_with('-')
+        || !name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
     {
-        bail!("invalid daemon {kind} {value:?}; use letters, numbers, '.', '_' or '-'");
+        bail!("invalid {kind} name {name:?}; use letters, numbers, '.', '_' or '-'");
+    }
+    Ok(())
+}
+
+/// A namespace reaches pitchfork verbatim and lands in filesystem paths under
+/// the state directory, so it follows the same rules as a daemon name.
+pub(crate) fn validate_namespace(namespace: &str) -> Result<()> {
+    if validate_name("daemon", namespace).is_err() {
+        bail!("invalid daemon namespace {namespace:?}; use letters, numbers, '.', '_' or '-'");
     }
     Ok(())
 }
@@ -193,12 +218,12 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         let entries = cf.daemon_declarations();
         let file_settings = cf.daemon_settings();
         let groups = cf.daemon_group_declarations();
-        if entries.is_empty() && file_settings.is_none() && groups.is_empty() {
+        // A file can carry only `[daemons_settings]`, which declares nothing.
+        if entries.is_empty() && groups.is_empty() && file_settings.is_none() {
             continue;
         }
         if !Settings::get().experimental {
-            // A file may carry only `[daemons_settings]`, which declares nothing.
-            if !entries.is_empty() {
+            if !entries.is_empty() || !groups.is_empty() {
                 warn_once!("{EXPERIMENTAL}; ignoring daemon declarations");
             }
             continue;
@@ -244,10 +269,12 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     }
     let mut set = DaemonSet::default();
     // Local name -> qualified ID, so `depends` can name an imported daemon short.
-    let mut imported_ids: IndexMap<String, String> = IndexMap::new();
+    // Keyed by the importing root: a name means an import only in the project
+    // that declared it, and a daemon elsewhere may use the same word.
+    let mut imported_ids: IndexMap<(PathBuf, String), String> = IndexMap::new();
     let mut state = LoadState::default();
     for (name, (declaration, source, root)) in declarations {
-        validate_id("name", &name)?;
+        validate_name("daemon", &name)?;
         if let Declaration::Definition(table) = &declaration
             && table.contains_key("project")
         {
@@ -263,7 +290,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 Ok(imported) => imported,
                 Err(err) => {
                     debug!("[daemons.{name}] import failed: {err:#}");
-                    set.import_errors.insert(name, format!("{err:#}"));
+                    set.import_errors
+                        .insert((root.clone(), name), format!("{err:#}"));
                     continue;
                 }
             };
@@ -279,8 +307,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                     daemon.root.display()
                 );
             }
-            imported_ids.insert(name.clone(), key.clone());
-            set.aliases.insert(name, key.clone());
+            imported_ids.insert((root.clone(), name.clone()), key.clone());
+            set.aliases.insert((root.clone(), name), key.clone());
             set.daemons.insert(key, daemon);
             continue;
         }
@@ -407,11 +435,39 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // Runs even with nothing imported, because it also rejects a `depends` this
     // project could not act on. An imported daemon's own `depends` is relative
     // to its project and is checked when that project loads.
-    let unresolved = set.import_errors.clone();
-    let mut blocked: IndexMap<String, String> = IndexMap::new();
+    let failures = set.import_errors.clone();
+    let mut blocked: IndexMap<String, (String, String)> = IndexMap::new();
     for (key, daemon) in set.daemons.iter_mut().filter(|(_, d)| !d.imported) {
-        if let Some(missing) = rewrite_depends(&mut daemon.table, &imported_ids, &unresolved)? {
-            blocked.insert(key.clone(), missing);
+        // What this daemon's project reaches by name: its own imports and the
+        // ones it inherits, resolved or not. Nearest declaration wins, so a
+        // working import here is unaffected by a broken one of the same name
+        // further up, and vice versa.
+        let mut reach: IndexMap<String, Result<String, String>> = IndexMap::new();
+        for ancestor in daemon.root.ancestors() {
+            for ((root, name), id) in &imported_ids {
+                if root.as_path() == ancestor {
+                    reach.entry(name.clone()).or_insert_with(|| Ok(id.clone()));
+                }
+            }
+            for ((root, name), err) in &failures {
+                if root.as_path() == ancestor {
+                    reach
+                        .entry(name.clone())
+                        .or_insert_with(|| Err(err.clone()));
+                }
+            }
+        }
+        let imports: IndexMap<String, String> = reach
+            .iter()
+            .filter_map(|(name, id)| Some((name.clone(), id.as_ref().ok()?.clone())))
+            .collect();
+        let unresolved: IndexMap<String, String> = reach
+            .iter()
+            .filter_map(|(name, id)| Some((name.clone(), id.as_ref().err()?.clone())))
+            .collect();
+        if let Some(missing) = rewrite_depends(&mut daemon.table, &imports, &unresolved)? {
+            let error = unresolved[&missing].clone();
+            blocked.insert(key.clone(), (missing, error));
         }
     }
     set.blocked = blocked;
@@ -733,10 +789,8 @@ pub(crate) fn ensure_not_blocked(
     let project = root
         .map(|root| format!(" in {}", root.display()))
         .unwrap_or_default();
-    bail!(
-        "daemon {name:?}{project} depends on [daemons.{import}], which is unavailable: {}",
-        set.import_errors[import]
-    );
+    let (import, error) = import;
+    bail!("daemon {name:?}{project} depends on [daemons.{import}], which is unavailable: {error}");
 }
 
 /// Config files that apply to a directory, lowest precedence first.
@@ -794,7 +848,7 @@ fn parse_import(local_name: &str, mut table: toml::Table) -> Result<Import> {
     let project = take_string(&mut table, "project")?
         .ok_or_else(|| eyre::eyre!("[daemons.{local_name}].project must be a string"))?;
     let remote_name = take_string(&mut table, "name")?.unwrap_or_else(|| local_name.to_string());
-    validate_id("name", &remote_name)?;
+    validate_name("daemon", &remote_name)?;
     if let Some(unexpected) = table.keys().next() {
         bail!(
             "[daemons.{local_name}] declares {unexpected:?} alongside project; define the daemon in the referenced project instead"
@@ -1073,7 +1127,7 @@ fn load_groups(
     let mut groups: IndexMap<GroupKey, Group> = IndexMap::new();
     for (key, (declaration, source, root)) in declarations {
         let name = key.1.clone();
-        validate_id("group name", &name)?;
+        validate_name("daemon group", &name)?;
         if declares(&root, &name) {
             bail!("[daemon_groups.{name}] conflicts with the daemon of the same name");
         }
@@ -1094,6 +1148,22 @@ fn load_groups(
     }
     for key in groups.keys().cloned().collect::<Vec<_>>() {
         let daemons = expand_group(&groups, &key, &declares, &mut Vec::new())?;
+        // A group becomes a pitchfork group in this project's generated
+        // configuration, and its members are that project's daemons. A daemon
+        // reached with `project` belongs to another project and is registered
+        // in that project's configuration under its own namespace, so naming it
+        // here would produce a group mise expands and the registered one does
+        // not. Say so rather than silently dropping the member.
+        let group_root = groups[&key].root.clone();
+        if let Some(member) = daemons
+            .iter()
+            .find(|member| set.imported_in(&group_root, member))
+        {
+            let name = &groups[&key].name;
+            bail!(
+                "[daemon_groups.{name}] names {member:?}, which this project reaches with `project`; a group covers the daemons this project declares, so name the imported daemon directly or list it in `depends`"
+            );
+        }
         groups[&key].daemons = daemons;
     }
     set.groups = groups.into_values().collect();
@@ -1263,12 +1333,16 @@ impl DaemonSet {
                 .filter(|(r, _)| r.as_path() == root)
                 .map(|(r, n)| (r.clone(), n.clone()))
                 .collect(),
-            aliases: self.aliases.clone(),
+            aliases: self
+                .aliases
+                .iter()
+                .filter(|((r, _), _)| r.as_path() == root)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             import_errors: self.import_errors.clone(),
             blocked: self.blocked.clone(),
-            // Narrowed like `namespaces`: the generated pitchfork config carries
-            // one `worktree_label`, and copying every root's labels here would
-            // let an imported project's checkout name reach this one's file.
+            // Narrowed like `namespaces`, so an imported project's checkout
+            // name cannot reach this root's generated file.
             labels: self
                 .labels
                 .iter()
@@ -1297,15 +1371,54 @@ impl DaemonSet {
     /// Resolve a local declaration or import alias to its qualified ID.
     /// A local name must not also select a same-named daemon from another root.
     pub(crate) fn resolve_alias(&self, name: &str) -> String {
-        self.aliases
-            .get(name)
-            .cloned()
+        self.imported_as(name)
+            .map(str::to_string)
             .or_else(|| {
                 let daemon = self.daemons.get(name)?;
                 let namespace = self.namespace_for(&daemon.root)?;
                 Some(format!("{namespace}/{}", daemon.name))
             })
             .unwrap_or_else(|| name.to_string())
+    }
+
+    /// The qualified ID a name refers to when some project in this set imported
+    /// a daemon under it. Callers holding a root-scoped set ask about that
+    /// project alone, which is the question worth asking.
+    pub(crate) fn imported_as(&self, name: &str) -> Option<&str> {
+        self.aliases
+            .iter()
+            .find(|((_, key), _)| key == name)
+            .map(|(_, id)| id.as_str())
+    }
+
+    /// What a bare name means to a project.
+    ///
+    /// A project inherits its ancestors' daemons and groups and may redefine
+    /// them, so the nearest declaration wins. Within one project the two cannot
+    /// collide: a group conflicting with a daemon of the same name there is
+    /// rejected when configuration loads.
+    pub(crate) fn resolve_bare(&self, root: &Path, name: &str) -> Option<BareName<'_>> {
+        root.ancestors().find_map(|ancestor| {
+            if self
+                .groups
+                .iter()
+                .any(|g| g.root == ancestor && g.name == name)
+            {
+                return Some(BareName::Group);
+            }
+            let key = (ancestor.to_path_buf(), name.to_string());
+            if let Some(id) = self.aliases.get(&key) {
+                return Some(BareName::Import(id.as_str()));
+            }
+            self.import_errors
+                .get(&key)
+                .map(|err| BareName::Unresolved(err.as_str()))
+        })
+    }
+
+    /// Whether `root` reaches an import under this name, its own or inherited.
+    pub(crate) fn imported_in(&self, root: &Path, name: &str) -> bool {
+        matches!(self.resolve_bare(root, name), Some(BareName::Import(_)))
     }
 
     /// The pitchfork namespace for a project root, when this set declares daemons for it.
@@ -1353,7 +1466,17 @@ impl DaemonSet {
         let by_id: IndexMap<_, _> = self.daemons.values().map(|d| (qualified(d), d)).collect();
         let mut keep: indexmap::IndexSet<String> = by_id
             .iter()
-            .filter(|(id, d)| names.iter().any(|name| name == *id || name == &d.name))
+            .filter(|(id, daemon)| {
+                names.iter().any(|name| {
+                    name == *id
+                        // A bare name means the daemon that key refers to, not
+                        // every daemon that happens to carry it: another project
+                        // can have one of its own with the same name.
+                        || self.daemons.get(name).is_some_and(|exact| {
+                            exact.name == daemon.name && exact.root == daemon.root
+                        })
+                })
+            })
             .map(|(id, _)| id.clone())
             .collect();
         let mut queue: Vec<String> = keep.iter().cloned().collect();
@@ -1424,6 +1547,25 @@ impl DaemonSet {
             }
         }
         Ok(())
+    }
+
+    /// The daemons pitchfork starts when a shell joins this project's session,
+    /// together with everything they depend on. `auto` is passed through to the
+    /// generated configuration and pitchfork acts on it, so mise mirrors the
+    /// rule here to check a start it is about to hand over.
+    pub(crate) fn auto_starting(&self) -> Self {
+        let names: Vec<String> = self
+            .daemons
+            .iter()
+            .filter(|(_, d)| {
+                d.table
+                    .get("auto")
+                    .and_then(toml::Value::as_array)
+                    .is_some_and(|a| a.iter().any(|v| v.as_str() == Some("start")))
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        self.with_dependencies(&names)
     }
 
     pub(crate) fn auto(&self) -> bool {
@@ -1725,6 +1867,15 @@ mod tests {
         crate::test::lock_ignoring_poison(&IMPORT_TESTS)
     }
 
+    /// The recorded failure for an import, by the name the project gave it.
+    fn failure(set: &DaemonSet, name: &str) -> String {
+        set.import_errors
+            .iter()
+            .find(|((_, key), _)| key == name)
+            .map(|(_, err)| err.clone())
+            .unwrap_or_else(|| panic!("no import failure recorded for {name:?}"))
+    }
+
     /// A referenced project the developer has never trusted.
     fn untrusted_project(dir: &Path, body: &str) -> PathBuf {
         std::fs::create_dir_all(dir).unwrap();
@@ -1831,7 +1982,7 @@ mod tests {
         assert!(set.daemons.contains_key("api"));
         assert!(!set.daemons.contains_key("pipeline"));
         // The failure is kept so `mise daemons` can report it with the path.
-        let err = &set.import_errors["pipeline"];
+        let err = &failure(&set, "pipeline");
         assert!(err.contains("mirror-pipeline"), "{err}");
         assert!(err.contains("[daemons.pipeline].project"), "{err}");
         assert!(
@@ -1852,7 +2003,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../mirror-pipeline'\n",
         )]);
-        let err = load(&config).unwrap().import_errors["worker"].clone();
+        let err = failure(&load(&config).unwrap(), "worker");
         assert!(err.contains(&tmp.path().join("mirror-pipeline").display().to_string()));
         assert!(err.contains("[daemons.worker].project"));
 
@@ -1862,7 +2013,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../empty'\n",
         )]);
-        assert!(load(&config).unwrap().import_errors["worker"].contains("mise configuration"));
+        assert!(failure(&load(&config).unwrap(), "worker").contains("mise configuration"));
 
         referenced_project(
             &tmp.path().join("other"),
@@ -1872,7 +2023,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../other'\n",
         )]);
-        let err = load(&config).unwrap().import_errors["worker"].clone();
+        let err = failure(&load(&config).unwrap(), "worker");
         assert!(err.contains("[daemons.worker]"), "{err}");
         assert!(err.contains("build"), "{err}");
     }
@@ -2105,6 +2256,257 @@ mod tests {
     }
 
     #[test]
+    fn a_name_means_the_nearest_declaration_that_claims_it() {
+        let _serial = import_lock();
+        // A parent's `project` reference that cannot be read must not take the
+        // word away from a group the child declares under it.
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\n[daemon_groups]\nops = ['api']\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                "[daemons.ops]\nproject = '../gone'\n",
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        // To the child the word is its group; to the parent it is the failure.
+        assert!(matches!(
+            set.resolve_bare(&child, "ops"),
+            Some(BareName::Group)
+        ));
+        assert!(matches!(
+            set.resolve_bare(&parent, "ops"),
+            Some(BareName::Unresolved(_))
+        ));
+        assert_eq!(set.expand("ops"), Some(["api".to_string()].as_slice()));
+    }
+
+    #[test]
+    fn a_nearer_failure_is_not_hidden_by_an_ancestor_that_resolved() {
+        let _serial = import_lock();
+        // The child redefines a word its parent imported successfully, and the
+        // child's own reference cannot be read. The nearest declaration decides,
+        // so the word means the failure and not the parent's daemon.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'remote'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.pipeline]\nproject = '../gone'\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                &format!(
+                    "[daemons.pipeline]\nproject = {}\nname = 'worker'\n",
+                    toml::Value::String(mirror.to_string_lossy().into_owned())
+                ),
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        assert!(matches!(
+            set.resolve_bare(&child, "pipeline"),
+            Some(BareName::Unresolved(_))
+        ));
+        assert!(!set.imported_in(&child, "pipeline"));
+        // Nothing kept the parent's masked declaration, so no walk from any
+        // root can answer the word with the daemon it would have imported.
+        assert!(set.resolve_bare(&parent, "pipeline").is_none());
+        assert!(set.imported_as("pipeline").is_none());
+    }
+
+    #[test]
+    fn the_auto_lifecycle_checks_only_what_it_starts() {
+        let _serial = import_lock();
+        // The shell hook registers the whole project but pitchfork only starts
+        // the `auto = ["start"]` daemons, so a blocked daemon nobody starts must
+        // not take the project's automatic lifecycle down with it.
+        let app = tempfile::tempdir().unwrap();
+        let root = app.path().to_path_buf();
+        let config = files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'exec api'\nauto = ['start', 'stop']\ndepends = ['pipeline']\n\
+             [daemons.manual]\nrun = 'exec manual'\ndepends = ['other']\n\
+             [daemons.pipeline]\nproject = '../gone'\n[daemons.other]\nproject = '../gone'\n",
+        )]);
+        let set = load(&config).unwrap();
+        let starting = set.auto_starting();
+        assert!(starting.daemons.contains_key("api"));
+        assert!(!starting.daemons.contains_key("manual"));
+        let err = ensure_not_blocked(&set, &starting, Some(&root))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("\"api\""), "{err}");
+        assert!(err.contains("[daemons.pipeline]"), "{err}");
+        // Only the daemon nobody starts is blocked: the hook stays out of it.
+        let config = files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'exec api'\nauto = ['start']\n\
+             [daemons.manual]\nrun = 'exec manual'\ndepends = ['other']\n\
+             [daemons.other]\nproject = '../gone'\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert!(set.blocked.contains_key("manual"));
+        assert!(ensure_not_blocked(&set, &set.auto_starting(), Some(&root)).is_ok());
+    }
+
+    #[test]
+    fn a_broken_import_does_not_disturb_a_working_one() {
+        let _serial = import_lock();
+        // A project can reach one import that resolves and one that does not.
+        // Each `depends` entry is answered by its own declaration.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'remote'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\ndepends = ['pipeline', 'absent']\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                &format!(
+                    "[daemons.pipeline]\nproject = {}\nname = 'worker'\n[daemons.absent]\nproject = '../gone'\n",
+                    toml::Value::String(mirror.to_string_lossy().into_owned())
+                ),
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        // The resolved one is rewritten to the ID it answers to; the unresolved
+        // one is dropped, so nothing unresolvable reaches pitchfork.
+        let depends = set.daemons["api"].table["depends"].as_array().unwrap();
+        assert_eq!(depends.len(), 1);
+        assert_eq!(depends[0].as_str(), Some("remote/worker"));
+        // Starting it is refused, naming the one that is unavailable.
+        assert_eq!(
+            set.blocked.get("api").map(|(name, _)| name.as_str()),
+            Some("absent")
+        );
+        assert!(set.imported_in(&child, "pipeline"));
+    }
+
+    #[test]
+    fn a_child_reaches_an_import_its_parent_declared() {
+        let _serial = import_lock();
+        // Configuration is inherited, so a child may name a `project` reference
+        // its parent declared; the rewritten dependency has to carry the ID the
+        // daemon answers to, or pitchfork looks it up in the child's namespace.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'remote'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\ndepends = ['pipeline']\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                &format!(
+                    "[daemons.pipeline]\nproject = {}\nname = 'worker'\n",
+                    toml::Value::String(mirror.to_string_lossy().into_owned())
+                ),
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        assert_eq!(
+            set.daemons["api"].table["depends"][0].as_str(),
+            Some("remote/worker")
+        );
+        // The child reaches the inherited import by name on the command line too.
+        assert!(set.imported_in(&child, "pipeline"));
+    }
+
+    #[test]
+    fn an_import_belongs_to_the_project_that_declared_it() {
+        let _serial = import_lock();
+        // A parent imports `ops`; the child uses that word for a group of its
+        // own. The parent's import must not answer for the child's name, and
+        // the child's group must not be rejected as an imported member.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(&mirror, "[daemons.worker]\nrun = 'exec worker'\n");
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\n[daemon_groups]\nops = ['api']\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                &format!(
+                    "[daemons.ops]\nproject = {}\nname = 'worker'\n",
+                    toml::Value::String(mirror.to_string_lossy().into_owned())
+                ),
+            ),
+        ]);
+        // The child's group loads: the parent's import is not its member.
+        let set = load(&config).unwrap();
+        assert_eq!(set.expand("ops"), Some(["api".to_string()].as_slice()));
+        // Each project is asked about its own name.
+        assert!(set.imported_in(&parent, "ops"));
+        assert!(!set.imported_in(&child, "ops"));
+        // A bare name selects the daemon that key refers to, not every daemon
+        // carrying it, so the child's `api` does not drag in a namesake.
+        let starting = set.with_dependencies(&["api".to_string()]);
+        assert_eq!(starting.daemons.len(), 1);
+        assert_eq!(starting.daemons["api"].root, child);
+    }
+
+    #[test]
+    fn a_group_cannot_name_a_daemon_reached_with_project() {
+        let _serial = import_lock();
+        // A group renders into this project's pitchfork configuration, where an
+        // imported daemon has no definition, so accepting the member would
+        // produce a group mise expands and the registered one does not.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(&mirror, "[daemons.worker]\nrun = 'exec worker'\n");
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.pipeline]\nproject = '../mirror'\nname = 'worker'\n[daemons.api]\nrun = 'exec api'\n[daemon_groups]\nweb = ['api', 'pipeline']\n",
+        )]);
+        let err = load(&config).unwrap_err().to_string();
+        assert!(err.contains("[daemon_groups.web]"), "{err}");
+        assert!(err.contains("pipeline"), "{err}");
+        assert!(err.contains("depends"), "{err}");
+        // A group naming only this project's own daemons still loads.
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.pipeline]\nproject = '../mirror'\nname = 'worker'\n[daemons.api]\nrun = 'exec api'\n[daemon_groups]\nweb = ['api']\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(set.expand("web"), Some(["api".to_string()].as_slice()));
+    }
+
+    #[test]
     fn a_daemon_is_identified_by_its_project_not_just_its_name() {
         let _serial = import_lock();
         // Two projects can each declare `api`. Matching on the name alone made a
@@ -2157,7 +2559,7 @@ mod tests {
         let _paranoid = Paranoid::on();
         let set = load(&config).unwrap();
         assert!(set.find("worker").is_none());
-        let err = &set.import_errors["worker"];
+        let err = &failure(&set, "worker");
         assert!(err.contains("not trusted"), "{err}");
         assert!(err.contains("mise trust"), "{err}");
         // Trying did not trust it as a side effect, which is the whole point:
@@ -2168,7 +2570,10 @@ mod tests {
         // pitchfork cannot find, so it is dropped rather than registered, and
         // the daemon that needed it is recorded so starting it can refuse.
         assert!(!set.daemons["api"].table.contains_key("depends"));
-        assert_eq!(set.blocked.get("api").map(String::as_str), Some("worker"));
+        assert_eq!(
+            set.blocked.get("api").map(|(name, _)| name.as_str()),
+            Some("worker")
+        );
 
         // Trusting it makes the same configuration import.
         crate::config::config_file::trust(&config_path).unwrap();
@@ -2273,7 +2678,7 @@ mod tests {
             "[daemons.worker]\nproject = '../middle'\n",
         )]);
         assert!(
-            load(&config).unwrap().import_errors["worker"]
+            failure(&load(&config).unwrap(), "worker")
                 .contains("reference the project that declares it")
         );
         let config = files(&[(
@@ -2291,10 +2696,10 @@ mod tests {
     #[test]
     fn explicit_namespaces_are_validated() {
         for namespace in ["entiredb", "entire.db", "entire_db", "db-1"] {
-            assert!(validate_id("namespace", namespace).is_ok(), "{namespace}");
+            assert!(validate_namespace(namespace).is_ok(), "{namespace}");
         }
         for namespace in ["", ".", "..", "a--b", "-a", "a-", "a/b", "a b"] {
-            assert!(validate_id("namespace", namespace).is_err(), "{namespace}");
+            assert!(validate_namespace(namespace).is_err(), "{namespace}");
         }
         let tmp = tempfile::tempdir().unwrap();
         let config = files(&[(
@@ -3086,11 +3491,11 @@ three = ["two", "c"]
         );
     }
 
-    /// A group can name a daemon this project imported. The set keys an import
-    /// by its qualified ID, so a group member carrying the local name has to be
-    /// resolved through the aliases before it reaches the generated config.
+    /// A group covers the daemons its project declares. Naming one reached
+    /// with `project` is refused rather than silently dropped, because mise
+    /// would expand a group the registered configuration does not.
     #[test]
-    fn a_group_can_name_an_imported_daemon() {
+    fn a_group_cannot_name_an_imported_daemon() {
         let _serial = import_lock();
         let tmp = tempfile::tempdir().unwrap();
         let mirror = tmp.path().join("mirror");
@@ -3100,7 +3505,7 @@ three = ["two", "c"]
         );
         let root = tmp.path().join("app");
         std::fs::create_dir_all(root.join(".git")).unwrap();
-        let set = load(&files(&[(
+        let err = load(&files(&[(
             root.join("mise.toml").to_str().unwrap(),
             &format!(
                 "[daemons_settings]\nnamespace = 'app'\n\
@@ -3110,22 +3515,9 @@ three = ["two", "c"]
                 mirror.display()
             ),
         )]))
-        .unwrap();
-        let group = set.for_root(&root.canonicalize().unwrap());
-        let group = group.group("stack").expect("the group is declared here");
-        assert!(
-            group.daemons.iter().any(|d| d == "api"),
-            "{:?}",
-            group.daemons
-        );
-        assert!(
-            group.daemons.iter().any(|d| d == "remote"),
-            "an imported member must survive expansion: {:?}",
-            group.daemons
-        );
-        // The member reaches pitchfork as the qualified ID the project that
-        // owns it registers, not as a name in this project's file.
-        assert_eq!(set.aliases["remote"], "mirror/worker");
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("reaches with `project`"), "{err}");
     }
 
     #[test]

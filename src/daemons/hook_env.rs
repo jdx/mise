@@ -100,6 +100,11 @@ pub(crate) async fn emit(
                 let scoped_config = runtime::config_for_root(config, &root).await?;
                 scoped_set.validate_tasks(&scoped_config).await?;
             }
+            // Pitchfork starts the `auto = ["start"]` daemons as soon as this
+            // session joins, so the same check the other two registration paths
+            // make belongs here: a daemon whose dependency was dropped with an
+            // unreadable import would otherwise start without what it declared.
+            super::ensure_not_blocked(&scoped_set, &scoped_set.auto_starting(), Some(&root))?;
             // Only this project's own roots reach here, so it owns the profile.
             let (_state, _lock) = runtime.prepare(&root, &scoped_set, force, true).await?;
             Ok::<_, eyre::Report>(runtime.bin)

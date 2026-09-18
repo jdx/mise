@@ -154,8 +154,10 @@ pub(crate) async fn start(
         // comes along and not only what the task named.
         let starting = set.with_dependencies(&keys.iter().cloned().collect::<Vec<_>>());
         super::ensure_not_blocked(set, &starting, None)?;
-        for key in keys {
-            let daemon = &set.daemons[&key];
+        // Take the closure, not only the names the task gave. A dependency can
+        // live in a project reached by `project =`, and that project has to be
+        // registered and started or the daemon comes up without it.
+        for daemon in starting.daemons.values() {
             if daemon.imported {
                 foreign.insert(daemon.root.clone());
             } else {
@@ -290,8 +292,10 @@ mod tests {
         worker.root = PathBuf::from("/mirror");
         worker.imported = true;
         set.daemons.insert("mirror/worker".into(), worker);
-        set.aliases
-            .insert("pipeline".into(), "mirror/worker".into());
+        set.aliases.insert(
+            (PathBuf::from("/project"), "pipeline".into()),
+            "mirror/worker".into(),
+        );
         set.namespaces
             .insert(PathBuf::from("/mirror"), "mirror".into());
         set.namespaces

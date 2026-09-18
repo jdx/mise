@@ -476,7 +476,10 @@ pub(crate) fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) 
     let Some(explicit) = settings.and_then(|s| s.namespace.as_deref()) else {
         return namespace(root);
     };
-    crate::daemons::validate_id("namespace", explicit)?;
+    crate::daemons::validate_namespace(explicit)?;
+    // The same check `port = "auto"` uses. A local one accepted any `.git` file
+    // whose path contained `worktrees`, so a lookalike could take a per-worktree
+    // namespace without the matching port offset.
     if settings.is_none_or(|s| s.namespace_per_worktree()) && crate::git::in_linked_worktree(root) {
         // Linked worktrees of one repository share the configuration that names
         // the namespace, so an unsuffixed namespace would make two checkouts
@@ -585,18 +588,8 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
         let members = group
             .daemons
             .iter()
-            .filter_map(|name| {
-                if set.daemons.contains_key(name) {
-                    return Some(format!("{}/{name}", state.namespace));
-                }
-                // A member this project imported with `project =` is defined by
-                // the project that owns it and registered under that project's
-                // namespace, so it reaches pitchfork as that qualified ID. It is
-                // not a name in this file, and dropping it would quietly shrink
-                // the group.
-                set.aliases.get(name).cloned()
-            })
-            .map(toml::Value::String)
+            .filter(|name| set.daemons.contains_key(*name))
+            .map(|name| toml::Value::String(format!("{}/{name}", state.namespace)))
             .collect::<Vec<_>>();
         if members.is_empty() {
             continue;
@@ -961,16 +954,7 @@ mod tests {
         assert!(rendered.contains("[groups.web]"), "{rendered}");
         assert!(rendered.contains("\"proj/api\""), "{rendered}");
         assert!(rendered.contains("\"proj/worker\""), "{rendered}");
-        // A member imported from another project is registered under that
-        // project's namespace, so it reaches pitchfork as its qualified ID
-        // rather than being dropped from the group.
-        let mut imported = set.clone();
-        imported.groups[0].daemons.push("remote".into());
-        imported
-            .aliases
-            .insert("remote".into(), "mirror/worker".into());
-        let rendered = render(&imported, &state).unwrap();
-        assert!(rendered.contains("\"mirror/worker\""), "{rendered}");
+
         // A member this project no longer owns is left out rather than rendered as
         // an ID pitchfork cannot resolve.
         let mut overridden = set.clone();
