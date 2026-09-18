@@ -149,7 +149,21 @@ pub(crate) async fn start(
     for (project, tasks) in by_project {
         let scoped = runtime::config_for_root(config, &project).await?;
         let set = scoped.daemons()?;
-        for key in required(&tasks, set)? {
+        let keys = required(&tasks, set)?;
+        // Pitchfork starts a daemon's dependencies with it, so the check has to
+        // cover what comes along, not only what the task named.
+        let starting = set.with_dependencies(&keys.iter().cloned().collect::<Vec<_>>());
+        if let Some((name, import)) = set.blocked.iter().find(|(name, _)| {
+            set.daemons
+                .get(*name)
+                .is_some_and(|blocked| starting.contains(blocked))
+        }) {
+            bail!(
+                "daemon {name:?} depends on [daemons.{import}], which is unavailable: {}",
+                set.import_errors[import]
+            );
+        }
+        for key in keys {
             let daemon = &set.daemons[&key];
             if daemon.imported {
                 foreign.insert(daemon.root.clone());
@@ -183,6 +197,12 @@ pub(crate) async fn start(
     // live in another project's root. Register every root first and start only
     // once they all exist, so a local daemon listed before an imported one
     // cannot start while that dependency is still unregistered.
+    //
+    // Holding several project locks at once means the order they are taken in
+    // matters: `mise daemons start` sorts its roots, so this takes them in the
+    // same order rather than in whatever order the configuration produced, and
+    // the two cannot deadlock against each other.
+    wanted.sort_keys();
     let mut pending = Vec::new();
     for (root, names) in wanted {
         let scoped = runtime::config_for_root(config, &root).await?;
