@@ -135,6 +135,9 @@ use it only when you need the secret itself, and keep it out of shared logs.
 
 ## Tool Options
 
+Platform-specific download URLs support the same version
+templates as the [GitHub backend](/dev-tools/backends/github.html#platform-specific-urls).
+
 The following [tool-options](/dev-tools/#tool-options) are available for the `gitlab` backend—these
 go in `[tools]` in `mise.toml`.
 

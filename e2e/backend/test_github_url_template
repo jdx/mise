@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+
+detect_platform
+cat <<EOF >mise.toml
+[tools."github:jdx/mise-test-fixtures"]
+version = "1.0.0"
+strip_components = 1
+bin_path = "bin"
+additional_asset_patterns = ["fd-8.7.0.tar.gz"]
+platforms."$MISE_PLATFORM".url = "https://github.com/jdx/mise-test-fixtures/releases/download/v{{ version }}/hello-world-{{ version }}.tar.gz"
+EOF
+
+touch mise.lock
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+install_path=$(mise where github:jdx/mise-test-fixtures)
+assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"
+assert_contains "cat mise.lock" 'url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"'
+assert_contains "cat mise.lock" 'url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/fd-8.7.0.tar.gz"'
+
+mise uninstall github:jdx/mise-test-fixtures
+mise install --locked
+assert_contains "mise x -- hello-world" "hello world"
+assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"
