@@ -12,14 +12,22 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 
+/// What mise knows about one project's daemons, as written beside them.
+///
+/// Every field defaults, so a state file written by another version still
+/// parses. The alternative is that adding a field turns every existing
+/// `state.json` into something `mise daemons prune` cannot read, and therefore
+/// into data nothing will ever clean up. What the missing fields cost is
+/// bounded: an empty root is never selected for removal, and an empty id list
+/// only means there is nothing to stop.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub(crate) struct State {
     pub root: PathBuf,
     pub profile: Vec<String>,
     pub namespace: String,
     pub ids: Vec<String>,
     pub bin: PathBuf,
-    #[serde(default)]
     pub config_hash: String,
 }
 

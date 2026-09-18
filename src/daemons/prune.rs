@@ -669,6 +669,30 @@ mod tests {
     }
 
     #[test]
+    fn state_from_another_version_is_still_selectable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("daemons");
+        let gone = tmp.path().join("gone");
+        let dir = base.join(crate::hash::hash_to_str(&gone));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Only the field that matters for selection, plus one this version has
+        // never heard of. A state file that cannot be parsed is state that can
+        // never be cleaned up, so every field has to be optional.
+        std::fs::write(
+            dir.join("state.json"),
+            format!(
+                r#"{{"root":{:?},"something_new":42}}"#,
+                gone.to_str().unwrap()
+            ),
+        )
+        .unwrap();
+        let entry = orphans(&base).unwrap().remove(0);
+        assert_eq!(entry.state.root, gone);
+        assert!(entry.state.ids.is_empty());
+        assert_eq!(entry.ambiguity(), None);
+    }
+
+    #[test]
     fn state_that_cannot_be_understood_is_reported_and_skipped() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
