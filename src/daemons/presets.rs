@@ -173,6 +173,7 @@ pub(crate) fn expand(
         task: None,
         tool: Some((tool, version.into())),
         exports,
+        imported: false,
     })
 }
 

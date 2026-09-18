@@ -112,29 +112,112 @@ impl Daemons {
                 .await;
         }
         let loaded = config.daemons()?;
+        // The loop below shadows `root` with each project root it prepares.
+        let project_root = root.to_path_buf();
         let mut roots = loaded.roots();
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
         }
-        let (names, groups, flags) = split_args(action, &args)?;
+        let (requested_names, groups, flags) = split_args(action, &args)?;
+        // An import that could not be resolved is fatal only when this command
+        // names it. Someone whose sibling checkout is missing can still list and
+        // stop their own daemons; they are told what is unavailable and why.
+        // Fatal only when this command names it, and only when the name means
+        // that failure to this project: a group or a working import declared
+        // nearer answers for the word instead. A qualified request is literal,
+        // and an unresolved import never got an ID to be qualified with.
+        if let Some((name, err)) = requested_names.iter().find_map(|requested| {
+            match loaded.resolve_bare(&project_root, requested) {
+                Some(daemons::BareName::Unresolved(err)) if !requested.contains('/') => {
+                    Some((requested, err))
+                }
+                _ => None,
+            }
+        }) {
+            bail!("cannot resolve [daemons.{name}]: {err}");
+        }
+        for ((_, name), err) in &loaded.import_errors {
+            warn!("[daemons.{name}] is unavailable: {err}");
+        }
+        let install = matches!(action, "start" | "restart");
+        let names: Vec<String> = requested_names
+            .iter()
+            .map(|name| {
+                let resolved = loaded.resolve_alias(name);
+                if name.contains('/') {
+                    return Ok(resolved);
+                }
+                // Ask this project what the word means, nearest declaration
+                // first. An import becomes the ID it answers to; a group stays
+                // bare so `selects` expands it against the project that
+                // declares it, which is also how a group in an unrelated
+                // project keeps its own meaning.
+                match loaded.resolve_bare(&project_root, name) {
+                    Some(daemons::BareName::Import(id)) => return Ok(id.to_string()),
+                    // An unresolved import has no ID; the check above already
+                    // refused it, so this only keeps the name intact.
+                    Some(daemons::BareName::Group | daemons::BareName::Unresolved(_)) => {
+                        return Ok(name.clone());
+                    }
+                    None => {}
+                }
+                // A group no project in this tree declares can still belong to
+                // one of the other loaded roots, which resolves it itself.
+                if loaded.groups.iter().any(|group| group.name == *name) {
+                    return Ok(name.clone());
+                }
+                let owner = loaded
+                    .daemons
+                    .values()
+                    .find(|daemon| {
+                        loaded.namespace_for(&daemon.root).is_some_and(|namespace| {
+                            resolved == format!("{namespace}/{}", daemon.name)
+                        })
+                    })
+                    .map(|daemon| daemon.root.as_path())
+                    .unwrap_or(root);
+                let previous = runtime::read_state(owner)?;
+                // Bare names still address registered daemons after a namespace
+                // edit, so users can stop them before the next start migrates.
+                // Explicit qualified IDs always retain their literal meaning.
+                let namespace = if !install && !previous.namespace.is_empty() {
+                    previous.namespace
+                } else {
+                    match loaded.namespace_for(owner) {
+                        Some(namespace) => namespace.to_owned(),
+                        None => runtime::namespace(owner)?,
+                    }
+                };
+                let daemon_name = resolved.rsplit('/').next().unwrap_or(&resolved);
+                Ok(format!("{namespace}/{daemon_name}"))
+            })
+            .collect::<Result<_>>()?;
+        // Selectors carry the resolved names, so a group and an imported
+        // daemon's local alias are matched the same way from here on.
         let selectors: Vec<Selector> = names
-            .into_iter()
+            .iter()
+            .cloned()
             .map(Selector::Name)
             .chain(groups.iter().cloned().map(Selector::Group))
             .collect();
-        let install = matches!(action, "start" | "restart");
         let mut root_ids = Vec::new();
         let mut root_sets = Vec::new();
         for root in &roots {
             let previous = runtime::read_state(root)?;
-            let namespace = if previous.namespace.is_empty() {
-                runtime::namespace(root)?
-            } else {
-                previous.namespace.clone()
+            let namespace = match loaded.namespace_for(root) {
+                Some(namespace) => namespace.to_string(),
+                None if previous.namespace.is_empty() => runtime::namespace(root)?,
+                None => previous.namespace.clone(),
             };
             let set = loaded.for_root(root);
             let mut ids = if install { Vec::new() } else { previous.ids };
-            ids.extend(set.daemons.keys().map(|name| format!("{namespace}/{name}")));
+            // An imported daemon is keyed by qualified ID, so take the name
+            // from the daemon rather than the map key.
+            ids.extend(
+                set.daemons
+                    .values()
+                    .map(|daemon| format!("{namespace}/{}", daemon.name)),
+            );
             root_ids.push(ids);
             root_sets.push(set);
         }
@@ -163,31 +246,141 @@ impl Daemons {
                 bail!("no matching project daemons for {:?}", selector.name());
             }
         }
+        // Resolve dependencies against each owner's complete declarations, so
+        // imported daemons can bring their own local dependencies with them.
+        let mut owner_configs = std::collections::HashMap::new();
+        let starting = if install {
+            let mut candidates = daemons::DaemonSet::default();
+            let mut index = 0;
+            while index < roots.len() {
+                let root = roots[index].clone();
+                index += 1;
+                let scoped = runtime::config_for_root(&config, &root).await?;
+                let declarations = scoped.daemons()?;
+                for dependency_root in declarations.roots() {
+                    if !roots.contains(&dependency_root) {
+                        // Every root travels with its ids and its set; the three
+                        // are zipped below and a short list drops the tail.
+                        root_sets.push(declarations.for_root(&dependency_root));
+                        roots.push(dependency_root);
+                        root_ids.push(Vec::new());
+                    }
+                }
+                let set = declarations.for_root(&root);
+                for daemon in set.daemons.values() {
+                    let namespace = set.namespace_for(&root).unwrap_or_default();
+                    let id = format!("{namespace}/{}", daemon.name);
+                    if let Some(other) = candidates.daemons.insert(id.clone(), daemon.clone())
+                        && other.root != daemon.root
+                    {
+                        bail!(
+                            "daemon {id} is declared in both {} and {}; give the projects distinct namespaces",
+                            other.root.display(),
+                            daemon.root.display()
+                        );
+                    }
+                }
+                candidates.namespaces.extend(set.namespaces);
+                owner_configs.insert(root.clone(), scoped);
+            }
+            // Expanded the same way selection expands them, so starting a
+            // group gathers the daemons it names rather than nothing.
+            let requested = root_ids
+                .iter()
+                .zip(&root_sets)
+                .flat_map(|(ids, set)| {
+                    let root_selectors = effective_selectors(&selectors, set, action);
+                    ids.iter()
+                        .filter(move |id| {
+                            root_selectors.is_empty()
+                                || root_selectors.iter().any(|s| selects(set, id, s))
+                        })
+                        .cloned()
+                })
+                .collect::<Vec<_>>();
+            let starting = candidates.with_dependencies(&requested);
+            // Dropping a dependency on an unresolved import keeps the generated
+            // config valid, but starting the daemon anyway would run it without
+            // something it declared it needs. Say which import is missing.
+            daemons::ensure_not_blocked(loaded, &starting, None)?;
+            starting
+        } else {
+            daemons::DaemonSet::default()
+        };
+        let mut pending = Vec::new();
         let mut rows = Vec::new();
         let mut matched = false;
-        for ((root, ids), root_set) in roots.into_iter().zip(root_ids).zip(root_sets) {
+        let mut root_entries: Vec<_> = roots
+            .into_iter()
+            .zip(root_ids)
+            .zip(root_sets)
+            .map(|((root, ids), root_set)| (root, ids, root_set))
+            .collect();
+        if install {
+            // Startup holds project locks until execution. Acquire them in a
+            // consistent order even when callers import the projects differently.
+            root_entries.sort_by(|a, b| a.0.cmp(&b.0));
+        }
+        for (root, ids, root_set) in root_entries {
+            // What this root contributes to the run: for a start that is the
+            // dependency closure, which already accounts for daemons in other
+            // projects that nothing named directly.
+            let in_closure = install && !starting.for_root(&root).daemons.is_empty();
+            if install && !in_closure && (!names.is_empty() || root != project_root) {
+                continue;
+            }
             // Each root resolves the request against its own groups, so a `default`
             // group in one project never suppresses another project's daemons. This
             // is the one place selectors are resolved, from the set the request was
             // validated against rather than the per-root reload used for tools and
             // the generated configuration.
             let root_selectors = effective_selectors(&selectors, &root_set, action);
-            if !root_selectors.is_empty()
+            if !in_closure
+                && !root_selectors.is_empty()
                 && !ids
                     .iter()
                     .any(|id| root_selectors.iter().any(|s| selects(&root_set, id, s)))
             {
                 continue;
             }
-            // The per-root configuration supplies this project's tools and env. Which
-            // daemons it owns comes from the merged view instead, the same way the
-            // auto lifecycle and task-required daemons resolve them, so a name a
-            // nearer project redefines is registered and started once.
-            let scoped = runtime::config_for_root(&config, &root).await?;
-            // Seeded before the toolset is built, so this project installs tools for
-            // the daemons it registers and not for a name a nearer project took over.
-            scoped.seed_daemons(root_set.clone());
-            let set = &root_set;
+            // The per-root configuration supplies this project's tools and env.
+            let scoped = match owner_configs.remove(&root) {
+                Some(scoped) => scoped,
+                None => runtime::config_for_root(&config, &root).await?,
+            };
+            // What this invocation may act on, which for another project's root
+            // is only what it imported.
+            let requested = loaded.for_root(&root);
+            // Another project's root, reached only because a daemon was imported
+            // from it. An ancestor of this project is not that: its daemons are
+            // declared in this project's own hierarchy, and the merged view is
+            // what decides which of them a nearer config has taken over.
+            let foreign = !requested.daemons.is_empty()
+                && requested.daemons.values().all(|daemon| daemon.imported);
+            // Which daemons a root owns comes from the merged view, the same way
+            // the auto lifecycle and task-required daemons resolve them, so a
+            // name a nearer project redefines is registered and started once.
+            //
+            // Another project's root is the exception. This project knows only
+            // the daemon it imported, and the generated configuration is
+            // rewritten whole, so registering that alone would delete the
+            // siblings sharing that file. Its own hierarchy is the complete set.
+            let set = if foreign {
+                scoped.daemons()?.for_root(&root)
+            } else {
+                // Seeded before the toolset is built, so this project installs
+                // tools for the daemons it registers and not for a name a nearer
+                // project took over.
+                scoped.seed_daemons(root_set.clone());
+                root_set.clone()
+            };
+            // What this invocation may act on or display. Registration still
+            // uses the complete set above; only visibility narrows here.
+            let visible = if foreign {
+                set.restricted_to(&requested)
+            } else {
+                set.clone()
+            };
             let previous = runtime::read_state(&root)?;
             if set.daemons.is_empty() && previous.ids.is_empty() {
                 continue;
@@ -195,20 +388,48 @@ impl Daemons {
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if action == "ls" {
-                let mut ids = previous.ids.clone();
-                for name in set.daemons.keys() {
-                    let id = if previous.namespace.is_empty() {
+                let desired = set
+                    .namespace_for(&root)
+                    .unwrap_or(previous.namespace.as_str());
+                // Keep active daemons visible under their registered IDs until
+                // they can be stopped. Otherwise show only the new namespace.
+                let active = if !previous.namespace.is_empty() && desired != previous.namespace {
+                    match &runtime {
+                        Ok(runtime) => runtime.active(&root, &previous).await?,
+                        Err(_) => false,
+                    }
+                } else {
+                    false
+                };
+                let listed = if active { &previous.namespace } else { desired };
+                let mut ids: Vec<String> = previous
+                    .ids
+                    .iter()
+                    .filter(|id| {
+                        id.rsplit_once('/')
+                            .is_some_and(|(namespace, _)| namespace == listed)
+                            && (!foreign
+                                || visible.find(id.rsplit('/').next().unwrap_or(id)).is_some())
+                    })
+                    .cloned()
+                    .collect();
+                for name in visible.daemons.values().map(|d| &d.name) {
+                    // An existing registration already represents this daemon.
+                    // New declarations always use the configured namespace,
+                    // even while other daemons still run under the old one.
+                    if ids.iter().any(|id| id.rsplit('/').next() == Some(name)) {
+                        continue;
+                    }
+                    let id = if desired.is_empty() {
                         name.clone()
                     } else {
-                        format!("{}/{name}", previous.namespace)
+                        format!("{desired}/{name}")
                     };
-                    if !ids.contains(&id) {
-                        ids.push(id);
-                    }
+                    ids.push(id);
                 }
                 for id in ids {
                     let name = id.rsplit('/').next().unwrap_or(&id);
-                    let daemon = set.daemons.get(name);
+                    let daemon = visible.find(name);
                     let status = if let Ok(runtime) = &runtime
                         && !previous.namespace.is_empty()
                     {
@@ -222,11 +443,20 @@ impl Daemons {
             }
             let runtime = runtime?;
             if install {
-                runtime::validate_tools(set, &scoped, &ts).await?;
-                set.validate_tasks(&scoped).await?;
+                // Validate what this invocation will start, plus whatever those
+                // daemons depend on, since pitchfork starts dependencies with
+                // them. An unrelated daemon is registered but not started, so a
+                // missing tool or task reference of its own must not fail this
+                // command.
+                let starting = set.restricted_to(&starting);
+                runtime::validate_tools(&starting, &scoped, &ts).await?;
+                starting.validate_tasks(&scoped).await?;
+                // This root's own configuration, which the check above cannot
+                // see: a referenced project declares its own imports.
+                daemons::ensure_not_blocked(&set, &starting, Some(&root))?;
             }
             let (state, _project_lock) = if install {
-                let (state, lock) = runtime.prepare(&root, set, true).await?;
+                let (state, lock) = runtime.prepare(&root, &set, true, !foreign).await?;
                 (state, Some(lock))
             } else {
                 (previous, None)
@@ -237,14 +467,25 @@ impl Daemons {
                 .ids
                 .iter()
                 .filter(|id| {
-                    root_selectors.is_empty() || root_selectors.iter().any(|s| selects(set, id, s))
+                    if install {
+                        // The closure already answered this, including
+                        // dependencies in projects nothing named directly.
+                        set.find(id.rsplit('/').next().unwrap_or(id))
+                            .is_some_and(|daemon| starting.contains(daemon))
+                    } else {
+                        root_selectors.is_empty()
+                            || root_selectors.iter().any(|s| selects(&set, id, s))
+                    }
                 })
                 .cloned()
                 .collect();
-            if install {
+            if foreign && !install {
+                // Registering another project's daemons does not mean stopping
+                // them; only the ones this project asked for.
                 selected.retain(|id| {
-                    set.daemons
-                        .contains_key(id.rsplit('/').next().unwrap_or(id))
+                    requested
+                        .find(id.rsplit('/').next().unwrap_or(id))
+                        .is_some()
                 });
             }
             if selected.is_empty() {
@@ -264,8 +505,17 @@ impl Daemons {
                 let mut forwarded = vec![action.into()];
                 forwarded.extend(selected);
                 forwarded.extend(flags.clone());
-                runtime.exec(&root, forwarded).await?;
+                if install {
+                    pending.push((runtime, root, forwarded, _project_lock));
+                } else {
+                    runtime.exec(&root, forwarded).await?;
+                }
             }
+        }
+        // Register and validate every dependency root before pitchfork starts
+        // anything, regardless of the order projects appear in the config.
+        for (runtime, root, forwarded, _project_lock) in pending {
+            runtime.exec(&root, forwarded).await?;
         }
         if action == "ls" {
             if json {

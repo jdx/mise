@@ -1,4 +1,4 @@
-use super::{DaemonSet, state_dir};
+use super::{DaemonSet, DaemonSettings, state_dir};
 use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
@@ -185,7 +185,7 @@ impl Runtime {
         }
     }
 
-    async fn active(&self, root: &Path, state: &State) -> Result<bool> {
+    pub(crate) async fn active(&self, root: &Path, state: &State) -> Result<bool> {
         for id in &state.ids {
             if let Ok(value) = self.status(root, id).await
                 && matches!(
@@ -214,34 +214,68 @@ impl Runtime {
         Ok(false)
     }
 
+    /// Register a root's daemons.
+    ///
+    /// `owns_profile` is false when another project is preparing this root
+    /// because it imported a daemon from it. The profile recorded is always the
+    /// one the configuration was read under, since that is what the rendered
+    /// definitions reflect; the flag only says who is asking, so a profile
+    /// conflict can be explained in terms of the two projects involved.
     pub(crate) async fn prepare(
         &self,
         root: &Path,
         set: &DaemonSet,
         force_registration: bool,
+        owns_profile: bool,
     ) -> Result<(State, fslock::LockFile)> {
         let lock = crate::lock_file::LockFile::at(&state_dir(root).join("project.lock")).lock()?;
         let previous = read_state(root)?;
+        // This root's configuration was read under the current profile, whoever
+        // asked for it, so that is what the rendered definitions reflect and
+        // what has to be recorded. Claiming the profile the root last used would
+        // leave the generated file and the state describing different things.
         let profile = crate::env::MISE_ENV.clone();
         if !previous.namespace.is_empty()
             && previous.profile != profile
             && self.active(root, &previous).await?
         {
+            // The guard protects the owner either way. Rewriting a running
+            // project's registration from another profile's definitions is worse
+            // than refusing, so an importer is refused too, and told why.
+            if owns_profile {
+                bail!(
+                    "another daemon profile is active for {}; stop its daemons and leave its shell sessions before switching MISE_ENV",
+                    root.display()
+                );
+            }
             bail!(
-                "another daemon profile is active for {}; stop its daemons and leave its shell sessions before switching MISE_ENV",
-                root.display()
+                "{} has daemons running under MISE_ENV {:?}, and this project would register it under {:?}; stop them, or match that profile, before starting a daemon imported from it",
+                root.display(),
+                previous.profile.join(","),
+                profile.join(",")
             );
         }
-        let namespace = if !previous.namespace.is_empty() {
-            previous.namespace.clone()
-        } else {
-            namespace(root)?
+        let desired = match set.namespace_for(root) {
+            Some(namespace) => namespace.to_string(),
+            None => namespace(root)?,
         };
+        let changed = !previous.namespace.is_empty() && previous.namespace != desired;
+        if changed && self.active(root, &previous).await? {
+            bail!(
+                "daemons for {} are registered under namespace {:?} but the configuration now asks for {:?}; stop them before changing the namespace",
+                root.display(),
+                previous.namespace,
+                desired
+            );
+        }
         let mut state = State {
             root: root.into(),
             profile,
-            namespace,
-            ids: previous.ids,
+            namespace: desired,
+            // IDs from the previous namespace name daemons that are no longer
+            // reachable; nothing is running under them, so drop them here rather
+            // than forwarding unresolvable IDs to pitchfork.
+            ids: if changed { Vec::new() } else { previous.ids },
             bin: self.bin.clone(),
             config_hash: String::new(),
         };
@@ -255,6 +289,7 @@ impl Runtime {
         let file = state_dir(root).join("pitchfork.toml");
         state.config_hash = crate::hash::hash_to_str(&content);
         if !force_registration
+            && !changed
             && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
         {
@@ -267,8 +302,10 @@ impl Runtime {
             return Ok((state, lock));
         }
         self.supports_external_config(root).await?;
-        write_if_changed(&file, content.as_bytes())?;
-        if set.daemons.is_empty() {
+        // Pitchfork binds a registered file to its namespace. Detach the old
+        // mapping before registering the same file under a different name.
+        // The active check above ensures this cannot orphan running daemons.
+        if changed || set.daemons.is_empty() {
             self.output(
                 root,
                 &[
@@ -278,7 +315,9 @@ impl Runtime {
                 ],
             )
             .await?;
-        } else {
+        }
+        write_if_changed(&file, content.as_bytes())?;
+        if !set.daemons.is_empty() {
             self.output(
                 root,
                 &[
@@ -310,6 +349,53 @@ impl Runtime {
         runner.with_pass_signals();
         runner.execute_async().await
     }
+}
+
+/// Resolve the pitchfork namespace for a project root.
+///
+/// An explicit `[daemons_settings] namespace` wins so daemons in other projects
+/// can name this one's by qualified ID. Everything else keeps the hashed default,
+/// which cannot collide between unrelated checkouts.
+pub(crate) fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) -> Result<String> {
+    let Some(explicit) = settings.and_then(|s| s.namespace.as_deref()) else {
+        return namespace(root);
+    };
+    crate::daemons::validate_namespace(explicit)?;
+    if settings.is_none_or(|s| s.namespace_per_worktree()) && is_linked_worktree(root) {
+        // Linked worktrees of one repository share the configuration that names
+        // the namespace, so an unsuffixed namespace would make two checkouts
+        // fight over the same pitchfork daemon IDs and state directory.
+        return Ok(format!(
+            "{explicit}-{}",
+            crate::hash::hash_to_str(&root.canonicalize().unwrap_or_else(|_| root.to_path_buf()))
+        ));
+    }
+    Ok(explicit.into())
+}
+
+/// Whether `root` sits in a linked git worktree rather than the main checkout.
+///
+/// A linked worktree's `.git` is a file pointing into the main repository's
+/// `worktrees/` directory, which is what `git rev-parse --git-common-dir`
+/// reports as a path outside the worktree. Reading the file directly keeps this
+/// out of subprocess territory: namespaces are resolved on every config load,
+/// including the activation hook. A submodule also uses a `.git` file, but it
+/// points at `modules/`, so only `worktrees/` counts here.
+fn is_linked_worktree(root: &Path) -> bool {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    for dir in root.ancestors() {
+        let git = dir.join(".git");
+        if git.is_dir() {
+            return false;
+        }
+        if git.is_file() {
+            return std::fs::read_to_string(&git).is_ok_and(|s| {
+                s.trim().starts_with("gitdir:")
+                    && (s.contains("/worktrees/") || s.contains("\\worktrees\\"))
+            });
+        }
+    }
+    false
 }
 
 pub(crate) fn namespace(root: &Path) -> Result<String> {
@@ -437,7 +523,9 @@ pub(crate) async fn validate_tools(
     ts: &Toolset,
 ) -> Result<()> {
     for daemon in set.daemons.values() {
-        let Some((tool, version)) = &daemon.tool else {
+        // Imported daemons resolve their tool against the project that declares
+        // them, which happens when that root is prepared.
+        let Some((tool, version)) = daemon.tool.as_ref().filter(|_| !daemon.imported) else {
             continue;
         };
         if cfg!(windows) {
@@ -498,6 +586,82 @@ mod tests {
         assert_eq!(state_dir(&root), state_dir(&link));
     }
 
+    fn settings(namespace: &str, per_worktree: bool) -> DaemonSettings {
+        DaemonSettings {
+            namespace: Some(namespace.to_string()),
+            namespace_per_worktree: Some(per_worktree),
+        }
+    }
+
+    #[test]
+    fn explicit_namespace_wins_over_the_hashed_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("app");
+        std::fs::create_dir(&root).unwrap();
+        assert_eq!(
+            resolve_namespace(&root, Some(&settings("entiredb", true))).unwrap(),
+            "entiredb"
+        );
+        assert_eq!(
+            resolve_namespace(&root, None).unwrap(),
+            namespace(&root).unwrap()
+        );
+        assert!(
+            resolve_namespace(&root, Some(&settings("entire--db", true)))
+                .unwrap_err()
+                .to_string()
+                .contains("invalid daemon namespace")
+        );
+    }
+
+    #[test]
+    fn linked_worktrees_get_their_own_namespace_unless_disabled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let main = tmp.path().join("repo");
+        std::fs::create_dir_all(main.join(".git").join("worktrees").join("feature")).unwrap();
+        let worktree = tmp.path().join("feature");
+        std::fs::create_dir(&worktree).unwrap();
+        std::fs::write(
+            worktree.join(".git"),
+            format!(
+                "gitdir: {}\n",
+                main.join(".git/worktrees/feature").display()
+            ),
+        )
+        .unwrap();
+
+        let suffixed = resolve_namespace(&worktree, Some(&settings("entiredb", true))).unwrap();
+        assert!(
+            suffixed.starts_with("entiredb-") && suffixed != "entiredb",
+            "{suffixed}"
+        );
+        // A nested directory inside the worktree resolves the same way.
+        let nested = worktree.join("services");
+        std::fs::create_dir(&nested).unwrap();
+        assert!(
+            resolve_namespace(&nested, Some(&settings("entiredb", true)))
+                .unwrap()
+                .starts_with("entiredb-")
+        );
+        assert_eq!(
+            resolve_namespace(&worktree, Some(&settings("entiredb", false))).unwrap(),
+            "entiredb"
+        );
+        // The main checkout keeps the unsuffixed name.
+        assert_eq!(
+            resolve_namespace(&main, Some(&settings("entiredb", true))).unwrap(),
+            "entiredb"
+        );
+        // A submodule uses a .git file too, but it is not a worktree.
+        let submodule = tmp.path().join("sub");
+        std::fs::create_dir(&submodule).unwrap();
+        std::fs::write(submodule.join(".git"), "gitdir: ../repo/.git/modules/sub\n").unwrap();
+        assert_eq!(
+            resolve_namespace(&submodule, Some(&settings("entiredb", true))).unwrap(),
+            "entiredb"
+        );
+    }
+
     #[test]
     fn groups_render_with_qualified_daemon_ids() {
         let daemon = |name: &str| super::super::Daemon {
@@ -512,6 +676,7 @@ mod tests {
             task: None,
             tool: None,
             exports: Default::default(),
+            imported: false,
         };
         let set = DaemonSet {
             daemons: ["api", "worker"]
@@ -525,6 +690,7 @@ mod tests {
                 members: vec!["api".into(), "worker".into()],
                 daemons: vec!["api".into(), "worker".into()],
             }],
+            ..Default::default()
         };
         let state = State {
             namespace: "proj".into(),
@@ -567,6 +733,7 @@ mod tests {
             task: task.map(str::to_string),
             tool: None,
             exports: Default::default(),
+            imported: false,
         };
         let state = State {
             profile: vec!["dev".into()],
@@ -576,7 +743,7 @@ mod tests {
             render(
                 &DaemonSet {
                     daemons: indexmap::IndexMap::from_iter([("core".to_string(), d)]),
-                    groups: Vec::new(),
+                    ..Default::default()
                 },
                 &state,
             )
