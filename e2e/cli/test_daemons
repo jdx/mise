@@ -119,7 +119,6 @@ assert_contains "mise run dev" 'dev-ran'
 assert_contains "cat '$DAEMON_LOG'" 'args=start '
 assert_contains "cat '$DAEMON_LOG'" '/api'
 assert_not_contains "cat '$DAEMON_LOG'" '/core'
-generated=$(find "$MISE_STATE_DIR/daemons" -name pitchfork.toml -print -quit)
 # The supervised task runs through plain `mise run`, so its depends still run;
 # a marker in the daemon environment is what stops the recursion instead.
 assert_not_contains "cat '$generated'" 'skip-deps'
