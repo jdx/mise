@@ -122,17 +122,21 @@ impl Daemons {
         // An import that could not be resolved is fatal only when this command
         // names it. Someone whose sibling checkout is missing can still list and
         // stop their own daemons; they are told what is unavailable and why.
-        if let Some((name, err)) = loaded.import_errors.iter().find(|(name, _)| {
-            // Only a bare name can be the key a project gave an import. An
-            // unresolved import never got a qualified ID, so a request that has
-            // one names some other daemon and must be taken literally.
-            requested_names
-                .iter()
-                .any(|requested| requested == *name && !requested.contains('/'))
+        if let Some((name, err)) = loaded.import_errors.iter().find(|((root, name), _)| {
+            // Only a bare name can be the key a project gave an import, and only
+            // a failure this project reaches is its problem: another project may
+            // use the word for an import of its own that resolved.
+            requested_names.iter().any(|requested| {
+                requested == name
+                    && !requested.contains('/')
+                    && project_root.starts_with(root)
+                    && !loaded.imported_in(&project_root, requested)
+            })
         }) {
+            let name = &name.1;
             bail!("cannot resolve [daemons.{name}]: {err}");
         }
-        for (name, err) in &loaded.import_errors {
+        for ((_, name), err) in &loaded.import_errors {
             warn!("[daemons.{name}] is unavailable: {err}");
         }
         let install = matches!(action, "start" | "restart");

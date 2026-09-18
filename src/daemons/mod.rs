@@ -143,14 +143,14 @@ pub(crate) struct DaemonSet {
     /// Daemons that depend on an import which could not be resolved, mapping the
     /// daemon's key to the import's local key. Starting one would run it without
     /// something it declared it needs, so the command refuses instead.
-    pub blocked: IndexMap<String, String>,
+    pub blocked: IndexMap<String, (String, String)>,
     /// Imports that could not be resolved, by local key.
     ///
     /// Daemons load on every command, so a sibling project that is missing or
     /// not trusted must not take `mise x`, `mise run` or the activation hook
     /// down with it. The failure is carried here and reported by `mise daemons`,
     /// which is the command that can act on it.
-    pub import_errors: IndexMap<String, String>,
+    pub import_errors: IndexMap<(PathBuf, String), String>,
     /// Group names are project scoped, so nested projects may each declare one
     /// with the same name. They stay in a root-aware list until `for_root`.
     pub groups: Vec<Group>,
@@ -248,7 +248,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 Ok(imported) => imported,
                 Err(err) => {
                     debug!("[daemons.{name}] import failed: {err:#}");
-                    set.import_errors.insert(name, format!("{err:#}"));
+                    set.import_errors
+                        .insert((root.clone(), name), format!("{err:#}"));
                     continue;
                 }
             };
@@ -304,27 +305,39 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // Runs even with nothing imported, because it also rejects a `depends` this
     // project could not act on. An imported daemon's own `depends` is relative
     // to its project and is checked when that project loads.
-    let unresolved = set.import_errors.clone();
-    let mut blocked: IndexMap<String, String> = IndexMap::new();
+    let failures = set.import_errors.clone();
+    let mut blocked: IndexMap<String, (String, String)> = IndexMap::new();
     for (key, daemon) in set.daemons.iter_mut().filter(|(_, d)| !d.imported) {
-        // The imports this daemon's project reaches, its own and the ones it
-        // inherits, since a child can name a `project` reference its parent
-        // declared. Nearest declaration wins.
-        let imports: IndexMap<String, String> = daemon
-            .root
-            .ancestors()
-            .flat_map(|ancestor| {
-                imported_ids
-                    .iter()
-                    .filter(move |((root, _), _)| root.as_path() == ancestor)
-                    .map(|((_, name), id)| (name.clone(), id.clone()))
-            })
-            .fold(IndexMap::new(), |mut acc, (name, id)| {
-                acc.entry(name).or_insert(id);
-                acc
-            });
+        // What this daemon's project reaches by name: its own imports and the
+        // ones it inherits, resolved or not. Nearest declaration wins, so a
+        // working import here is unaffected by a broken one of the same name
+        // further up, and vice versa.
+        let mut reach: IndexMap<String, Result<String, String>> = IndexMap::new();
+        for ancestor in daemon.root.ancestors() {
+            for ((root, name), id) in &imported_ids {
+                if root.as_path() == ancestor {
+                    reach.entry(name.clone()).or_insert_with(|| Ok(id.clone()));
+                }
+            }
+            for ((root, name), err) in &failures {
+                if root.as_path() == ancestor {
+                    reach
+                        .entry(name.clone())
+                        .or_insert_with(|| Err(err.clone()));
+                }
+            }
+        }
+        let imports: IndexMap<String, String> = reach
+            .iter()
+            .filter_map(|(name, id)| Some((name.clone(), id.as_ref().ok()?.clone())))
+            .collect();
+        let unresolved: IndexMap<String, String> = reach
+            .iter()
+            .filter_map(|(name, id)| Some((name.clone(), id.as_ref().err()?.clone())))
+            .collect();
         if let Some(missing) = rewrite_depends(&mut daemon.table, &imports, &unresolved)? {
-            blocked.insert(key.clone(), missing);
+            let error = unresolved[&missing].clone();
+            blocked.insert(key.clone(), (missing, error));
         }
     }
     set.blocked = blocked;
@@ -497,10 +510,8 @@ pub(crate) fn ensure_not_blocked(
     let project = root
         .map(|root| format!(" in {}", root.display()))
         .unwrap_or_default();
-    bail!(
-        "daemon {name:?}{project} depends on [daemons.{import}], which is unavailable: {}",
-        set.import_errors[import]
-    );
+    let (import, error) = import;
+    bail!("daemon {name:?}{project} depends on [daemons.{import}], which is unavailable: {error}");
 }
 
 /// Config files that apply to a directory, lowest precedence first.
@@ -1510,6 +1521,15 @@ mod tests {
         crate::test::lock_ignoring_poison(&IMPORT_TESTS)
     }
 
+    /// The recorded failure for an import, by the name the project gave it.
+    fn failure(set: &DaemonSet, name: &str) -> String {
+        set.import_errors
+            .iter()
+            .find(|((_, key), _)| key == name)
+            .map(|(_, err)| err.clone())
+            .unwrap_or_else(|| panic!("no import failure recorded for {name:?}"))
+    }
+
     /// A referenced project the developer has never trusted.
     fn untrusted_project(dir: &Path, body: &str) -> PathBuf {
         std::fs::create_dir_all(dir).unwrap();
@@ -1615,7 +1635,7 @@ mod tests {
         assert!(set.daemons.contains_key("api"));
         assert!(!set.daemons.contains_key("pipeline"));
         // The failure is kept so `mise daemons` can report it with the path.
-        let err = &set.import_errors["pipeline"];
+        let err = &failure(&set, "pipeline");
         assert!(err.contains("mirror-pipeline"), "{err}");
         assert!(err.contains("[daemons.pipeline].project"), "{err}");
         assert!(
@@ -1636,7 +1656,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../mirror-pipeline'\n",
         )]);
-        let err = load(&config).unwrap().import_errors["worker"].clone();
+        let err = failure(&load(&config).unwrap(), "worker");
         assert!(err.contains(&tmp.path().join("mirror-pipeline").display().to_string()));
         assert!(err.contains("[daemons.worker].project"));
 
@@ -1646,7 +1666,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../empty'\n",
         )]);
-        assert!(load(&config).unwrap().import_errors["worker"].contains("mise configuration"));
+        assert!(failure(&load(&config).unwrap(), "worker").contains("mise configuration"));
 
         referenced_project(
             &tmp.path().join("other"),
@@ -1656,7 +1676,7 @@ mod tests {
             source.to_str().unwrap(),
             "[daemons.worker]\nproject = '../other'\n",
         )]);
-        let err = load(&config).unwrap().import_errors["worker"].clone();
+        let err = failure(&load(&config).unwrap(), "worker");
         assert!(err.contains("[daemons.worker]"), "{err}");
         assert!(err.contains("build"), "{err}");
     }
@@ -1889,6 +1909,47 @@ mod tests {
     }
 
     #[test]
+    fn a_broken_import_does_not_disturb_a_working_one() {
+        let _serial = import_lock();
+        // A project can reach one import that resolves and one that does not.
+        // Each `depends` entry is answered by its own declaration.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'remote'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\ndepends = ['pipeline', 'absent']\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                &format!(
+                    "[daemons.pipeline]\nproject = {}\nname = 'worker'\n[daemons.absent]\nproject = '../gone'\n",
+                    toml::Value::String(mirror.to_string_lossy().into_owned())
+                ),
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        // The resolved one is rewritten to the ID it answers to; the unresolved
+        // one is dropped, so nothing unresolvable reaches pitchfork.
+        let depends = set.daemons["api"].table["depends"].as_array().unwrap();
+        assert_eq!(depends.len(), 1);
+        assert_eq!(depends[0].as_str(), Some("remote/worker"));
+        // Starting it is refused, naming the one that is unavailable.
+        assert_eq!(
+            set.blocked.get("api").map(|(name, _)| name.as_str()),
+            Some("absent")
+        );
+        assert!(set.imported_in(&child, "pipeline"));
+    }
+
+    #[test]
     fn a_child_reaches_an_import_its_parent_declared() {
         let _serial = import_lock();
         // Configuration is inherited, so a child may name a `project` reference
@@ -2044,7 +2105,7 @@ mod tests {
         let _paranoid = Paranoid::on();
         let set = load(&config).unwrap();
         assert!(set.find("worker").is_none());
-        let err = &set.import_errors["worker"];
+        let err = &failure(&set, "worker");
         assert!(err.contains("not trusted"), "{err}");
         assert!(err.contains("mise trust"), "{err}");
         // Trying did not trust it as a side effect, which is the whole point:
@@ -2055,7 +2116,10 @@ mod tests {
         // pitchfork cannot find, so it is dropped rather than registered, and
         // the daemon that needed it is recorded so starting it can refuse.
         assert!(!set.daemons["api"].table.contains_key("depends"));
-        assert_eq!(set.blocked.get("api").map(String::as_str), Some("worker"));
+        assert_eq!(
+            set.blocked.get("api").map(|(name, _)| name.as_str()),
+            Some("worker")
+        );
 
         // Trusting it makes the same configuration import.
         crate::config::config_file::trust(&config_path).unwrap();
@@ -2160,7 +2224,7 @@ mod tests {
             "[daemons.worker]\nproject = '../middle'\n",
         )]);
         assert!(
-            load(&config).unwrap().import_errors["worker"]
+            failure(&load(&config).unwrap(), "worker")
                 .contains("reference the project that declares it")
         );
         let config = files(&[(
