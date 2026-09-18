@@ -239,6 +239,9 @@ impl TasksValidate {
         // 1. Validate missing task references
         issues.extend(self.validate_missing_references(task, all_tasks));
 
+        // 1b. Validate required daemon references
+        issues.extend(Self::validate_daemon_references(task, config));
+
         // 2. Validate usage spec parsing
         issues.extend(self.validate_usage_spec(task, config).await);
 
@@ -278,6 +281,32 @@ impl TasksValidate {
             .get_matching(&resolved_name)
             .is_ok_and(|matches| !matches.is_empty())
             || all_tasks.values().any(|t| t.display_name == resolved_name)
+    }
+
+    /// A `daemons` entry naming something no `[daemons]` section declares fails
+    /// the run, so it belongs here with the other missing references. A name
+    /// still holding a template is left alone; it is resolved per invocation.
+    fn validate_daemon_references(task: &Task, config: &Arc<Config>) -> Vec<ValidationIssue> {
+        let Some(daemons) = &task.daemons else {
+            return vec![];
+        };
+        let Ok(set) = config.daemons() else {
+            return vec![];
+        };
+        daemons
+            .names()
+            .iter()
+            .filter(|name| {
+                !crate::tera::contains_template_syntax(name) && !set.daemons.contains_key(*name)
+            })
+            .map(|name| ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Error,
+                category: "missing-daemon".to_string(),
+                message: format!("requires daemon '{name}', which is not defined in [daemons]"),
+                details: Some("declare it in [daemons] or remove it from this task".to_string()),
+            })
+            .collect()
     }
 
     fn validate_missing_references(

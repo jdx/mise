@@ -402,6 +402,29 @@ mod tests {
     }
 
     #[test]
+    fn daemons_are_inherited_but_never_override_the_task() {
+        use crate::task::TaskDaemons;
+        let template = TaskTemplate {
+            daemons: Some(TaskDaemons::Names(vec!["postgres".into()])),
+            ..Default::default()
+        };
+        // Nothing declared locally, so the template supplies the requirement.
+        let mut task = Task::default();
+        task.merge_extended_template(&template);
+        assert_eq!(
+            task.daemons,
+            Some(TaskDaemons::Names(vec!["postgres".to_string()]))
+        );
+        // A local declaration wins, including one that asks for nothing.
+        let mut task = Task {
+            daemons: Some(TaskDaemons::All(false)),
+            ..Default::default()
+        };
+        task.merge_extended_template(&template);
+        assert_eq!(task.daemons, Some(TaskDaemons::All(false)));
+    }
+
+    #[test]
     fn test_merge_template_usage_from_template_only() {
         let mut task = Task::default();
         let template = TaskTemplate {

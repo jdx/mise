@@ -648,6 +648,26 @@ pub(crate) enum TaskDaemons {
     Names(Vec<String>),
 }
 
+impl TaskDaemons {
+    /// The names written in the declaration. Empty for `true` and `false`,
+    /// which name no daemon.
+    pub(crate) fn names(&self) -> &[String] {
+        match self {
+            Self::All(_) => &[],
+            Self::One(name) => std::slice::from_ref(name),
+            Self::Names(names) => names.as_slice(),
+        }
+    }
+
+    fn names_mut(&mut self) -> &mut [String] {
+        match self {
+            Self::All(_) => &mut [],
+            Self::One(name) => std::slice::from_mut(name),
+            Self::Names(names) => names.as_mut_slice(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Task {
@@ -2772,6 +2792,7 @@ impl Task {
             || contains_template_syntax(&self.description)
             || self.sources.iter().any(|s| contains_template_syntax(s))
             || self.outputs.has_tera_template()
+            || daemons_have_template(self.daemons.as_ref())
             || deps_have_template(&self.depends)
             || deps_have_template(&self.depends_post)
             || deps_have_template(&self.wait_for)
@@ -2852,6 +2873,7 @@ impl Task {
         render_task_deps(&mut self.depends, &mut tera, &tera_ctx, true)?;
         render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, true)?;
         render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, true)?;
+        render_task_daemons(self.daemons.as_mut(), &mut tera, &tera_ctx, true)?;
         if let Some(dir) = &mut self.dir
             && contains_template_syntax(dir)
         {
@@ -2912,6 +2934,10 @@ impl Task {
         }) || has_usage_deps(&self.depends_raw)
             || has_usage_deps(&self.depends_post_raw)
             || has_usage_deps(&self.wait_for_raw)
+            || self
+                .daemons
+                .as_ref()
+                .is_some_and(|d| d.names().iter().any(|n| tera_template_has_usage_ref(n)))
     }
 
     pub(crate) async fn render_runtime_templates_with_usage(
@@ -2985,6 +3011,10 @@ impl Task {
             self.wait_for = raw.clone();
             render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, false)?;
         }
+        // Daemon names are plain strings, so the first pass left a name holding
+        // a usage reference literal and this one renders it in place; there is
+        // no parsed form to restore from.
+        render_task_daemons(self.daemons.as_mut(), &mut tera, &tera_ctx, false)?;
         Ok(())
     }
 
@@ -3870,6 +3900,30 @@ pub(crate) fn dep_has_usage_ref(dep: &TaskDep) -> bool {
     tera_template_has_usage_ref(&dep.task)
         || dep.args.iter().any(|a| tera_template_has_usage_ref(a))
         || dep.env.values().any(|v| tera_template_has_usage_ref(v))
+}
+
+fn daemons_have_template(daemons: Option<&TaskDaemons>) -> bool {
+    daemons.is_some_and(|d| d.names().iter().any(|n| contains_template_syntax(n)))
+}
+
+/// Render the daemon names a task requires. `skip_usage` defers a name holding
+/// a `{{usage.*}}` reference to the pass that has the argument values.
+fn render_task_daemons(
+    daemons: Option<&mut TaskDaemons>,
+    tera: &mut TeraEngine,
+    ctx: &tera::Context,
+    skip_usage: bool,
+) -> Result<()> {
+    let Some(daemons) = daemons else {
+        return Ok(());
+    };
+    for name in daemons.names_mut() {
+        if !contains_template_syntax(name) || (skip_usage && tera_template_has_usage_ref(name)) {
+            continue;
+        }
+        *name = render_str(tera, name, ctx)?;
+    }
+    Ok(())
 }
 
 fn render_task_deps(
@@ -5793,6 +5847,37 @@ echo "hello world"
         let result = task.file_path(&config).await;
         // Should succeed (not error on template rendering)
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn toml_overlay_replaces_a_file_task_daemon_requirement() {
+        use super::TaskDaemons;
+        let overlay = |daemons: Option<TaskDaemons>| {
+            let mut task = Task {
+                daemons: Some(TaskDaemons::Names(vec!["postgres".into()])),
+                ..Default::default()
+            };
+            task.merge_toml_overlay(Task {
+                daemons,
+                ..Default::default()
+            });
+            task.daemons
+        };
+        // The overlay replaces rather than extends, so a shorter list and an
+        // explicit opt-out both mean what they say.
+        assert_eq!(
+            overlay(Some(TaskDaemons::Names(vec!["nats".into()]))),
+            Some(TaskDaemons::Names(vec!["nats".to_string()]))
+        );
+        assert_eq!(
+            overlay(Some(TaskDaemons::All(false))),
+            Some(TaskDaemons::All(false))
+        );
+        // An overlay that says nothing leaves the file task's declaration.
+        assert_eq!(
+            overlay(None),
+            Some(TaskDaemons::Names(vec!["postgres".to_string()]))
+        );
     }
 
     #[tokio::test]

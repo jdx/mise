@@ -844,7 +844,15 @@ impl Run {
         // what stops a task-backed daemon, which runs `mise run --skip-deps`,
         // from starting itself. A dry run still validates the names.
         if !self.skip_deps {
-            crate::daemons::tasks::start(&config, &resolved_tasks, self.dry_run).await?;
+            // Task entries are resolved once the run is in flight, inside a
+            // spawned task, so their daemons have to be collected here with
+            // everyone else's.
+            let mut daemon_tasks = resolved_tasks.clone();
+            daemon_tasks.extend(
+                crate::task::task_list::resolve_task_entries(&config, &resolved_tasks).await?,
+            );
+            crate::daemons::tasks::start(&config, &daemon_tasks, self.dry_run, !self.skip_tools)
+                .await?;
         }
 
         // Apply global timeout for entire run if configured

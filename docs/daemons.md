@@ -68,7 +68,10 @@ port = 5433
 ```
 
 Custom commands use the project's mise tool environment by default. Declare their
-tools in `[tools]`; presets add their own required tools. Use `exec` for the final
+tools in `[tools]`; presets add their own required tools. A daemon declared with
+`task` is the exception: mise is the entry point there, so it is not wrapped again
+unless it also has [`init`](#setup-before-the-process-starts). The task still gets
+the tool environment from mise itself. Use `exec` for the final
 long-running command so it receives stop signals directly.
 
 Fields such as `ready_port`, `ready_cmd`, and `auto` configure pitchfork's daemon
@@ -130,13 +133,11 @@ The daemon's readiness check is configured on `[daemons.core]`, not on the task.
 A daemon's `task` cannot be combined with `run` or `preset`, and `args` requires
 `task`. The referenced task must exist when daemons are registered.
 
-::: warning Task dependencies are skipped
-A daemon invokes its task with `mise run --skip-deps`. This prevents recursive
-startup, but also skips that task's `depends` tasks and `daemons` requirements.
-Put setup commands in [`init`](#setup-before-the-process-starts), and arrange
-required services through pitchfork's daemon `depends` configuration or start
-them separately.
-:::
+A daemon invokes its task with `mise run`, so that task's `depends` tasks run
+before it, as they would on the command line. Its own `daemons` requirements are
+the one exception: starting those would start this daemon again, so mise skips
+them. Arrange services a supervised task needs through pitchfork's daemon
+`depends` configuration, or start them separately.
 
 ## Setup before the process starts
 

@@ -74,9 +74,17 @@ pub(crate) async fn toolset(config: &Arc<Config>, install: bool) -> Result<(Arc<
     } else {
         vec![]
     };
+    // Resolve from what is on disk. `install_missing_versions` re-resolves the
+    // specific requests it has to fetch, so an already-satisfied project costs
+    // no network round trip -- which matters when this runs on every `mise run`
+    // of a task that requires daemons.
     let mut ts = ToolsetBuilder::new()
         .with_args(&args)
         .with_default_to_latest(true)
+        .with_resolve_options(crate::toolset::ResolveOptions {
+            offline: true,
+            ..Default::default()
+        })
         .build(&config)
         .await?;
     if install {
@@ -451,6 +459,42 @@ mod tests {
         std::os::unix::fs::symlink(&root, &link).unwrap();
         assert_eq!(namespace(&root).unwrap(), namespace(&link).unwrap());
         assert_eq!(state_dir(&root), state_dir(&link));
+    }
+
+    #[test]
+    fn task_daemons_carry_the_profile_despite_opting_out_of_mise() {
+        let daemon = |task: Option<&str>, mise: bool| super::super::Daemon {
+            name: "core".into(),
+            source: PathBuf::from("/project/mise.toml"),
+            root: PathBuf::from("/project"),
+            table: toml::Table::from_iter([
+                ("run".into(), toml::Value::String("server".into())),
+                ("mise".into(), toml::Value::Boolean(mise)),
+            ]),
+            preset: None,
+            task: task.map(str::to_string),
+            tool: None,
+            exports: Default::default(),
+        };
+        let state = State {
+            profile: vec!["dev".into()],
+            ..State::default()
+        };
+        let rendered = |d: super::super::Daemon| {
+            render(
+                &DaemonSet {
+                    daemons: indexmap::IndexMap::from_iter([("core".to_string(), d)]),
+                },
+                &state,
+            )
+            .unwrap()
+        };
+        // A task daemon runs mise itself, so it needs the profile that resolved
+        // the task even though pitchfork is told not to wrap it.
+        assert!(rendered(daemon(Some("dev"), false)).contains("MISE_ENV = \"dev\""));
+        // A daemon that is not mise at all still opts out.
+        assert!(!rendered(daemon(None, false)).contains("MISE_ENV"));
+        assert!(rendered(daemon(None, true)).contains("MISE_ENV = \"dev\""));
     }
 
     #[test]

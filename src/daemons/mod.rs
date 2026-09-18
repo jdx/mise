@@ -17,6 +17,10 @@ use std::sync::Arc;
 /// both report the same requirement.
 pub(crate) const EXPERIMENTAL: &str = "[daemons] requires experimental = true";
 
+/// Set on a daemon that runs a task, so the `mise run` it starts does not start
+/// daemons of its own and recurse.
+pub(crate) const DAEMON_TASK_MARKER: &str = "MISE_DAEMON_TASK";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum Declaration {
@@ -124,10 +128,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 if task.is_empty() {
                     bail!("[daemons.{name}] task must not be empty");
                 }
-                // `--skip-deps` keeps a task that requires daemons from
-                // recursively starting this one.
                 let mut run = format!(
-                    "exec {} run --skip-deps {}",
+                    "exec {} run {}",
                     presets::quote(crate::env::MISE_BIN.to_string_lossy()),
                     presets::quote(task)
                 );
@@ -140,6 +142,20 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                     }
                 }
                 table.insert("run".into(), toml::Value::String(run));
+                // The task runs through `mise run`, which would start this very
+                // daemon again. This marker breaks that cycle in `tasks::start`
+                // instead of `--skip-deps`, which would also have discarded the
+                // task's own `depends`, leaving the daemon to supervise a stale
+                // build.
+                table
+                    .entry("env".to_string())
+                    .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+                    .as_table_mut()
+                    .ok_or_else(|| eyre::eyre!("[daemons.{name}] env must be a table"))?
+                    .insert(
+                        DAEMON_TASK_MARKER.into(),
+                        toml::Value::String("1".to_string()),
+                    );
                 // mise is already the entry point, so pitchfork does not need
                 // to wrap a bare task daemon in `mise x`. With `init` it does:
                 // the setup steps and the task then share one shell inside the
@@ -460,11 +476,11 @@ mod tests {
         let mise = presets::quote(crate::env::MISE_BIN.to_string_lossy());
         assert_eq!(
             daemon.table["run"].as_str(),
-            Some(
-                format!("exec {mise} run --skip-deps 'dev:core' -- '--port' 'it'\\''s 3000'")
-                    .as_str()
-            )
+            Some(format!("exec {mise} run 'dev:core' -- '--port' 'it'\\''s 3000'").as_str())
         );
+        // The task keeps its own `depends`; a marker in the daemon environment
+        // is what stops the nested run from starting this daemon again.
+        assert_eq!(daemon.table["env"][DAEMON_TASK_MARKER].as_str(), Some("1"));
         // mise is the entry point already, so pitchfork must not re-enter it.
         assert_eq!(daemon.table["mise"].as_bool(), Some(false));
         assert_eq!(daemon.task.as_deref(), Some("dev:core"));
@@ -476,7 +492,7 @@ mod tests {
         let config = files(&[("/project/mise.toml", "[daemons.core]\ntask = 'dev'\n")]);
         assert_eq!(
             load(&config).unwrap().daemons["core"].table["run"].as_str(),
-            Some(format!("exec {mise} run --skip-deps 'dev'").as_str())
+            Some(format!("exec {mise} run 'dev'").as_str())
         );
     }
 
@@ -540,7 +556,7 @@ mod tests {
             run.starts_with("npm ci && npm run migrate && exec "),
             "{run}"
         );
-        assert!(run.ends_with("run --skip-deps 'dev'"), "{run}");
+        assert!(run.ends_with("run 'dev'"), "{run}");
         assert_eq!(daemon.table["mise"].as_bool(), Some(true));
         // An explicit `mise` value stays the user's call.
         let explicit = files(&[(

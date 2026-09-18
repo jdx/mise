@@ -87,7 +87,18 @@ pub(crate) fn gate(experimental: bool, tasks: &[Task]) -> Result<bool> {
 /// dependency task can live in a different subproject, and two subprojects may
 /// each declare a daemon of the same name; each task's names are therefore
 /// looked up in its own configuration hierarchy.
-pub(crate) async fn start(config: &Arc<Config>, tasks: &[Task], dry_run: bool) -> Result<()> {
+pub(crate) async fn start(
+    config: &Arc<Config>,
+    tasks: &[Task],
+    dry_run: bool,
+    install_tools: bool,
+) -> Result<()> {
+    // This run is the body of a task-backed daemon. Starting daemons again from
+    // here is what would recurse, so stop at this one point and leave the rest
+    // of the run, including the task's own `depends`, untouched.
+    if crate::env::var_is_true(super::DAEMON_TASK_MARKER) {
+        return Ok(());
+    }
     if !gate(Settings::get().experimental, tasks)? {
         return Ok(());
     }
@@ -137,11 +148,15 @@ pub(crate) async fn start(config: &Arc<Config>, tasks: &[Task], dry_run: bool) -
             continue;
         }
         let previous = runtime::read_state(&root)?;
-        let (scoped, ts) = runtime::toolset(&scoped, true).await?;
+        let (scoped, ts) = runtime::toolset(&scoped, install_tools).await?;
         let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
         runtime::validate_tools(&set, &scoped, &ts).await?;
         set.validate_tasks(&scoped).await?;
-        let (state, _project_lock) = rt.prepare(&root, &set, true).await?;
+        // Let the configuration hash short-circuit re-registration. Forcing it
+        // would re-probe `pitchfork usage` and re-run `config add` on every
+        // `mise run` of a task that requires daemons, even when nothing about
+        // the daemons changed and they are already running.
+        let (state, _project_lock) = rt.prepare(&root, &set, false).await?;
         let ids: Vec<String> = state
             .ids
             .iter()
