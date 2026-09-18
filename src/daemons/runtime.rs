@@ -360,7 +360,7 @@ pub(crate) fn resolve_namespace(root: &Path, settings: Option<&DaemonSettings>) 
     let Some(explicit) = settings.and_then(|s| s.namespace.as_deref()) else {
         return namespace(root);
     };
-    crate::daemons::validate_id("namespace", explicit)?;
+    crate::daemons::validate_namespace(explicit)?;
     if settings.is_none_or(|s| s.namespace_per_worktree()) && is_linked_worktree(root) {
         // Linked worktrees of one repository share the configuration that names
         // the namespace, so an unsuffixed namespace would make two checkouts
@@ -477,6 +477,28 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
         }
         daemons.insert(daemon.name.clone(), toml::Value::Table(table));
     }
+    let mut groups = toml::Table::new();
+    for group in &set.groups {
+        // Qualified IDs keep the group bound to this project's namespace. A member
+        // this project no longer owns, because a nearer config redefined that name,
+        // has no ID here, and pitchfork rejects a group naming an undefined daemon.
+        let members = group
+            .daemons
+            .iter()
+            .filter(|name| set.daemons.contains_key(*name))
+            .map(|name| toml::Value::String(format!("{}/{name}", state.namespace)))
+            .collect::<Vec<_>>();
+        if members.is_empty() {
+            continue;
+        }
+        groups.insert(
+            group.name.clone(),
+            toml::Value::Table(toml::Table::from_iter([(
+                "daemons".into(),
+                toml::Value::Array(members),
+            )])),
+        );
+    }
     let mut doc = toml::Table::new();
     doc.insert(
         "settings".into(),
@@ -489,6 +511,9 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
         )])),
     );
     doc.insert("daemons".into(), toml::Value::Table(daemons));
+    if !groups.is_empty() {
+        doc.insert("groups".into(), toml::Value::Table(groups));
+    }
     Ok(header + &toml::to_string_pretty(&doc)?)
 }
 
@@ -635,6 +660,63 @@ mod tests {
             resolve_namespace(&submodule, Some(&settings("entiredb", true))).unwrap(),
             "entiredb"
         );
+    }
+
+    #[test]
+    fn groups_render_with_qualified_daemon_ids() {
+        let daemon = |name: &str| super::super::Daemon {
+            name: name.to_string(),
+            source: PathBuf::from("/project/mise.toml"),
+            root: PathBuf::from("/project"),
+            table: toml::Table::from_iter([(
+                "run".into(),
+                toml::Value::String(format!("run {name}")),
+            )]),
+            preset: None,
+            task: None,
+            tool: None,
+            exports: Default::default(),
+            imported: false,
+        };
+        let set = DaemonSet {
+            daemons: ["api", "worker"]
+                .into_iter()
+                .map(|name| (name.to_string(), daemon(name)))
+                .collect(),
+            groups: vec![super::super::Group {
+                name: "web".into(),
+                source: PathBuf::from("/project/mise.toml"),
+                root: PathBuf::from("/project"),
+                members: vec!["api".into(), "worker".into()],
+                daemons: vec!["api".into(), "worker".into()],
+            }],
+            ..Default::default()
+        };
+        let state = State {
+            namespace: "proj".into(),
+            ..State::default()
+        };
+        let rendered = render(&set, &state).unwrap();
+        assert!(rendered.contains("[groups.web]"), "{rendered}");
+        assert!(rendered.contains("\"proj/api\""), "{rendered}");
+        assert!(rendered.contains("\"proj/worker\""), "{rendered}");
+        // A member this project no longer owns is left out rather than rendered as
+        // an ID pitchfork cannot resolve.
+        let mut overridden = set.clone();
+        overridden.groups[0].daemons.push("elsewhere".into());
+        let rendered = render(&overridden, &state).unwrap();
+        assert!(rendered.contains("[groups.web]"), "{rendered}");
+        assert!(!rendered.contains("elsewhere"), "{rendered}");
+        // A group left with no members of its own is dropped entirely.
+        let mut empty = set.clone();
+        empty.groups[0].daemons = vec!["elsewhere".into()];
+        assert!(!render(&empty, &state).unwrap().contains("[groups"));
+        // Without groups the section is omitted entirely.
+        let bare = DaemonSet {
+            groups: Vec::new(),
+            ..set
+        };
+        assert!(!render(&bare, &state).unwrap().contains("[groups"));
     }
 
     #[test]

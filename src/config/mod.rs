@@ -622,6 +622,16 @@ impl Config {
             .get_or_try_init(|| crate::daemons::load(&self.config_files))
     }
 
+    /// Use `set` as this config's daemons instead of loading them from its files.
+    /// A configuration reloaded for one project root still sees a daemon name a
+    /// nearer project has taken over, so a caller that already resolved ownership
+    /// seeds the answer here, keeping tool requests and exported environment to
+    /// the daemons that project will actually register. Seeding after the daemons
+    /// have been read does nothing, which is why callers seed on a fresh config.
+    pub(crate) fn seed_daemons(&self, set: crate::daemons::DaemonSet) {
+        let _ = self.daemons.set(set);
+    }
+
     pub(crate) async fn get_tool_request_set(self: &Arc<Self>) -> eyre::Result<&ToolRequestSet> {
         self.tool_request_set
             .get_or_try_init(async || ToolRequestSetBuilder::new().build(self).await)

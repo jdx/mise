@@ -195,9 +195,69 @@ Start and restart install missing tools. Without names, start, stop, and restart
 target mise-managed daemons. Listing and status do not register configuration or
 start a supervisor. The TUI opens pitchfork's dashboard.
 
-Lifecycle commands accept project daemon names. Use pitchfork directly for group
-operations: mise rejects `--group` because pitchfork groups can include daemons
-outside the project.
+## Groups
+
+Name a set of project daemons in `[daemon_groups]` and use that name wherever a
+daemon name is accepted:
+
+```toml
+[daemon_groups]
+default = ["postgres", "nats", "core", "node0", "node1"]
+two-cluster = ["default", "core2", "c2-node0"]
+```
+
+A member is another daemon in the same project or another group in that same project,
+which expands in place. Members are validated when configuration loads, so a group can
+never select a daemon outside the project, including a same-named daemon in a parent or
+child project. An equivalent table form matching pitchfork's own
+syntax also works:
+
+```toml
+[daemon_groups.two-cluster]
+daemons = ["default", "core2", "c2-node0"]
+```
+
+```sh
+mise daemons start two-cluster
+mise daemons stop --group two-cluster
+mise daemons logs default
+```
+
+A positional name is resolved by each project in its own terms: it selects that
+project's group of that name, or failing that a daemon of that name. So if one
+project declares a group `web` and another declares a daemon `web`, the one name
+selects the group in the first and the daemon in the second. `--group` only ever
+selects a group, and never a daemon that happens to share its name.
+
+A nearer declaration replaces a same-name daemon completely, so the name belongs to
+the project that declared it last. A group in an outer project keeps naming it, but
+the daemon is started by the project that now owns it. With a parent declaring
+`default = ["postgres", "api"]` and a child redefining `postgres`, starting from the
+child runs one `postgres`, the child's, together with the parent's `api`. One service
+means one process, whichever project ends up owning it.
+
+A group is an alias in the configuration rather than persisted state, so removing
+one leaves nothing to expand. Daemons it started are still tracked by name: `mise
+daemons ls` lists them, and `mise daemons stop` without names stops every daemon
+the project is tracking.
+
+A group name may not repeat a daemon name in the same project, and a group must
+have at least one member. `--group` is accepted only for groups declared in
+`[daemon_groups]`; a pitchfork group defined elsewhere is rejected because it can
+include daemons outside the project. Use pitchfork directly for those.
+
+`mise daemons start` with no names starts the `default` group when the project
+declares one, and otherwise starts every project daemon. `restart` does the same,
+since it starts daemons too. `stop` without names still covers every project daemon.
+
+Each project resolves that on its own. With inherited daemons, a `default` group in
+one project does not limit what another project starts. Group names are project
+scoped in the same way, so nested projects may each declare their own `default`.
+
+Groups are also written to the generated pitchfork configuration with fully
+qualified daemon IDs, so `pitchfork start --group two-cluster` works natively.
+Pitchfork group names are global to its configuration, so choose distinct names
+across projects if you invoke pitchfork directly.
 
 ## Daemons from another project
 
