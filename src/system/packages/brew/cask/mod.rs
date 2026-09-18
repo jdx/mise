@@ -1158,6 +1158,9 @@ impl SystemPackageManager for BrewCaskManager {
             .await
     }
 
+    /// Reports each requested cask's state, resolving their metadata
+    /// concurrently. Results stay in request order: the caller zips this list
+    /// against the requests it passed in.
     async fn installed_with_options(
         &self,
         pkgs: &[PackageRequest],
@@ -1299,6 +1302,10 @@ async fn resolve_cask_for(
     fetch_cask(req, provision_ruby).await
 }
 
+/// Downloads the archives an upcoming install will need, ahead of the serial
+/// install loop. Resolution and download both run concurrently; placement does
+/// not. Every failure here is swallowed, since this is purely an optimisation
+/// and the serial pass reports real errors with their full context.
 async fn prewarm_downloads(
     pkgs: &[PackageRequest],
     mode: InstallMode,

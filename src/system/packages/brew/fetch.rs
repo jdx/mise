@@ -258,6 +258,8 @@ mod tests {
         );
     }
 
+    /// The ordering guarantee has to survive the fallible path too, not just
+    /// the infallible one.
     #[tokio::test]
     async fn concurrently_results_in_order_returns_input_order() {
         let futures: Vec<_> = (0..12usize)
@@ -272,6 +274,7 @@ mod tests {
         );
     }
 
+    /// Nothing to run is not an error, and must not trip the slot bookkeeping.
     #[tokio::test]
     async fn concurrently_in_order_handles_empty_input() {
         let futures: Vec<std::future::Ready<usize>> = Vec::new();
