@@ -39,8 +39,26 @@ const STALE_AFTER: Duration = Duration::from_secs(86_400);
 /// than misread.
 const INDEX_VERSION: u32 = 1;
 
+/// Cache directory for the bulk document, keyed to where the document actually
+/// came from.
+///
+/// `url_replacements` can point mise at a mirror or, in the e2e suite, at a
+/// local fixture. Those are different documents, so they cannot share a cache
+/// file: one run would otherwise answer from bytes another run fetched
+/// somewhere else. The canonical endpoint keeps the plain path so the common
+/// case stays readable; anything redirected gets its own directory.
 fn dir() -> PathBuf {
-    crate::dirs::CACHE.join("system-brew").join("api")
+    let base = crate::dirs::CACHE.join("system-brew").join("api");
+    let mut url = match url::Url::parse(BULK_URL) {
+        Ok(url) => url,
+        Err(_) => return base,
+    };
+    crate::http::apply_url_replacements(&mut url);
+    if url.as_str() == BULK_URL {
+        return base;
+    }
+    let digest = crate::hash::hash_sha256_to_str(url.as_str());
+    base.join(format!("redirected-{}", &digest[..16]))
 }
 
 fn document_path() -> PathBuf {
