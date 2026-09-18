@@ -661,9 +661,7 @@ pub(crate) fn in_linked_worktree(path: &Path) -> bool {
             // same submodule in two worktrees is two working copies, so keep
             // walking. Any other `.git` file is an independent repository, so
             // stop exactly as a nested `.git` directory does.
-            let submodule = read_gitdir(&dotgit)
-                .is_some_and(|g| g.components().any(|c| c.as_os_str() == "modules"));
-            if !submodule {
+            if !is_submodule_gitdir(&dotgit) {
                 return false;
             }
         }
@@ -716,6 +714,27 @@ fn worktree_common_dir(gitdir: &Path) -> Option<PathBuf> {
     // the top of a bare repository. Requiring it stops an arbitrary existing
     // directory from passing as the repository a worktree belongs to.
     common.join("HEAD").is_file().then_some(common)
+}
+
+/// Whether a `.git` file names a submodule's git dir.
+///
+/// git keeps a submodule's git dir at `<enclosing>/modules/<name>`, where the
+/// enclosing dir is the superproject's git dir, or that superproject worktree's
+/// private dir when the submodule sits inside a worktree. Requiring the path
+/// before `modules` to be a git dir is what separates a real submodule from an
+/// unrelated repository that merely has `modules` somewhere in its path.
+fn is_submodule_gitdir(dotgit_file: &Path) -> bool {
+    let Some(gitdir) = read_gitdir(dotgit_file) else {
+        return false;
+    };
+    let mut dir = gitdir.as_path();
+    while let Some(parent) = dir.parent() {
+        if dir.file_name() == Some(OsStr::new("modules")) {
+            return parent.join("HEAD").is_file();
+        }
+        dir = parent;
+    }
+    false
 }
 
 /// The git dir a `.git` *file* names, resolved against that file's own
@@ -1323,6 +1342,13 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         std::fs::create_dir_all(wt.join("packages/api")).unwrap();
         std::fs::write(main.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+        // git writes HEAD into the private dir as well, which is what a
+        // submodule inside this worktree is anchored against below.
+        std::fs::write(
+            main.join(".git/worktrees/wt/HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
         std::fs::write(
             wt.join(".git"),
             format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
@@ -1424,6 +1450,26 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/release
         )
         .unwrap();
         assert!(super::in_linked_worktree(&wt_sub));
+
+        // An unrelated repository whose git dir merely sits under a directory
+        // named `modules` is not a submodule: the path before `modules` is not
+        // a git dir, so it must not inherit the worktree's offset.
+        let lookalike = wt.join("lookalike");
+        let lookalike_git = base.join("plain/modules/repo");
+        std::fs::create_dir_all(&lookalike_git).unwrap();
+        std::fs::create_dir_all(&lookalike).unwrap();
+        std::fs::write(lookalike_git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            lookalike.join(".git"),
+            format!("gitdir: {}\n", lookalike_git.display()),
+        )
+        .unwrap();
+        assert!(!super::in_linked_worktree(&lookalike));
+
+        // Give the path before `modules` git metadata and it becomes a real
+        // submodule layout, which does follow its worktree.
+        std::fs::write(base.join("plain/HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert!(super::in_linked_worktree(&lookalike));
 
         // An independent repository nested in a worktree is its own single
         // copy, so it stops the walk like a nested `.git` directory would.
