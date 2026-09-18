@@ -860,8 +860,13 @@ fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String,
         return Some((token, TokenSource::CredentialCommand));
     }
 
-    // 4. native GitHub OAuth device-flow token
-    if let Some(token) = oauth::resolve_token(host) {
+    // 4. native GitHub OAuth device-flow token. Asked about the canonical host
+    // for the same reason as the credential command above: the resolver matches
+    // the configured OAuth endpoint, which knows `github.com` and
+    // `api.github.com` but not `raw.githubusercontent.com`, so passing the raw
+    // host would silently return no token for a user authenticated by device
+    // flow rather than by GITHUB_TOKEN.
+    if let Some(token) = oauth::resolve_token(canonical_token_host(host)) {
         return Some((token, TokenSource::GithubOauth));
     }
 
@@ -1458,7 +1463,10 @@ something_else = "value"
         env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", "ghes-secret");
 
         for host in ["raw.githubusercontent.com", "github.com", "api.github.com"] {
-            if let Some((token, _)) = resolve_token(host) {
+            // `resolve_token` would allow git credential helpers to run, which
+            // can block or prompt; the enterprise exclusion is unaffected by
+            // skipping them.
+            if let Some((token, _)) = resolve_token_inner(host, false) {
                 assert_ne!(
                     token, "ghes-secret",
                     "{host} must not receive MISE_GITHUB_ENTERPRISE_TOKEN"
