@@ -47,15 +47,18 @@ Go uses `GOPRIVATE` as the default for both `GONOPROXY` and `GONOSUMDB`. If you
 configure those variables separately, set each one according to the proxy and
 checksum-database privacy you need.
 
-When discovery goes through Go rather than a module proxy, reading a version's
-release date costs its own VCS round trip, so `mise ls-remote` only reports
-dates for the ten newest versions. Versions without a date are always eligible,
-so [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
-cannot hide a version older than those ten. That is ample for its 24h default;
-raise it to a long cutoff, such as `90d`, and a module that released more than
-ten times inside the window may still resolve to a version newer than the
-cutoff. Requesting `latest` is unaffected either way — mise asks Go for `latest`
-directly, in one query, and that answer carries a date.
+mise caps how many versions of a module it reports release dates for, on either
+route: the newest 100 through a module proxy, where a date is one cheap request
+among many in flight, and the newest 10 when it has to reach the module over
+VCS, where each date is its own round trip. A version with no date is always
+eligible, so
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age) cannot
+hide a version older than whatever the listing dated. Both caps are ample for
+its 24h default. Raise it to a long cutoff, such as `90d`, and a module that
+published more than 10 releases (over VCS) or 100 releases (through a proxy)
+inside that window may still resolve to a version newer than the cutoff.
+Requesting `latest` avoids the cap — mise asks for `latest` directly, in one
+query, and that answer carries a date.
 
 You can also pin a specific Go module version, including an unreleased
 pseudo-version:
