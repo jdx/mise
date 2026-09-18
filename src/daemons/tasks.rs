@@ -46,6 +46,7 @@ pub(crate) fn required(tasks: &[Task], set: &DaemonSet) -> Result<IndexSet<Strin
 pub(crate) fn gate(experimental: bool, tasks: &[Task]) -> Result<bool> {
     let declared = tasks.iter().any(|task| match &task.daemons {
         None | Some(crate::task::TaskDaemons::All(false)) => false,
+        Some(crate::task::TaskDaemons::Names(names)) => !names.is_empty(),
         Some(_) => true,
     });
     if declared && !experimental {
@@ -58,8 +59,9 @@ pub(crate) fn gate(experimental: bool, tasks: &[Task]) -> Result<bool> {
 /// them ready. Already-running daemons are left alone, so this is cheap to
 /// repeat.
 ///
-/// A dry run still applies the experimental gate and resolves every name, so a
-/// typo fails there as it would on a real run; it just stops before pitchfork.
+/// A dry run still applies the experimental gate, resolves every name, and
+/// validates task-backed daemons, so configuration errors fail there as they
+/// would on a real run; it just stops before pitchfork.
 ///
 /// Names are resolved per project, not against one merged set. In a monorepo a
 /// dependency task can live in a different subproject, and two subprojects may
@@ -97,7 +99,13 @@ pub(crate) async fn start(config: &Arc<Config>, tasks: &[Task], dry_run: bool) -
         }
     }
     if dry_run {
-        for (root, (_, names)) in &wanted {
+        for (root, (scoped, names)) in &wanted {
+            let scoped = runtime::config_for_root(scoped, root).await?;
+            scoped
+                .daemons()?
+                .for_root(root)
+                .validate_tasks(&scoped)
+                .await?;
             for name in names {
                 info!("[dry-run] would start daemon {name} in {}", root.display());
             }
@@ -209,5 +217,6 @@ mod tests {
         // A run that requires no daemons is never held to the requirement.
         assert!(!gate(false, &[task("test", None)]).unwrap());
         assert!(!gate(false, &[task("test", Some(TaskDaemons::All(false)))]).unwrap());
+        assert!(!gate(false, &[task("test", Some(TaskDaemons::Names(vec![])))]).unwrap());
     }
 }

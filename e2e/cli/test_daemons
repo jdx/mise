@@ -86,6 +86,24 @@ version = "18"
 TOML
 assert_contains "mise daemons ls 2>&1 || true" 'invalid daemon name'
 
+# Dry runs validate task-backed daemons without starting pitchfork.
+cat >mise.toml <<'TOML'
+[tasks.dev]
+daemons = ["api"]
+run = "echo dev"
+[daemons.api]
+task = "missing"
+TOML
+assert_fail_contains "mise run --dry-run dev 2>&1" 'daemon api runs unknown task "missing"'
+
+# An empty daemon requirement is a no-op and does not require experimental mode.
+cat >mise.toml <<'TOML'
+[tasks.dev]
+daemons = []
+run = "echo dev"
+TOML
+assert_succeed "MISE_EXPERIMENTAL=0 mise run --dry-run dev"
+
 # Preset tool requests obey their declaring configuration's lock policy.
 cat >mise.toml <<'TOML'
 [tool_config]

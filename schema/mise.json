@@ -5857,6 +5857,9 @@
                 },
                 {
                   "required": ["task"]
+                },
+                {
+                  "required": ["args"]
                 }
               ]
             },
@@ -5908,7 +5911,14 @@
             "type": "object",
             "required": ["preset", "version"],
             "not": {
-              "required": ["task"]
+              "anyOf": [
+                {
+                  "required": ["task"]
+                },
+                {
+                  "required": ["args"]
+                }
+              ]
             },
             "properties": {
               "preset": {
