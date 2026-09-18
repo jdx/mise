@@ -492,14 +492,19 @@ A preset renders its resolved port into its own conventional variables, so
 `port = "auto"` moves `PGPORT`, `DATABASE_URL`, and `REDIS_URL` with it. A custom daemon
 has no such convention, so mise exports `<NAME>_PORT`, upper-cased with punctuation
 replaced by underscores. `[daemons.api]` exports `API_PORT`, and `[daemons.web-ui]`
-exports `WEB_UI_PORT`. The variable is a convenience, so a name that cannot produce one
-costs only the variable and never the daemon. Two daemons whose names differ only by
-punctuation, such as `web-ui` and `web_ui`, would claim the same variable, so neither
-exports it and mise warns. A name beginning with a digit cannot be a shell variable at
-all, so it goes without one and mise warns. Both daemons run normally in either case,
-and the ports still reach pitchfork. This applies to an integer `port` as well, so a custom daemon's
-port is always visible to `mise env`, to `mise x`, and to the daemon's own process.
-Pitchfork additionally injects `$PORT` into the process it starts.
+exports `WEB_UI_PORT`. This applies to an integer `port` as well as an auto one, so
+wherever the variable exists it makes the port visible to `mise env`, to `mise x`, and
+to the daemon's own process.
+
+The variable is a convenience, so a name that cannot produce a usable one costs only
+the variable and never the daemon. Two daemons whose names differ only by punctuation,
+such as `web-ui` and `web_ui`, would claim the same variable, so neither exports it and
+mise warns. A name beginning with a digit cannot be a shell variable at all, so it goes
+without one and mise warns. Both daemons run normally in either case, and their ports
+still reach pitchfork, which injects `$PORT` into the process it starts regardless. The
+same name decides `<NAME>_URL`, described in
+[Stable URLs per worktree](#stable-urls-per-worktree), so a name that withholds one
+withholds both.
 
 Use `port` rather than `ready_port` with `port = "auto"`. A literal `ready_port` cannot
 follow an allocated port, whereas `port` is what mise resolves and pins.
@@ -547,7 +552,8 @@ daemon or an open shell session in that project does not make it look busy. A st
 project never reserves a port, so two projects can still take turns on a default port
 such as 5432 exactly as before. The check only probes a root whose port actually
 matches, and it leaves the port available when that project's supervisor cannot be
-reached. It is a diagnostic rather than a reservation: two projects starting at the same
+reached. It also runs for an automatic start whose configuration has not changed, since
+that is exactly when another project can take a port that was free last time. It is a diagnostic rather than a reservation: two projects starting at the same
 instant can still both see a port as free, and binding remains the final arbiter.
 
 ## Stable URLs per worktree
