@@ -471,7 +471,9 @@ impl Backend for UnifiedGitBackend {
         tv: &ToolVersion,
         check_symlink: bool,
     ) -> Result<bool> {
-        if !self.is_version_installed(config, tv, check_symlink) {
+        if !self.is_version_installed(config, tv, check_symlink)
+            || self.locked_checksum_drifted(config, tv)
+        {
             return Ok(false);
         }
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;

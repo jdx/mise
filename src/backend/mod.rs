@@ -2879,8 +2879,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
         else {
             return false;
         };
+        // No marker means either a pre-fix install or one this function never
+        // covered; treat it like a rolling version with no stored checksum
+        // and assume outdated rather than silently trusting it.
         install_state::read_checksum(&tv.install_path())
-            .is_some_and(|stored| stored != *lock_checksum)
+            .is_none_or(|stored| stored != *lock_checksum)
     }
 
     async fn is_install_satisfied_or_false(

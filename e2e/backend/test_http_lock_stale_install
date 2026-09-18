@@ -70,3 +70,18 @@ assert_contains "cat mise.lock" "sha256:${SHA_B}"
 # lockfile no longer describes.
 mise install --locked
 assert_contains "mise x -- mytool" "mytool build-b"
+
+# An install from before this checksum marker existed has no marker file at
+# all. Missing must be treated the same as mismatched, not as "trust it".
+INSTALL_PATH="$(mise where "http:mytool-stale@1.0.0")"
+rm -f "$INSTALL_PATH/.mise.checksum"
+cat >mise.toml <<EOF
+[tools."http:mytool-stale"]
+version = "1.0.0"
+bin = "mytool"
+url = "http://127.0.0.1:${PORT}/mytool-a"
+checksum_url = "http://127.0.0.1:${PORT}/mytool-a_SHASUMS"
+EOF
+mise lock --platform "$PLATFORM"
+mise install --locked
+assert_contains "mise x -- mytool" "mytool build-a"
