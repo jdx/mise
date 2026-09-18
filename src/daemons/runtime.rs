@@ -29,8 +29,10 @@ pub(crate) struct State {
     #[serde(default)]
     pub ports: BTreeMap<String, PortClaim>,
     /// Fingerprint of the other projects' state files as of the last conflict
-    /// check. A shell hook runs on every prompt, so an unchanged neighbourhood
-    /// is recognised from metadata instead of re-reading and parsing each one.
+    /// check, recorded only when that check found no neighbour claiming any of
+    /// this project's ports. A shell hook runs on every prompt, so recognising
+    /// that unchanged case from metadata avoids re-reading and parsing each
+    /// file. Empty means the last check was not clear and must be repeated.
     #[serde(default)]
     pub ports_scan: String,
 }
@@ -43,10 +45,10 @@ pub(crate) struct State {
 /// unchanged. Missing one costs a delayed hint rather than a wrong port, and an
 /// explicit start scans regardless.
 fn siblings_fingerprint(mine: &Path) -> String {
-    let Ok(entries) = std::fs::read_dir(crate::dirs::STATE.join("daemons")) else {
-        return String::new();
-    };
+    let entries = std::fs::read_dir(crate::dirs::STATE.join("daemons"));
     let mut seen: Vec<String> = entries
+        .into_iter()
+        .flatten()
         .flatten()
         .filter(|e| e.path() != mine)
         .filter_map(|e| {
@@ -353,15 +355,23 @@ impl Runtime {
         root: &Path,
         ports: &BTreeMap<String, PortClaim>,
         starting: &[String],
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        let claimed: Vec<_> = claimed_ports(&state_dir(root))
+            .into_iter()
+            .filter(|(other, _, _)| other.root != root)
+            .collect();
+        // Over every claim this project holds, not only the ones starting: when
+        // no neighbour names any of them, no subset can conflict and no daemon
+        // starting or stopping elsewhere can change that. It is the one answer
+        // that stays true without re-asking, so it is the only one cached.
+        let clear = !ports
+            .values()
+            .any(|claim| claimed.iter().any(|(_, _, port)| *port == claim.port));
         let ports = &ports_being_started(ports, starting);
         if ports.is_empty() {
-            return Ok(());
+            return Ok(clear);
         }
-        for (other, other_name, port) in claimed_ports(&state_dir(root)) {
-            if other.root == root {
-                continue;
-            }
+        for (other, other_name, port) in claimed {
             let Some((name, _)) = ports.iter().find(|(_, claim)| claim.port == port) else {
                 continue;
             };
@@ -396,7 +406,7 @@ impl Runtime {
                 other.root.display()
             );
         }
-        Ok(())
+        Ok(clear)
     }
 
     /// Register this project's daemons with pitchfork.
@@ -468,14 +478,26 @@ impl Runtime {
         // fingerprinted from metadata first: unchanged siblings and unchanged
         // claims of our own can only give the answer they gave last time. The
         // liveness probe beyond that runs only once a port actually matches.
-        state.ports_scan = siblings_fingerprint(&state_dir(root));
-        if force_registration
-            || state.ports_scan != previous.ports_scan
-            || state.ports != previous.ports
+        let scan = siblings_fingerprint(&state_dir(root));
+        // A recorded fingerprint means the last scan found no neighbour naming
+        // any of this project's ports. That is the only answer safe to reuse:
+        // it does not depend on whether anybody's daemon is running, nor on
+        // which daemons this command starts, so neither a neighbour starting
+        // one nor a change of selection can invalidate it. Anything else is
+        // re-checked, because liveness is not visible in a state file.
+        let reusable = !force_registration
+            && !previous.ports_scan.is_empty()
+            && scan == previous.ports_scan
+            && state.ports == previous.ports;
+        state.ports_scan = if reusable
+            || self
+                .check_port_conflicts(root, &state.ports, starting)
+                .await?
         {
-            self.check_port_conflicts(root, &state.ports, starting)
-                .await?;
-        }
+            scan
+        } else {
+            String::new()
+        };
         if !force_registration
             && state.config_hash == previous.config_hash
             && std::fs::read(&file).ok().as_deref() == Some(content.as_bytes())
@@ -762,6 +784,60 @@ mod tests {
                 .iter()
                 .any(|(s, _, _)| s.root == theirs)
         );
+    }
+
+    #[test]
+    fn a_scan_is_only_clear_when_no_neighbour_names_any_of_our_ports() {
+        // Clearance is what makes the skip sound, so it must be judged over
+        // every claim this project holds, not just the ones starting: a port
+        // nobody else names cannot conflict however daemons come and go.
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = tmp.path().join("mine");
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let state = State {
+            root: other.clone(),
+            ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(5432))]),
+            ..State::default()
+        };
+        let dir = state_dir(&other);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("state.json"),
+            serde_json::to_vec_pretty(&state).unwrap(),
+        )
+        .unwrap();
+
+        let claimed: Vec<_> = claimed_ports(&state_dir(&mine))
+            .into_iter()
+            .filter(|(o, _, _)| o.root != mine)
+            .collect();
+        let clear = |ports: &BTreeMap<String, PortClaim>| {
+            !ports
+                .values()
+                .any(|claim| claimed.iter().any(|(_, _, port)| *port == claim.port))
+        };
+
+        // Ports nobody else names: safe to remember as clear.
+        assert!(clear(&BTreeMap::from([(
+            "redis".to_string(),
+            PortClaim::fixed(6379)
+        )])));
+
+        // A neighbour names 5432, so this is not clear even though that daemon
+        // may be stopped right now. Liveness decides the verdict, and liveness
+        // is not visible here, so the answer must not be reused.
+        assert!(!clear(&BTreeMap::from([(
+            "pg".to_string(),
+            PortClaim::fixed(5432)
+        )])));
+
+        // Judged over every claim, so an unrelated overlap still blocks reuse.
+        assert!(!clear(&BTreeMap::from([
+            ("redis".to_string(), PortClaim::fixed(6379)),
+            ("pg".to_string(), PortClaim::fixed(5432)),
+        ])));
     }
 
     #[test]
