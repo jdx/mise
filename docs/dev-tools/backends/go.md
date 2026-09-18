@@ -31,6 +31,35 @@ To select one, run `mise use go:github.com/DarthSim/hivemind@VERSION`, replacing
 `VERSION` with a listed release. mise writes the resulting executable into its
 own installation directory instead of your ordinary `GOBIN`.
 
+### Version discovery and release dates
+
+For `latest`, mise first queries the module proxy or `go list` directly for the
+latest stable release. This avoids listing every version and fetching a release
+date for each one, which can time out on modules with many tags.
+
+Commands such as `mise ls-remote` and version requests such as `@1` still use the
+full version list. To keep these lookups fast, mise fetches release dates for
+only the newest 100 versions through a module proxy, or the newest 10 through
+`go list`. All versions remain in the list; versions outside these limits have
+no release date.
+
+A version with no release date is still checked against
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age):
+before mise settles on one, it reads that single version's date and moves
+further back while the answer is newer than the cutoff. A cutoff deep enough to
+reach past the dated versions therefore costs one query per version it skips,
+which can make the first resolution of a module with many releases noticeably
+slower through `go list`. The direct `latest` query includes a release date, and
+if that release is too recent mise falls back to the full list and dates
+candidates from there.
+
+::: warning Unreachable sources
+If reading a version's date fails outright — an unreachable proxy, a VCS host
+that times out — mise warns and allows that version rather than failing the
+install. A version can therefore still slip past the cutoff on a bad network,
+and the warning is what tells you it happened.
+:::
+
 ### Private modules
 
 Private modules use Go's normal VCS authentication. Export `GOPRIVATE`, or
@@ -47,23 +76,7 @@ Go uses `GOPRIVATE` as the default for both `GONOPROXY` and `GONOSUMDB`. If you
 configure those variables separately, set each one according to the proxy and
 checksum-database privacy you need.
 
-mise caps how many versions of a module it reports release dates for, on either
-route: the newest 100 through a module proxy, and the newest 10 when it has to
-reach the module over VCS, where each date costs its own round trip. That cap
-shows up in `mise ls-remote`, which lists the older versions without a date.
-The cap does not weaken
-[`minimum_release_age`](/configuration/settings.html#minimum_release_age): on
-both routes, before mise settles on a version it has no date for, it reads that
-one version's date and moves further back while the answer is newer than the
-cutoff. A cutoff deep enough to reach past the dated versions therefore costs one
-extra query per version it skips, which is why a long cutoff such as `90d` can
-make the first resolution of a module with many releases noticeably slower over
-VCS. If one of those reads fails outright — an unreachable proxy, a VCS host that
-times out — mise warns and allows the version rather than failing the install, so
-a version can still slip past the cutoff on a bad network. Requesting `latest` usually avoids all of it — mise
-asks for `latest` directly, in one query — though when that answer is itself
-newer than the cutoff, mise falls back to the version list and dates candidates
-from there.
+### Pinned versions
 
 You can also pin a specific Go module version, including an unreleased
 pseudo-version:
