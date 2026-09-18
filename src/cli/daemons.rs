@@ -143,6 +143,13 @@ impl Daemons {
                 if name.contains('/') {
                     return Ok(resolved);
                 }
+                // A name this project imported means that import, whatever the
+                // word means elsewhere. Checked before groups, because another
+                // project may use it for a group and leaving it bare would
+                // expand that group instead of starting the import.
+                if loaded.aliases.contains_key(name) {
+                    return Ok(resolved);
+                }
                 // A bare name can be a group, which `selects` expands against
                 // the project that declares it. Keep it bare: another project
                 // may use the same word for a daemon, and qualifying it here
