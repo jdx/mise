@@ -6272,11 +6272,21 @@ type OnDemandReleaseDates = HashMap<(String, String), String>;
 static ON_DEMAND_RELEASE_DATES: LazyLock<Mutex<OnDemandReleaseDates>> =
     LazyLock::new(Default::default);
 
+/// How many dates to keep. Reaching this needs a cutoff deep enough to walk
+/// past a listing's dated versions, repeated across hundreds of tools, so a CLI
+/// run never comes close; the bound is here so a long-lived process (a daemon,
+/// an embedded use) cannot grow this without end. Forgetting costs a repeated
+/// lookup, nothing more, so the simplest bound will do.
+const ON_DEMAND_RELEASE_DATE_LIMIT: usize = 1024;
+
 fn remember_on_demand_release_date(backend_id: &str, version: &str, created_at: Option<&str>) {
     let Some(created_at) = created_at else {
         return;
     };
     if let Ok(mut dates) = ON_DEMAND_RELEASE_DATES.lock() {
+        if dates.len() >= ON_DEMAND_RELEASE_DATE_LIMIT {
+            dates.clear();
+        }
         dates.insert(
             (backend_id.to_string(), version.to_string()),
             created_at.to_string(),
