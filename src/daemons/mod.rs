@@ -99,6 +99,14 @@ pub(crate) struct Group {
     pub daemons: Vec<String>,
 }
 
+/// What a bare name resolves to for a project; see [`DaemonSet::resolve_bare`].
+pub(crate) enum BareName<'a> {
+    /// A group declared by this project or an ancestor, expanded per project.
+    Group,
+    /// A daemon reached with `project`, and the qualified ID it answers to.
+    Import(&'a str),
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Daemon {
     /// Name inside its own project; the key in the owning project's pitchfork config.
@@ -299,13 +307,22 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let unresolved = set.import_errors.clone();
     let mut blocked: IndexMap<String, String> = IndexMap::new();
     for (key, daemon) in set.daemons.iter_mut().filter(|(_, d)| !d.imported) {
-        // Only the imports this daemon's own project declared can rename its
-        // dependencies.
-        let imports: IndexMap<String, String> = imported_ids
-            .iter()
-            .filter(|((root, _), _)| *root == daemon.root)
-            .map(|((_, name), id)| (name.clone(), id.clone()))
-            .collect();
+        // The imports this daemon's project reaches, its own and the ones it
+        // inherits, since a child can name a `project` reference its parent
+        // declared. Nearest declaration wins.
+        let imports: IndexMap<String, String> = daemon
+            .root
+            .ancestors()
+            .flat_map(|ancestor| {
+                imported_ids
+                    .iter()
+                    .filter(move |((root, _), _)| root.as_path() == ancestor)
+                    .map(|((_, name), id)| (name.clone(), id.clone()))
+            })
+            .fold(IndexMap::new(), |mut acc, (name, id)| {
+                acc.entry(name).or_insert(id);
+                acc
+            });
         if let Some(missing) = rewrite_depends(&mut daemon.table, &imports, &unresolved)? {
             blocked.insert(key.clone(), missing);
         }
@@ -1036,10 +1053,30 @@ impl DaemonSet {
             .map(|(_, id)| id.as_str())
     }
 
-    /// Whether `root` imported a daemon under this name.
+    /// What a bare name means to a project.
+    ///
+    /// A project inherits its ancestors' daemons and groups and may redefine
+    /// them, so the nearest declaration wins. Within one project the two cannot
+    /// collide: a group conflicting with a daemon of the same name there is
+    /// rejected when configuration loads.
+    pub(crate) fn resolve_bare(&self, root: &Path, name: &str) -> Option<BareName<'_>> {
+        root.ancestors().find_map(|ancestor| {
+            if self
+                .groups
+                .iter()
+                .any(|g| g.root == ancestor && g.name == name)
+            {
+                return Some(BareName::Group);
+            }
+            self.aliases
+                .get(&(ancestor.to_path_buf(), name.to_string()))
+                .map(|id| BareName::Import(id.as_str()))
+        })
+    }
+
+    /// Whether `root` reaches an import under this name, its own or inherited.
     pub(crate) fn imported_in(&self, root: &Path, name: &str) -> bool {
-        self.aliases
-            .contains_key(&(root.to_path_buf(), name.to_string()))
+        matches!(self.resolve_bare(root, name), Some(BareName::Import(_)))
     }
 
     /// The pitchfork namespace for a project root, when this set declares daemons for it.
@@ -1849,6 +1886,43 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains(&app.display().to_string()), "{err}");
+    }
+
+    #[test]
+    fn a_child_reaches_an_import_its_parent_declared() {
+        let _serial = import_lock();
+        // Configuration is inherited, so a child may name a `project` reference
+        // its parent declared; the rewritten dependency has to carry the ID the
+        // daemon answers to, or pitchfork looks it up in the child's namespace.
+        let tmp = tempfile::tempdir().unwrap();
+        let mirror = tmp.path().join("mirror");
+        referenced_project(
+            &mirror,
+            "[daemons_settings]\nnamespace = 'remote'\n[daemons.worker]\nrun = 'exec worker'\n",
+        );
+        let parent = tmp.path().join("parent");
+        let child = parent.join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        let config = files(&[
+            (
+                child.join("mise.toml").to_str().unwrap(),
+                "[daemons.api]\nrun = 'exec api'\ndepends = ['pipeline']\n",
+            ),
+            (
+                parent.join("mise.toml").to_str().unwrap(),
+                &format!(
+                    "[daemons.pipeline]\nproject = {}\nname = 'worker'\n",
+                    toml::Value::String(mirror.to_string_lossy().into_owned())
+                ),
+            ),
+        ]);
+        let set = load(&config).unwrap();
+        assert_eq!(
+            set.daemons["api"].table["depends"][0].as_str(),
+            Some("remote/worker")
+        );
+        // The child reaches the inherited import by name on the command line too.
+        assert!(set.imported_in(&child, "pipeline"));
     }
 
     #[test]

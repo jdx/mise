@@ -143,20 +143,18 @@ impl Daemons {
                 if name.contains('/') {
                     return Ok(resolved);
                 }
-                // A name this project imported means that import, whatever the
-                // word means elsewhere. Checked before groups, because another
-                // project may use it for a group and leaving it bare would
-                // expand that group instead of starting the import. Asked of
-                // this project only: an ancestor's import must not shadow a
-                // group declared here.
-                if loaded.imported_in(&project_root, name) {
-                    return Ok(resolved);
+                // Ask this project what the word means, nearest declaration
+                // first. An import becomes the ID it answers to; a group stays
+                // bare so `selects` expands it against the project that
+                // declares it, which is also how a group in an unrelated
+                // project keeps its own meaning.
+                match loaded.resolve_bare(&project_root, name) {
+                    Some(daemons::BareName::Import(id)) => return Ok(id.to_string()),
+                    Some(daemons::BareName::Group) => return Ok(name.clone()),
+                    None => {}
                 }
-                // A bare name can be a group, which `selects` expands against
-                // the project that declares it. Keep it bare: another project
-                // may use the same word for a daemon, and qualifying it here
-                // would pick that daemon everywhere and expand the group
-                // nowhere.
+                // A group no project in this tree declares can still belong to
+                // one of the other loaded roots, which resolves it itself.
                 if loaded.groups.iter().any(|group| group.name == *name) {
                     return Ok(name.clone());
                 }
