@@ -641,6 +641,10 @@ These settings merge by key across project configuration files and are inherited
 by child projects. They are ignored in global and system configuration. See
 [Namespaces](/daemons#namespaces) for naming rules, inheritance, and worktree behavior.
 
+### `[daemon_groups]`
+
+Experimental named sets of project daemons. Each member is a daemon or another group declared in the same project, so a group never selects daemons outside it. Group names work wherever `mise daemons` accepts a daemon name. See [daemons](/daemons#groups).
+
 ## Environment variables
 
 ::: tip

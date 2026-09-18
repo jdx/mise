@@ -118,7 +118,7 @@ impl Daemons {
         if !roots.iter().any(|r| r == root) {
             roots.push(root.to_path_buf());
         }
-        let (requested_names, flags) = split_args(action, &args)?;
+        let (requested_names, groups, flags) = split_args(action, &args)?;
         // An import that could not be resolved is fatal only when this command
         // names it. Someone whose sibling checkout is missing can still list and
         // stop their own daemons; they are told what is unavailable and why.
@@ -136,12 +136,18 @@ impl Daemons {
             warn!("[daemons.{name}] is unavailable: {err}");
         }
         let install = matches!(action, "start" | "restart");
-        let names: Vec<String> = requested_names
+        // A positional argument naming a declared group stays unqualified: a
+        // group is resolved against each project's own [daemon_groups], so
+        // pinning it to one namespace would make it select nothing.
+        let selectors: Vec<Selector> = requested_names
             .iter()
             .map(|name| {
+                if loaded.groups.iter().any(|group| &group.name == name) {
+                    return Ok(Selector::Group(name.clone()));
+                }
                 let resolved = loaded.resolve_alias(name);
                 if name.contains('/') {
-                    return Ok(resolved);
+                    return Ok(Selector::Name(resolved));
                 }
                 let owner = loaded
                     .daemons
@@ -166,10 +172,12 @@ impl Daemons {
                     }
                 };
                 let daemon_name = resolved.rsplit('/').next().unwrap_or(&resolved);
-                Ok(format!("{namespace}/{daemon_name}"))
+                Ok(Selector::Name(format!("{namespace}/{daemon_name}")))
             })
+            .chain(groups.iter().cloned().map(|g| Ok(Selector::Group(g))))
             .collect::<Result<_>>()?;
         let mut root_ids = Vec::new();
+        let mut root_sets = Vec::new();
         for root in &roots {
             let previous = runtime::read_state(root)?;
             let namespace = match loaded.namespace_for(root) {
@@ -177,19 +185,45 @@ impl Daemons {
                 None if previous.namespace.is_empty() => runtime::namespace(root)?,
                 None => previous.namespace.clone(),
             };
+            let set = loaded.for_root(root);
             let mut ids = if install { Vec::new() } else { previous.ids };
             ids.extend(
-                loaded
-                    .for_root(root)
-                    .daemons
+                set.daemons
                     .values()
                     .map(|daemon| format!("{namespace}/{}", daemon.name)),
             );
             root_ids.push(ids);
+            root_sets.push(set);
+        }
+        // A pitchfork group can name daemons outside the project, so only groups
+        // declared in [daemon_groups] are accepted here.
+        for group in &groups {
+            if !root_sets.iter().any(|set| set.group(group).is_some()) {
+                // A group is an alias in the configuration, not persisted state, so a
+                // removed one cannot be expanded. Daemons it started are still tracked
+                // by name, which is the way back to them.
+                let hint = if install {
+                    "declare the group in [daemon_groups] or use pitchfork directly for its own groups"
+                } else {
+                    "declare the group in [daemon_groups], or run `mise daemons ls` to name daemons a removed group started"
+                };
+                bail!("no [daemon_groups] entry named {group:?}; {hint}");
+            }
         }
         // Validate the entire request before any root installs tools or changes state.
-        for (name, requested) in names.iter().zip(&requested_names) {
-            if !root_ids.iter().flatten().any(|id| matches_name(id, name)) {
+        // A qualified selector carries the namespace the user did not type, so
+        // report the name they actually asked for.
+        for (selector, requested) in selectors.iter().zip(
+            requested_names
+                .iter()
+                .chain(groups.iter())
+                .map(String::as_str),
+        ) {
+            if !root_ids
+                .iter()
+                .zip(&root_sets)
+                .any(|(ids, set)| ids.iter().any(|id| selects(set, id, selector)))
+            {
                 bail!("no matching project daemons for {requested:?}");
             }
         }
@@ -230,7 +264,12 @@ impl Daemons {
             let requested = root_ids
                 .iter()
                 .flatten()
-                .filter(|id| names.is_empty() || names.iter().any(|name| matches_name(id, name)))
+                .filter(|id| {
+                    selectors.is_empty()
+                        || root_sets
+                            .iter()
+                            .any(|set| selectors.iter().any(|s| selects(set, id, s)))
+                })
                 .cloned()
                 .collect::<Vec<_>>();
             let starting = candidates.with_dependencies(&requested);
@@ -254,23 +293,34 @@ impl Daemons {
         let mut pending = Vec::new();
         let mut rows = Vec::new();
         let mut matched = false;
-        let mut root_entries: Vec<_> = roots.into_iter().zip(root_ids).collect();
+        let mut root_entries: Vec<_> = roots
+            .into_iter()
+            .zip(root_ids)
+            .zip(root_sets)
+            .map(|((root, ids), set)| (root, ids, set))
+            .collect();
         if install {
             // Startup holds project locks until execution. Acquire them in a
             // consistent order even when callers import the projects differently.
             root_entries.sort_by(|a, b| a.0.cmp(&b.0));
         }
-        for (root, ids) in root_entries {
+        for (root, ids, root_set) in root_entries {
+            // Each root resolves the request against its own groups, so a `default`
+            // group in one project never suppresses another project's daemons. This
+            // is the one place selectors are resolved, from the set the request was
+            // validated against rather than the per-root reload used for tools and
+            // the generated configuration.
+            let root_selectors = effective_selectors(&selectors, &root_set, action);
             if install {
                 if starting.for_root(&root).daemons.is_empty()
-                    && (!names.is_empty() || root != project_root)
+                    && (!root_selectors.is_empty() || root != project_root)
                 {
                     continue;
                 }
-            } else if !names.is_empty()
+            } else if !root_selectors.is_empty()
                 && !ids
                     .iter()
-                    .any(|id| names.iter().any(|name| matches_name(id, name)))
+                    .any(|id| root_selectors.iter().any(|s| selects(&root_set, id, s)))
             {
                 continue;
             }
@@ -378,10 +428,15 @@ impl Daemons {
             } else {
                 (previous, None)
             };
+            // `root_selectors` came from the same set the request was validated
+            // against, so selection cannot disagree with that validation.
             let mut selected: Vec<_> = state
                 .ids
                 .iter()
-                .filter(|id| names.is_empty() || names.iter().any(|name| matches_name(id, name)))
+                .filter(|id| {
+                    root_selectors.is_empty()
+                        || root_selectors.iter().any(|s| selects(&root_set, id, s))
+                })
                 .cloned()
                 .collect();
             if install {
@@ -451,10 +506,53 @@ fn matches_name(id: &str, name: &str) -> bool {
     id == name || id.rsplit('/').next() == Some(name)
 }
 
-/// Separate positional IDs from pitchfork options before matching project roots.
-/// Value-taking options must retain their values even when a value is a daemon name.
-fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>)> {
+/// What the user asked for. A positional argument may name a daemon or a group and
+/// is resolved per project root; `--group` only ever names a group, so it can never
+/// fall back to a same-named daemon in an unrelated project.
+#[derive(Debug, Clone, PartialEq)]
+enum Selector {
+    Name(String),
+    Group(String),
+}
+
+/// Whether `id`, a daemon of `set`'s project, is selected. Groups are looked up in
+/// that same project, so membership never crosses a project boundary.
+fn selects(set: &daemons::DaemonSet, id: &str, selector: &Selector) -> bool {
+    match selector {
+        Selector::Group(name) => set
+            .expand(name)
+            .is_some_and(|members| members.iter().any(|member| matches_name(id, member))),
+        Selector::Name(name) => match set.expand(name) {
+            Some(members) => members.iter().any(|member| matches_name(id, member)),
+            None => matches_name(id, name),
+        },
+    }
+}
+
+/// The selectors to apply to one project. A bare `start` or `restart` uses that
+/// project's own `default` group; a project without one still covers all of its
+/// daemons. `restart` is included because it starts daemons, and would otherwise
+/// start the ones a `default` group deliberately leaves out.
+fn effective_selectors(
+    selectors: &[Selector],
+    set: &daemons::DaemonSet,
+    action: &str,
+) -> Vec<Selector> {
+    if selectors.is_empty()
+        && matches!(action, "start" | "restart")
+        && set.group("default").is_some()
+    {
+        return vec![Selector::Group("default".into())];
+    }
+    selectors.to_vec()
+}
+
+/// Separate positional IDs, `--group` values, and pitchfork options before matching
+/// project roots. Value-taking options must retain their values even when a value is
+/// a daemon name.
+fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>, Vec<String>)> {
     let mut names = Vec::new();
+    let mut groups = Vec::new();
     let mut flags = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -466,12 +564,19 @@ fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>
             names.push(arg.clone());
             continue;
         }
-        if matches!(action, "start" | "stop" | "restart")
-            && (arg == "--group" || arg.starts_with("--group="))
-        {
-            bail!(
-                "mise daemons selects project daemon names; use pitchfork directly for --group operations"
-            );
+        if arg == "--group" || arg.starts_with("--group=") {
+            let value = match arg.strip_prefix("--group=") {
+                Some(value) => value.to_string(),
+                None => args
+                    .next()
+                    .ok_or_else(|| eyre::eyre!("--group requires a value"))?
+                    .clone(),
+            };
+            if value.is_empty() {
+                bail!("--group requires a value");
+            }
+            groups.push(value);
+            continue;
         }
         flags.push(arg.clone());
         let takes_value = match action {
@@ -524,37 +629,168 @@ fn split_args(action: &str, args: &[String]) -> Result<(Vec<String>, Vec<String>
             flags.push(args.next().unwrap().clone());
         }
     }
-    Ok((names, flags))
+    Ok((names, groups, flags))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::config_file::ConfigFile;
+    use crate::config::config_file::mise_toml::MiseToml;
+    use std::sync::Arc;
+
+    fn files(entries: &[(&str, &str)]) -> crate::config::ConfigMap {
+        entries
+            .iter()
+            .map(|(path, body)| {
+                let path = PathBuf::from(path);
+                let cf: Arc<dyn ConfigFile> = Arc::new(MiseToml::from_str(body, &path).unwrap());
+                (path, cf)
+            })
+            .collect()
+    }
 
     #[test]
     fn names_are_independent_of_flag_order_and_values() {
         for args in [vec!["--force", "missing"], vec!["missing", "--force"]] {
             let args = args.into_iter().map(String::from).collect::<Vec<_>>();
-            let (names, flags) = split_args("start", &args).unwrap();
+            let (names, groups, flags) = split_args("start", &args).unwrap();
             assert_eq!(names, ["missing"]);
+            assert!(groups.is_empty());
             assert_eq!(flags, ["--force"]);
         }
         let args = ["--grep", "api", "--since=5m", "web", "-n", "20"].map(String::from);
-        let (names, flags) = split_args("logs", &args).unwrap();
+        let (names, _, flags) = split_args("logs", &args).unwrap();
         assert_eq!(names, ["web"]);
         assert_eq!(flags, ["--grep", "api", "--since=5m", "-n", "20"]);
-        let (names, flags) =
+        let (names, _, flags) =
             split_args("logs", &["-fn".into(), "20".into(), "web".into()]).unwrap();
         assert_eq!(names, ["web"]);
         assert_eq!(flags, ["-fn", "20"]);
         assert!(split_args("logs", &["--grep".into()]).is_err());
-        for action in ["start", "stop", "restart"] {
-            for args in [vec!["--group", "web"], vec!["api", "--group=web"]] {
-                let args = args.into_iter().map(String::from).collect::<Vec<_>>();
-                assert!(split_args(action, &args).is_err());
-            }
-        }
-        let (names, _) = split_args("start", &["--".into(), "missing".into()]).unwrap();
+        let (names, _, _) = split_args("start", &["--".into(), "missing".into()]).unwrap();
         assert_eq!(names, ["missing"]);
+    }
+
+    #[test]
+    fn group_flags_are_collected_without_reaching_pitchfork() {
+        for action in ["start", "stop", "restart", "status", "logs"] {
+            let args = ["api", "--group", "web", "--group=db"].map(String::from);
+            let (names, groups, flags) = split_args(action, &args).unwrap();
+            assert_eq!(names, ["api"]);
+            assert_eq!(groups, ["web", "db"]);
+            assert!(flags.is_empty());
+        }
+        assert!(split_args("start", &["--group".into()]).is_err());
+        assert!(split_args("start", &["--group=".into()]).is_err());
+    }
+
+    #[test]
+    fn group_names_select_every_member() {
+        let set = daemons::load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemons.web]\nrun = 'web'\n[daemon_groups]\nbackend = ['api', 'worker']\n",
+        )]))
+        .unwrap();
+        let group = Selector::Group("backend".into());
+        assert!(selects(&set, "proj/api", &group));
+        assert!(selects(&set, "proj/worker", &group));
+        assert!(!selects(&set, "proj/web", &group));
+        // A positional argument resolves to the group of that name.
+        assert!(selects(&set, "proj/api", &Selector::Name("backend".into())));
+        // Daemon names keep working alongside groups.
+        assert!(selects(&set, "proj/web", &Selector::Name("web".into())));
+        assert!(selects(
+            &set,
+            "proj/web",
+            &Selector::Name("proj/web".into())
+        ));
+        assert!(!selects(
+            &set,
+            "proj/web",
+            &Selector::Name("missing".into())
+        ));
+    }
+
+    #[test]
+    fn a_group_selector_never_matches_a_same_named_daemon() {
+        // One project declares the group; an unrelated project declares a daemon
+        // that happens to share its name.
+        let loaded = daemons::load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nops = ['api']\n",
+            ),
+            ("/parent/mise.toml", "[daemons.ops]\nrun = 'ops'\n"),
+        ]))
+        .unwrap();
+        // Roots are absolutized, so derive them instead of hardcoding a path.
+        let other = loaded.for_root(&loaded.daemons["ops"].root.clone());
+        assert!(!selects(
+            &other,
+            "parent/ops",
+            &Selector::Group("ops".into())
+        ));
+        // The same word given positionally still selects that project's daemon.
+        assert!(selects(&other, "parent/ops", &Selector::Name("ops".into())));
+        let owner = loaded.for_root(&loaded.daemons["api"].root.clone());
+        assert!(selects(&owner, "child/api", &Selector::Group("ops".into())));
+    }
+
+    #[test]
+    fn a_positional_name_resolves_in_each_project_separately() {
+        // `web` is a group in the child and a daemon in the parent.
+        let loaded = daemons::load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemon_groups]\nweb = ['api']\n",
+            ),
+            ("/parent/mise.toml", "[daemons.web]\nrun = 'web'\n"),
+        ]))
+        .unwrap();
+        let child = loaded.for_root(&loaded.daemons["api"].root.clone());
+        let parent = loaded.for_root(&loaded.daemons["web"].root.clone());
+        let positional = Selector::Name("web".into());
+        // In the child it is the group, so it reaches the member and not the rest.
+        assert!(selects(&child, "child/api", &positional));
+        assert!(!selects(&child, "child/worker", &positional));
+        // In the parent the same word is the daemon of that name.
+        assert!(selects(&parent, "parent/web", &positional));
+        // --group stays a group everywhere, so it never reaches the parent daemon.
+        let group = Selector::Group("web".into());
+        assert!(selects(&child, "child/api", &group));
+        assert!(!selects(&parent, "parent/web", &group));
+    }
+
+    #[test]
+    fn a_default_group_applies_only_to_the_project_declaring_it() {
+        let loaded = daemons::load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.web]\nrun = 'web'\n[daemons.extra]\nrun = 'extra'\n[daemon_groups]\ndefault = ['web']\n",
+            ),
+            ("/parent/mise.toml", "[daemons.inherited]\nrun = 'x'\n"),
+        ]))
+        .unwrap();
+        let child = loaded.for_root(&loaded.daemons["web"].root.clone());
+        let parent = loaded.for_root(&loaded.daemons["inherited"].root.clone());
+        assert_eq!(
+            effective_selectors(&[], &child, "start"),
+            [Selector::Group("default".into())]
+        );
+        // The parent declares no default, so a bare start keeps every daemon.
+        assert!(effective_selectors(&[], &parent, "start").is_empty());
+        // restart starts daemons, so it uses the group too; stop does not.
+        assert_eq!(
+            effective_selectors(&[], &child, "restart"),
+            [Selector::Group("default".into())]
+        );
+        assert!(effective_selectors(&[], &child, "stop").is_empty());
+        assert!(effective_selectors(&[], &child, "logs").is_empty());
+        // An explicit request is never replaced by the default group.
+        assert_eq!(
+            effective_selectors(&[Selector::Name("extra".into())], &child, "start"),
+            [Selector::Name("extra".into())]
+        );
     }
 }
