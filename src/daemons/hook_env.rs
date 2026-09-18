@@ -57,7 +57,14 @@ pub(crate) async fn emit(
     let roots: Vec<_> = set
         .roots()
         .into_iter()
-        .filter(|root| set.for_root(root).auto())
+        .filter(|root| {
+            let scoped = set.for_root(root);
+            // Preparing a root rewrites its generated pitchfork file whole, and
+            // this project only knows the daemons it imported from another one.
+            // Registering that here would deregister the sibling's own daemons,
+            // so automatic lifecycle stops at this project's boundary.
+            scoped.auto() && !scoped.daemons.values().any(|daemon| daemon.imported)
+        })
         .collect();
     for (root, bin) in &previous.roots {
         if !roots.contains(root) {
@@ -93,10 +100,18 @@ pub(crate) async fn emit(
                 let scoped_config = runtime::config_for_root(config, &root).await?;
                 scoped_set.validate_tasks(&scoped_config).await?;
             }
-            // Only the daemons this hook will actually start.
-            let auto_start = scoped_set.auto_start_names();
+            // Pitchfork starts the `auto = ["start"]` daemons as soon as this
+            // session joins, so the same check the other two registration paths
+            // make belongs here: a daemon whose dependency was dropped with an
+            // unreadable import would otherwise start without what it declared.
+            let auto = scoped_set.auto_starting();
+            super::ensure_not_blocked(&scoped_set, &auto, Some(&root))?;
+            // Only those daemons are launched here, so only their ports are
+            // conflict checked; dependencies are already part of the set.
+            let starting: Vec<String> = auto.daemons.keys().cloned().collect();
+            // Only this project's own roots reach here, so it owns the profile.
             let (_state, _lock) = runtime
-                .prepare(&root, &scoped_set, force, &auto_start)
+                .prepare(&root, &scoped_set, force, true, &starting)
                 .await?;
             Ok::<_, eyre::Report>(runtime.bin)
         }

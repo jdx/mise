@@ -40,7 +40,20 @@ fn project_for_task(project_root: Option<&Path>, task: &Task) -> Result<Option<P
         })
 }
 
-/// Daemon names required by `tasks`, in declaration order.
+/// The key under which `set` holds the daemon a task asked for.
+///
+/// A daemon imported from another project is keyed by its qualified ID, and the
+/// name this project gave it lives in the alias table, so a bare local name has
+/// to be resolved before it can be looked up.
+fn key_for(set: &DaemonSet, name: &str) -> Option<String> {
+    if set.daemons.contains_key(name) {
+        return Some(name.to_string());
+    }
+    let resolved = set.resolve_alias(name);
+    set.daemons.contains_key(&resolved).then_some(resolved)
+}
+
+/// Daemons required by `tasks`, in declaration order, as keys into `set`.
 pub(crate) fn required(tasks: &[Task], set: &DaemonSet) -> Result<IndexSet<String>> {
     let mut names = IndexSet::new();
     for task in tasks {
@@ -49,18 +62,26 @@ pub(crate) fn required(tasks: &[Task], set: &DaemonSet) -> Result<IndexSet<Strin
         };
         let requested: Vec<String> = match daemons {
             crate::task::TaskDaemons::All(false) => continue,
-            crate::task::TaskDaemons::All(true) => set.daemons.keys().cloned().collect(),
+            // "every daemon" means the ones this project declares. A daemon
+            // imported from elsewhere belongs to that project, and starting it
+            // because a local task said `true` would reach further than asked.
+            crate::task::TaskDaemons::All(true) => set
+                .daemons
+                .iter()
+                .filter(|(_, d)| !d.imported)
+                .map(|(key, _)| key.clone())
+                .collect(),
             crate::task::TaskDaemons::One(name) => vec![name.clone()],
             crate::task::TaskDaemons::Names(requested) => requested.clone(),
         };
         for name in requested {
-            if !set.daemons.contains_key(&name) {
+            let Some(key) = key_for(set, &name) else {
                 bail!(
                     "task {} requires daemon {name:?}, which is not defined in [daemons]",
                     task.display_name
                 );
-            }
-            names.insert(name);
+            };
+            names.insert(key);
         }
     }
     Ok(names)
@@ -117,29 +138,64 @@ pub(crate) async fn start(
     // request before touching pitchfork. Only the names travel: each root's
     // configuration is loaded from the invoking config below, not from the
     // config of whichever task happened to name the daemon first.
+    // Names travel as the daemon is known inside the project that owns it, which
+    // is not the key this project holds it under when it was imported.
     let mut wanted: IndexMap<PathBuf, IndexSet<String>> = IndexMap::new();
+    // Roots reached only because a task named a daemon imported from them. Such
+    // a root belongs to another project, which owns its profile and the rest of
+    // its daemons.
+    let mut foreign: IndexSet<PathBuf> = IndexSet::new();
+    let mut owned: IndexSet<PathBuf> = IndexSet::new();
     for (project, tasks) in by_project {
         let scoped = runtime::config_for_root(config, &project).await?;
         let set = scoped.daemons()?;
-        for name in required(&tasks, set)? {
-            let root = set.daemons[&name].root.clone();
-            wanted.entry(root).or_default().insert(name);
+        let keys = required(&tasks, set)?;
+        // Pitchfork starts a daemon's dependencies with it, so this covers what
+        // comes along and not only what the task named.
+        let starting = set.with_dependencies(&keys.iter().cloned().collect::<Vec<_>>());
+        super::ensure_not_blocked(set, &starting, None)?;
+        // Take the closure, not only the names the task gave. A dependency can
+        // live in a project reached by `project =`, and that project has to be
+        // registered and started or the daemon comes up without it.
+        for daemon in starting.daemons.values() {
+            if daemon.imported {
+                foreign.insert(daemon.root.clone());
+            } else {
+                owned.insert(daemon.root.clone());
+            }
+            wanted
+                .entry(daemon.root.clone())
+                .or_default()
+                .insert(daemon.name.clone());
         }
     }
+    // Reaching a root through one project's own daemon settles it, whether or
+    // not something else reached the same root through an import.
+    foreign.retain(|root| !owned.contains(root));
     if dry_run {
         for (root, names) in &wanted {
             let scoped = runtime::config_for_root(config, root).await?;
-            scoped
-                .daemons()?
-                .for_root(root)
-                .validate_tasks(&scoped)
-                .await?;
+            let set = scoped.daemons()?.for_root(root);
+            set.validate_tasks(&scoped).await?;
+            let starting = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+            super::ensure_not_blocked(&set, &starting, Some(root))?;
             for name in names {
                 info!("[dry-run] would start daemon {name} in {}", root.display());
             }
         }
         return Ok(());
     }
+    // Pitchfork starts a daemon's dependencies with it, and a dependency can
+    // live in another project's root. Register every root first and start only
+    // once they all exist, so a local daemon listed before an imported one
+    // cannot start while that dependency is still unregistered.
+    //
+    // Holding several project locks at once means the order they are taken in
+    // matters: `mise daemons start` sorts its roots, so this takes them in the
+    // same order rather than in whatever order the configuration produced, and
+    // the two cannot deadlock against each other.
+    wanted.sort_keys();
+    let mut pending = Vec::new();
     for (root, names) in wanted {
         let scoped = runtime::config_for_root(config, &root).await?;
         // The generated pitchfork configuration describes every daemon in the
@@ -158,31 +214,55 @@ pub(crate) async fn start(
             (scoped, ts)
         };
         let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
-        runtime::validate_tools(&set, &scoped, &ts).await?;
-        set.validate_tasks(&scoped).await?;
+        let owned = !foreign.contains(&root);
+        // Another project's root is registered whole but only checked for what
+        // this run starts, so an unrelated daemon of theirs cannot fail a
+        // `mise run` here.
+        let starting = if owned {
+            set.clone()
+        } else {
+            set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>())
+        };
+        runtime::validate_tools(&starting, &scoped, &ts).await?;
+        starting.validate_tasks(&scoped).await?;
+        // This root's own configuration, which is the only view that knows
+        // about imports the referenced project itself declares.
+        let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        super::ensure_not_blocked(&set, &will_start, Some(&root))?;
         // Let the configuration hash short-circuit re-registration. Forcing it
         // would re-probe `pitchfork usage` and re-run `config add` on every
         // `mise run` of a task that requires daemons, even when nothing about
         // the daemons changed and they are already running.
+        // Only the daemons this task requires are launched here, so only
+        // their ports are conflict checked.
         let required: Vec<String> = set
             .daemons
             .keys()
             .filter(|name| names.contains(name.as_str()))
             .cloned()
             .collect();
-        let (state, _project_lock) = rt.prepare(&root, &set, false, &required).await?;
+        // The profile belongs to the project that owns the root, so a task that
+        // reached another project's daemon does not impose its own.
+        let (state, _project_lock) = rt.prepare(&root, &set, false, owned, &required).await?;
         let ids: Vec<String> = state
             .ids
             .iter()
             .filter(|id| {
+                // `names` holds daemons as the owning project names them, and
+                // this root's own set is keyed the same way.
                 let name = id.rsplit('/').next().unwrap_or(id);
-                names.contains(name) && set.daemons.contains_key(name)
+                names.contains(name) && set.find(name).is_some()
             })
             .cloned()
             .collect();
         if ids.is_empty() {
             continue;
         }
+        // The project lock rides along so every root stays held until the last
+        // one has started.
+        pending.push((rt, root, ids, _project_lock));
+    }
+    for (rt, root, ids, _project_lock) in pending {
         rt.exec(&root, [vec!["start".into()], ids].concat()).await?;
     }
     Ok(())
@@ -203,6 +283,68 @@ mod tests {
         }
     }
 
+    /// A set holding one local daemon and one imported from another project,
+    /// the way `load` keys them: the import by qualified ID, with the name this
+    /// project gave it in the alias table.
+    fn set_with_import() -> DaemonSet {
+        let mut set = set(&["api"]);
+        let mut worker = set.daemons["api"].clone();
+        worker.name = "worker".into();
+        worker.root = PathBuf::from("/mirror");
+        worker.imported = true;
+        set.daemons.insert("mirror/worker".into(), worker);
+        set.aliases.insert(
+            (PathBuf::from("/project"), "pipeline".into()),
+            "mirror/worker".into(),
+        );
+        set.namespaces
+            .insert(PathBuf::from("/mirror"), "mirror".into());
+        set.namespaces
+            .insert(PathBuf::from("/project"), "project".into());
+        set
+    }
+
+    #[test]
+    fn a_task_can_require_a_daemon_imported_from_another_project() {
+        let set = set_with_import();
+        // The name this project gave the import resolves to its qualified ID.
+        let by_alias = [task("dev", Some(TaskDaemons::One("pipeline".into())))];
+        assert_eq!(
+            required(&by_alias, &set)
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            ["mirror/worker"]
+        );
+        // So does the qualified ID itself.
+        let by_id = [task("dev", Some(TaskDaemons::One("mirror/worker".into())))];
+        assert_eq!(
+            required(&by_id, &set)
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            ["mirror/worker"]
+        );
+        // `true` means this project's own daemons; another project's daemon is
+        // not started because a local task asked for everything.
+        let all = [task("dev", Some(TaskDaemons::All(true)))];
+        assert_eq!(
+            required(&all, &set)
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            ["api"]
+        );
+        // A name that is neither is still rejected.
+        let unknown = [task("dev", Some(TaskDaemons::One("nope".into())))];
+        assert!(
+            required(&unknown, &set)
+                .unwrap_err()
+                .to_string()
+                .contains("not defined in [daemons]")
+        );
+    }
+
     fn set(names: &[&str]) -> DaemonSet {
         DaemonSet {
             daemons: names
@@ -219,12 +361,13 @@ mod tests {
                             task: None,
                             tool: None,
                             exports: Default::default(),
+                            imported: false,
                             port: None,
                         },
                     )
                 })
                 .collect(),
-            groups: Vec::new(),
+            ..Default::default()
         }
     }
 

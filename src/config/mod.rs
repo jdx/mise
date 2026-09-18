@@ -2868,11 +2868,11 @@ fn is_default_config_dir_override_filtered(path: &Path) -> bool {
         && path.starts_with(&*env::MISE_DEFAULT_CONFIG_DIR)
 }
 
-fn config_dir_is_ignored(dir: &Path, include_ignored: bool) -> bool {
+pub(crate) fn config_dir_is_ignored(dir: &Path, include_ignored: bool) -> bool {
     !include_ignored && config_file::is_ignored_via_setting(dir)
 }
 
-fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool {
+pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool {
     if is_default_config_dir_override_filtered(path) {
         return true;
     }
