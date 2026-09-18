@@ -139,26 +139,37 @@ async fn refresh() -> Result<()> {
         .map(str::to_string);
     let body = resp.bytes().await?;
 
+    // Index BEFORE promoting. A readable but malformed 200 that replaced the
+    // cached document would still count as fresh, so every lookup would fall
+    // back to a per-cask request for the whole staleness window: slower than
+    // having never cached anything, and silent. Failing here instead leaves the
+    // last known-good document in place.
+    let mut index = build_index(&body)?;
+
     crate::file::create_dir_all(dir())?;
-    // Write through a temporary file: a half-written document would be indexed
-    // as if complete, and every later lookup would slice garbage out of it.
-    let tmp = path.with_extension("json.part");
-    std::fs::write(&tmp, &body)?;
-    std::fs::rename(&tmp, &path)?;
+    crate::file::write_atomic(&path, &body)?;
     if let Some(stamp) = last_modified {
-        std::fs::write(dir().join("cask.last-modified"), stamp).ok();
+        crate::file::write_atomic(dir().join("cask.last-modified"), stamp).ok();
     }
 
-    let index = build_index(&body)?;
+    // Stamp from the promoted file rather than leaving zeros: `load_index`
+    // rejects an index whose recorded size and mtime do not match the document,
+    // so writing zeros here would make the very next lookup rescan all ~19MB
+    // and write the index a second time.
+    let (size, mtime) = stat(&path)?;
+    index.source_size = size;
+    index.source_mtime_ns = mtime;
     write_index(&index)?;
     Ok(())
 }
 
 fn write_index(index: &Index) -> Result<()> {
     crate::file::create_dir_all(dir())?;
-    let tmp = index_path().with_extension("json.part");
-    std::fs::write(&tmp, serde_json::to_vec(index)?)?;
-    std::fs::rename(&tmp, index_path())?;
+    // `write_atomic` rather than a fixed `.part` name plus rename: concurrent
+    // mise processes would otherwise share one temporary path and clobber each
+    // other's partial writes. It also carries the Windows sharing-violation
+    // retry that a raw rename does not.
+    crate::file::write_atomic(index_path(), serde_json::to_vec(index)?)?;
     Ok(())
 }
 
@@ -290,21 +301,27 @@ fn top_level_elements(body: &[u8]) -> Result<Vec<(usize, usize)>> {
 
 /// Resolve one cask from the bulk document.
 ///
-/// `Ok(None)` means the index does not carry this token, which is a normal
-/// answer for a tap cask or a token this snapshot predates; the caller falls
-/// back to the per-cask request.
-pub(super) async fn cask(token: &str) -> Result<Option<Cask>> {
+/// `None` means "ask the per-cask endpoint": either the index genuinely does not
+/// carry this token (a tap cask, or one this snapshot predates) or something
+/// about the cache went wrong.
+///
+/// Infallible on purpose. This is an optimization, so no failure in it may
+/// abort package resolution, and returning `Option` rather than
+/// `Result<Option<_>>` makes that a property of the type rather than of every
+/// caller remembering to catch. Each failure logs before falling back, so a
+/// persistently broken cache is visible at debug level rather than silent.
+pub(super) async fn cask(token: &str) -> Option<Cask> {
     if let Err(err) = refresh().await {
         // An unreachable index is not fatal: the per-cask path still works, and
         // failing here would turn a cache miss into a failed run.
         debug!("brew-cask: bulk index unavailable ({err:#}); falling back to per-cask metadata");
-        return Ok(None);
+        return None;
     }
     let index = match load_index() {
         Ok(index) => index,
         Err(err) => {
             debug!("brew-cask: bulk index unreadable ({err:#}); falling back to per-cask metadata");
-            return Ok(None);
+            return None;
         }
     };
 
@@ -314,13 +331,33 @@ pub(super) async fn cask(token: &str) -> Result<Option<Cask>> {
         .map(String::as_str)
         .unwrap_or(token);
     let Some(&(offset, len)) = index.casks.get(canonical) else {
-        return Ok(None);
+        return None;
     };
 
-    let body = read_range(&document_path(), offset, len)?;
-    let cask: Cask = serde_json::from_slice(&body)
-        .wrap_err_with(|| format!("invalid metadata for cask '{token}' in the bulk index"))?;
-    Ok(Some(cask))
+    // Read and parse are fallible for a reason that is nobody's fault: another
+    // mise process can replace the document between `load_index` validating it
+    // and this read, leaving these offsets pointing at different bytes.
+    // Propagating that would abort the whole resolution, which is precisely what
+    // this optimization must never do, so it falls back like every other failure
+    // here.
+    let body = match read_range(&document_path(), offset, len) {
+        Ok(body) => body,
+        Err(err) => {
+            debug!(
+                "brew-cask: bulk index read failed for '{token}' ({err:#}); falling back to per-cask metadata"
+            );
+            return None;
+        }
+    };
+    match serde_json::from_slice::<Cask>(&body) {
+        Ok(cask) => Some(cask),
+        Err(err) => {
+            debug!(
+                "brew-cask: bulk index entry for '{token}' did not parse ({err}); falling back to per-cask metadata"
+            );
+            None
+        }
+    }
 }
 
 fn read_range(path: &Path, offset: u64, len: u64) -> Result<Vec<u8>> {
