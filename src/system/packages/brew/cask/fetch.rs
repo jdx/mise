@@ -23,6 +23,15 @@ pub(super) async fn fetch_cask(req: &PackageRequest, provision_ruby: bool) -> Re
             ),
         }
     }
+    // One request for every cask beats one request per cask. Only the official
+    // API is bulk-published, so a tap cask falls straight through, as does any
+    // token this snapshot does not carry.
+    if official_api && let Some(mut cask) = super::bulk::cask(requested_token).await? {
+        cask.raw_base = Some(HOMEBREW_CASK_RAW.to_string());
+        validate_cask_identity(&cask, requested_token, official_api)?;
+        return Ok(cask);
+    }
+
     let (url, raw_base) = match tap_name {
         Some(("homebrew", "cask", token)) => (
             format!("{API_BASE}/cask/{token}.json"),
