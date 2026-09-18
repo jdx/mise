@@ -161,6 +161,18 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             && table.contains_key("project")
         {
             let (key, daemon) = import(&name, table.clone(), &source, &root, &mut set.namespaces)?;
+            // Two imports can resolve to one qualified ID when their projects
+            // share a namespace. Inserting the second would replace the first
+            // and leave both local names pointing at the later project.
+            if let Some(existing) = set.daemons.get(&key)
+                && existing.root != daemon.root
+            {
+                bail!(
+                    "daemon {key} is imported from both {} and {}; they share a namespace, so one of those projects needs its own [daemons_settings] namespace",
+                    existing.root.display(),
+                    daemon.root.display()
+                );
+            }
             imported_ids.insert(name.clone(), key.clone());
             set.aliases.insert(name, key.clone());
             set.daemons.insert(key, daemon);
@@ -198,10 +210,11 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             );
         }
     }
-    if !imported_ids.is_empty() {
-        for daemon in set.daemons.values_mut().filter(|d| !d.imported) {
-            rewrite_depends(&mut daemon.table, &imported_ids)?;
-        }
+    // Runs even with nothing imported, because it also rejects a `depends` this
+    // project could not act on. An imported daemon's own `depends` is relative
+    // to its project and is checked when that project loads.
+    for daemon in set.daemons.values_mut().filter(|d| !d.imported) {
+        rewrite_depends(&mut daemon.table, &imported_ids)?;
     }
     Ok(set)
 }
@@ -429,10 +442,35 @@ fn rewrite_depends(table: &mut toml::Table, imported: &IndexMap<String, String>)
     };
     match depends {
         toml::Value::String(_) => rewrite(depends),
-        toml::Value::Array(entries) => entries.iter_mut().for_each(rewrite),
+        toml::Value::Array(entries) => {
+            if entries.iter().any(|entry| entry.as_str().is_none()) {
+                bail!("daemon depends must be a string or an array of strings");
+            }
+            entries.iter_mut().for_each(rewrite);
+        }
         _ => bail!("daemon depends must be a string or an array of strings"),
     }
     Ok(())
+}
+
+/// The bare daemon names a table's `depends` refers to.
+fn depends_names(table: &toml::Table) -> Vec<String> {
+    let Some(depends) = table.get("depends") else {
+        return Vec::new();
+    };
+    let entries: Vec<&toml::Value> = match depends {
+        toml::Value::String(_) => vec![depends],
+        toml::Value::Array(entries) => entries.iter().collect(),
+        _ => Vec::new(),
+    };
+    entries
+        .into_iter()
+        .filter_map(|entry| entry.as_str())
+        // A qualified ID names another project's daemon, which that project
+        // checks for itself.
+        .filter(|entry| !entry.contains('/'))
+        .map(str::to_string)
+        .collect()
 }
 
 fn take_string(table: &mut toml::Table, key: &str) -> Result<Option<String>> {
@@ -541,7 +579,54 @@ impl DaemonSet {
             daemons: self
                 .daemons
                 .iter()
-                .filter(|(_, d)| requested.find(&d.name).is_some())
+                // Match the root too. A name alone is only unique within one
+                // project, and nothing here promises both sets hold just one.
+                .filter(|(_, d)| {
+                    requested
+                        .daemons
+                        .values()
+                        .any(|r| r.name == d.name && r.root == d.root)
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            namespaces: self.namespaces.clone(),
+            aliases: self.aliases.clone(),
+        }
+    }
+
+    /// The daemons these names select, together with everything they depend on.
+    ///
+    /// Pitchfork starts a daemon's dependencies with it, so a caller checking
+    /// what a command is about to run has to include them. A dependency written
+    /// as a qualified ID belongs to another project and is checked when that
+    /// project's root is prepared, so only bare names are followed here.
+    pub(crate) fn with_dependencies(&self, names: &[String]) -> Self {
+        let mut keep: indexmap::IndexSet<String> = self
+            .daemons
+            .values()
+            .filter(|d| {
+                names
+                    .iter()
+                    .any(|name| name == &d.name || name.rsplit('/').next() == Some(&d.name))
+            })
+            .map(|d| d.name.clone())
+            .collect();
+        let mut queue: Vec<String> = keep.iter().cloned().collect();
+        while let Some(name) = queue.pop() {
+            let Some(daemon) = self.find(&name) else {
+                continue;
+            };
+            for dependency in depends_names(&daemon.table) {
+                if self.find(&dependency).is_some() && keep.insert(dependency.clone()) {
+                    queue.push(dependency);
+                }
+            }
+        }
+        Self {
+            daemons: self
+                .daemons
+                .iter()
+                .filter(|(_, d)| keep.contains(&d.name))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             namespaces: self.namespaces.clone(),
@@ -868,6 +953,53 @@ mod tests {
             set.namespace_for(&root),
             Some(runtime::namespace(&root).unwrap().as_str())
         );
+    }
+
+    #[test]
+    fn two_imports_cannot_claim_one_daemon_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        for dir in ["one", "two"] {
+            referenced_project(
+                &tmp.path().join(dir),
+                "[daemons_settings]\nnamespace = 'shared'\n[daemons.worker]\nrun = 'exec worker'\n",
+            );
+        }
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let config = files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons.first]\nproject = '../one'\nname = 'worker'\n[daemons.second]\nproject = '../two'\nname = 'worker'\n",
+        )]);
+        let err = load(&config).unwrap_err().to_string();
+        assert!(err.contains("shared/worker"), "{err}");
+        assert!(err.contains("share a namespace"), "{err}");
+    }
+
+    #[test]
+    fn depends_entries_must_be_strings() {
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'exec api'\ndepends = ['db', 3]\n",
+        )]);
+        assert!(
+            load(&config)
+                .unwrap_err()
+                .to_string()
+                .contains("array of strings")
+        );
+    }
+
+    #[test]
+    fn selecting_a_daemon_includes_what_it_depends_on() {
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'exec api'\ndepends = ['cache']\n[daemons.cache]\nrun = 'exec cache'\ndepends = ['db']\n[daemons.db]\nrun = 'exec db'\n[daemons.unrelated]\nrun = 'exec other'\n",
+        )]);
+        let set = load(&config).unwrap();
+        let starting = set.with_dependencies(&["api".to_string()]);
+        let mut names: Vec<_> = starting.daemons.values().map(|d| d.name.clone()).collect();
+        names.sort();
+        assert_eq!(names, ["api", "cache", "db"]);
     }
 
     #[test]

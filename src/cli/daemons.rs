@@ -184,13 +184,13 @@ impl Daemons {
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if action == "ls" {
-                // An explicit namespace is known before anything is registered,
-                // so listing can show the qualified ID another project would use.
-                let listed = if previous.namespace.is_empty() {
-                    set.namespace_for(&root).unwrap_or_default()
-                } else {
-                    previous.namespace.as_str()
-                };
+                // Currently declared daemons are listed under the namespace the
+                // next start will register them under, which is the configured
+                // one. Previously registered IDs keep the namespace they were
+                // registered with, so their status still resolves.
+                let listed = set
+                    .namespace_for(&root)
+                    .unwrap_or(previous.namespace.as_str());
                 let mut ids: Vec<String> = previous
                     .ids
                     .iter()
@@ -225,10 +225,16 @@ impl Daemons {
             }
             let runtime = runtime?;
             if install {
-                // Validate what this invocation will start. A sibling daemon in
-                // the referenced project is registered but not started, so its
-                // tool being absent must not block an import.
-                runtime::validate_tools(&visible, &scoped, &ts).await?;
+                // Validate what this invocation will start, plus whatever those
+                // daemons depend on, since pitchfork starts dependencies with
+                // them. An unrelated daemon is registered but not started, so a
+                // missing tool of its own must not fail this command.
+                let starting = if names.is_empty() {
+                    visible.clone()
+                } else {
+                    visible.with_dependencies(&names)
+                };
+                runtime::validate_tools(&starting, &scoped, &ts).await?;
             }
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime.prepare(&root, &set, true).await?;
