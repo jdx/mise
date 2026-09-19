@@ -348,6 +348,23 @@ async fn refresh() -> Result<()> {
     // blocking on a ~19MB transfer.
     let _lock = crate::lock_file::LockFile::at(&dir().join("cask.lock")).lock()?;
 
+    // Re-check under the lock, because the wait for it can be long enough for
+    // the answer to have changed. Two processes both past the window download
+    // concurrently; if upstream publishes between their two responses, the one
+    // holding the OLDER body can take the lock second and overwrite the newer
+    // one. Nothing downstream would notice: it replaces the document, its index
+    // and the validator together, so they agree with each other and
+    // `load_index` accepts them, and the window then serves that older
+    // generation until it expires.
+    //
+    // A fresh stamp here means some other process published and stamped while
+    // this one was downloading. Its body is at least as new as this one's, so
+    // the right move is to keep it and throw this download away.
+    if is_fresh() {
+        debug!("brew-cask: another process published the bulk index first; keeping its copy");
+        return Ok(());
+    }
+
     crate::file::write_atomic(&path, &body)?;
     if let Some(stamp) = last_modified {
         crate::file::write_atomic(dir().join("cask.last-modified"), stamp).ok();
