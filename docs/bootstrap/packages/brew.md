@@ -240,7 +240,11 @@ installer packages (`pkg` artifacts), script-based cask installers, and shell co
 Binary artifacts and generated wrappers are staged in the Caskroom and linked
 into the Homebrew prefix, usually under `<prefix>/bin`. Package installers run
 through mise's normal system-package sudo path, so non-interactive runs never
-hang waiting for a password. Pkg casks must include `pkgutil` receipt IDs in
+hang waiting for a password. Script-based installers that declare `sudo: true`
+use the same path. mise expands `$HOMEBREW_PREFIX`, `$APPDIR`, and `$HOME` in installer
+script executables and arguments, and runs an executable declared under the
+cask's Caskroom version directory from the staged download. Installers that
+read `input` from stdin are not supported yet. Pkg casks must include `pkgutil` receipt IDs in
 their `uninstall` metadata so mise can verify installed state after the
 installer writes files outside the Caskroom. `zap` `pkgutil` IDs are treated as
 cleanup metadata, not install receipts. For casks with lifecycle hooks, mise
