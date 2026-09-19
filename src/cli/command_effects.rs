@@ -163,6 +163,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("daemons", Read),
     ("daemons ls", Read),
     ("daemons status", Read),
+    ("daemons urls", Read),
     // Bare `mise deps` defaults to `deps install` and runs install steps.
     ("deps", Write),
     ("deps add", Write),

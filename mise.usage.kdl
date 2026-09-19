@@ -2217,6 +2217,17 @@ With no subcommand, list configured and previously managed daemons.
         flag --json
         flag "-h --help" help="Print help" action=help builtin=#true
     }
+    cmd urls help="Show each project daemon's port and its proxy hostname URL." effect=read {
+        long_help #"""
+Show each project daemon's port and its proxy hostname URL.
+
+Hostnames do not move between git worktrees, so an HTTP service can be
+addressed by URL while concurrent checkouts keep separate ports. A daemon
+with no port, or with proxy = false, is listed with its port alone.
+"""#
+        flag --json
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
     cmd logs help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[ARGS]…" required=#false double_dash=automatic var=#true

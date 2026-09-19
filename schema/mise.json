@@ -42,6 +42,25 @@
         }
       ]
     },
+    "daemon_proxy": {
+      "description": "Hostname label the reverse proxy routes to this daemon, false to opt out, or true to use the daemon's name. Only a daemon with a port is routed. The hostname is <proxy>.<worktree>.<project>.<tld> in a linked git worktree and <proxy>.<project>.<tld> in the primary checkout.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+          "maxLength": 63
+        },
+        {
+          "type": "boolean",
+          "description": "false opts out of the reverse proxy; true uses the daemon's name, which re-enables routing for a preset that opts out."
+        }
+      ]
+    },
+    "daemon_proxy_tls": {
+      "description": "Whether the proxy terminates TLS for this daemon or passes the connection through to it.",
+      "type": "string",
+      "enum": ["terminate", "passthrough"]
+    },
     "task_dependency_item": {
       "description": "task name and args",
       "oneOf": [
@@ -5927,6 +5946,12 @@
                     }
                   }
                 ]
+              },
+              "proxy": {
+                "$ref": "#/$defs/daemon_proxy"
+              },
+              "proxy_tls": {
+                "$ref": "#/$defs/daemon_proxy_tls"
               }
             },
             "additionalProperties": true
@@ -5941,6 +5966,9 @@
                 },
                 {
                   "required": ["preset"]
+                },
+                {
+                  "required": ["project"]
                 }
               ]
             },
@@ -5958,6 +5986,12 @@
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
+              },
+              "proxy": {
+                "$ref": "#/$defs/daemon_proxy"
+              },
+              "proxy_tls": {
+                "$ref": "#/$defs/daemon_proxy_tls"
               }
             },
             "additionalProperties": true
@@ -5997,6 +6031,12 @@
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
+              },
+              "proxy": {
+                "$ref": "#/$defs/daemon_proxy"
+              },
+              "proxy_tls": {
+                "$ref": "#/$defs/daemon_proxy_tls"
               }
             },
             "additionalProperties": true

@@ -176,8 +176,15 @@ pub(crate) async fn start(
         for (root, names) in &wanted {
             let scoped = runtime::config_for_root(config, root).await?;
             let set = scoped.daemons()?.for_root(root);
-            set.validate_tasks(&scoped).await?;
             let starting = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+            // Narrowed for another project's root exactly as the real run
+            // narrows it, so an unrelated daemon of theirs cannot fail a
+            // dry run that the run itself would have completed.
+            if foreign.contains(root) {
+                starting.validate_tasks(&scoped).await?;
+            } else {
+                set.validate_tasks(&scoped).await?;
+            }
             super::ensure_not_blocked(&set, &starting, Some(root))?;
             for name in names {
                 info!("[dry-run] would start daemon {name} in {}", root.display());
@@ -233,12 +240,13 @@ pub(crate) async fn start(
         // would re-probe `pitchfork usage` and re-run `config add` on every
         // `mise run` of a task that requires daemons, even when nothing about
         // the daemons changed and they are already running.
-        // Only the daemons this task requires are launched here, so only
-        // their ports are conflict checked.
-        let required: Vec<String> = set
-            .names()
-            .into_iter()
-            .filter(|name| names.contains(name.as_str()))
+        // The closure, not the names the task gave: pitchfork starts a
+        // daemon's dependencies with it, so their ports are about to be bound
+        // and belong in the conflict check too.
+        let required: Vec<String> = will_start
+            .daemons
+            .values()
+            .map(|daemon| daemon.name.clone())
             .collect();
         // The profile belongs to the project that owns the root, so a task that
         // reached another project's daemon does not impose its own.
@@ -362,6 +370,7 @@ mod tests {
                             exports: Default::default(),
                             imported: false,
                             port: None,
+                            host: None,
                         },
                     )
                 })

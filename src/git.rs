@@ -639,6 +639,72 @@ pub(crate) fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Where a path sits in a git repository: which checkout holds it, and which
+/// repository that checkout belongs to.
+///
+/// Both are needed to name a working copy. The repository identifies the
+/// project across all of its checkouts, and the linked worktree, when there is
+/// one, distinguishes this copy from the others.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Checkout {
+    /// The checkout that names the project: an ordinary checkout's own
+    /// directory, or, for a linked worktree, the main checkout every worktree
+    /// of the repository shares. None outside any git repository.
+    ///
+    /// A worktree of a bare repository names itself here, because a bare
+    /// repository has no working tree to stand for the project and the
+    /// directory holding it usually holds unrelated ones too. Pitchfork
+    /// resolves it the same way, and a hostname the two disagreed about would
+    /// be exported by mise and routed by nothing.
+    pub repository: Option<PathBuf>,
+    /// This linked worktree's own directory, when `path` is inside one.
+    pub worktree: Option<PathBuf>,
+}
+
+/// Resolve `path`'s checkout without running git.
+pub(crate) fn checkout_of(path: &Path) -> Checkout {
+    for dir in path.ancestors() {
+        let dotgit = dir.join(".git");
+        if dotgit.is_dir() {
+            // The main checkout, or a nested independent repository; either way
+            // the search stops rather than consulting an outer repository.
+            return Checkout {
+                repository: Some(dir.to_path_buf()),
+                worktree: None,
+            };
+        }
+        if !dotgit.is_file() {
+            continue;
+        }
+        if worktree_gitdir(&dotgit).is_some() {
+            // Without a main checkout there is nothing above this worktree to
+            // name the project, so it stands on its own: one label, and no
+            // worktree component to distinguish it from siblings it has none of.
+            return match main_checkout_root(&dotgit) {
+                Some(repository) => Checkout {
+                    repository: Some(repository),
+                    worktree: Some(dir.to_path_buf()),
+                },
+                None => Checkout {
+                    repository: Some(dir.to_path_buf()),
+                    worktree: None,
+                },
+            };
+        }
+        // A submodule belongs to whatever checkout contains it, so keep
+        // walking: the same submodule in two worktrees is two working copies.
+        // Any other `.git` file is an independent repository and ends the walk
+        // exactly as a `.git` directory does.
+        if !is_submodule_gitdir(&dotgit) {
+            return Checkout {
+                repository: Some(dir.to_path_buf()),
+                worktree: None,
+            };
+        }
+    }
+    Checkout::default()
+}
+
 /// Whether `path` sits inside a linked git worktree.
 ///
 /// Unlike [`main_checkout_equivalent`] this also accepts worktrees of a bare
@@ -758,7 +824,54 @@ fn read_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
     })
 }
 
-/// Resolves a linked worktree's `.git` file to the root of the main checkout
+/// Whether this linked worktree's repository has other worktrees beside it.
+///
+/// Asked only of a checkout that names itself, where the hostname carries no
+/// worktree component: a namespace such a checkout shares with a sibling then
+/// resolves to one hostname for both, and each runs in its own process, so
+/// neither load can see the other to report it. `false` for anything that is
+/// not a linked worktree, which has no siblings by this definition.
+pub(crate) fn has_sibling_worktrees(worktree_root: &Path) -> bool {
+    let Some(gitdir) = worktree_gitdir(&worktree_root.join(".git")) else {
+        return false;
+    };
+    // `worktree_gitdir` already established that this is `<common>/worktrees/
+    // <name>`, so the parent holds one entry per worktree of the repository.
+    let Some(registry) = gitdir.parent() else {
+        return false;
+    };
+    std::fs::read_dir(registry)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            // Removing a worktree's directory leaves its entry here until
+            // someone prunes it, and a checkout that no longer exists cannot
+            // inherit a namespace. Git decides that by the `gitdir` pointer
+            // still naming something, so this does too, rather than sending a
+            // user off to change a namespace nothing else shares.
+            let Ok(pointer) = std::fs::read_to_string(entry.path().join("gitdir")) else {
+                return false;
+            };
+            // `worktree.useRelativePaths` writes the pointer relative to the
+            // entry holding it, as `commondir` and a worktree's own `.git` are
+            // written. Resolving it against the process directory instead
+            // would make every live worktree of such a repository look pruned.
+            let pointer = Path::new(pointer.trim());
+            match pointer.is_relative() {
+                true => entry.path().join(pointer).exists(),
+                false => pointer.exists(),
+            }
+        })
+        .nth(1)
+        .is_some()
+}
+
+/// Resolves a linked worktree's `.git` file to the root of the main checkout.
+///
+/// Two questions share this answer: which working copy may share trust
+/// records, and which checkout names the project for [`Checkout`]. Both refuse
+/// a bare repository, having no working copy to point at.
 fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     let common = worktree_common_dir(&worktree_gitdir(dotgit_file)?)?;
     if common.file_name() == Some(OsStr::new(".git")) {

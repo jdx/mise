@@ -621,8 +621,11 @@ The `api` daemon runs in this project; `worker` uses the `worker` declaration in
 differently named daemon.
 
 A higher-precedence declaration replaces the complete same-name daemon. Explicit
-environment variables override preset exports. See [Daemons](/daemons) for presets,
-[project references](/daemons#daemons-from-another-project), and lifecycle commands.
+environment variables override preset exports. `proxy` sets the daemon's hostname
+label, opts it out with `false`, or re-enables it with `true`, and `proxy_tls`
+chooses `"terminate"` or `"passthrough"`. See [Daemons](/daemons) for presets,
+[project references](/daemons#daemons-from-another-project),
+[stable URLs](/daemons#stable-urls-per-worktree), and lifecycle commands.
 
 ### `[daemons_settings]`
 
@@ -636,6 +639,9 @@ namespace_per_worktree = true # default
 
 Without an explicit namespace, mise derives one from the project path. Linked Git
 worktrees append a unique suffix to an explicit namespace by default.
+
+The namespace also names the project in the hostnames daemons are reachable at. See
+[Stable URLs per worktree](/daemons#stable-urls-per-worktree).
 
 These settings merge by key across project configuration files and are inherited
 by child projects. They are ignored in global and system configuration. See

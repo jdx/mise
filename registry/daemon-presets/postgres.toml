@@ -7,6 +7,8 @@ tool = "postgres"
 database = "postgres"
 
 [daemon]
+# The reverse proxy speaks HTTP; a database client does not.
+proxy = false
 ready_cmd = "pg_isready -h 127.0.0.1 -p {{ port }} -U postgres"
 run = "postgres -D {{ data }} -p {{ port }} -h 127.0.0.1 -k ''"
 stop_signal = "SIGINT"
