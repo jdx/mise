@@ -178,7 +178,8 @@ explicit upgrade reads the installed package versions from the cask's
 `pkgutil` receipts and upgrades when a receipt is older than the cask version
 and none is current or newer. Receipts whose versions cannot be compared with
 the cask version are ignored; if none can be compared, or `pkgutil` cannot read
-them, the upgrade is skipped.
+them, the upgrade is skipped. As with app casks, the upgrade is also skipped
+while an app bundle installed by those receipts is running.
 
 `mise bootstrap status` marks these entries as `installed (auto-updates)`.
 For mise-owned casks, the `Current` column is the version recorded in the mise

@@ -205,6 +205,68 @@ pub(super) fn pkg_info_version(plist: &[u8]) -> Result<String> {
         .ok_or_else(|| eyre!("brew-cask: pkgutil receipt has no pkg-version"))
 }
 
+/// Returns the app bundles installed by the package receipts matching
+/// `pkg_ids`. A pkg cask declares no app artifact, so this is how an upgrade
+/// finds what might be running. Unreadable receipts contribute nothing.
+pub(super) fn pkg_receipt_apps(pkg_ids: &[String]) -> Vec<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    let pkgutil = |args: &[&str]| {
+        std::process::Command::new("pkgutil")
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| output.stdout)
+    };
+    let mut apps = Vec::new();
+    for pattern in pkg_ids {
+        let Some(ids) = pkgutil(&[&format!("--pkgs={pattern}")]) else {
+            continue;
+        };
+        for id in String::from_utf8_lossy(&ids).split_whitespace() {
+            let location = pkgutil(&["--pkg-info-plist", id])
+                .and_then(|info| pkg_info_string(&info, "install-location"));
+            let dirs = pkgutil(&["--only-dirs", "--files", id]);
+            if let (Some(location), Some(dirs)) = (location, dirs) {
+                apps.extend(receipt_app_bundles(
+                    &location,
+                    &String::from_utf8_lossy(&dirs),
+                ));
+            }
+        }
+    }
+    apps.sort();
+    apps.dedup();
+    apps
+}
+
+/// Picks the outermost `.app` directories from `pkgutil --only-dirs --files`
+/// output, which lists paths relative to the receipt's install location.
+pub(super) fn receipt_app_bundles(install_location: &str, dirs: &str) -> Vec<PathBuf> {
+    let is_app = |path: &Path| path.extension().is_some_and(|ext| ext == "app");
+    let root = Path::new("/").join(install_location);
+    dirs.lines()
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
+        .map(Path::new)
+        .filter(|dir| is_app(dir) && !dir.ancestors().skip(1).any(is_app))
+        .map(|dir| root.join(dir))
+        .collect()
+}
+
+fn pkg_info_string(plist: &[u8], key: &str) -> Option<String> {
+    plist::Value::from_reader(std::io::Cursor::new(plist))
+        .ok()?
+        .as_dictionary()?
+        .get(key)?
+        .as_string()
+        .map(str::to_string)
+}
+
 pub(super) fn pkg_ids_installed(pkg_ids: &[String]) -> Result<bool> {
     for pkg_id in pkg_ids {
         if !pkg_id_installed(pkg_id)? {

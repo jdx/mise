@@ -8391,6 +8391,32 @@ fn pkg_receipt_versions_keep_readable_receipts_after_partial_failures() {
 }
 
 #[test]
+fn finds_outermost_app_bundles_in_pkg_receipt_dirs() {
+    // `pkgutil --only-dirs --files` output is relative to install-location and
+    // lists every directory, including the ones inside each bundle.
+    let dirs = "Applications
+Applications/Tailscale.app
+Applications/Tailscale.app/Contents
+Applications/Tailscale.app/Contents/PlugIns/IPNExtension.appex
+Applications/Tailscale.app/Contents/Library/LoginItems/Helper.app
+Library/Application Support/Tailscale
+";
+    assert_eq!(
+        receipt_app_bundles("/", dirs),
+        [PathBuf::from("/Applications/Tailscale.app")]
+    );
+    // A receipt rooted below / resolves its relative paths against it.
+    assert_eq!(
+        receipt_app_bundles(
+            "Applications",
+            "Karabiner-Elements.app\nKarabiner-Elements.app/Contents\n"
+        ),
+        [PathBuf::from("/Applications/Karabiner-Elements.app")]
+    );
+    assert!(receipt_app_bundles("/", "usr/local/bin\n").is_empty());
+}
+
+#[test]
 fn auto_updates_pkg_cask_upgrade_consults_package_receipts() -> Result<()> {
     let mut cask = test_cask("microsoft-outlook", "16.113.26091740");
     cask.auto_updates = true;

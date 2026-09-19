@@ -121,7 +121,14 @@ fn installed_skip_reason(
         // stand in for the live app version. An unreadable receipt skips, like
         // an unreadable app version.
         let versions = pkg_receipt_versions(&receipt.pkg_ids).unwrap_or_default();
-        return Ok(pkg_upgrade_skip_reason(&cask.version, &versions));
+        if let Some(reason) = pkg_upgrade_skip_reason(&cask.version, &versions) {
+            return Ok(Some(reason));
+        }
+        // As for an app artifact, leave a running self-updater alone.
+        if pkg_app_is_running(&receipt.pkg_ids) {
+            return Ok(Some("skipped: installed app is running and updates itself"));
+        }
+        return Ok(None);
     }
     let [app] = artifacts.apps.as_slice() else {
         return Ok(Some("skipped: requires a single owned app"));
@@ -142,6 +149,13 @@ fn installed_skip_reason(
         return Ok(Some("skipped: installed app is running and updates itself"));
     }
     Ok(None)
+}
+
+/// Whether any app bundle a pkg cask's receipts installed is running.
+fn pkg_app_is_running(pkg_ids: &[String]) -> bool {
+    pkg_receipt_apps(pkg_ids)
+        .iter()
+        .any(|app| app_is_running(app))
 }
 
 /// Decides a self-updating pkg cask's upgrade from its installed package
@@ -869,6 +883,14 @@ impl BrewCaskManager {
                 if app_is_running(&app_target_path(app.target_name()?)?) {
                     return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
                 }
+            }
+            // A pkg-only cask names no app, so check the bundles its package
+            // receipts installed. Nothing has been installed yet at this point.
+            if artifacts.apps.is_empty()
+                && !artifacts.pkgs.is_empty()
+                && pkg_app_is_running(&artifacts.pkg_ids)
+            {
+                return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
             }
         }
         let mut metadata_only_apps = Vec::new();
