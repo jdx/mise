@@ -532,6 +532,24 @@ pub(crate) fn in_tool_env(command: &str) -> String {
     )
 }
 
+/// Probes are separate processes: wrapping the daemon does not give them its
+/// project environment. Preserve structured probe options while wrapping `run`.
+pub(crate) fn wrap_probe_commands(table: &mut toml::Table) {
+    for key in ["ready_cmd", "health_cmd"] {
+        let command = match table.get_mut(key) {
+            Some(toml::Value::String(command)) => Some(command),
+            Some(toml::Value::Table(fields)) => match fields.get_mut("run") {
+                Some(toml::Value::String(command)) => Some(command),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(command) = command {
+            *command = in_tool_env(command);
+        }
+    }
+}
+
 /// Chain idempotent setup steps in front of the long-running command, using
 /// pitchfork's shell-command semantics: every step must succeed before the
 /// process that keeps running is reached. Returns `run` unchanged when there is
@@ -659,9 +677,6 @@ pub(crate) fn expand(
         toml::Value::Array(items) => !items.is_empty(),
         _ => true,
     });
-    if let Some(toml::Value::String(command)) = table.get_mut("ready_cmd") {
-        *command = in_tool_env(command.as_str());
-    }
     let mut exports = preset.exports;
     for (key, value) in exports.iter_mut() {
         *value = crate::tera::render_str(&mut renderer, value, &plain_ctx).map_err(|err| {
@@ -714,6 +729,9 @@ pub(crate) fn expand(
     overrides.remove("proxy");
     overrides.remove("proxy_tls");
     table.extend(overrides);
+    if table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
+        wrap_probe_commands(&mut table);
+    }
     Ok(Daemon {
         name: name.into(),
         source: source.into(),
@@ -1261,6 +1279,37 @@ mod tests {
     }
 
     #[test]
+    fn preset_probe_overrides_keep_options_and_project_environment() {
+        let daemon = render(
+            "postgres",
+            toml::toml! {
+                ready_cmd = { run = "test -n \"$PGPORT\"", timeout = "15s" }
+                health_cmd = { run = "pg_isready", interval = "2s", retries = 4 }
+            },
+        );
+        assert_eq!(
+            daemon.table["ready_cmd"]["run"].as_str(),
+            Some(in_tool_env("test -n \"$PGPORT\"").as_str())
+        );
+        assert_eq!(daemon.table["ready_cmd"]["timeout"].as_str(), Some("15s"));
+        assert_eq!(
+            daemon.table["health_cmd"]["run"].as_str(),
+            Some(in_tool_env("pg_isready").as_str())
+        );
+        assert_eq!(daemon.table["health_cmd"]["interval"].as_str(), Some("2s"));
+        assert_eq!(daemon.table["health_cmd"]["retries"].as_integer(), Some(4));
+
+        let unmanaged = render(
+            "postgres",
+            toml::toml! {
+                mise = false
+                ready_cmd = "custom-ready"
+            },
+        );
+        assert_eq!(unmanaged.table["ready_cmd"].as_str(), Some("custom-ready"));
+    }
+
+    #[test]
     fn named_instances_override_ports_and_keep_templates() {
         let overrides = toml::toml! { ready_cmd = "echo {{ env.FOO }}" };
         let daemon = expand(
@@ -1281,7 +1330,7 @@ mod tests {
         assert_eq!(daemon.exports["PGPORT"], "5433");
         assert_eq!(
             daemon.table["ready_cmd"].as_str(),
-            Some("echo {{ env.FOO }}")
+            Some(in_tool_env("echo {{ env.FOO }}").as_str())
         );
         assert!(daemon.table["run"].as_str().unwrap().contains("analytics"));
     }

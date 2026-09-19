@@ -22,7 +22,13 @@ else
 fi
 
 setup_isolated_env() {
-  TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+  # macOS's per-user TMPDIR can exceed Pitchfork's Unix socket path limit.
+  # Keep daemon fixtures short while preserving other tests' temporary roots.
+  if [[ $(os) == "macos" && $(basename "$TEST") == test_daemons* ]]; then
+    TEST_ISOLATED_DIR="$(mktemp --tmpdir=/tmp --directory "$(basename "$TEST").XXXXXX")"
+  else
+    TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+  fi
   if [[ $(os) == "macos" ]]; then
     TEST_ISOLATED_DIR="$(realpath "$TEST_ISOLATED_DIR")"
   fi

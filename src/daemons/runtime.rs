@@ -714,6 +714,17 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
             daemon.source.to_string_lossy().replace(['\r', '\n'], " ")
         ));
         let mut table = daemon.table.clone();
+        // Pitchfork wraps the main process in mise, but runs readiness probes
+        // directly. Resolve custom probes in this checkout too: the supervisor
+        // may have inherited another worktree's tools and endpoint variables.
+        // Preset and task probes already carry their own environment wrapper.
+        if cfg!(unix)
+            && daemon.preset.is_none()
+            && daemon.task.is_none()
+            && table.get("mise").and_then(toml::Value::as_bool) != Some(false)
+        {
+            super::presets::wrap_probe_commands(&mut table);
+        }
         // Ensure mise sees the profile that generated this definition, even at
         // boot. A task-backed daemon runs mise itself rather than being wrapped
         // in `mise x`, so it needs the profile even though it sets mise = false;
