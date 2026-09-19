@@ -56,6 +56,8 @@ enum Request {
         directory: PathBuf,
         links: Vec<(String, PathBuf)>,
         remove: Vec<String>,
+        /// Names whose real directory a link in `links` may replace.
+        replace: Vec<String>,
     },
 }
 
@@ -122,11 +124,14 @@ pub(crate) async fn install<B: Backend + ?Sized>(
 }
 
 /// Publish `links` into `directory` and delete the symlinks named in `remove`.
+/// A real directory occupying a name in `replace` (legacy stale runtime state)
+/// is removed so its link can be created; any other occupied name is skipped.
 /// Entries that already match are dropped before deciding whether to elevate.
 pub(crate) fn links(
     directory: &Path,
     links: Vec<(String, PathBuf)>,
     remove: Vec<String>,
+    replace: Vec<String>,
 ) -> Result<()> {
     let links = links
         .into_iter()
@@ -134,6 +139,9 @@ pub(crate) fn links(
             let path = directory.join(name);
             match fs::symlink_metadata(&path) {
                 Ok(metadata) if !metadata.file_type().is_symlink() => {
+                    if metadata.is_dir() && replace.contains(name) {
+                        return true;
+                    }
                     // A concrete install or an unmanaged file occupies the name;
                     // the helper would refuse it, so leave it alone here.
                     warn!("not replacing non-symlink {}", path.display());
@@ -151,10 +159,15 @@ pub(crate) fn links(
     if links.is_empty() && remove.is_empty() {
         return Ok(());
     }
+    let replace = replace
+        .into_iter()
+        .filter(|name| links.iter().any(|(link, _)| link == name))
+        .collect();
     let mut input = serde_json::to_vec(&Request::Links {
         directory: directory.to_path_buf(),
         links,
         remove,
+        replace,
     })?;
     input.push(b'\n');
     publish(&input[..])
@@ -435,7 +448,12 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
                 return Err(err);
             }
         }
-        Request::Links { links, remove, .. } => {
+        Request::Links {
+            links,
+            remove,
+            replace,
+            ..
+        } => {
             for name in remove {
                 ensure!(crate::file::is_plain_file_name(&name), "invalid link name");
                 let path = directory.join(name);
@@ -459,12 +477,18 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
                 }
                 let destination = directory.join(&name);
                 if let Ok(metadata) = fs::symlink_metadata(&destination) {
-                    ensure!(
-                        metadata.file_type().is_symlink(),
-                        "refusing to replace {}",
-                        destination.display()
-                    );
-                    let existing = fs::read_link(&destination)?;
+                    if metadata.is_dir() && replace.contains(&name) {
+                        // Legacy real directory in a generated selector slot.
+                        fs::remove_dir_all(&destination)?;
+                    } else {
+                        ensure!(
+                            metadata.file_type().is_symlink(),
+                            "refusing to replace {}",
+                            destination.display()
+                        );
+                    }
+                }
+                if let Ok(existing) = fs::read_link(&destination) {
                     if existing == target {
                         continue;
                     }
@@ -623,6 +647,7 @@ mod tests {
                     .map(|(name, target)| (name.to_string(), PathBuf::from(target)))
                     .collect(),
                 remove: remove.into_iter().map(str::to_string).collect(),
+                replace: vec![],
             })?;
             bytes.push(b'\n');
             Ok(bytes)
@@ -660,6 +685,22 @@ mod tests {
         let remove_dir = links_request(vec![], vec!["1"])?;
         assert!(apply_for_owner(&remove_dir[..], owner).is_err());
         assert!(root.join("uv/1").is_dir());
+        // A legacy real directory in a selector slot is only replaced when named.
+        fs::create_dir(root.join("uv/latest"))?;
+        fs::write(root.join("uv/latest/tool"), "stale")?;
+        let stale = links_request(vec![("latest", "./1")], vec![])?;
+        assert!(apply_for_owner(&stale[..], owner).is_err());
+        assert!(root.join("uv/latest").is_dir());
+        let mut migrate = serde_json::to_vec(&Request::Links {
+            directory: root.join("uv"),
+            links: vec![("latest".into(), PathBuf::from("./1"))],
+            remove: vec![],
+            replace: vec!["latest".into()],
+        })?;
+        migrate.push(b'\n');
+        apply_for_owner(&migrate[..], owner)?;
+        assert!(root.join("uv/latest").is_symlink());
+        assert_eq!(fs::read_to_string(root.join("uv/latest/tool"))?, "binary");
         fs::set_permissions(&root, fs::Permissions::from_mode(0o777))?;
         assert!(validate_directory(&root, owner).is_err());
         Ok(())

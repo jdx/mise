@@ -113,6 +113,22 @@ fn rebuild_symlinks_in_dir(
             .chain(missing_symlinks_in_dir(installs_dir)?)
             .filter_map(|path| path.file_name().map(|n| n.to_string_lossy().to_string()))
             .collect();
+        // Same rule as the loop below: a real directory in a runtime-symlink
+        // slot that is not a concrete install is legacy stale state.
+        let replace = symlinks
+            .iter()
+            .filter(|(from, to)| {
+                let path = installs_dir.join(from);
+                path.is_dir()
+                    && !is_runtime_symlink(&path)
+                    && path
+                        .file_name()
+                        .zip(to.file_name())
+                        .is_some_and(|(f, t)| f != t)
+                    && !concrete_installs.contains(*from)
+            })
+            .map(|(from, _)| from.clone())
+            .collect();
         return crate::system_install::links(
             installs_dir,
             symlinks
@@ -120,6 +136,7 @@ fn rebuild_symlinks_in_dir(
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             remove,
+            replace,
         );
     }
     for (from, to) in &symlinks {

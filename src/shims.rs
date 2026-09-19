@@ -645,6 +645,7 @@ pub(crate) async fn reshim_for(
                 .map(|name| (name, mise_bin.to_path_buf()))
                 .collect(),
             extra,
+            vec![],
         );
     }
     file::create_dir_all(&shims_dir)?;
