@@ -104,9 +104,16 @@ pub(crate) async fn emit(
             // session joins, so the same check the other two registration paths
             // make belongs here: a daemon whose dependency was dropped with an
             // unreadable import would otherwise start without what it declared.
-            super::ensure_not_blocked(&scoped_set, &scoped_set.auto_starting(), Some(&root))?;
-            // Only the daemons this hook will actually start.
-            let auto_start = scoped_set.auto_start_names();
+            let auto_starting = scoped_set.auto_starting();
+            super::ensure_not_blocked(&scoped_set, &auto_starting, Some(&root))?;
+            // The daemons this hook starts, dependencies included: pitchfork
+            // brings those up too, so their ports are about to be bound and
+            // belong in the conflict check.
+            let auto_start: Vec<String> = auto_starting
+                .daemons
+                .values()
+                .map(|daemon| daemon.name.clone())
+                .collect();
             // Only this project's own roots reach here, so it owns the profile.
             let (_state, _lock) = runtime
                 .prepare(&root, &scoped_set, force, true, &auto_start)

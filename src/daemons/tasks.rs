@@ -240,11 +240,13 @@ pub(crate) async fn start(
         // would re-probe `pitchfork usage` and re-run `config add` on every
         // `mise run` of a task that requires daemons, even when nothing about
         // the daemons changed and they are already running.
-        let required: Vec<String> = set
+        // The closure, not the names the task gave: pitchfork starts a
+        // daemon's dependencies with it, so their ports are about to be bound
+        // and belong in the conflict check too.
+        let required: Vec<String> = will_start
             .daemons
-            .keys()
-            .filter(|name| names.contains(name.as_str()))
-            .cloned()
+            .values()
+            .map(|daemon| daemon.name.clone())
             .collect();
         // The profile belongs to the project that owns the root, so a task that
         // reached another project's daemon does not impose its own.

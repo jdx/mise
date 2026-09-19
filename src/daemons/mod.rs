@@ -1575,23 +1575,6 @@ impl DaemonSet {
         self.with_dependencies(&names)
     }
 
-    /// Names of the daemons opted into automatic start, which is what a shell
-    /// hook actually launches and so the only ports worth conflict checking
-    /// there. Unlike `auto_starting`, this is the daemons themselves, without
-    /// the dependencies pitchfork brings along.
-    pub(crate) fn auto_start_names(&self) -> Vec<String> {
-        self.daemons
-            .values()
-            .filter(|d| {
-                d.table
-                    .get("auto")
-                    .and_then(toml::Value::as_array)
-                    .is_some_and(|a| a.iter().any(|v| v.as_str() == Some("start")))
-            })
-            .map(|d| d.name.clone())
-            .collect()
-    }
-
     pub(crate) fn auto(&self) -> bool {
         self.daemons.values().any(|d| {
             d.table

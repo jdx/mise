@@ -61,12 +61,11 @@ struct List {
     json: bool,
 }
 
-/// Show each project daemon's port, and its stable hostname URL when the
-/// daemon is proxied.
+/// Show each project daemon's port and its proxy hostname URL.
 ///
 /// Hostnames do not move between git worktrees, so an HTTP service can be
 /// addressed by URL while concurrent checkouts keep separate ports. A daemon
-/// with no port, or with proxy = false, is listed without one.
+/// with no port, or with proxy = false, is listed with its port alone.
 #[derive(Debug, Default, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct UrlsArgs {
@@ -644,12 +643,22 @@ fn proxy_mode(daemon: &daemons::Daemon) -> &str {
 /// `<namespace>/<name>`, which would drop that daemon from the check while it
 /// still started.
 fn starting_names(set: &daemons::DaemonSet, ids: &[String], selectors: &[Selector]) -> Vec<String> {
-    ids.iter()
+    let named: Vec<String> = ids
+        .iter()
         .filter(|id| selectors.is_empty() || selectors.iter().any(|s| selects(set, id, s)))
         .filter_map(|id| {
             let name = id.rsplit('/').next().unwrap_or(id);
             set.daemons.contains_key(name).then(|| name.to_string())
         })
+        .collect();
+    // Pitchfork starts a daemon's dependencies with it, so their ports are
+    // about to be bound too and belong in the check. Naming only what the
+    // selectors matched would let a dependency collide with another project
+    // and say nothing.
+    set.with_dependencies(&named)
+        .daemons
+        .values()
+        .map(|daemon| daemon.name.clone())
         .collect()
 }
 
@@ -835,6 +844,21 @@ mod tests {
         // An id with no matching daemon contributes nothing.
         let stale = ["ns/gone".to_string()];
         assert!(starting_names(&set, &stale, &[]).is_empty());
+
+        // Pitchfork starts a daemon's dependencies with it, so their ports are
+        // bound by this same command and have to reach the conflict check.
+        // Naming only what the selector matched would let one collide with
+        // another project in silence.
+        let set = daemons::load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\nport = 3000\ndepends = ['db']\n\
+             [daemons.db]\nrun = 'db'\nport = 5432\n",
+        )]))
+        .unwrap();
+        let ids = ["ns/api".to_string(), "ns/db".to_string()];
+        let mut launching = starting_names(&set, &ids, &[Selector::Name("ns/api".to_string())]);
+        launching.sort();
+        assert_eq!(launching, ["api", "db"]);
     }
 
     #[test]
