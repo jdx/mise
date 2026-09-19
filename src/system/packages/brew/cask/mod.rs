@@ -3232,11 +3232,12 @@ fn install_pkg(stage: &Path, pkg: &PkgArtifact) -> Result<()> {
     let choices_file = if pkg.choices.is_empty() {
         None
     } else {
-        let file = tempfile::Builder::new()
+        let mut file = tempfile::Builder::new()
             .prefix("choices")
             .suffix(".xml")
             .tempfile()?;
-        file::write(file.path(), pkg_choices_plist(&pkg.choices)?)?;
+        std::io::Write::write_all(&mut file, &pkg_choices_plist(&pkg.choices)?)?;
+        file.as_file().sync_all()?;
         Some(file)
     };
     let args = pkg_installer_args(&source, choices_file.as_ref().map(|file| file.path()));
