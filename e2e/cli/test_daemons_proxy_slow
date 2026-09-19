@@ -6,10 +6,7 @@ if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
 fi
 cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
-# Keep Unix socket paths within macOS sockaddr_un limits, including the
-# random client socket names. This short external directory needs its own cleanup.
-PITCHFORK_STATE_DIR=$(mktemp -d /tmp/mise-pf.XXXXXX)
-export PITCHFORK_STATE_DIR
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
 export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
 export PITCHFORK_PROXY_IDLE_TIMEOUT=5s
 export PITCHFORK_INTERVAL=500ms
@@ -21,7 +18,7 @@ export PITCHFORK_PROXY_AUTO_TRUST=false
 export PITCHFORK_PROXY_TLD=localhost
 PITCHFORK_PROXY_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
 export PITCHFORK_PROXY_PORT
-trap 'pitchfork supervisor stop >/dev/null 2>&1 || true; rm -rf -- "$PITCHFORK_STATE_DIR"' EXIT
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
 
 mkdir project
 cd project

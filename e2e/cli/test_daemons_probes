@@ -6,14 +6,11 @@ if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
 fi
 cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
-# Keep Unix socket paths within macOS sockaddr_un limits, including the
-# random client socket names. This short external directory needs its own cleanup.
-PITCHFORK_STATE_DIR=$(mktemp -d /tmp/mise-pf.XXXXXX)
-export PITCHFORK_STATE_DIR
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
 export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
 export PITCHFORK_INTERVAL=500ms
 export PITCHFORK_PROXY_ENABLE=false
-trap 'pitchfork supervisor stop >/dev/null 2>&1 || true; rm -rf -- "$PITCHFORK_STATE_DIR"' EXIT
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
 
 mkdir project
 cd project
@@ -29,8 +26,8 @@ ready_cmd = "test -f dependency-ready"
 [daemons.api]
 run = "test -f dependency-ready && sleep 2 && exec python3 -m http.server $API_PORT --bind 127.0.0.1"
 port = { auto = true, base = 35000 }
-ready_cmd = { run = "curl -fsS http://127.0.0.1:$API_PORT/proof", timeout = "15s" }
-health_cmd = { run = 'printf "%s" "$API_PORT" > health-port; curl -fsS http://127.0.0.1:$API_PORT/proof', interval = "1s" }
+ready_cmd = { run = 'test "{{ name }}" = api && curl -fsS http://127.0.0.1:$API_PORT/proof', timeout = "15s" }
+health_cmd = { run = 'test "{{ name }}" = api && printf "%s" "$API_PORT" > health-port; curl -fsS http://127.0.0.1:$API_PORT/proof', interval = "1s" }
 depends = ["prepare"]
 TOML
 git add mise.toml

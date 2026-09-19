@@ -794,6 +794,11 @@ fn build(
                 DAEMON_TASK_MARKER.into(),
                 toml::Value::String("1".to_string()),
             );
+        // Preserve an explicit opt-out before inserting the task's own `mise =
+        // false` default: probes still need the project environment by default.
+        if cfg!(unix) && table.get("mise").and_then(toml::Value::as_bool) != Some(false) {
+            presets::wrap_probe_commands(&mut table);
+        }
         // mise is already the entry point, so pitchfork does not need
         // to wrap a bare task daemon in `mise x`. With `init` it does:
         // the setup steps and the task then share one shell inside the
@@ -1870,6 +1875,33 @@ mod tests {
                 .to_string()
                 .contains("tool must be a string")
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn task_probe_environment_respects_explicit_opt_out() {
+        for opt_out in [false, true] {
+            let source = format!(
+                "[daemons.api]\ntask = 'dev'\nready_cmd = 'echo ready'\nhealth_cmd = {{ run = 'echo {{{{ env.FOO }}}}', interval = '2s' }}\n{}",
+                if opt_out { "mise = false\n" } else { "" }
+            );
+            let config = files(&[("/project/mise.toml", &source)]);
+            let set = load(&config).unwrap();
+            let table = &set.daemons["api"].table;
+            let expected = if opt_out {
+                "echo ready".to_string()
+            } else {
+                presets::in_tool_env("echo ready")
+            };
+            assert_eq!(table["ready_cmd"].as_str(), Some(expected.as_str()));
+            let expected = if opt_out {
+                "echo {{ env.FOO }}".to_string()
+            } else {
+                presets::in_tool_env("echo {{ env.FOO }}")
+            };
+            assert_eq!(table["health_cmd"]["run"].as_str(), Some(expected.as_str()));
+            assert_eq!(table["health_cmd"]["interval"].as_str(), Some("2s"));
+        }
     }
 
     #[test]

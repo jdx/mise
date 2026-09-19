@@ -22,7 +22,13 @@ else
 fi
 
 setup_isolated_env() {
-  TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+  # macOS's per-user TMPDIR can exceed Unix socket path limits. Keep the
+  # harness-owned root short so tests need no external temporary directories.
+  local test_tmp_root="${TMPDIR:-/tmp}"
+  if [[ $(os) == "macos" ]]; then
+    test_tmp_root=/tmp
+  fi
+  TEST_ISOLATED_DIR="$(mktemp --tmpdir="$test_tmp_root" --directory "$(basename "$TEST").XXXXXX")"
   if [[ $(os) == "macos" ]]; then
     TEST_ISOLATED_DIR="$(realpath "$TEST_ISOLATED_DIR")"
   fi
