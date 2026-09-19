@@ -149,13 +149,18 @@ fn installed_skip_reason(
 /// updated itself. A cask can list receipts with unrelated numbering (a shared
 /// licensing helper, say), so incomparable ones are ignored rather than
 /// blocking the upgrade, and only a comparable, older receipt triggers it.
+/// Placeholder versions such as `0` are neither older nor current, so they are
+/// ignored too.
 fn pkg_upgrade_skip_reason(cask_version: &str, versions: &[String]) -> Option<&'static str> {
     let cask_short = cask_version.split(',').next().unwrap_or(cask_version);
     let mut outdated = false;
     for version in versions {
         if app_version_outdated(cask_version, Some(version), None) {
             outdated = true;
-        } else if compare_app_versions(version, cask_short).is_some() {
+        } else if matches!(
+            compare_app_versions(version, cask_short),
+            Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Greater)
+        ) {
             return Some("skipped: installed package is current or newer");
         }
     }

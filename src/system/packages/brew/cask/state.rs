@@ -187,10 +187,10 @@ pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
 
 pub(super) fn pkg_receipt_versions_from_ids<'a>(
     ids: impl IntoIterator<Item = &'a str>,
-    mut read_info: impl FnMut(&str) -> Option<Vec<u8>>,
+    read_info: impl FnMut(&str) -> Option<Vec<u8>>,
 ) -> Vec<String> {
     ids.into_iter()
-        .filter_map(|id| read_info(id))
+        .filter_map(read_info)
         .filter_map(|info| pkg_info_version(&info).ok())
         .collect()
 }

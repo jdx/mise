@@ -8328,6 +8328,16 @@ fn auto_updates_pkg_casks_upgrade_only_from_an_older_receipt() {
             "{installed:?}"
         );
     }
+    // A placeholder receipt comparable to the cask version must not veto an
+    // upgrade that a genuinely older receipt calls for.
+    assert_eq!(
+        pkg_upgrade_skip_reason("1.2", &versions(&["0.0", "1.1"])),
+        None
+    );
+    assert_eq!(
+        pkg_upgrade_skip_reason("1.2", &versions(&["0.0"])),
+        Some("skipped: installed package version is unreadable or incomparable")
+    );
     // Comma-separated cask versions compare against their leading version.
     assert_eq!(
         pkg_upgrade_skip_reason("1.102.4,abc123", &versions(&["1.102.3"])),
