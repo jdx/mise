@@ -499,7 +499,7 @@ pub(super) fn write_receipt(
             rf.formula
                 .dependencies_for(tag)
                 .iter()
-                .any(|d| d == &other.formula.name || other.formula.aliases.contains(d))
+                .any(|d| other.formula.names().any(|n| n == d))
         })
         .filter_map(|dep| {
             let pkg_version = dep.formula.pkg_version().ok()?;

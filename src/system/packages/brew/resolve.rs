@@ -280,7 +280,10 @@ async fn resolve_closure_pairs(
 
 async fn fetch_formula(key: &FormulaKey, requested: bool, provision_ruby: bool) -> Result<Formula> {
     if !requested && key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() {
-        match api::formula(&key.name).await {
+        // Exact names only: a sibling formula from the same tap 404s here,
+        // and resolving that through the alias index would download it for
+        // nothing. Aliases are resolved by the core fallback below.
+        match api::formula_exact(&key.name).await {
             Ok(formula) => return Ok(formula),
             Err(err) => {
                 debug!(

@@ -17,6 +17,9 @@ pub(super) struct Formula {
     pub tap: Option<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// names this formula had before a rename
+    #[serde(default)]
+    pub oldnames: Vec<String>,
     pub versions: Versions,
     #[serde(default)]
     pub revision: u32,
@@ -100,6 +103,13 @@ pub(super) struct KegOnlyReason {
 }
 
 impl Formula {
+    /// every name that refers to this formula: canonical, aliases, old names
+    pub(super) fn names(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.name.as_str())
+            .chain(self.aliases.iter().map(String::as_str))
+            .chain(self.oldnames.iter().map(String::as_str))
+    }
+
     /// keg directory name: version plus brew's bottle revision suffix
     pub(super) fn pkg_version(&self) -> Result<String> {
         let stable = self
@@ -160,14 +170,81 @@ impl Formula {
     }
 }
 
-/// Fetch formula metadata by name (or alias — brew's API redirects aliases
-/// to the canonical formula).
+/// Fetch homebrew/core formula metadata by name, alias, or old name.
+///
+/// The per-formula API serves canonical names only: an alias (`openssl`) or a
+/// renamed formula's old name returns 404 rather than redirecting. When the
+/// exact lookup fails, the name is resolved through the bulk formula index and
+/// the canonical formula is fetched instead; if the index has no entry for it,
+/// the original error is returned.
 pub(super) async fn formula(name: &str) -> Result<Formula> {
+    let err = match formula_exact(name).await {
+        Ok(formula) => return Ok(formula),
+        Err(err) => err,
+    };
+    match canonical_formula_name(name).await {
+        Ok(Some(canonical)) => {
+            debug!("brew: {name} resolves to {canonical}");
+            formula_exact(&canonical).await
+        }
+        Ok(None) => Err(err),
+        Err(index_err) => {
+            debug!("brew: could not load the formula index to resolve {name}: {index_err:#}");
+            Err(err)
+        }
+    }
+}
+
+/// Fetch homebrew/core formula metadata by its canonical name only.
+pub(super) async fn formula_exact(name: &str) -> Result<Formula> {
     let url = format!("{API_BASE}/formula/{name}.json");
     HTTP_FETCH
         .json_cached::<Formula, _>(url)
         .await
         .wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
+}
+
+#[derive(Debug, Deserialize)]
+struct FormulaIndexEntry {
+    name: String,
+    #[serde(default)]
+    aliases: Vec<String>,
+    #[serde(default)]
+    oldnames: Vec<String>,
+}
+
+/// alias or old name -> canonical name, from the bulk `formula.json`. Loaded
+/// at most once per process, and only after an exact lookup has failed.
+static FORMULA_ALIASES: tokio::sync::OnceCell<HashMap<String, String>> =
+    tokio::sync::OnceCell::const_new();
+
+async fn canonical_formula_name(name: &str) -> Result<Option<String>> {
+    let aliases = FORMULA_ALIASES
+        .get_or_try_init(|| async {
+            let entries: Vec<FormulaIndexEntry> = HTTP_FETCH
+                .json(format!("{API_BASE}/formula.json"))
+                .await
+                .wrap_err("failed to fetch the Homebrew formula index")?;
+            Ok::<_, eyre::Report>(alias_map(entries))
+        })
+        .await?;
+    Ok(aliases.get(name).cloned())
+}
+
+/// A name that is both an alias and an old name resolves as the alias.
+fn alias_map(entries: Vec<FormulaIndexEntry>) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for entry in &entries {
+        for alias in &entry.aliases {
+            map.insert(alias.clone(), entry.name.clone());
+        }
+    }
+    for entry in entries {
+        for oldname in entry.oldnames {
+            map.entry(oldname).or_insert_with(|| entry.name.clone());
+        }
+    }
+    map
 }
 
 pub(super) async fn formula_with_tap_name(
@@ -316,6 +393,43 @@ mod tests {
         assert!(keg_only_formula(Some(":versioned_formula")).keg_only_for_target());
         assert!(keg_only_formula(Some("free-text reason")).keg_only_for_target());
         assert!(keg_only_formula(None).keg_only_for_target());
+    }
+
+    #[test]
+    fn alias_map_resolves_aliases_before_old_names() {
+        let entries: Vec<FormulaIndexEntry> = serde_json::from_value(serde_json::json!([
+            {"name": "openssl@3", "aliases": ["openssl", "openssl@3.6"], "oldnames": []},
+            {"name": "gitea-runner", "aliases": [], "oldnames": ["act_runner"]},
+            {"name": "shadowed", "oldnames": ["openssl"]},
+            {"name": "hello"},
+        ]))
+        .unwrap();
+        let map = alias_map(entries);
+        assert_eq!(map.get("openssl").map(String::as_str), Some("openssl@3"));
+        assert_eq!(
+            map.get("openssl@3.6").map(String::as_str),
+            Some("openssl@3")
+        );
+        assert_eq!(
+            map.get("act_runner").map(String::as_str),
+            Some("gitea-runner")
+        );
+        assert_eq!(map.get("hello"), None);
+    }
+
+    #[test]
+    fn formula_names_include_aliases_and_old_names() {
+        let formula: Formula = serde_json::from_value(serde_json::json!({
+            "name": "gitea-runner",
+            "aliases": ["runner"],
+            "oldnames": ["act_runner"],
+            "versions": {"stable": "1.0"},
+        }))
+        .unwrap();
+        assert_eq!(
+            formula.names().collect::<Vec<_>>(),
+            ["gitea-runner", "runner", "act_runner"]
+        );
     }
 
     #[test]

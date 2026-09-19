@@ -131,10 +131,12 @@ impl BrewManager {
         for rf in &closure {
             if rf.on_request
                 && !roots.contains(&rf.formula.name)
-                && let Some(alias) = roots.iter().find(|r| rf.formula.aliases.contains(r))
+                && let Some(alias) = roots
+                    .iter()
+                    .find(|r| rf.formula.names().any(|n| n == r.as_str()))
             {
                 warn!(
-                    "'{alias}' is an alias of '{}' — use the canonical name in [bootstrap.packages] \
+                    "'{alias}' resolves to '{}' — use the canonical name in [bootstrap.packages] \
                      so `mise bootstrap packages status` can track it",
                     rf.formula.name
                 );
