@@ -163,26 +163,28 @@ pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
     }
     let mut versions = Vec::new();
     for pattern in pkg_ids {
-        let output = std::process::Command::new("pkgutil")
-            .arg(format!("--pkgs={pattern}"))
-            .stdin(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .output()?;
+        let Some(ids) = pkgutil(&[&format!("--pkgs={pattern}")]) else {
+            continue;
+        };
         versions.extend(pkg_receipt_versions_from_ids(
-            String::from_utf8_lossy(&output.stdout).split_whitespace(),
-            |id| {
-                std::process::Command::new("pkgutil")
-                    .args(["--pkg-info-plist", id])
-                    .stdin(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .output()
-                    .ok()
-                    .filter(|info| info.status.success())
-                    .map(|info| info.stdout)
-            },
+            String::from_utf8_lossy(&ids).split_whitespace(),
+            |id| pkgutil(&["--pkg-info-plist", id]),
         ));
     }
     Ok(versions)
+}
+
+/// Runs `pkgutil` and returns its stdout, or `None` if it could not run or
+/// exited unsuccessfully (as a query with no matching receipt can).
+fn pkgutil(args: &[&str]) -> Option<Vec<u8>> {
+    std::process::Command::new("pkgutil")
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| output.stdout)
 }
 
 pub(super) fn pkg_receipt_versions_from_ids<'a>(
@@ -212,16 +214,6 @@ pub(super) fn pkg_receipt_apps(pkg_ids: &[String]) -> Vec<PathBuf> {
     if !cfg!(target_os = "macos") {
         return Vec::new();
     }
-    let pkgutil = |args: &[&str]| {
-        std::process::Command::new("pkgutil")
-            .args(args)
-            .stdin(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| output.stdout)
-    };
     let mut apps = Vec::new();
     for pattern in pkg_ids {
         let Some(ids) = pkgutil(&[&format!("--pkgs={pattern}")]) else {
