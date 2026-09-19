@@ -261,6 +261,11 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
         url.scheme()
     );
     ensure!(
+        url.scheme() == "https" || !carries_credentials(&url) || is_loopback(&url),
+        "gem `source` would send its credential in clear text: use https, or a \
+         loopback host for a registry running locally"
+    );
+    ensure!(
         url.query().is_none() && url.fragment().is_none(),
         "gem `source` must not carry a query string or fragment: the version API path is \
          appended to it, and both would swallow that path"
@@ -272,6 +277,33 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
     Ok(Some(url))
 }
 
+/// Whether this URL carries basic-auth userinfo.
+fn carries_credentials(url: &Url) -> bool {
+    !url.username().is_empty() || url.password().is_some_and(|p| !p.is_empty())
+}
+
+/// Whether this URL points at the machine it is running on.
+///
+/// A registry on loopback is the ordinary way to test one, and the credential
+/// never crosses a network, so plain HTTP is allowed there and nowhere else.
+fn is_loopback(url: &Url) -> bool {
+    match url.host() {
+        Some(url::Host::Domain(host)) => host == "localhost",
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
+}
+
+/// The shortest credential worth registering as a redaction.
+///
+/// Redaction is substring replacement across every later log line and error, so
+/// a one or two character value would blank out unrelated text everywhere and
+/// leave diagnostics unreadable, which is a worse outcome than not masking a
+/// value that short. Anything a registry issues as a token is far longer; a
+/// value under this length is not a secret worth protecting at that cost.
+const MIN_REDACTABLE_SECRET: usize = 8;
+
 /// The parts of a source URL that must never be printed.
 ///
 /// A registry that authenticates with a token takes it as userinfo. GitHub
@@ -281,11 +313,15 @@ fn parse_source(raw: &str) -> Result<Option<Url>> {
 /// a name like `x-access-token` and redacting it everywhere is just noise.
 fn source_secrets(url: &Url) -> Vec<String> {
     let user = url.username();
-    match url.password() {
-        Some(password) if !password.is_empty() => vec![password.to_string()],
-        _ if !user.is_empty() => vec![user.to_string()],
-        _ => vec![],
+    let secret = match url.password() {
+        Some(password) if !password.is_empty() => password,
+        _ if !user.is_empty() => user,
+        _ => return vec![],
+    };
+    if secret.len() < MIN_REDACTABLE_SECRET {
+        return vec![];
     }
+    vec![secret.to_string()]
 }
 
 /// Strip userinfo so an unparseable value can still be named in an error.
@@ -732,6 +768,48 @@ mod tests {
         }
     }
 
+    /// Basic-auth userinfo over plain HTTP puts the token on the wire for
+    /// anything between here and the registry.
+    #[test]
+    fn a_credential_may_not_travel_over_plain_http() {
+        assert!(parse_source("http://ghp_tok3n@gems.example.com").is_err());
+        assert!(parse_source("http://user:s3cretpw@gems.example.com").is_err());
+
+        // No credential, no exposure: a plain-HTTP public mirror is still fine.
+        assert!(parse_source("http://gems.example.com").unwrap().is_some());
+        // And a registry on this machine never puts it on a network, which is
+        // how a local one is tested.
+        for host in [
+            "http://ghp_tok3n@127.0.0.1:8080",
+            "http://ghp_tok3n@localhost:8080",
+            "http://ghp_tok3n@[::1]:8080",
+        ] {
+            assert!(parse_source(host).unwrap().is_some(), "{host}");
+        }
+        assert!(
+            parse_source("https://ghp_tok3n@gems.example.com")
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    /// Redaction is substring replacement over every later log line, so a very
+    /// short pattern would blank out unrelated text everywhere. Leaving a
+    /// two-character value unmasked is the lesser harm, and nothing a registry
+    /// issues as a token is that short.
+    #[test]
+    fn a_too_short_credential_is_not_registered_for_redaction() {
+        let short = parse_source("https://ab@gems.example.com")
+            .unwrap()
+            .unwrap();
+        assert!(source_secrets(&short).is_empty());
+
+        let real = parse_source("https://ghp_tok3n@gems.example.com")
+            .unwrap()
+            .unwrap();
+        assert_eq!(source_secrets(&real), vec!["ghp_tok3n".to_string()]);
+    }
+
     #[test]
     fn a_source_must_be_http_or_https() {
         assert!(parse_source("file:///tmp/gems").is_err());
@@ -742,10 +820,13 @@ mod tests {
     /// token really does live in this URL and must never reach a log line.
     #[test]
     fn credentials_in_a_source_are_collected_for_redaction() {
-        let with_password = parse_source("https://user:s3cret@gems.example.com")
+        let with_password = parse_source("https://user:s3cret-pw@gems.example.com")
             .unwrap()
             .unwrap();
-        assert_eq!(source_secrets(&with_password), vec!["s3cret".to_string()]);
+        assert_eq!(
+            source_secrets(&with_password),
+            vec!["s3cret-pw".to_string()]
+        );
 
         // GitHub Packages puts the token in the user position with no password.
         let token_only = parse_source("https://ghp_tok3n@rubygems.pkg.github.com/acme")

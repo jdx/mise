@@ -107,6 +107,11 @@ Some registries expect the token in the user position with no password, which
 is what the example above does. Others want `user:token@host`. Follow whichever
 your registry documents.
 
+A source carrying a credential must use `https`, since basic auth over plain
+`http` puts the token on the wire. Plain `http` is accepted for a registry on
+`localhost`, where nothing crosses a network, and for any source with no
+credential in it.
+
 mise registers the credential for redaction, so it is replaced with
 `[redacted]` wherever mise renders the source: log output, `MISE_LOG_FILE`, the
 `gem install` command line, error messages, and the gem command's own output.
@@ -114,6 +119,13 @@ Credentials are also stripped from the URL before it is recorded in mise's
 install metadata, so no token is written under the data directory. Even so,
 prefer a token scoped to reading that registry, since the rendered value does
 exist in the process environment and in whatever supplies it.
+
+Two limits are worth knowing. A credential shorter than eight characters is not
+registered, because redaction is substring replacement and a pattern that short
+would blank out unrelated text everywhere; nothing a registry issues as a token
+is that short. And under `raw` mode mise hands the child its own stdout and
+stderr, so `gem`'s output is not filtered; RubyGems redacts the source in its
+own fetch errors, but a verbose or wrapped invocation may not.
 
 Dependencies are still resolved from the other configured sources, so a private
 gem whose dependencies live on rubygems.org installs normally. `source` is added
