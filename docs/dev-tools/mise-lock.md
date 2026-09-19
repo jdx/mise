@@ -281,7 +281,8 @@ mise.lock
 ```
 
 The corresponding entry contains a relative path and a SHA-256 digest of the native
-lockfile's exact bytes:
+lockfile's contents, with CRLF line endings normalized to LF so that a Windows
+checkout (`core.autocrlf=true`) verifies against the committed file:
 
 ```toml
 [[tools."pypi:black"]]
@@ -322,8 +323,8 @@ sidecar directories. `aube-lock.yaml` is aube's native format; it is not an npm
 `package-lock.json` and scanners may not recognize its transitive dependencies.
 
 After editing a sidecar, run `mise lock` to validate it and update the recorded
-digest. Then run `mise install --locked`. Even formatting-only edits change the
-digest and installation identity.
+digest. Then run `mise install --locked`. Apart from line endings, even
+formatting-only edits change the digest and installation identity.
 
 Ordinary `mise install` also accepts valid edits when an installation is needed
 and updates the digest through auto-locking. If the recorded installation already
