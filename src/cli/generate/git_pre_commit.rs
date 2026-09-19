@@ -11,6 +11,11 @@ use crate::git::Git;
 ///
 /// Staged files are passed to the task as `STAGED`.
 ///
+/// Hooks that git hands a message file — `commit-msg`, `prepare-commit-msg`,
+/// `applypatch-msg` and `sendemail-validate` — pass that file to the task. git's other
+/// arguments are not forwarded, so a `pre-push` hook's remote name and URL are not
+/// appended to the task's command.
+///
 /// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
 #[derive(Debug, usage_rs::Args)]
 #[usage(
@@ -49,6 +54,15 @@ pub(super) struct GitPreCommit {
     mise_args: Vec<String>,
 }
 
+/// Hooks git calls with the path to a message file, as their first argument, for the
+/// hook to read or edit.
+const FILE_ARG_HOOKS: &[&str] = &[
+    "applypatch-msg",
+    "commit-msg",
+    "prepare-commit-msg",
+    "sendemail-validate",
+];
+
 impl GitPreCommit {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let output = self.generate();
@@ -85,16 +99,22 @@ impl GitPreCommit {
         } else {
             format!(" {}", shell_words::join(&self.mise_args))
         };
-        // `"$@"` forwards whatever git passes the hook. `pre-commit` is called with no
-        // arguments so it is unaffected, but every other `--hook` target gets some — a
-        // `commit-msg` hook is handed the path to the message file, for instance — and
-        // without this they are dropped before the task ever sees them.
+        // A task that declares no args gets extra arguments appended to its last command,
+        // so forwarding git's arguments is only safe when the task is meant to read them.
+        // For the message hooks the file is the whole point; anything else (`pre-push`'s
+        // remote name and URL, `prepare-commit-msg`'s source and SHA) would land on
+        // commands such as `npm test` that never asked for it (discussion #13366).
+        let hook_args = if FILE_ARG_HOOKS.contains(&self.hook.as_str()) {
+            r#" "$1""#
+        } else {
+            ""
+        };
         format!(
             r#"#!/bin/sh
 STAGED="$(git diff-index --cached --name-only -z HEAD | xargs -0)"
 export STAGED
 export MISE_PRE_COMMIT=1
-exec mise{mise_args} run {task} "$@"
+exec mise{mise_args} run {task}{hook_args}
 "#
         )
     }
@@ -124,9 +144,26 @@ mod tests {
         // hands it, which is the whole point of that hook.
         let out = generate("lint-commit-msg", "commit-msg");
         assert!(
-            out.contains(r#"exec mise run lint-commit-msg "$@""#),
-            "hook arguments must reach the task:\n{out}"
+            out.ends_with("exec mise run lint-commit-msg \"$1\"\n"),
+            "the message file must reach the task:\n{out}"
         );
+    }
+
+    /// `prepare-commit-msg` also gets the message source and sometimes a SHA; only the file
+    /// is meant for the task, and the rest would be appended to its last command.
+    #[test]
+    fn prepare_commit_msg_forwards_only_the_message_file() {
+        let out = generate("prep", "prepare-commit-msg");
+        assert!(out.ends_with("exec mise run prep \"$1\"\n"), "{out}");
+    }
+
+    /// git calls `pre-push` with the remote name and URL. A task without declared args
+    /// would get them appended to its last command, so they must not be forwarded
+    /// (discussion #13366).
+    #[test]
+    fn pre_push_does_not_forward_hook_arguments() {
+        let out = generate("pre-push", "pre-push");
+        assert!(out.ends_with("exec mise run pre-push\n"), "{out}");
     }
 
     #[test]
@@ -142,7 +179,7 @@ mod tests {
 STAGED="$(git diff-index --cached --name-only -z HEAD | xargs -0)"
 export STAGED
 export MISE_PRE_COMMIT=1
-exec mise run pre-commit "$@"
+exec mise run pre-commit
 "#;
 
     /// Passing nothing must leave the hook byte-identical, so the ones already written
@@ -157,9 +194,9 @@ exec mise run pre-commit "$@"
     /// reachable if the hook carries the flag that gets mise there (discussion #4304).
     #[test]
     fn mise_args_are_inserted_before_run() {
-        let out = generate_with_args("lint", "pre-commit", &["-C", "subdir", "-E", "ci"]);
+        let out = generate_with_args("lint", "commit-msg", &["-C", "subdir", "-E", "ci"]);
         assert!(
-            out.contains(r#"exec mise -C subdir -E ci run lint "$@""#),
+            out.contains(r#"exec mise -C subdir -E ci run lint "$1""#),
             "{out}"
         );
     }
@@ -169,13 +206,13 @@ exec mise run pre-commit "$@"
     /// the line back apart asserts the property instead of the spelling.
     #[test]
     fn an_argument_containing_a_space_stays_one_word() {
-        let out = generate_with_args("lint", "pre-commit", &["-C", "my dir"]);
+        let out = generate_with_args("lint", "commit-msg", &["-C", "my dir"]);
         let exec_line = out
             .lines()
             .find(|line| line.starts_with("exec mise"))
             .expect("generated hook should exec mise");
         let words = shell_words::split(exec_line).expect("exec line should be valid shell");
-        assert_eq!(words, ["exec", "mise", "-C", "my dir", "run", "lint", "$@"]);
+        assert_eq!(words, ["exec", "mise", "-C", "my dir", "run", "lint", "$1"]);
     }
 
     /// The tests above build the struct directly, so they cannot see the question this

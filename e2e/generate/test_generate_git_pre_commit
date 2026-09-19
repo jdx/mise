@@ -7,9 +7,6 @@ assert_contains "mise generate git-pre-commit --quiet" "exec mise run pre-commit
 assert_contains "mise generate git-pre-commit --write" "Wrote to"
 test -x .git/hooks/pre-commit
 assert_contains "cat .git/hooks/pre-commit" "exec mise run pre-commit"
-# git hands most hooks arguments — a commit-msg hook gets the message file — and they have
-# to reach the task. pre-commit itself is called with none, so this expands to nothing there.
-assert_contains "cat .git/hooks/pre-commit" 'exec mise run pre-commit "$@"'
 
 assert_contains "mise generate git-pre-commit --write" "Moving existing hook"
 test -f .git/hooks/pre-commit.old
@@ -23,3 +20,43 @@ mise generate git-pre-commit --write --hook silent-hook >/dev/null
 assert_empty "mise generate git-pre-commit --silent --write --hook silent-hook 2>&1"
 test -x .git/hooks/silent-hook
 test -f .git/hooks/silent-hook.old
+
+# A commit-msg hook is handed the message file, and the task has to receive it. The
+# pre-commit hook written above runs a task that does not exist here, so drop it first.
+rm .git/hooks/pre-commit
+git config user.email test@example.com
+git config user.name test
+cat >mise.toml <<'EOF'
+[tasks.check-msg]
+run = 'grep -q "subject line" '
+
+[tasks.read-msg]
+run = 'cat '
+
+[tasks.test]
+run = ["echo first", "echo last"]
+
+[tasks.pre-push]
+run = "mise run test"
+EOF
+mise generate git-pre-commit --write --hook commit-msg --task check-msg >/dev/null
+# shellcheck disable=SC2016 # the literal "$1" written into the hook
+assert "tail -n1 .git/hooks/commit-msg" 'exec mise run check-msg "$1"'
+git add mise.toml
+assert_succeed "git commit -q -m 'subject line'"
+assert_fail "git commit -q --allow-empty -m 'something else'"
+
+# prepare-commit-msg also gets the message source ("message" for -m). Only the file is
+# forwarded; otherwise cat would look for a file named "message" and fail the commit.
+mise generate git-pre-commit --write --hook prepare-commit-msg --task read-msg >/dev/null
+assert_succeed "git commit -q --allow-empty -m 'subject line again'"
+
+# git calls pre-push with the remote name and URL. They are not forwarded, so they do not
+# end up on the last command of a task that never declared args (discussion #13366).
+git init -q --bare remote.git
+git remote add origin remote.git
+mise generate git-pre-commit --write --hook pre-push --task pre-push >/dev/null
+assert "tail -n1 .git/hooks/pre-push" "exec mise run pre-push"
+output="$(git push -q origin HEAD 2>&1)"
+assert_contains_text "$output" "echo last"
+assert_not_contains_text "$output" "origin"
