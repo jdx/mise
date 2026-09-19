@@ -405,6 +405,15 @@ jobs:
       - run: ls target\debug
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - uses: ./.github/actions/mise-tools
+      - name: "TEMP: mise cache composition (after restore)"
+        if: always()
+        shell: bash
+        run: |
+          for d in ~/.local/share/mise/installs/* ~/.local/share/mise/* ~/.cache/mise/*; do
+            [ -e "$d" ] || continue
+            printf '%8s MB %8s files  %s\n' "$(du -sm "$d" | cut -f1)" "$(find "$d" | wc -l)" "$d"
+          done | sort -rn
+          du -sm ~/.local/share/mise ~/.cache/mise
       - name: e2e
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
@@ -412,6 +421,15 @@ jobs:
           retry_wait_seconds: 30
           max_attempts: 2
           command: pwsh e2e-win\run.ps1
+      - name: "TEMP: mise cache composition (after e2e)"
+        if: always()
+        shell: bash
+        run: |
+          for d in ~/.local/share/mise/installs/* ~/.local/share/mise/* ~/.cache/mise/*; do
+            [ -e "$d" ] || continue
+            printf '%8s MB %8s files  %s\n' "$(du -sm "$d" | cut -f1)" "$(find "$d" | wc -l)" "$d"
+          done | sort -rn
+          du -sm ~/.local/share/mise ~/.cache/mise
 
   test-ci:
     permissions: {}
