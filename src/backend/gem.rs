@@ -295,13 +295,14 @@ fn is_loopback(url: &Url) -> bool {
     }
 }
 
-/// The shortest credential worth registering as a redaction.
+/// The shortest credential safe to register on its own.
 ///
-/// Redaction is substring replacement across every later log line and error, so
-/// a one or two character value would blank out unrelated text everywhere and
-/// leave diagnostics unreadable, which is a worse outcome than not masking a
-/// value that short. Anything a registry issues as a token is far longer; a
-/// value under this length is not a secret worth protecting at that cost.
+/// Redaction is substring replacement across every later log line, so a bare
+/// one or two character value would blank out unrelated text everywhere. That
+/// is a reason to be careful about the BARE value only: the userinfo pattern
+/// below carries its own delimiters and is specific at any length, so a short
+/// credential is still covered wherever it appears as part of a URL, which is
+/// everywhere mise or gem renders it.
 const MIN_REDACTABLE_SECRET: usize = 8;
 
 /// The parts of a source URL that must never be printed.
@@ -313,15 +314,28 @@ const MIN_REDACTABLE_SECRET: usize = 8;
 /// a name like `x-access-token` and redacting it everywhere is just noise.
 fn source_secrets(url: &Url) -> Vec<String> {
     let user = url.username();
-    let secret = match url.password() {
-        Some(password) if !password.is_empty() => password,
-        _ if !user.is_empty() => user,
-        _ => return vec![],
-    };
-    if secret.len() < MIN_REDACTABLE_SECRET {
+    let password = url.password().unwrap_or_default();
+    if user.is_empty() && password.is_empty() {
         return vec![];
     }
-    vec![secret.to_string()]
+
+    // The userinfo exactly as a URL spells it, trailing `@` included. That
+    // delimiter is what makes it specific: it cannot collide with ordinary text
+    // the way a bare `ab` would, so it is registered whatever its length, and a
+    // short credential is protected rather than skipped.
+    let mut secrets = vec![if password.is_empty() {
+        format!("{user}@")
+    } else {
+        format!("{user}:{password}@")
+    }];
+
+    // The bare secret as well, in case something prints it outside a URL, but
+    // only when it is long enough for substring replacement to be safe.
+    let bare = if password.is_empty() { user } else { password };
+    if bare.len() >= MIN_REDACTABLE_SECRET {
+        secrets.push(bare.to_string());
+    }
+    secrets
 }
 
 /// Strip userinfo so an unparseable value can still be named in an error.
@@ -798,16 +812,36 @@ mod tests {
     /// two-character value unmasked is the lesser harm, and nothing a registry
     /// issues as a token is that short.
     #[test]
-    fn a_too_short_credential_is_not_registered_for_redaction() {
+    fn a_short_credential_is_still_redacted_through_its_userinfo() {
         let short = parse_source("https://ab@gems.example.com")
             .unwrap()
             .unwrap();
-        assert!(source_secrets(&short).is_empty());
+        assert_eq!(source_secrets(&short), vec!["ab@".to_string()]);
+        assert!(
+            !source_secrets(&short).contains(&"ab".to_string()),
+            "a two-character pattern would blank out unrelated text"
+        );
+    }
 
-        let real = parse_source("https://ghp_tok3n@gems.example.com")
-            .unwrap()
-            .unwrap();
-        assert_eq!(source_secrets(&real), vec!["ghp_tok3n".to_string()]);
+    /// Whatever is registered has to actually mask the URL as it is rendered,
+    /// since that is how the credential reaches a log line or an argv.
+    #[test]
+    fn the_registered_patterns_mask_the_rendered_url() {
+        for raw in [
+            "https://ab@gems.example.com/acme",
+            "https://user:pw@gems.example.com/acme",
+            "https://ghp_tok3n@gems.example.com/acme",
+        ] {
+            let url = parse_source(raw).unwrap().unwrap();
+            let secret = url
+                .password()
+                .filter(|p| !p.is_empty())
+                .unwrap_or_else(|| url.username())
+                .to_string();
+            let masked =
+                crate::redactions::Redactor::new(source_secrets(&url)).redact(&url.to_string());
+            assert!(!masked.contains(&secret), "{raw} -> {masked}");
+        }
     }
 
     #[test]
@@ -823,16 +857,20 @@ mod tests {
         let with_password = parse_source("https://user:s3cret-pw@gems.example.com")
             .unwrap()
             .unwrap();
+        // The userinfo pattern first, then the bare secret.
         assert_eq!(
             source_secrets(&with_password),
-            vec!["s3cret-pw".to_string()]
+            vec!["user:s3cret-pw@".to_string(), "s3cret-pw".to_string()]
         );
 
         // GitHub Packages puts the token in the user position with no password.
         let token_only = parse_source("https://ghp_tok3n@rubygems.pkg.github.com/acme")
             .unwrap()
             .unwrap();
-        assert_eq!(source_secrets(&token_only), vec!["ghp_tok3n".to_string()]);
+        assert_eq!(
+            source_secrets(&token_only),
+            vec!["ghp_tok3n@".to_string(), "ghp_tok3n".to_string()]
+        );
 
         let anonymous = parse_source("https://gems.example.com").unwrap().unwrap();
         assert!(source_secrets(&anonymous).is_empty());

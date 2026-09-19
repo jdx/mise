@@ -120,12 +120,9 @@ install metadata, so no token is written under the data directory. Even so,
 prefer a token scoped to reading that registry, since the rendered value does
 exist in the process environment and in whatever supplies it.
 
-Two limits are worth knowing. A credential shorter than eight characters is not
-registered, because redaction is substring replacement and a pattern that short
-would blank out unrelated text everywhere; nothing a registry issues as a token
-is that short. And under `raw` mode mise hands the child its own stdout and
-stderr, so `gem`'s output is not filtered; RubyGems redacts the source in its
-own fetch errors, but a verbose or wrapped invocation may not.
+One limit is worth knowing: under `raw` mode mise hands the child its own
+stdout and stderr, so `gem`'s output is not filtered. RubyGems redacts the
+source in its own fetch errors, but a verbose or wrapped invocation may not.
 
 Dependencies are still resolved from the other configured sources, so a private
 gem whose dependencies live on rubygems.org installs normally. `source` is added
