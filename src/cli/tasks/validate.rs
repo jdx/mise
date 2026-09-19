@@ -89,6 +89,9 @@ impl TasksValidate {
             self.get_all_tasks(&all_tasks)
         };
 
+        // Keep reference discovery separate from task selection and other checks.
+        let reference_tasks = Self::load_reference_tasks(&config, &tasks, &all_tasks).await?;
+
         // Run validation
         let mut issues = Vec::new();
         if let Err(err) = Deps::new_for_validation(&config, tasks.clone()).await {
@@ -113,7 +116,10 @@ impl TasksValidate {
             }
         }
         for task in &tasks {
-            issues.extend(self.validate_task(task, &all_tasks, &config).await);
+            issues.extend(
+                self.validate_task(task, &all_tasks, reference_tasks.as_deref(), &config)
+                    .await,
+            );
         }
 
         // Filter by severity if needed
@@ -233,15 +239,13 @@ impl TasksValidate {
         &self,
         task: &Task,
         all_tasks: &BTreeMap<String, Task>,
+        reference_tasks: Option<&BTreeMap<String, Task>>,
         config: &Arc<Config>,
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
         // 1. Validate missing task references
-        issues.extend(
-            self.validate_missing_references(task, all_tasks, config)
-                .await,
-        );
+        issues.extend(self.validate_missing_references(task, all_tasks, reference_tasks));
 
         // 1b. Validate required daemon references
         issues.extend(Self::validate_daemon_references(task, config).await);
@@ -271,18 +275,59 @@ impl TasksValidate {
         issues.extend(self.validate_output_patterns(task));
 
         // 10. Validate run entries
-        issues.extend(self.validate_run_entries(task, all_tasks, config).await);
+        issues.extend(self.validate_run_entries(task, all_tasks, reference_tasks));
 
         issues
     }
 
+    /// Load unresolved cross-project references together, preserving configuration errors.
+    async fn load_reference_tasks(
+        config: &Arc<Config>,
+        tasks: &[Task],
+        all_tasks: &BTreeMap<String, Task>,
+    ) -> Result<Option<Arc<BTreeMap<String, Task>>>> {
+        let mut patterns = Vec::new();
+        for task in tasks {
+            let dependencies = task
+                .depends
+                .iter()
+                .chain(task.depends_post.iter())
+                .chain(task.wait_for.iter())
+                .filter(|dep| !dep.optional && !dep.task.contains(['*', '?']))
+                .map(|dep| dep.task.as_str());
+            let run_references = task.run().iter().flat_map(|entry| {
+                let names = match entry {
+                    crate::task::RunEntry::Script(_) => &[][..],
+                    crate::task::RunEntry::SingleTask { task, .. } => std::slice::from_ref(task),
+                    crate::task::RunEntry::TaskGroup { tasks } => tasks.as_slice(),
+                };
+                names
+                    .iter()
+                    .map(|name| crate::task::task_list::split_task_spec(name).0)
+            });
+            for name in dependencies.chain(run_references) {
+                let resolved = resolve_task_pattern(name, Some(task));
+                if extract_monorepo_path(&resolved).is_some_and(|path| !path.is_empty())
+                    && !Self::task_exists(all_tasks, name, task, None)
+                {
+                    patterns.push(resolved);
+                }
+            }
+        }
+        if patterns.is_empty() {
+            return Ok(None);
+        }
+        let ctx = TaskLoadContext::from_patterns(patterns.iter().map(String::as_str));
+        Ok(Some(config.tasks_with_context(Some(&ctx)).await?))
+    }
+
     /// Check if a task exists by name, display_name, or alias.
     /// Monorepo-relative references are resolved the same way runtime task matching resolves them.
-    async fn task_exists(
+    fn task_exists(
         all_tasks: &BTreeMap<String, Task>,
         task_name: &str,
         parent: &Task,
-        config: &Arc<Config>,
+        reference_tasks: Option<&BTreeMap<String, Task>>,
     ) -> bool {
         let resolved_name = resolve_task_pattern(task_name, Some(parent));
         let exists = |tasks: &BTreeMap<String, Task>| {
@@ -296,18 +341,10 @@ impl TasksValidate {
             return true;
         }
 
-        // The validation snapshot only contains the current directory hierarchy.
-        // Look up missing cross-project references in their own loading context,
-        // without expanding task selection, alias checks, or remote file fetching.
-        // Root-local and ordinary references need no additional discovery.
-        if extract_monorepo_path(&resolved_name).is_none_or(|path| path.is_empty()) {
-            return false;
-        }
-        let ctx = TaskLoadContext::from_pattern(&resolved_name);
-        config
-            .tasks_with_context(Some(&ctx))
-            .await
-            .is_ok_and(|tasks| exists(&tasks))
+        // Only missing cross-project references may use the expanded catalog.
+        // Ordinary and root-local references retain their original lookup scope.
+        extract_monorepo_path(&resolved_name).is_some_and(|path| !path.is_empty())
+            && reference_tasks.is_some_and(exists)
     }
 
     /// A `daemons` entry naming something no `[daemons]` section declares fails
@@ -368,11 +405,11 @@ impl TasksValidate {
             .collect()
     }
 
-    async fn validate_missing_references(
+    fn validate_missing_references(
         &self,
         task: &Task,
         all_tasks: &BTreeMap<String, Task>,
-        config: &Arc<Config>,
+        reference_tasks: Option<&BTreeMap<String, Task>>,
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
@@ -397,7 +434,7 @@ impl TasksValidate {
             }
 
             // Check if task exists
-            if !Self::task_exists(all_tasks, dep_name, task, config).await {
+            if !Self::task_exists(all_tasks, dep_name, task, reference_tasks) {
                 issues.push(ValidationIssue {
                     task: task.name.clone(),
                     severity: Severity::Error,
@@ -674,11 +711,11 @@ impl TasksValidate {
         issues
     }
 
-    async fn validate_run_entries(
+    fn validate_run_entries(
         &self,
         task: &Task,
         all_tasks: &BTreeMap<String, Task>,
-        config: &Arc<Config>,
+        reference_tasks: Option<&BTreeMap<String, Task>>,
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
@@ -702,7 +739,7 @@ impl TasksValidate {
                 } => {
                     // Strip inline arguments before checking existence, matching runtime behavior
                     let (name, _) = crate::task::task_list::split_task_spec(task_name);
-                    if !Self::task_exists(all_tasks, name, task, config).await {
+                    if !Self::task_exists(all_tasks, name, task, reference_tasks) {
                         issues.push(ValidationIssue {
                             task: task.name.clone(),
                             severity: Severity::Error,
@@ -716,7 +753,7 @@ impl TasksValidate {
                     // Strip inline arguments before checking existence, matching runtime behavior
                     for task_name in tasks {
                         let (name, _) = crate::task::task_list::split_task_spec(task_name);
-                        if !Self::task_exists(all_tasks, name, task, config).await {
+                        if !Self::task_exists(all_tasks, name, task, reference_tasks) {
                             issues.push(ValidationIssue {
                                 task: task.name.clone(),
                                 severity: Severity::Error,

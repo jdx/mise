@@ -126,3 +126,44 @@ depends = [{task = "//crates/gui:absent", optional = true}]
 run = "echo wrapper"
 EOF
 assert_validation 1 "mise tasks validate"
+
+# A child loading failure must expose its cause instead of reporting a missing task.
+mkdir -p broken/pkg
+cat >broken/mise.toml <<'EOF'
+monorepo_root = true
+[monorepo]
+config_roots = ["pkg"]
+[tasks.wrapper]
+run = [{task = "//pkg:dev"}]
+EOF
+cat >broken/pkg/mise.toml <<'EOF'
+[tasks.dev]
+extends = "missing-template"
+EOF
+assert_fail "mise -C broken tasks validate" "extends template 'missing-template' which was not found"
+assert_not_contains "mise -C broken tasks validate 2>&1 || true" "missing-task-reference"
+
+# Distinct child scopes share one reference load, rather than loading once per scope.
+mkdir -p batched
+cat >batched/mise.toml <<'EOF'
+monorepo_root = true
+[monorepo]
+config_roots = ["projects/*"]
+EOF
+for i in {1..12}; do
+  mkdir -p "batched/projects/p$i"
+  cat >"batched/projects/p$i/mise.toml" <<'EOF'
+[tasks.dev]
+run = "echo child"
+EOF
+  cat >>batched/mise.toml <<EOF
+[tasks.wrapper$i]
+run = [{task = "//projects/p$i:dev"}]
+EOF
+done
+assert_succeed "MISE_TRACE=1 mise -C batched tasks validate --json >validation.json 2>trace.log"
+assert "jq -c '[.tasks_validated, .errors, .warnings]' validation.json" '[12,0,0]'
+load_count=$(awk '/config::load_all_tasks_with_context start/ {count++} END {print count+0}' trace.log)
+if ((load_count == 0 || load_count >= 12)); then
+  fail "expected shared task loading for 12 child scopes, got $load_count loads"
+fi
