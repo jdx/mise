@@ -165,12 +165,19 @@ pub(crate) fn normalize_arch(arch: &str) -> &str {
 }
 
 /// Whether an `os` or `os/arch` selector matches the current platform.
+/// Besides an OS name, the OS family `unix` matches every non-Windows platform.
 pub(crate) fn os_selector_matches(entry: &str) -> bool {
-    if let Some((os, arch)) = entry.split_once('/') {
-        normalize_os(os) == OS.as_str() && normalize_arch(arch) == ARCH.as_str()
-    } else {
-        normalize_os(entry) == OS.as_str()
-    }
+    let (os, arch) = entry
+        .split_once('/')
+        .map_or((entry, None), |(os, arch)| (os, Some(arch)));
+    let os = normalize_os(os);
+    (os == OS.as_str() || os == env::consts::FAMILY)
+        && arch.is_none_or(|arch| normalize_arch(arch) == ARCH.as_str())
+}
+
+/// Whether a selector names the OS family (`unix`, `unix/arm64`) rather than one OS.
+pub(crate) fn is_os_family_selector(entry: &str) -> bool {
+    entry.split('/').next() == Some("unix")
 }
 
 pub(crate) static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
@@ -461,6 +468,23 @@ mod tests {
         assert_eq!(normalize_os("windows"), "windows");
         assert_eq!(normalize_os("win"), "windows");
         assert_eq!(normalize_os("freebsd"), "freebsd");
+    }
+
+    #[test]
+    fn test_os_selector_matches() {
+        let os = OS.as_str();
+        let arch = ARCH.as_str();
+        let other_arch = if arch == "x64" { "arm64" } else { "x64" };
+        assert!(os_selector_matches(os));
+        assert!(os_selector_matches(&format!("{os}/{arch}")));
+        assert!(!os_selector_matches(&format!("{os}/{other_arch}")));
+        assert!(!os_selector_matches("plan9"));
+        assert_eq!(os_selector_matches("unix"), cfg!(unix));
+        assert_eq!(os_selector_matches(&format!("unix/{arch}")), cfg!(unix));
+        assert!(!os_selector_matches(&format!("unix/{other_arch}")));
+        assert!(is_os_family_selector("unix"));
+        assert!(is_os_family_selector("unix/arm64"));
+        assert!(!is_os_family_selector("linux"));
     }
 
     #[test]

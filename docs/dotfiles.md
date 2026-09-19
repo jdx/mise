@@ -685,6 +685,14 @@ versions of `~/.zshrc` for macOS and Linux:
 Add this to your global configuration, or use
 `mise dot track ~/.zshrc --os macos` to add one variant.
 The `os` selector accepts an optional `/arch`, as in bootstrap packages.
+Use `os = "unix"` to share one version between Linux and macOS and skip
+the path on Windows:
+
+```toml
+[dotfiles]
+"~/.zshrc" = { mode = "track", variants = [{ os = "unix" }] }
+```
+
 Use `profile` to select a [mise environment](/configuration/environments.html):
 
 ```toml
@@ -692,10 +700,11 @@ Use `profile` to select a [mise environment](/configuration/environments.html):
 "~/.gitconfig-work" = { mode = "track", variants = [{ profile = "work" }, { default = true }] }
 ```
 
-When several variants match, mise scores each one: `profile` adds two
-points, `os` adds one, and an architecture adds one more. The highest
-score wins. A profile-only variant therefore ties with an OS-and-architecture
-variant. If the highest score is tied, mise reports the ambiguity and
+When several variants match, mise scores each one: `profile` adds four
+points, `os` adds two (the `unix` family adds one), and an architecture
+adds two more. The highest score wins. On a Mac, `os = "macos"` therefore
+beats `os = "unix"`, and a profile-only variant ties with an
+OS-and-architecture variant. If the highest score is tied, mise reports the ambiguity and
 skips the path until you fix it.
 
 When nothing matches, mise uses the variant marked `default = true`.

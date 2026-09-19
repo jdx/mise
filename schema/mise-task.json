@@ -1245,7 +1245,14 @@
       "description": "operating system or os/arch pair to install on",
       "type": "string",
       "pattern": "^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)?$",
-      "examples": ["linux", "macos", "windows", "macos/arm64", "linux/x64"]
+      "examples": [
+        "linux",
+        "macos",
+        "windows",
+        "unix",
+        "macos/arm64",
+        "linux/x64"
+      ]
     }
   }
 }
