@@ -393,15 +393,24 @@ jobs:
           path: target/debug
       - run: ls target\debug
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
-      # No tool cache here. The e2e suite installs tools into this same data
-      # dir, so the saved cache accumulated every version any test ever pulled:
-      # 3.8 GB across 56k files, restored in 98s (7s to download, 91s to
-      # create the files on NTFS). Installing the ~2 GB the job actually uses
-      # is faster than unpacking that: measured cold, `mise install` takes 9s
-      # and the tools the suite reuses take another ~50s.
+      # The e2e suite installs tools into this same data dir, so the cache had
+      # grown to 3.8 GB across 56k files. Restoring it took ~114s, almost all
+      # of it creating those files on NTFS rather than downloading the 1.2 GB
+      # archive. The four entries below are 78% of the files but only 28% of
+      # the bytes, and each is quicker to install than to unpack: measured
+      # cold on a runner, zig 15.9s, go 7.6s, python 5.3s, vfox-nodejs 3.3s.
+      # `bin/` is a mise binary an install-script test drops there and nothing
+      # reads afterwards. Everything else stays cached, including the three
+      # node versions the suite uses, which are cheaper to unpack than to
+      # fetch.
       - uses: ./.github/actions/mise-tools
         with:
-          cache: "false"
+          cache-exclude: |
+            !~/.local/share/mise/installs/zig/**
+            !~/.local/share/mise/installs/go/**
+            !~/.local/share/mise/installs/python/**
+            !~/.local/share/mise/installs/vfox-version-fox-vfox-nodejs/**
+            !~/.local/share/mise/bin/**
       - name: e2e
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:

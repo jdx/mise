@@ -6,18 +6,28 @@ inputs:
     description: "Restore and save the mise tool cache"
     required: false
     default: "true"
+  cache-exclude:
+    description: >-
+      Extra actions/cache path patterns, one per line, for tools that are
+      cheaper to reinstall than to unpack.
+      e.g. `!~/.local/share/mise/installs/zig/**`
+    required: false
+    default: ""
 
 runs:
   using: "composite"
   steps:
+    # v2: the key changed when `cache-exclude` landed, so that a job which
+    # trims the cache stops restoring the untrimmed entry it already matches.
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       if: inputs.cache == 'true'
       with:
-        key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
-        restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-
+        key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-v2-${{ hashFiles('mise.lock') }}
+        restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-v2-
         path: |
           ~/.local/share/mise
           ~/.cache/mise
+          ${{ inputs.cache-exclude }}
     # Check the API directly instead of bootstrapping the rate-limit helper,
     # since installing the helper itself requires GitHub API access.
     - name: Wait for GitHub rate limit
