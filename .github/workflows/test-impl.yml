@@ -155,21 +155,32 @@ jobs:
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos
       # Tracked history shells out to git and needs the Xcode Command
-      # Line Tools guard exercised on a real macOS runner.
-      - run: >-
+      # Line Tools guard exercised on a real macOS runner. Each test has its
+      # own HOME, TMPDIR, and mise directories, so these run concurrently.
+      # They are listed longest first so the slowest start immediately.
+      # macos-14 runners have 3 cores; Namespace runners have 6.
+      - name: Test dotfiles and bootstrap e2e
+        env:
+          E2E_JOBS: ${{ inputs.trusted && '3' || '2' }}
+        run: >-
           mise run test:e2e
-          '^test_dotfiles_history_bootstrap$' '^test_dotfiles_history$'
-          '^test_dotfiles_recovery_journey$' '^test_dotfiles_capture$'
-          '^test_dotfiles_onboarding$' '^test_dotfiles_track$'
-          '^test_dotfiles_history_policies$' '^test_dotfiles_rollback$'
-          '^test_dotfiles_rollback_types$' '^test_bootstrap_user_services$'
-          '^test_bootstrap_unit_templates$'
-          '^test_dotfiles_rollback_review$' '^test_dotfiles_sync_permissions$'
-          '^test_dotfiles_managed_manual$' '^test_bootstrap_from_git_dumb_http$'
-          '^test_dotfiles_alias_enrollment$'
-          '^test_dotfiles_watch$' '^test_dotfiles_watch_pending$'
-          '^test_dotfiles_watch_throttle$' '^test_dotfiles_sync$'
-          '^test_dotfiles_sync_files_encrypted$' '^test_dotfiles_directory_permissions$'
+          '^test_dotfiles_rollback_types$' '^test_dotfiles_sync_files_encrypted$'
+          '^test_dotfiles_rollback$' '^test_dotfiles_capture$'
+          '^test_dotfiles_track$' '^test_dotfiles_rollback_review$'
+          '^test_bootstrap_user_services$' '^test_dotfiles_sync_permissions$'
+          '^test_dotfiles_recovery_journey$' '^test_dotfiles_sync$'
+          '^test_dotfiles_managed_manual$' '^test_dotfiles_history_bootstrap$'
+          '^test_dotfiles_history$' '^test_dotfiles_directory_permissions$'
+          '^test_bootstrap_unit_templates$' '^test_dotfiles_history_policies$'
+          '^test_dotfiles_onboarding$' '^test_dotfiles_alias_enrollment$'
+          '^test_bootstrap_from_git_dumb_http$'
+      # The watcher tests assert on debounce and throttle windows. Keep them
+      # serial so concurrent tests cannot delay filesystem events.
+      - name: Test dotfiles watcher e2e
+        run: >-
+          mise run test:e2e
+          '^test_dotfiles_watch_throttle$' '^test_dotfiles_watch$'
+          '^test_dotfiles_watch_pending$'
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
