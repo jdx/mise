@@ -148,6 +148,27 @@ fn checked_path() -> PathBuf {
     dir().join("cask.last-checked")
 }
 
+/// An HTTP date, for ordering one generation of the document against another.
+///
+/// `parse_from_rfc2822` is what `src/http.rs` already uses on `Last-Modified`:
+/// the IMF-fixdate HTTP sends parses as RFC 2822.
+fn parse_http_date(raw: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    chrono::DateTime::parse_from_rfc2822(raw.trim()).ok()
+}
+
+/// The `Last-Modified` belonging to the document currently on disk.
+///
+/// Gated on the document actually being there: a validator with no document
+/// describes nothing, and treating it as a generation to compare against would
+/// let a leftover file suppress a real publication.
+fn stored_last_modified() -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    if !usable_document() {
+        return None;
+    }
+    let raw = std::fs::read_to_string(dir().join("cask.last-modified")).ok()?;
+    parse_http_date(&raw)
+}
+
 /// Whether a file can actually be created in the cache directory.
 ///
 /// `create_dir_all` returns `Ok` the moment the directory exists, which says
@@ -357,11 +378,28 @@ async fn refresh() -> Result<()> {
     // `load_index` accepts them, and the window then serves that older
     // generation until it expires.
     //
-    // A fresh stamp here means some other process published and stamped while
-    // this one was downloading. Its body is at least as new as this one's, so
-    // the right move is to keep it and throw this download away.
-    if is_fresh() {
-        debug!("brew-cask: another process published the bulk index first; keeping its copy");
+    // Compared on the validator, not on the freshness stamp. A fresh stamp only
+    // says somebody spoke to upstream, and a 304 stamps too: a process whose
+    // cached copy was still current when it asked renews the window without
+    // publishing anything. Deciding on the stamp would make that 304 discard
+    // THIS newer body and keep the older one for another window, which is the
+    // very thing being fixed here, just with the processes swapped.
+    //
+    // Falls through when either side is missing or unparseable, which is what
+    // this did before: a server sending no `Last-Modified` gives nothing to
+    // order by, and publishing is the better guess than silently keeping
+    // whatever happens to be on disk.
+    if let Some(stored) = stored_last_modified()
+        && let Some(fetched) = last_modified.as_deref().and_then(parse_http_date)
+        && stored >= fetched
+    {
+        debug!(
+            "brew-cask: another process published a bulk index at least as new; keeping its copy"
+        );
+        // Their document is current, so the window is as much theirs to restart
+        // as ours: not stamping would send the next run back to upstream for a
+        // document it already has.
+        mark_checked_best_effort();
         return Ok(());
     }
 
@@ -798,6 +836,25 @@ mod tests {
 
         index.casks.insert("huge".to_string(), (size, 1));
         assert!(!ranges_fit(&index, size), "range past the end accepted");
+    }
+
+    /// The publication race is decided by comparing these, so they have to
+    /// order correctly.
+    #[test]
+    fn http_dates_order_one_generation_against_another() {
+        // Real weekday names: chrono rejects a date whose day-of-week does not
+        // match, and so would silently make this comparison unreachable.
+        let older = parse_http_date("Thu, 17 Sep 2026 10:00:00 GMT").unwrap();
+        let newer = parse_http_date("Fri, 18 Sep 2026 09:00:00 GMT").unwrap();
+        assert!(newer > older);
+        assert!(older >= parse_http_date("  Thu, 17 Sep 2026 10:00:00 GMT  ").unwrap());
+        assert_eq!(parse_http_date("not a date"), None);
+        assert_eq!(parse_http_date(""), None);
+        assert_eq!(
+            parse_http_date("Wed, 17 Sep 2026 10:00:00 GMT"),
+            None,
+            "17 Sep 2026 is a Thursday"
+        );
     }
 
     #[test]
