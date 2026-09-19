@@ -8,7 +8,7 @@ use rmcp::{
         CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorCode,
         ErrorData, Implementation, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
         ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
-        Resource, ResourceContents, ServerCapabilities, ServerInfo,
+        Resource, ResourceContents, ServerCapabilities, ServerConfig,
     },
     schemars::JsonSchema,
     service::RequestContext,
@@ -241,12 +241,12 @@ impl MiseServer {
 }
 
 impl ServerHandler for MiseServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let capabilities = ServerCapabilities::builder()
             .enable_resources()
             .enable_tools()
             .build();
-        ServerInfo::new(capabilities)
+        ServerConfig::new(capabilities)
             .with_protocol_version(ProtocolVersion::V_2025_03_26)
             .with_server_info(Implementation::new("mise", env!("CARGO_PKG_VERSION")))
             .with_instructions(
