@@ -114,8 +114,8 @@ vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
 
 For better Treesitter and LSP integration, see the [neovim cookbook](./mise-cookbook/neovim.md).
 
-Or use [miser.nvim](https://github.com/carldaws/miser.nvim), which starts LSP servers, runs
-formatters on save, and launches tasks straight from the tools declared in your `mise.toml` —
+Or use [miser.nvim](https://github.com/carldaws/miser.nvim), which starts LSP servers and runs
+formatters on save for the tools declared in your `mise.toml`, and launches your mise tasks —
 no separate installer needed.
 
 ## Emacs
