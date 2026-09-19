@@ -357,12 +357,14 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         daemon
             .exports
             .retain(|key, _| !state.ambiguous.contains(key));
-        if let Some(host) = &daemon.host
-            && state.ambiguous_hosts.contains(host)
+        if let Some(host) = daemon.host.clone()
+            && state.ambiguous_hosts.contains(&host)
         {
-            if let Some(base) = env_var_base(&daemon.name) {
-                daemon.exports.shift_remove(&format!("{base}_URL"));
-            }
+            // Only what names the withdrawn hostname. Deleting `<NAME>_URL`
+            // outright would take a preset's own connection string with it: a
+            // proxied `redis` preset publishes `REDIS_URL = redis://…`, which
+            // is not the derived URL and stays valid however the proxy routes.
+            daemon.exports.retain(|_, value| !value.contains(&host));
             urls::withdraw(&mut daemon.table);
             daemon.host = None;
         }
@@ -3422,6 +3424,22 @@ three = ["two", "c"]
             assert!(set.daemons[name].host.is_none(), "{name} kept a hostname");
             assert_eq!(set.daemons[name].table["proxy"].as_bool(), Some(false));
         }
+
+        // Withdrawing a hostname takes only what names it. A proxied preset
+        // publishes its own connection string, which stays valid however the
+        // proxy routes, so it must survive the collision that costs the
+        // hostname.
+        let set = load_body(
+            "[daemons.redis]\npreset = 'redis'\nversion = '8'\nproxy = true\n\
+             [daemons.web]\nrun = 'b'\nport = 3001\nproxy = 'redis'\n",
+        )
+        .unwrap();
+        assert!(set.daemons["redis"].host.is_none());
+        assert!(
+            set.daemons["redis"].exports["REDIS_URL"].starts_with("redis://"),
+            "the preset's own connection string is not the withdrawn URL: {:?}",
+            set.daemons["redis"].exports
+        );
 
         // A project whose labels do not collide keeps both hostnames.
         let set = load_body(
