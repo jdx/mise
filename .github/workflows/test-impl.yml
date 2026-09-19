@@ -393,7 +393,15 @@ jobs:
           path: target/debug
       - run: ls target\debug
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+      # No tool cache here. The e2e suite installs tools into this same data
+      # dir, so the saved cache accumulated every version any test ever pulled:
+      # 3.8 GB across 56k files, restored in 98s (7s to download, 91s to
+      # create the files on NTFS). Installing the ~2 GB the job actually uses
+      # is faster than unpacking that: measured cold, `mise install` takes 9s
+      # and the tools the suite reuses take another ~50s.
       - uses: ./.github/actions/mise-tools
+        with:
+          cache: "false"
       - name: e2e
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
