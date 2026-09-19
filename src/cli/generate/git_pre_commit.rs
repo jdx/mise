@@ -12,9 +12,9 @@ use crate::git::Git;
 /// Staged files are passed to the task as `STAGED`.
 ///
 /// Hooks that git hands a message file — `commit-msg`, `prepare-commit-msg`,
-/// `applypatch-msg` and `sendemail-validate` — forward git's arguments to the task. Other
-/// hooks do not, so a `pre-push` hook's remote name and URL are not appended to the task's
-/// command.
+/// `applypatch-msg` and `sendemail-validate` — pass that file to the task. git's other
+/// arguments are not forwarded, so a `pre-push` hook's remote name and URL are not
+/// appended to the task's command.
 ///
 /// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
 #[derive(Debug, usage_rs::Args)]
@@ -54,7 +54,8 @@ pub(super) struct GitPreCommit {
     mise_args: Vec<String>,
 }
 
-/// Hooks git calls with the path to a message file for the hook to read or edit.
+/// Hooks git calls with the path to a message file, as their first argument, for the
+/// hook to read or edit.
 const FILE_ARG_HOOKS: &[&str] = &[
     "applypatch-msg",
     "commit-msg",
@@ -100,11 +101,11 @@ impl GitPreCommit {
         };
         // A task that declares no args gets extra arguments appended to its last command,
         // so forwarding git's arguments is only safe when the task is meant to read them.
-        // For the message hooks the file is the whole point; for the rest (`pre-push`'s
-        // remote name and URL, `post-checkout`'s refs) they would land on commands such
-        // as `npm test` that never asked for them (discussion #13366).
+        // For the message hooks the file is the whole point; anything else (`pre-push`'s
+        // remote name and URL, `prepare-commit-msg`'s source and SHA) would land on
+        // commands such as `npm test` that never asked for it (discussion #13366).
         let hook_args = if FILE_ARG_HOOKS.contains(&self.hook.as_str()) {
-            r#" "$@""#
+            r#" "$1""#
         } else {
             ""
         };
@@ -143,9 +144,17 @@ mod tests {
         // hands it, which is the whole point of that hook.
         let out = generate("lint-commit-msg", "commit-msg");
         assert!(
-            out.contains(r#"exec mise run lint-commit-msg "$@""#),
-            "hook arguments must reach the task:\n{out}"
+            out.ends_with("exec mise run lint-commit-msg \"$1\"\n"),
+            "the message file must reach the task:\n{out}"
         );
+    }
+
+    /// `prepare-commit-msg` also gets the message source and sometimes a SHA; only the file
+    /// is meant for the task, and the rest would be appended to its last command.
+    #[test]
+    fn prepare_commit_msg_forwards_only_the_message_file() {
+        let out = generate("prep", "prepare-commit-msg");
+        assert!(out.ends_with("exec mise run prep \"$1\"\n"), "{out}");
     }
 
     /// git calls `pre-push` with the remote name and URL. A task without declared args
@@ -187,7 +196,7 @@ exec mise run pre-commit
     fn mise_args_are_inserted_before_run() {
         let out = generate_with_args("lint", "commit-msg", &["-C", "subdir", "-E", "ci"]);
         assert!(
-            out.contains(r#"exec mise -C subdir -E ci run lint "$@""#),
+            out.contains(r#"exec mise -C subdir -E ci run lint "$1""#),
             "{out}"
         );
     }
@@ -203,7 +212,7 @@ exec mise run pre-commit
             .find(|line| line.starts_with("exec mise"))
             .expect("generated hook should exec mise");
         let words = shell_words::split(exec_line).expect("exec line should be valid shell");
-        assert_eq!(words, ["exec", "mise", "-C", "my dir", "run", "lint", "$@"]);
+        assert_eq!(words, ["exec", "mise", "-C", "my dir", "run", "lint", "$1"]);
     }
 
     /// The tests above build the struct directly, so they cannot see the question this
