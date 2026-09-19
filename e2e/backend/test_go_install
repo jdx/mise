@@ -30,6 +30,14 @@ eval "$(mise activate bash --shims)"
 assert "go-example" "hello world"
 assert "tool" "deep v2 postgres"
 
+# A project that forces vendoring through GOFLAGS must not break go: tool installs.
+# mise passes an explicit -mod flag so the inherited -mod=vendor never reaches the
+# install, which otherwise fails with "cannot query module due to -mod=vendor".
+# See https://github.com/jdx/mise/pull/7052
+assert \
+  "GOFLAGS=-mod=vendor GOPROXY=direct mise x go:github.com/jdx/go-example@v0.1.0 -- go-example" \
+  "hello world"
+
 # Remote-version caches for the same module must be isolated by Go's routing
 # configuration. Without that isolation, the GOPROXY=off lookup reuses the
 # public proxy's cached list.
