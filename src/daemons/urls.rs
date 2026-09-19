@@ -1024,6 +1024,13 @@ mod tests {
             std::fs::write(private.join("gitdir"), format!("{}\n", dotgit.display())).unwrap();
             root
         };
+        // `worktree.useRelativePaths` writes that pointer relative to the
+        // entry holding it. Resolving it against the process directory would
+        // make every worktree of such a repository look pruned.
+        let relative = |name: &str| {
+            let private = bare.join("worktrees").join(name);
+            std::fs::write(private.join("gitdir"), format!("../../../{name}/.git\n")).unwrap();
+        };
         let only = add("main");
         assert!(
             !crate::git::has_sibling_worktrees(&only),
@@ -1072,6 +1079,17 @@ mod tests {
         assert!(
             !crate::git::has_sibling_worktrees(&only),
             "a stale registry entry is not a sibling"
+        );
+
+        // A repository written with relative pointers is read the same way.
+        let second = add("feature");
+        relative("main");
+        relative("feature");
+        assert!(crate::git::has_sibling_worktrees(&only));
+        std::fs::remove_dir_all(&second).unwrap();
+        assert!(
+            !crate::git::has_sibling_worktrees(&only),
+            "a relative pointer to a removed worktree is still stale"
         );
 
         // An ordinary checkout is not a linked worktree and has no siblings by

@@ -850,8 +850,18 @@ pub(crate) fn has_sibling_worktrees(worktree_root: &Path) -> bool {
             // inherit a namespace. Git decides that by the `gitdir` pointer
             // still naming something, so this does too, rather than sending a
             // user off to change a namespace nothing else shares.
-            std::fs::read_to_string(entry.path().join("gitdir"))
-                .is_ok_and(|pointer| Path::new(pointer.trim()).exists())
+            let Ok(pointer) = std::fs::read_to_string(entry.path().join("gitdir")) else {
+                return false;
+            };
+            // `worktree.useRelativePaths` writes the pointer relative to the
+            // entry holding it, as `commondir` and a worktree's own `.git` are
+            // written. Resolving it against the process directory instead
+            // would make every live worktree of such a repository look pruned.
+            let pointer = Path::new(pointer.trim());
+            match pointer.is_relative() {
+                true => entry.path().join(pointer).exists(),
+                false => pointer.exists(),
+            }
         })
         .nth(1)
         .is_some()
