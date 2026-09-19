@@ -914,6 +914,24 @@ visible here too. `mise daemons ls --json` carries the same information in its `
 `url`, and `proxy` fields. The primary checkout has no stack page of its own; its
 stack is the project.
 
+### Register for on-demand startup
+
+```sh
+mise daemons register
+mise daemons urls
+```
+
+`register` installs missing tools, validates the daemon definitions and their
+dependencies, and registers the generated configuration with Pitchfork without
+starting any daemons. It includes daemons outside the `default` group and imported
+dependencies. Run it in each checkout you want to make available. Existing daemons
+keep running; registration does not restart them or initialize database data.
+
+With the Pitchfork supervisor running and its proxy enabled, requesting a
+registered daemon's hostname starts that daemon and its dependencies. Listing URLs
+alone does not register the project. See the Pitchfork
+[proxy guide](https://pitchfork.jdx.dev/guides/port-management) for proxy setup.
+
 ### Where the scheme and port come from
 
 Mise derives the URL the way pitchfork does: the scheme follows `proxy.https`, the TLD

@@ -279,6 +279,7 @@
 - [mise daemons logs](https://mise.jdx.dev/cli/daemons/logs.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons ls](https://mise.jdx.dev/cli/daemons/ls.html): List project daemons without starting a supervisor or registering configuration.
 - [mise daemons prune](https://mise.jdx.dev/cli/daemons/prune.html): Remove daemon state left behind by deleted project directories.
+- [mise daemons register](https://mise.jdx.dev/cli/daemons/register.html): Prepare all project daemons for on-demand startup without starting them.
 - [mise daemons restart](https://mise.jdx.dev/cli/daemons/restart.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons start](https://mise.jdx.dev/cli/daemons/start.html): Arguments passed to pitchfork; daemon names may be short or qualified.
 - [mise daemons status](https://mise.jdx.dev/cli/daemons/status.html): Arguments passed to pitchfork; daemon names may be short or qualified.
