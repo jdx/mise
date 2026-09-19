@@ -1471,6 +1471,9 @@ const RESERVED_TEMPLATE_NAMES: &[&str] = &[
     "item_value",
     "init_port",
     "init_http_port",
+    // Set from the daemon's proxy hostname when it has one.
+    "host",
+    "url",
 ];
 
 fn is_string_list(value: &toml::Value) -> bool {
