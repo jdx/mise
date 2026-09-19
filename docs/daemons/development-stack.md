@@ -10,8 +10,8 @@ Use presets for databases and brokers, `run` for application servers, and
 all the repositories on your machine.
 
 This is the recommended starting point for a stack spread across `~/src`.
-Start with explicit commands, verify the stack, then add browser-triggered
-startup and login persistence. The [daemon reference](/daemons.html) covers
+Register each checkout, use hostname requests to start applications, and let
+idle stacks stop automatically. Keep the supervisor available at login. The [daemon reference](/daemons.html) covers
 other declaration forms and all the configuration options.
 
 ::: warning Experimental
@@ -60,15 +60,19 @@ localhost ports in `.env` files.
 ```sh
 cd ~/src/shop
 mise trust
-mise daemons start api
-mise daemons logs api
+mise daemons register
 mise daemons urls
-mise run test
 ```
 
-`mise daemons start` installs missing tools and registers the project's generated
-Pitchfork configuration. Repeat it after changing daemon definitions. Listing
-URLs alone does not register a project or install its tools.
+`mise daemons register` installs missing tools, validates the definitions and
+dependencies, and registers the project without starting its daemons. Repeat it
+after changing daemon definitions. Listing URLs alone does not register a project
+or install its tools. Configure the proxy below before opening the URL.
+
+Use `mise daemons start api` for an explicit start and `mise daemons logs api` to
+inspect output. `mise run test` starts its required database before running tests.
+Explicitly started services stay running until stopped; they do not become idle
+just because browser traffic ends.
 
 For setup such as migrations, add `init = "npm run migrate"` to the API daemon.
 It runs after dependencies are ready, on every start; make it safe to repeat.
@@ -86,7 +90,7 @@ default base port.
 git worktree add ../shop-feature -b feature
 cd ../shop-feature
 mise trust
-mise daemons start api
+mise daemons register
 mise daemons urls
 ```
 
@@ -137,8 +141,9 @@ depends = ["db", "events"]
 NATS_URL = "nats://127.0.0.1:4222"
 ```
 
-Review and trust `../services`, then run `mise daemons start api` again. Mise
-registers the imported service and Pitchfork starts it before the API. Relative
+Review and trust `../services`, then run `mise daemons register` again. Mise
+registers the imported dependency too; Pitchfork starts it before the API when
+the application is requested. Relative
 project paths resolve from the declaring configuration: sibling checkouts must
 keep the expected layout, or use an absolute path for an intentionally shared
 checkout.
@@ -151,34 +156,51 @@ project when every consumer is finished with it.
 See the [CockroachDB, SpiceDB, and NATS example](/daemons.html#example-cockroachdb-spicedb-and-nats)
 for an authorization and messaging stack.
 
-## Open a hostname to start the application
+## Start on request and stop when idle
 
-After explicitly starting each checkout once, configure Pitchfork's
+Configure Pitchfork's
 [local HTTPS proxy](https://pitchfork.jdx.dev/guides/port-management#hostname-resolution).
 That setup covers wildcard hostname resolution, certificate trust, and the
 standard HTTPS port. Keep the supervisor running as your normal user; proxy
 setup handles the privileged networking changes separately. Check it with
 `pitchfork proxy doctor`.
 
-Then stop the application stack:
+Enable idle shutdown in `~/.config/pitchfork/config.toml`:
+
+```toml
+[settings.proxy]
+idle_timeout = "15m"
+```
+
+Restart the supervisor after changing its settings. Then, in each application
+checkout:
 
 ```sh
-mise daemons stop api db
+mise daemons register
 mise daemons urls
 ```
 
-Open the API URL. The HTTP request starts
-its stopped dependencies, waits for readiness, and then reaches the API.
-The supervisor and proxy must already be running. A DNS lookup by itself does
-not start a daemon, and an unknown checkout cannot be configured by visiting
-its hostname: register it with mise first.
+Open the API URL. The HTTP request starts its dependencies, waits for readiness,
+and then reaches the API. The supervisor and proxy must already be running.
+A DNS lookup by itself does not start a daemon, and visiting an unknown hostname
+cannot register a checkout.
 
-Closing the browser does not stop the stack. Stop it explicitly with
-`mise daemons stop`, or separately opt into
-[shell-session lifecycle](/daemons.html#automatic-start-and-stop).
-Shell sessions track shells entering and leaving projects, not browser activity.
-Do not enable shell auto-stop for services you expect to remain available to a
-browser after leaving the directory.
+After 15 minutes without activity, Pitchfork stops the proxy-started API and
+then its unused dependencies. An open streaming response or WebSocket keeps the
+API active. A shared dependency stays running while another running consumer
+needs it. The next request starts the stack again; preset data remains on disk.
+Closing a browser tab does not immediately stop anything: the idle timeout
+controls when shutdown happens. Idle shutdown is disabled unless configured.
+
+Explicit starts claim the daemon and its dependencies, keeping them running
+until you stop them. If you previously ran `mise daemons start api`, stop that
+stack once with `mise daemons stop api db` before trying the on-demand workflow.
+Stop explicitly started shared infrastructure from its own project only when
+its other consumers no longer need it.
+
+Shell sessions can also keep proxy-started daemons active. The separate
+[shell-session lifecycle](/daemons.html#automatic-start-and-stop) tracks shells
+entering and leaving projects; it is not needed for browser-driven startup.
 
 ## Keep the supervisor available at login
 
@@ -206,7 +228,7 @@ what launchd or systemd supervises; `supervisor start` would detach from it.
 Preview with `mise bootstrap --dry-run`, then apply with `mise bootstrap` and
 check `mise bootstrap services status`. On macOS this is a user LaunchAgent,
 starting at login, not before a user logs in. `--boot` starts daemons marked
-`boot_start = true`; leave that
+[`boot_start = true`](https://pitchfork.jdx.dev/reference/configuration#boot-start); leave that
 unset on applications you want to start only on demand.
 
 Choose one owner for login startup. If you previously used
