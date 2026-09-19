@@ -844,7 +844,15 @@ pub(crate) fn has_sibling_worktrees(worktree_root: &Path) -> bool {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|entry| entry.path().is_dir())
+        .filter(|entry| {
+            // Removing a worktree's directory leaves its entry here until
+            // someone prunes it, and a checkout that no longer exists cannot
+            // inherit a namespace. Git decides that by the `gitdir` pointer
+            // still naming something, so this does too, rather than sending a
+            // user off to change a namespace nothing else shares.
+            std::fs::read_to_string(entry.path().join("gitdir"))
+                .is_ok_and(|pointer| Path::new(pointer.trim()).exists())
+        })
         .nth(1)
         .is_some()
 }

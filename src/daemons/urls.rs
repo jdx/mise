@@ -361,6 +361,28 @@ fn worktree_label(dir: &Path) -> Option<String> {
 ///
 /// A project root nested in a monorepo, such as `/repo/packages/api`, takes its
 /// enclosing checkout's names, so every project in one worktree shares them.
+/// The checkout whose namespace could reach a sibling worktree, when this one
+/// is in that shape.
+///
+/// A checkout that names itself has no worktree component to be told apart by,
+/// so a namespace its siblings inherit is the whole hostname for all of them.
+/// Each runs in its own process, so no load ever sees the pair and the usual
+/// collision warning cannot fire.
+///
+/// The question goes to the checkout, never to the project root: a monorepo
+/// declares several roots inside one checkout, and only the checkout holds the
+/// `.git` that names the repository.
+fn namespace_reaches_siblings<'a>(
+    root: &'a Path,
+    checkout: &'a crate::git::Checkout,
+    worktree: Option<&str>,
+    namespace: Option<&str>,
+) -> Option<&'a Path> {
+    let checkout_dir = checkout.repository.as_deref().unwrap_or(root);
+    (worktree.is_none() && namespace.is_some() && crate::git::has_sibling_worktrees(checkout_dir))
+        .then_some(checkout_dir)
+}
+
 pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabels> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let checkout = crate::git::checkout_of(&root);
@@ -390,13 +412,15 @@ pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabel
     // them. Each runs in its own process, so no load ever sees the pair and
     // the usual collision warning cannot fire; say it here, where the shape is
     // visible, rather than leave two daemons racing for one route in silence.
-    if worktree.is_none()
-        && settings.namespace.is_some()
-        && crate::git::has_sibling_worktrees(&root)
-    {
+    if let Some(checkout_dir) = namespace_reaches_siblings(
+        &root,
+        &checkout,
+        worktree.as_deref(),
+        settings.namespace.as_deref(),
+    ) {
         warn_once!(
             "[daemons] {} is a worktree of a repository with no main checkout, so its hostnames carry no worktree component and every sibling worktree inheriting namespace {} resolves to the same one, which pitchfork cannot route. Give each checkout its own [daemons_settings] namespace in a gitignored mise.local.toml.",
-            root.display(),
+            checkout_dir.display(),
             settings.namespace.as_deref().unwrap_or_default()
         );
     }
@@ -992,11 +1016,12 @@ mod tests {
             std::fs::write(private.join("commondir"), "../..\n").unwrap();
             let root = tmp.path().join(name);
             std::fs::create_dir_all(&root).unwrap();
-            std::fs::write(
-                root.join(".git"),
-                format!("gitdir: {}\n", private.display()),
-            )
-            .unwrap();
+            let dotgit = root.join(".git");
+            std::fs::write(&dotgit, format!("gitdir: {}\n", private.display())).unwrap();
+            // Git records the way back, and prunes the entry when it no longer
+            // names anything. That pointer is what tells a live worktree from
+            // one whose directory is gone.
+            std::fs::write(private.join("gitdir"), format!("{}\n", dotgit.display())).unwrap();
             root
         };
         let only = add("main");
@@ -1007,6 +1032,47 @@ mod tests {
         let second = add("feature");
         assert!(crate::git::has_sibling_worktrees(&only));
         assert!(crate::git::has_sibling_worktrees(&second));
+
+        // A monorepo declares several roots inside one checkout, and only the
+        // checkout holds the `.git` that names the repository. Asking from the
+        // project root would find nothing and report no sibling at all.
+        let nested = second.join("packages").join("api");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert!(!crate::git::has_sibling_worktrees(&nested));
+        let reaches = |dir: &Path| {
+            namespace_reaches_siblings(dir, &crate::git::checkout_of(dir), None, Some("shop"))
+                .map(Path::to_path_buf)
+        };
+        assert_eq!(
+            reaches(&nested),
+            Some(second.clone()),
+            "the nested root must be answered for by its checkout"
+        );
+        assert_eq!(reaches(&second), Some(second.clone()));
+        // Without a namespace to share there is nothing to collide over, and a
+        // checkout that still has a worktree component is told apart by it.
+        assert_eq!(
+            namespace_reaches_siblings(&second, &crate::git::checkout_of(&second), None, None),
+            None
+        );
+        assert_eq!(
+            namespace_reaches_siblings(
+                &second,
+                &crate::git::checkout_of(&second),
+                Some("feature"),
+                Some("shop")
+            ),
+            None
+        );
+
+        // Removing a worktree leaves its entry behind until someone prunes it.
+        // A checkout that is gone cannot inherit a namespace, so it must not
+        // send the remaining one off to change a name nothing else shares.
+        std::fs::remove_dir_all(&second).unwrap();
+        assert!(
+            !crate::git::has_sibling_worktrees(&only),
+            "a stale registry entry is not a sibling"
+        );
 
         // An ordinary checkout is not a linked worktree and has no siblings by
         // this definition, however many worktrees hang off it.
