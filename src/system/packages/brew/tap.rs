@@ -810,6 +810,76 @@ end
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
+    async fn serializes_cask_staged_paths_without_reading_host_files() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let dir = tempfile::tempdir()?;
+        let matching_manpage = dir
+            .path()
+            .join("$HOMEBREW_PREFIX/Caskroom/widget/1.2.3/manpages/widget.1");
+        crate::file::create_dir_all(matching_manpage.parent().unwrap())?;
+        crate::file::write(&matching_manpage, "fixture")?;
+
+        let runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(CASK_METADATA_SHIM_RB)
+            .stdin_string(
+                r##"cask "widget" do
+  version "1.2.3"
+  url "https://example.invalid/widget.zip"
+  binary "#{staged_path}/bin/widget"
+  uninstall trash: staged_path.dirname/"latest"
+  preflight_steps do
+    run "#{staged_path}/bin/prepare"
+    run staged_path / "bin/prepare"
+    run "/usr/bin/xattr", args: ["#{staged_path}/bin/prepare"]
+  end
+  Dir["#{staged_path}/manpages/*"].each { |path| manpage path }
+end"##,
+            )
+            .env("MISE_BREW_TOKEN", "widget")
+            .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
+            .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+            .env("MISE_BREW_TAP_COMMIT", "fixture")
+            .env("MISE_BREW_MACOS_VERSION", "26")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", "aarch64")
+            // Deliberately omit the sandbox: the shim must ignore matching host
+            // files even when Ruby could otherwise read its working directory.
+            .current_dir(dir.path());
+        let output = runner.read().await?;
+        let _: Cask = serde_json::from_str(&output)?;
+        let metadata: serde_json::Value = serde_json::from_str(&output)?;
+        assert_eq!(
+            metadata["artifacts"],
+            serde_json::json!([
+                {"binary": ["$HOMEBREW_PREFIX/Caskroom/widget/1.2.3/bin/widget"]},
+                {"uninstall": {"trash": "$HOMEBREW_PREFIX/Caskroom/widget/latest"}},
+                {"preflight_steps": [{"steps": [
+                    {
+                        "type": "run",
+                        "command": {"path": "bin/prepare", "base": "staged_path"}
+                    },
+                    {
+                        "type": "run",
+                        "command": {"path": "bin/prepare", "base": "staged_path"}
+                    },
+                    {
+                        "type": "run",
+                        "command": {"path": "/usr/bin/xattr"},
+                        "args": ["{{staged_path}}/bin/prepare"]
+                    }
+                ]}]}
+            ])
+        );
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
     async fn extracts_cask_homebrew_prefix_as_relocatable_metadata() -> Result<()> {
         let Some(ruby) = test_ruby().await? else {
             return Ok(());
