@@ -554,7 +554,9 @@ operation.
   with a clear error naming the unsupported feature.
 - **Use canonical formula names.** `postgresql@17` is a formula name, not a
   mise version pin — the API's current stable version decides what gets
-  installed. Aliases (`postgres`) install correctly but `mise bootstrap packages status`
-  can't track them; mise warns and tells you the canonical name.
+  installed. Aliases (`postgres`) and old names of renamed formulae install
+  the canonical formula, as do dependencies declared by alias in third-party
+  taps, but `mise bootstrap packages status` can't track a requested alias;
+  mise warns and tells you the canonical name.
 - `PATH` is up to you: `<prefix>/bin` must be on `PATH` to use linked
   binaries, just like with Homebrew itself.

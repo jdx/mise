@@ -17,6 +17,9 @@ pub(super) struct Formula {
     pub tap: Option<String>,
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// names this formula had before a rename
+    #[serde(default)]
+    pub oldnames: Vec<String>,
     pub versions: Versions,
     #[serde(default)]
     pub revision: u32,
@@ -100,6 +103,13 @@ pub(super) struct KegOnlyReason {
 }
 
 impl Formula {
+    /// every name that refers to this formula: canonical, aliases, old names
+    pub(super) fn names(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.name.as_str())
+            .chain(self.aliases.iter().map(String::as_str))
+            .chain(self.oldnames.iter().map(String::as_str))
+    }
+
     /// keg directory name: version plus brew's bottle revision suffix
     pub(super) fn pkg_version(&self) -> Result<String> {
         let stable = self
@@ -160,14 +170,99 @@ impl Formula {
     }
 }
 
-/// Fetch formula metadata by name (or alias — brew's API redirects aliases
-/// to the canonical formula).
+/// Fetch homebrew/core formula metadata by name, alias, or old name.
+///
+/// The per-formula API serves canonical names only: an alias (`openssl`) or a
+/// renamed formula's old name returns 404 rather than redirecting. When the
+/// exact lookup fails, the name is resolved through the bulk formula index and
+/// the canonical formula is fetched instead; if the index has no entry for it,
+/// the original error is returned.
 pub(super) async fn formula(name: &str) -> Result<Formula> {
-    let url = format!("{API_BASE}/formula/{name}.json");
+    formula_from(API_BASE, &FORMULA_ALIASES, name).await
+}
+
+async fn formula_from(base: &str, aliases: &AliasIndex, name: &str) -> Result<Formula> {
+    let err = match formula_exact_from(base, name).await {
+        Ok(formula) => return Ok(formula),
+        Err(err) => err,
+    };
+    match canonical_formula_name(base, aliases, name).await {
+        Ok(Some(canonical)) => {
+            debug!("brew: {name} resolves to {canonical}");
+            formula_exact_from(base, &canonical).await
+        }
+        Ok(None) => Err(err),
+        Err(index_err) => {
+            debug!("brew: could not load the formula index to resolve {name}: {index_err:#}");
+            Err(err)
+        }
+    }
+}
+
+/// Fetch homebrew/core formula metadata by its canonical name only.
+pub(super) async fn formula_exact(name: &str) -> Result<Formula> {
+    formula_exact_from(API_BASE, name).await
+}
+
+async fn formula_exact_from(base: &str, name: &str) -> Result<Formula> {
+    let url = format!("{base}/formula/{name}.json");
     HTTP_FETCH
         .json_cached::<Formula, _>(url)
         .await
         .wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
+}
+
+#[derive(Debug, Deserialize)]
+struct FormulaIndexEntry {
+    name: String,
+    #[serde(default)]
+    aliases: Vec<String>,
+    #[serde(default)]
+    oldnames: Vec<String>,
+}
+
+/// alias or old name -> canonical name, from the bulk `formula.json`, or why
+/// it could not be loaded. Fetched at most once per process, and only after
+/// an exact lookup has failed; a failure is kept so that every alias in a
+/// dependency frontier does not retry the download.
+type AliasIndex = tokio::sync::OnceCell<std::result::Result<HashMap<String, String>, String>>;
+
+static FORMULA_ALIASES: AliasIndex = tokio::sync::OnceCell::const_new();
+
+async fn canonical_formula_name(
+    base: &str,
+    aliases: &AliasIndex,
+    name: &str,
+) -> Result<Option<String>> {
+    let aliases = aliases
+        .get_or_init(|| async {
+            HTTP_FETCH
+                .json::<Vec<FormulaIndexEntry>, _>(format!("{base}/formula.json"))
+                .await
+                .map(alias_map)
+                .map_err(|err| format!("{err:#}"))
+        })
+        .await;
+    match aliases {
+        Ok(aliases) => Ok(aliases.get(name).cloned()),
+        Err(err) => bail!("failed to fetch the Homebrew formula index: {err}"),
+    }
+}
+
+/// A name that is both an alias and an old name resolves as the alias.
+fn alias_map(entries: Vec<FormulaIndexEntry>) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for entry in &entries {
+        for alias in &entry.aliases {
+            map.insert(alias.clone(), entry.name.clone());
+        }
+    }
+    for entry in entries {
+        for oldname in entry.oldnames {
+            map.entry(oldname).or_insert_with(|| entry.name.clone());
+        }
+    }
+    map
 }
 
 pub(super) async fn formula_with_tap_name(
@@ -316,6 +411,118 @@ mod tests {
         assert!(keg_only_formula(Some(":versioned_formula")).keg_only_for_target());
         assert!(keg_only_formula(Some("free-text reason")).keg_only_for_target());
         assert!(keg_only_formula(None).keg_only_for_target());
+    }
+
+    #[test]
+    fn alias_map_resolves_aliases_before_old_names() {
+        let entries: Vec<FormulaIndexEntry> = serde_json::from_value(serde_json::json!([
+            {"name": "openssl@3", "aliases": ["openssl", "openssl@3.6"], "oldnames": []},
+            {"name": "gitea-runner", "aliases": [], "oldnames": ["act_runner"]},
+            {"name": "shadowed", "oldnames": ["openssl"]},
+            {"name": "hello"},
+        ]))
+        .unwrap();
+        let map = alias_map(entries);
+        assert_eq!(map.get("openssl").map(String::as_str), Some("openssl@3"));
+        assert_eq!(
+            map.get("openssl@3.6").map(String::as_str),
+            Some("openssl@3")
+        );
+        assert_eq!(
+            map.get("act_runner").map(String::as_str),
+            Some("gitea-runner")
+        );
+        assert_eq!(map.get("hello"), None);
+    }
+
+    #[tokio::test]
+    async fn failed_lookup_resolves_through_the_alias_index_once() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let mut not_found = Vec::new();
+        for path in ["/formula/openssl.json", "/formula/missing.json"] {
+            not_found.push(
+                server
+                    .mock("GET", path)
+                    .with_status(404)
+                    .expect(1)
+                    .create_async()
+                    .await,
+            );
+        }
+        let index = server
+            .mock("GET", "/formula.json")
+            .with_body(
+                serde_json::json!([{"name": "openssl@3", "aliases": ["openssl"]}]).to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let canonical = server
+            .mock("GET", "/formula/openssl@3.json")
+            .with_body(
+                serde_json::json!({"name": "openssl@3", "versions": {"stable": "3.6.4"}})
+                    .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let aliases = AliasIndex::const_new();
+
+        assert_eq!(
+            formula_from(&base, &aliases, "openssl").await?.name,
+            "openssl@3"
+        );
+        let err = formula_from(&base, &aliases, "missing").await.unwrap_err();
+        assert!(format!("{err:#}").contains("missing.json"), "{err:#}");
+
+        for mock in not_found.iter().chain([&index, &canonical]) {
+            mock.assert_async().await;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_alias_index_is_fetched_once() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        server
+            .mock("GET", mockito::Matcher::Regex("^/formula/".into()))
+            .with_status(404)
+            .create_async()
+            .await;
+        let index = server
+            .mock("GET", "/formula.json")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        let aliases = AliasIndex::const_new();
+
+        for name in ["first", "second"] {
+            let err = formula_from(&base, &aliases, name).await.unwrap_err();
+            assert!(
+                format!("{err:#}").contains(&format!("{name}.json")),
+                "{err:#}"
+            );
+        }
+        index.assert_async().await;
+        Ok(())
+    }
+
+    #[test]
+    fn formula_names_include_aliases_and_old_names() {
+        let formula: Formula = serde_json::from_value(serde_json::json!({
+            "name": "gitea-runner",
+            "aliases": ["runner"],
+            "oldnames": ["act_runner"],
+            "versions": {"stable": "1.0"},
+        }))
+        .unwrap();
+        assert_eq!(
+            formula.names().collect::<Vec<_>>(),
+            ["gitea-runner", "runner", "act_runner"]
+        );
     }
 
     #[test]
