@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+assert_validation() {
+  local count="$1" command="$2"
+  assert_succeed "$command --json >validation.json"
+  assert "jq -c '[.tasks_validated, .errors, .warnings]' validation.json" "[$count,0,0]"
+}
+
+# Root validation must recognize child references without validating child tasks.
+mkdir -p crates/gui crates/tui
+cat >mise.toml <<'EOF'
+monorepo_root = true
+[monorepo]
+config_roots = ["crates/gui", "crates/tui"]
+[tasks.dev]
+depends = ["//crates/gui:dev"]
+[tasks.build]
+run = "echo build"
+[tasks.check]
+run = "echo check"
+[tasks.fix]
+run = "echo fix"
+[tasks.setup]
+run = "echo setup"
+[tasks.test]
+run = "echo test"
+EOF
+cat >crates/gui/mise.toml <<'EOF'
+[tasks.dev]
+run = "echo gui"
+EOF
+cat >crates/tui/mise.toml <<'EOF'
+[tasks.dev]
+run = "echo tui"
+EOF
+
+assert_validation 6 "mise tasks validate"
+assert_validation 7 "mise -C crates/gui tasks validate"
+assert_validation 1 "mise tasks validate //:dev"
+assert "mise run dev" "gui"
+# Explicit task selection and the scope of --all are unchanged.
+assert_fail "mise tasks validate //crates/gui:dev" "Task '//crates/gui:dev' not found"
+assert_fail "mise tasks --all validate" "task list options cannot be used with subcommands"
+
+# Dependency traversal can cross into a sibling without widening validation scope.
+echo 'depends = ["//crates/tui:dev"]' >>crates/gui/mise.toml
+assert_validation 6 "mise tasks validate"
+assert_validation 7 "mise -C crates/gui tasks validate"
+assert "mise run dev" $'tui\ngui'
+
+# Child-only validation issues, aliases and remote files must not enter root checks.
+cat >>mise.toml <<'EOF'
+[tasks.local]
+alias = "shared"
+run = "echo local"
+EOF
+cat >>crates/tui/mise.toml <<'EOF'
+[tasks.invalid]
+alias = "shared"
+timeout = "not-a-duration"
+run = "echo invalid"
+[tasks.remote]
+file = "http://127.0.0.1:1/not-fetched.sh"
+EOF
+assert_validation 7 "mise tasks validate"
+
+# Each reference form uses the same scoped lookup, including relative paths and aliases.
+cat >>crates/gui/mise.toml <<'EOF'
+[tasks.target]
+alias = "target-alias"
+run = "echo target"
+EOF
+for reference in \
+  'depends = ["//crates/gui:target-alias"]' \
+  'depends_post = ["//crates/gui:target"]' \
+  'wait_for = ["//crates/gui:target"]' \
+  'run = [{task = "./crates/gui:target"}]' \
+  'run = [{tasks = ["//crates/gui:target argument"]}]'; do
+  cat >mise.toml <<EOF
+monorepo_root = true
+[monorepo]
+config_roots = ["crates/gui", "crates/tui"]
+[tasks.wrapper]
+$reference
+EOF
+  # wait_for does not provide executable content on its own.
+  if [[ $reference == wait_for* ]]; then
+    echo 'run = "echo wrapper"' >>mise.toml
+  fi
+  assert_validation 1 "mise tasks validate"
+done
+
+# Missing references still fail for each form, with the existing diagnostic category.
+for reference in \
+  'depends = ["//crates/gui:absent"]' \
+  'depends_post = ["//crates/gui:absent"]' \
+  'wait_for = ["//crates/gui:absent"]' \
+  'run = [{task = "//crates/gui:absent"}]' \
+  'run = [{tasks = ["//crates/gui:absent argument"]}]' \
+  'run = [{task = "target"}]' \
+  'run = [{task = "//:target"}]'; do
+  cat >mise.toml <<EOF
+monorepo_root = true
+[monorepo]
+config_roots = ["crates/gui", "crates/tui"]
+[tasks.wrapper]
+$reference
+EOF
+  if [[ $reference == wait_for* ]]; then
+    echo 'run = "echo wrapper"' >>mise.toml
+  fi
+  if [[ $reference == run* ]]; then
+    assert_fail "mise tasks validate" "missing-task-reference"
+  else
+    assert_fail "mise tasks validate" "missing-dependency"
+  fi
+done
+
+# Optional missing references retain their existing semantics.
+cat >mise.toml <<'EOF'
+monorepo_root = true
+[monorepo]
+config_roots = ["crates/gui", "crates/tui"]
+[tasks.wrapper]
+depends = [{task = "//crates/gui:absent", optional = true}]
+run = "echo wrapper"
+EOF
+assert_validation 1 "mise tasks validate"
