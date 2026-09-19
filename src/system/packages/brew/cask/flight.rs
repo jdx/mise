@@ -658,7 +658,7 @@ pub(super) fn execute_flight_step(
             let mut existing = Vec::new();
             for path in paths {
                 for path in permissions_flight_paths(cask, path, staged_path, appdir)? {
-                    if path.exists() {
+                    if path.try_exists()? {
                         existing.push(path);
                     }
                 }
