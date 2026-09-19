@@ -157,8 +157,8 @@ fn env_flag(value: &str) -> Option<bool> {
 
 fn read_proxy_settings() -> ProxySettings {
     let mut settings = ProxySettings::default();
-    // Accumulated across the layers and applied once at the end; see below.
-    let mut lan = false;
+    // Accumulated across the layers and settled once at the end; see below.
+    let mut lan = Lan::default();
     for path in [
         Path::new("/etc/pitchfork/config.toml").to_path_buf(),
         user_config_dir().join("config.toml"),
@@ -188,33 +188,51 @@ fn read_proxy_settings() -> ProxySettings {
             settings.tld = tld.to_string();
         }
         if let Some(value) = proxy.get("lan").and_then(toml::Value::as_bool) {
-            lan = value;
+            lan.enabled = value;
         }
-        // Setting an address is how pitchfork documents pinning LAN mode on.
+        // Pinning an address is how pitchfork documents turning LAN mode on, so
+        // it is carried as itself and only implies LAN once the layers settle.
         if let Some(ip) = proxy.get("lan_ip").and_then(toml::Value::as_str) {
-            lan = lan || !ip.is_empty();
+            lan.ip = ip.to_string();
         }
     }
-    lan = apply_proxy_env(&mut settings, lan, |key| crate::env::var(key).ok());
+    let lan = apply_proxy_env(&mut settings, lan, |key| crate::env::var(key).ok());
     // Applied once, after every layer. Doing it inside the loop would let a
     // later file's `tld` undo an earlier layer's LAN mode, which pitchfork
     // resolves the other way round: it settles the settings first, then the
     // proxy forces the mDNS TLD.
-    if lan {
+    if lan.on() {
         settings.tld = "local".into();
     }
     settings
 }
 
+/// `lan` and `lan_ip` as the layers have left them. They settle independently
+/// and only then decide the TLD, because `lan_ip` implies LAN mode: folding the
+/// address into a running flag would let a later `lan = false` discard an
+/// earlier address, and would leave a later empty address unable to clear one.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct Lan {
+    enabled: bool,
+    ip: String,
+}
+
+impl Lan {
+    /// Pitchfork forces the mDNS TLD when either says so.
+    fn on(&self) -> bool {
+        self.enabled || !self.ip.is_empty()
+    }
+}
+
 /// Environment variables win over both files, exactly as pitchfork resolves
-/// them. Returns whether LAN mode is on after this layer, which the caller
-/// applies once every layer has been read. `var` is taken as a closure so the
+/// them. LAN is carried through rather than applied, because the caller settles
+/// it once every layer has been read. `var` is taken as a closure so the
 /// precedence can be tested without touching the process environment.
 fn apply_proxy_env(
     settings: &mut ProxySettings,
-    mut lan: bool,
+    mut lan: Lan,
     var: impl Fn(&str) -> Option<String>,
-) -> bool {
+) -> Lan {
     if let Some(https) = var("PITCHFORK_PROXY_HTTPS").as_deref().and_then(env_flag) {
         settings.https = https;
     }
@@ -228,10 +246,10 @@ fn apply_proxy_env(
         settings.tld = tld.trim().to_string();
     }
     if let Some(value) = var("PITCHFORK_PROXY_LAN").as_deref().and_then(env_flag) {
-        lan = value;
+        lan.enabled = value;
     }
     if let Some(ip) = var("PITCHFORK_PROXY_LAN_IP") {
-        lan = lan || !ip.trim().is_empty();
+        lan.ip = ip.trim().to_string();
     }
     lan
 }
@@ -535,7 +553,7 @@ mod tests {
             "PITCHFORK_PROXY_TLD" => Some("test".to_string()),
             _ => None,
         };
-        apply_proxy_env(&mut settings, false, env);
+        apply_proxy_env(&mut settings, Lan::default(), env);
         assert_eq!(
             settings,
             ProxySettings {
@@ -545,30 +563,59 @@ mod tests {
             }
         );
 
-        // LAN mode forces the mDNS TLD, and it is applied after every layer
+        // LAN mode forces the mDNS TLD, and it is settled after every layer
         // rather than inside one, so a later `tld` cannot undo it.
-        let mut lan = ProxySettings {
+        let mut settings = ProxySettings {
             tld: "test".into(),
             ..ProxySettings::default()
         };
-        assert!(apply_proxy_env(&mut lan, false, |key| {
-            matches!(key, "PITCHFORK_PROXY_LAN").then(|| "1".to_string())
-        }));
-        assert_eq!(lan.tld, "test", "the caller applies the mDNS TLD, not this");
-        // An explicit `false` in the environment turns off a file's LAN mode.
-        assert!(!apply_proxy_env(&mut lan, true, |key| {
-            matches!(key, "PITCHFORK_PROXY_LAN").then(|| "off".to_string())
-        }));
-        // Pinning an address implies it.
-        assert!(apply_proxy_env(&mut lan, false, |key| {
-            matches!(key, "PITCHFORK_PROXY_LAN_IP").then(|| "192.168.1.42".to_string())
-        }));
+        let one = |key: &str, value: &str| {
+            let key = key.to_string();
+            let value = value.to_string();
+            move |asked: &str| (asked == key).then(|| value.clone())
+        };
+        let lan = apply_proxy_env(
+            &mut settings,
+            Lan::default(),
+            one("PITCHFORK_PROXY_LAN", "1"),
+        );
+        assert!(lan.on());
+        assert_eq!(
+            settings.tld, "test",
+            "the caller settles the mDNS TLD, not this"
+        );
+
+        // `lan` and `lan_ip` settle as themselves. A later `lan = false` must
+        // not discard an address an earlier layer pinned, since the address
+        // implies LAN mode on its own, and a later empty address must clear one.
+        let pinned = Lan {
+            enabled: false,
+            ip: "192.168.1.42".into(),
+        };
+        let after = apply_proxy_env(
+            &mut settings,
+            pinned.clone(),
+            one("PITCHFORK_PROXY_LAN", "off"),
+        );
+        assert!(after.on(), "a pinned address keeps LAN mode on: {after:?}");
+        let cleared = apply_proxy_env(&mut settings, pinned, one("PITCHFORK_PROXY_LAN_IP", ""));
+        assert!(
+            !cleared.on(),
+            "an empty address clears the pin: {cleared:?}"
+        );
+        // And pinning one turns LAN mode on by itself.
+        let ip = apply_proxy_env(
+            &mut settings,
+            Lan::default(),
+            one("PITCHFORK_PROXY_LAN_IP", "192.168.1.42"),
+        );
+        assert!(ip.on());
 
         // Pitchfork compares these spellings without regard to case, so mise
         // must read `FALSE` and `Off` as it does rather than as "not empty".
         for spelling in ["FALSE", "False", "no", "N", "Off", "0", ""] {
             let mut cased = ProxySettings::default();
-            apply_proxy_env(&mut cased, false, |key| {
+            apply_proxy_env(&mut cased, Lan::default(), |key| {
                 matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| spelling.to_string())
             });
             assert!(!cased.https, "{spelling:?} must turn HTTPS off");
@@ -578,14 +625,14 @@ mod tests {
                 https: false,
                 ..ProxySettings::default()
             };
-            apply_proxy_env(&mut cased, false, |key| {
+            apply_proxy_env(&mut cased, Lan::default(), |key| {
                 matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| spelling.to_string())
             });
             assert!(cased.https, "{spelling:?} must turn HTTPS on");
         }
         // A spelling neither side recognises leaves the setting alone.
         let mut unknown = ProxySettings::default();
-        apply_proxy_env(&mut unknown, false, |key| {
+        apply_proxy_env(&mut unknown, Lan::default(), |key| {
             matches!(key, "PITCHFORK_PROXY_HTTPS").then(|| "maybe".to_string())
         });
         assert!(unknown.https);
