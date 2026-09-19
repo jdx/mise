@@ -179,7 +179,9 @@ lock.write_text(lock.read_text().replace(normalized, legacy))
 Path('legacy-digest').write_text(legacy)
 Path('normalized-digest').write_text(normalized)
 PY_LEGACY_DIGEST
+cp crlf/mise.lock legacy-checkout.lock
 MISE_DATA_DIR="$PWD/.legacy-data" MISE_LOCKFILE=1 mise -C crlf install --locked
+assert_succeed 'cmp legacy-checkout.lock crlf/mise.lock'
 assert_contains "cat crlf/mise.lock" "$(cat legacy-digest)"
 MISE_DATA_DIR="$PWD/.legacy-heal-data" MISE_LOCKFILE=1 mise -C crlf install
 assert_contains "cat crlf/mise.lock" "$(cat normalized-digest)"
