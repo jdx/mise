@@ -295,16 +295,33 @@ pub(super) fn parse_installer_artifact(value: &Value) -> Result<Option<Installer
         .and_then(|value| value.get("script"))
         .and_then(Value::as_object)
         .ok_or_else(|| eyre!("brew-cask: only script installers are supported"))?;
-    reject_unsupported_artifact_fields("installer script", script, &["executable", "args"])?;
+    reject_unsupported_artifact_fields(
+        "installer script",
+        script,
+        &["executable", "args", "sudo", "print_stderr"],
+    )?;
     let executable = script
         .get("executable")
         .and_then(Value::as_str)
         .ok_or_else(|| eyre!("brew-cask: installer script requires an executable"))?;
     let args = string_args(script, "installer script")?;
+    let sudo = optional_installer_bool(script, "sudo")?;
+    // Homebrew only uses `print_stderr: false` to hide a noisy installer's
+    // stderr. Validate it, but leave the output visible.
+    optional_installer_bool(script, "print_stderr")?;
     Ok(Some(InstallerArtifact {
         executable: executable.to_string(),
         args,
+        sudo,
     }))
+}
+
+fn optional_installer_bool(object: &serde_json::Map<String, Value>, field: &str) -> Result<bool> {
+    match object.get(field) {
+        None => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => bail!("brew-cask: installer script {field} must be a boolean"),
+    }
 }
 
 /// `kind` names the declaring artifact, so errors read e.g. "installer script

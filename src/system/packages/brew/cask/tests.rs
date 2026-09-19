@@ -1255,6 +1255,7 @@ fn parses_gcloud_copy_installer_and_run_metadata() -> Result<()> {
         artifacts.installers,
         [InstallerArtifact {
             executable: "google-cloud-sdk/install.sh".to_string(),
+            sudo: false,
             args: vec![
                 "--quiet".to_string(),
                 "--install-python".to_string(),
@@ -1288,6 +1289,7 @@ fn installer_script_is_made_executable_before_running() -> Result<()> {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o644))?;
     let installer = InstallerArtifact {
         executable: "install.sh".to_string(),
+        sudo: false,
         args: vec![marker.display().to_string()],
     };
 
@@ -1324,6 +1326,7 @@ fn installer_script_rejects_paths_outside_stage() -> Result<()> {
             &stage,
             &InstallerArtifact {
                 executable,
+                sudo: false,
                 args: Vec::new(),
             },
             &BTreeSet::new(),
@@ -1362,6 +1365,7 @@ fn installer_script_accepts_preflight_copied_root() -> Result<()> {
         &stage,
         &InstallerArtifact {
             executable: "payload/install.sh".to_string(),
+            sudo: false,
             args: vec![marker.display().to_string()],
         },
         &copied_files,
@@ -1391,6 +1395,7 @@ fn installer_script_rejects_unrecorded_file_beneath_copied_target() -> Result<()
         &stage,
         &InstallerArtifact {
             executable: "payload/bin/existing.sh".to_string(),
+            sudo: false,
             args: Vec::new(),
         },
         &copied_files,
@@ -1419,6 +1424,7 @@ fn installer_mutations_are_included_in_durable_symlink_sources() -> Result<()> {
     file::write(&script, "#!/bin/sh\nprintf mutated > \"$1\"\n")?;
     let installer = InstallerArtifact {
         executable: "install.sh".to_string(),
+        sudo: false,
         args: vec![source.join("generated").display().to_string()],
     };
     let target = tmp.path().join("share/example");
@@ -1439,6 +1445,95 @@ fn installer_mutations_are_included_in_durable_symlink_sources() -> Result<()> {
     assert_eq!(
         file::read_to_string(temporary_caskroom.join(".homebrew-staged/payload/generated"))?,
         "mutated"
+    );
+    Ok(())
+}
+
+#[test]
+fn parses_installer_script_sudo_and_print_stderr() -> Result<()> {
+    let mut cask = test_cask("logi-options+", "2.0.0");
+    cask.artifacts = vec![serde_json::json!({
+        "installer": [{"script": {
+            "executable": "logioptionsplus_installer.app/Contents/MacOS/logioptionsplus_installer",
+            "args": ["--quiet"],
+            "sudo": true,
+            "print_stderr": false
+        }}]
+    })];
+
+    assert_eq!(
+        cask_artifacts(&cask)?.installers,
+        [InstallerArtifact {
+            executable: "logioptionsplus_installer.app/Contents/MacOS/logioptionsplus_installer"
+                .to_string(),
+            args: vec!["--quiet".to_string()],
+            sudo: true,
+        }]
+    );
+
+    for (field, value) in [("sudo", "if_needed"), ("print_stderr", "false")] {
+        cask.artifacts = vec![serde_json::json!({
+            "installer": [{"script": {"executable": "install.sh", field: value}}]
+        })];
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert_eq!(
+            err,
+            format!("brew-cask: installer script {field} must be a boolean")
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn installer_script_expands_homebrew_placeholders() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let prefix = tmp.path().join("prefix");
+    let _guard = BrewPrefixGuard::set(&prefix);
+    file::create_dir_all(prefix.join("bin"))?;
+    file::create_dir_all(prefix.join("sbin"))?;
+    let stage = tmp.path().join("stage");
+    let script = stage.join("Example Installer.app/Contents/MacOS/install");
+    file::create_dir_all(script.parent().unwrap())?;
+    let marker = tmp.path().join("args");
+    file::write(
+        &script,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+            marker.display()
+        ),
+    )?;
+    let appdir = tmp.path().join("Applications");
+    let cask = test_cask("example", "1.0.0");
+    let installer = InstallerArtifact {
+        executable:
+            "$HOMEBREW_PREFIX/Caskroom/example/1.0.0/Example Installer.app/Contents/MacOS/install"
+                .to_string(),
+        args: vec![
+            "-dir".to_string(),
+            "$APPDIR/Example".to_string(),
+            "-p".to_string(),
+            "$HOMEBREW_PREFIX/Caskroom/example/base".to_string(),
+            "-VaddToDockAction$Boolean=false".to_string(),
+        ],
+        sudo: false,
+    };
+
+    let expanded = expand_installer_artifact(&cask, &installer, &stage, &appdir);
+    assert_eq!(
+        expanded.executable,
+        "Example Installer.app/Contents/MacOS/install"
+    );
+    run_installer_artifact(&stage, &expanded, &BTreeSet::new())?;
+
+    assert_eq!(
+        file::read_to_string(marker)?,
+        format!(
+            "-dir\n{}\n-p\n{}\n-VaddToDockAction$Boolean=false\n",
+            appdir.join("Example").display(),
+            prefix.join("Caskroom/example/base").display(),
+        )
     );
     Ok(())
 }

@@ -168,6 +168,7 @@ struct PkgArtifact {
 struct InstallerArtifact {
     executable: String,
     args: Vec<String>,
+    sudo: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,7 +332,11 @@ impl CaskArtifacts {
             miseprintln!("install pkg {}", pkg.source);
         }
         for installer in &self.installers {
-            miseprintln!("run installer {}", installer.executable);
+            if installer.sudo {
+                miseprintln!("run installer {} with sudo", installer.executable);
+            } else {
+                miseprintln!("run installer {}", installer.executable);
+            }
         }
         for artifact in &self.generic {
             miseprintln!("install artifact {}", artifact.target);
@@ -808,10 +813,15 @@ impl BrewCaskManager {
         for target in &previous_flight_symlinks {
             flight_targets.protect(target)?;
         }
+        let installers = artifacts
+            .installers
+            .iter()
+            .map(|installer| expand_installer_artifact(&cask, installer, &stage, &appdir))
+            .collect::<Vec<_>>();
         run_installers_before_durabilizing(
             &stage,
             &tmp_caskroom,
-            &artifacts.installers,
+            &installers,
             &mut flight_targets,
             |index| record_cask_action(cask.manager, &mut journal, &format!("installer[{index}]")),
         )?;
@@ -2878,11 +2888,58 @@ fn run_installer_artifact(
         paths.extend(std::env::split_paths(&path));
     }
     let path = std::env::join_paths(paths)?;
+    if installer.sudo {
+        return sudo::run(
+            &executable.to_string_lossy(),
+            &installer.args,
+            &[("PATH".to_string(), path.to_string_lossy().into_owned())],
+        );
+    }
     CmdLineRunner::new(executable)
         .env("PATH", path)
         .args(&installer.args)
         .raw(true)
         .execute()
+}
+
+/// Expands the placeholders the Homebrew API leaves in installer scripts
+/// (`$HOMEBREW_PREFIX`, `$APPDIR`, `$HOME`, ...).
+///
+/// Homebrew stages casks in the caskroom version directory, so casks often
+/// name the executable as `$HOMEBREW_PREFIX/Caskroom/<token>/<version>/<path>`.
+/// mise runs installers from its own stage, so that form is rewritten to the
+/// stage-relative `<path>`. The metadata names Homebrew's caskroom even when
+/// macos-app keeps its state elsewhere.
+fn expand_installer_artifact(
+    cask: &Cask,
+    installer: &InstallerArtifact,
+    stage: &Path,
+    appdir: &Path,
+) -> InstallerArtifact {
+    let executable = expand_flight_template(cask, &installer.executable, stage, appdir);
+    let homebrew_staged_path = prefix::prefix()
+        .join("Caskroom")
+        .join(&cask.token)
+        .join(&cask.version);
+    let executable = match Path::new(&executable).strip_prefix(&homebrew_staged_path) {
+        Ok(relative)
+            if !relative
+                .components()
+                .any(|component| matches!(component, Component::ParentDir)) =>
+        {
+            relative.to_string_lossy().into_owned()
+        }
+        _ => executable,
+    };
+    InstallerArtifact {
+        executable,
+        args: installer
+            .args
+            .iter()
+            .map(|arg| expand_flight_template(cask, arg, stage, appdir))
+            .collect(),
+        sudo: installer.sudo,
+    }
 }
 
 fn run_installers_before_durabilizing(
