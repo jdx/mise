@@ -848,7 +848,7 @@ mod tests {
                 .unwrap_or_else(|| url.username())
                 .to_string();
             let masked =
-                crate::redactions::Redactor::new(source_secrets(&url)).redact(&url.to_string());
+                crate::redactions::Redactor::new(source_secrets(&url)).redact(url.as_str());
             assert!(!masked.contains(&secret), "{raw} -> {masked}");
         }
     }
