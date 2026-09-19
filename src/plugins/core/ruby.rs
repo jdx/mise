@@ -17,6 +17,7 @@ use crate::duration::DAILY;
 use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};
 use crate::github::{self, GithubRelease};
+use crate::gitlab::{self, GitlabRelease};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
@@ -30,6 +31,31 @@ const RUBY_INDEX_URL: &str = "https://cache.ruby-lang.org/pub/ruby/index.txt";
 const DEFAULT_RUBY_PRECOMPILED_URL: &str = "jdx/ruby";
 const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_RUBY_GITHUB_ATTESTATIONS=false\n\
     or add `ruby.github_attestations = false` under [settings] in mise.toml";
+
+/// The forms `ruby.precompiled_url` may take. Parsed once so the branching logic isn't
+/// rederived (and can't drift) across every function that consumes the setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrecompiledSource<'a> {
+    /// Bare `owner/repo` (default, e.g. `"jdx/ruby"`). Backward-compatible: unprefixed
+    /// shorthand always means GitHub, there is no explicit `github:` prefix.
+    Github(&'a str),
+    /// `gitlab:owner/repo` — opt-in only, never the bare-string default.
+    Gitlab(&'a str),
+    /// A full URL template containing `{version}`/`{platform}`/`{os}`/`{arch}`.
+    UrlTemplate(&'a str),
+}
+
+impl<'a> PrecompiledSource<'a> {
+    fn parse(source: &'a str) -> Self {
+        if source.contains("://") {
+            Self::UrlTemplate(source)
+        } else if let Some(repo) = source.strip_prefix("gitlab:") {
+            Self::Gitlab(repo)
+        } else {
+            Self::Github(source)
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct RubyPlugin {
@@ -407,27 +433,24 @@ impl RubyPlugin {
 
     /// Detect provenance type for precompiled Ruby binaries.
     /// Records GithubAttestations based on settings and URL format without an API probe.
-    /// This assumes all releases from the configured precompiled source have attestations;
-    /// if a release lacks them, install will fail at verification time.
+    /// This assumes all releases from the configured GitHub source have attestations; if a
+    /// release lacks them, install fails at verification time. GitLab sources have no
+    /// attestation mechanism yet.
     fn detect_precompiled_provenance(&self) -> Option<ProvenanceType> {
         let settings = Settings::get();
-        let enabled = settings
-            .ruby
-            .github_attestations
-            .unwrap_or(settings.github_attestations);
-        if !enabled {
-            return None;
+        match PrecompiledSource::parse(&settings.ruby.precompiled_url) {
+            PrecompiledSource::Github(repo) => {
+                let enabled = settings
+                    .ruby
+                    .github_attestations
+                    .unwrap_or(settings.github_attestations);
+                // Must be a valid owner/repo format for GitHub attestation verification
+                (enabled && repo.contains('/')).then_some(ProvenanceType::GithubAttestations)
+            }
+            // GitLab sources have no checksum (see ruby.precompiled_url docs) and no
+            // attestation mechanism yet; custom URL templates aren't verified either.
+            PrecompiledSource::Gitlab(_) | PrecompiledSource::UrlTemplate(_) => None,
         }
-        let source = &settings.ruby.precompiled_url;
-        // Custom URL templates aren't verified via GitHub attestation API
-        if source.contains("://") {
-            return None;
-        }
-        // Must be a valid owner/repo format for GitHub attestation verification
-        if !source.contains('/') {
-            return None;
-        }
-        Some(ProvenanceType::GithubAttestations)
     }
 
     fn is_default_ruby_source(source: &str) -> bool {
@@ -436,6 +459,50 @@ impl RubyPlugin {
 
     fn use_versions_host_for_precompiled_source(source: &str) -> bool {
         Self::is_default_ruby_source(source)
+    }
+
+    /// The GitLab API host to use for a `gitlab:owner/repo` precompiled_url, defaulting to
+    /// gitlab.com. Set `ruby.precompiled_api_url` to point at a self-hosted GitLab instance.
+    ///
+    /// Rejects a non-HTTPS URL rather than silently sending GitLab credentials
+    /// (`MISE_GITLAB_ENTERPRISE_TOKEN` etc.) over plaintext.
+    fn ruby_precompiled_api_url(settings: &Settings) -> Result<&str> {
+        let url = settings
+            .ruby
+            .precompiled_api_url
+            .as_deref()
+            .unwrap_or(gitlab::API_URL);
+        if !url.starts_with("https://") {
+            bail!("ruby.precompiled_api_url must use https://, got: {url}");
+        }
+        Ok(url)
+    }
+
+    /// The effective GitLab API URL for cache/lockfile identity purposes, or `None` when the
+    /// source isn't `gitlab:` and the setting is never consulted. Gating on the source keeps a
+    /// stray `ruby.precompiled_api_url` from splitting cache keys or breaking lockfile matches
+    /// for GitHub and URL-template sources, where it has no effect.
+    fn gitlab_identity_api_url(settings: &Settings) -> Option<&str> {
+        match PrecompiledSource::parse(&settings.ruby.precompiled_url) {
+            PrecompiledSource::Gitlab(_) => Some(
+                settings
+                    .ruby
+                    .precompiled_api_url
+                    .as_deref()
+                    .unwrap_or(gitlab::API_URL),
+            ),
+            PrecompiledSource::Github(_) | PrecompiledSource::UrlTemplate(_) => None,
+        }
+    }
+
+    /// GitLab release links carry no digest, so there's no checksum backstop — refuse a
+    /// plaintext asset URL rather than downloading it unauthenticated and unverified. Applies
+    /// to freshly resolved links and to locked URLs read back from `mise.lock` alike.
+    fn ensure_https_gitlab_asset_url(url: &str) -> Result<()> {
+        if !url.starts_with("https://") {
+            bail!("refusing to use non-HTTPS GitLab release asset URL: {url}");
+        }
+        Ok(())
     }
 
     /// Check if precompiled binaries should be tried.
@@ -562,7 +629,7 @@ impl RubyPlugin {
     /// the base tag when revisions aren't required — so availability is decided by that same
     /// release. A newer revision that is missing an asset for this platform means the version
     /// is not installable even when an older revision has one, which keeps this list from
-    /// offering versions [`Self::find_precompiled_asset_in_repo`] would reject.
+    /// offering versions [`Self::find_precompiled_asset_in_github_repo`] would reject.
     fn precompiled_versions_from_releases(
         releases: &[GithubRelease],
         requires_build_revision: bool,
@@ -590,6 +657,39 @@ impl RubyPlugin {
             .collect()
     }
 
+    /// Structural duplicate of [`Self::precompiled_versions_from_releases`] for GitLab
+    /// releases, which carry assets under `assets.links` instead of `assets`. Kept as a
+    /// separate function rather than a shared generic, matching how `github.rs`/`gitlab.rs`
+    /// are maintained as parallel, non-shared modules elsewhere in this codebase.
+    fn precompiled_versions_from_gitlab_releases(
+        releases: &[GitlabRelease],
+        requires_build_revision: bool,
+        platform: &str,
+    ) -> HashSet<String> {
+        let mut best: HashMap<&str, (Option<u32>, bool)> = HashMap::new();
+        for release in releases {
+            let (version, revision) = Self::split_build_revision_tag(&release.tag_name);
+            if requires_build_revision && revision.is_none() {
+                continue;
+            }
+            match best.get(version) {
+                Some((best_revision, _)) if *best_revision >= revision => continue,
+                _ => {}
+            }
+            let asset_name = format!("ruby-{version}.{platform}.tar.gz");
+            let has_asset = release
+                .assets
+                .links
+                .iter()
+                .any(|link| link.name == asset_name);
+            best.insert(version, (revision, has_asset));
+        }
+        best.into_iter()
+            .filter(|(_, (_, has_asset))| *has_asset)
+            .map(|(version, _)| version.to_string())
+            .collect()
+    }
+
     /// Cache key context for strict precompiled version listings.
     ///
     /// The filtered list depends on which source is queried and which platform's assets are
@@ -602,6 +702,7 @@ impl RubyPlugin {
         Some(hash::hash_to_str(&(
             "ruby-precompiled",
             &settings.ruby.precompiled_url,
+            Self::gitlab_identity_api_url(&settings),
             &settings.ruby.precompiled_arch,
             &settings.ruby.precompiled_os,
             self.precompiled_platform(),
@@ -617,8 +718,8 @@ impl RubyPlugin {
         versions: Vec<VersionInfo>,
     ) -> Result<Vec<VersionInfo>> {
         let settings = Settings::get();
-        let source = &settings.ruby.precompiled_url;
-        if source.contains("://") {
+        let source = PrecompiledSource::parse(&settings.ruby.precompiled_url);
+        if matches!(source, PrecompiledSource::UrlTemplate(_)) {
             // A URL template can't be enumerated, so every version is assumed available.
             return Ok(versions);
         }
@@ -628,15 +729,27 @@ impl RubyPlugin {
                  To compile ruby from source, run: mise settings ruby.compile=true"
             );
         };
-        // Only the releases `list_releases` returns are considered. Without
-        // MISE_LIST_ALL_VERSIONS that is the most recent page, which is where the
+        // Only the releases `list_releases`/`list_releases_from_url` return are considered.
+        // Without MISE_LIST_ALL_VERSIONS that is the most recent page, which is where the
         // precompiled builds live.
-        let releases = github::list_releases(source).await?;
-        let available = Self::precompiled_versions_from_releases(
-            &releases,
-            Self::source_requires_build_revision(source),
-            &platform,
-        );
+        let available = match source {
+            PrecompiledSource::Github(repo) => {
+                let releases = github::list_releases(repo).await?;
+                Self::precompiled_versions_from_releases(
+                    &releases,
+                    Self::source_requires_build_revision(repo),
+                    &platform,
+                )
+            }
+            PrecompiledSource::Gitlab(repo) => {
+                let api_url = Self::ruby_precompiled_api_url(&settings)?;
+                let releases = gitlab::list_releases_from_url(api_url, repo).await?;
+                // GitLab sources never require a build revision — that convention only
+                // applies to the default GitHub `jdx/ruby` source.
+                Self::precompiled_versions_from_gitlab_releases(&releases, false, &platform)
+            }
+            PrecompiledSource::UrlTemplate(_) => unreachable!("handled above"),
+        };
         Ok(versions
             .into_iter()
             .filter(|v| available.contains(&v.version))
@@ -644,7 +757,7 @@ impl RubyPlugin {
     }
 
     /// Find precompiled asset from a GitHub repo's releases.
-    async fn find_precompiled_asset_in_repo(
+    async fn find_precompiled_asset_in_github_repo(
         &self,
         repo: &str,
         version: &str,
@@ -720,26 +833,131 @@ impl RubyPlugin {
         Ok(None)
     }
 
-    /// Resolve precompiled binary URL and checksum for a given version and platform
+    /// Find precompiled asset from a GitLab repo's releases.
+    ///
+    /// Mirrors [`Self::find_precompiled_asset_in_github_repo`], but matches GitLab's
+    /// release-asset shape (`assets.links[].name`/`url` rather than `assets[].name`/
+    /// `browser_download_url`). GitLab release links carry no digest field, so the
+    /// checksum is always `None` here — a documented limitation, not a bug.
+    async fn find_precompiled_asset_in_gitlab_repo(
+        &self,
+        repo: &str,
+        version: &str,
+        platform: &str,
+        locked_build_revision: Option<&str>,
+        api_url: &str,
+    ) -> Result<Option<(String, Option<String>)>> {
+        // GitLab sources never require a build revision — that convention only applies to
+        // the default GitHub `jdx/ruby` source.
+        let requires_build_revision = false;
+        let release = if let Some(tag) = locked_build_revision {
+            debug!("using locked build revision {tag} for ruby {version}");
+            match gitlab::get_release_for_url(api_url, repo, tag).await {
+                Ok(r) => r,
+                Err(err) => {
+                    debug!("locked build revision {tag} not found, finding latest: {err}");
+                    match gitlab::get_release_with_build_revision_status(api_url, repo, version)
+                        .await
+                    {
+                        Ok((r, found_build_revision)) => {
+                            if requires_build_revision && !found_build_revision {
+                                debug!("no build revision release found for ruby {version}");
+                                return Ok(None);
+                            }
+                            r
+                        }
+                        Err(err) => {
+                            debug!("no precompiled ruby found for {version}: {err}");
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+        } else {
+            match gitlab::get_release_with_build_revision_status(api_url, repo, version).await {
+                Ok((r, found_build_revision)) => {
+                    if requires_build_revision && !found_build_revision {
+                        debug!("no build revision release found for ruby {version}");
+                        return Ok(None);
+                    }
+                    r
+                }
+                Err(err) => {
+                    debug!("no precompiled ruby found for {version}: {err}");
+                    return Ok(None);
+                }
+            }
+        };
+        if release.tag_name != version {
+            debug!(
+                "using build revision {} for ruby {version}",
+                release.tag_name
+            );
+        }
+        let standard_name = format!("ruby-{}.{}.tar.gz", version, platform);
+
+        for link in &release.assets.links {
+            if link.name == standard_name {
+                Self::ensure_https_gitlab_asset_url(&link.url)?;
+                return Ok(Some((link.url.clone(), None)));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Resolve precompiled binary URL and checksum for a given version and platform.
+    ///
+    /// `locked_url` is the exact URL from an existing lockfile entry for this platform, if
+    /// any. GitLab release links have no reliable tag-shaped URL convention to recover a
+    /// build revision from (unlike GitHub's `/releases/download/{tag}/`), so a locked
+    /// GitLab install reuses `locked_url` verbatim instead of re-resolving the current
+    /// latest release — otherwise a reinstall would silently swap in a newer build
+    /// revision. GitHub/URL-template sources ignore it: GitHub already has a working,
+    /// tag-based reproducibility mechanism via `locked_build_revision`.
     async fn resolve_precompiled_url(
         &self,
         version: &str,
         platform: &str,
         locked_build_revision: Option<&str>,
+        locked_url: Option<&str>,
     ) -> Result<Option<(String, Option<String>)>> {
         let settings = Settings::get();
-        let source = &settings.ruby.precompiled_url;
-
-        if source.contains("://") {
-            // Full URL template - no checksum available
-            Ok(Some((
-                self.render_precompiled_url(source, version, platform),
-                None,
-            )))
-        } else {
+        match PrecompiledSource::parse(&settings.ruby.precompiled_url) {
+            PrecompiledSource::UrlTemplate(template) => {
+                // Full URL template - no checksum available
+                Ok(Some((
+                    self.render_precompiled_url(template, version, platform),
+                    None,
+                )))
+            }
             // GitHub repo shorthand (default: "jdx/ruby")
-            self.find_precompiled_asset_in_repo(source, version, platform, locked_build_revision)
+            PrecompiledSource::Github(repo) => {
+                self.find_precompiled_asset_in_github_repo(
+                    repo,
+                    version,
+                    platform,
+                    locked_build_revision,
+                )
                 .await
+            }
+            PrecompiledSource::Gitlab(repo) => {
+                if let Some(url) = locked_url {
+                    // A hand-edited or tampered mise.lock must not bypass the HTTPS check
+                    // that fresh resolution applies — locked GitLab entries have no checksum.
+                    Self::ensure_https_gitlab_asset_url(url)?;
+                    return Ok(Some((url.to_string(), None)));
+                }
+                let api_url = Self::ruby_precompiled_api_url(&settings)?;
+                self.find_precompiled_asset_in_gitlab_repo(
+                    repo,
+                    version,
+                    platform,
+                    locked_build_revision,
+                    api_url,
+                )
+                .await
+            }
         }
     }
 
@@ -795,10 +1013,25 @@ impl RubyPlugin {
             return Ok(None);
         };
 
+        let settings = Settings::get();
+        let source = PrecompiledSource::parse(&settings.ruby.precompiled_url);
+        let platform_key = PlatformTarget::from_current().to_key();
+        // GitLab release links have no tag-shaped URL to recover a build revision from, so
+        // a locked GitLab install reuses this exact URL instead of re-resolving the latest
+        // release (see resolve_precompiled_url's doc comment).
+        let locked_url = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|pi| pi.url.clone());
         let locked_build_revision =
             Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
         let Some((url, checksum)) = self
-            .resolve_precompiled_url(&tv.version, &platform, locked_build_revision.as_deref())
+            .resolve_precompiled_url(
+                &tv.version,
+                &platform,
+                locked_build_revision.as_deref(),
+                locked_url.as_deref(),
+            )
             .await?
         else {
             return Ok(None);
@@ -811,8 +1044,23 @@ impl RubyPlugin {
         let tarball_path = tv.download_path().join(&filename);
 
         ctx.pr.set_message(format!("download {}", filename));
-        HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
-            .await?;
+        match source {
+            PrecompiledSource::Gitlab(_) => {
+                let api_url = Self::ruby_precompiled_api_url(&settings)?;
+                let headers = gitlab::get_headers(&url, api_url);
+                HTTP.download_file_with_headers(
+                    &url,
+                    &tarball_path,
+                    &headers,
+                    Some(ctx.pr.as_ref()),
+                )
+                .await?;
+            }
+            PrecompiledSource::Github(_) | PrecompiledSource::UrlTemplate(_) => {
+                HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
+                    .await?;
+            }
+        }
 
         if let Some(hash_str) = checksum.as_ref().and_then(|c| c.strip_prefix("sha256:")) {
             ctx.pr.set_message(format!("checksum {}", filename));
@@ -820,7 +1068,6 @@ impl RubyPlugin {
         }
 
         // Locked bytes remain checked even when provenance verification is reused.
-        let platform_key = PlatformTarget::from_current().to_key();
         let locked_info = tv
             .lock_platforms
             .get(&platform_key)
@@ -838,8 +1085,8 @@ impl RubyPlugin {
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
 
-        // Verify GitHub artifact attestations for precompiled binaries
-        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed
+        // Verify GitHub artifact attestations for precompiled binaries.
+        // Returns Ok(true) if verified, Ok(false) if skipped, Err if failed.
         let verified = if reuse_provenance {
             if self.detect_precompiled_provenance().is_none() {
                 bail!(
@@ -848,14 +1095,30 @@ impl RubyPlugin {
             }
             true
         } else {
-            self.verify_github_artifact_attestations(ctx.pr.as_ref(), &tarball_path, &tv.version)
-                .await?
+            match source {
+                PrecompiledSource::Github(repo) => {
+                    self.verify_github_artifact_attestations(
+                        ctx.pr.as_ref(),
+                        &tarball_path,
+                        &tv.version,
+                        repo,
+                    )
+                    .await?
+                }
+                PrecompiledSource::Gitlab(_) | PrecompiledSource::UrlTemplate(_) => false,
+            }
         };
 
         // Record provenance only if verification actually succeeded (not skipped)
         if verified {
+            let provenance = match source {
+                PrecompiledSource::Github(_) => ProvenanceType::GithubAttestations,
+                PrecompiledSource::Gitlab(_) | PrecompiledSource::UrlTemplate(_) => {
+                    unreachable!("verified is only true for a Github source")
+                }
+            };
             let pi = tv.lock_platforms.entry(platform_key.clone()).or_default();
-            pi.provenance = Some(ProvenanceType::GithubAttestations);
+            pi.provenance = Some(provenance);
         }
 
         // Enforce lockfile provenance
@@ -893,7 +1156,8 @@ impl RubyPlugin {
         Ok(Some(tv.clone()))
     }
 
-    /// Verify GitHub artifact attestations for precompiled Ruby binary
+    /// Verify GitHub artifact attestations for precompiled Ruby binary.
+    /// `repo` is the already-parsed `owner/repo` from a [`PrecompiledSource::Github`].
     /// Returns Ok(true) if verification succeeds
     /// Returns Ok(false) if verification was skipped (disabled or not applicable)
     /// Returns Err if verification is enabled and fails
@@ -902,6 +1166,7 @@ impl RubyPlugin {
         pr: &dyn crate::ui::progress_report::SingleReport,
         tarball_path: &std::path::Path,
         version: &str,
+        repo: &str,
     ) -> Result<bool> {
         let settings = Settings::get();
 
@@ -915,18 +1180,10 @@ impl RubyPlugin {
             return Ok(false);
         }
 
-        let source = &settings.ruby.precompiled_url;
-
-        // Skip for custom URL templates (not GitHub repos)
-        if source.contains("://") {
-            debug!("Skipping GitHub artifact attestation verification for custom URL template");
-            return Ok(false);
-        }
-
-        let (owner, repo) = match source.split_once('/') {
+        let (owner, repo_name) = match repo.split_once('/') {
             Some((o, r)) => (o, r),
             None => {
-                warn!("Invalid precompiled_url format: {}", source);
+                warn!("Invalid precompiled_url format: {}", repo);
                 return Ok(false);
             }
         };
@@ -936,10 +1193,10 @@ impl RubyPlugin {
         match crate::github::sigstore::verify_attestation(
             tarball_path,
             owner,
-            repo,
+            repo_name,
             None, // Accept any workflow from repo
             None,
-            Self::use_versions_host_for_precompiled_source(source),
+            Self::use_versions_host_for_precompiled_source(repo),
         )
         .await
         {
@@ -978,12 +1235,18 @@ impl Backend for RubyPlugin {
             algorithm: Some("sha256".to_string()),
         }];
 
-        // Report GitHub artifact attestations if enabled for precompiled binaries
+        // Report GitHub artifact attestations only when the configured source is actually
+        // GitHub — a `gitlab:` or URL-template source never verifies these (see
+        // detect_precompiled_provenance), regardless of the global/ruby setting.
         let github_attestations_enabled = settings
             .ruby
             .github_attestations
             .unwrap_or(settings.github_attestations);
-        if self.should_try_precompiled() && github_attestations_enabled {
+        let is_github_source = matches!(
+            PrecompiledSource::parse(&settings.ruby.precompiled_url),
+            PrecompiledSource::Github(_)
+        );
+        if self.should_try_precompiled() && github_attestations_enabled && is_github_source {
             features.push(SecurityFeature::GithubAttestations {
                 signer_workflow: None,
             });
@@ -1176,6 +1439,13 @@ impl Backend for RubyPlugin {
 
         if try_precompiled {
             opts.insert("precompiled_url".to_string(), ruby.precompiled_url.clone());
+            // Only a gitlab: source reads precompiled_api_url; recording it for other
+            // sources would break lockfile matching on a setting that has no effect.
+            if Self::gitlab_identity_api_url(&settings).is_some()
+                && let Some(precompiled_api_url) = ruby.precompiled_api_url.clone()
+            {
+                opts.insert("precompiled_api_url".to_string(), precompiled_api_url);
+            }
             if let Some(precompiled_arch) = ruby.precompiled_arch.clone() {
                 opts.insert("precompiled_arch".to_string(), precompiled_arch);
             }
@@ -1203,10 +1473,15 @@ impl Backend for RubyPlugin {
             && let Some((url, mut checksum)) = {
                 let locked_build_revision =
                     Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
+                let locked_url = tv
+                    .lock_platforms
+                    .get(&target.to_key())
+                    .and_then(|pi| pi.url.clone());
                 self.resolve_precompiled_url(
                     &tv.version,
                     &platform,
                     locked_build_revision.as_deref(),
+                    locked_url.as_deref(),
                 )
                 .await?
             }
@@ -1217,14 +1492,21 @@ impl Backend for RubyPlugin {
                 let artifact =
                     crate::lockfile::generate::download_for_verification(&url, &mut checksum)
                         .await?;
-                if !self
-                    .verify_github_artifact_attestations(
-                        &crate::ui::progress_report::QuietReport::new(),
-                        &artifact.path().join("artifact"),
-                        &tv.version,
-                    )
-                    .await?
-                {
+                let settings = Settings::get();
+                let source = PrecompiledSource::parse(&settings.ruby.precompiled_url);
+                let verified = match source {
+                    PrecompiledSource::Github(repo) => {
+                        self.verify_github_artifact_attestations(
+                            &crate::ui::progress_report::QuietReport::new(),
+                            &artifact.path().join("artifact"),
+                            &tv.version,
+                            repo,
+                        )
+                        .await?
+                    }
+                    PrecompiledSource::Gitlab(_) | PrecompiledSource::UrlTemplate(_) => false,
+                };
+                if !verified {
                     provenance = None;
                 }
             }
@@ -1353,6 +1635,27 @@ mod tests {
         }
     }
 
+    fn gitlab_release(tag: &str, asset_names: &[&str]) -> GitlabRelease {
+        GitlabRelease {
+            tag_name: tag.to_string(),
+            description: None,
+            released_at: None,
+            assets: crate::gitlab::GitlabAssets {
+                sources: vec![],
+                links: asset_names
+                    .iter()
+                    .map(|name| crate::gitlab::GitlabAssetLink {
+                        id: 0,
+                        name: (*name).to_string(),
+                        url: format!("https://example.com/{name}"),
+                        direct_asset_url: format!("https://example.com/{name}"),
+                        link_type: "other".to_string(),
+                    })
+                    .collect(),
+            },
+        }
+    }
+
     fn non_current_platform_target() -> PlatformTarget {
         let platform = ["linux-x64", "macos-arm64", "windows-x64"]
             .into_iter()
@@ -1454,6 +1757,52 @@ mod tests {
     }
 
     #[test]
+    fn test_ruby_precompiled_versions_from_gitlab_releases_use_highest_build_revision_only() {
+        let releases = vec![
+            gitlab_release("3.3.12-1", &["ruby-3.3.12.x86_64_linux.tar.gz"]),
+            gitlab_release("3.3.12-2", &["ruby-3.3.12.macos.tar.gz"]),
+        ];
+        let versions =
+            RubyPlugin::precompiled_versions_from_gitlab_releases(&releases, true, "x86_64_linux");
+        assert!(versions.is_empty());
+        let versions =
+            RubyPlugin::precompiled_versions_from_gitlab_releases(&releases, true, "macos");
+        assert_eq!(versions, HashSet::from(["3.3.12".to_string()]));
+    }
+
+    #[test]
+    fn test_precompiled_source_parse() {
+        assert_eq!(
+            PrecompiledSource::parse("jdx/ruby"),
+            PrecompiledSource::Github("jdx/ruby")
+        );
+        assert_eq!(
+            PrecompiledSource::parse("gitlab:acme/ruby"),
+            PrecompiledSource::Gitlab("acme/ruby")
+        );
+        assert_eq!(
+            PrecompiledSource::parse("https://example.com/ruby-{version}.{platform}.tar.gz"),
+            PrecompiledSource::UrlTemplate("https://example.com/ruby-{version}.{platform}.tar.gz")
+        );
+    }
+
+    #[test]
+    fn test_ruby_detect_precompiled_provenance_gitlab() {
+        // Regression: before dispatch went through `PrecompiledSource`, a `gitlab:`-prefixed
+        // source slipped past the naive `contains("://")`/`contains('/')` checks and was
+        // treated as a (bogus) GitHub repo. GitLab sources have no attestation mechanism
+        // yet, so this must always be `None`, regardless of the (GitHub-only) setting.
+        let provenance = with_ruby_settings(
+            |settings| {
+                settings.ruby.precompiled_url = Some("gitlab:acme/ruby".to_string());
+                settings.github_attestations = Some(true);
+            },
+            |backend| backend.detect_precompiled_provenance(),
+        );
+        assert_eq!(provenance, None);
+    }
+
+    #[test]
     fn test_ruby_precompiled_cache_context_tracks_source_and_platform() {
         assert_eq!(ruby_precompiled_cache_context(|_| {}), None);
 
@@ -1471,6 +1820,41 @@ mod tests {
             settings.ruby.precompiled_url = Some("acme/ruby".to_string());
         });
         assert_ne!(default_source, custom_source);
+
+        let gitlab_source = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("gitlab:acme/ruby".to_string());
+        });
+        assert_ne!(custom_source, gitlab_source);
+        assert_ne!(default_source, gitlab_source);
+
+        // Changing only the self-hosted GitLab API URL (same gitlab:owner/repo) must not
+        // reuse a version list cached for a different instance.
+        let gitlab_self_hosted = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("gitlab:acme/ruby".to_string());
+            settings.ruby.precompiled_api_url =
+                Some("https://gitlab.example.com/api/v4".to_string());
+        });
+        assert_ne!(gitlab_source, gitlab_self_hosted);
+
+        // An explicit gitlab.com API URL is the same instance as the default.
+        let gitlab_explicit_default = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("gitlab:acme/ruby".to_string());
+            settings.ruby.precompiled_api_url = Some(gitlab::API_URL.to_string());
+        });
+        assert_eq!(gitlab_source, gitlab_explicit_default);
+
+        // GitHub sources never consult precompiled_api_url, so a stray value must not
+        // split the cache.
+        let custom_source_with_api_url = ruby_precompiled_cache_context(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+            settings.ruby.precompiled_api_url =
+                Some("https://gitlab.example.com/api/v4".to_string());
+        });
+        assert_eq!(custom_source, custom_source_with_api_url);
 
         let custom_platform = ruby_precompiled_cache_context(|settings| {
             settings.ruby.compile = Some(false);
@@ -1516,6 +1900,123 @@ mod tests {
         assert!(!ruby_precompiled_only(None));
         assert!(!ruby_precompiled_only(Some(true)));
         assert!(ruby_precompiled_only(Some(false)));
+    }
+
+    #[test]
+    fn test_ruby_precompiled_api_url_rejects_non_https() {
+        with_ruby_settings(
+            |_| {},
+            |_| {
+                let settings = Settings::get();
+                assert_eq!(
+                    RubyPlugin::ruby_precompiled_api_url(&settings).unwrap(),
+                    gitlab::API_URL
+                );
+            },
+        );
+
+        with_ruby_settings(
+            |settings| {
+                settings.ruby.precompiled_api_url =
+                    Some("https://gitlab.example.com/api/v4".to_string());
+            },
+            |_| {
+                let settings = Settings::get();
+                assert_eq!(
+                    RubyPlugin::ruby_precompiled_api_url(&settings).unwrap(),
+                    "https://gitlab.example.com/api/v4"
+                );
+            },
+        );
+
+        with_ruby_settings(
+            |settings| {
+                settings.ruby.precompiled_api_url =
+                    Some("http://gitlab.example.com/api/v4".to_string());
+            },
+            |_| {
+                let settings = Settings::get();
+                assert!(RubyPlugin::ruby_precompiled_api_url(&settings).is_err());
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ruby_security_info_github_attestations_only_for_github_source() {
+        async fn features_for(configure_settings: impl FnOnce(&mut SettingsPartial)) -> bool {
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+            let mut settings = SettingsPartial::empty();
+            configure_settings(&mut settings);
+            Settings::reset(Some(settings));
+            let _guard = SettingsResetGuard { _lock: lock };
+
+            let backend = RubyPlugin::new();
+            backend.security_info().await.iter().any(|f| {
+                matches!(
+                    f,
+                    crate::backend::SecurityFeature::GithubAttestations { .. }
+                )
+            })
+        }
+
+        assert!(
+            features_for(|settings| {
+                settings.github_attestations = Some(true);
+            })
+            .await
+        );
+        assert!(
+            !features_for(|settings| {
+                settings.github_attestations = Some(true);
+                settings.ruby.precompiled_url = Some("gitlab:acme/ruby".to_string());
+            })
+            .await
+        );
+        assert!(
+            !features_for(|settings| {
+                settings.github_attestations = Some(true);
+                settings.ruby.precompiled_url =
+                    Some("https://example.com/ruby-{version}.tar.gz".to_string());
+            })
+            .await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ruby_resolve_precompiled_url_reuses_locked_gitlab_url() {
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let mut settings = SettingsPartial::empty();
+        settings.ruby.precompiled_url = Some("gitlab:acme/ruby".to_string());
+        Settings::reset(Some(settings));
+        let _guard = SettingsResetGuard { _lock: lock };
+
+        let backend = RubyPlugin::new();
+        let locked = "https://gitlab.com/acme/ruby/-/releases/v1/downloads/ruby-3.3.0.macos.tar.gz";
+        // Locked GitLab installs must reuse the exact locked URL rather than re-resolving
+        // the current latest release — this must not attempt any network call, which is
+        // why this test can run without HTTP mocking.
+        let result = backend
+            .resolve_precompiled_url("3.3.0", "macos", None, Some(locked))
+            .await
+            .unwrap();
+        assert_eq!(result, Some((locked.to_string(), None)));
+
+        // A locked plaintext URL (e.g. a tampered mise.lock) gets the same HTTPS check as a
+        // freshly resolved release link — there is no checksum to fall back on.
+        let err = backend
+            .resolve_precompiled_url(
+                "3.3.0",
+                "macos",
+                None,
+                Some("http://gitlab.com/acme/ruby/-/releases/v1/downloads/ruby-3.3.0.macos.tar.gz"),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("refusing to use non-HTTPS GitLab release asset URL"),
+            "{err}"
+        );
     }
 
     fn ruby_precompiled_platform_for_target(
@@ -1598,7 +2099,9 @@ mod tests {
     fn test_ruby_lockfile_options_include_precompiled_inputs() {
         let opts = resolve_ruby_lockfile_options(|settings| {
             settings.ruby.compile = Some(false);
-            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+            settings.ruby.precompiled_url = Some("gitlab:acme/ruby".to_string());
+            settings.ruby.precompiled_api_url =
+                Some("https://gitlab.example.com/api/v4".to_string());
             settings.ruby.precompiled_arch = Some("arm64".to_string());
             settings.ruby.precompiled_os = Some("linux".to_string());
         });
@@ -1607,8 +2110,38 @@ mod tests {
             opts,
             BTreeMap::from([
                 ("compile".to_string(), "false".to_string()),
+                (
+                    "precompiled_api_url".to_string(),
+                    "https://gitlab.example.com/api/v4".to_string(),
+                ),
                 ("precompiled_arch".to_string(), "arm64".to_string()),
                 ("precompiled_os".to_string(), "linux".to_string()),
+                (
+                    "precompiled_url".to_string(),
+                    "gitlab:acme/ruby".to_string()
+                ),
+                (
+                    "ruby_build_repo".to_string(),
+                    DEFAULT_RUBY_BUILD_REPO.to_string(),
+                ),
+                ("ruby_install".to_string(), "false".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_ruby_lockfile_options_omit_precompiled_api_url_for_non_gitlab_sources() {
+        let opts = resolve_ruby_lockfile_options(|settings| {
+            settings.ruby.compile = Some(false);
+            settings.ruby.precompiled_url = Some("acme/ruby".to_string());
+            settings.ruby.precompiled_api_url =
+                Some("https://gitlab.example.com/api/v4".to_string());
+        });
+
+        assert_eq!(
+            opts,
+            BTreeMap::from([
+                ("compile".to_string(), "false".to_string()),
                 ("precompiled_url".to_string(), "acme/ruby".to_string()),
                 (
                     "ruby_build_repo".to_string(),

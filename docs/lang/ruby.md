@@ -131,7 +131,14 @@ To require precompiled binaries and never compile, see
 [Precompiled binaries only](#precompiled-binaries-only).
 
 You can also use a custom source for precompiled binaries by setting `ruby.precompiled_url` to
-either a GitHub repo (e.g., `owner/repo`) or a full URL template.
+a GitHub repo (e.g., `owner/repo`), a GitLab repo prefixed with `gitlab:` (e.g.,
+`gitlab:owner/repo`), or a full URL template.
+
+GitLab-hosted release assets have no published digest, so precompiled binaries from a
+`gitlab:` source have no checksum verification. Self-hosted GitLab is supported by setting
+`ruby.precompiled_api_url` to the instance's API URL (e.g.,
+`https://gitlab.example.com/api/v4`); authentication follows the normal GitLab token
+resolution, using `MISE_GITLAB_ENTERPRISE_TOKEN` for non-gitlab.com hosts.
 
 You can also install a specific ruby flavour. To get the latest version of a flavour, use the
 flavour prefix.
