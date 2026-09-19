@@ -12,7 +12,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class E2ERunnerTests(unittest.TestCase):
-    def run_runner(self, attempts=None, tranche=None, extra_tests=()):
+    def run_runner(
+        self, attempts=None, tranche=None, extra_tests=(), args=(), release_skip=False
+    ):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             e2e = root / "e2e"
@@ -22,6 +24,8 @@ class E2ERunnerTests(unittest.TestCase):
             scripts = root / "scripts"
             scripts.mkdir()
             (scripts / "get-version.sh").write_text("echo test\n")
+            if release_skip:
+                (root / ".release-skip-e2e").write_text("test\n")
             names = ("test_fail", "test_flaky", "test_pass", "test_skip_slow")
             for name in names + tuple(extra_tests):
                 (e2e / name).touch()
@@ -68,7 +72,7 @@ exit "$status"
             if tranche is not None:
                 env.update(TEST_TRANCHE_COUNT="2", TEST_TRANCHE=str(tranche))
             result = subprocess.run(
-                ["bash", str(e2e / "run_all_tests")],
+                ["bash", str(e2e / "run_all_tests"), *args],
                 cwd=root,
                 env=env,
                 capture_output=True,
@@ -78,7 +82,7 @@ exit "$status"
             return (
                 result,
                 {p.name: int(p.read_text()) for p in counts.iterdir()},
-                summary.read_text(),
+                summary.read_text() if summary.exists() else "",
             )
 
     def test_retries_only_failures(self):
@@ -115,6 +119,20 @@ exit "$status"
         self.assertIn("| test_no_summary | - | :x: |", summary)
         self.assertEqual(summary.count("| test_no_summary |"), 1)
         self.assertIn("test_no_summary", result.stderr)
+
+    def test_explicit_tests_run_including_slow(self):
+        result, counts, _ = self.run_runner(args=("test_skip_slow", "test_pass"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(counts, {"test_skip_slow": 1, "test_pass": 1})
+        self.assertIn("ran 2 tests, skipped 0 tests", result.stderr)
+
+    def test_release_skip_applies_only_to_discovery(self):
+        result, counts, _ = self.run_runner(release_skip=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(counts, {})
+        result, counts, _ = self.run_runner(release_skip=True, args=("test_pass",))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(counts, {"test_pass": 1})
 
     def test_invalid_attempt_limit(self):
         for attempts in ("0", "-1", "abc", "08"):
