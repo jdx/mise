@@ -411,6 +411,15 @@ jobs:
             !~/.local/share/mise/installs/python/**
             !~/.local/share/mise/installs/vfox-version-fox-vfox-nodejs/**
             !~/.local/share/mise/bin/**
+      - name: TEMPORARY data dir size after restore
+        shell: pwsh
+        run: |
+          $d = "$env:USERPROFILE\.local\share\mise"
+          $f = Get-ChildItem -Force -Recurse -File $d -ErrorAction SilentlyContinue
+          Write-Host ("RESTORED {0:N0} MB, {1} files" -f (($f | Measure-Object Length -Sum).Sum / 1MB), $f.Count)
+          foreach ($n in 'installs\zig', 'installs\go', 'installs\python', 'installs\vfox-version-fox-vfox-nodejs', 'bin') {
+            Write-Host ("  {0} present={1}" -f $n, (Test-Path "$d\$n"))
+          }
       - name: e2e
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         with:
