@@ -94,4 +94,11 @@ committed. Authenticate once with `gem signin --host <registry>` (or however
 your registry documents it) and mise will inherit it.
 
 Dependencies are still resolved from the other configured sources, so a private
-gem whose dependencies live on rubygems.org installs normally.
+gem whose dependencies live on rubygems.org installs normally. `source` is added
+to the source list rather than replacing it, which is what makes that work.
+
+That cuts both ways, so name private gems distinctly. Because the other sources
+remain available, a public gem of the same name is also a candidate, and
+RubyGems, not mise, decides between them. A registry that proxies rubygems.org
+avoids the question entirely: point `source` at the proxy, and the private gem
+and its dependencies both resolve from one place.
