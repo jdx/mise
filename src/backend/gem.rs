@@ -50,6 +50,20 @@ impl Backend for GemBackend {
         false
     }
 
+    /// `source` selects which registry the version list comes from, so it has
+    /// to be part of that list's cache key.
+    ///
+    /// Without this, two projects naming the same gem with different `source`
+    /// values share one cache entry: a list fetched from registry A answers
+    /// `latest` for registry B, and the install then asks B for a version only A
+    /// publishes. Declaring the key here rather than implementing
+    /// `remote_version_cache_context` keeps the shared versions host available
+    /// for the ordinary rubygems.org case, since mise only folds locally
+    /// overridden options into the key.
+    fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+        &["source"]
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Resolution and installation have to agree on where the gem comes
         // from. Listing versions from rubygems.org and then installing from a
@@ -605,6 +619,21 @@ mod tests {
     fn no_source_option_leaves_the_backend_unconfigured() {
         let backend = GemBackend::from_arg("gem:rubocop".into());
         assert_eq!(backend.configured_source(), None);
+    }
+
+    /// A version list is only valid for the registry it came from, so `source`
+    /// has to reach the cache key. Asserted on the declaration rather than on a
+    /// cached file, because the digest is mise's to build: what this backend
+    /// owns is naming the option.
+    #[test]
+    fn the_source_option_partitions_the_remote_version_cache() {
+        let backend = GemBackend::from_arg("gem:rubocop".into());
+        assert!(
+            backend
+                .remote_version_listing_tool_option_keys()
+                .contains(&"source"),
+            "a version list from one registry must not answer for another"
+        );
     }
 
     #[test]
