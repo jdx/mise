@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# `os = "unix"` selects every non-Windows platform, like the `unix` config environment.
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", os = ["unix"] }
+
+[doctor.checks.a_unix]
+run = "touch unix-ran"
+os = "unix"
+
+[doctor.checks.b_windows]
+run = "touch windows-ran"
+os = ["windows"]
+TOML
+
+assert_succeed "mise install"
+assert_contains "mise which dummy" "dummy/1.0.0"
+
+assert_succeed "mise doctor project --json > report.json"
+assert_succeed "jq -e '.checks | map(.status) == [\"pass\", \"skipped\"]' report.json"
+assert_succeed "test -f unix-ran && test ! -f windows-ran"

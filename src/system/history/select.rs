@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Variant {
-    /// `"macos"`, `"linux/arm64"`, or a list; empty = any.
+    /// `"macos"`, `"linux/arm64"`, the `"unix"` family, or a list; empty = any.
     #[serde(default, deserialize_with = "deserialize_one_or_many")]
     pub os: Vec<String>,
     /// Active when this mise environment is selected (`-E work`).
@@ -55,19 +55,26 @@ impl Variant {
         os_ok && profile_ok
     }
 
-    /// `profile` +2, an arch qualifier +2, an os alone +1.
+    /// `profile` +4, plus the best matching `os` entry: an os +2 (the `unix`
+    /// family +1) and an arch qualifier +2 more.
     fn specificity(&self) -> u8 {
-        let mut score = 0;
-        if self.profile.is_some() {
-            score += 2;
-        }
-        if !self.os.is_empty() {
-            score += 1;
-            if self.os.iter().any(|entry| entry.contains('/')) {
-                score += 1;
-            }
-        }
-        score
+        let profile = if self.profile.is_some() { 4 } else { 0 };
+        let os = self
+            .os
+            .iter()
+            .filter(|entry| crate::cli::version::os_selector_matches(entry))
+            .map(|entry| {
+                let os = if crate::cli::version::is_os_family_selector(entry) {
+                    1
+                } else {
+                    2
+                };
+                let arch = if entry.contains('/') { 2 } else { 0 };
+                os + arch
+            })
+            .max()
+            .unwrap_or(0);
+        profile + os
     }
 }
 
@@ -209,6 +216,47 @@ mod tests {
         let variants = vec![v(&[&this_os], None, false), v(&[&this_os], None, false)];
         assert!(matches!(select(&variants, &[]), Selection::Ambiguous(_)));
         assert_eq!(select(&[], &[]), Selection::Single);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_family_selects_below_a_specific_os() {
+        let this_os = crate::cli::version::OS.to_string();
+        let this_arch = crate::cli::version::ARCH.to_string();
+        let variants = vec![v(&["unix"], None, false), v(&["windows"], None, false)];
+        assert_eq!(
+            select(&variants, &[]),
+            Selection::Variant(v(&["unix"], None, false))
+        );
+        // the os itself beats its family
+        let variants = vec![v(&["unix"], None, false), v(&[&this_os], None, false)];
+        assert_eq!(
+            select(&variants, &[]),
+            Selection::Variant(v(&[&this_os], None, false))
+        );
+        // an arch qualifier on the family beats the os alone
+        let family_arch = format!("unix/{this_arch}");
+        let variants = vec![v(&[&family_arch], None, false), v(&[&this_os], None, false)];
+        assert_eq!(
+            select(&variants, &[]),
+            Selection::Variant(v(&[&family_arch], None, false))
+        );
+        // a list scores by the entry that matched, not its most specific entry
+        let variants = vec![
+            v(&["unix", "windows/arm64"], None, false),
+            v(&[&this_os], None, false),
+        ];
+        assert_eq!(
+            select(&variants, &[]),
+            Selection::Variant(v(&[&this_os], None, false))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn unix_family_does_not_select_windows() {
+        let variants = vec![v(&["unix"], None, false)];
+        assert_eq!(select(&variants, &[]), Selection::NoMatch);
     }
 
     #[test]
