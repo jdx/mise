@@ -2770,6 +2770,216 @@ three = ["two", "c"]
     }
 
     #[test]
+    fn auto_ports_separate_worktrees_but_leave_the_primary_checkout_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let primary = tmp.path().join("project");
+        std::fs::create_dir_all(primary.join(".git")).unwrap();
+        let linked = tmp.path().join("worktree");
+        std::fs::create_dir_all(&linked).unwrap();
+        // A linked worktree's marker points into the main checkout's worktrees
+        // directory, which carries a commondir pointer; that is what
+        // distinguishes it from a submodule.
+        let private = primary.join(".git").join("worktrees").join("worktree");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(primary.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
+        std::fs::write(
+            linked.join(".git"),
+            format!("gitdir: {}\n", private.display()),
+        )
+        .unwrap();
+
+        let body = "[daemons.db]\npreset = 'postgres'\nversion = '18'\nport = 'auto'\n[daemons.api]\nrun = 'server'\n[daemons.api.port]\nauto = true\nbase = 3000\n";
+        let ports = |root: &Path| {
+            let set = load(&files(&[(root.join("mise.toml").to_str().unwrap(), body)])).unwrap();
+            (
+                set.daemons["db"].port.unwrap().port,
+                set.daemons["api"].port.unwrap().port,
+            )
+        };
+
+        // The single well-known checkout keeps the well-known ports.
+        assert_eq!(ports(&primary), (5432, 3000));
+        let (db, api) = ports(&linked);
+        assert!(db > 5432 && db <= 5432 + ports::SLOTS);
+        assert!(api > 3000 && api <= 3000 + ports::SLOTS);
+        // Same root, same ports; and the port reaches the exports and the command.
+        assert_eq!(ports(&linked), (db, api));
+        let set = load(&files(&[(
+            linked.join("mise.toml").to_str().unwrap(),
+            body,
+        )]))
+        .unwrap();
+        assert_eq!(set.daemons["db"].exports["PGPORT"], db.to_string());
+        assert!(set.daemons["db"].exports["DATABASE_URL"].contains(&format!(":{db}/")));
+        assert!(
+            set.daemons["db"].table["run"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("-p {db}"))
+        );
+        assert_eq!(
+            set.daemons["api"].table["port"]["expect"][0].as_integer(),
+            Some(i64::from(api))
+        );
+    }
+
+    #[test]
+    fn custom_daemons_export_their_resolved_port() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("project");
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'server'\nport = 3000\n[daemons.web-ui]\nrun = 'ui'\n[daemons.web-ui.port]\nauto = true\nbase = 4000\n",
+        )]))
+        .unwrap();
+        // Without an export the port would reach pitchfork only.
+        assert_eq!(set.daemons["api"].exports["API_PORT"], "3000");
+        // Punctuation is not valid in a variable name.
+        assert_eq!(set.daemons["web-ui"].exports["WEB_UI_PORT"], "4000");
+        // Two names that normalize onto one variable are ambiguous, so
+        // neither is exported and both daemons keep working. Failing the load
+        // would take `mise env` down for the whole project over a convenience.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.web-ui]\nrun = 'a'\nport = 3000\n[daemons.web_ui]\nrun = 'b'\nport = 3001\n",
+        )]))
+        .unwrap();
+        assert!(set.daemons["web-ui"].exports.is_empty());
+        assert!(set.daemons["web_ui"].exports.is_empty());
+        // Both still have their ports; only the variable is withheld.
+        assert_eq!(set.daemons["web-ui"].port.unwrap().port, 3000);
+        assert_eq!(set.daemons["web_ui"].port.unwrap().port, 3001);
+
+        // A leading punctuation character becomes an underscore, which a shell
+        // accepts, so such a name still gets its variable.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.\".api\"]\nrun = 'a'\nport = 3000\n",
+        )]))
+        .unwrap();
+        assert_eq!(set.daemons[".api"].exports["_API_PORT"], "3000");
+
+        // A shell cannot export a name starting with a digit, but that name was
+        // legal before this export existed, so it keeps working without one.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.9api]\nrun = 'a'\nport = 3000\n",
+        )]))
+        .unwrap();
+        assert!(set.daemons["9api"].exports.is_empty());
+        assert_eq!(set.daemons["9api"].port.unwrap().port, 3000);
+        assert_eq!(
+            set.daemons["9api"].table["port"]["expect"][0].as_integer(),
+            Some(3000)
+        );
+
+        // A daemon with no port mise resolved exports nothing.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'server'\n",
+        )]))
+        .unwrap();
+        assert!(set.daemons["api"].exports.is_empty());
+        // The exports reach the environment mise renders.
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            "[daemons.api]\nrun = 'server'\nport = 3000\n",
+        )]))
+        .unwrap();
+        assert!(set.env_entries().iter().any(
+            |(d, _)| matches!(d, EnvDirective::Val(k, v, _) if k == "API_PORT" && v == "3000")
+        ));
+    }
+
+    #[test]
+    fn a_persisted_allocation_wins_over_a_fresh_derivation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("wt");
+        std::fs::create_dir_all(&root).unwrap();
+        let private = tmp.path().join(".git").join("worktrees").join("wt");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(
+            tmp.path().join(".git").join("HEAD"),
+            "ref: refs/heads/main\n",
+        )
+        .unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
+        std::fs::write(
+            root.join(".git"),
+            format!("gitdir: {}\n", private.display()),
+        )
+        .unwrap();
+
+        let body = "[daemons.api]\nrun = 'server'\n[daemons.api.port]\nauto = true\nbase = 3000\n";
+        let cfg = || files(&[(root.join("mise.toml").to_str().unwrap(), body)]);
+        let derived = load(&cfg()).unwrap().daemons["api"].port.unwrap();
+        assert_ne!(derived.port, 3000, "a worktree is offset");
+
+        // A recorded claim for the same base and stride is what the next load
+        // uses, so a started daemon cannot move when derivation changes.
+        let state = runtime::State {
+            root: root.clone(),
+            ports: std::collections::BTreeMap::from([(
+                "api".to_string(),
+                PortClaim {
+                    port: 3456,
+                    base: 3000,
+                    stride: 1,
+                },
+            )]),
+            ..Default::default()
+        };
+        let dir = state_dir(&root);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("state.json"),
+            serde_json::to_vec_pretty(&state).unwrap(),
+        )
+        .unwrap();
+        let set = load(&cfg()).unwrap();
+        assert_eq!(set.daemons["api"].port.unwrap().port, 3456);
+        assert_eq!(set.daemons["api"].exports["API_PORT"], "3456");
+        assert_eq!(
+            set.daemons["api"].table["port"]["expect"][0].as_integer(),
+            Some(3456)
+        );
+    }
+
+    #[test]
+    fn invalid_auto_port_declarations_are_rejected() {
+        // A custom daemon has no default port to offset.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\nport = 'auto'\n",
+        )]);
+        assert!(
+            load(&config)
+                .unwrap_err()
+                .to_string()
+                .contains("needs a base port")
+        );
+        // Presets do not take pitchfork's structured port.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\n[daemons.db.port]\nexpect = [5432]\n",
+        )]);
+        assert!(load(&config).is_err());
+        // Custom daemons still forward it verbatim.
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\n[daemons.api.port]\nexpect = [3000, 3001]\nbump = true\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(
+            set.daemons["api"].table["port"]["bump"].as_bool(),
+            Some(true)
+        );
+        assert!(set.daemons["api"].port.is_none());
+    }
+
+    #[test]
     fn daemon_names_cannot_escape_persistent_data_directory() {
         for name in [".", "..", "../outside", "a/b", "a\\b"] {
             let config = files(&[(
