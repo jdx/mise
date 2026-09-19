@@ -108,7 +108,7 @@ pub(crate) async fn emit(
             super::ensure_not_blocked(&scoped_set, &auto, Some(&root))?;
             // Only those daemons are launched here, so only their ports are
             // conflict checked; dependencies are already part of the set.
-            let starting: Vec<String> = auto.daemons.keys().cloned().collect();
+            let starting = auto.names();
             // Only this project's own roots reach here, so it owns the profile.
             let (_state, _lock) = runtime
                 .prepare(&root, &scoped_set, force, true, &starting)

@@ -1342,6 +1342,15 @@ impl DaemonSet {
 
     /// Look a daemon up by the name it carries inside its own project. Imported
     /// daemons are keyed by qualified ID, so the map key is not always the name.
+    /// The daemon names in this set, as port claims are keyed.
+    ///
+    /// Not the map keys: an imported daemon is keyed by its qualified ID while
+    /// its claim is recorded under its own name, so keys would silently miss
+    /// every imported daemon and skip its port check.
+    pub(crate) fn names(&self) -> Vec<String> {
+        self.daemons.values().map(|d| d.name.clone()).collect()
+    }
+
     pub(crate) fn find(&self, name: &str) -> Option<&Daemon> {
         self.daemons.values().find(|d| d.name == name)
     }
@@ -2977,6 +2986,36 @@ three = ["two", "c"]
             Some(true)
         );
         assert!(set.daemons["api"].port.is_none());
+    }
+
+    #[test]
+    fn set_names_match_how_port_claims_are_keyed() {
+        // An imported daemon is keyed in the set by its qualified ID but
+        // records its claim under its own name. Reading the map keys would
+        // silently drop it from the port check while it still started.
+        let mut set = DaemonSet::default();
+        let daemon = |name: &str, imported: bool| Daemon {
+            name: name.to_string(),
+            source: PathBuf::from("/project/mise.toml"),
+            root: PathBuf::from("/project"),
+            table: toml::Table::new(),
+            preset: None,
+            task: None,
+            tool: None,
+            exports: IndexMap::new(),
+            imported,
+            port: Some(PortClaim::fixed(3000)),
+        };
+        set.daemons.insert("api".into(), daemon("api", false));
+        set.daemons
+            .insert("mirror/worker".into(), daemon("worker", true));
+
+        assert_eq!(set.names(), ["api", "worker"]);
+        // The map keys are what a naive read would have used.
+        assert_eq!(
+            set.daemons.keys().cloned().collect::<Vec<_>>(),
+            ["api", "mirror/worker"]
+        );
     }
 
     #[test]

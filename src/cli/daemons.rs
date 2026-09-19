@@ -462,7 +462,7 @@ impl Daemons {
             }
             // Only the daemons this root launches have their ports checked, so
             // an unrelated one whose port is busy elsewhere cannot block them.
-            let starting_names: Vec<String> = root_starting.daemons.keys().cloned().collect();
+            let starting_names = root_starting.names();
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime
                     .prepare(&root, &set, true, !foreign, &starting_names)

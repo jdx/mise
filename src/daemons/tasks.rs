@@ -236,10 +236,9 @@ pub(crate) async fn start(
         // Only the daemons this task requires are launched here, so only
         // their ports are conflict checked.
         let required: Vec<String> = set
-            .daemons
-            .keys()
+            .names()
+            .into_iter()
             .filter(|name| names.contains(name.as_str()))
-            .cloned()
             .collect();
         // The profile belongs to the project that owns the root, so a task that
         // reached another project's daemon does not impose its own.
