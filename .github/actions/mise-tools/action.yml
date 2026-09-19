@@ -6,28 +6,30 @@ inputs:
     description: "Restore and save the mise tool cache"
     required: false
     default: "true"
-  cache-exclude:
+  cache-path:
     description: >-
-      Extra actions/cache path patterns, one per line, for tools that are
-      cheaper to reinstall than to unpack.
-      e.g. `!~/.local/share/mise/installs/zig/**`
+      What to cache, as actions/cache path patterns. A job whose tests install
+      into the data dir can narrow this to leave out tools that are cheaper to
+      reinstall than to unpack. `actions/cache` resolves these patterns with
+      implicit descendants off, so a bare directory is archived whole and a
+      later `!` pattern for something inside it never matches; to leave a tool
+      out, enumerate the siblings to keep with a wildcard instead.
     required: false
-    default: ""
+    default: |
+      ~/.local/share/mise
+      ~/.cache/mise
 
 runs:
   using: "composite"
   steps:
-    # v2: the key changed when `cache-exclude` landed, so that a job which
-    # trims the cache stops restoring the untrimmed entry it already matches.
+    # v3: the key moves with the cached path set, so that a job which narrows
+    # it stops restoring the wider entry its old key still matched.
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       if: inputs.cache == 'true'
       with:
-        key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-v2-${{ hashFiles('mise.lock') }}
-        restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-v2-
-        path: |
-          ~/.local/share/mise
-          ~/.cache/mise
-          ${{ inputs.cache-exclude }}
+        key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-v3-${{ hashFiles('mise.lock') }}
+        restore-keys: ${{ runner.os }}-${{ runner.arch }}-mise-tools-v3-
+        path: ${{ inputs.cache-path }}
     # Check the API directly instead of bootstrapping the rate-limit helper,
     # since installing the helper itself requires GitHub API access.
     - name: Wait for GitHub rate limit
