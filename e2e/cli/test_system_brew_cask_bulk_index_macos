@@ -33,7 +33,10 @@ cache = Path(os.environ["MISE_CACHE_DIR"])
 
 BULK_PATH = "/api/cask.json"
 NOBULK = "/nobulk"
-LAST_MODIFIED = "Wed, 17 Sep 2026 10:00:00 GMT"
+# A real HTTP date: 17 Sep 2026 is a Thursday, and mise parses this value to
+# order one generation of the document against another, so a wrong weekday
+# would fail to parse and quietly skip the path that comparison guards.
+LAST_MODIFIED = "Thu, 17 Sep 2026 10:00:00 GMT"
 TOKENS = ["alpha", "beta"]
 
 # (path, If-Modified-Since or None, status answered)
