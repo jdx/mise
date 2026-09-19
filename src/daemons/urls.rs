@@ -863,16 +863,16 @@ mod tests {
         );
     }
 
-    /// A bare repository with worktrees beside it has no ordinary checkout, so
-    /// the repository directory names the project. Falling back to the root's
-    /// own directory would repeat the worktree label in the hostname, and would
-    /// give sibling projects in one worktree different project labels.
+    /// A bare repository has no working tree to stand for the project, and the
+    /// directory holding it holds unrelated repositories just as often as
+    /// sibling worktrees. Pitchfork therefore gives each such worktree a
+    /// project label of its own, and mise must agree: a hostname only mise
+    /// believed in would be exported and routed by nothing.
     #[test]
-    fn a_bare_repositorys_worktrees_share_one_project_label() {
+    fn a_worktree_of_a_bare_repository_names_itself() {
         let tmp = tempfile::tempdir().unwrap();
         // The usual layout: one directory holding the bare repository and the
-        // worktrees checked out beside it. That directory is the project, which
-        // is also what pitchfork names: the parent of the common git dir.
+        // worktrees checked out beside it.
         let project = tmp.path().join("shop");
         let bare = project.join("repo.git");
         std::fs::create_dir_all(&bare).unwrap();
@@ -893,19 +893,20 @@ mod tests {
         let main = worktree("main");
         let feature = worktree("feature");
 
-        // The project is named once, by the repository, and the worktree
-        // component stays distinct from it.
+        // Each worktree is its own project, with no component beneath it: not
+        // `shop`, which would group every bare repository in that directory,
+        // and no worktree label for siblings it does not have.
         let resolved = labels(&main, &settings(None)).unwrap();
-        assert_eq!(resolved.project.as_deref(), Some("shop"));
-        assert_eq!(resolved.worktree.as_deref(), Some("main"));
-        assert_eq!(resolved.suffix("localhost").unwrap(), "main.shop.localhost");
+        assert_eq!(resolved.project.as_deref(), Some("main"));
+        assert_eq!(resolved.worktree, None);
+        assert_eq!(resolved.suffix("localhost").unwrap(), "main.localhost");
         assert_eq!(
             labels(&feature, &settings(None))
                 .unwrap()
                 .project
                 .as_deref(),
-            Some("shop"),
-            "every worktree of one repository names the same project"
+            Some("feature"),
+            "each worktree of a bare repository names itself"
         );
 
         // Sibling projects inside one worktree share both labels.

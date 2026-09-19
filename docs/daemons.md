@@ -674,6 +674,12 @@ the worktree component does the separating in hostnames. Without an explicit
 namespace, both mise and pitchfork name the project after the primary checkout's
 directory.
 
+A bare repository has no primary checkout, so each worktree beside it names itself
+and gets no worktree component: a daemon in `shop/main` is `api.main.localhost`, not
+`api.main.shop.localhost`. The directory holding a bare repository often holds
+unrelated ones too, and naming the project after it would put them on one label. Set
+an explicit `namespace` to group such worktrees under a project of your choosing.
+
 The worktree component is the linked worktree's directory name. To name it yourself,
 set `worktree_label` in a pitchfork configuration file inside that worktree, which is
 where pitchfork reads it:

@@ -647,14 +647,15 @@ pub(crate) fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
 /// one, distinguishes this copy from the others.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Checkout {
-    /// The directory the repository lives in: an ordinary checkout's own
-    /// directory, or the one holding a bare repository and the worktrees
-    /// beside it. None outside any git repository.
+    /// The checkout that names the project: an ordinary checkout's own
+    /// directory, or, for a linked worktree, the main checkout every worktree
+    /// of the repository shares. None outside any git repository.
     ///
-    /// Not a working tree. A bare repository has none, and this still names
-    /// its directory, because the question here is which project a path
-    /// belongs to. For the narrower question of which working copy may share
-    /// another's trust records, see `main_checkout_equivalent`.
+    /// A worktree of a bare repository names itself here, because a bare
+    /// repository has no working tree to stand for the project and the
+    /// directory holding it usually holds unrelated ones too. Pitchfork
+    /// resolves it the same way, and a hostname the two disagreed about would
+    /// be exported by mise and routed by nothing.
     pub repository: Option<PathBuf>,
     /// This linked worktree's own directory, when `path` is inside one.
     pub worktree: Option<PathBuf>,
@@ -676,9 +677,18 @@ pub(crate) fn checkout_of(path: &Path) -> Checkout {
             continue;
         }
         if worktree_gitdir(&dotgit).is_some() {
-            return Checkout {
-                repository: repository_root(&dotgit),
-                worktree: Some(dir.to_path_buf()),
+            // Without a main checkout there is nothing above this worktree to
+            // name the project, so it stands on its own: one label, and no
+            // worktree component to distinguish it from siblings it has none of.
+            return match main_checkout_root(&dotgit) {
+                Some(repository) => Checkout {
+                    repository: Some(repository),
+                    worktree: Some(dir.to_path_buf()),
+                },
+                None => Checkout {
+                    repository: Some(dir.to_path_buf()),
+                    worktree: None,
+                },
             };
         }
         // A submodule belongs to whatever checkout contains it, so keep
@@ -814,19 +824,11 @@ fn read_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
     })
 }
 
-/// The directory a linked worktree's repository sits in: the parent of its
-/// common git directory, whether that is a checkout's `.git` or a bare repo.
-///
-/// This names the repository, so every worktree of it agrees, which is what
-/// [`Checkout::repository`] is for. It is not [`main_checkout_root`], which
-/// answers a narrower question — which working copy may share trust records —
-/// and so refuses a bare repository, having no working copy to point at.
-fn repository_root(dotgit_file: &Path) -> Option<PathBuf> {
-    let common = worktree_common_dir(&worktree_gitdir(dotgit_file)?)?;
-    common.parent().map(|p| p.to_path_buf())
-}
-
 /// Resolves a linked worktree's `.git` file to the root of the main checkout.
+///
+/// Two questions share this answer: which working copy may share trust
+/// records, and which checkout names the project for [`Checkout`]. Both refuse
+/// a bare repository, having no working copy to point at.
 fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     let common = worktree_common_dir(&worktree_gitdir(dotgit_file)?)?;
     if common.file_name() == Some(OsStr::new(".git")) {
