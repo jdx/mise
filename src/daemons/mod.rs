@@ -2,6 +2,7 @@
 pub(crate) mod hook_env;
 pub(crate) mod ports;
 pub(crate) mod presets;
+pub(crate) mod prune;
 pub(crate) mod runtime;
 pub(crate) mod tasks;
 pub(crate) mod urls;
@@ -226,6 +227,72 @@ pub(crate) fn state_dir(root: &Path) -> PathBuf {
         .join(crate::hash::hash_to_str(
             &root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
         ))
+}
+
+/// The lock serializing everything that touches one project's daemon state.
+///
+/// Deliberately a sibling of [`state_dir`] rather than a file inside it.
+/// `mise daemons prune` deletes that directory, and a lock living inside the
+/// directory being deleted cannot be held across the deletion: releasing it
+/// first leaves a window for another process to write fresh state into the
+/// doomed directory, and Windows refuses to delete a file whose handle is still
+/// open. As a sibling it stays valid through the removal.
+///
+/// Takes the state directory, not the project root, because prune works on
+/// state whose root no longer exists.
+pub(crate) fn lock_file_for_state_dir(dir: &Path) -> PathBuf {
+    let name = dir.file_name().unwrap_or_default().to_string_lossy();
+    dir.with_file_name(format!("{name}.lock"))
+}
+
+/// Where mise versions before the lock moved out of the state directory
+/// coordinate. Still taken alongside [`lock_file_for_state_dir`] so that a
+/// daemon start from an older mise and a prune from this one continue to
+/// exclude each other. Removable once no supported version locks this path.
+pub(crate) fn legacy_lock_file_for_state_dir(dir: &Path) -> PathBuf {
+    dir.join("project.lock")
+}
+
+/// Both locks guarding one project's daemon state, held together.
+///
+/// Acquired sibling first, then legacy, by everything that takes both, so they
+/// cannot deadlock against each other. Released together, which is what lets
+/// `mise daemons prune` delete state without any window for a `prepare()` to
+/// write into it.
+pub(crate) struct ProjectLock {
+    _sibling: fslock::LockFile,
+    _legacy: fslock::LockFile,
+}
+
+impl ProjectLock {
+    /// Waits for both locks. Used by `prepare()`, which must not give up.
+    pub(crate) fn acquire(root: &Path) -> Result<Self> {
+        let dir = state_dir(root);
+        Ok(Self {
+            _sibling: crate::lock_file::LockFile::at(&lock_file_for_state_dir(&dir)).lock()?,
+            _legacy: crate::lock_file::LockFile::at(&legacy_lock_file_for_state_dir(&dir))
+                .lock()?,
+        })
+    }
+
+    /// Takes both locks or neither, without waiting. Used by prune, which skips
+    /// state another process is using rather than blocking behind it.
+    pub(crate) fn try_acquire(dir: &Path) -> Result<Option<Self>> {
+        let Some(sibling) =
+            crate::lock_file::LockFile::at(&lock_file_for_state_dir(dir)).try_lock()?
+        else {
+            return Ok(None);
+        };
+        let Some(legacy) =
+            crate::lock_file::LockFile::at(&legacy_lock_file_for_state_dir(dir)).try_lock()?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            _sibling: sibling,
+            _legacy: legacy,
+        }))
+    }
 }
 
 /// Which claimant of a contested hostname pitchfork still serves, by index,

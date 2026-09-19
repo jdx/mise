@@ -10,7 +10,37 @@ case "$1" in
   usage)
     if [[ ${OLD_PITCHFORK:-0} == 1 ]]; then echo 'cmd start {}'; else echo 'cmd config help="External files" {'; fi
     ;;
-  status) exit 1 ;;
+  status)
+    # $2 is the daemon id. RUNNING_ID names one the supervisor still reports as
+    # running, which is how a partial stop is simulated. STATUS_BROKEN stands
+    # for a supervisor that fails for some other reason than not knowing the id.
+    if [[ ${STATUS_BROKEN:-} == silent ]]; then
+      exit 1
+    elif [[ ${STATUS_BROKEN:-} == path ]]; then
+      echo "No such file or directory: /run/pitchfork/${2##*/}.sock" >&2
+      exit 1
+    elif [[ -n ${STATUS_BROKEN:-} ]]; then
+      echo 'supervisor socket timed out' >&2
+      exit 1
+    elif [[ -n ${RUNNING_ID:-} && $2 == "$RUNNING_ID" ]]; then
+      printf '{"status":"running","pid":4242}\n'
+    elif [[ -n ${UNKNOWN_ID:-} && $2 == "$UNKNOWN_ID" ]]; then
+      # What pitchfork says about an id it does not have. Only a supervisor
+      # that is up may be believed when it says this.
+      echo "daemon $2 not found" >&2
+      exit 1
+    else
+      printf '{"status":"stopped"}\n'
+    fi
+    ;;
+  stop)
+    # Pitchfork validating the whole list up front and refusing it: the failure
+    # says nothing about whether the daemons it did know are stopped.
+    if [[ -n ${STOP_FAILS:-} ]]; then
+      echo "no such daemon $STOP_FAILS" >&2
+      exit 1
+    fi
+    ;;
   supervisor) printf '{"status":"%s"}\n' "${SUPERVISOR_STATUS:-down}" ;;
   project) echo '[]' ;;
 esac
@@ -352,6 +382,145 @@ profile_state="$(daemon_state_dir)/state.json"
 unset __MISE_SESSION
 MISE_ENV=second mise hook-env --shell-pid "$$" -s bash >"$TMPDIR/profile-hook"
 assert_contains "jq -r '.profile[]' '$profile_state'" second
+
+# Deleting a project leaves its daemon state behind until it is pruned explicitly.
+mkdir -p "$HOME/live-project" "$HOME/doomed-project"
+cd "$HOME/live-project"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "sleep 30"
+TOML
+mise daemons start
+live_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+assert_contains "mise daemons ls --json" '"data_size"'
+assert_contains "mise daemons ls --json" "\"state_dir\": \"$(dirname "$live_state")\""
+
+cd "$HOME/doomed-project"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+run = "sleep 30"
+TOML
+mise daemons start
+doomed_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+doomed_dir=$(dirname "$doomed_state")
+mkdir -p "$doomed_dir/data/db"
+echo data >"$doomed_dir/data/db/file"
+cd "$HOME"
+rm -rf "$HOME/doomed-project"
+
+# A dry run reports the deleted project without removing anything.
+assert_contains "mise daemons prune --dry-run 2>&1" 'dryrun'
+assert_contains "mise daemons prune --dry-run 2>&1" "$(basename "$doomed_dir")"
+assert_contains "mise daemons prune --dry-run 2>&1" 'from deleted ~/doomed-project'
+assert "test -f '$doomed_state'"
+
+# Starting daemons elsewhere hints at the leftover state but never deletes it.
+cd "$HOME/live-project"
+assert_contains "mise daemons start 2>&1" 'mise daemons prune'
+assert "test -f '$doomed_state'"
+
+mise daemons prune --yes
+# The data and the state are gone; the lock files that made the removal safe
+# stay behind, and without state.json it is no longer an entry.
+assert "test ! -f '$doomed_state'"
+assert "test ! -d '$doomed_dir/data'"
+assert "test ! -f '$doomed_dir/pitchfork.toml'"
+assert "test -f '$live_state'"
+assert_contains "mise daemons prune --yes 2>&1" 'no daemon state'
+
+# State for a project that still exists is kept even with no daemons declared.
+: >mise.toml
+mise daemons prune --yes
+assert "test -f '$live_state'"
+
+# State whose absence could be an unmounted volume is never deleted by --yes.
+mkdir -p "$HOME/mountish/project"
+cd "$HOME/mountish/project"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+run = "sleep 30"
+TOML
+mise daemons start
+ambiguous_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+cd "$HOME"
+# Removing the project leaves its parent empty, which is what an unmounted
+# mount point looks like, so mise cannot tell the two apart.
+rm -rf "$HOME/mountish/project"
+assert_contains "mise daemons prune --yes 2>&1" 'unmounted volume'
+assert "test -f '$ambiguous_state'"
+
+# A stop that pitchfork refuses must not let the data go while a daemon runs.
+mkdir -p "$HOME/still-running"
+cd "$HOME/still-running"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+run = "sleep 30"
+TOML
+mise daemons start
+running_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+running_id=$(jq -r '.ids[0]' "$running_state")
+cd "$HOME"
+rm -rf "$HOME/still-running"
+# The supervisor is up, the stop is refused for an id it has forgotten, and the
+# remaining daemon is still running: the state must survive.
+export SUPERVISOR_STATUS=up STOP_FAILS="gone/other" RUNNING_ID="$running_id"
+assert_contains "mise daemons prune --yes 2>&1" 'is still running'
+assert "test -f '$running_state'"
+
+# A status pitchfork cannot answer is not an answer: the state stays.
+unset RUNNING_ID
+export STATUS_BROKEN=1
+assert_contains "mise daemons prune --yes 2>&1" 'cannot check'
+assert "test -f '$running_state'"
+# A status that fails without saying anything is not an answer either.
+export STATUS_BROKEN=silent
+assert_contains "mise daemons prune --yes 2>&1" 'cannot check'
+assert "test -f '$running_state'"
+unset STATUS_BROKEN
+
+# With nothing running any more, the same state prunes.
+mise daemons prune --yes
+assert "test ! -f '$running_state'"
+unset SUPERVISOR_STATUS STOP_FAILS
+
+# An id pitchfork says it does not have is only an answer from a supervisor
+# that is up; a supervisor that is down cannot reach anything.
+mkdir -p "$HOME/forgotten"
+cd "$HOME/forgotten"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+run = "sleep 30"
+TOML
+mise daemons start
+forgotten_state=$(find "$MISE_STATE_DIR/daemons" -name state.json -exec jq -r --arg root "$PWD" 'select(.root == $root) | input_filename' {} +)
+forgotten_id=$(jq -r '.ids[0]' "$forgotten_state")
+cd "$HOME"
+rm -rf "$HOME/forgotten"
+export UNKNOWN_ID="$forgotten_id"
+assert_contains "mise daemons prune --yes 2>&1" 'cannot check'
+assert "test -f '$forgotten_state'"
+
+# An I/O error can carry both a missing-file phrase and the daemon's short name
+# in a path, which is not pitchfork saying it has no such daemon.
+export STATUS_BROKEN=path SUPERVISOR_STATUS=up
+assert_contains "mise daemons prune --yes 2>&1" 'cannot check'
+assert "test -f '$forgotten_state'"
+unset STATUS_BROKEN SUPERVISOR_STATUS
+
+# With the supervisor up, the same answer is one pitchfork is able to give.
+SUPERVISOR_STATUS=up mise daemons prune --yes
+assert "test ! -f '$forgotten_state'"
+unset UNKNOWN_ID
 
 # port = "auto" keeps the base port in an ordinary checkout and moves it in a
 # linked worktree, and the resolved port must reach mise env, not pitchfork only.

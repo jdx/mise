@@ -541,6 +541,9 @@ Arguments passed to pitchfork; daemon names may be short or qualified.
 \fBdaemons tui\fR
 Open pitchfork's dashboard with optional pitchfork TUI flags.
 .TP
+\fBdaemons prune\fR
+Remove daemon state left behind by deleted project directories.
+.TP
 \fBdotfiles\fR
 Manage dotfiles from `[dotfiles]`
 .RS
@@ -3959,6 +3962,31 @@ Open pitchfork's dashboard with optional pitchfork TUI flags.
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PRUNE"
+Remove daemon state left behind by deleted project directories.
+
+Scan `$MISE_STATE_DIR/daemons/` for state belonging to deleted projects,
+including removed Git worktrees. Stop their daemons, unregister their
+configuration, and delete their state and data. Existing projects are preserved.
+
+Use `\-\-dry\-run` to preview the paths and sizes. Removal is irreversible and
+requires confirmation. Pass the global `\-\-yes` flag for non\-interactive cleanup;
+entries that may belong to an unmounted volume or a deleted symlink are skipped
+with `\-\-yes` and require separate interactive confirmation.
+
+Pitchfork must be available. State is kept when mise cannot confirm that the
+daemons have stopped or cannot unregister their configuration.
+.PP
+\fBUsage:\fR mise daemons prune [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would be removed without deleting anything
 .TP
 \fB\-h, \-\-help\fR
 Print help

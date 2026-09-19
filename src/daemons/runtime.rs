@@ -14,14 +14,22 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 
+/// What mise knows about one project's daemons, as written beside them.
+///
+/// Every field defaults, so a state file written by another version still
+/// parses. The alternative is that adding a field turns every existing
+/// `state.json` into something `mise daemons prune` cannot read, and therefore
+/// into data nothing will ever clean up. What the missing fields cost is
+/// bounded: an empty root is never selected for removal, and an empty id list
+/// only means there is nothing to stop.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub(crate) struct State {
     pub root: PathBuf,
     pub profile: Vec<String>,
     pub namespace: String,
     pub ids: Vec<String>,
     pub bin: PathBuf,
-    #[serde(default)]
     pub config_hash: String,
     /// Ports allocated per daemon name. Persisting them keeps an `auto`
     /// allocation stable across a change to the slot derivation, and lets other
@@ -261,14 +269,7 @@ impl Runtime {
     }
 
     pub(crate) async fn output(&self, root: &Path, args: &[String]) -> Result<String> {
-        let mut command = Command::new(&self.bin);
-        command
-            .args(args)
-            .envs(&self.env)
-            .env_remove("PITCHFORK_CONFIG")
-            .current_dir(root)
-            .kill_on_drop(true);
-        let output = tokio::time::timeout(Duration::from_secs(15), command.output()).await??;
+        let output = self.raw_output(root, args).await?;
         if !output.status.success() {
             bail!(
                 "pitchfork {}: {}",
@@ -277,6 +278,25 @@ impl Runtime {
             );
         }
         Ok(String::from_utf8(output.stdout)?)
+    }
+
+    /// Like [`Self::output`], but hands a failing command's output back instead
+    /// of turning it into an error. For callers that can tell one failure from
+    /// another, such as prune deciding whether pitchfork simply does not know
+    /// about a daemon it was asked to forget.
+    pub(crate) async fn raw_output(
+        &self,
+        root: &Path,
+        args: &[String],
+    ) -> Result<std::process::Output> {
+        let mut command = Command::new(&self.bin);
+        command
+            .args(args)
+            .envs(&self.env)
+            .env_remove("PITCHFORK_CONFIG")
+            .current_dir(root)
+            .kill_on_drop(true);
+        Ok(tokio::time::timeout(Duration::from_secs(15), command.output()).await??)
     }
 
     pub(crate) async fn supports_external_config(&self, root: &Path) -> Result<()> {
@@ -428,8 +448,8 @@ impl Runtime {
         force_registration: bool,
         owns_profile: bool,
         starting: &[String],
-    ) -> Result<(State, fslock::LockFile)> {
-        let lock = crate::lock_file::LockFile::at(&state_dir(root).join("project.lock")).lock()?;
+    ) -> Result<(State, super::ProjectLock)> {
+        let lock = super::ProjectLock::acquire(root)?;
         let previous = read_state(root)?;
         // This root's configuration was read under the current profile, whoever
         // asked for it, so that is what the rendered definitions reflect and
@@ -480,7 +500,11 @@ impl Runtime {
         // daemon holding the port answers as running.
         let ports = carry_port_claims(&previous.ports, set);
         let mut state = State {
-            root: root.into(),
+            // Canonical, like the directory this state lives in: recording an
+            // alias against a directory named for its target leaves a record
+            // that cannot be tied back to the path that created it, which is
+            // what `mise daemons prune` needs before it deletes anything.
+            root: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
             profile,
             namespace: desired,
             // IDs from the previous namespace name daemons that are no longer

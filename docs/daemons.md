@@ -777,6 +777,77 @@ daemons retain their declaring project scope. One environment profile can be act
 per project: stop its daemons and leave its shell sessions before switching `MISE_ENV`.
 Changed definitions take effect on the next start or explicit restart.
 
+### Inspecting storage
+
+Use `mise daemons ls --json` to locate a project's daemon data and check its size
+before deleting the project or a worktree. Each daemon row includes:
+
+| Field             | Value                                                                       |
+| ----------------- | --------------------------------------------------------------------------- |
+| `root`            | Project directory                                                           |
+| `state_dir`       | Directory containing the project's generated configuration, state, and data |
+| `data_size`       | Total size of the project's daemon data in bytes                            |
+| `data_size_human` | The same size formatted for display                                         |
+
+These fields describe the whole project, so daemons from the same project report
+the same values.
+
+### Pruning deleted projects
+
+Each project, including each linked Git worktree, has its own daemon state and
+data. Deleting the project directory (for example, with `git worktree remove`)
+leaves that data on disk and its daemons registered with pitchfork.
+
+Use [`mise daemons prune`](/cli/daemons/prune.html) to clean up after deleted
+projects. It scans all project state under `$MISE_STATE_DIR/daemons/`:
+
+```sh
+# Preview the projects, state directories, and sizes
+mise daemons prune --dry-run
+
+# Review the list and confirm removal
+mise daemons prune
+```
+
+Pruning stops the affected daemons, unregisters their generated configuration,
+and deletes their configuration, state, and data. The confirmation prompt shows
+the number of state directories and their total size, and defaults to **no**.
+Back up any data you want to keep: removal is irreversible.
+
+State for existing projects is preserved, even if they no longer declare any
+daemons. `mise daemons start` displays a reminder when it finds state eligible for
+pruning; it does not delete anything automatically.
+
+#### Non-interactive cleanup
+
+Pass the global `--yes` flag to confirm ordinary removals without a prompt:
+
+```sh
+mise daemons prune --yes
+```
+
+If a missing project could be on an unmounted volume or reached through a deleted
+symlink, mise asks for separate confirmation. `--yes` skips these entries. Run
+without `--yes` to review them, and confirm only if the project itself was deleted.
+A deleted parent directory, an empty or unreadable ancestor, a project rooted at a
+mount point such as `/Volumes/Disk`, or a recorded path that differs from the path
+used to create the state directory can trigger this extra check.
+
+#### When state is kept
+
+Pruning requires pitchfork to be available. Mise reports why it keeps state when
+it cannot read the project path or state file, acquire the project lock, confirm
+that the daemons have stopped, or unregister their configuration. It also keeps
+state if the project directory reappears before removal.
+
+Database PID or lock files can also prevent removal. A PID file naming a live
+process blocks pruning; a stale PID does not. An unreadable marker or one without
+a valid PID is treated as potentially active. Resolve the reported condition
+before retrying.
+
+After successful pruning, two empty lock files remain to coordinate concurrent
+mise processes. They contain no daemon data and are ignored by future prune runs.
+
 ## Automatic start and stop
 
 Set `auto = ["start", "stop"]` on a custom or preset table and activate mise in Bash,

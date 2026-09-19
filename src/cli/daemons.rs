@@ -3,6 +3,8 @@ use crate::daemons::{
     self,
     runtime::{self, Runtime},
 };
+use crate::file::display_path;
+use crate::ui::prompt::{self, Confirmation};
 use eyre::{Result, bail};
 use std::path::PathBuf;
 
@@ -34,6 +36,7 @@ enum Commands {
     Logs(Args),
     Status(Args),
     Tui(TuiArgs),
+    Prune(Prune),
     #[usage(name = "__init", hide = true)]
     Init(Init),
 }
@@ -59,6 +62,27 @@ struct TuiArgs {
 struct List {
     #[usage(long)]
     json: bool,
+}
+
+/// Remove daemon state left behind by deleted project directories.
+///
+/// Scan `$MISE_STATE_DIR/daemons/` for state belonging to deleted projects,
+/// including removed Git worktrees. Stop their daemons, unregister their
+/// configuration, and delete their state and data. Existing projects are preserved.
+///
+/// Use `--dry-run` to preview the paths and sizes. Removal is irreversible and
+/// requires confirmation. Pass the global `--yes` flag for non-interactive cleanup;
+/// entries that may belong to an unmounted volume or a deleted symlink are skipped
+/// with `--yes` and require separate interactive confirmation.
+///
+/// Pitchfork must be available. State is kept when mise cannot confirm that the
+/// daemons have stopped or cannot unregister their configuration.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct Prune {
+    /// Show what would be removed without deleting anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
 }
 
 /// Show each project daemon's port and its proxy hostname URL.
@@ -95,6 +119,7 @@ impl Daemons {
             Some(Commands::Init(args)) => {
                 return daemons::presets::initialize(&args.preset, &args.data, &args.database);
             }
+            Some(Commands::Prune(args)) => return args.run().await,
             Some(Commands::Start(args)) => ("start", args.args, false),
             Some(Commands::Stop(args)) => ("stop", args.args, false),
             Some(Commands::Restart(args)) => ("restart", args.args, false),
@@ -124,6 +149,9 @@ impl Daemons {
             return runtime
                 .exec(root, [vec!["tui".into()], args].concat())
                 .await;
+        }
+        if action == "start" {
+            hint_prunable_state();
         }
         let loaded = config.daemons()?;
         // The loop below shadows `root` with each project root it prepares.
@@ -391,6 +419,10 @@ impl Daemons {
                 // labels, and skipping it here would drop its daemons from the
                 // listing entirely rather than showing them without URLs.
                 listed_roots.push((root.clone(), set.labels.get(&root).cloned()));
+                // Reported per root so a developer can see what a worktree costs
+                // before deleting it (or before running `mise daemons prune`).
+                let state_dir = daemons::state_dir(&root);
+                let data_size = daemons::prune::dir_size(&state_dir.join("data"));
                 let desired = set
                     .namespace_for(&root)
                     .unwrap_or(previous.namespace.as_str());
@@ -446,7 +478,7 @@ impl Daemons {
                         None
                     };
                     let host = daemon.and_then(|d| d.host.as_deref());
-                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(proxy_mode) }));
+                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(proxy_mode), "state_dir": state_dir, "data_size": data_size, "data_size_human": daemons::prune::human_size(data_size) }));
                 }
                 continue;
             }
@@ -551,6 +583,154 @@ impl Daemons {
         }
         Ok(())
     }
+}
+
+impl Prune {
+    async fn run(self) -> Result<()> {
+        let base = daemons::prune::base_dir();
+        // Said here, where someone is reading prune's output, rather than from
+        // the scan itself, which runs on ordinary commands too.
+        for entry in daemons::prune::scan(&base)? {
+            if let Some(why) = entry.unreadable_root() {
+                warn!("{why}");
+            }
+        }
+        let orphans = daemons::prune::orphans(&base)?;
+        if orphans.is_empty() {
+            info!(
+                "no daemon state from deleted projects under {}",
+                display_path(&base)
+            );
+            return Ok(());
+        }
+        // Entries whose absence proves less than it appears are never mixed in
+        // with the rest: they get their own listing and their own answer, so
+        // approving the confirmed ones never approves these too.
+        let (uncertain, confirmed): (Vec<_>, Vec<_>) = orphans
+            .into_iter()
+            .partition(|entry| entry.ambiguity().is_some());
+        let mut selected = self.decide(confirmed, None)?;
+        if !uncertain.is_empty() {
+            for entry in &uncertain {
+                if let Some(why) = entry.ambiguity() {
+                    warn!("{why}");
+                }
+            }
+            selected.extend(self.decide(uncertain, Some("that may still be in use"))?);
+        }
+        if selected.is_empty() {
+            return Ok(());
+        }
+        // Pitchfork is resolved once from the ambient configuration; each entry
+        // falls back to the executable its own state recorded.
+        let config = Config::get().await?;
+        let (config, ts) = runtime::toolset(&config, false).await?;
+        for (entry, size) in &selected {
+            let runtime = Runtime::from_toolset(&config, &ts, Some(&entry.state.bin))
+                .await
+                .ok();
+            if daemons::prune::remove(entry, runtime.as_ref()).await?
+                == daemons::prune::Outcome::Removed
+            {
+                info!(
+                    "removed {} ({})",
+                    display_path(&entry.dir),
+                    daemons::prune::human_size(*size)
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Reports one group of entries and returns those to remove, with their
+    /// sizes.
+    ///
+    /// `caveat`, when present, marks a group whose absence proves less than it
+    /// appears. Such a group is only ever removed on an explicit answer: the
+    /// global `--yes` does not carry to it, and neither does the answer given
+    /// for the ordinary group.
+    fn decide(
+        &self,
+        entries: Vec<daemons::prune::Entry>,
+        caveat: Option<&str>,
+    ) -> Result<Vec<(daemons::prune::Entry, u64)>> {
+        if entries.is_empty() {
+            return Ok(vec![]);
+        }
+        let sized: Vec<_> = entries
+            .into_iter()
+            .map(|entry| {
+                let size = daemons::prune::dir_size(&entry.dir);
+                (entry, size)
+            })
+            .collect();
+        for line in daemons::prune::describe(&sized) {
+            if self.dry_run {
+                info!("{line} {}", console::style("[dryrun]").bold());
+            } else {
+                info!("{line}");
+            }
+        }
+        if self.dry_run {
+            return Ok(vec![]);
+        }
+        if Settings::get().yes {
+            // `--yes` answers the question prune would have asked. For a group
+            // whose absence proves less than it appears, that question was
+            // never "delete these too?" -- it is one only a person looking at
+            // the paths can answer, so the flag skips the group rather than
+            // approving it.
+            if caveat.is_some() {
+                warn!("keeping state that may still be in use; prune without --yes to decide");
+                return Ok(vec![]);
+            }
+            return Ok(sized);
+        }
+        let total: u64 = sized.iter().map(|(_, size)| size).sum();
+        let message = format!(
+            "remove {} daemon state director{}{} and {} of data?",
+            sized.len(),
+            if sized.len() == 1 { "y" } else { "ies" },
+            caveat.map(|c| format!(" {c}")).unwrap_or_default(),
+            daemons::prune::human_size(total),
+        );
+        // Defaults to no: the data is gone for good once this proceeds.
+        match prompt::confirm_with_default(message, false)? {
+            Confirmation::Yes => Ok(sized),
+            // An unanswered prompt is a refusal, not a decision to delete.
+            Confirmation::No | Confirmation::Unanswered => Ok(vec![]),
+            Confirmation::Unavailable if caveat.is_some() => {
+                warn!("keeping state that may still be in use: nobody could be asked about it");
+                Ok(vec![])
+            }
+            Confirmation::Unavailable => bail!(
+                "mise daemons prune requires confirmation but there was nobody to ask; pass --yes to prune non-interactively"
+            ),
+        }
+    }
+}
+
+/// Points at daemon state whose project directory no longer exists. The current
+/// project cannot be among them: it is the directory mise is running in. Nothing
+/// is deleted here; pruning is always explicit.
+///
+/// Counts only what a plain `mise daemons prune` would remove. State that needs
+/// a person to look at it is not something to nag about on every start.
+fn hint_prunable_state() {
+    let Ok(orphans) = daemons::prune::orphans(&daemons::prune::base_dir()) else {
+        return;
+    };
+    let count = orphans
+        .iter()
+        .filter(|entry| entry.ambiguity().is_none())
+        .count();
+    if count == 0 {
+        return;
+    }
+    let plural = if count == 1 { "y" } else { "ies" };
+    info!(
+        "{count} daemon state director{plural} belong to deleted projects; run `mise daemons prune` to remove them"
+    );
 }
 
 /// Print every daemon's stable hostname next to the port it actually binds,
