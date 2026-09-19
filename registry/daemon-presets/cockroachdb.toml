@@ -81,6 +81,9 @@ run = [
 ]
 
 [daemon]
+# The reverse proxy speaks HTTP; CockroachDB's primary port speaks the Postgres
+# wire protocol, and its HTTP console lives on http_port.
+proxy = false
 ready_cmd = "cockroach sql --insecure --host=127.0.0.1:{{ port }} -e 'SELECT 1'"
 run = "cockroach start-single-node --insecure --store={{ data }} --listen-addr=127.0.0.1:{{ port }} --http-addr=127.0.0.1:{{ http_port }}{% if locality %} --locality={{ locality }}{% endif %}{% if max_offset %} --max-offset={{ max_offset }}{% endif %}"
 

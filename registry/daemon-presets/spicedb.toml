@@ -39,6 +39,9 @@ when = "{% if datastore_engine != 'memory' %}true{% endif %}"
 
 [daemon]
 depends = ["{{ datastore_daemon }}"]
+# The reverse proxy speaks HTTP; the primary port serves gRPC, and the HTTP
+# API lives on http_port.
+proxy = false
 ready_cmd = "curl -fsS http://127.0.0.1:{{ http_port }}/healthz"
 run = "spicedb serve --grpc-addr 127.0.0.1:{{ port }} --http-addr 127.0.0.1:{{ http_port }} --http-enabled --metrics-addr 127.0.0.1:{{ metrics_port }} --grpc-preshared-key {{ preshared_key }} --datastore-engine {{ datastore_engine }}{% if datastore_uri %} --datastore-conn-uri {{ datastore_uri }}{% endif %}"
 

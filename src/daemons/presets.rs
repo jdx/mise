@@ -1233,6 +1233,10 @@ mod tests {
             assert!(run.contains("127.0.0.1"));
             assert!(!run.contains("/latest"));
             assert_eq!(daemon.table["port"]["bump"].as_bool(), Some(false));
+            // No preset's primary port speaks HTTP, so none may be routed through
+            // the HTTP reverse proxy or advertise a proxy URL.
+            assert!(daemon.host.is_none(), "{name} is proxied");
+            assert_eq!(daemon.table["proxy"].as_bool(), Some(false), "{name}");
             // Every declared port is reserved, and nothing is left unrendered.
             let preset = preset(name).unwrap();
             assert_eq!(
@@ -1539,6 +1543,8 @@ mod tests {
         );
         assert_eq!(init_json(&daemon)["config"], serde_json::json!(resolved));
         assert!(run.contains("--tls --tlscert '"), "{run}");
+        // A TLS-only listener needs clients to select TLS from the URL.
+        assert_eq!(daemon.exports["NATS_URL"], "tls://127.0.0.1:4222");
         // Only Unix treats a leading slash as absolute, so only there is the root
         // guaranteed not to be prepended.
         #[cfg(unix)]

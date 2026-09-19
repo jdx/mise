@@ -577,7 +577,8 @@ option has no effect.
 Set both `tls_cert` and `tls_key` to enable TLS. Adding `tls_ca` requires those two
 options and enables client certificate verification.
 
-Exports: `NATS_URL` and `NATS_MONITORING_URL`.
+Exports: `NATS_URL` and `NATS_MONITORING_URL`. With TLS enabled, `NATS_URL` uses
+the `tls://` scheme so clients connect over TLS.
 
 #### SpiceDB
 
