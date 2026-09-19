@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+# Exercise the real CLI and subprocess boundary without changing host packages.
+mkdir -p "$HOME/zypper-bin"
+export PATH="$HOME/zypper-bin:$PATH"
+export MISE_SYSTEM_PACKAGES_SUDO=true
+touch "$HOME/rpm-state" "$HOME/zypper-log"
+cat >"$HOME/zypper-bin/rpm" <<'SH'
+#!/bin/sh
+[ "$1" = -q ] && [ "$2" = --qf ] && [ "$4" = -- ] || exit 2
+[ "$LC_ALL" = C ] || exit 2
+if [ -f "$HOME/rpm-error" ]; then
+  echo 'error: cannot open Packages database' >&2
+  exit 1
+fi
+cat "$HOME/rpm-state"
+# Mixed installed/missing queries return nonzero, too.
+exit 1
+SH
+cat >"$HOME/zypper-bin/zypper" <<'SH'
+#!/bin/sh
+echo "$*" >> "$HOME/zypper-log"
+if [ "$2" = refresh ]; then
+  exit "${ZYPPER_REFRESH_EXIT:-0}"
+fi
+if [ -f "$HOME/zypper-restart" ]; then
+  rm "$HOME/zypper-restart"
+  exit 103
+fi
+exit "${ZYPPER_EXIT:-0}"
+SH
+cat >"$HOME/zypper-bin/sudo" <<'SH'
+#!/bin/sh
+if [ "$1" = -n ] && [ "$2" = true ]; then
+  exit 0
+fi
+[ "$1" = zypper ] || exit 99
+shift
+exec "$HOME/zypper-bin/zypper" "$@"
+SH
+chmod +x "$HOME/zypper-bin/"*
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"zypper:bash" = "5.2.37"
+"zypper:git" = "latest"
+"zypper:ripgrep" = "latest"
+TOML
+printf 'git\t2.49.0-1.1\nbash\t5.3.0-1.1\n' >"$HOME/rpm-state"
+assert_contains "mise bootstrap packages status" "version mismatch"
+assert_fail "mise bootstrap packages status --missing"
+assert_contains "mise bootstrap packages apply --dry-run --update" 'zypper --non-interactive refresh'
+assert_contains "mise bootstrap packages apply --dry-run" 'zypper --non-interactive install --oldpackage -- bash=5.2.37 ripgrep'
+assert_succeed "test ! -s '$HOME/zypper-log'"
+
+# Only missing/mismatched packages are installed; a requested refresh runs first.
+assert_succeed "mise bootstrap packages apply --yes --update"
+assert "cat '$HOME/zypper-log'" $'--non-interactive refresh\n--non-interactive install --oldpackage -- bash=5.2.37 ripgrep'
+
+# Already-satisfied pins accept any release and apply becomes a no-op.
+printf 'git\t2.49.0-1.1\nbash\t5.2.37-2.1\nripgrep\t14.1.1-1.1\n' >"$HOME/rpm-state"
+: >"$HOME/zypper-log"
+assert_succeed "mise bootstrap packages status --missing"
+assert_succeed "mise bootstrap packages apply --yes"
+assert_succeed "test ! -s '$HOME/zypper-log'"
+
+# Upgrade refreshes even without --update and excludes missing packages.
+printf 'git\t2.49.0-1.1\nbash\t5.2.37-2.1\n' >"$HOME/rpm-state"
+assert_succeed "mise bootstrap packages upgrade --yes"
+assert "cat '$HOME/zypper-log'" $'--non-interactive refresh\n--non-interactive install --oldpackage -- bash=5.2.37 git'
+
+# Declarative removal does not install missing packages or refresh metadata.
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"zypper:git" = { state = "absent" }
+"zypper:missing" = { state = "absent" }
+TOML
+: >"$HOME/zypper-log"
+assert_fail "mise bootstrap packages status --missing"
+assert_contains "mise bootstrap packages apply --dry-run" 'zypper --non-interactive remove -- git'
+assert_succeed "test ! -s '$HOME/zypper-log'"
+assert_succeed "mise bootstrap packages apply --yes"
+assert "cat '$HOME/zypper-log'" '--non-interactive remove -- git'
+
+# Reboot/restart notifications succeed; real errors must propagate.
+for code in 0 102; do
+  assert_succeed "ZYPPER_EXIT=$code mise bootstrap packages apply zypper:missing --yes"
+done
+assert_contains "ZYPPER_EXIT=102 mise bootstrap packages apply zypper:missing --yes 2>&1" 'zypper: a system reboot is required'
+# A restart reruns exactly the same transaction, with a bounded retry count.
+: >"$HOME/zypper-log"
+touch "$HOME/zypper-restart"
+assert_contains "mise bootstrap packages apply zypper:missing --yes 2>&1" 'zypper: package manager restart required; retrying command (1/2)'
+assert "cat '$HOME/zypper-log'" $'--non-interactive install -- missing\n--non-interactive install -- missing'
+: >"$HOME/zypper-log"
+assert_fail "ZYPPER_EXIT=103 mise bootstrap packages apply zypper:missing --yes"
+assert "cat '$HOME/zypper-log'" $'--non-interactive install -- missing\n--non-interactive install -- missing\n--non-interactive install -- missing'
+# A real error on the retry must also propagate immediately.
+: >"$HOME/zypper-log"
+touch "$HOME/zypper-restart"
+assert_fail "ZYPPER_EXIT=8 mise bootstrap packages apply zypper:missing --yes"
+assert "cat '$HOME/zypper-log'" $'--non-interactive install -- missing\n--non-interactive install -- missing'
+for code in 4 7 8 104 105 106 107; do
+  assert_fail "ZYPPER_EXIT=$code mise bootstrap packages apply zypper:missing --yes"
+done
+: >"$HOME/zypper-log"
+assert_fail "ZYPPER_REFRESH_EXIT=4 mise bootstrap packages apply zypper:missing --update --yes"
+assert "cat '$HOME/zypper-log'" '--non-interactive refresh'
+
+# Database failures cannot be mistaken for missing packages and trigger installs.
+touch "$HOME/rpm-error"
+: >"$HOME/zypper-log"
+assert_fail_contains "mise bootstrap packages apply zypper:missing --yes" 'cannot open Packages database'
+assert_succeed "test ! -s '$HOME/zypper-log'"

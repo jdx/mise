@@ -2717,7 +2717,7 @@ Print the commands that would run without running them
 Skip the confirmation prompt
 .TP
 \fB\-\-update\fR
-Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`, winget: `source update`)
+Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`, zypper: `refresh`, winget: `source update`)
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -2946,8 +2946,8 @@ mise bootstrap packages status \-\-missing # exit 1 if anything is out of sync
 Upgrade installed bootstrap packages from `[bootstrap.packages]`
 
 Refreshes package manager metadata and upgrades the configured packages
-that are already installed: apk/apt/aur/dnf/pacman upgrade to the newest
-available version (apk, apt, and dnf honor a version pinned in config), brew
+that are already installed: apk/apt/aur/dnf/pacman/zypper upgrade to the newest
+available version (apk, apt, dnf, and zypper honor a version pinned in config), brew
 pours the formula's current bottle and replaces the old keg, brew\-cask
 installs the current cask artifact, flatpak and flatpak\-user update
 applications and runtimes, mas upgrades App Store apps, and winget upgrades

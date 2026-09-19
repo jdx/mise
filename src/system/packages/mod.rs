@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, macos-app, mas, scoop, winget) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, macos-app, mas, scoop, winget, zypper) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -23,6 +23,7 @@ pub(crate) mod pacman;
 pub(crate) mod plugin;
 pub(crate) mod scoop;
 pub(crate) mod winget;
+pub(crate) mod zypper;
 
 /// A single package entry from `[bootstrap.packages]` — the part after the
 /// `manager:` prefix of a `"manager:package" = "version"` config entry.
@@ -365,6 +366,7 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(pacman::PacmanManager::new()),
         Arc::new(scoop::ScoopManager::new()),
         Arc::new(winget::WingetManager::new()),
+        Arc::new(zypper::ZypperManager),
     ]
 }
 

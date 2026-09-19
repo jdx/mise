@@ -624,6 +624,7 @@ fn install_prefix(mgr: &str) -> &'static str {
         "brew-cask" => "brew install --cask ",
         "apt" => "sudo apt-get install -y ",
         "dnf" => "sudo dnf install -y ",
+        "zypper" => "sudo zypper --non-interactive install ",
         "pacman" => "sudo pacman -S ",
         "apk" => "sudo apk add ",
         "mas" => "mas install ",

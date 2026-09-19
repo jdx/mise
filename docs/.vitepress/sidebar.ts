@@ -130,6 +130,7 @@ export const sidebar: SidebarItem[] = [
           { text: "apt", link: "/bootstrap/packages/apt" },
           { text: "AUR", link: "/bootstrap/packages/aur" },
           { text: "dnf", link: "/bootstrap/packages/dnf" },
+          { text: "zypper", link: "/bootstrap/packages/zypper" },
           { text: "pacman", link: "/bootstrap/packages/pacman" },
           { text: "brew", link: "/bootstrap/packages/brew" },
           { text: "nix", link: "/bootstrap/packages/nix" },

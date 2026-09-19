@@ -8,6 +8,7 @@ cat <<EOF >mise.toml
 "dnf:bc" = "latest"
 "mas:497799835" = "latest"
 "pacman:bc" = "latest"
+"zypper:bc" = "latest"
 EOF
 
 # status renders on any platform; unavailable managers are skipped, not errors
@@ -21,6 +22,10 @@ assert \
   "mise bootstrap packages status --json | jq -r '.apk.packages[] | select(.package == \"bc\") | [.package, .desired_state] | @tsv'" \
   $'bc\tabsent'
 assert_contains "mise bootstrap packages status --json" '"mas"'
+assert_contains "mise bootstrap packages status --json" '"zypper"'
+if ! command -v zypper >/dev/null || ! command -v rpm >/dev/null; then
+  assert_fail_contains "mise bootstrap packages apply --manager zypper --dry-run --yes" "zypper is not available"
+fi
 if ! command -v apk >/dev/null; then
   assert \
     "mise bootstrap packages status --json | jq -r '.apk.packages[] | select(.package == \"bc\") | .state'" \
