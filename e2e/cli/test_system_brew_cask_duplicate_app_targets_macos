@@ -65,6 +65,7 @@ env = dict(os.environ, MISE_SYSTEM_BREW_PREFIX=str(prefix),
            MISE_URL_REPLACEMENTS=json.dumps({"https://formulae.brew.sh": base}))
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
+runs = 0
 try:
     for token, (_, second) in cases.items():
         (root / "mise.toml").write_text(
@@ -73,6 +74,7 @@ try:
         for options in [("--dry-run",), ()]:
             command = ["mise", "bootstrap", "packages", "apply", "--yes", *options]
             result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=30)
+            runs += 1
             output = result.stdout + result.stderr
             print("$ " + " ".join(command), flush=True)
             print(output, end="", flush=True)
@@ -81,12 +83,18 @@ try:
             assert second in output, output
             assert not prefix.exists(), "duplicate targets must fail before prefix or Caskroom creation"
     # Every cask is still resolved through its own endpoint, and nothing beyond
-    # that is fetched. The bulk probe is allowed but not required: it is a cache
-    # miss here, so whether it appears depends only on whether the cached index
-    # was already warm.
-    assert set(requests) - {BULK_PATH} == {
-        f"/api/cask/{token}.json" for token in cases
-    }, requests
+    # that is fetched.
+    per_cask = [path for path in requests if path != BULK_PATH]
+    assert set(per_cask) == {f"/api/cask/{token}.json" for token in cases}, requests
+
+    # Count the bulk probes rather than folding them into a set, which would hide
+    # how many there were. This fixture answers 404, so the cache never warms and
+    # every process retries: exactly one attempt per process is the contract. A
+    # refresh that is not memoized would retry once per cask lookup instead, and
+    # against a mirror that has no cask.json that is strictly more requests than
+    # the per-cask path this replaces.
+    bulk = [path for path in requests if path == BULK_PATH]
+    assert len(bulk) == runs, (len(bulk), runs, requests)
 finally:
     server.shutdown()
     thread.join()
