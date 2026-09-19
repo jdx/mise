@@ -2317,6 +2317,22 @@ mod tests {
         );
     }
 
+    /// Packages such as `@deepseek-ai/dsh` publish only pre-releases, so the
+    /// `latest` dist-tag installs one and `latest` must still resolve to it.
+    #[test]
+    fn latest_installed_version_falls_back_to_prerelease_without_stable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-prerelease-only");
+        std::fs::create_dir_all(installs_path.join("0.1.5-rc.1")).unwrap();
+        std::fs::create_dir_all(installs_path.join("0.1.5-rc.2")).unwrap();
+        let backend = test_backend("happy-prerelease-only", Some(installs_path), None);
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("0.1.5-rc.2")
+        );
+    }
+
     #[test]
     fn latest_installed_version_keeps_prereleases_when_enabled() {
         let tmp = tempfile::tempdir().unwrap();

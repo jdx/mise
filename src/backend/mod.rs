@@ -3404,16 +3404,23 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         return Ok(Some(version));
                     }
                 }
-                Ok(file::dir_subdirs(&installs_path)
+                let installed = file::dir_subdirs(&installs_path)
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
                     .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
-                    .filter(|v| !filter || !self.is_backend_prerelease(v))
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
-                    .last())
+                    .collect_vec();
+                // Prefer a stable install, but a tool that only publishes
+                // pre-releases (an npm package whose `latest` dist-tag is an rc)
+                // must still resolve `latest` to what is installed.
+                Ok(installed
+                    .iter()
+                    .rfind(|v| !filter || !self.is_backend_prerelease(v))
+                    .or(installed.last())
+                    .cloned())
             }
         }
     }
