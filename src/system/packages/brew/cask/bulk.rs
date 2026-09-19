@@ -404,8 +404,28 @@ async fn refresh() -> Result<()> {
     }
 
     crate::file::write_atomic(&path, &body)?;
-    if let Some(stamp) = last_modified {
-        crate::file::write_atomic(dir().join("cask.last-modified"), stamp).ok();
+
+    // The validator has to describe the document that is now on disk, or not
+    // exist. It is what the publication race is decided on, so a newer document
+    // left paired with an older validator is exactly how an older concurrent
+    // response wins that comparison and overwrites it.
+    //
+    // Hence no best-effort write here, and an explicit removal when the
+    // response carried no `Last-Modified`: a leftover validator from a previous
+    // generation would otherwise be read as belonging to these bytes. Losing
+    // the validator only costs an unconditional fetch next time, which is the
+    // safe direction.
+    let validator = dir().join("cask.last-modified");
+    match last_modified {
+        Some(stamp) => {
+            if let Err(err) = crate::file::write_atomic(&validator, stamp) {
+                let _ = crate::file::remove_file(&validator);
+                return Err(err).wrap_err("failed to record the Homebrew cask index validator");
+            }
+        }
+        None => {
+            let _ = crate::file::remove_file(&validator);
+        }
     }
 
     // Stamp from the promoted file rather than leaving zeros: `load_index`
