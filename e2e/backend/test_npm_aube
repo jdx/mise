@@ -164,6 +164,29 @@ mise -C crlf lock
 assert_succeed 'cmp crlf-checkout.yaml crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml'
 assert_succeed 'cmp mise.lock crlf/mise.lock'
 
+# A lockfile an older mise wrote from a CRLF checkout pins the raw bytes. It
+# keeps installing, and an ordinary install records the normalized digest.
+python3 - <<'PY_LEGACY_DIGEST'
+import hashlib
+from pathlib import Path
+graph = Path('crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml').read_bytes()
+legacy = 'sha256:' + hashlib.sha256(graph).hexdigest()
+normalized = 'sha256:' + hashlib.sha256(graph.replace(b'\r\n', b'\n')).hexdigest()
+assert legacy != normalized
+lock = Path('crlf/mise.lock')
+assert normalized in lock.read_text()
+lock.write_text(lock.read_text().replace(normalized, legacy))
+Path('legacy-digest').write_text(legacy)
+Path('normalized-digest').write_text(normalized)
+PY_LEGACY_DIGEST
+cp crlf/mise.lock legacy-checkout.lock
+MISE_DATA_DIR="$PWD/.legacy-data" MISE_LOCKFILE=1 mise -C crlf install --locked
+assert_succeed 'cmp legacy-checkout.lock crlf/mise.lock'
+assert_contains "cat crlf/mise.lock" "$(cat legacy-digest)"
+MISE_DATA_DIR="$PWD/.legacy-heal-data" MISE_LOCKFILE=1 mise -C crlf install
+assert_contains "cat crlf/mise.lock" "$(cat normalized-digest)"
+assert_succeed 'cmp crlf-checkout.yaml crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml'
+
 # A project lockfile must not require dependency graphs for npm tools owned by
 # the global config, whose lockfile is only created explicitly with --global.
 global_only_npm="$HOME/global-only-npm"
