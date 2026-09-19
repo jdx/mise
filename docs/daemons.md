@@ -76,8 +76,10 @@ long-running command so it receives stop signals directly.
 
 Fields such as `ready_port`, `ready_cmd`, and `auto` configure pitchfork's daemon
 behavior. Set a readiness check that reflects when your service can accept work;
-the example above waits for port 3000. For presets, `port` is an integer.
-Custom daemons also accept pitchfork's structured `port` configuration.
+the example above waits for port 3000. Use an integer `port` for a fixed port or
+[automatic ports](#ports-across-git-worktrees) to run services across worktrees.
+Custom daemons also accept pitchfork's structured `port` table; presets accept
+only an integer or mise's automatic port syntax.
 User-provided strings retain pitchfork template syntax; mise renders only the
 embedded preset templates.
 
@@ -428,8 +430,9 @@ worktrees at once can cause collisions.
 | `postgres` | `postgres` | 5432         | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `DATABASE_URL` |
 | `redis`    | `redis`    | 6379         | `REDIS_URL`                                                |
 
-Both bind to loopback and require their configured ports to be free; ports do not
-bump automatically. PostgreSQL uses the `postgres` user with local trust authentication. Any process
+Both bind to loopback and require their configured ports to be free. Use
+[`port = "auto"`](#ports-across-git-worktrees) to derive ports for linked worktrees.
+PostgreSQL uses the `postgres` user with local trust authentication. Any process
 that can reach its loopback port can connect without a password. These presets
 are for development on a trusted local machine; use a custom daemon with
 authentication for shared or untrusted environments.
@@ -445,6 +448,113 @@ the instance your application uses. Explicit `[tools]` declarations
 must match the version requested by the preset (for example, an installed `18.1`
 can satisfy `18`). Multiple instances sharing a
 tool must use the same version request.
+
+## Ports across git worktrees
+
+Use `port = "auto"` to run the same database preset in your primary checkout and
+linked Git worktrees without assigning ports by hand:
+
+```toml
+[daemons.postgres]
+preset = "postgres"
+version = "18"
+port = "auto"
+```
+
+The primary checkout uses PostgreSQL's default port, `5432`. In a linked worktree,
+mise derives an offset from the project root's path. Connection variables such as
+`PGPORT` and `DATABASE_URL` follow the resolved port, so applications can use the
+same configuration in each checkout.
+
+Automatic ports require the same `experimental = true` setting as other daemon
+features. They are resolved when configuration loads, so `mise env` and `mise x`
+can expose them before a daemon starts. Mise does not search for a free port or
+change the port when it is occupied; see [port conflicts](#port-conflicts).
+
+### Configure the base port and spacing
+
+Use the table form to choose a base port. Custom daemons require `base` because
+they have no preset default:
+
+```toml
+[daemons.api]
+run = "exec npm run dev -- --port $API_PORT"
+port = { auto = true, base = 3000 }
+```
+
+This example assumes the application's `dev` script accepts `--port`. The primary
+checkout uses `3000`; linked worktrees use ports from `3001` through `3511`.
+Configure the application to listen on the exported port. A fixed `ready_port`
+does not follow an automatic port, so omit it or use a readiness check that reads
+the resolved port.
+
+Both presets and custom daemons accept these options:
+
+| Option   | Meaning                                            | Default                                            |
+| -------- | -------------------------------------------------- | -------------------------------------------------- |
+| `auto`   | Enables automatic port allocation. Must be `true`. | Required in the table form.                        |
+| `base`   | Port used by the primary checkout.                 | The preset's default; required for custom daemons. |
+| `stride` | Spacing between allocation slots.                  | `1`                                                |
+
+For a service that uses several consecutive ports, set `stride` to the size of
+that range, for example `port = { auto = true, base = 3000, stride = 10 }`.
+This separates different slots by ten ports; it does not prevent two projects
+from receiving the same slot. Configuration loading fails if the resolved port
+would exceed `65535`.
+
+There are 511 possible worktree offsets. With the default base and stride,
+PostgreSQL uses `5433`–`5943` in linked worktrees and Redis uses `6380`–`6890`.
+
+### Project layout and port stability
+
+Mise detects the enclosing checkout even when `mise.toml` is nested in a directory
+such as `packages/api`. Each project root inside a linked worktree is hashed
+separately. Submodules follow their enclosing checkout: they receive an offset
+inside a linked worktree and keep the base port inside a primary checkout.
+
+Independent clones, including `git clone --separate-git-dir`, and projects outside
+Git keep the base port. Worktrees of a bare repository all receive offsets because
+there is no primary checkout. To give one checkout a fixed port, set an integer
+`port` in a checkout-specific configuration such as a gitignored `mise.local.toml`.
+
+Mise saves resolved ports in the project's generated `state.json` during daemon
+registration and reuses them on later loads. This preserves existing assignments
+if the allocation algorithm changes. Changing `base` or `stride` causes mise to
+resolve the port again; restart the affected daemon after making that change.
+
+Use `mise daemons ls --json` to inspect assignments. Each listed daemon includes
+`port` for its resolved port and `port_auto` to indicate automatic allocation.
+
+### Port environment variables
+
+Presets export their usual connection variables with the resolved port, including
+`PGPORT` and `DATABASE_URL` for PostgreSQL and `REDIS_URL` for Redis.
+
+Custom daemons with an integer or automatic `port` export `<NAME>_PORT`. Mise
+uppercases the daemon name and replaces punctuation with underscores:
+`[daemons.api]` exports `API_PORT`, and `[daemons.web-ui]` exports `WEB_UI_PORT`.
+These variables are available through `mise env`, `mise x`, and the daemon's mise
+environment. Explicit `[env]` values take precedence over daemon exports.
+
+If a name starts with a digit, or two names map to the same variable (such as
+`web-ui` and `web_ui`), mise warns and omits the affected exports. The daemons can
+still run. Pitchfork also provides `$PORT` to the process it starts.
+
+### Port conflicts
+
+Automatic ports are derived from paths, so different projects can receive the
+same port. When another mise-managed project has a running daemon on that port,
+startup fails with an error identifying the daemon and its project root. Change
+one project's `base` or stop the other daemon before starting again.
+
+Stopped daemons do not reserve ports. Conflict checks cover only the daemons being
+started: `mise daemons start redis` is not blocked by a conflict on this project's
+PostgreSQL port. The checks apply to fixed integer ports as well as automatic ports.
+
+These checks do not reserve ports or detect every listener. An unmanaged process,
+an unreachable supervisor, or two projects starting simultaneously can still
+cause an ordinary bind failure. Mise keeps the selected port rather than trying
+another one, so existing shells retain the same connection settings.
 
 ## Data and configuration
 

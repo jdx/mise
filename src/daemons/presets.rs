@@ -1,3 +1,4 @@
+use super::ports::PortClaim;
 use super::{Daemon, state_dir};
 use eyre::{Context, Result, bail};
 use indexmap::IndexMap;
@@ -36,6 +37,12 @@ fn preset(name: &str) -> Result<Preset> {
     Ok(toml::from_str(content)?)
 }
 
+/// The well-known port a preset binds when nothing overrides it, and the base
+/// that `port = "auto"` offsets per worktree.
+pub(crate) fn default_port(name: &str) -> Result<u16> {
+    Ok(preset(name)?.port)
+}
+
 pub(crate) fn quote(value: impl AsRef<str>) -> String {
     format!("'{}'", value.as_ref().replace('\'', "'\\''"))
 }
@@ -61,29 +68,29 @@ pub(crate) fn with_init(steps: &[String], run: &str) -> String {
     format!("{} && {run}", steps.join(" && "))
 }
 
+/// The declaration fields mise interprets itself rather than forwarding to
+/// pitchfork: setup steps to run before the daemon, and the port already
+/// resolved for this project root.
+pub(crate) struct Extras<'a> {
+    pub init: &'a [String],
+    pub port: Option<PortClaim>,
+}
+
 pub(crate) fn expand(
     name: &str,
     preset_name: &str,
     version: &str,
     mut overrides: toml::Table,
-    init: &[String],
+    extras: Extras<'_>,
     source: &Path,
     root: &Path,
 ) -> Result<Daemon> {
     let mut preset = preset(preset_name)?;
     let tool = super::take_string(&mut overrides, "tool")?.unwrap_or_else(|| preset.tool.clone());
-    let port = overrides
-        .remove("port")
-        .map(|v| {
-            v.as_integer()
-                .and_then(|n| u16::try_from(n).ok())
-                .filter(|n| *n > 0)
-                .ok_or_else(|| {
-                    eyre::eyre!("[daemons.{name}].port must be an integer from 1 to 65535")
-                })
-        })
-        .transpose()?
-        .unwrap_or(preset.port);
+    // `port` is already parsed and resolved by the caller, which knows the
+    // persisted allocation for this project root.
+    let claim = extras.port.unwrap_or_else(|| PortClaim::fixed(preset.port));
+    let port = claim.port;
     if let Some(options) = overrides.remove("options") {
         let options = options
             .as_table()
@@ -150,18 +157,9 @@ pub(crate) fn expand(
         quote(data.to_string_lossy()),
         quote(database)
     )];
-    steps.extend(init.iter().cloned());
+    steps.extend(extras.init.iter().cloned());
     table.insert("run".into(), toml::Value::String(with_init(&steps, &run)));
-    table.insert(
-        "port".into(),
-        toml::Value::Table(toml::Table::from_iter([
-            (
-                String::from("expect"),
-                toml::Value::Array(vec![toml::Value::Integer(i64::from(port))]),
-            ),
-            (String::from("bump"), toml::Value::Boolean(false)),
-        ])),
-    );
+    table.insert("port".into(), super::expected_port(port));
     table.insert("mise".into(), toml::Value::Boolean(true));
     table.extend(overrides);
     Ok(Daemon {
@@ -174,6 +172,7 @@ pub(crate) fn expand(
         tool: Some((tool, version.into())),
         exports,
         imported: false,
+        port: Some(claim),
     })
 }
 
@@ -291,7 +290,10 @@ mod tests {
                 name,
                 "latest",
                 toml::Table::new(),
-                &[],
+                Extras {
+                    init: &[],
+                    port: None,
+                },
                 Path::new("/project/mise.toml"),
                 Path::new("/project"),
             )
@@ -305,13 +307,16 @@ mod tests {
     }
     #[test]
     fn named_instances_override_ports_and_keep_templates() {
-        let overrides = toml::toml! { port = 5433 ready_cmd = "echo {{ env.FOO }}" };
+        let overrides = toml::toml! { ready_cmd = "echo {{ env.FOO }}" };
         let daemon = expand(
             "analytics",
             "postgres",
             "18",
             overrides,
-            &[],
+            Extras {
+                init: &[],
+                port: Some(PortClaim::fixed(5433)),
+            },
             Path::new("/p/mise.toml"),
             Path::new("/p"),
         )
