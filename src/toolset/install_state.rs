@@ -918,11 +918,41 @@ fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
     if let Some(o) = ba.opts.as_ref() {
         for (k, v) in &o.opts {
             if !EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                opts_map.insert(k.clone(), v.clone());
+                opts_map.insert(k.clone(), strip_url_credentials(v));
             }
         }
     }
     opts_map
+}
+
+/// Remove userinfo from an option that is a URL carrying credentials.
+///
+/// These manifests are written under the data directory, which gets backed up,
+/// synced between machines and left group-readable, so a live credential must
+/// not reach them. It can: a registry URL authenticates as basic-auth userinfo
+/// (mise's gem `source` option, for one), and templating the token in from the
+/// environment does not help, because rendering happens before the value is
+/// stored.
+///
+/// The rest of the URL is kept, since it is genuine identity: which registry a
+/// tool came from is worth recording. A consumer that needs the credential
+/// reads it from config, which is where it was configured.
+fn strip_url_credentials(value: &toml::Value) -> toml::Value {
+    let Some(raw) = value.as_str() else {
+        return value.clone();
+    };
+    // `.ok()` rather than `let Ok(..)`: `Ok` is shadowed by eyre's in this module.
+    let Some(mut url) = raw.parse::<url::Url>().ok() else {
+        return value.clone();
+    };
+    if url.username().is_empty() && url.password().is_none() {
+        return value.clone();
+    }
+    // Both calls fail only for a URL that cannot have credentials at all, which
+    // is precisely the case already returned above.
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    toml::Value::String(url.to_string())
 }
 
 pub(crate) fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
@@ -1392,5 +1422,43 @@ explicit_backend = true
         assert_eq!(tool.versions, ["24.10.0"]);
         assert!(dir.join("24.10.0").is_dir());
         assert!(!temp.path().join("pypi-black").exists());
+    }
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::strip_url_credentials;
+
+    /// These manifests live under the data directory, which is backed up and
+    /// synced, so a registry URL must not carry its token onto disk. Templating
+    /// the token in from the environment does not help: rendering happens
+    /// before the value is stored.
+    #[test]
+    fn credentials_are_stripped_before_a_manifest_is_written() {
+        let stripped = |raw: &str| {
+            strip_url_credentials(&toml::Value::String(raw.to_string()))
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+
+        assert_eq!(
+            stripped("https://ghp_tok3n@rubygems.pkg.github.com/acme"),
+            "https://rubygems.pkg.github.com/acme"
+        );
+        assert_eq!(
+            stripped("https://user:s3cret@gems.example.com/"),
+            "https://gems.example.com/"
+        );
+        // Identity worth keeping is kept, and non-URL options are untouched.
+        assert_eq!(
+            stripped("https://gems.example.com/acme"),
+            "https://gems.example.com/acme"
+        );
+        assert_eq!(stripped("not a url"), "not a url");
+        assert_eq!(
+            strip_url_credentials(&toml::Value::Integer(7)),
+            toml::Value::Integer(7)
+        );
     }
 }

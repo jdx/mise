@@ -88,17 +88,45 @@ on that machine as well.
 The source applies to version resolution as well as installation, so `latest`
 resolves against the same registry the gem is installed from.
 
-Credentials are not part of this option. `gem` reads `~/.gem/credentials`
-itself, so no token has to be written into `mise.toml`, which is usually
-committed. Authenticate once with `gem signin --host <registry>` (or however
-your registry documents it) and mise will inherit it.
+### Authenticating
+
+A private registry authenticates with basic-auth credentials on the source URL
+itself. RubyGems reads the userinfo from the source it is fetching from; the
+API key `gem signin` writes to `~/.gem/credentials` is for publishing commands
+such as `gem push` and does not authenticate a download.
+
+Keep the token out of the file by taking it from the environment, since tool
+options are templated:
+
+```toml
+[tools]
+"gem:internal-cli" = { version = "latest", source = "https://{{ env.GEM_TOKEN }}@gems.example.com" }
+```
+
+Some registries expect the token in the user position with no password, which
+is what the example above does. Others want `user:token@host`. Follow whichever
+your registry documents.
+
+mise registers the credential for redaction, so it is replaced with
+`[redacted]` wherever mise renders the source: log output, `MISE_LOG_FILE`, the
+`gem install` command line, error messages, and the gem command's own output.
+Credentials are also stripped from the URL before it is recorded in mise's
+install metadata, so no token is written under the data directory. Even so,
+prefer a token scoped to reading that registry, since the rendered value does
+exist in the process environment and in whatever supplies it.
 
 Dependencies are still resolved from the other configured sources, so a private
 gem whose dependencies live on rubygems.org installs normally. `source` is added
 to the source list rather than replacing it, which is what makes that work.
 
-That cuts both ways, so name private gems distinctly. Because the other sources
-remain available, a public gem of the same name is also a candidate, and
-RubyGems, not mise, decides between them. A registry that proxies rubygems.org
-avoids the question entirely: point `source` at the proxy, and the private gem
-and its dependencies both resolve from one place.
+That cuts both ways, and it is worth being plain about the consequence. mise
+pins the version it resolved from your registry, but `--source` appends, so
+rubygems.org is still in RubyGems' source list and a public gem of the same
+name and version can satisfy the install. Whoever holds that name publicly can
+therefore influence what a private `latest` installs, and if the name is
+already taken you cannot fix it by choosing a different one.
+
+**Prefer a registry that proxies rubygems.org.** Point `source` at the proxy so
+the private gem and its dependencies both resolve from one place, and no other
+source is in play. Where that is not possible, use a private gem name unlikely
+to be claimed publicly, and pin an exact version rather than `latest`.

@@ -2057,17 +2057,28 @@ pub(crate) fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static
     }
 }
 
+/// A command line with registered secrets removed.
+///
+/// This rendering is not only for logs. `execute` debug-logs it, but it is also
+/// formatted into `failed to execute command: {self}`, and that error is
+/// printed by the top-level handler, which applies no redaction of its own. An
+/// argument can legitimately carry a credential (a gem `source` authenticates
+/// as basic-auth userinfo on the URL), so redacting where the string is built
+/// covers every consumer instead of asking each one to remember.
+fn display_command(runner: &CmdLineRunner<'_>) -> String {
+    let args = runner.get_args().join(" ");
+    crate::config::redact_global(&format!("{} {args}", runner.get_program()))
+}
+
 impl Display for CmdLineRunner<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let args = self.get_args().join(" ");
-        write!(f, "{} {args}", self.get_program())
+        write!(f, "{}", display_command(self))
     }
 }
 
 impl Debug for CmdLineRunner<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let args = self.get_args().join(" ");
-        write!(f, "{} {args}", self.get_program())
+        write!(f, "{}", display_command(self))
     }
 }
 

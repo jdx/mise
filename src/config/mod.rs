@@ -180,6 +180,15 @@ pub(crate) struct Alias {
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 static _REDACTOR: Lazy<Mutex<Redactor>> = Lazy::new(Default::default);
+
+/// Redact registered secrets without needing a loaded `Config`.
+///
+/// The patterns live in a global, and some of the places a secret can surface
+/// have no `Config` to hand: `Display for CmdLineRunner` is rendered into
+/// `eyre` errors that are printed long after any config went out of scope.
+pub(crate) fn redact_global(input: &str) -> String {
+    _REDACTOR.lock().unwrap().redact(input)
+}
 const BOOTSTRAP_CONFIG_ROOTS_WARN_AT: &str = "2026.9.3";
 const BOOTSTRAP_CONFIG_ROOTS_REMOVE_AT: &str = "2027.3.3";
 const MONOREPO_LOCKFILE_WARN_AT: &str = "2026.12.0";
@@ -1659,6 +1668,20 @@ impl Config {
             .cloned()
             .collect()
     }
+    /// Register values that must never reach a log line.
+    ///
+    /// Every log record is redacted through this (see `src/logger.rs`), so a
+    /// secret registered here is scrubbed from the terminal, `MISE_LOG_FILE`,
+    /// and the command lines `CmdLineRunner` debug-logs, without each call site
+    /// having to remember.
+    ///
+    /// Append-only for the same reason as `add_redactions_excluding`: removing a
+    /// value could expose a different key that happens to share it.
+    pub(crate) fn add_redactions(&self, values: impl IntoIterator<Item = String>) {
+        let mut r = _REDACTOR.lock().unwrap();
+        *r = r.with_additional(values);
+    }
+
     pub(crate) fn add_redactions_excluding(
         &self,
         redactions: impl IntoIterator<Item = String>,

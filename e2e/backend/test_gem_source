@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+# The gem `source` option, exercised through version listing only. With a
+# source configured, listing is a plain HTTP request against that registry and
+# never shells out to `gem`, so this needs no Ruby and stays fast.
+#
+# Two properties, both of which regressed or would have:
+#
+#   1. The source is read from the CONFIG, even when the backend is built from a
+#      bare CLI argument. Reading it off the argument instead sent listing to
+#      rubygems.org while the cache key still said "private registry", so a
+#      later install took a version from one registry and asked the other for it.
+#   2. A credential in the source never reaches output. RubyGems authenticates a
+#      private registry with basic-auth userinfo, so a token genuinely lives in
+#      this URL.
+
+python3 - "$PWD" <<'PYTHON'
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+root = Path(sys.argv[1]).resolve()
+TOKEN = "ghp_e2eSECRET"
+requests = []
+
+versions = json.dumps([
+    {"number": "1.0.0", "created_at": "2026-01-01T00:00:00.000Z"},
+    {"number": "2.2.0", "created_at": "2026-02-01T00:00:00.000Z"},
+]).encode()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        requests.append((self.path, self.headers.get("Authorization")))
+        if self.path != "/acme/api/v1/versions/internal-cli.json":
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(versions)))
+        self.end_headers()
+        self.wfile.write(versions)
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+port = server.server_port
+thread = threading.Thread(target=server.serve_forever, daemon=True)
+thread.start()
+
+try:
+    # Declared in config, with a credential in the URL. The command below names
+    # the tool as a bare argument and passes no options.
+    (root / "mise.toml").write_text(
+        "[tools]\n"
+        f'"gem:internal-cli" = {{ version = "latest", source = "http://{TOKEN}@127.0.0.1:{port}/acme" }}\n'
+    )
+
+    result = subprocess.run(
+        ["mise", "ls-remote", "gem:internal-cli"],
+        env=dict(os.environ, MISE_DEBUG="1"),
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    output = result.stdout + result.stderr
+    print(output, end="", flush=True)
+    assert result.returncode == 0, output
+
+    # Reached the configured registry rather than rubygems.org, which only
+    # happens if the source was resolved from config.
+    assert requests, "the configured registry was never asked"
+    paths = [path for path, _ in requests]
+    assert paths == ["/acme/api/v1/versions/internal-cli.json"], paths
+
+    # The endpoint landed under the source's path, and the credential was sent
+    # as basic auth rather than being dropped.
+    assert all(auth and auth.startswith("Basic ") for _, auth in requests), requests
+
+    # Versions came from the fixture, not from rubygems.org.
+    assert "2.2.0" in output, output
+
+    # And the token appears nowhere, at debug verbosity, in stdout or stderr.
+    assert TOKEN not in output, "the source credential reached mise's output"
+    assert "[redacted]" in output, output
+finally:
+    server.shutdown()
+    thread.join()
+    server.server_close()
+PYTHON
