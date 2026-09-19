@@ -8,6 +8,11 @@ Define a task template when several tasks share commands, tools, environment var
 dependencies. Each task selects a template with `extends` and supplies the settings that differ.
 Run the task by its name; declaring a template alone does not create a runnable task.
 
+For repeated or nested snippet expansions inside one task's script, use
+[Tera components](/templates.html#parameterized-snippets-with-components).
+Task templates inherit fields; they do not insert parameterized snippets into
+the middle of a task's `run` string.
+
 The Python examples below assume a uv project whose development dependencies
 include `pytest` and, for coverage, `pytest-cov`. Declaring Python as a tool does
 not install those project packages.
