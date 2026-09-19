@@ -175,6 +175,23 @@ pub(crate) struct DaemonSet {
     pub labels: IndexMap<PathBuf, urls::RootLabels>,
 }
 
+impl Daemon {
+    /// Stop advertising this daemon's hostname, because the proxy will not
+    /// serve it to this daemon.
+    ///
+    /// Only what names the hostname goes. Deleting `<NAME>_URL` outright would
+    /// take a preset's own connection string with it: a proxied `redis` preset
+    /// publishes `REDIS_URL = redis://…`, which is not the derived URL and
+    /// stays valid however the proxy routes.
+    fn withdraw_host(&mut self) {
+        let Some(host) = self.host.take() else {
+            return;
+        };
+        self.exports.retain(|_, value| !value.contains(&host));
+        urls::withdraw(&mut self.table);
+    }
+}
+
 /// Validate a name that reaches pitchfork verbatim. Pitchfork rejects `--`
 /// among other things, and these names land in filesystem paths under the
 /// state directory.
@@ -392,7 +409,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             })
             .collect::<Vec<_>>()
             .join(", ");
-        match routed_claimant(&imported) {
+        let winner = routed_claimant(&imported);
+        match winner {
             Some(only) => warn_once!(
                 "[daemons] {where_each} all resolve to {host}. {} is declared by the project it is imported from, which registers it from its own configuration, so pitchfork serves that one and the others get no URL. Give one of them a different proxy label, or set proxy = false on it.",
                 set.daemons[&keys[only]].name
@@ -401,13 +419,18 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 "[daemons] {where_each} all resolve to {host}, so pitchfork routes none of them. Give one of them a different proxy label, or set proxy = false on it."
             ),
         }
-        // Only what this load registers. An imported daemon's hostname is not
-        // this project's to take away: its own project writes the file that
-        // claims it, and clearing it here would leave the state contradicting
-        // both the warning above and what the proxy actually serves.
-        state
-            .withdrawn_hosts
-            .extend(keys.iter().filter(|k| !set.daemons[*k].imported).cloned());
+        // Everyone the proxy will not serve, which is every claimant but the
+        // one above. A local claimant is always among them: mise writes the
+        // file that would claim the hostname, so it simply does not. An
+        // imported claimant is there only when nothing is served at all,
+        // because mise cannot stop the project declaring it from registering
+        // it, but it must not advertise a URL that answers for no one either.
+        state.withdrawn_hosts.extend(
+            keys.iter()
+                .enumerate()
+                .filter(|(i, _)| Some(*i) != winner)
+                .map(|(_, k)| k.clone()),
+        );
     }
     // The first claimant of an ambiguous key or hostname kept it while it
     // looked unique; drop it now so neither side is handed the other's
@@ -416,16 +439,8 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
         daemon
             .exports
             .retain(|key, _| !state.ambiguous.contains(key));
-        if let Some(host) = daemon.host.clone()
-            && state.withdrawn_hosts.contains(key)
-        {
-            // Only what names the withdrawn hostname. Deleting `<NAME>_URL`
-            // outright would take a preset's own connection string with it: a
-            // proxied `redis` preset publishes `REDIS_URL = redis://…`, which
-            // is not the derived URL and stays valid however the proxy routes.
-            daemon.exports.retain(|_, value| !value.contains(&host));
-            urls::withdraw(&mut daemon.table);
-            daemon.host = None;
+        if state.withdrawn_hosts.contains(key) {
+            daemon.withdraw_host();
         }
     }
     // Two daemons in one project can resolve to one port: `auto` derives it
@@ -1513,13 +1528,23 @@ impl DaemonSet {
                 .iter()
                 // Match the root too. A name alone is only unique within one
                 // project, and nothing here promises both sets hold just one.
-                .filter(|(_, d)| {
-                    requested
+                .filter_map(|(k, v)| {
+                    let asked = requested
                         .daemons
                         .values()
-                        .any(|r| r.name == d.name && r.root == d.root)
+                        .find(|r| r.name == v.name && r.root == v.root)?;
+                    let mut daemon = v.clone();
+                    // The declaring project settled what is registered; the
+                    // project asking settles what it advertises. It sees the
+                    // other projects this one imports from, so it alone can
+                    // tell that two of them claim one hostname and the proxy
+                    // serves neither. Showing a URL from the narrower view
+                    // would offer an endpoint that answers for no one.
+                    if asked.host.is_none() {
+                        daemon.withdraw_host();
+                    }
+                    Some((k.clone(), daemon))
                 })
-                .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             namespaces: self.namespaces.clone(),
             aliases: self.aliases.clone(),
@@ -3708,6 +3733,58 @@ three = ["two", "c"]
     /// imported: that project registers it from its own configuration, which
     /// this project neither sees nor rewrites on its behalf. Saying "pitchfork
     /// routes neither" there would describe a hostname that is in fact served.
+    /// Two imported claimants leave pitchfork a contest it will not settle, so
+    /// neither is served. Mise cannot stop either project from registering its
+    /// own, but the project that can see both must not offer a URL for them.
+    #[test]
+    fn two_imported_claimants_leave_no_url_to_advertise() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        for (dir, port) in [("one", 3000), ("two", 3001)] {
+            let project = tmp.path().join(dir).join("api");
+            std::fs::create_dir_all(project.join(".git")).unwrap();
+            referenced_project(
+                &project,
+                &format!("[daemons.web]\nrun = 'exec web'\nport = {port}\n"),
+            );
+        }
+        let root = tmp.path().join("app");
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let set = load(&files(&[(
+            root.join("mise.toml").to_str().unwrap(),
+            &format!(
+                "[daemons.first]\nproject = '{}'\nname = 'web'\n\
+                 [daemons.second]\nproject = '{}'\nname = 'web'\n",
+                tmp.path().join("one").join("api").display(),
+                tmp.path().join("two").join("api").display(),
+            ),
+        )]))
+        .unwrap();
+        let imported: Vec<_> = set.daemons.values().filter(|d| d.imported).collect();
+        assert_eq!(imported.len(), 2, "both imports must have resolved");
+        for daemon in imported {
+            assert!(daemon.host.is_none(), "{} kept a hostname", daemon.name);
+        }
+
+        // Each declaring project still registers its own, because its own
+        // hierarchy is what writes that file and nothing collides there. The
+        // importing project's view is what decides whether a URL is shown, so
+        // it withdraws the hostname the narrower view still carries.
+        let mut declared = set.clone();
+        for daemon in declared.daemons.values_mut() {
+            daemon.host = Some("web.api.localhost".into());
+            daemon
+                .exports
+                .insert("WEB_URL".into(), "https://web.api.localhost".into());
+        }
+        let visible = declared.restricted_to(&set);
+        assert_eq!(visible.daemons.len(), set.daemons.len());
+        for daemon in visible.daemons.values() {
+            assert!(daemon.host.is_none(), "{} still shows a URL", daemon.name);
+            assert!(!daemon.exports.contains_key("WEB_URL"));
+        }
+    }
+
     #[test]
     fn only_a_lone_imported_side_keeps_a_collided_hostname() {
         assert_eq!(routed_claimant(&[false, false]), None);
