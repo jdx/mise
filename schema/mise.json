@@ -5191,7 +5191,12 @@
                       },
                       "process_type": {
                         "type": "string",
-                        "enum": ["Background", "Standard", "Adaptive", "Interactive"],
+                        "enum": [
+                          "Background",
+                          "Standard",
+                          "Adaptive",
+                          "Interactive"
+                        ],
                         "description": "write ProcessType, the scheduling band launchd runs the job in"
                       },
                       "queue_directories": {
