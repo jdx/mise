@@ -717,6 +717,40 @@ pub(super) fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Resul
                 recursive,
             })
         }
+        "set_ownership" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "set_ownership step",
+                object,
+                &["type", "paths", "user", "group", "non_recursive"],
+            )?;
+            let paths = object
+                .get("paths")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    eyre!(
+                        "brew-cask:{}: unsupported {kind} set_ownership step metadata format",
+                        cask.token
+                    )
+                })?
+                .iter()
+                .map(|path| parse_ownership_flight_path(cask, kind, path))
+                .collect::<Result<Vec<_>>>()?;
+            // Homebrew omits the default `staff` group and the `recursive: true`
+            // default when serializing.
+            let user = parse_ownership_name(cask, kind, object, "user")?;
+            let group = parse_ownership_name(cask, kind, object, "group")?
+                .unwrap_or_else(|| "staff".into());
+            let recursive =
+                !parse_optional_flight_bool(cask, kind, object, "non_recursive", false)?;
+            Ok(FlightStep::SetOwnership {
+                paths,
+                user,
+                group,
+                recursive,
+            })
+        }
         "copy" => {
             reject_unsupported_flight_fields(
                 cask,
@@ -997,6 +1031,60 @@ pub(super) fn parse_flight_guards(
         })
         .transpose()
         .map(|guards| guards.unwrap_or_default())
+}
+
+/// Homebrew leaves `base` off only for paths that are already absolute: `/`,
+/// `~`, or an absolute template such as `{{appdir}}`. Globs are expanded only
+/// inside `staged_path`, like `set_permissions`.
+fn parse_ownership_flight_path(cask: &Cask, kind: &str, value: &Value) -> Result<FlightPath> {
+    let path = parse_context_flight_path_value(cask, kind, "set_ownership path", Some(value))?;
+    let valid = match path.base {
+        FlightPathBase::Literal => {
+            path.path.starts_with('/') || path.path.starts_with("~/") || path.path.starts_with("{{")
+        }
+        _ => validate_flight_relative_path(&path.path).is_ok(),
+    };
+    if !valid {
+        bail!(
+            "brew-cask:{}: invalid {kind} set_ownership path {}",
+            cask.token,
+            path.path
+        );
+    }
+    if path.base != FlightPathBase::StagedPath && path.path.contains(['*', '?', '[']) {
+        bail!(
+            "brew-cask:{}: unsupported {kind} set_ownership glob outside staged_path {}",
+            cask.token,
+            path.path
+        );
+    }
+    Ok(path)
+}
+
+/// A user or group becomes one half of chown's `user:group` operand, so a
+/// separator or whitespace would change what it names.
+fn parse_ownership_name(
+    cask: &Cask,
+    kind: &str,
+    object: &serde_json::Map<String, Value>,
+    field: &str,
+) -> Result<Option<String>> {
+    match object.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(name))
+            if !name.is_empty()
+                && !name.starts_with('-')
+                && !name
+                    .chars()
+                    .any(|c| c == ':' || c.is_whitespace() || c.is_control()) =>
+        {
+            Ok(Some(name.clone()))
+        }
+        Some(_) => bail!(
+            "brew-cask:{}: unsupported {kind} set_ownership {field}",
+            cask.token
+        ),
+    }
 }
 
 pub(super) fn parse_optional_flight_bool(

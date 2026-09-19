@@ -264,7 +264,9 @@ supported `preflight`/`postflight` hooks through its own Cask DSL shim, without
 delegating to Homebrew. mise also supports structured `preflight_steps` and
 `postflight_steps` for `move`/`remove` operations against `staged_path`,
 `set_permissions` operations that `chmod` existing `staged_path` or `appdir`
-paths with Homebrew's recursive default, `run` operations using Homebrew's
+paths with Homebrew's recursive default, `set_ownership` operations that
+`chown` existing paths through mise's sudo path (defaulting to the current user
+and the `staff` group, as Homebrew does), `run` operations using Homebrew's
 serialized command bases, arguments, environment, guards, and sudo setting, and
 `terminate_process` operations with Homebrew-compatible name/full matching,
 retries, notices, and failure policy. Manpage artifacts are intentionally not
