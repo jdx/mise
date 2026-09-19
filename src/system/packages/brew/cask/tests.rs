@@ -244,6 +244,116 @@ fn validates_requested_cask_identity_and_trusted_aliases() -> Result<()> {
     Ok(())
 }
 
+/// Trimmed from the Raycast cask, whose top level only runs on Tahoe
+fn raycast_api_json() -> Value {
+    serde_json::json!({
+        "token": "raycast",
+        "version": "2.4.1.0",
+        "url": "https://x.raycast-releases.com/download?version=2.4.1.0",
+        "sha256": "5bb09adafcf8070605264bb29fcf496e4d615da3a6a0ce88eab70653d186a795",
+        "variations": {
+            "arm64_sequoia": {
+                "url": "https://releases.raycast.com/releases/1.104.29/download?build=arm",
+                "version": "1.104.29",
+                "sha256": "1f098dce15ca1f678dd31fd3782dc8072d9104fb344af3ae753f84a66d97d15c",
+            },
+            "arm64_linux": {
+                "url": null,
+                "url_specs": null,
+                "version": null,
+                "sha256": null,
+            },
+        },
+    })
+}
+
+#[test]
+fn cask_api_json_applies_the_host_variation() -> Result<()> {
+    let cask = cask_from_api_json(raycast_api_json(), Some("arm64_sequoia"))?;
+    assert_eq!(cask.version, "1.104.29");
+    assert_eq!(
+        cask.url,
+        "https://releases.raycast.com/releases/1.104.29/download?build=arm"
+    );
+    assert_eq!(
+        cask.sha256.as_deref(),
+        Some("1f098dce15ca1f678dd31fd3782dc8072d9104fb344af3ae753f84a66d97d15c")
+    );
+    assert_eq!(cask.token, "raycast");
+    Ok(())
+}
+
+#[test]
+fn cask_api_json_keeps_the_top_level_without_a_host_variation() -> Result<()> {
+    // no fallback to an older tag: Tahoe has no entry, so the top level applies
+    let cask = cask_from_api_json(raycast_api_json(), Some("arm64_tahoe"))?;
+    assert_eq!(cask.version, "2.4.1.0");
+    // nor on a macOS release newer than mise knows, which has no tag
+    let cask = cask_from_api_json(raycast_api_json(), None)?;
+    assert_eq!(cask.version, "2.4.1.0");
+    assert_eq!(
+        cask.url,
+        "https://x.raycast-releases.com/download?version=2.4.1.0"
+    );
+    Ok(())
+}
+
+#[test]
+fn cask_api_json_variation_inherits_fields_it_omits() -> Result<()> {
+    // shaped like claude-code: Linux variations swap only the binary
+    let json = serde_json::json!({
+        "token": "claude-code",
+        "version": "2.1.267",
+        "url": "https://example.com/2.1.267/darwin-arm64/claude",
+        "sha256": "darwin",
+        "variations": {
+            "x86_64_linux": {
+                "url": "https://example.com/2.1.267/linux-x64/claude",
+                "sha256": "linux",
+            },
+        },
+    });
+    let cask = cask_from_api_json(json, Some("x86_64_linux"))?;
+    assert_eq!(cask.version, "2.1.267");
+    assert_eq!(cask.url, "https://example.com/2.1.267/linux-x64/claude");
+    assert_eq!(cask.sha256.as_deref(), Some("linux"));
+    Ok(())
+}
+
+#[test]
+fn cask_api_json_accepts_a_variation_that_nulls_list_fields() -> Result<()> {
+    let mut json = raycast_api_json();
+    json["variations"]["arm64_sequoia"]["url_specs"] = Value::Null;
+    json["variations"]["arm64_sequoia"]["artifacts"] = Value::Null;
+    json["variations"]["arm64_sequoia"]["aliases"] = Value::Null;
+    json["variations"]["arm64_sequoia"]["old_tokens"] = Value::Null;
+    let cask = cask_from_api_json(json, Some("arm64_sequoia"))?;
+    assert_eq!(cask.version, "1.104.29");
+    assert!(cask.artifacts.is_empty());
+    assert!(cask.url_specs.branch.is_none());
+    Ok(())
+}
+
+#[test]
+fn cask_api_json_rejects_a_platform_the_cask_does_not_support() {
+    let err = cask_from_api_json(raycast_api_json(), Some("arm64_linux")).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("not available for this platform (arm64_linux)"),
+        "{err}"
+    );
+
+    // shaped like visual-studio-code: a url survives, but the version does not
+    let mut json = raycast_api_json();
+    json["variations"]["arm64_linux"]["url"] = "https://example.com/darwin/stable".into();
+    let err = cask_from_api_json(json, Some("arm64_linux")).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("not available for this platform (arm64_linux)"),
+        "{err}"
+    );
+}
+
 #[test]
 fn rejects_unsafe_cask_identity_components() {
     for value in [

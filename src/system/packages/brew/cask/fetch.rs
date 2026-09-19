@@ -91,8 +91,8 @@ pub(super) async fn fetch_cask_url(
     raw_base: Option<String>,
     official_api: bool,
 ) -> Result<Cask> {
-    let mut cask = HTTP_FETCH
-        .json_cached::<Cask, _>(url)
+    let json = HTTP_FETCH
+        .json_cached::<Value, _>(url)
         .await
         // Context only. What to do about it depends on which caller failed, and
         // each of them already says: the parent-tap probe logs and moves on, the
@@ -100,9 +100,41 @@ pub(super) async fn fetch_cask_url(
         // either, and an official cask has no tap story to tell. Mirrors
         // `api::formula`.
         .wrap_err_with(|| format!("failed to fetch Homebrew cask '{requested_token}'"))?;
+    let mut cask = cask_from_api_json(json, super::super::tag::cask_variation_tag().as_deref())
+        .wrap_err_with(|| format!("failed to fetch Homebrew cask '{requested_token}'"))?;
     cask.raw_base = raw_base;
     validate_cask_identity(&cask, requested_token, official_api)?;
     Ok(cask)
+}
+
+/// Build a `Cask` from API metadata as the given platform tag sees it.
+///
+/// The top-level `url`, `version`, and `sha256` describe the newest macOS
+/// only. Older releases and Linux get theirs from `variations`, keyed by
+/// bottle tag (`arm64_sequoia`, `x86_64_linux`, ...). Like Homebrew's
+/// `API.merge_variations`, the host's exact tag is merged shallowly over the
+/// top level; there is no fallback to an older tag, because the API writes an
+/// entry for every tag whose values differ. With no tag (a macOS release mise
+/// does not know yet), the top level applies.
+pub(super) fn cask_from_api_json(mut json: Value, tag: Option<&str>) -> Result<Cask> {
+    if let Some(fields) = json.as_object_mut()
+        && let Some(Value::Object(variation)) = fields
+            .remove("variations")
+            .and_then(|mut variations| Some(variations.get_mut(tag?)?.take()))
+    {
+        fields.extend(variation);
+    }
+    // A variation nulls these for platforms the cask does not support
+    if ["url", "version"]
+        .iter()
+        .any(|key| json.get(key).is_none_or(Value::is_null))
+    {
+        bail!(
+            "brew-cask: not available for this platform ({})",
+            tag.unwrap_or("unknown")
+        );
+    }
+    Ok(serde_json::from_value(json)?)
 }
 
 pub(super) fn validate_cask_identity(

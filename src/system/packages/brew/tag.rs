@@ -63,10 +63,60 @@ pub(super) fn select(files: &HashMap<String, BottleFile>) -> Option<(String, &Bo
         .find_map(|tag| files.get(&tag).map(|f| (tag, f)))
 }
 
+/// The host's tag for cask `variations`, or `None` on a macOS release mise
+/// does not know yet. Unlike bottles, a cask variation must match exactly: the
+/// top level describes the newest release, so the nearest older tag would
+/// select an older build. brew-cask also runs on Intel Macs, which bottles do
+/// not support, so the architecture comes from the host rather than assuming
+/// arm64.
+pub(super) fn cask_variation_tag() -> Option<String> {
+    if cfg!(target_os = "macos") {
+        macos_variation_tag(*MACOS_MAJOR, std::env::consts::ARCH)
+    } else {
+        candidates().into_iter().next()
+    }
+}
+
+/// Homebrew spells Intel macOS tags as the bare release name (`sequoia`) and
+/// every other one as `<arch>_<release>` (`arm64_sequoia`)
+fn macos_variation_tag(major: u32, arch: &str) -> Option<String> {
+    let (_, name) = MACOS_VERSIONS.iter().find(|(known, _)| *known == major)?;
+    Some(if arch == "x86_64" {
+        name.to_string()
+    } else {
+        format!("arm64_{name}")
+    })
+}
+
 /// The host's exact preferred tag (for `variations` lookups)
 pub(super) fn host_tag() -> String {
     candidates()
         .into_iter()
         .next()
         .unwrap_or_else(|| "all".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cask_variation_tag_matches_only_a_known_macos_release() {
+        assert_eq!(
+            macos_variation_tag(15, "aarch64").as_deref(),
+            Some("arm64_sequoia")
+        );
+        assert_eq!(
+            macos_variation_tag(26, "aarch64").as_deref(),
+            Some("arm64_tahoe")
+        );
+        assert_eq!(
+            macos_variation_tag(15, "x86_64").as_deref(),
+            Some("sequoia")
+        );
+        // a release newer than MACOS_VERSIONS must not borrow Tahoe's variation
+        assert_eq!(macos_variation_tag(27, "aarch64"), None);
+        // `sw_vers` failed
+        assert_eq!(macos_variation_tag(0, "x86_64"), None);
+    }
 }
