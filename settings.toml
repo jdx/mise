@@ -3223,14 +3223,23 @@ type = "ListString"
 
 [system_packages.sudo]
 default = true
-description = "Allow `mise bootstrap packages apply` to elevate with sudo when not running as root."
+description = "Allow `mise bootstrap` and `mise install --system` to elevate with sudo when not running as root."
 docs = """
-Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.
+Allow `mise bootstrap` and `mise install --system` to invoke sudo when root
+permissions are needed. Enabled by default.
 
-When disabled, mise never runs sudo: if elevation would be required, it errors
-with the exact command to run manually. mise only elevates for explicit
-`mise bootstrap packages apply` invocations, logs the full command line before running
-it, and skips sudo entirely when already running as root (e.g. containers/CI).
+For bootstrap, elevation applies to explicit apply operations. For
+[`mise install --system`](/dev-tools/index.html#system-installations), mise
+prepares supported tools as your user and elevates only to write the installation
+and its links into protected system directories.
+
+Set this to `false` to disable automatic elevation. Operations that require root
+permissions then fail unless mise is already running as root. Operations that do
+not need elevation, such as installing into a user-writable directory, still work.
+
+mise logs each elevated command before running it. Interactive sessions can
+prompt for a sudo password; noninteractive sessions require sudo to work without
+a password prompt. When already running as root, mise skips sudo.
 """
 env = "MISE_SYSTEM_PACKAGES_SUDO"
 type = "Bool"

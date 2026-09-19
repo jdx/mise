@@ -102,6 +102,8 @@ mod shorthands;
 mod sops;
 mod sysconfig;
 mod system;
+#[cfg(unix)]
+mod system_install;
 pub(crate) mod task;
 pub(crate) mod tera;
 pub(crate) mod timeout;

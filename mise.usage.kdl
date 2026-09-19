@@ -3682,7 +3682,9 @@ May require elevated permissions depending on the path.
 Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
-May require elevated permissions (e.g. sudo).
+On Unix, binary-download backends invoke sudo to publish into protected
+system directories unless system_packages.sudo is disabled. Run mise as
+your user, without sudo.
 """#
     }
     flag "-h --help" help="Print help" action=help builtin=#true
@@ -4685,6 +4687,14 @@ This is useful for scripts to check if tools need to be pruned.
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL]…" help="Prune only these tools" required=#false var=#true
     example "mise prune --dry-run" help="Preview unused versions without deleting them. Example output: `rm -rf ~/.local/share/mise/installs/node/20.0.0` and `rm -rf ~/.local/share/mise/installs/node/20.0.1`."
+}
+cmd __publish-system-install hide=#true help="[internal] publish a staged system installation as root" effect=destructive {
+    long_help #"""
+[internal] publish a staged system installation as root
+
+`mise install --system` prepares a tool as the invoking user and streams it into this command through sudo. Reads one request and its archive from stdin; see `system_install`.
+"""#
+    flag "-h --help" help="Print help" action=help builtin=#true
 }
 cmd registry help="List registry shorthand names and their backends" effect=read {
     long_help #"""

@@ -8,6 +8,9 @@ export type Command = {
   };
 };
 export const commands: { [key: string]: Command } = {
+  "__publish-system-install": {
+    hide: true,
+  },
   activate: {
     hide: false,
   },
