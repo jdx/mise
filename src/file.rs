@@ -440,9 +440,30 @@ pub(crate) fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Re
 }
 
 pub(crate) fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
+    copy_dir_all_preserve_symlinks_skipping(from, to, &[])
+}
+
+/// Copies `from` into `to` like [`copy_dir_all_preserve_symlinks`], without
+/// descending into top-level entries of `from` named in `skip_top_level`.
+fn copy_dir_all_preserve_symlinks_skipping(
+    from: &Path,
+    to: &Path,
+    skip_top_level: &[&str],
+) -> Result<()> {
     trace!("cp -a {} {}", from.display(), to.display());
     let mut directory_permissions = vec![(to.to_path_buf(), fs::metadata(from)?.permissions())];
-    for entry in WalkDir::new(from).follow_links(false).min_depth(1) {
+    let entries = WalkDir::new(from)
+        .follow_links(false)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(|entry| {
+            entry.depth() != 1
+                || !entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| skip_top_level.contains(&name))
+        });
+    for entry in entries {
         let entry = entry?;
         let relative = entry.path().strip_prefix(from)?;
         let dest = to.join(relative);
@@ -2278,6 +2299,29 @@ pub(crate) fn unzip(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> R
     })
 }
 
+/// Volume metadata that macOS and disk-image tools leave at a DMG's root. It is
+/// never part of an artifact, and some of it cannot be read: `.Trashes` ships
+/// with mode 0333 in some images. This is Homebrew's `DMG_METADATA` list.
+const DMG_VOLUME_METADATA: &[&str] = &[
+    ".background",
+    ".com.apple.timemachine.donotpresent",
+    ".com.apple.timemachine.supported",
+    ".DocumentRevisions-V100",
+    ".DS_Store",
+    ".fseventsd",
+    ".MobileBackups",
+    ".Spotlight-V100",
+    ".TemporaryItems",
+    ".Trashes",
+    ".VolumeIcon.icns",
+    ".HFS+ Private Directory Data\r",
+    ".HFS+ Private Data\r",
+];
+
+fn copy_dmg_volume(volume: &Path, dest: &Path) -> Result<()> {
+    copy_dir_all_preserve_symlinks_skipping(volume, dest, DMG_VOLUME_METADATA)
+}
+
 pub(crate) fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
     debug!(
         "hdiutil attach -quiet -nobrowse -mountpoint {} {}",
@@ -2296,7 +2340,7 @@ pub(crate) fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
             archive.to_path_buf()
         )
         .run()?;
-        let copy_result = copy_dir_all_preserve_symlinks(tmp.path(), dest);
+        let copy_result = copy_dmg_volume(tmp.path(), dest);
         let detach_result = cmd!("hdiutil", "detach", tmp.path()).run();
         match (copy_result, detach_result) {
             (Err(copy_err), Err(detach_err)) => Err(copy_err)
@@ -3523,6 +3567,37 @@ mod tests {
             fs::read_link(dest.join("Applications")).unwrap(),
             Path::new(".")
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_copy_dmg_volume_skips_unreadable_volume_metadata() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let volume = dir.path().join("volume");
+        let dest = dir.path().join("dest");
+        fs::create_dir_all(volume.join("Example.app/Contents/.Trashes")).unwrap();
+        fs::write(volume.join("Example.app/Contents/.Trashes/kept"), "kept").unwrap();
+        fs::write(volume.join(".DS_Store"), "metadata").unwrap();
+        fs::create_dir_all(volume.join(".fseventsd")).unwrap();
+        fs::write(volume.join(".fseventsd/log"), "metadata").unwrap();
+        // mysql-workbench-community-8.0.47-macos-arm64.dmg ships `.Trashes`
+        // with mode 0333, which a non-root user cannot list.
+        fs::create_dir(volume.join(".Trashes")).unwrap();
+        fs::set_permissions(volume.join(".Trashes"), fs::Permissions::from_mode(0o333)).unwrap();
+
+        let result = copy_dmg_volume(&volume, &dest);
+        fs::set_permissions(volume.join(".Trashes"), fs::Permissions::from_mode(0o755)).unwrap();
+        result.unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("Example.app/Contents/.Trashes/kept")).unwrap(),
+            "kept"
+        );
+        assert!(!dest.join(".Trashes").exists());
+        assert!(!dest.join(".DS_Store").exists());
+        assert!(!dest.join(".fseventsd").exists());
     }
 
     #[test]
