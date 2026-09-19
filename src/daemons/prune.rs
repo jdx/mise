@@ -332,11 +332,25 @@ pub(crate) async fn remove(entry: &Entry, runtime: Option<&Runtime>) -> Result<O
                 // ever declared, and pitchfork asked to stop a list it cannot
                 // fully resolve may refuse the whole list, leaving a live
                 // daemon running on data that is about to go.
+                //
+                // Asking is all this does. A refusal says nothing about whether
+                // the daemon is running, since an id pitchfork has forgotten
+                // cannot be stopped and does not need to be, so it is noted and
+                // the loop moves on. What decides is the status pass below,
+                // which every id has to clear before anything is deleted. Only
+                // being unable to run pitchfork at all stops the attempt here.
                 for id in &entry.state.ids {
                     let args = ["stop".to_string(), id.clone()];
-                    if let Err(err) = runtime.raw_output(cwd, &args).await {
-                        warn!("keeping {}: cannot stop {id}: {err:#}", display_path(cwd));
-                        return Ok(Outcome::Kept);
+                    match runtime.raw_output(cwd, &args).await {
+                        Ok(output) if !output.status.success() => debug!(
+                            "pitchfork would not stop {id}: {}",
+                            String::from_utf8_lossy(&output.stderr).trim()
+                        ),
+                        Ok(_) => {}
+                        Err(err) => {
+                            warn!("keeping {}: cannot stop {id}: {err:#}", display_path(cwd));
+                            return Ok(Outcome::Kept);
+                        }
                     }
                 }
                 true
