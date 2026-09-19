@@ -586,6 +586,7 @@ impl FlightStep {
             Self::Move { .. } => "move",
             Self::Remove { .. } => "remove",
             Self::SetPermissions { .. } => "set_permissions",
+            Self::SetOwnership { .. } => "set_ownership",
             Self::Copy { .. } => "copy",
             Self::Symlink { .. } => "symlink",
             Self::Run { .. } => "run",
@@ -680,6 +681,38 @@ pub(super) fn execute_flight_step(
                 runner = runner.arg(path);
             }
             runner.raw(true).execute()?;
+        }
+        FlightStep::SetOwnership {
+            paths,
+            user,
+            group,
+            recursive,
+        } => {
+            // Like Homebrew, chown the paths that exist with sudo and skip the
+            // rest. As with set_permissions, Homebrew does not reverse this on
+            // failure, so nothing is recorded for rollback.
+            let mut existing = Vec::new();
+            for path in paths {
+                for path in ownership_flight_paths(cask, path, staged_path, appdir)? {
+                    if path.exists() {
+                        existing.push(path);
+                    }
+                }
+            }
+            if existing.is_empty() {
+                return Ok(());
+            }
+            let user = match user {
+                Some(user) => user.clone(),
+                None => nix::unistd::User::from_uid(nix::unistd::geteuid())?
+                    .map(|user| user.name)
+                    .ok_or_else(|| eyre!("brew-cask: could not determine current user"))?,
+            };
+            sudo::run(
+                "chown",
+                &set_ownership_args(&existing, &user, group, *recursive),
+                &[],
+            )?;
         }
         FlightStep::Copy {
             source,
@@ -1091,6 +1124,44 @@ pub(super) fn permissions_flight_paths(
         }
         _ => bail!("brew-cask: structured set_permissions must use staged_path or appdir"),
     }
+}
+
+/// `set_ownership` accepts every path shape Homebrew serializes for it:
+/// staged paths and globs, appdir and prefix paths, and absolute or `~` paths.
+pub(super) fn ownership_flight_paths(
+    cask: &Cask,
+    path: &FlightPath,
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<Vec<PathBuf>> {
+    if path.base == FlightPathBase::StagedPath {
+        return permissions_flight_paths(cask, path, staged_path, appdir);
+    }
+    let resolved = resolve_flight_path_with_context(cask, path, staged_path, appdir)?;
+    if !resolved.is_absolute() {
+        bail!(
+            "brew-cask:{}: set_ownership path '{}' is not absolute",
+            cask.token,
+            resolved.display()
+        );
+    }
+    Ok(vec![resolved])
+}
+
+pub(super) fn set_ownership_args(
+    paths: &[PathBuf],
+    user: &str,
+    group: &str,
+    recursive: bool,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    if recursive {
+        args.push("-R".to_string());
+    }
+    args.push("--".to_string());
+    args.push(format!("{user}:{group}"));
+    args.extend(paths.iter().map(|path| path.display().to_string()));
+    args
 }
 
 pub(super) fn expand_staged_glob(staged_path: &Path, pattern: &str) -> Result<Vec<PathBuf>> {

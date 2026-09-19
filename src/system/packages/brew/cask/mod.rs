@@ -223,6 +223,13 @@ enum FlightStep {
         permissions: String,
         recursive: bool,
     },
+    SetOwnership {
+        paths: Vec<FlightPath>,
+        /// `None` is the user running mise, as in Homebrew.
+        user: Option<String>,
+        group: String,
+        recursive: bool,
+    },
     Copy {
         source: FlightPath,
         target: FlightPath,

@@ -3418,8 +3418,8 @@ fn rejects_unsupported_structured_flight_steps() {
         serde_json::json!({
             "preflight_steps": [{
                 "steps": [{
-                    "type": "set_ownership",
-                    "paths": [{"base": "staged_path", "path": "Battle.net-Setup.app"}]
+                    "type": "mkdir_p",
+                    "path": {"base": "staged_path", "path": "Battle.net-Setup.app"}
                 }]
             }]
         }),
@@ -3427,7 +3427,7 @@ fn rejects_unsupported_structured_flight_steps() {
     ];
 
     let err = cask_artifacts(&cask).unwrap_err().to_string();
-    assert!(err.contains("unsupported preflight_steps step type set_ownership"));
+    assert!(err.contains("unsupported preflight_steps step type mkdir_p"));
 }
 
 #[test]
@@ -3543,6 +3543,259 @@ fn rejects_malformed_structured_set_permissions_steps() {
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert!(err.contains(message), "{err}");
     }
+}
+
+fn set_ownership_step(
+    paths: &[(FlightPathBase, &str)],
+    user: Option<&str>,
+    group: &str,
+    recursive: bool,
+) -> FlightStep {
+    FlightStep::SetOwnership {
+        paths: paths
+            .iter()
+            .map(|(base, path)| FlightPath {
+                base: *base,
+                path: path.to_string(),
+            })
+            .collect(),
+        user: user.map(str::to_string),
+        group: group.to_string(),
+        recursive,
+    }
+}
+
+#[test]
+fn parses_structured_set_ownership_steps() -> Result<()> {
+    // Shapes taken from the Homebrew cask API: parsec, hummingbird,
+    // proxy-audio-device, macfuse, anaconda, and mplabx-ide.
+    let mut cask = test_cask("tool", "1.0.0");
+    cask.artifacts = vec![
+        serde_json::json!({"pkg": ["Tool.pkg"]}),
+        serde_json::json!({"uninstall": [{"pkgutil": "com.example.tool"}]}),
+        serde_json::json!({
+            "postflight_steps": [{
+                "steps": [
+                    {"type": "set_ownership", "paths": [{"path": "~/.parsec"}]},
+                    {
+                        "type": "set_ownership",
+                        "paths": [{"base": "staged_path", "path": "tool-macos-*-{{version}}/tool"}],
+                        "user": "root"
+                    },
+                    {
+                        "type": "set_ownership",
+                        "paths": [{"path": "/Library/Audio/Plug-Ins/HAL/Tool.driver"}],
+                        "user": "root",
+                        "group": "wheel"
+                    },
+                    {
+                        "type": "set_ownership",
+                        "paths": [{"path": "/usr/local/include"}, {"path": "/usr/local/lib"}],
+                        "non_recursive": true
+                    },
+                    {"type": "set_ownership", "paths": [{"base": "homebrew_prefix", "path": "anaconda3"}]},
+                    {
+                        "type": "set_ownership",
+                        "paths": [{"base": "appdir", "path": "microchip/mplabx/{{version}}"}]
+                    }
+                ]
+            }]
+        }),
+    ];
+
+    let artifacts = cask_artifacts(&cask)?;
+    assert_eq!(
+        artifacts.postflight_steps,
+        vec![
+            set_ownership_step(
+                &[(FlightPathBase::Literal, "~/.parsec")],
+                None,
+                "staff",
+                true
+            ),
+            set_ownership_step(
+                &[(FlightPathBase::StagedPath, "tool-macos-*-{{version}}/tool")],
+                Some("root"),
+                "staff",
+                true
+            ),
+            set_ownership_step(
+                &[(
+                    FlightPathBase::Literal,
+                    "/Library/Audio/Plug-Ins/HAL/Tool.driver"
+                )],
+                Some("root"),
+                "wheel",
+                true
+            ),
+            set_ownership_step(
+                &[
+                    (FlightPathBase::Literal, "/usr/local/include"),
+                    (FlightPathBase::Literal, "/usr/local/lib")
+                ],
+                None,
+                "staff",
+                false
+            ),
+            set_ownership_step(
+                &[(FlightPathBase::HomebrewPrefix, "anaconda3")],
+                None,
+                "staff",
+                true
+            ),
+            set_ownership_step(
+                &[(FlightPathBase::AppDir, "microchip/mplabx/{{version}}")],
+                None,
+                "staff",
+                true
+            ),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_malformed_structured_set_ownership_steps() {
+    for (step, message) in [
+        (
+            serde_json::json!({"type": "set_ownership", "paths": [{"path": "relative/dir"}]}),
+            "invalid postflight_steps set_ownership path relative/dir",
+        ),
+        (
+            serde_json::json!({
+                "type": "set_ownership",
+                "paths": [{"base": "staged_path", "path": "../escape"}]
+            }),
+            "invalid postflight_steps set_ownership path ../escape",
+        ),
+        (
+            serde_json::json!({
+                "type": "set_ownership",
+                "paths": [{"base": "appdir", "path": "*.app"}]
+            }),
+            "unsupported postflight_steps set_ownership glob outside staged_path *.app",
+        ),
+        (
+            serde_json::json!({
+                "type": "set_ownership",
+                "paths": [{"path": "/opt/tool"}],
+                "user": "root:wheel"
+            }),
+            "unsupported postflight_steps set_ownership user",
+        ),
+        (
+            serde_json::json!({
+                "type": "set_ownership",
+                "paths": [{"path": "/opt/tool"}],
+                "group": "-R"
+            }),
+            "unsupported postflight_steps set_ownership group",
+        ),
+        (
+            serde_json::json!({
+                "type": "set_ownership",
+                "paths": [{"path": "/opt/tool"}],
+                "sudo": false
+            }),
+            "unsupported postflight_steps set_ownership step field sudo",
+        ),
+        (
+            serde_json::json!({
+                "type": "set_ownership",
+                "paths": [{"path": "/opt/tool"}],
+                "non_recursive": "true"
+            }),
+            "postflight_steps non_recursive must be a boolean",
+        ),
+    ] {
+        let mut cask = test_cask("tool", "1.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({"app": "Tool.app"}),
+            serde_json::json!({"postflight_steps": [{"steps": [step]}]}),
+        ];
+        let err = cask_artifacts(&cask).unwrap_err().to_string();
+        assert!(err.contains(message), "{err}");
+    }
+}
+
+#[test]
+fn resolves_structured_set_ownership_paths() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(&tmp.path().join("prefix"));
+    let stage = tmp.path().join("stage");
+    let appdir = tmp.path().join("Applications");
+    file::create_dir_all(stage.join("tool-macos-arm64-1.0.0"))?;
+    file::write(stage.join("tool-macos-arm64-1.0.0/tool"), "")?;
+    let cask = test_cask("tool", "1.0.0");
+    let resolve = |base, path: &str| {
+        ownership_flight_paths(
+            &cask,
+            &FlightPath {
+                base,
+                path: path.to_string(),
+            },
+            &stage,
+            &appdir,
+        )
+    };
+
+    assert_eq!(
+        resolve(FlightPathBase::Literal, "~/.parsec")?,
+        [crate::dirs::HOME.join(".parsec")]
+    );
+    assert_eq!(
+        resolve(FlightPathBase::Literal, "/usr/local/lib")?,
+        [PathBuf::from("/usr/local/lib")]
+    );
+    assert_eq!(
+        resolve(FlightPathBase::StagedPath, "tool-macos-*-{{version}}/tool")?,
+        [stage.join("tool-macos-arm64-1.0.0/tool")]
+    );
+    assert_eq!(
+        resolve(FlightPathBase::HomebrewPrefix, "anaconda3")?,
+        [tmp.path().join("prefix/anaconda3")]
+    );
+    assert_eq!(
+        resolve(FlightPathBase::AppDir, "microchip/mplabx/{{version}}")?,
+        [appdir.join("microchip/mplabx/1.0.0")]
+    );
+    Ok(())
+}
+
+#[test]
+fn builds_set_ownership_chown_args() {
+    let paths = [PathBuf::from("/opt/tool"), PathBuf::from("/usr/local/lib")];
+    assert_eq!(
+        set_ownership_args(&paths, "alice", "staff", true),
+        ["-R", "--", "alice:staff", "/opt/tool", "/usr/local/lib"]
+    );
+    assert_eq!(
+        set_ownership_args(&paths[..1], "root", "wheel", false),
+        ["--", "root:wheel", "/opt/tool"]
+    );
+}
+
+#[test]
+fn structured_set_ownership_step_skips_when_no_path_exists() -> Result<()> {
+    // Reaching chown would need sudo, so this passes only if the step returns
+    // before elevating.
+    let tmp = tempfile::tempdir()?;
+    execute_flight_steps(
+        &test_cask("tool", "1.0.0"),
+        &[set_ownership_step(
+            &[
+                (FlightPathBase::StagedPath, "Missing-*"),
+                (FlightPathBase::Literal, "/nonexistent/mise-set-ownership"),
+            ],
+            None,
+            "staff",
+            true,
+        )],
+        tmp.path(),
+        tmp.path(),
+        "postflight_steps",
+    )
 }
 
 #[test]
