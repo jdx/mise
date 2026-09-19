@@ -224,7 +224,13 @@ class CaskMetadata
 
   def app(source, target: nil) = add_artifact("app", source, target)
   def binary(source, target: nil) = add_artifact("binary", source, target)
-  def pkg(source, **) = add_artifact("pkg", source, nil)
+  # Keep pkg options such as `choices` so an install applies them instead of
+  # silently installing every package component.
+  def pkg(source, **options)
+    value = [source.to_s]
+    value << options.transform_keys(&:to_s) unless options.empty?
+    @artifacts << { "pkg" => value }
+  end
   def font(source, target: nil) = add_artifact("font", source, target)
   def manpage(source, target: nil) = add_artifact("manpage", source, target)
   def bash_completion(source, target: nil) = add_artifact("bash_completion", source, target)

@@ -266,20 +266,59 @@ pub(super) fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
     match pkg {
         Value::String(source) => Ok(Some(PkgArtifact {
             source: source.clone(),
+            choices: Vec::new(),
         })),
         Value::Array(values) => {
-            if values.len() > 1 {
-                bail!("brew-cask: pkg installer choices are not supported yet");
+            if values.len() > 2 {
+                bail!("brew-cask: pkg artifact metadata has unexpected entries");
             }
-            Ok(values
-                .first()
-                .and_then(Value::as_str)
-                .map(|source| PkgArtifact {
-                    source: source.to_string(),
-                }))
+            let Some(source) = values.first().and_then(Value::as_str) else {
+                return Ok(None);
+            };
+            let choices = match values.get(1) {
+                Some(options) => parse_pkg_choices(options)?,
+                None => Vec::new(),
+            };
+            Ok(Some(PkgArtifact {
+                source: source.to_string(),
+                choices,
+            }))
         }
         _ => Ok(None),
     }
+}
+
+/// Homebrew's pkg stanza accepts only `choices` besides the deprecated
+/// `allow_untrusted`. Each choice is a flat dictionary that Homebrew writes
+/// verbatim into the plist for `installer -applyChoiceChangesXML`, so only
+/// values with a plist equivalent are accepted.
+fn parse_pkg_choices(options: &Value) -> Result<Vec<serde_json::Map<String, Value>>> {
+    let options = options
+        .as_object()
+        .ok_or_else(|| eyre!("brew-cask: pkg options must be an object"))?;
+    reject_unsupported_artifact_fields("pkg", options, &["choices"])?;
+    let Some(choices) = options.get("choices") else {
+        return Ok(Vec::new());
+    };
+    choices
+        .as_array()
+        .ok_or_else(|| eyre!("brew-cask: pkg choices must be an array"))?
+        .iter()
+        .map(|choice| {
+            let choice = choice
+                .as_object()
+                .ok_or_else(|| eyre!("brew-cask: pkg choices must be objects"))?;
+            if choice.is_empty() {
+                bail!("brew-cask: pkg choices must not be empty");
+            }
+            for (key, value) in choice {
+                if !matches!(value, Value::String(_) | Value::Number(_) | Value::Bool(_)) {
+                    bail!("brew-cask: pkg choice {key} must be a string, number, or boolean");
+                }
+            }
+            Ok(choice.clone())
+        })
+        .collect()
 }
 
 pub(super) fn parse_installer_artifact(value: &Value) -> Result<Option<InstallerArtifact>> {

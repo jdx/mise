@@ -233,14 +233,16 @@ gains portable implementations for more cask artifact types.
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
-generic prefix artifacts (`artifact`), font artifacts (`font`), simple macOS
+generic prefix artifacts (`artifact`), font artifacts (`font`), macOS
 installer packages (`pkg` artifacts), script-based cask installers, and shell completions
 (`bash_completion`, `fish_completion`, `zsh_completion`, and
 `generate_completions_from_executable`) from dmg and common archive formats.
 Binary artifacts and generated wrappers are staged in the Caskroom and linked
 into the Homebrew prefix, usually under `<prefix>/bin`. Package installers run
 through mise's normal system-package sudo path, so non-interactive runs never
-hang waiting for a password. Script-based installers that declare `sudo: true`
+hang waiting for a password. Pkg `choices`, such as deselecting a bundled
+updater, are passed to `installer -applyChoiceChangesXML` as Homebrew does.
+Script-based installers that declare `sudo: true`
 use the same path. mise expands `$HOMEBREW_PREFIX`, `$APPDIR`, and `$HOME` in installer
 script executables and arguments, and runs an executable declared under the
 cask's Caskroom version directory from the staged download. Installers that
@@ -265,7 +267,7 @@ guards, source globs, replacement, and sudo behavior. External paths created by
 lifecycle steps are recorded in the mise receipt and restored if the install
 transaction fails. A cask's formula and cask dependencies are installed first,
 and declared cask conflicts fail before anything is modified. Casks that
-require custom installer choices, services, unsupported hook DSL, unsupported
+require services, unsupported hook DSL, unsupported
 structured lifecycle steps, or other cask artifact types fail with a clear
 unsupported artifact error instead of delegating to Homebrew.
 
@@ -536,11 +538,11 @@ operation.
 
 - **Cask artifact coverage is intentionally narrow.** On macOS, `brew-cask`
   supports app bundles, binary artifacts, generated command wrappers, generic
-  prefix artifacts, font artifacts, simple pkg installers, script-based
+  prefix artifacts, font artifacts, pkg installers, script-based
   installers, and shell completions from dmg and common archive formats. On Linux, it supports
   font-only casks without lifecycle hooks or structured `preflight_steps` or
-  `postflight_steps`. Other artifact types, pkg installers without `pkgutil`
-  IDs, and pkg installers with custom choices fail explicitly.
+  `postflight_steps`. Other artifact types and pkg installers without
+  `pkgutil` IDs fail explicitly.
 - **`brew services` is not implemented.**
 - **Cask import is not implemented.** Cask prune is limited to mise-owned direct
   artifacts whose install-time receipt proves they can be removed safely. Pkg

@@ -4982,7 +4982,8 @@ fn parses_pkg_artifacts() {
     assert_eq!(
         parse_pkg_artifact(&value).unwrap(),
         Some(PkgArtifact {
-            source: "OpenJDK.pkg".to_string()
+            source: "OpenJDK.pkg".to_string(),
+            choices: Vec::new(),
         })
     );
 }
@@ -5431,14 +5432,90 @@ fn obsolete_generic_cleanup_allows_owner_group_writable_prefix() -> Result<()> {
 }
 
 #[test]
-fn rejects_pkg_installer_choices() {
+fn parses_pkg_installer_choices() {
     let value: Value = serde_json::json!({
         "pkg": [
-            "VirtualBox.pkg",
-            {"choices": [{"choiceIdentifier": "choiceVBox", "attributeSetting": 1}]}
+            "Microsoft_Outlook_Installer.pkg",
+            {"choices": [{
+                "choiceIdentifier": "com.microsoft.autoupdate",
+                "choiceAttribute": "selected",
+                "attributeSetting": 0
+            }]}
         ]
     });
-    assert!(parse_pkg_artifact(&value).is_err());
+    let pkg = parse_pkg_artifact(&value).unwrap().unwrap();
+    assert_eq!(pkg.source, "Microsoft_Outlook_Installer.pkg");
+    assert_eq!(
+        Value::Array(pkg.choices.into_iter().map(Value::Object).collect()),
+        serde_json::json!([{
+            "choiceIdentifier": "com.microsoft.autoupdate",
+            "choiceAttribute": "selected",
+            "attributeSetting": 0
+        }])
+    );
+}
+
+#[test]
+fn rejects_unsupported_pkg_options() {
+    for value in [
+        serde_json::json!({"pkg": ["Widget.pkg", {"allow_untrusted": true}]}),
+        serde_json::json!({"pkg": ["Widget.pkg", {"choices": {"choiceIdentifier": "a"}}]}),
+        serde_json::json!({"pkg": ["Widget.pkg", {"choices": [{}]}]}),
+        serde_json::json!({"pkg": ["Widget.pkg", {"choices": [{"attributeSetting": null}]}]}),
+        serde_json::json!({"pkg": ["Widget.pkg", {"choices": [{"choiceIdentifier": ["a"]}]}]}),
+        serde_json::json!({"pkg": ["Widget.pkg", {"choices": []}, {}]}),
+    ] {
+        assert!(parse_pkg_artifact(&value).is_err(), "{value}");
+    }
+}
+
+#[test]
+fn writes_pkg_choices_as_installer_plist() -> Result<()> {
+    let choices = serde_json::json!([
+        {"choiceIdentifier": "com.microsoft.autoupdate", "choiceAttribute": "selected", "attributeSetting": 0},
+        {"choiceIdentifier": "choiceVBox", "attributeSetting": true}
+    ]);
+    let choices = choices
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|choice| choice.as_object().unwrap().clone())
+        .collect::<Vec<_>>();
+
+    let parsed = plist::Value::from_reader_xml(pkg_choices_plist(&choices)?.as_slice())?;
+
+    let mut outlook = plist::Dictionary::new();
+    outlook.insert("attributeSetting".into(), plist::Value::Integer(0.into()));
+    outlook.insert("choiceAttribute".into(), "selected".into());
+    outlook.insert("choiceIdentifier".into(), "com.microsoft.autoupdate".into());
+    let mut vbox = plist::Dictionary::new();
+    vbox.insert("attributeSetting".into(), true.into());
+    vbox.insert("choiceIdentifier".into(), "choiceVBox".into());
+    assert_eq!(
+        parsed,
+        plist::Value::Array(vec![outlook.into(), vbox.into()])
+    );
+    Ok(())
+}
+
+#[test]
+fn passes_pkg_choices_to_installer() {
+    let source = Path::new("/stage/Widget.pkg");
+    assert_eq!(
+        pkg_installer_args(source, None),
+        ["-pkg", "/stage/Widget.pkg", "-target", "/"]
+    );
+    assert_eq!(
+        pkg_installer_args(source, Some(Path::new("/tmp/choices.xml"))),
+        [
+            "-pkg",
+            "/stage/Widget.pkg",
+            "-target",
+            "/",
+            "-applyChoiceChangesXML",
+            "/tmp/choices.xml"
+        ]
+    );
 }
 
 #[test]
@@ -5453,7 +5530,8 @@ fn parses_uninstall_pkgutil_ids() -> Result<()> {
         cask_artifacts(&cask)?,
         CaskArtifacts {
             pkgs: vec![PkgArtifact {
-                source: "OpenJDK26U-jdk.pkg".to_string()
+                source: "OpenJDK26U-jdk.pkg".to_string(),
+                choices: Vec::new(),
             }],
             pkg_ids: vec!["net.temurin.26.jdk".to_string()],
             ..Default::default()
@@ -5484,7 +5562,8 @@ fn ignores_zap_pkgutil_ids_for_pkg_receipts() -> Result<()> {
         cask_artifacts(&cask)?,
         CaskArtifacts {
             pkgs: vec![PkgArtifact {
-                source: "GoogleJapaneseInput.pkg".to_string()
+                source: "GoogleJapaneseInput.pkg".to_string(),
+                choices: Vec::new(),
             }],
             pkg_ids: vec!["com.google.pkg.GoogleJapaneseInput".to_string()],
             ..Default::default()
@@ -6347,6 +6426,7 @@ fn cask_prune_receipt_rejects_pkg_and_lifecycle_casks() -> Result<()> {
     let pkg = CaskArtifacts {
         pkgs: vec![PkgArtifact {
             source: "Example.pkg".to_string(),
+            choices: Vec::new(),
         }],
         pkg_ids: vec!["com.example.pkg".to_string()],
         ..Default::default()
