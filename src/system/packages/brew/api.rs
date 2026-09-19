@@ -178,14 +178,18 @@ impl Formula {
 /// the canonical formula is fetched instead; if the index has no entry for it,
 /// the original error is returned.
 pub(super) async fn formula(name: &str) -> Result<Formula> {
-    let err = match formula_exact(name).await {
+    formula_from(API_BASE, &FORMULA_ALIASES, name).await
+}
+
+async fn formula_from(base: &str, aliases: &AliasIndex, name: &str) -> Result<Formula> {
+    let err = match formula_exact_from(base, name).await {
         Ok(formula) => return Ok(formula),
         Err(err) => err,
     };
-    match canonical_formula_name(name).await {
+    match canonical_formula_name(base, aliases, name).await {
         Ok(Some(canonical)) => {
             debug!("brew: {name} resolves to {canonical}");
-            formula_exact(&canonical).await
+            formula_exact_from(base, &canonical).await
         }
         Ok(None) => Err(err),
         Err(index_err) => {
@@ -197,7 +201,11 @@ pub(super) async fn formula(name: &str) -> Result<Formula> {
 
 /// Fetch homebrew/core formula metadata by its canonical name only.
 pub(super) async fn formula_exact(name: &str) -> Result<Formula> {
-    let url = format!("{API_BASE}/formula/{name}.json");
+    formula_exact_from(API_BASE, name).await
+}
+
+async fn formula_exact_from(base: &str, name: &str) -> Result<Formula> {
+    let url = format!("{base}/formula/{name}.json");
     HTTP_FETCH
         .json_cached::<Formula, _>(url)
         .await
@@ -213,22 +221,32 @@ struct FormulaIndexEntry {
     oldnames: Vec<String>,
 }
 
-/// alias or old name -> canonical name, from the bulk `formula.json`. Loaded
-/// at most once per process, and only after an exact lookup has failed.
-static FORMULA_ALIASES: tokio::sync::OnceCell<HashMap<String, String>> =
-    tokio::sync::OnceCell::const_new();
+/// alias or old name -> canonical name, from the bulk `formula.json`, or why
+/// it could not be loaded. Fetched at most once per process, and only after
+/// an exact lookup has failed; a failure is kept so that every alias in a
+/// dependency frontier does not retry the download.
+type AliasIndex = tokio::sync::OnceCell<std::result::Result<HashMap<String, String>, String>>;
 
-async fn canonical_formula_name(name: &str) -> Result<Option<String>> {
-    let aliases = FORMULA_ALIASES
-        .get_or_try_init(|| async {
-            let entries: Vec<FormulaIndexEntry> = HTTP_FETCH
-                .json(format!("{API_BASE}/formula.json"))
+static FORMULA_ALIASES: AliasIndex = tokio::sync::OnceCell::const_new();
+
+async fn canonical_formula_name(
+    base: &str,
+    aliases: &AliasIndex,
+    name: &str,
+) -> Result<Option<String>> {
+    let aliases = aliases
+        .get_or_init(|| async {
+            HTTP_FETCH
+                .json::<Vec<FormulaIndexEntry>, _>(format!("{base}/formula.json"))
                 .await
-                .wrap_err("failed to fetch the Homebrew formula index")?;
-            Ok::<_, eyre::Report>(alias_map(entries))
+                .map(alias_map)
+                .map_err(|err| format!("{err:#}"))
         })
-        .await?;
-    Ok(aliases.get(name).cloned())
+        .await;
+    match aliases {
+        Ok(aliases) => Ok(aliases.get(name).cloned()),
+        Err(err) => bail!("failed to fetch the Homebrew formula index: {err}"),
+    }
 }
 
 /// A name that is both an alias and an old name resolves as the alias.
@@ -415,6 +433,81 @@ mod tests {
             Some("gitea-runner")
         );
         assert_eq!(map.get("hello"), None);
+    }
+
+    #[tokio::test]
+    async fn failed_lookup_resolves_through_the_alias_index_once() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let mut not_found = Vec::new();
+        for path in ["/formula/openssl.json", "/formula/missing.json"] {
+            not_found.push(
+                server
+                    .mock("GET", path)
+                    .with_status(404)
+                    .expect(1)
+                    .create_async()
+                    .await,
+            );
+        }
+        let index = server
+            .mock("GET", "/formula.json")
+            .with_body(
+                serde_json::json!([{"name": "openssl@3", "aliases": ["openssl"]}]).to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let canonical = server
+            .mock("GET", "/formula/openssl@3.json")
+            .with_body(
+                serde_json::json!({"name": "openssl@3", "versions": {"stable": "3.6.4"}})
+                    .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let aliases = AliasIndex::const_new();
+
+        assert_eq!(
+            formula_from(&base, &aliases, "openssl").await?.name,
+            "openssl@3"
+        );
+        let err = formula_from(&base, &aliases, "missing").await.unwrap_err();
+        assert!(format!("{err:#}").contains("missing.json"), "{err:#}");
+
+        for mock in not_found.iter().chain([&index, &canonical]) {
+            mock.assert_async().await;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_alias_index_is_fetched_once() -> Result<()> {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        server
+            .mock("GET", mockito::Matcher::Regex("^/formula/".into()))
+            .with_status(404)
+            .create_async()
+            .await;
+        let index = server
+            .mock("GET", "/formula.json")
+            .with_status(404)
+            .expect(1)
+            .create_async()
+            .await;
+        let aliases = AliasIndex::const_new();
+
+        for name in ["first", "second"] {
+            let err = formula_from(&base, &aliases, name).await.unwrap_err();
+            assert!(
+                format!("{err:#}").contains(&format!("{name}.json")),
+                "{err:#}"
+            );
+        }
+        index.assert_async().await;
+        Ok(())
     }
 
     #[test]

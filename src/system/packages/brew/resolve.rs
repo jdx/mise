@@ -52,6 +52,27 @@ fn accept_resolved_alias_failures(
     Ok(())
 }
 
+/// Every name in the closure mapped to the formula it refers to. A name
+/// claimed by several formulae resolves by canonical name, then alias, then
+/// old name, the same precedence as the alias index.
+pub(super) fn formulae_by_name(closure: &[ResolvedFormula]) -> HashMap<&str, &ResolvedFormula> {
+    let mut by_name = HashMap::new();
+    for rf in closure {
+        by_name.insert(rf.formula.name.as_str(), rf);
+    }
+    for rf in closure {
+        for alias in &rf.formula.aliases {
+            by_name.entry(alias.as_str()).or_insert(rf);
+        }
+    }
+    for rf in closure {
+        for oldname in &rf.formula.oldnames {
+            by_name.entry(oldname.as_str()).or_insert(rf);
+        }
+    }
+    by_name
+}
+
 /// The `variations` entry that applies to what will actually be installed:
 /// the selected bottle tag (which may be older than the host's), or the
 /// host's own tag for formulae that will be built from source. Shared with
@@ -185,6 +206,16 @@ async fn resolve_closure_pairs(
                     ),
                     canonical_key.clone(),
                 );
+            }
+            // an alias another formula already claimed outranks an old name
+            for oldname in &formula.oldnames {
+                canonical
+                    .entry(FormulaKey::new(
+                        oldname.clone(),
+                        effective_tap_name.clone(),
+                        effective_tap_url.clone(),
+                    ))
+                    .or_insert_with(|| canonical_key.clone());
             }
             if !formulae.contains_key(&canonical_key) {
                 let tag = dep_tag(&formula, &host_tag);
@@ -338,6 +369,33 @@ fn tap_raw_base(key: &FormulaKey) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn resolved(json: serde_json::Value) -> ResolvedFormula {
+        ResolvedFormula {
+            formula: serde_json::from_value(json).unwrap(),
+            tap_raw_base: None,
+            on_request: false,
+        }
+    }
+
+    #[test]
+    fn formulae_by_name_prefers_canonical_then_alias_then_old_name() {
+        let closure = [
+            resolved(serde_json::json!({
+                "name": "renamed", "oldnames": ["shared", "openssl@3"],
+                "versions": {"stable": "1"},
+            })),
+            resolved(serde_json::json!({
+                "name": "openssl@3", "aliases": ["shared"],
+                "versions": {"stable": "3"},
+            })),
+        ];
+        let by_name = formulae_by_name(&closure);
+        let name_of = |n: &str| by_name[n].formula.name.as_str();
+        assert_eq!(name_of("openssl@3"), "openssl@3");
+        assert_eq!(name_of("shared"), "openssl@3");
+        assert_eq!(name_of("renamed"), "renamed");
+    }
 
     #[test]
     fn failed_alias_is_accepted_after_canonical_resolution() {

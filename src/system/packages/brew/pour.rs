@@ -1,5 +1,6 @@
 //! Pour a bottle: extract -> relocate -> codesign -> receipt -> link.
 
+use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -493,14 +494,17 @@ pub(super) fn write_receipt(
     closure: &[ResolvedFormula],
     poured_from_bottle: bool,
 ) -> Result<()> {
+    let by_name = super::resolve::formulae_by_name(closure);
+    let declared: HashSet<&str> = rf
+        .formula
+        .dependencies_for(tag)
+        .iter()
+        .filter_map(|d| by_name.get(d.as_str()))
+        .map(|dep| dep.formula.name.as_str())
+        .collect();
     let runtime_dependencies: Vec<serde_json::Value> = closure
         .iter()
-        .filter(|other| {
-            rf.formula
-                .dependencies_for(tag)
-                .iter()
-                .any(|d| other.formula.names().any(|n| n == d))
-        })
+        .filter(|other| declared.contains(other.formula.name.as_str()))
         .filter_map(|dep| {
             let pkg_version = dep.formula.pkg_version().ok()?;
             Some(json!({

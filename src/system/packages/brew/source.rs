@@ -340,10 +340,7 @@ fn build_env(
     let opt = prefix.join("opt");
     // only this formula's transitive dependencies — unrelated formulae from
     // the same install batch must not leak into the build environment
-    let by_name: HashMap<&str, &ResolvedFormula> = closure
-        .iter()
-        .flat_map(|other| other.formula.names().map(move |n| (n, other)))
-        .collect();
+    let by_name = super::resolve::formulae_by_name(closure);
     // walk each formula's deps under the same variations tag the closure
     // resolution used (the dep's selected bottle tag, not the host's)
     let host_tag = tag::host_tag();
