@@ -15,7 +15,8 @@ idle stacks stop automatically. Keep the supervisor available at login. The [dae
 other declaration forms and all the configuration options.
 
 ::: warning Experimental
-Daemon management requires `experimental = true` and an installed Pitchfork.
+Daemon management requires `experimental = true`. Install or update Pitchfork
+before following this guide.
 :::
 
 ## Define one application

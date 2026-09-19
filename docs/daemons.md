@@ -6,7 +6,8 @@ description: Run project databases, message brokers, and development servers wit
 
 ::: warning Experimental
 Daemon management requires `experimental = true` and
-[pitchfork](https://pitchfork.jdx.dev/) for process supervision.
+[pitchfork](https://pitchfork.jdx.dev/) for process supervision. Install or update
+Pitchfork before following this guide.
 :::
 
 Use daemons for processes that keep running between task invocations, such as a
@@ -835,9 +836,8 @@ port = 3000
 proxy_tls = "passthrough"
 ```
 
-Both keys are forwarded to pitchfork unchanged. Hostname routing needs pitchfork
-2.26.0 or later; an older supervisor starts the daemons normally but does not serve
-the hostnames.
+Both keys are forwarded to pitchfork unchanged. Update Pitchfork if an older
+supervisor starts the daemons but does not serve their hostnames.
 
 ### Naming the project and the worktree
 
