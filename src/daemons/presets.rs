@@ -580,8 +580,21 @@ pub(crate) fn expand(
     };
     let mut ports = preset.ports.clone();
     if slot > 0 {
-        for value in ports.values_mut() {
-            *value = value.saturating_add(slot.saturating_mul(claim.stride));
+        let offset = slot.checked_mul(claim.stride).ok_or_else(|| {
+            eyre::eyre!(
+                "[daemons.{name}].port stride {} overflows the port range",
+                claim.stride
+            )
+        })?;
+        for (key, value) in ports.iter_mut() {
+            // Clamping here would let two worktrees resolve the same listener to
+            // 65535 while their primary ports stayed distinct.
+            *value = value.checked_add(offset).filter(|p| *p > 0).ok_or_else(|| {
+                eyre::eyre!(
+                    "[daemons.{name}].ports.{key} {value} with stride {} exceeds 65535 for this worktree",
+                    claim.stride
+                )
+            })?;
         }
     }
     if let Some(value) = overrides.remove("ports") {
@@ -1332,6 +1345,32 @@ mod tests {
         assert_eq!(
             daemon.table["port"]["expect"].as_array().unwrap(),
             &vec![toml::Value::Integer(26264), toml::Value::Integer(8087)]
+        );
+        // A named port above the primary one runs out of range first, so a far
+        // enough slot must be rejected rather than clamped to a 65535 that another
+        // slot could also land on. NATS monitors on 8222 above a base of 4222.
+        let far = PortClaim {
+            port: u16::MAX,
+            base: 4222,
+            stride: 1,
+        };
+        let overflow = expand(
+            "events",
+            "nats",
+            "2",
+            toml::Table::new(),
+            Extras {
+                init: &[],
+                port: Some(far),
+                labels: &labels(),
+                imported: false,
+            },
+            Path::new("/p/mise.toml"),
+            Path::new("/p"),
+        );
+        assert!(
+            overflow.unwrap_err().to_string().contains("exceeds 65535"),
+            "a named port past the range must be rejected"
         );
         // The primary checkout keeps the well-known ports.
         let primary = render("cockroachdb", toml::Table::new());
