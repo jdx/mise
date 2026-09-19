@@ -497,8 +497,25 @@ fn names_this_as_unknown(stderr: &str, id: &str) -> bool {
     if !lowered.contains("daemon") {
         return false;
     }
-    let name = id.rsplit('/').next().unwrap_or(id).to_lowercase();
-    lowered.contains(&id.to_lowercase()) || lowered.contains(&name)
+    // The whole id, standing on its own. A short name is too easy to hit by
+    // accident -- a daemon called `file` or `found` appears in ordinary I/O
+    // text -- and the whole id appears inside paths, which is where an error
+    // about a socket would carry it. This is the id pitchfork was given, so an
+    // answer about it quotes it as given.
+    mentions_on_its_own(&lowered, &id.to_lowercase())
+}
+
+/// Whether `needle` appears in `haystack` as a thing being named rather than as
+/// part of a longer word or path.
+fn mentions_on_its_own(haystack: &str, needle: &str) -> bool {
+    let part_of_something_longer =
+        |c: char| c.is_alphanumeric() || matches!(c, '/' | '\\' | '.' | '-' | '_');
+    haystack.match_indices(needle).any(|(at, _)| {
+        let before = haystack[..at].chars().next_back();
+        let after = haystack[at + needle.len()..].chars().next();
+        !before.is_some_and(part_of_something_longer)
+            && !after.is_some_and(part_of_something_longer)
+    })
 }
 
 /// Turns a pitchfork invocation into success, a tolerated non-failure, or an
@@ -1087,8 +1104,21 @@ mod tests {
         // The status check asks for more: the message has to be about the
         // daemon in hand, since the last thing after it is a recursive delete.
         assert!(names_this_as_unknown("daemon ns/db not found", "ns/db"));
-        assert!(names_this_as_unknown("no such daemon: db", "ns/db"));
+        assert!(names_this_as_unknown("no such daemon: ns/db", "ns/db"));
         assert!(!names_this_as_unknown("", "ns/db"));
+        // A daemon whose name is a word that turns up in I/O text, reported by
+        // a supervisor that cannot answer.
+        assert!(!names_this_as_unknown(
+            "daemon socket error: no such file or directory",
+            "ns/file"
+        ));
+        // The id inside a path is a socket that is missing, not an answer.
+        assert!(!names_this_as_unknown(
+            "daemon socket missing: no such file /run/pitchfork/ns/db.sock",
+            "ns/db"
+        ));
+        // Only the short name is not the id that was asked about.
+        assert!(!names_this_as_unknown("no such daemon: db", "ns/db"));
         assert!(!names_this_as_unknown(
             "No such file or directory (os error 2)",
             "ns/db"
