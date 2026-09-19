@@ -14,79 +14,120 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-# The bulk cask index: one request for every cask, a staleness window, and a
-# conditional request that is answered 304. None of that is visible from the
-# resolved metadata, which is identical either way, so it is asserted here
-# against the requests the fixture actually receives.
+# The bulk cask index: one request for every cask, a staleness window, a
+# conditional request answered 304, and a refresh that is attempted once per
+# process rather than once per cask. None of that is visible in the resolved
+# metadata, which is identical either way, so it is asserted here against the
+# requests the fixture actually receives.
+#
+# Two fixtures, distinguished by URL prefix, because mise keys this cache to the
+# URL it resolved. That is what gives the second one a cold cache without
+# reaching into the first one's files.
+#
+#   (default)  bulk document served: the happy path, the window, and the 304
+#   /nobulk    bulk document 404s:   the per-cask fallback, and the memoization
 
 root = Path(sys.argv[1]).resolve()
 prefix = root / "brew-prefix"
 cache = Path(os.environ["MISE_CACHE_DIR"])
 
 BULK_PATH = "/api/cask.json"
+NOBULK = "/nobulk"
 LAST_MODIFIED = "Wed, 17 Sep 2026 10:00:00 GMT"
 TOKENS = ["alpha", "beta"]
 
 # (path, If-Modified-Since or None, status answered)
 requests = []
-document = json.dumps([
-    {
+
+
+def cask_body(token):
+    return {
         "token": token,
         "version": "1.0",
         "sha256": "no_check",
         "url": f"http://127.0.0.1/{token}.zip",
         "artifacts": [{"app": [f"{token.title()}.app"]}],
     }
-    for token in TOKENS
-]).encode()
+
+
+document = json.dumps([cask_body(token) for token in TOKENS]).encode()
 
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def record(self, status):
+        requests.append((self.path, self.headers.get("If-Modified-Since"), status))
+
+    def send_json(self, body):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Last-Modified", LAST_MODIFIED)
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
-        conditional = self.headers.get("If-Modified-Since")
+        # The no-bulk fixture: no bulk document, per-cask answers normally. This
+        # is an ordinary mirror, not a broken one, and mise is expected to fall
+        # back rather than fail.
+        if self.path.startswith(NOBULK):
+            if self.path == NOBULK + BULK_PATH:
+                self.record(404)
+                self.send_error(404)
+                return
+            token = self.path.removeprefix(NOBULK + "/api/cask/").removesuffix(".json")
+            if token not in TOKENS:
+                self.record(500)
+                self.send_error(500, f"unexpected path {self.path}")
+                return
+            self.record(200)
+            self.send_json(json.dumps(cask_body(token)).encode())
+            return
+
         if self.path != BULK_PATH:
-            # Reaching the per-cask endpoint at all means the bulk document did
-            # not answer, which is the whole thing this test is about.
-            requests.append((self.path, conditional, 500))
+            # Reaching the per-cask endpoint here means the bulk document did not
+            # answer, which is the whole thing this fixture is about.
+            self.record(500)
             self.send_error(500, "must resolve from the bulk index, not per-cask")
             return
 
-        if conditional == LAST_MODIFIED:
-            requests.append((self.path, conditional, 304))
+        if self.headers.get("If-Modified-Since") == LAST_MODIFIED:
+            self.record(304)
             self.send_response(304)
             self.send_header("Last-Modified", LAST_MODIFIED)
             self.end_headers()
             return
 
-        requests.append((self.path, conditional, 200))
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(document)))
-        self.send_header("Last-Modified", LAST_MODIFIED)
-        self.end_headers()
-        self.wfile.write(document)
+        self.record(200)
+        self.send_json(document)
 
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 base = f"http://127.0.0.1:{server.server_port}"
-env = dict(
-    os.environ,
-    MISE_SYSTEM_BREW_PREFIX=str(prefix),
-    MISE_BREW_CASK_OPT_APPDIR=str(prefix / "Applications"),
-    MISE_URL_REPLACEMENTS=json.dumps({"https://formulae.brew.sh": base}),
-)
+
+
+def env_for(url_base):
+    return dict(
+        os.environ,
+        MISE_SYSTEM_BREW_PREFIX=str(prefix),
+        MISE_BREW_CASK_OPT_APPDIR=str(prefix / "Applications"),
+        MISE_URL_REPLACEMENTS=json.dumps({"https://formulae.brew.sh": url_base}),
+    )
+
+
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
 
 
-def run(label):
+def run(label, url_base=None):
     """One `mise` invocation. Returns the requests it alone produced."""
     before = len(requests)
     command = ["mise", "bootstrap", "packages", "apply", "--yes", "--dry-run"]
-    result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=60)
+    result = subprocess.run(
+        command, env=env_for(url_base or base), text=True, capture_output=True, timeout=60
+    )
     output = result.stdout + result.stderr
     print(f"$ {label}: {' '.join(command)}", flush=True)
     print(output, end="", flush=True)
@@ -110,8 +151,7 @@ try:
     )
 
     # Cold. One unconditional fetch of the bulk document serves both casks, and
-    # the per-cask endpoint is never reached. Two casks rather than one so that
-    # a refresh running per lookup instead of per process is a failure here.
+    # the per-cask endpoint is never reached.
     cold = run("cold")
     assert cold == [(BULK_PATH, None, 200)], cold
 
@@ -122,7 +162,8 @@ try:
 
     # Past the window. Only the stamp moves: backdating the document itself
     # would invalidate the index, which records its size and mtime, and this
-    # needs to exercise the conditional request rather than a rebuild.
+    # needs to exercise the conditional request rather than a rebuild. An hour
+    # is past any plausible STALE_AFTER and well inside FALLBACK_AFTER.
     expired = time.time() - 3600
     os.utime(last_checked(), (expired, expired))
 
@@ -133,6 +174,23 @@ try:
     # still has to restart the window, or every later run would re-ask.
     again = run("warm after 304")
     assert again == [], again
+
+    # A mirror with no bulk document. Separate URL, so this cache is cold and
+    # the refresh genuinely runs and genuinely fails.
+    #
+    # This is the case that pins the per-process memoization, and it needs both
+    # casks to do it: the refresh failure writes no stamp, so nothing makes the
+    # second lookup think the cache is fresh, and a refresh attempted per lookup
+    # instead of per process would 404 twice here. Resolution then falls through
+    # to the per-cask endpoint for each cask, which is the behaviour mise had
+    # before this cache existed.
+    fallback = run("no bulk document", url_base=base + NOBULK)
+    bulk_attempts = [r for r in fallback if r[0] == NOBULK + BULK_PATH]
+    per_cask = [r for r in fallback if r[0] != NOBULK + BULK_PATH]
+    assert len(bulk_attempts) == 1, fallback
+    assert sorted(r[0] for r in per_cask) == [
+        f"{NOBULK}/api/cask/{token}.json" for token in TOKENS
+    ], fallback
 finally:
     server.shutdown()
     thread.join()
