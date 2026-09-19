@@ -225,10 +225,34 @@ def keg_only_reason_metadata(klass)
   { "reason" => reason.is_a?(Symbol) ? reason.inspect : reason.to_s }
 end
 
-def inferred_version(url)
+NUMERIC_WITH_DOTS = /[0-9]+(?:\.[0-9]+)+/.source
+
+# e.g. https://github.com/foo/bar/releases/download/v1.2/foo-1.2.0.tar.gz
+GITHUB_RELEASE_URL = %r{github\.com/.+/releases/download/(?:[rvV]_?)?(#{NUMERIC_WITH_DOTS})/}
+
+# The tag path segment of a GitHub release URL. Homebrew tries this before any
+# filename pattern (Library/Homebrew/version.rb, VERSION_PARSERS), and the order
+# matters: release assets are routinely named for their platform rather than
+# their version, so the path is both the only source when the filename carries
+# no version at all (goku-arm.zip) and the more accurate one when it carries a
+# partial version followed by a platform suffix (foo-1.2-darwin-arm64.tar.gz,
+# where the filename pattern below over-captures "1.2-darwin-arm64").
+def version_from_url_path(url)
+  match = url.to_s.match(GITHUB_RELEASE_URL)
+  match && match[1]
+end
+
+# The version carried by the archive's own filename, e.g. wget-1.21.4.tar.gz.
+def version_from_basename(url)
   basename = File.basename(url.to_s).sub(/\.(tar\.(gz|xz|bz2|zst)|tgz|txz|zip|gz)\z/i, "")
   match = basename.match(/(?:^|[-_v])([0-9]+(?:\.[0-9A-Za-z]+)+(?:[-_.][0-9A-Za-z]+)*)/)
   match && match[1]
+end
+
+# Homebrew tries its URL parsers in a fixed order and takes the first that
+# matches; these are the two that cover the formulae mise builds from taps.
+def inferred_version(url)
+  version_from_url_path(url) || version_from_basename(url)
 end
 
 eval(STDIN.read.force_encoding("UTF-8"), TOPLEVEL_BINDING, FORMULA_FILE, 1)

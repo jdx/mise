@@ -727,6 +727,109 @@ end
         Ok(())
     }
 
+    /// Run the metadata shim over one formula definition and parse its JSON.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    async fn formula_metadata(ruby: &Path, name: &str, source: &str) -> Result<Formula> {
+        let mut runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(METADATA_SHIM_RB)
+            .stdin_string(source.to_string())
+            .env("MISE_BREW_NAME", name)
+            .env("MISE_BREW_TAP", "acme/tools")
+            .env("MISE_BREW_SOURCE_PATH", format!("Formula/{name}.rb"))
+            .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
+            .env("MISE_BREW_TAP_COMMIT", "deadbeef")
+            .env("MISE_BREW_MACOS_VERSION", "15.3")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", std::env::consts::ARCH)
+            .with_sandbox(metadata_sandbox()?);
+        runner.apply_sandbox().await?;
+        Ok(serde_json::from_str(&runner.read().await?)?)
+    }
+
+    /// None of these formulae declare a `version`, so they pin the URL
+    /// heuristics themselves. Every expectation below is what Homebrew's own
+    /// `Version.detect` returns for the same URL.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn infers_version_from_github_release_tag_path() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        const SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let widget = |url: &str| {
+            format!("class Widget < Formula\n  url \"{url}\"\n  sha256 \"{SHA}\"\nend\n")
+        };
+
+        // A release asset named for its platform carries no version in its
+        // filename at all, so the tag path segment is the only source. This is
+        // the case that failed outright before, with "could not infer formula
+        // version".
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://github.com/o/r/releases/download/v0.8.0/widget-arm.zip"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("0.8.0"));
+
+        // The tag is also the more accurate source when the filename carries a
+        // partial version followed by a platform suffix: reading the basename
+        // here yields "1.10.0-arm64-macos".
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget(
+                "https://github.com/o/r/releases/download/v1.10.0/widget-1.10.0-arm64-macos.tar.gz",
+            ),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("1.10.0"));
+
+        // Homebrew discards a trailing filename suffix the same way once a
+        // numeric tag is present, because its GitHub releases parser runs ahead
+        // of every filename parser. `Version.detect` returns "1.2.3" for this
+        // URL, not "1.2.3-1".
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://github.com/o/r/releases/download/v1.2.3/widget-1.2.3-1.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("1.2.3"));
+
+        // Tag prefixes brew accepts: bare, and r/v/V optionally followed by "_".
+        for (tag, want) in [("1.4.0", "1.4.0"), ("V2.0.1", "2.0.1"), ("r3.1", "3.1")] {
+            let url = format!("https://github.com/o/r/releases/download/{tag}/widget.zip");
+            let f = formula_metadata(&ruby, "widget", &widget(&url)).await?;
+            assert_eq!(f.versions.stable.as_deref(), Some(want), "tag {tag}");
+        }
+
+        // Non-release URLs keep using the filename, unchanged by this parser.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &widget("https://ftp.gnu.org/gnu/wget/wget-1.21.4.tar.gz"),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("1.21.4"));
+
+        // An explicit `version` still wins over both heuristics.
+        let f = formula_metadata(
+            &ruby,
+            "widget",
+            &format!(
+                "class Widget < Formula\n  version \"9.9.9\"\n  url \"https://github.com/o/r/releases/download/v1.2.3/widget.tar.gz\"\n  sha256 \"{SHA}\"\nend\n"
+            ),
+        )
+        .await?;
+        assert_eq!(f.versions.stable.as_deref(), Some("9.9.9"));
+
+        Ok(())
+    }
+
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn extracts_cask_metadata_without_homebrew() -> Result<()> {
