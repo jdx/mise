@@ -206,7 +206,9 @@ entering and leaving projects; it is not needed for browser-driven startup.
 
 For a machine managed through mise bootstrap, declare one user service in your
 global mise configuration. Use the permanent absolute path to your installed
-mise binary; replace `/opt/homebrew/bin/mise` below if it is installed elsewhere.
+mise binary; replace both occurrences of `/opt/homebrew/bin/mise` below if it is
+installed elsewhere. `PITCHFORK_MISE_BIN` makes daemon commands use that same
+binary, even when multiple mise installations exist.
 
 ```toml
 [tools]
@@ -215,6 +217,7 @@ pitchfork = "latest"
 [bootstrap.services.pitchfork]
 scope = "user"
 command = "/opt/homebrew/bin/mise x -- pitchfork supervisor run --boot"
+environment = { PITCHFORK_MISE_BIN = "/opt/homebrew/bin/mise" }
 working_directory = "~"
 requires_tools = true
 restart = "on-failure"
