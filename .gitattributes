@@ -6,3 +6,6 @@ vendor/aqua-registry/** linguist-vendored
 crates/vfox/embedded-plugins/** linguist-vendored
 schema/mise-task.json linguist-generated=true
 schema/miserc.json linguist-generated=true
+# mise.lock pins digests of the exact sidecar bytes; CRLF conversion on
+# Windows checkouts would break them.
+.mise/locks/** -text
