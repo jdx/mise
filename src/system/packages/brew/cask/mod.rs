@@ -116,6 +116,20 @@ fn installed_skip_reason(
     if receipt.version == cask.version {
         return Ok(Some("already up to date"));
     }
+    if artifacts.apps.is_empty() && !artifacts.pkgs.is_empty() {
+        // A pkg-only cask has no bundle to read, so the macOS package receipts
+        // stand in for the live app version. An unreadable receipt skips, like
+        // an unreadable app version.
+        let versions = pkg_receipt_versions(&receipt.pkg_ids).unwrap_or_default();
+        if let Some(reason) = pkg_upgrade_skip_reason(&cask.version, &versions) {
+            return Ok(Some(reason));
+        }
+        // As for an app artifact, leave a running self-updater alone.
+        if pkg_app_is_running(&receipt.pkg_ids) {
+            return Ok(Some("skipped: installed app is running and updates itself"));
+        }
+        return Ok(None);
+    }
     let [app] = artifacts.apps.as_slice() else {
         return Ok(Some("skipped: requires a single owned app"));
     };
@@ -135,6 +149,40 @@ fn installed_skip_reason(
         return Ok(Some("skipped: installed app is running and updates itself"));
     }
     Ok(None)
+}
+
+/// Whether any app bundle a pkg cask's receipts installed is running.
+fn pkg_app_is_running(pkg_ids: &[String]) -> bool {
+    pkg_receipt_apps(pkg_ids)
+        .iter()
+        .any(|app| app_is_running(app))
+}
+
+/// Decides a self-updating pkg cask's upgrade from its installed package
+/// receipt versions. One receipt at or past the cask version means the software
+/// updated itself. A cask can list receipts with unrelated numbering (a shared
+/// licensing helper, say), so incomparable ones are ignored rather than
+/// blocking the upgrade, and only a comparable, older receipt triggers it.
+/// Placeholder versions such as `0` are neither older nor current, so they are
+/// ignored too.
+fn pkg_upgrade_skip_reason(cask_version: &str, versions: &[String]) -> Option<&'static str> {
+    let cask_short = cask_version.split(',').next().unwrap_or(cask_version);
+    let mut outdated = false;
+    for version in versions {
+        if app_version_outdated(cask_version, Some(version), None) {
+            outdated = true;
+        } else if matches!(
+            compare_app_versions(version, cask_short),
+            Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Greater)
+        ) {
+            return Some("skipped: installed package is current or newer");
+        }
+    }
+    if outdated {
+        None
+    } else {
+        Some("skipped: installed package version is unreadable or incomparable")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -855,6 +903,21 @@ impl BrewCaskManager {
         if defer_running {
             for app in &artifacts.apps {
                 if app_is_running(&app_target_path(app.target_name()?)?) {
+                    return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
+                }
+            }
+            // A pkg-only cask names no app, so check the bundles its package
+            // receipts installed. Nothing has been installed yet at this point.
+            // The locked receipt's IDs find what the installed version put
+            // down even if the cask has since changed its pkgutil patterns.
+            if artifacts.apps.is_empty() && !artifacts.pkgs.is_empty() {
+                let mut pkg_ids = artifacts.pkg_ids.clone();
+                if let Some(receipt) = &locked_ownership {
+                    pkg_ids.extend(receipt.pkg_ids.iter().cloned());
+                }
+                pkg_ids.sort();
+                pkg_ids.dedup();
+                if pkg_app_is_running(&pkg_ids) {
                     return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
                 }
             }

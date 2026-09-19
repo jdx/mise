@@ -8438,6 +8438,178 @@ fn auto_updates_matches_homebrew_short_build_decisions() {
     }
 }
 
+#[test]
+fn auto_updates_pkg_casks_upgrade_only_from_an_older_receipt() {
+    let versions = |values: &[&str]| values.iter().map(|v| v.to_string()).collect::<Vec<_>>();
+    let cask = "16.113.26091740";
+    // Every comparable receipt is older: upgrade. An incomparable helper
+    // receipt (different component count) must not block it.
+    assert_eq!(
+        pkg_upgrade_skip_reason(cask, &versions(&["16.112.26081010", "1.0"])),
+        None
+    );
+    // The software updated itself to the cask version or past it.
+    for installed in [
+        &["16.113.26091740"][..],
+        &["16.114.26100110"],
+        &["1.0", "16.113.26091740"],
+        &["16.112.26081010", "16.114.26100110"],
+    ] {
+        assert_eq!(
+            pkg_upgrade_skip_reason(cask, &versions(installed)),
+            Some("skipped: installed package is current or newer"),
+            "{installed:?}"
+        );
+    }
+    // Nothing comparable, or nothing readable, never upgrades.
+    for installed in [&[][..], &["1.0"], &["0"]] {
+        assert_eq!(
+            pkg_upgrade_skip_reason(cask, &versions(installed)),
+            Some("skipped: installed package version is unreadable or incomparable"),
+            "{installed:?}"
+        );
+    }
+    // A placeholder receipt comparable to the cask version must not veto an
+    // upgrade that a genuinely older receipt calls for.
+    assert_eq!(
+        pkg_upgrade_skip_reason("1.2", &versions(&["0.0", "1.1"])),
+        None
+    );
+    assert_eq!(
+        pkg_upgrade_skip_reason("1.2", &versions(&["0.0"])),
+        Some("skipped: installed package version is unreadable or incomparable")
+    );
+    // Comma-separated cask versions compare against their leading version.
+    assert_eq!(
+        pkg_upgrade_skip_reason("1.102.4,abc123", &versions(&["1.102.3"])),
+        None
+    );
+    assert_eq!(
+        pkg_upgrade_skip_reason("1.102.4,abc123", &versions(&["1.102.4"])),
+        Some("skipped: installed package is current or newer")
+    );
+}
+
+#[test]
+fn reads_pkg_version_from_pkgutil_info_plist() -> Result<()> {
+    let info = br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>install-location</key>
+	<string>/</string>
+	<key>install-time</key>
+	<integer>1789000000</integer>
+	<key>pkg-version</key>
+	<string>16.113.26091740</string>
+	<key>pkgid</key>
+	<string>com.microsoft.package.Microsoft_Outlook.app</string>
+	<key>receipt-plist-version</key>
+	<real>1</real>
+	<key>volume</key>
+	<string>/</string>
+</dict>
+</plist>
+"#;
+    assert_eq!(pkg_info_version(info)?, "16.113.26091740");
+    assert!(pkg_info_version(b"<plist version=\"1.0\"><dict></dict></plist>").is_err());
+    Ok(())
+}
+
+#[test]
+fn pkg_receipt_versions_keep_readable_receipts_after_partial_failures() {
+    let versions = pkg_receipt_versions_from_ids(["missing", "current", "malformed"], |id| {
+        match id {
+            "current" => Some(
+                br#"<plist version="1.0"><dict><key>pkg-version</key><string>1.102.4</string></dict></plist>"#
+                    .to_vec(),
+            ),
+            "malformed" => Some(br#"<plist version="1.0"><dict></dict></plist>"#.to_vec()),
+            _ => None,
+        }
+    });
+    assert_eq!(versions, ["1.102.4"]);
+}
+
+#[test]
+fn finds_outermost_app_bundles_in_pkg_receipt_dirs() {
+    // `pkgutil --only-dirs --files` output is relative to install-location and
+    // lists every directory, including the ones inside each bundle.
+    let dirs = "Applications
+Applications/Tailscale.app
+Applications/Tailscale.app/Contents
+Applications/Tailscale.app/Contents/PlugIns/IPNExtension.appex
+Applications/Tailscale.app/Contents/Library/LoginItems/Helper.app
+Library/Application Support/Tailscale
+";
+    assert_eq!(
+        receipt_app_bundles("/", dirs),
+        [PathBuf::from("/Applications/Tailscale.app")]
+    );
+    // A receipt rooted below / resolves its relative paths against it.
+    assert_eq!(
+        receipt_app_bundles(
+            "Applications",
+            "Karabiner-Elements.app\nKarabiner-Elements.app/Contents\n"
+        ),
+        [PathBuf::from("/Applications/Karabiner-Elements.app")]
+    );
+    assert!(receipt_app_bundles("/", "usr/local/bin\n").is_empty());
+    // The install location can be the bundle itself, with a payload of
+    // `Contents/...`.
+    assert_eq!(
+        receipt_app_bundles(
+            "/Applications/NoMachine.app",
+            "Contents\nContents/MacOS\nContents/Frameworks/Helper.app\n"
+        ),
+        [PathBuf::from("/Applications/NoMachine.app")]
+    );
+}
+
+#[test]
+fn auto_updates_pkg_cask_upgrade_consults_package_receipts() -> Result<()> {
+    let mut cask = test_cask("microsoft-outlook", "16.113.26091740");
+    cask.auto_updates = true;
+    cask.artifacts = vec![
+        serde_json::json!({"pkg": ["Microsoft_Outlook_Installer.pkg"]}),
+        serde_json::json!({"uninstall": [{"pkgutil": "com.microsoft.package.Microsoft_Outlook.app"}]}),
+    ];
+    let artifacts = cask_artifacts(&cask)?;
+    let receipt = CaskReceipt {
+        schema_version: 3,
+        version: "16.112.26081010".to_string(),
+        auto_updates: true,
+        metadata_only_apps: Vec::new(),
+        apps: Vec::new(),
+        binaries: Vec::new(),
+        fonts: Vec::new(),
+        completions: Vec::new(),
+        flight_directories: Vec::new(),
+        generic: Vec::new(),
+        pkg_ids: vec!["com.microsoft.package.Microsoft_Outlook.app".to_string()],
+        targets: Vec::new(),
+        prune_safe: false,
+        prune_blocker: None,
+    };
+
+    let reason = installed_skip_reason(
+        &cask,
+        &artifacts,
+        Some(&receipt),
+        Some("16.112.26081010"),
+        InstallMode::Upgrade,
+    )?;
+    // Without pkgutil (off macOS) the receipt is unreadable, which skips. The
+    // point is that the pkg path is taken instead of the app-only refusal.
+    #[cfg(not(target_os = "macos"))]
+    assert_eq!(
+        reason,
+        Some("skipped: installed package version is unreadable or incomparable")
+    );
+    assert_ne!(reason, Some("skipped: requires a single owned app"));
+    Ok(())
+}
+
 /// Verifies both plist encodings preserve optional version strings and that
 /// malformed, missing, or directory-backed plist inputs return errors.
 #[test]

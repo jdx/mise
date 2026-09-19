@@ -152,6 +152,142 @@ pub(super) fn pkgutil_output_has_match(output: &[u8]) -> bool {
     output.iter().any(|byte| !byte.is_ascii_whitespace())
 }
 
+/// Returns the recorded version of every installed package receipt matching
+/// `pkg_ids`, which are Homebrew's pkgutil patterns rather than literal IDs.
+pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
+    if !cfg!(target_os = "macos") {
+        bail!(
+            "brew-cask: pkgutil receipt versions for {} are only available on macOS",
+            pkg_ids.join(", ")
+        );
+    }
+    let mut versions = Vec::new();
+    for pattern in pkg_ids {
+        let ids = pkgutil_matching_ids(pattern);
+        versions.extend(pkg_receipt_versions_from_ids(
+            ids.iter().map(String::as_str),
+            |id| pkgutil(&["--pkg-info-plist", id]),
+        ));
+    }
+    Ok(versions)
+}
+
+/// Lists the receipt IDs matching a Homebrew pkgutil pattern. As in
+/// `pkg_id_installed`, the printed IDs are authoritative and the exit status
+/// is ignored, because a query can exit unsuccessfully either way.
+fn pkgutil_matching_ids(pattern: &str) -> Vec<String> {
+    std::process::Command::new("pkgutil")
+        .arg(format!("--pkgs={pattern}"))
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .split_whitespace()
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Runs a per-receipt `pkgutil` query and returns its stdout, or `None` if it
+/// could not run or exited unsuccessfully.
+fn pkgutil(args: &[&str]) -> Option<Vec<u8>> {
+    std::process::Command::new("pkgutil")
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| output.stdout)
+}
+
+pub(super) fn pkg_receipt_versions_from_ids<'a>(
+    ids: impl IntoIterator<Item = &'a str>,
+    read_info: impl FnMut(&str) -> Option<Vec<u8>>,
+) -> Vec<String> {
+    ids.into_iter()
+        .filter_map(read_info)
+        .filter_map(|info| pkg_info_version(&info).ok())
+        .collect()
+}
+
+/// Extracts `pkg-version` from `pkgutil --pkg-info-plist` output.
+pub(super) fn pkg_info_version(plist: &[u8]) -> Result<String> {
+    plist::Value::from_reader(std::io::Cursor::new(plist))?
+        .as_dictionary()
+        .and_then(|info| info.get("pkg-version"))
+        .and_then(plist::Value::as_string)
+        .map(str::to_string)
+        .ok_or_else(|| eyre!("brew-cask: pkgutil receipt has no pkg-version"))
+}
+
+/// Returns the app bundles installed by the package receipts matching
+/// `pkg_ids`. A pkg cask declares no app artifact, so this is how an upgrade
+/// finds what might be running. Unreadable receipts contribute nothing.
+pub(super) fn pkg_receipt_apps(pkg_ids: &[String]) -> Vec<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    let mut apps = Vec::new();
+    for pattern in pkg_ids {
+        for id in &pkgutil_matching_ids(pattern) {
+            let location = pkgutil(&["--pkg-info-plist", id])
+                .and_then(|info| pkg_info_string(&info, "install-location"));
+            let dirs = pkgutil(&["--only-dirs", "--files", id]);
+            if let (Some(location), Some(dirs)) = (location, dirs) {
+                apps.extend(receipt_app_bundles(
+                    &location,
+                    &String::from_utf8_lossy(&dirs),
+                ));
+            }
+        }
+    }
+    apps.sort();
+    apps.dedup();
+    apps
+}
+
+/// Picks the outermost `.app` bundles from `pkgutil --only-dirs --files`
+/// output, which lists paths relative to the receipt's install location. The
+/// install location can itself be inside a bundle (a payload of `Contents/...`
+/// installed to `/Applications/Foo.app`), so the full path is searched.
+pub(super) fn receipt_app_bundles(install_location: &str, dirs: &str) -> Vec<PathBuf> {
+    let root = Path::new("/").join(install_location);
+    let outermost_app = |path: &Path| {
+        let mut prefix = PathBuf::new();
+        for component in path.components() {
+            prefix.push(component);
+            if prefix.extension().is_some_and(|ext| ext == "app") {
+                return Some(prefix);
+            }
+        }
+        None
+    };
+    let mut apps = std::iter::once(root.clone())
+        .chain(
+            dirs.lines()
+                .map(str::trim)
+                .filter(|dir| !dir.is_empty())
+                .map(|dir| root.join(dir)),
+        )
+        .filter_map(|path| outermost_app(&path))
+        .collect::<Vec<_>>();
+    apps.sort();
+    apps.dedup();
+    apps
+}
+
+fn pkg_info_string(plist: &[u8], key: &str) -> Option<String> {
+    plist::Value::from_reader(std::io::Cursor::new(plist))
+        .ok()?
+        .as_dictionary()?
+        .get(key)?
+        .as_string()
+        .map(str::to_string)
+}
+
 pub(super) fn pkg_ids_installed(pkg_ids: &[String]) -> Result<bool> {
     for pkg_id in pkg_ids {
         if !pkg_id_installed(pkg_id)? {
