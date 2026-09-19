@@ -473,20 +473,20 @@ impl Daemons {
                 continue;
             }
             let runtime = runtime?;
+            // What this invocation will start here, plus whatever those daemons
+            // depend on, since pitchfork starts dependencies with them.
+            let here = set.restricted_to(&starting);
             if install {
-                // Validate what this invocation will start, plus whatever those
-                // daemons depend on, since pitchfork starts dependencies with
-                // them. An unrelated daemon is registered but not started, so a
+                // An unrelated daemon is registered but not started, so a
                 // missing tool or task reference of its own must not fail this
                 // command.
-                let starting = set.restricted_to(&starting);
-                runtime::validate_tools(&starting, &scoped, &ts).await?;
-                starting.validate_tasks(&scoped).await?;
+                runtime::validate_tools(&here, &scoped, &ts).await?;
+                here.validate_tasks(&scoped).await?;
                 // This root's own configuration, which the check above cannot
                 // see: a referenced project declares its own imports.
-                daemons::ensure_not_blocked(&set, &starting, Some(&root))?;
+                daemons::ensure_not_blocked(&set, &here, Some(&root))?;
             }
-            let launching = starting_names(&set, &ids, &root_selectors);
+            let launching = starting_names(&set, &ids, &root_selectors, &here);
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime
                     .prepare(&root, &set, true, !foreign, &launching)
@@ -642,7 +642,12 @@ fn proxy_mode(daemon: &daemons::Daemon) -> &str {
 /// selection does: a bare name never matches a selector written as
 /// `<namespace>/<name>`, which would drop that daemon from the check while it
 /// still started.
-fn starting_names(set: &daemons::DaemonSet, ids: &[String], selectors: &[Selector]) -> Vec<String> {
+fn starting_names(
+    set: &daemons::DaemonSet,
+    ids: &[String],
+    selectors: &[Selector],
+    here: &daemons::DaemonSet,
+) -> Vec<String> {
     let named: Vec<String> = ids
         .iter()
         .filter(|id| selectors.is_empty() || selectors.iter().any(|s| selects(set, id, s)))
@@ -655,11 +660,22 @@ fn starting_names(set: &daemons::DaemonSet, ids: &[String], selectors: &[Selecto
     // about to be bound too and belong in the check. Naming only what the
     // selectors matched would let a dependency collide with another project
     // and say nothing.
-    set.with_dependencies(&named)
+    let mut names: Vec<String> = set
+        .with_dependencies(&named)
         .daemons
         .values()
         .map(|daemon| daemon.name.clone())
-        .collect()
+        .collect();
+    // `ids` records what this root already had. A root reached only because
+    // something depends on it arrives with none, so the ids alone would name
+    // nothing here while its daemons still start. `here` is this root's part of
+    // the dependency closure, which is what the command actually launches.
+    for daemon in here.daemons.values() {
+        if !names.contains(&daemon.name) {
+            names.push(daemon.name.clone());
+        }
+    }
+    names
 }
 
 fn matches_name(id: &str, name: &str) -> bool {
@@ -821,6 +837,8 @@ mod tests {
 
     #[test]
     fn qualified_selectors_still_reach_the_port_check() {
+        // A root whose daemons this command does not reach through the closure.
+        let empty = daemons::DaemonSet::default();
         let set = daemons::load(&files(&[(
             "/project/mise.toml",
             "[daemons.api]\nrun = 'server'\n[daemons.web]\nrun = 'web'\n",
@@ -832,18 +850,18 @@ mod tests {
         // name never matches such a selector, so filtering on names would have
         // returned nothing here while the daemon was still started.
         let qualified = [Selector::Name("ns/api".to_string())];
-        assert_eq!(starting_names(&set, &ids, &qualified), ["api"]);
+        assert_eq!(starting_names(&set, &ids, &qualified, &empty), ["api"]);
 
         // The short spelling selects the same daemon, and only that one.
         let bare = [Selector::Name("api".to_string())];
-        assert_eq!(starting_names(&set, &ids, &bare), ["api"]);
+        assert_eq!(starting_names(&set, &ids, &bare, &empty), ["api"]);
 
         // No selectors means everything this root would launch.
-        assert_eq!(starting_names(&set, &ids, &[]), ["api", "web"]);
+        assert_eq!(starting_names(&set, &ids, &[], &empty), ["api", "web"]);
 
         // An id with no matching daemon contributes nothing.
         let stale = ["ns/gone".to_string()];
-        assert!(starting_names(&set, &stale, &[]).is_empty());
+        assert!(starting_names(&set, &stale, &[], &empty).is_empty());
 
         // Pitchfork starts a daemon's dependencies with it, so their ports are
         // bound by this same command and have to reach the conflict check.
@@ -856,7 +874,17 @@ mod tests {
         )]))
         .unwrap();
         let ids = ["ns/api".to_string(), "ns/db".to_string()];
-        let mut launching = starting_names(&set, &ids, &[Selector::Name("ns/api".to_string())]);
+        let mut launching =
+            starting_names(&set, &ids, &[Selector::Name("ns/api".to_string())], &empty);
+        launching.sort();
+        assert_eq!(launching, ["api", "db"]);
+
+        // A root reached only because something depends on it is added with no
+        // recorded ids, so the ids name nothing for it. What this command
+        // launches there comes from the closure instead, and has to reach the
+        // check or a transitive dependency binds a port unannounced.
+        let mut launching =
+            starting_names(&set, &[], &[Selector::Name("ns/api".to_string())], &set);
         launching.sort();
         assert_eq!(launching, ["api", "db"]);
     }
