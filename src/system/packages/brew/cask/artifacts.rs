@@ -266,20 +266,87 @@ pub(super) fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
     match pkg {
         Value::String(source) => Ok(Some(PkgArtifact {
             source: source.clone(),
+            choices: Vec::new(),
         })),
         Value::Array(values) => {
-            if values.len() > 1 {
-                bail!("brew-cask: pkg installer choices are not supported yet");
+            if values.len() > 2 {
+                bail!("brew-cask: pkg artifact metadata has unexpected entries");
             }
-            Ok(values
-                .first()
-                .and_then(Value::as_str)
-                .map(|source| PkgArtifact {
-                    source: source.to_string(),
-                }))
+            let Some(source) = values.first().and_then(Value::as_str) else {
+                return Ok(None);
+            };
+            let choices = match values.get(1) {
+                Some(options) => parse_pkg_choices(options)?,
+                None => Vec::new(),
+            };
+            Ok(Some(PkgArtifact {
+                source: source.to_string(),
+                choices,
+            }))
         }
         _ => Ok(None),
     }
+}
+
+/// Homebrew's pkg stanza accepts only `choices` besides the deprecated
+/// `allow_untrusted`. Homebrew writes each choice verbatim into the plist for
+/// `installer -applyChoiceChangesXML`, which needs all three keys and a setting
+/// that suits the attribute, so an incomplete, unknown, or mismatched choice is
+/// rejected here rather than by `installer`.
+fn parse_pkg_choices(options: &Value) -> Result<Vec<PkgChoice>> {
+    let options = options
+        .as_object()
+        .ok_or_else(|| eyre!("brew-cask: pkg options must be an object"))?;
+    reject_unsupported_artifact_fields("pkg", options, &["choices"])?;
+    let Some(choices) = options.get("choices") else {
+        return Ok(Vec::new());
+    };
+    choices
+        .as_array()
+        .ok_or_else(|| eyre!("brew-cask: pkg choices must be an array"))?
+        .iter()
+        .map(|choice| {
+            let choice = choice
+                .as_object()
+                .ok_or_else(|| eyre!("brew-cask: pkg choices must be objects"))?;
+            reject_unsupported_artifact_fields(
+                "pkg choice",
+                choice,
+                &["choiceIdentifier", "choiceAttribute", "attributeSetting"],
+            )?;
+            let string_field = |field: &str| {
+                choice
+                    .get(field)
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| eyre!("brew-cask: pkg choice {field} must be a string"))
+            };
+            let identifier = string_field("choiceIdentifier")?.to_string();
+            let attribute = string_field("choiceAttribute")?;
+            let setting = choice.get("attributeSetting");
+            let flag = || match setting.and_then(Value::as_i64) {
+                Some(0) => Ok(false),
+                Some(1) => Ok(true),
+                _ => bail!("brew-cask: pkg choice {attribute} setting must be 0 or 1"),
+            };
+            let change = match attribute {
+                "selected" => PkgChoiceChange::Selected(flag()?),
+                "enabled" => PkgChoiceChange::Enabled(flag()?),
+                "visible" => PkgChoiceChange::Visible(flag()?),
+                "customLocation" => PkgChoiceChange::CustomLocation(
+                    setting
+                        .and_then(Value::as_str)
+                        .filter(|path| !path.is_empty())
+                        .ok_or_else(|| {
+                            eyre!("brew-cask: pkg choice customLocation setting must be a path")
+                        })?
+                        .to_string(),
+                ),
+                _ => bail!("brew-cask: unsupported pkg choice attribute {attribute}"),
+            };
+            Ok(PkgChoice { identifier, change })
+        })
+        .collect()
 }
 
 pub(super) fn parse_installer_artifact(value: &Value) -> Result<Option<InstallerArtifact>> {

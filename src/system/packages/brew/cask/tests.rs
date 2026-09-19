@@ -4982,7 +4982,8 @@ fn parses_pkg_artifacts() {
     assert_eq!(
         parse_pkg_artifact(&value).unwrap(),
         Some(PkgArtifact {
-            source: "OpenJDK.pkg".to_string()
+            source: "OpenJDK.pkg".to_string(),
+            choices: Vec::new(),
         })
     );
 }
@@ -5431,14 +5432,151 @@ fn obsolete_generic_cleanup_allows_owner_group_writable_prefix() -> Result<()> {
 }
 
 #[test]
-fn rejects_pkg_installer_choices() {
+fn parses_pkg_installer_choices() {
     let value: Value = serde_json::json!({
         "pkg": [
-            "VirtualBox.pkg",
-            {"choices": [{"choiceIdentifier": "choiceVBox", "attributeSetting": 1}]}
+            "Microsoft_Outlook_Installer.pkg",
+            {"choices": [
+                {
+                    "choiceIdentifier": "com.microsoft.autoupdate",
+                    "choiceAttribute": "selected",
+                    "attributeSetting": 0
+                },
+                {
+                    "choiceIdentifier": "com.example.tools",
+                    "choiceAttribute": "customLocation",
+                    "attributeSetting": "/opt/example"
+                }
+            ]}
         ]
     });
-    assert!(parse_pkg_artifact(&value).is_err());
+    assert_eq!(
+        parse_pkg_artifact(&value).unwrap(),
+        Some(PkgArtifact {
+            source: "Microsoft_Outlook_Installer.pkg".to_string(),
+            choices: vec![
+                PkgChoice {
+                    identifier: "com.microsoft.autoupdate".to_string(),
+                    change: PkgChoiceChange::Selected(false),
+                },
+                PkgChoice {
+                    identifier: "com.example.tools".to_string(),
+                    change: PkgChoiceChange::CustomLocation("/opt/example".to_string()),
+                },
+            ],
+        })
+    );
+}
+
+#[test]
+fn rejects_unsupported_pkg_options() {
+    let choice = |choice: Value| serde_json::json!({"pkg": ["Widget.pkg", {"choices": [choice]}]});
+    for value in [
+        serde_json::json!({"pkg": ["Widget.pkg", {"allow_untrusted": true}]}),
+        serde_json::json!({"pkg": ["Widget.pkg", {"choices": {"choiceIdentifier": "a"}}]}),
+        serde_json::json!({"pkg": ["Widget.pkg", {"choices": []}, {}]}),
+        choice(serde_json::json!({})),
+        // Each of installer's three keys is required.
+        choice(serde_json::json!({"choiceIdentifier": "a", "attributeSetting": 1})),
+        choice(serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected"})),
+        choice(serde_json::json!({"choiceAttribute": "selected", "attributeSetting": 1})),
+        // Settings are 0/1 or a customLocation path.
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": true}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": 0.5}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": null}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": ["a"], "choiceAttribute": "selected", "attributeSetting": 1}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "", "choiceAttribute": "selected", "attributeSetting": 1}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": 1, "extra": 1}),
+        ),
+        // The setting must suit the attribute, and the attribute must be one
+        // installer documents.
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": "/opt"}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": 2}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "customLocation", "attributeSetting": 0}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "customLocation", "attributeSetting": ""}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "hidden", "attributeSetting": 1}),
+        ),
+    ] {
+        assert!(parse_pkg_artifact(&value).is_err(), "{value}");
+    }
+}
+
+#[test]
+fn writes_pkg_choices_as_installer_plist() -> Result<()> {
+    let choices = [
+        PkgChoice {
+            identifier: "com.microsoft.autoupdate".to_string(),
+            change: PkgChoiceChange::Selected(false),
+        },
+        PkgChoice {
+            identifier: "com.example.tools".to_string(),
+            change: PkgChoiceChange::CustomLocation("/opt/example".to_string()),
+        },
+        PkgChoice {
+            identifier: "com.example.docs".to_string(),
+            change: PkgChoiceChange::Visible(true),
+        },
+    ];
+
+    let parsed = plist::Value::from_reader_xml(pkg_choices_plist(&choices)?.as_slice())?;
+
+    let mut outlook = plist::Dictionary::new();
+    outlook.insert("attributeSetting".into(), plist::Value::Integer(0.into()));
+    outlook.insert("choiceAttribute".into(), "selected".into());
+    outlook.insert("choiceIdentifier".into(), "com.microsoft.autoupdate".into());
+    let mut tools = plist::Dictionary::new();
+    tools.insert("attributeSetting".into(), "/opt/example".into());
+    tools.insert("choiceAttribute".into(), "customLocation".into());
+    tools.insert("choiceIdentifier".into(), "com.example.tools".into());
+    let mut docs = plist::Dictionary::new();
+    docs.insert("attributeSetting".into(), plist::Value::Integer(1.into()));
+    docs.insert("choiceAttribute".into(), "visible".into());
+    docs.insert("choiceIdentifier".into(), "com.example.docs".into());
+    assert_eq!(
+        parsed,
+        plist::Value::Array(vec![outlook.into(), tools.into(), docs.into()])
+    );
+    Ok(())
+}
+
+#[test]
+fn passes_pkg_choices_to_installer() {
+    let source = Path::new("/stage/Widget.pkg");
+    assert_eq!(
+        pkg_installer_args(source, None),
+        ["-pkg", "/stage/Widget.pkg", "-target", "/"]
+    );
+    assert_eq!(
+        pkg_installer_args(source, Some(Path::new("/tmp/choices.xml"))),
+        [
+            "-pkg",
+            "/stage/Widget.pkg",
+            "-target",
+            "/",
+            "-applyChoiceChangesXML",
+            "/tmp/choices.xml"
+        ]
+    );
 }
 
 #[test]
@@ -5453,7 +5591,8 @@ fn parses_uninstall_pkgutil_ids() -> Result<()> {
         cask_artifacts(&cask)?,
         CaskArtifacts {
             pkgs: vec![PkgArtifact {
-                source: "OpenJDK26U-jdk.pkg".to_string()
+                source: "OpenJDK26U-jdk.pkg".to_string(),
+                choices: Vec::new(),
             }],
             pkg_ids: vec!["net.temurin.26.jdk".to_string()],
             ..Default::default()
@@ -5484,7 +5623,8 @@ fn ignores_zap_pkgutil_ids_for_pkg_receipts() -> Result<()> {
         cask_artifacts(&cask)?,
         CaskArtifacts {
             pkgs: vec![PkgArtifact {
-                source: "GoogleJapaneseInput.pkg".to_string()
+                source: "GoogleJapaneseInput.pkg".to_string(),
+                choices: Vec::new(),
             }],
             pkg_ids: vec!["com.google.pkg.GoogleJapaneseInput".to_string()],
             ..Default::default()
@@ -6347,6 +6487,7 @@ fn cask_prune_receipt_rejects_pkg_and_lifecycle_casks() -> Result<()> {
     let pkg = CaskArtifacts {
         pkgs: vec![PkgArtifact {
             source: "Example.pkg".to_string(),
+            choices: Vec::new(),
         }],
         pkg_ids: vec!["com.example.pkg".to_string()],
         ..Default::default()

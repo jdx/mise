@@ -162,6 +162,28 @@ struct CommandWrapperArtifact {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PkgArtifact {
     source: String,
+    /// Choice changes for `installer -applyChoiceChangesXML`, e.g. deselecting
+    /// a bundled updater. Empty installs the package's default choices.
+    choices: Vec<PkgChoice>,
+}
+
+/// One entry of `installer`'s choice changes: an attribute change for the
+/// choice `identifier`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PkgChoice {
+    identifier: String,
+    change: PkgChoiceChange,
+}
+
+/// The attributes `installer(8)` documents for `-applyChoiceChangesXML`, each
+/// paired with the setting it takes: 0/1 for the flags, a path for
+/// `customLocation`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PkgChoiceChange {
+    Selected(bool),
+    Enabled(bool),
+    Visible(bool),
+    CustomLocation(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3206,13 +3228,61 @@ fn ditto_into<Fd: std::os::fd::AsFd>(from: &Path, dir: Fd, name: &std::ffi::OsSt
 fn install_pkg(stage: &Path, pkg: &PkgArtifact) -> Result<()> {
     let source = find_file_artifact(stage, &pkg.source)
         .ok_or_else(|| eyre!("brew-cask: pkg artifact '{}' was not found", pkg.source))?;
-    let args = vec![
+    // Like Homebrew, hand the choices to installer as a temporary plist.
+    let choices_file = if pkg.choices.is_empty() {
+        None
+    } else {
+        let mut file = tempfile::Builder::new()
+            .prefix("choices")
+            .suffix(".xml")
+            .tempfile()?;
+        std::io::Write::write_all(&mut file, &pkg_choices_plist(&pkg.choices)?)?;
+        file.as_file().sync_all()?;
+        Some(file)
+    };
+    let args = pkg_installer_args(&source, choices_file.as_ref().map(|file| file.path()));
+    sudo::run("installer", &args, &[])
+}
+
+fn pkg_installer_args(source: &Path, choices: Option<&Path>) -> Vec<String> {
+    let mut args = vec![
         "-pkg".to_string(),
         source.display().to_string(),
         "-target".to_string(),
         "/".to_string(),
     ];
-    sudo::run("installer", &args, &[])
+    if let Some(choices) = choices {
+        args.push("-applyChoiceChangesXML".to_string());
+        args.push(choices.display().to_string());
+    }
+    args
+}
+
+/// Serializes pkg choices as the XML plist array that `installer
+/// -applyChoiceChangesXML` reads, matching Homebrew's `Plist::Emit.dump`.
+fn pkg_choices_plist(choices: &[PkgChoice]) -> Result<Vec<u8>> {
+    let choices = choices
+        .iter()
+        .map(|choice| {
+            let mut entry = plist::Dictionary::new();
+            entry.insert("choiceIdentifier".into(), choice.identifier.clone().into());
+            let flag = |value: bool| plist::Value::Integer(i64::from(value).into());
+            let (attribute, setting) = match &choice.change {
+                PkgChoiceChange::Selected(value) => ("selected", flag(*value)),
+                PkgChoiceChange::Enabled(value) => ("enabled", flag(*value)),
+                PkgChoiceChange::Visible(value) => ("visible", flag(*value)),
+                PkgChoiceChange::CustomLocation(path) => {
+                    ("customLocation", plist::Value::String(path.clone()))
+                }
+            };
+            entry.insert("choiceAttribute".into(), attribute.into());
+            entry.insert("attributeSetting".into(), setting);
+            plist::Value::Dictionary(entry)
+        })
+        .collect();
+    let mut xml = Vec::new();
+    plist::Value::Array(choices).to_writer_xml(&mut xml)?;
+    Ok(xml)
 }
 
 fn stage_font(stage: &Path, caskroom: &Path, font: &FontArtifact) -> Result<()> {

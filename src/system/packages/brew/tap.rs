@@ -810,6 +810,58 @@ end
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
+    async fn serializes_cask_pkg_choices() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
+            .arg("-e")
+            .arg(CASK_METADATA_SHIM_RB)
+            .stdin_string(
+                r##"cask "widget" do
+  version "1.2.3"
+  url "https://example.invalid/widget.pkg"
+  pkg "Widget.pkg",
+      choices: [
+        {
+          "choiceIdentifier" => "com.example.updater",
+          "choiceAttribute"  => "selected",
+          "attributeSetting" => 0,
+        },
+      ]
+  pkg "Plain.pkg"
+  uninstall pkgutil: "com.example.widget"
+end"##,
+            )
+            .env("MISE_BREW_TOKEN", "widget")
+            .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
+            .env("MISE_BREW_SOURCE_CHECKSUM", "fixture")
+            .env("MISE_BREW_TAP_COMMIT", "fixture")
+            .env("MISE_BREW_MACOS_VERSION", "26")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", "aarch64");
+        let output = runner.read().await?;
+        let _: Cask = serde_json::from_str(&output)?;
+        let metadata: serde_json::Value = serde_json::from_str(&output)?;
+        assert_eq!(
+            metadata["artifacts"],
+            serde_json::json!([
+                {"pkg": ["Widget.pkg", {"choices": [{
+                    "choiceIdentifier": "com.example.updater",
+                    "choiceAttribute": "selected",
+                    "attributeSetting": 0
+                }]}]},
+                {"pkg": ["Plain.pkg"]},
+                {"uninstall": {"pkgutil": "com.example.widget"}}
+            ])
+        );
+        Ok(())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
     async fn serializes_cask_staged_paths_without_reading_host_files() -> Result<()> {
         let Some(ruby) = test_ruby().await? else {
             return Ok(());
