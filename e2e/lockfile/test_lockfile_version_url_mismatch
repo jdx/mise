@@ -40,7 +40,7 @@ rm -rf "$MISE_DATA_DIR/installs/shfmt" "$MISE_DATA_DIR/downloads/shfmt"
 write_lock 3.7.0
 
 assert_fail "mise install" "locked to a download URL from 3.7.0"
-assert_fail "mise install" "Run \`mise lock\` to regenerate the entry"
+assert_fail "mise install" 'Run `mise lock` to regenerate the entry'
 assert_fail "mise install --locked" "locked to a download URL from 3.7.0"
 
 # The refusal comes before the download, so nothing landed under the wrong name.

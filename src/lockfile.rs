@@ -4553,27 +4553,89 @@ fn dotted_number_runs(s: &str) -> Vec<&str> {
     runs
 }
 
-/// Whether two dotted numbers name the same release, allowing one to be a
-/// truncation of the other (`22.1` and `22.1.0`).
+/// Whether two dotted numbers name the same release.
+///
+/// Components are compared as numbers, not as text, so a zero-padded tag like
+/// `1.02.0` still matches the version `1.2.0` rather than reading as a
+/// different release. Either side may be a truncation of the other (`22.1` and
+/// `22.1.0`), since a URL often carries a shorter form of the same version.
+/// Leading zeros are stripped instead of parsed, so a component too long for an
+/// integer cannot make this disagree by accident.
 fn dotted_numbers_agree(a: &str, b: &str) -> bool {
-    a == b || a.starts_with(&format!("{b}.")) || b.starts_with(&format!("{a}."))
+    let mut a = a.split('.');
+    let mut b = b.split('.');
+    loop {
+        match (a.next(), b.next()) {
+            (Some(x), Some(y)) => {
+                if x.trim_start_matches('0') != y.trim_start_matches('0') {
+                    return false;
+                }
+            }
+            // One side ran out, so it is a truncation of the other.
+            _ => return true,
+        }
+    }
 }
 
-/// The versions a download URL names when they provably contradict `version`.
+/// The dotted numbers in a URL path that identify which release it came from.
 ///
-/// Returns `None` whenever the URL cannot settle the question: the entry
-/// version is not a dotted number (a ref, a date, `latest`), the URL path holds
-/// no dotted number at all (many assets are named only by platform), or one of
-/// them agrees with the entry. Only the path is inspected, so a host like
-/// `10.0.0.5` never counts as a version. This is deliberately one-sided — it
-/// reports a contradiction it can prove and stays quiet otherwise.
+/// Exactly two positions qualify, because a dotted number anywhere else in a
+/// path is just as likely to be an API version (`/api/1.0/`), a bucket or a
+/// mirror layout as it is a release:
+///
+/// - the release tag of a forge download URL — `/releases/download/<tag>/…`,
+///   `/releases/<tag>/downloads/…` and `/-/archive/<tag>/…`, where the segment
+///   is the release by definition
+/// - the artifact file name, where a version is named for the thing being
+///   downloaded rather than for the route to it
+///
+/// Everything between the host and those positions is ignored.
+fn release_identifiers(path: &str) -> Vec<&str> {
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut found = Vec::new();
+    let tag = segments
+        .iter()
+        .position(|s| *s == "releases")
+        .and_then(|i| {
+            if segments.get(i + 1) == Some(&"download") {
+                segments.get(i + 2)
+            } else {
+                segments.get(i + 1)
+            }
+        })
+        .or_else(|| {
+            segments
+                .iter()
+                .position(|s| *s == "archive")
+                .and_then(|i| segments.get(i + 1))
+        });
+    if let Some(tag) = tag {
+        found.extend(dotted_number_runs(tag));
+    }
+    if let Some(name) = segments.last() {
+        found.extend(dotted_number_runs(name));
+    }
+    found
+}
+
+/// The releases a download URL names when they provably contradict `version`.
+///
+/// Returns `None` whenever the URL cannot settle the question, which is the
+/// common case: the entry version is not a dotted number (a ref, a date,
+/// `latest`), neither the release tag nor the file name carries a dotted number
+/// (many assets are named only by platform), or one of them agrees with the
+/// entry. A number that is merely somewhere in the path — `/api/1.0/`, a CDN
+/// bucket, a date directory — is not a release identifier and never triggers
+/// this, and neither does the host. Rejecting a valid locked install is worse
+/// than missing an invalid one, so this is deliberately one-sided: it reports a
+/// contradiction it can prove and stays quiet on anything ambiguous.
 pub(crate) fn url_contradicts_version(version: &str, url: &str) -> Option<Vec<String>> {
     let version_runs = dotted_number_runs(version);
     if version_runs.is_empty() {
         return None;
     }
-    // Strip the scheme/host so only the path (and its file name) is read, and
-    // drop any query string or fragment.
+    // Strip the scheme and host so only the path is read, and drop any query
+    // string or fragment.
     let path = url
         .split_once("://")
         .map_or(url, |(_, rest)| rest)
@@ -4581,17 +4643,17 @@ pub(crate) fn url_contradicts_version(version: &str, url: &str) -> Option<Vec<St
         .next()
         .unwrap_or_default();
     let path = &path[path.find('/')?..];
-    let url_runs = dotted_number_runs(path);
-    if url_runs.is_empty() {
+    let identifiers = release_identifiers(path);
+    if identifiers.is_empty() {
         return None;
     }
-    if url_runs
+    if identifiers
         .iter()
         .any(|u| version_runs.iter().any(|v| dotted_numbers_agree(u, v)))
     {
         return None;
     }
-    Some(url_runs.into_iter().map(str::to_string).collect())
+    Some(identifiers.into_iter().map(str::to_string).collect())
 }
 
 /// Refuse to install a tool whose locked download URL belongs to a different
@@ -4994,6 +5056,16 @@ mod tests {
                 "22.1.0",
                 "https://nodejs.org/dist/v22.1/node-v22.1-linux-x64.tar.xz",
             ),
+            // A zero-padded tag names the same release as the stored version.
+            (
+                "1.2.0",
+                "https://github.com/o/r/releases/download/v1.02.0/tool-linux-x64.tar.gz",
+            ),
+            // ...and the padding may be on the version instead.
+            (
+                "1.02.0",
+                "https://github.com/o/r/releases/download/v1.2.0/tool-linux-x64.tar.gz",
+            ),
         ] {
             assert_eq!(
                 url_contradicts_version(version, url),
@@ -5034,6 +5106,90 @@ mod tests {
             url_contradicts_version("1.2.3", "http://10.0.0.5/dist/tool.tar.gz"),
             None
         );
+    }
+
+    /// A number in the route to an artifact is not a release identifier. These
+    /// are all valid locked installs, and rejecting one would be worse than
+    /// missing a real mismatch, so none of them may fire.
+    #[test]
+    fn test_url_contradicts_version_ignores_numbers_outside_release_positions() {
+        for (version, url, why) in [
+            (
+                "2.0.0",
+                "https://mirror.example/api/1.0/tool-linux.tar.gz",
+                "an API version in the path",
+            ),
+            (
+                "1.2.3",
+                "https://cdn.example/v2/artifacts/tool.tar.gz",
+                "an unversioned API segment",
+            ),
+            (
+                "1.2.3",
+                "https://cdn.example/bucket-3.7/dist/tool-linux-x64.tar.gz",
+                "a numbered CDN bucket",
+            ),
+            (
+                "1.2.3",
+                "https://example.com/dist/20260901/tool-linux-x64.tar.gz",
+                "a date directory",
+            ),
+            (
+                "2.0.0",
+                "https://mirror.example/repo/1.0/pool/main/t/tool/tool_all.deb",
+                "a distro pool layout",
+            ),
+            (
+                "1.2.3",
+                "https://s3.example.com/2.0/downloads/tool-x86_64",
+                "a versioned bucket that is not a release tag",
+            ),
+        ] {
+            assert_eq!(
+                url_contradicts_version(version, url),
+                None,
+                "{version} must install despite {why}: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_release_identifiers_reads_only_the_tag_and_file_name() {
+        // `/releases/download/<tag>/<file>`
+        assert_eq!(
+            release_identifiers("/jdx/hk/releases/download/v1.56.1/hk-x86_64-linux.tar.gz"),
+            vec!["1.56.1"]
+        );
+        // GitLab's `/-/releases/<tag>/downloads/<file>`
+        assert_eq!(
+            release_identifiers("/g/p/-/releases/v1.2.3/downloads/tool-linux"),
+            vec!["1.2.3"]
+        );
+        // `/-/archive/<tag>/<file>`
+        assert_eq!(
+            release_identifiers("/g/p/-/archive/v1.2.3/p-v1.2.3.tar.gz"),
+            vec!["1.2.3", "1.2.3"]
+        );
+        // Neither position carries a number, so the `1.0` route is ignored.
+        assert_eq!(
+            release_identifiers("/api/1.0/tool-linux.tar.gz"),
+            Vec::<&str>::new()
+        );
+    }
+
+    #[test]
+    fn test_dotted_numbers_agree_compares_components_numerically() {
+        assert!(dotted_numbers_agree("1.02.0", "1.2.0"));
+        assert!(dotted_numbers_agree("1.2.0", "1.02.0"));
+        assert!(dotted_numbers_agree("22.1", "22.1.0"));
+        assert!(dotted_numbers_agree("0.1.0", "00.1.0"));
+        // Zero-stripping must not merge genuinely different components.
+        assert!(!dotted_numbers_agree("1.20.0", "1.2.0"));
+        assert!(!dotted_numbers_agree("1.2.3", "1.9.9"));
+        // A longer trailing component is a different release, not a truncation:
+        // 1.2.3 must never accept a 1.2.30 artifact.
+        assert!(!dotted_numbers_agree("1.2.3", "1.2.30"));
+        assert!(!dotted_numbers_agree("1.2.30", "1.2.3"));
     }
 
     #[test]
