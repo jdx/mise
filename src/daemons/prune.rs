@@ -98,6 +98,12 @@ impl Entry {
     /// carry a spelling its directory was not named from. Hence a question
     /// rather than a refusal, which would strand that state forever.
     pub(crate) fn ambiguity(&self) -> Option<String> {
+        if is_a_mount_point(&self.state.root) {
+            return Some(format!(
+                "{} is where a volume gets mounted, so it may be unmounted rather than a deleted project",
+                display_path(&self.state.root)
+            ));
+        }
         if let Some(parent) = self.state.root.parent()
             && !parent.exists()
         {
@@ -139,6 +145,29 @@ pub(crate) enum Outcome {
     Removed,
     /// Left in place. A warning says why, and a later run can retry.
     Kept,
+}
+
+/// Whether a path is somewhere a volume gets mounted rather than an ordinary
+/// directory.
+///
+/// A project whose root *is* the mount point goes missing without either of the
+/// other signs: `/Volumes/Disk` leaves `/Volumes` behind with the other disks
+/// still in it, and a Windows drive root has no parent to lose. Where each
+/// platform mounts things is a convention rather than something the filesystem
+/// will say once the volume is gone, so this is a list of those conventions.
+fn is_a_mount_point(root: &Path) -> bool {
+    // A filesystem root: `/` on Unix, `D:\` on Windows.
+    let Some(parent) = root.parent() else {
+        return true;
+    };
+    let container = parent.to_string_lossy().replace('\\', "/");
+    let container = container.trim_end_matches('/');
+    // macOS puts external volumes in /Volumes; Linux desktops use /media,
+    // /run/media/<user> or /mnt.
+    matches!(container, "/Volumes" | "/media" | "/mnt")
+        || parent
+            .parent()
+            .is_some_and(|grandparent| grandparent.ends_with("run/media"))
 }
 
 /// The directory holding every project's daemon state.
@@ -819,6 +848,20 @@ mod tests {
             .find(|e| e.dir == dir)
             .unwrap();
         assert_eq!(entry.ambiguity(), None);
+    }
+
+    #[test]
+    fn a_root_that_is_itself_a_mount_point_is_flagged_for_a_person() {
+        // The disk is unplugged, but /Volumes keeps the other disks, so neither
+        // the empty-ancestor nor the missing-parent sign shows.
+        assert!(is_a_mount_point(Path::new("/Volumes/Disk")));
+        assert!(is_a_mount_point(Path::new("/media/usb")));
+        assert!(is_a_mount_point(Path::new("/mnt/data")));
+        assert!(is_a_mount_point(Path::new("/run/media/coder/usb")));
+        assert!(is_a_mount_point(Path::new("/")));
+        // Ordinary project directories are not.
+        assert!(!is_a_mount_point(Path::new("/home/coder/src/mise")));
+        assert!(!is_a_mount_point(Path::new("/Volumes/Disk/project")));
     }
 
     #[test]

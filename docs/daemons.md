@@ -519,9 +519,9 @@ mise daemons prune --yes
 If a missing project could be on an unmounted volume or reached through a deleted
 symlink, mise asks for separate confirmation. `--yes` skips these entries. Run
 without `--yes` to review them, and confirm only if the project itself was deleted.
-A deleted parent directory, an empty or unreadable ancestor, or a recorded path
-that differs from the path used to create the state directory can trigger this
-extra check.
+A deleted parent directory, an empty or unreadable ancestor, a project rooted at a
+mount point such as `/Volumes/Disk`, or a recorded path that differs from the path
+used to create the state directory can trigger this extra check.
 
 #### When state is kept
 
