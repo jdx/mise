@@ -225,7 +225,8 @@ enum FlightStep {
     },
     SetOwnership {
         paths: Vec<FlightPath>,
-        /// `None` is the user running mise, as in Homebrew.
+        /// `None` is the user running mise (the invoking user under sudo), as
+        /// in Homebrew.
         user: Option<String>,
         group: String,
         recursive: bool,

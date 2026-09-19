@@ -702,10 +702,11 @@ pub(super) fn execute_flight_step(
             if existing.is_empty() {
                 return Ok(());
             }
+            // Homebrew's default is the current user. Under `sudo mise` that is
+            // the invoking user, not root, as for the Homebrew prefix.
             let user = match user {
                 Some(user) => user.clone(),
-                None => nix::unistd::User::from_uid(nix::unistd::geteuid())?
-                    .map(|user| user.name)
+                None => prefix::prefix_owner()
                     .ok_or_else(|| eyre!("brew-cask: could not determine current user"))?,
             };
             sudo::run(

@@ -152,7 +152,7 @@ pub(super) fn sudo_invoking_user() -> Option<String> {
 /// Who should own the prefix. Under `sudo mise`, the invoking user
 /// (SUDO_USER), not root — mirrors brew's install.sh. Plain root (e.g. a
 /// container) owns it as root.
-fn prefix_owner() -> Option<String> {
+pub(super) fn prefix_owner() -> Option<String> {
     if let Some(user) = sudo_invoking_user() {
         return Some(user);
     }
