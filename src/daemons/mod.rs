@@ -416,10 +416,14 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // daemon's name lands on a preset's variable, such as a daemon called
     // `database` beside a Postgres preset, the convenience gives way rather
     // than silently replacing the endpoint the preset published.
+    // An imported preset's exports belong to the project that declares it and
+    // never reach this environment, so they cannot be what a local daemon would
+    // replace; counting them would take a legitimate export away for a clash
+    // that does not happen here.
     let preset_keys: std::collections::BTreeSet<String> = set
         .daemons
         .values()
-        .filter(|d| d.preset.is_some())
+        .filter(|d| d.preset.is_some() && !d.imported)
         .flat_map(|d| d.exports.keys().cloned())
         .collect();
     for daemon in set.daemons.values_mut().filter(|d| d.preset.is_none()) {
@@ -3644,6 +3648,40 @@ three = ["two", "c"]
             set.daemons["database"].host.as_deref(),
             Some("database.shop.localhost")
         );
+    }
+
+    #[test]
+    fn an_imported_presets_exports_do_not_take_a_local_ones() {
+        let _serial = import_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        referenced_project(
+            &tmp.path().join("owner"),
+            "[daemons_settings]\nnamespace = 'remote'\n\
+             [daemons.db]\npreset = 'postgres'\nversion = '18'\n",
+        );
+        let app = tmp.path().join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        let set = load(&files(&[(
+            app.join("mise.toml").to_str().unwrap(),
+            "[daemons_settings]\nnamespace = 'shop'\n\
+             [daemons.store]\nproject = '../owner'\nname = 'db'\n\
+             [daemons.database]\nrun = 'gateway'\nport = 8080\n",
+        )]))
+        .unwrap();
+        assert!(set.daemons["remote/db"].imported);
+        // The imported preset does publish DATABASE_URL, but into its own
+        // project's environment: `env_entries` leaves every imported daemon
+        // out. There is nothing here for the local daemon to replace, so it
+        // keeps the variable it derives.
+        let exported: Vec<_> = set
+            .env_entries()
+            .into_iter()
+            .filter_map(|(directive, _)| match directive {
+                EnvDirective::Val(key, value, _) if key == "DATABASE_URL" => Some(value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(exported, ["https://database.shop.localhost"]);
     }
 
     #[test]

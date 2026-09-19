@@ -673,7 +673,11 @@ fn render(set: &DaemonSet, state: &State) -> Result<String> {
     // Hostname routing is what an older supervisor silently lacks: it starts
     // the daemons either way, so the only symptom is a URL that never
     // resolves. Say which release understands these keys.
-    if set.daemons.values().any(|d| d.host.is_some()) || !set.labels.is_empty() {
+    // Only when a daemon actually has one. Labels are derived for every root
+    // whether or not anything is routed, so testing them would put the notice
+    // on a project where every daemon opted out or configured no port, claiming
+    // a feature the file does not use.
+    if set.daemons.values().any(|d| d.host.is_some()) {
         header.push_str(&format!(
             "# Hostname routing (per-daemon proxy labels) needs pitchfork {}.\n",
             crate::daemons::urls::REQUIRED_PITCHFORK
@@ -1241,6 +1245,23 @@ mod tests {
         );
         assert_eq!(parsed["daemons"]["cache"]["proxy"].as_bool(), Some(false));
         assert!(rendered.contains("needs pitchfork"), "{rendered}");
+
+        // The notice claims hostname routing is in use, so a project where
+        // nothing is routed must not carry it. Labels are derived for every
+        // root either way, which is what made this easy to get wrong.
+        let mut unrouted = set.clone();
+        for daemon in unrouted.daemons.values_mut() {
+            daemon.host = None;
+        }
+        unrouted.labels.insert(
+            root.clone(),
+            super::super::urls::RootLabels {
+                project: Some("shop".into()),
+                worktree: None,
+            },
+        );
+        let rendered = render(&unrouted, &state).unwrap();
+        assert!(!rendered.contains("needs pitchfork"), "{rendered}");
     }
 
     #[test]

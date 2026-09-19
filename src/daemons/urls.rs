@@ -97,12 +97,18 @@ impl ProxySettings {
     pub(crate) fn stack_url(&self, labels: &RootLabels) -> Option<String> {
         let project = labels.project.as_deref()?;
         let worktree = labels.worktree.as_deref()?;
-        Some(self.url(&format!("{worktree}.{project}.{}", self.tld)))
+        self.page_url(&format!("{worktree}.{project}.{}", self.tld))
     }
 
     pub(crate) fn project_url(&self, labels: &RootLabels) -> Option<String> {
         let project = labels.project.as_deref()?;
-        Some(self.url(&format!("{project}.{}", self.tld)))
+        self.page_url(&format!("{project}.{}", self.tld))
+    }
+
+    /// A page's URL, held to the same length a daemon's hostname is. Printing
+    /// one DNS will not carry would offer a link that cannot be followed.
+    fn page_url(&self, host: &str) -> Option<String> {
+        hostname_fits(host).then(|| self.url(host))
     }
 }
 
@@ -551,6 +557,34 @@ mod tests {
             tld: "test".into(),
         };
         assert_eq!(http_custom.url(host), "http://api.shop.localhost:8088");
+    }
+
+    #[test]
+    fn a_page_url_is_withheld_when_it_would_not_resolve() {
+        let labels = RootLabels {
+            project: Some("shop".into()),
+            worktree: Some("feature".into()),
+        };
+        let settings = ProxySettings::default();
+        assert_eq!(
+            settings.stack_url(&labels).as_deref(),
+            Some("https://feature.shop.localhost")
+        );
+        assert_eq!(
+            settings.project_url(&labels).as_deref(),
+            Some("https://shop.localhost")
+        );
+
+        // Both labels are capped, so only the configured TLD can push a page
+        // past what DNS carries. A daemon's own hostname is already withheld
+        // there, and offering a link that cannot be followed is worse than
+        // offering none.
+        let long = ProxySettings {
+            tld: "t".repeat(MAX_HOSTNAME_LEN),
+            ..ProxySettings::default()
+        };
+        assert_eq!(long.stack_url(&labels), None);
+        assert_eq!(long.project_url(&labels), None);
     }
 
     #[test]
