@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  mise install pitchfork@2.25.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.25.0)"
+fi
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+# Keep Unix socket paths within macOS sockaddr_un limits, including the
+# random client socket names. This short external directory needs its own cleanup.
+PITCHFORK_STATE_DIR=$(mktemp -d /tmp/mise-pf.XXXXXX)
+export PITCHFORK_STATE_DIR
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_INTERVAL=500ms
+export PITCHFORK_PROXY_ENABLE=false
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true; rm -rf -- "$PITCHFORK_STATE_DIR"' EXIT
+
+mkdir project
+cd project
+git init -q
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons_settings]
+namespace = "proxy-test"
+[daemons.prepare]
+run = "echo ready > dependency-ready; exec sleep 600"
+ready_cmd = "test -f dependency-ready"
+[daemons.api]
+run = "test -f dependency-ready && sleep 2 && exec python3 -m http.server $API_PORT --bind 127.0.0.1"
+port = { auto = true, base = 35000 }
+ready_cmd = { run = "curl -fsS http://127.0.0.1:$API_PORT/proof", timeout = "15s" }
+health_cmd = { run = 'printf "%s" "$API_PORT" > health-port; curl -fsS http://127.0.0.1:$API_PORT/proof', interval = "1s" }
+depends = ["prepare"]
+TOML
+git add mise.toml
+git -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+git worktree add -qb other ../other
+
+# The supervisor starts from the primary checkout and inherits its API_PORT.
+# Both probes must resolve their own checkout before declaring the server ready.
+for checkout in "$PWD" "$PWD/../other"; do
+  (
+    cd "$checkout"
+    basename "$checkout" >proof
+    mise daemons start prepare
+    mise daemons stop
+    mv dependency-ready dependency-before-stop
+    mise daemons start api
+    port=$(mise env --json | jq -r .API_PORT)
+    assert_contains "curl --noproxy '*' -fsS --max-time 5 'http://127.0.0.1:$port/proof'" "$(basename "$checkout")"
+    assert "test -f dependency-ready"
+    for ((attempt = 0; attempt < 15; attempt++)); do
+      test -s health-port && break
+      sleep 1
+    done
+    assert "test \"\$(cat health-port)\" = '$port'"
+    assert_contains "mise daemons ls --json" '"status": "running"'
+  )
+done
+
+# Both servers remain reachable after the worktree starts.
+first_port=$(mise env --json | jq -r .API_PORT)
+second_port=$(cd ../other && mise env --json | jq -r .API_PORT)
+assert "test '$first_port' != '$second_port'"
+assert_contains "curl --noproxy '*' -fsS 'http://127.0.0.1:$first_port/proof'" project
+assert_contains "curl --noproxy '*' -fsS 'http://127.0.0.1:$second_port/proof'" other
