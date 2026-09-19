@@ -29,6 +29,7 @@ pub(crate) struct Daemons {
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Start(Args),
+    Register(Register),
     Stop(Args),
     Restart(Args),
     #[usage(visible_alias = "list")]
@@ -41,6 +42,19 @@ enum Commands {
     #[usage(name = "__init", hide = true)]
     Init(Init),
 }
+
+/// Prepare all project daemons for on-demand startup without starting them.
+///
+/// Install missing tools, validate daemon definitions and dependencies, and
+/// register the generated configuration with Pitchfork. Includes imported
+/// dependencies and daemons outside the default group. Existing daemons keep
+/// running; this command does not start or restart them.
+///
+/// A running Pitchfork supervisor with its proxy enabled can then start a
+/// registered HTTP daemon when a request reaches its hostname.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct Register {}
 
 /// Arguments passed to pitchfork; daemon names may be short or qualified.
 #[derive(Debug, usage_rs::Args)]
@@ -113,7 +127,7 @@ impl Daemons {
     pub(crate) fn starts(&self) -> bool {
         matches!(
             self.command,
-            Some(Commands::Start(_) | Commands::Restart(_))
+            Some(Commands::Start(_) | Commands::Restart(_) | Commands::Register(_))
         )
     }
 
@@ -134,6 +148,7 @@ impl Daemons {
             }
             Some(Commands::Prune(args)) => return args.run().await,
             Some(Commands::Start(args)) => ("start", args.args, false),
+            Some(Commands::Register(_)) => ("register", vec![], false),
             Some(Commands::Stop(args)) => ("stop", args.args, false),
             Some(Commands::Restart(args)) => ("restart", args.args, false),
             Some(Commands::Logs(args)) => ("logs", args.args, false),
@@ -194,7 +209,7 @@ impl Daemons {
         for ((_, name), err) in &loaded.import_errors {
             warn!("[daemons.{name}] is unavailable: {err}");
         }
-        let install = matches!(action, "start" | "restart");
+        let install = matches!(action, "start" | "restart" | "register");
         let proxy = daemons::urls::proxy_settings();
         let selectors: Vec<Selector> = requested_names
             .iter()
@@ -512,12 +527,27 @@ impl Daemons {
             let launching = starting_names(&set, &ids, &root_selectors, &here);
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime
-                    .prepare(&root, &set, true, !foreign, &launching)
+                    .prepare(
+                        &root,
+                        &set,
+                        true,
+                        !foreign,
+                        if action == "register" {
+                            &[]
+                        } else {
+                            &launching
+                        },
+                    )
                     .await?;
                 (state, Some(lock))
             } else {
                 (previous, None)
             };
+            if action == "register" {
+                matched = true;
+                miseprintln!("Registered daemons for {}", display_path(&root));
+                continue;
+            }
             // `root_selectors` came from the same set the request was validated
             // against, so selection cannot disagree with that validation.
             let mut selected: Vec<_> = state
