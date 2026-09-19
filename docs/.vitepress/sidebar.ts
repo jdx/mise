@@ -211,7 +211,16 @@ export const sidebar: SidebarItem[] = [
         ],
       },
       { text: "Hooks", link: "/hooks" },
-      { text: "Daemons", link: "/daemons" },
+      {
+        text: "Daemons",
+        link: "/daemons",
+        items: [
+          {
+            text: "Set up a development stack",
+            link: "/daemons/development-stack",
+          },
+        ],
+      },
       { text: "direnv", link: "/direnv" },
     ],
   },
