@@ -321,6 +321,20 @@ fn cask_api_json_variation_inherits_fields_it_omits() -> Result<()> {
 }
 
 #[test]
+fn cask_api_json_accepts_a_variation_that_nulls_list_fields() -> Result<()> {
+    let mut json = raycast_api_json();
+    json["variations"]["arm64_sequoia"]["url_specs"] = Value::Null;
+    json["variations"]["arm64_sequoia"]["artifacts"] = Value::Null;
+    json["variations"]["arm64_sequoia"]["aliases"] = Value::Null;
+    json["variations"]["arm64_sequoia"]["old_tokens"] = Value::Null;
+    let cask = cask_from_api_json(json, Some("arm64_sequoia"))?;
+    assert_eq!(cask.version, "1.104.29");
+    assert!(cask.artifacts.is_empty());
+    assert!(cask.url_specs.branch.is_none());
+    Ok(())
+}
+
+#[test]
 fn cask_api_json_rejects_a_platform_the_cask_does_not_support() {
     let err = cask_from_api_json(raycast_api_json(), Some("arm64_linux")).unwrap_err();
     assert!(

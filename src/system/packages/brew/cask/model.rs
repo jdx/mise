@@ -14,19 +14,19 @@ pub(super) struct CaskUrlSpecs {
 #[derive(Debug, Clone, Deserialize)]
 pub(in crate::system::packages::brew) struct Cask {
     pub(super) token: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) aliases: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) old_tokens: Vec<String>,
     pub(super) version: String,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) auto_updates: bool,
     pub(super) url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) url_specs: CaskUrlSpecs,
     #[serde(default)]
     pub(super) sha256: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) artifacts: Vec<Value>,
     #[serde(default, deserialize_with = "deserialize_null_default")]
     pub(super) depends_on: CaskDependencies,
