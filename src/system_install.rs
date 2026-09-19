@@ -373,6 +373,15 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
             )?;
             let metadata =
                 crate::file::prepare_atomic_write(&manifest_path, toml::to_string(&merged)?)?;
+            // Read before touching the tree so an error here cannot strand a
+            // replaced installation. The per-tool manifest takes precedence over
+            // the consolidated one, so a failure between the two commits must put
+            // the old tool manifest back alongside the old tree.
+            let previous_tool_manifest = match fs::read_to_string(&tool_manifest) {
+                Ok(text) => Some(text),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+                Err(err) => return Err(err.into()),
+            };
             let backup = stage.path().join("old");
             if exists {
                 fs::rename(&destination, &backup)?;
@@ -387,14 +396,6 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
                 }
                 return Err(err.into());
             }
-            // The per-tool manifest takes precedence over the consolidated one, so
-            // a failure between the two commits must put the old tool manifest back
-            // alongside the old tree.
-            let previous_tool_manifest = match fs::read_to_string(&tool_manifest) {
-                Ok(text) => Some(text),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-                Err(err) => return Err(err.into()),
-            };
             if let Err(err) = tool_metadata.commit().and_then(|()| metadata.commit()) {
                 // Keep the previous tool usable when metadata publication fails.
                 let rollback = fs::rename(&destination, &tree)
