@@ -143,6 +143,27 @@ assert_fail "cd missing-graph && MISE_LOCKFILE=1 mise install --locked"
 missing_graph_output="$(cd missing-graph && MISE_LOCKFILE=1 mise install --locked 2>&1 || true)"
 assert_contains_text "$missing_graph_output" "has no embedded-aube dependency graph"
 
+# Git checks sidecars out with CRLF on Windows (core.autocrlf=true). The
+# recorded digest covers the normalized graph text, so such a checkout still
+# installs, and re-locking leaves the working copy byte-for-byte alone.
+mkdir crlf
+cp mise.toml mise.lock crlf/
+cp -R .mise crlf/
+python3 - <<'PY_CRLF'
+from pathlib import Path
+for name in ['aube-lock.yaml', 'package.json']:
+    path = Path('crlf/.mise/locks/npm-cowsay/1.6.0') / name
+    data = path.read_bytes()
+    assert b'\r\n' not in data, path
+    path.write_bytes(data.replace(b'\n', b'\r\n'))
+PY_CRLF
+cp crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml crlf-checkout.yaml
+MISE_DATA_DIR="$PWD/.crlf-data" MISE_LOCKFILE=1 mise -C crlf install --locked
+assert_contains "MISE_DATA_DIR='$PWD/.crlf-data' MISE_LOCKFILE=1 mise -C crlf exec -- cowsay --version" "1.6.0"
+mise -C crlf lock
+assert_succeed 'cmp crlf-checkout.yaml crlf/.mise/locks/npm-cowsay/1.6.0/aube-lock.yaml'
+assert_succeed 'cmp mise.lock crlf/mise.lock'
+
 # A project lockfile must not require dependency graphs for npm tools owned by
 # the global config, whose lockfile is only created explicitly with --global.
 global_only_npm="$HOME/global-only-npm"
