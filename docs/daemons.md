@@ -704,14 +704,14 @@ proxy serves stay the same. Use `pitchfork.local.toml` and gitignore it: a track
 file is shared by every checkout, and a worktree label has to differ between them.
 
 Labels are folded to lowercase letters, digits and `-`. Two daemons, worktrees or
-projects whose names fold to one label collide, and pitchfork routes neither; mise
-withholds both URLs for the same pair and warns, rather than exporting an endpoint
-the proxy refuses. The daemons still run on their ports.
+projects whose names fold to one label collide, and pitchfork routes none of them;
+mise withholds those URLs and warns, rather than exporting an endpoint the proxy
+refuses. The daemons still run on their ports.
 
-One case has a winner. When only one side of the collision is a daemon this project
-reached with `project`, the project that declares it registers it from its own
+One case has a winner. When exactly one claimant is a daemon this project reached
+with `project`, the project that declares it registers it from its own
 configuration, where nothing collides, so pitchfork serves that one and the local
-daemon gets no URL. The warning says which side that is.
+daemons get no URL. The warning says which claimant that is.
 
 ### Seeing the URLs
 
