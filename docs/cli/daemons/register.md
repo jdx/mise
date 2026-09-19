@@ -6,6 +6,7 @@ description: "Prepare all project daemons for on-demand startup without starting
 # `mise daemons register`
 
 - **Usage:** `mise daemons register`
+- **Effect:** modifies state
 - **Source code:** [`src/cli/daemons.rs`](https://github.com/jdx/mise/blob/main/src/cli/daemons.rs)
 
 Prepare all project daemons for on-demand startup without starting them.
