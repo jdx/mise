@@ -76,20 +76,6 @@ see [Running the CLI](#running-the-cli).
 transparent Cargo wrapper, so build and lint tasks invoke ordinary Cargo commands through
 the cache. Standalone Cargo commands need an activated mise shell.
 
-If the wrapper fails, run the equivalent Cargo check with `MBX_DISABLE=1`; this bypasses
-the cache without skipping validation:
-
-```sh
-MBX_DISABLE=1 cargo build --all-features
-MBX_DISABLE=1 cargo test --all-features
-MBX_DISABLE=1 cargo check --all-features
-```
-
-If bypassed Cargo succeeds, report the mismatch in a
-[mr-boxington discussion](https://github.com/jdx/mr-boxington/discussions) with repository and
-commit, OS, `mbx --version`, `mbx doctor`, and both commands/output. Redact secrets, absolute
-cache paths, remote URLs, namespaces, and identifying details before posting.
-
 ## Pull Request Checklist
 
 1. **Discuss first**: Use GitHub Discussions or Discord for non-obvious changes

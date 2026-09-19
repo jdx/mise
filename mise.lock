@@ -687,71 +687,52 @@ url = "https://github.com/LuaLS/lua-language-server/releases/download/3.19.1/lua
 url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/513572668"
 
 [[tools.mr-boxington]]
-version = "1.11.1"
-backend = "github:jdx/mr-boxington"
+version = "1.14.0"
+backend = "packslip:github.com/jdx/mr-boxington"
 
 [tools.mr-boxington."platforms.linux-arm64"]
-checksum = "sha256:a05f13ee92e1100306ff707592d33195cadf9b61209921662915bd71643d63f9"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170204"
-provenance = "github-attestations"
+checksum = "sha256:fdf7965e886e25b2a34cefcc1a0b685159a0ee66002f58b720a0e29b5901fee8"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-arm64-musl"]
-checksum = "sha256:0540e5a9c7c5b3910a3c9d5cd300c8cd1395d80d17e15825b0e0eaee966c5847"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170206"
-provenance = "github-attestations"
+checksum = "sha256:bdb15ae0cc6a124e770a53ec52ac08f6da0cc574efe4dc7f787884ead8da35f5"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64"]
-checksum = "sha256:b854c43bd335b1e450138b06fab82512cf550300ee224fe5d17e2cb673986079"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170228"
-provenance = "github-attestations"
+checksum = "sha256:fc32cc431a9e022519b16348962f99ca84626ff25196bc11e61cb05df66fb069"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-baseline"]
-checksum = "sha256:b854c43bd335b1e450138b06fab82512cf550300ee224fe5d17e2cb673986079"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170228"
-provenance = "github-attestations"
+checksum = "sha256:fc32cc431a9e022519b16348962f99ca84626ff25196bc11e61cb05df66fb069"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-musl"]
-checksum = "sha256:3075b697c4475ee8ddc24c97a58342252f166f293d57c7546d274021b29af14f"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170229"
-provenance = "github-attestations"
+checksum = "sha256:e048e5ae5957fe18506e1dafd149e881fe373c9e1c0d3ad7a94a54149420ccbb"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:3075b697c4475ee8ddc24c97a58342252f166f293d57c7546d274021b29af14f"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170229"
-provenance = "github-attestations"
+checksum = "sha256:e048e5ae5957fe18506e1dafd149e881fe373c9e1c0d3ad7a94a54149420ccbb"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.macos-arm64"]
-checksum = "sha256:5801558a4e81545eb5abbb6ac0cca27ddf95a25e0aa9f41e7c5b63e01d1b75ce"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170205"
-provenance = "github-attestations"
-provenance_verified = true
+checksum = "sha256:ff743aad797d198c9381d36ff3c4f49e6a2601832f7bdf8cccdb34106e5385cd"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.windows-x64"]
-checksum = "sha256:a2f07c618539933ca521db5e1ffd62faf3a009e2e29cb73932ba17d041740596"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170223"
-provenance = "github-attestations"
+checksum = "sha256:5d102168bd30ac480da37b663edde883501aee4778bd757a547773d36cbcabfe"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.windows-x64-baseline"]
-checksum = "sha256:a2f07c618539933ca521db5e1ffd62faf3a009e2e29cb73932ba17d041740596"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.11.1/mbx-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/564170223"
-provenance = "github-attestations"
+checksum = "sha256:5d102168bd30ac480da37b663edde883501aee4778bd757a547773d36cbcabfe"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.14.0/mbx-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [[tools.node]]
