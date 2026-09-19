@@ -237,10 +237,11 @@ pub(crate) fn run_with_reader(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()?;
-    std::io::copy(
-        &mut input,
-        &mut child.stdin.take().expect("piped stdin is available"),
-    )?;
+    let mut stdin = child.stdin.take().expect("piped stdin is available");
+    // The helper may exit (and close its stdin) before the payload is fully
+    // written; reap it and report its status ahead of the resulting copy error.
+    let copied = std::io::copy(&mut input, &mut stdin);
+    drop(stdin);
     let status = child.wait()?;
     if !status.success() {
         bail!(
@@ -248,6 +249,7 @@ pub(crate) fn run_with_reader(
             args.join(" ")
         );
     }
+    copied?;
     Ok(())
 }
 

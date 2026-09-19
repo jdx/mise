@@ -125,7 +125,8 @@ pub(crate) struct Install {
     ///
     /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
     /// On Unix, binary-download backends invoke sudo to publish into protected
-    /// system directories. Run mise as your user, without sudo.
+    /// system directories unless system_packages.sudo is disabled. Run mise as
+    /// your user, without sudo.
     #[usage(long, verbatim_doc_comment, conflicts = "shared")]
     system: bool,
 

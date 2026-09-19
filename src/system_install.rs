@@ -130,7 +130,19 @@ pub(crate) fn links(
 ) -> Result<()> {
     let links = links
         .into_iter()
-        .filter(|(name, target)| fs::read_link(directory.join(name)).ok().as_ref() != Some(target))
+        .filter(|(name, target)| {
+            let path = directory.join(name);
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if !metadata.file_type().is_symlink() => {
+                    // A concrete install or an unmanaged file occupies the name;
+                    // the helper would refuse it, so leave it alone here.
+                    warn!("not replacing non-symlink {}", path.display());
+                    false
+                }
+                Ok(_) => fs::read_link(&path).ok().as_ref() != Some(target),
+                Err(_) => true,
+            }
+        })
         .collect::<Vec<_>>();
     let remove = remove
         .into_iter()

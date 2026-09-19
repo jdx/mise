@@ -65,7 +65,8 @@ Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.
 
   Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
   On Unix, binary-download backends invoke sudo to publish into protected
-  system directories. Run mise as your user, without sudo.
+  system directories unless system_packages.sudo is disabled. Run mise as
+  your user, without sudo.
 - **`-h --help`** — Print help
 
 ## Examples
