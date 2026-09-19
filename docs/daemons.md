@@ -5,9 +5,8 @@ description: Run project databases, message brokers, and development servers wit
 # Daemons
 
 ::: warning Experimental
-Daemon management requires `experimental = true`. It requires
-[pitchfork 2.25.0](https://github.com/jdx/pitchfork/releases/tag/v2.25.0) or later
-for external configuration support.
+Daemon management requires `experimental = true` and
+[pitchfork](https://pitchfork.jdx.dev/) for process supervision.
 :::
 
 Use daemons for processes that keep running between task invocations, such as a

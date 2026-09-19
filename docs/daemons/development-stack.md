@@ -15,9 +15,7 @@ startup and login persistence. The [daemon reference](/daemons.html) covers
 other declaration forms and all the configuration options.
 
 ::: warning Experimental
-Set `experimental = true`. The dependency-aware browser startup described below
-requires the upcoming Pitchfork 2.27.0; use explicit `mise daemons start` with
-older versions. Do not install an unreleased version from the examples.
+Daemon management requires `experimental = true` and an installed Pitchfork.
 :::
 
 ## Define one application
@@ -158,7 +156,9 @@ for an authorization and messaging stack.
 After explicitly starting each checkout once, configure Pitchfork's
 [local HTTPS proxy](https://pitchfork.jdx.dev/guides/port-management#hostname-resolution).
 That setup covers wildcard hostname resolution, certificate trust, and the
-standard HTTPS port. Check it with `pitchfork proxy doctor`.
+standard HTTPS port. Keep the supervisor running as your normal user; proxy
+setup handles the privileged networking changes separately. Check it with
+`pitchfork proxy doctor`.
 
 Then stop the application stack:
 
@@ -167,7 +167,7 @@ mise daemons stop api db
 mise daemons urls
 ```
 
-Open the API URL. With dependency-aware proxy startup, the HTTP request starts
+Open the API URL. The HTTP request starts
 its stopped dependencies, waits for readiness, and then reaches the API.
 The supervisor and proxy must already be running. A DNS lookup by itself does
 not start a daemon, and an unknown checkout cannot be configured by visiting
@@ -205,7 +205,8 @@ what launchd or systemd supervises; `supervisor start` would detach from it.
 
 Preview with `mise bootstrap --dry-run`, then apply with `mise bootstrap` and
 check `mise bootstrap services status`. On macOS this is a user LaunchAgent,
-starting at login. `--boot` starts daemons marked `boot_start = true`; leave that
+starting at login, not before a user logs in. `--boot` starts daemons marked
+`boot_start = true`; leave that
 unset on applications you want to start only on demand.
 
 Choose one owner for login startup. If you previously used
