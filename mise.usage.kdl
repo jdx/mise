@@ -2217,12 +2217,17 @@ With no subcommand, list configured and previously managed daemons.
         flag --json
         flag "-h --help" help="Print help" action=help builtin=#true
     }
-    cmd urls help="Show each project daemon's stable hostname URL and the port behind it." effect=read {
+    cmd urls help=#"""
+Show each project daemon's port, and its stable hostname URL when the
+daemon is proxied.
+"""# effect=read {
         long_help #"""
-Show each project daemon's stable hostname URL and the port behind it.
+Show each project daemon's port, and its stable hostname URL when the
+daemon is proxied.
 
 Hostnames do not move between git worktrees, so an HTTP service can be
-addressed by URL while concurrent checkouts keep separate ports.
+addressed by URL while concurrent checkouts keep separate ports. A daemon
+with no port, or with proxy = false, is listed without one.
 """#
         flag --json
         flag "-h --help" help="Print help" action=help builtin=#true

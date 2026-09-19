@@ -326,6 +326,30 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             )?,
         );
     }
+    // The proxy cannot route two daemons to one hostname, and pitchfork routes
+    // neither side of a collision rather than choosing, so mise never
+    // advertises one either. Checked once every daemon is built, because a
+    // preset's hostname is resolved on its own path. A daemon is identified by
+    // its root and its name: two projects whose directories share a basename
+    // derive one project label, so the names alone do not tell them apart.
+    let mut claimed_hosts: BTreeMap<String, (PathBuf, String)> = BTreeMap::new();
+    for daemon in set.daemons.values() {
+        let Some(host) = daemon.host.clone() else {
+            continue;
+        };
+        if let Some((other_root, other)) =
+            claimed_hosts.insert(host.clone(), (daemon.root.clone(), daemon.name.clone()))
+            && (other_root != daemon.root || other != daemon.name)
+        {
+            warn_once!(
+                "[daemons] {other} in {} and {} in {} both resolve to {host}, so pitchfork routes neither. Give one of them a different proxy label, or set proxy = false on it.",
+                other_root.display(),
+                daemon.name,
+                daemon.root.display()
+            );
+            state.ambiguous_hosts.insert(host);
+        }
+    }
     // The first claimant of an ambiguous key or hostname kept it while it
     // looked unique; drop it now so neither side is handed the other's
     // endpoint, and so mise never advertises a hostname the proxy refuses.
@@ -485,11 +509,6 @@ struct LoadState {
     /// Port variables already taken, so two names cannot normalize onto one key.
     keys: BTreeMap<String, String>,
     ambiguous: std::collections::BTreeSet<String>,
-    /// Hostnames already taken, each with the daemon holding it, so two
-    /// daemons cannot claim one endpoint. A daemon is identified by its root
-    /// and its name: two projects whose directories share a basename derive
-    /// one project label, so the names alone do not tell them apart.
-    hosts: BTreeMap<String, (PathBuf, String)>,
     /// Hostnames two daemons derived independently; neither keeps it.
     ambiguous_hosts: std::collections::BTreeSet<String>,
 
@@ -664,31 +683,12 @@ fn build(
         table.insert("port".into(), expected_port(claim.port));
     }
     let proxy = urls::proxy_settings();
-    let urls::Applied { mut host, .. } = urls::apply(
+    let urls::Applied { host, .. } = urls::apply(
         name,
         &mut table,
         &state.labels(&root, settings)?,
         &proxy.tld,
     )?;
-    // The proxy cannot route two daemons to one hostname, and pitchfork routes
-    // neither side of a collision rather than choosing. mise withholds the URL
-    // for the same pair, so it never advertises an endpoint the proxy refuses.
-    // Both daemons still run, and still have their ports.
-    if let Some(claimed) = host.clone()
-        && let Some((other_root, other)) = state
-            .hosts
-            .insert(claimed.clone(), (root.clone(), name.to_string()))
-        && (other_root != root || other != name)
-    {
-        warn_once!(
-            "[daemons] {other} in {} and {name} in {} both resolve to {claimed}, so pitchfork routes neither. Give one of them a different proxy label, or set proxy = false on it.",
-            other_root.display(),
-            root.display()
-        );
-        state.ambiguous_hosts.insert(claimed);
-        urls::withdraw(&mut table);
-        host = None;
-    }
     // Without these a custom daemon's endpoint would reach pitchfork and
     // nothing else: `mise env` would export nothing, and the process
     // could only discover it through pitchfork's own injection.
@@ -3408,6 +3408,19 @@ three = ["two", "c"]
             }
             // The ports are untouched; only the hostname is withheld.
             assert!(set.daemons.values().all(|d| d.port.is_some()), "{body:?}");
+        }
+
+        // A preset resolves its hostname on its own path, so it has to reach
+        // the same check: `proxy = true` puts one back on the proxy, and its
+        // name can land on another daemon's label like any other.
+        let set = load_body(
+            "[daemons.db]\npreset = 'postgres'\nversion = '18'\nproxy = true\n\
+             [daemons.web]\nrun = 'b'\nport = 3001\nproxy = 'db'\n",
+        )
+        .unwrap();
+        for name in ["db", "web"] {
+            assert!(set.daemons[name].host.is_none(), "{name} kept a hostname");
+            assert_eq!(set.daemons[name].table["proxy"].as_bool(), Some(false));
         }
 
         // A project whose labels do not collide keeps both hostnames.

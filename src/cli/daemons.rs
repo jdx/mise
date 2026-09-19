@@ -61,10 +61,12 @@ struct List {
     json: bool,
 }
 
-/// Show each project daemon's stable hostname URL and the port behind it.
+/// Show each project daemon's port, and its stable hostname URL when the
+/// daemon is proxied.
 ///
 /// Hostnames do not move between git worktrees, so an HTTP service can be
-/// addressed by URL while concurrent checkouts keep separate ports.
+/// addressed by URL while concurrent checkouts keep separate ports. A daemon
+/// with no port, or with proxy = false, is listed without one.
 #[derive(Debug, Default, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 struct UrlsArgs {
@@ -327,7 +329,7 @@ impl Daemons {
         let mut rows = Vec::new();
         // The hostname components each listed root contributes, for the stack
         // and project pages `mise daemons urls` prints alongside the daemons.
-        let mut listed_roots: Vec<(PathBuf, daemons::urls::RootLabels)> = Vec::new();
+        let mut listed_roots: Vec<(PathBuf, Option<daemons::urls::RootLabels>)> = Vec::new();
         let mut matched = false;
         let mut root_entries: Vec<_> = roots
             .into_iter()
@@ -407,9 +409,11 @@ impl Daemons {
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if matches!(action, "ls" | "urls") {
-                if let Some(labels) = set.labels.get(&root) {
-                    listed_roots.push((root.clone(), labels.clone()));
-                }
+                // Every listed root, labels or not. A root kept only by its
+                // recorded ids declares nothing now and so contributes no
+                // labels, and skipping it here would drop its daemons from the
+                // listing entirely rather than showing them without URLs.
+                listed_roots.push((root.clone(), set.labels.get(&root).cloned()));
                 let desired = set
                     .namespace_for(&root)
                     .unwrap_or(previous.namespace.as_str());
@@ -578,7 +582,7 @@ impl Daemons {
 /// a database is visible here rather than looking absent.
 fn print_urls(
     rows: &[serde_json::Value],
-    roots: &[(PathBuf, daemons::urls::RootLabels)],
+    roots: &[(PathBuf, Option<daemons::urls::RootLabels>)],
     proxy: &daemons::urls::ProxySettings,
 ) -> Result<()> {
     for (root, labels) in roots {
@@ -604,8 +608,12 @@ fn print_urls(
             ]);
         }
         table.print()?;
-        // The primary checkout has no stack page of its own; its stack is the
-        // project, so only a worktree prints both.
+        // A root that declares nothing now has no labels and so no pages. The
+        // primary checkout has no stack page of its own either; its stack is
+        // the project, so only a worktree prints both.
+        let Some(labels) = labels else {
+            continue;
+        };
         if let Some(stack) = proxy.stack_url(labels) {
             miseprintln!("  stack:   {stack}");
         }

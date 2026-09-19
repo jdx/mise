@@ -588,7 +588,8 @@ which port its neighbours ended up on. For anything that speaks HTTP, pitchfork'
 reverse proxy removes that step: it routes a stable hostname to whatever port the
 daemon actually bound, and mise derives the same hostname while configuration loads.
 
-Every daemon that configures a `port` is reachable at:
+Every proxied daemon is reachable at a hostname. A daemon is proxied when it
+configures a `port` and has not opted out with `proxy = false`:
 
 ```
 <daemon>.<project>.<tld>              in the primary checkout
@@ -620,7 +621,8 @@ table. Databases keep `port = "auto"` instead: the proxy speaks HTTP, and a Post
 or Redis client does not, so the `postgres` and `redis` presets opt out of it and keep
 exporting `PGPORT`, `DATABASE_URL`, and `REDIS_URL`.
 
-A daemon without a `port` is never routed and gets no URL. So does one that opts out.
+A daemon without a `port` is never routed and gets no URL, and neither is one that
+opted out. `mise daemons urls` still lists both, with their ports.
 
 ### Per-daemon proxy settings
 
