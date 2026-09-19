@@ -2080,7 +2080,7 @@
             },
             "sudo": {
               "default": true,
-              "description": "Allow `mise bootstrap packages apply` to elevate with sudo when not running as root.",
+              "description": "Allow `mise bootstrap` and `mise install --system` to elevate with sudo when not running as root.",
               "type": "boolean"
             }
           }

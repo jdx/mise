@@ -336,6 +336,11 @@ pub(super) const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap packages brew tap", Write),
     #[cfg(unix)]
     ("bootstrap packages brew untap", Write),
+    // Root-only helper: `mise install --system` streams a prepared tool
+    // archive into it through sudo and it replaces files under the system
+    // installs directory.
+    #[cfg(unix)]
+    ("__publish-system-install", Destructive),
     #[cfg(debug_assertions)]
     ("render-help", Write),
 ];

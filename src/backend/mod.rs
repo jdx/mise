@@ -3713,6 +3713,21 @@ pub(crate) trait Backend: Debug + Send + Sync {
             return Ok(tv);
         }
 
+        #[cfg(unix)]
+        if tv.install_path_is_explicit
+            && env::install_path_category(&tv.install_path()) == env::InstallPathCategory::System
+            && crate::system_install::needs_elevation(&tv.install_path())
+            && (ctx.force
+                || rolling_reinstall
+                || !self
+                    .is_install_satisfied_or_false(&ctx.config, &tv, true)
+                    .await)
+        {
+            let mut ctx = ctx;
+            ctx.force |= rolling_reinstall;
+            return crate::system_install::install(self, ctx, tv).await;
+        }
+
         if let Some(plugin) = self.plugin() {
             plugin.is_installed_err()?;
         }

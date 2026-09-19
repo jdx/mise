@@ -71,6 +71,8 @@ mod packslip;
 mod patrons;
 mod plugins;
 pub(crate) mod prune;
+#[cfg(unix)]
+mod publish_system_install;
 mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
@@ -303,6 +305,9 @@ pub(crate) enum Commands {
     Plugins(plugins::Plugins),
     Deps(deps::Deps),
     Prune(prune::Prune),
+    #[cfg(unix)]
+    #[usage(name = "__publish-system-install", hide = true)]
+    PublishSystemInstall(publish_system_install::PublishSystemInstall),
     Registry(registry::Registry),
     #[cfg(debug_assertions)]
     RenderHelp(render_help::RenderHelp),
@@ -443,6 +448,8 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run().await,
             Self::Deps(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
+            #[cfg(unix)]
+            Self::PublishSystemInstall(cmd) => cmd.run(),
             Self::Registry(cmd) => cmd.run().await,
             #[cfg(debug_assertions)]
             Self::RenderHelp(cmd) => cmd.run(),

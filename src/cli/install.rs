@@ -124,7 +124,8 @@ pub(crate) struct Install {
     /// Install tool(s) to the system-wide shared directory
     ///
     /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
-    /// May require elevated permissions (e.g. sudo).
+    /// On Unix, binary-download backends invoke sudo to publish into protected
+    /// system directories. Run mise as your user, without sudo.
     #[usage(long, verbatim_doc_comment, conflicts = "shared")]
     system: bool,
 
@@ -463,6 +464,12 @@ impl Install {
 
     fn install_opts(&self) -> Result<InstallOptions> {
         let install_dir = if self.system {
+            #[cfg(unix)]
+            if crate::system_install::under_sudo() {
+                warn!(
+                    "running mise with sudo can leave root-owned files in your home directory; run mise as your user and it will invoke sudo only to publish into the system directory"
+                );
+            }
             Some(Settings::get().system_installs_dir().to_path_buf())
         } else {
             self.shared.clone()
