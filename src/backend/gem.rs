@@ -141,6 +141,15 @@ impl Backend for GemBackend {
             // it ran. Its output is streamed straight through and the last
             // stderr line is carried into the failure, so scrub it here.
             cmd = cmd.redact(ctx.config.redactions().iter().cloned());
+            // Redacting the stream only helps if there is a stream to redact.
+            // Raw mode hands the child mise's own stdout and stderr, so it
+            // would bypass the line above entirely. Refused for this one
+            // command, and only when the source actually carries a credential:
+            // without one there is nothing to protect and no reason to take
+            // raw mode away from someone who asked for it.
+            if carries_credentials(&source) {
+                cmd = cmd.never_raw();
+            }
         }
         cmd.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)

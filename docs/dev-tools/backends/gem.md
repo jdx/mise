@@ -120,9 +120,11 @@ install metadata, so no token is written under the data directory. Even so,
 prefer a token scoped to reading that registry, since the rendered value does
 exist in the process environment and in whatever supplies it.
 
-One limit is worth knowing: under `raw` mode mise hands the child its own
-stdout and stderr, so `gem`'s output is not filtered. RubyGems redacts the
-source in its own fetch errors, but a verbose or wrapped invocation may not.
+This holds under `raw` mode too. Raw mode normally hands the child mise's own
+stdout and stderr, which would bypass redaction entirely, so a `gem install`
+whose source carries a credential is refused raw mode and has its output
+captured instead. Only that one command is affected, and only when there is a
+credential to protect.
 
 Dependencies are still resolved from the other configured sources, so a private
 gem whose dependencies live on rubygems.org installs normally. `source` is added
