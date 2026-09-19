@@ -116,6 +116,13 @@ fn installed_skip_reason(
     if receipt.version == cask.version {
         return Ok(Some("already up to date"));
     }
+    if artifacts.apps.is_empty() && !artifacts.pkgs.is_empty() {
+        // A pkg-only cask has no bundle to read, so the macOS package receipts
+        // stand in for the live app version. An unreadable receipt skips, like
+        // an unreadable app version.
+        let versions = pkg_receipt_versions(&receipt.pkg_ids).unwrap_or_default();
+        return Ok(pkg_upgrade_skip_reason(&cask.version, &versions));
+    }
     let [app] = artifacts.apps.as_slice() else {
         return Ok(Some("skipped: requires a single owned app"));
     };
@@ -135,6 +142,28 @@ fn installed_skip_reason(
         return Ok(Some("skipped: installed app is running and updates itself"));
     }
     Ok(None)
+}
+
+/// Decides a self-updating pkg cask's upgrade from its installed package
+/// receipt versions. One receipt at or past the cask version means the software
+/// updated itself. A cask can list receipts with unrelated numbering (a shared
+/// licensing helper, say), so incomparable ones are ignored rather than
+/// blocking the upgrade, and only a comparable, older receipt triggers it.
+fn pkg_upgrade_skip_reason(cask_version: &str, versions: &[String]) -> Option<&'static str> {
+    let cask_short = cask_version.split(',').next().unwrap_or(cask_version);
+    let mut outdated = false;
+    for version in versions {
+        if app_version_outdated(cask_version, Some(version), None) {
+            outdated = true;
+        } else if compare_app_versions(version, cask_short).is_some() {
+            return Some("skipped: installed package is current or newer");
+        }
+    }
+    if outdated {
+        None
+    } else {
+        Some("skipped: installed package version is unreadable or incomparable")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -172,6 +172,14 @@ receipt unchanged. An external self-updater can still change the app between
 the lock check and replacement. Dry-run reports the decision without replacing
 the app.
 
+Self-updating casks installed from a pkg with no app artifact, such as
+`tailscale-app` or `karabiner-elements`, have no bundle to read. For these,
+explicit upgrade reads the installed package versions from the cask's
+`pkgutil` receipts and upgrades when a receipt is older than the cask version
+and none is current or newer. Receipts whose versions cannot be compared with
+the cask version are ignored; if none can be compared, or `pkgutil` cannot read
+them, the upgrade is skipped.
+
 `mise bootstrap status` marks these entries as `installed (auto-updates)`.
 For mise-owned casks, the `Current` column is the version recorded in the mise
 receipt; the live app may have updated itself to a different version. JSON

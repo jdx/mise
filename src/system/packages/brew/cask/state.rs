@@ -152,6 +152,47 @@ pub(super) fn pkgutil_output_has_match(output: &[u8]) -> bool {
     output.iter().any(|byte| !byte.is_ascii_whitespace())
 }
 
+/// Returns the recorded version of every installed package receipt matching
+/// `pkg_ids`, which are Homebrew's pkgutil patterns rather than literal IDs.
+pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
+    if !cfg!(target_os = "macos") {
+        bail!(
+            "brew-cask: pkgutil receipt versions for {} are only available on macOS",
+            pkg_ids.join(", ")
+        );
+    }
+    let mut versions = Vec::new();
+    for pattern in pkg_ids {
+        let output = std::process::Command::new("pkgutil")
+            .arg(format!("--pkgs={pattern}"))
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()?;
+        for id in String::from_utf8_lossy(&output.stdout).split_whitespace() {
+            let info = std::process::Command::new("pkgutil")
+                .args(["--pkg-info-plist", id])
+                .stdin(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .output()?;
+            if !info.status.success() {
+                bail!("brew-cask: pkgutil could not read package receipt '{id}'");
+            }
+            versions.push(pkg_info_version(&info.stdout)?);
+        }
+    }
+    Ok(versions)
+}
+
+/// Extracts `pkg-version` from `pkgutil --pkg-info-plist` output.
+pub(super) fn pkg_info_version(plist: &[u8]) -> Result<String> {
+    plist::Value::from_reader(std::io::Cursor::new(plist))?
+        .as_dictionary()
+        .and_then(|info| info.get("pkg-version"))
+        .and_then(plist::Value::as_string)
+        .map(str::to_string)
+        .ok_or_else(|| eyre!("brew-cask: pkgutil receipt has no pkg-version"))
+}
+
 pub(super) fn pkg_ids_installed(pkg_ids: &[String]) -> Result<bool> {
     for pkg_id in pkg_ids {
         if !pkg_id_installed(pkg_id)? {
