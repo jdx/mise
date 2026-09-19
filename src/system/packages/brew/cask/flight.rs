@@ -689,14 +689,13 @@ pub(super) fn execute_flight_step(
             recursive,
         } => {
             // Like Homebrew, chown the paths that exist with sudo and skip the
-            // missing ones. Unlike Homebrew's `exist?`, a path that cannot be
-            // inspected fails the step instead of silently keeping its owner.
-            // As with set_permissions, Homebrew does not reverse this on
-            // failure, so nothing is recorded for rollback.
+            // rest. As with Ruby's `exist?` and set_permissions, a path that
+            // cannot be inspected counts as missing. Homebrew does not reverse
+            // this on failure, so nothing is recorded for rollback.
             let mut existing = Vec::new();
             for path in paths {
                 for path in ownership_flight_paths(cask, path, staged_path, appdir)? {
-                    if path.try_exists()? {
+                    if path.exists() {
                         existing.push(path);
                     }
                 }
