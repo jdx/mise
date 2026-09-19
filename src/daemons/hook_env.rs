@@ -104,9 +104,15 @@ pub(crate) async fn emit(
             // session joins, so the same check the other two registration paths
             // make belongs here: a daemon whose dependency was dropped with an
             // unreadable import would otherwise start without what it declared.
-            super::ensure_not_blocked(&scoped_set, &scoped_set.auto_starting(), Some(&root))?;
+            let auto = scoped_set.auto_starting();
+            super::ensure_not_blocked(&scoped_set, &auto, Some(&root))?;
+            // Only those daemons are launched here, so only their ports are
+            // conflict checked; dependencies are already part of the set.
+            let starting = auto.names();
             // Only this project's own roots reach here, so it owns the profile.
-            let (_state, _lock) = runtime.prepare(&root, &scoped_set, force, true).await?;
+            let (_state, _lock) = runtime
+                .prepare(&root, &scoped_set, force, true, &starting)
+                .await?;
             Ok::<_, eyre::Report>(runtime.bin)
         }
         .await;

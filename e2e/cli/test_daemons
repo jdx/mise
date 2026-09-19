@@ -352,3 +352,40 @@ profile_state="$(daemon_state_dir)/state.json"
 unset __MISE_SESSION
 MISE_ENV=second mise hook-env --shell-pid "$$" -s bash >"$TMPDIR/profile-hook"
 assert_contains "jq -r '.profile[]' '$profile_state'" second
+
+# port = "auto" keeps the base port in an ordinary checkout and moves it in a
+# linked worktree, and the resolved port must reach mise env, not pitchfork only.
+mkdir -p "$HOME/auto-primary/.git"
+cd "$HOME/auto-primary"
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.api]
+run = "sleep 30"
+[daemons.api.port]
+auto = true
+base = 3000
+[daemons.db]
+preset = "postgres"
+version = "18"
+port = "auto"
+TOML
+assert_contains "mise env -s bash" "API_PORT=3000"
+assert_contains "mise env -s bash" "PGPORT=5432"
+
+# A linked worktree of that checkout gets its own ports.
+mkdir -p "$HOME/auto-primary/.git/worktrees/wt"
+printf 'ref: refs/heads/main\n' >"$HOME/auto-primary/.git/HEAD"
+printf '../..\n' >"$HOME/auto-primary/.git/worktrees/wt/commondir"
+mkdir -p "$HOME/auto-wt"
+printf 'gitdir: %s\n' "$HOME/auto-primary/.git/worktrees/wt" >"$HOME/auto-wt/.git"
+cp mise.toml "$HOME/auto-wt/mise.toml"
+cd "$HOME/auto-wt"
+wt_api=$(mise env -s bash | sed -n 's/^export API_PORT=//p' | tr -d "'\"")
+wt_pg=$(mise env -s bash | sed -n 's/^export PGPORT=//p' | tr -d "'\"")
+assert "test -n '$wt_api' && test '$wt_api' != 3000"
+assert "test -n '$wt_pg' && test '$wt_pg' != 5432"
+# Stable across invocations, and the daemon listing reports the same port.
+assert "test \"\$(mise env -s bash | sed -n 's/^export API_PORT=//p' | tr -d \"'\\\"\")\" = '$wt_api'"
+assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"api\") | .port'" "$wt_api"
+assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"api\") | .port_auto'" "true"

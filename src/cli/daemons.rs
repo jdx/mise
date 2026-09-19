@@ -430,6 +430,11 @@ impl Daemons {
                 for id in ids {
                     let name = id.rsplit('/').next().unwrap_or(&id);
                     let daemon = visible.find(name);
+                    // Fall back to the last recorded allocation for a daemon
+                    // that is no longer declared but may still be running.
+                    let claim = daemon
+                        .and_then(|d| d.port)
+                        .or_else(|| previous.ports.get(name).copied());
                     let status = if let Ok(runtime) = &runtime
                         && !previous.namespace.is_empty()
                     {
@@ -437,26 +442,31 @@ impl Daemons {
                     } else {
                         None
                     };
-                    rows.push(serde_json::json!({ "id": id, "name": name, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()) }));
+                    rows.push(serde_json::json!({ "id": id, "name": name, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()) }));
                 }
                 continue;
             }
             let runtime = runtime?;
+            let root_starting = set.restricted_to(&starting);
             if install {
                 // Validate what this invocation will start, plus whatever those
                 // daemons depend on, since pitchfork starts dependencies with
                 // them. An unrelated daemon is registered but not started, so a
                 // missing tool or task reference of its own must not fail this
                 // command.
-                let starting = set.restricted_to(&starting);
-                runtime::validate_tools(&starting, &scoped, &ts).await?;
-                starting.validate_tasks(&scoped).await?;
+                runtime::validate_tools(&root_starting, &scoped, &ts).await?;
+                root_starting.validate_tasks(&scoped).await?;
                 // This root's own configuration, which the check above cannot
                 // see: a referenced project declares its own imports.
-                daemons::ensure_not_blocked(&set, &starting, Some(&root))?;
+                daemons::ensure_not_blocked(&set, &root_starting, Some(&root))?;
             }
+            // Only the daemons this root launches have their ports checked, so
+            // an unrelated one whose port is busy elsewhere cannot block them.
+            let starting_names = root_starting.names();
             let (state, _project_lock) = if install {
-                let (state, lock) = runtime.prepare(&root, &set, true, !foreign).await?;
+                let (state, lock) = runtime
+                    .prepare(&root, &set, true, !foreign, &starting_names)
+                    .await?;
                 (state, Some(lock))
             } else {
                 (previous, None)

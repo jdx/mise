@@ -1,3 +1,4 @@
+use super::ports::PortClaim;
 use super::{DaemonSet, DaemonSettings, state_dir};
 use crate::cli::args::ToolArg;
 use crate::cmd::CmdLineRunner;
@@ -6,6 +7,7 @@ use crate::env_diff::EnvMap;
 use crate::toolset::{ToolRequest, ToolSource, Toolset, ToolsetBuilder};
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,6 +23,48 @@ pub(crate) struct State {
     pub bin: PathBuf,
     #[serde(default)]
     pub config_hash: String,
+    /// Ports allocated per daemon name. Persisting them keeps an `auto`
+    /// allocation stable across a change to the slot derivation, and lets other
+    /// project roots on this machine detect a conflict before starting.
+    #[serde(default)]
+    pub ports: BTreeMap<String, PortClaim>,
+    /// Fingerprint of the other projects' state files as of the last conflict
+    /// check, recorded only when that check found no neighbour claiming any of
+    /// this project's ports. A shell hook runs on every prompt, so recognising
+    /// that unchanged case from metadata avoids re-reading and parsing each
+    /// file. Empty means the last check was not clear and must be repeated.
+    #[serde(default)]
+    pub ports_scan: String,
+}
+
+/// Cheap summary of the other projects' state files: their names, sizes and
+/// modification times, without opening any of them.
+///
+/// This is a hint for skipping redundant work on the shell-hook path, not a
+/// guarantee: a rewrite of the same length within one timestamp tick looks
+/// unchanged. Missing one costs a delayed hint rather than a wrong port, and an
+/// explicit start scans regardless.
+fn siblings_fingerprint(mine: &Path) -> String {
+    let entries = std::fs::read_dir(crate::dirs::STATE.join("daemons"));
+    let mut seen: Vec<String> = entries
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path() != mine)
+        .filter_map(|e| {
+            let state = e.path().join("state.json");
+            let meta = std::fs::metadata(&state).ok()?;
+            let stamp = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_nanos())
+                .unwrap_or_default();
+            Some(format!("{}:{}:{stamp}", state.display(), meta.len()))
+        })
+        .collect();
+    seen.sort();
+    crate::hash::hash_to_str(&seen)
 }
 
 pub(crate) struct Runtime {
@@ -37,6 +81,92 @@ pub(crate) fn read_state(root: &Path) -> Result<State> {
         });
     }
     Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+}
+
+/// Fail before registering configuration when another project root on this
+/// machine is *running* a daemon on one of our ports. Two checkouts landing on
+/// the same port is otherwise silent: the second daemon fails to bind, or worse,
+/// connects to the first one's data.
+///
+/// Liveness matters. A `state.json` outlives the daemon it describes, so a
+/// stopped project must not hold a port hostage; before this check existed, two
+/// projects could take turns on the default 5432 and that has to keep working.
+/// The cheap scan therefore only selects candidates, and the liveness probe runs
+/// solely for a root whose port actually matches.
+///
+/// This is a diagnostic, not a reservation. Because a recorded claim confers
+/// nothing until its daemon is actually serving, two projects starting at the
+/// same instant can both see the port free. Binding is the real arbiter, and the
+/// loser still gets its own bind error; the check exists to replace that opaque
+/// failure with one naming the other project whenever it can.
+/// The claims to record for a project, carrying forward those of daemons that
+/// are no longer declared.
+///
+/// A daemon dropped from the configuration keeps its id so it can still be
+/// queried and stopped, which means it may still be running and holding its
+/// port. Discarding its claim would hide that port from every other project's
+/// scan, and the next project to resolve it would be told the port is free. A
+/// claim is dropped only when the daemon is still declared and no longer has a
+/// port mise resolves, since nothing manages one for it any more. Stale entries
+/// cost nothing because a conflict is only reported once the daemon holding the
+/// port answers as running.
+fn carry_port_claims(
+    previous: &BTreeMap<String, PortClaim>,
+    set: &DaemonSet,
+) -> BTreeMap<String, PortClaim> {
+    let mut ports: BTreeMap<String, PortClaim> = previous
+        .iter()
+        .filter(|(name, _)| !set.daemons.contains_key(*name))
+        .map(|(name, claim)| (name.clone(), *claim))
+        .collect();
+    ports.extend(
+        set.daemons
+            .values()
+            .filter_map(|d| d.port.map(|claim| (d.name.clone(), claim))),
+    );
+    ports
+}
+
+/// The subset of a project's claims belonging to daemons this operation will
+/// launch. Registration covers the whole project, so checking every claim would
+/// let one project's Postgres on 5432 block `mise daemons start redis`, which
+/// never binds that port.
+fn ports_being_started(
+    ports: &BTreeMap<String, PortClaim>,
+    starting: &[String],
+) -> BTreeMap<String, PortClaim> {
+    ports
+        .iter()
+        .filter(|(name, _)| starting.iter().any(|s| s == *name))
+        .map(|(name, claim)| (name.clone(), *claim))
+        .collect()
+}
+
+fn claimed_ports(mine: &Path) -> Vec<(State, String, u16)> {
+    let Ok(entries) = std::fs::read_dir(crate::dirs::STATE.join("daemons")) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if dir == mine || !dir.is_dir() {
+            continue;
+        }
+        let Ok(other) = std::fs::read(dir.join("state.json")) else {
+            continue;
+        };
+        let Ok(other) = serde_json::from_slice::<State>(&other) else {
+            continue;
+        };
+        // A removed checkout keeps no claim; its ports are free to reuse.
+        if !other.root.is_dir() {
+            continue;
+        }
+        for (name, claim) in other.ports.clone() {
+            found.push((other.clone(), name, claim.port));
+        }
+    }
+    found
 }
 
 pub(crate) fn write_if_changed(path: &Path, content: &[u8]) -> Result<bool> {
@@ -214,6 +344,71 @@ impl Runtime {
         Ok(false)
     }
 
+    /// See [`claimed_ports`]: only a port that another root is actively serving
+    /// is a conflict.
+    /// `starting` names the daemons this operation will actually launch. Only
+    /// their ports are checked: registration covers every daemon in the project,
+    /// so checking all of them would let one project's Postgres on 5432 block
+    /// `mise daemons start redis`, which never binds that port.
+    async fn check_port_conflicts(
+        &self,
+        root: &Path,
+        ports: &BTreeMap<String, PortClaim>,
+        starting: &[String],
+    ) -> Result<bool> {
+        let claimed: Vec<_> = claimed_ports(&state_dir(root))
+            .into_iter()
+            .filter(|(other, _, _)| other.root != root)
+            .collect();
+        // Over every claim this project holds, not only the ones starting: when
+        // no neighbour names any of them, no subset can conflict and no daemon
+        // starting or stopping elsewhere can change that. It is the one answer
+        // that stays true without re-asking, so it is the only one cached.
+        let clear = !ports
+            .values()
+            .any(|claim| claimed.iter().any(|(_, _, port)| *port == claim.port));
+        let ports = &ports_being_started(ports, starting);
+        if ports.is_empty() {
+            return Ok(clear);
+        }
+        for (other, other_name, port) in claimed {
+            let Some((name, _)) = ports.iter().find(|(_, claim)| claim.port == port) else {
+                continue;
+            };
+            // Ask about the daemon holding the port, not the project. A
+            // project-wide probe would report a stopped Postgres as running
+            // merely because its Redis, or an open shell session, is alive.
+            //
+            // Probing costs a pitchfork call per matching root, so it runs only
+            // here. An unreachable supervisor leaves the port available rather
+            // than blocking a start that used to work.
+            let id = other
+                .ids
+                .iter()
+                .find(|id| id.rsplit('/').next() == Some(other_name.as_str()))
+                .cloned()
+                .unwrap_or_else(|| format!("{}/{other_name}", other.namespace));
+            let serving = self
+                .status(&other.root, &id)
+                .await
+                .ok()
+                .and_then(|value| value["status"].as_str().map(String::from))
+                .is_some_and(|status| {
+                    matches!(status.as_str(), "running" | "waiting" | "stopping")
+                });
+            if !serving {
+                continue;
+            }
+            bail!(
+                "daemon {name} would use port {port}, in use by {other_name} running in {}. \
+                 Stop it, set an explicit port on one of them, or use \
+                 port = {{ auto = true, base = <port> }} to move this project's range.",
+                other.root.display()
+            );
+        }
+        Ok(clear)
+    }
+
     /// Register a root's daemons.
     ///
     /// `owns_profile` is false when another project is preparing this root
@@ -221,12 +416,18 @@ impl Runtime {
     /// one the configuration was read under, since that is what the rendered
     /// definitions reflect; the flag only says who is asking, so a profile
     /// conflict can be explained in terms of the two projects involved.
+    ///
+    /// `starting` names the daemons the caller is about to launch, and only
+    /// their ports are conflict checked. Passing an empty slice checks nothing,
+    /// which is correct when a caller launches nothing but silently drops the
+    /// diagnostic if a future caller forgets to fill it in.
     pub(crate) async fn prepare(
         &self,
         root: &Path,
         set: &DaemonSet,
         force_registration: bool,
         owns_profile: bool,
+        starting: &[String],
     ) -> Result<(State, fslock::LockFile)> {
         let lock = crate::lock_file::LockFile::at(&state_dir(root).join("project.lock")).lock()?;
         let previous = read_state(root)?;
@@ -268,6 +469,12 @@ impl Runtime {
                 desired
             );
         }
+        // A daemon dropped from the configuration keeps its id so it can still
+        // be queried and stopped, which means it may still be running and
+        // holding its port. Its claim is kept for the same reason: discarding it
+        // would hide that port from every other project's scan, and the next
+        // project to resolve it would be told the port is free.
+        let ports = carry_port_claims(&previous.ports, set);
         let mut state = State {
             root: root.into(),
             profile,
@@ -278,6 +485,8 @@ impl Runtime {
             ids: if changed { Vec::new() } else { previous.ids },
             bin: self.bin.clone(),
             config_hash: String::new(),
+            ports,
+            ports_scan: String::new(),
         };
         for daemon in set.daemons.values() {
             let id = format!("{}/{}", state.namespace, daemon.name);
@@ -288,6 +497,36 @@ impl Runtime {
         let content = render(set, &state)?;
         let file = state_dir(root).join("pitchfork.toml");
         state.config_hash = crate::hash::hash_to_str(&content);
+        // Before the fast path, because an unchanged configuration is exactly
+        // when another project can take this one's port: `auto` lifecycle then
+        // hands pitchfork a session command and the daemon fails to bind in the
+        // background, where an opaque error is easiest to miss. Explicit starts
+        // force registration and would be covered either way.
+        //
+        // A shell hook reaches this on every prompt, so the neighbourhood is
+        // fingerprinted from metadata first: unchanged siblings and unchanged
+        // claims of our own can only give the answer they gave last time. The
+        // liveness probe beyond that runs only once a port actually matches.
+        let scan = siblings_fingerprint(&state_dir(root));
+        // A recorded fingerprint means the last scan found no neighbour naming
+        // any of this project's ports. That is the only answer safe to reuse:
+        // it does not depend on whether anybody's daemon is running, nor on
+        // which daemons this command starts, so neither a neighbour starting
+        // one nor a change of selection can invalidate it. Anything else is
+        // re-checked, because liveness is not visible in a state file.
+        let reusable = !force_registration
+            && !previous.ports_scan.is_empty()
+            && scan == previous.ports_scan
+            && state.ports == previous.ports;
+        state.ports_scan = if reusable
+            || self
+                .check_port_conflicts(root, &state.ports, starting)
+                .await?
+        {
+            scan
+        } else {
+            String::new()
+        };
         if !force_registration
             && !changed
             && state.config_hash == previous.config_hash
@@ -663,6 +902,242 @@ mod tests {
     }
 
     #[test]
+    fn only_live_roots_with_a_matching_port_become_conflict_candidates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = tmp.path().join("mine");
+        let theirs = tmp.path().join("theirs");
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::create_dir_all(&theirs).unwrap();
+        let write_state = |root: &Path, port: u16| {
+            let state = State {
+                root: root.to_path_buf(),
+                ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(port))]),
+                ..State::default()
+            };
+            let dir = state_dir(root);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("state.json"),
+                serde_json::to_vec_pretty(&state).unwrap(),
+            )
+            .unwrap();
+        };
+        write_state(&theirs, 5432);
+        write_state(&mine, 5432);
+
+        // Our own state directory never reports against us.
+        let found = claimed_ports(&state_dir(&mine));
+        let ours: Vec<_> = found.iter().filter(|(s, _, _)| s.root == mine).collect();
+        assert!(ours.is_empty(), "own claim must be skipped");
+        let theirs_found: Vec<_> = found
+            .iter()
+            .filter(|(s, name, port)| s.root == theirs && name == "db" && *port == 5432)
+            .collect();
+        assert_eq!(theirs_found.len(), 1, "live sibling claim must be reported");
+
+        // A checkout that no longer exists holds no claim, so its port is
+        // reusable rather than reserved forever.
+        std::fs::remove_dir_all(&theirs).unwrap();
+        assert!(
+            !claimed_ports(&state_dir(&mine))
+                .iter()
+                .any(|(s, _, _)| s.root == theirs)
+        );
+    }
+
+    #[test]
+    fn a_scan_is_only_clear_when_no_neighbour_names_any_of_our_ports() {
+        // Clearance is what makes the skip sound, so it must be judged over
+        // every claim this project holds, not just the ones starting: a port
+        // nobody else names cannot conflict however daemons come and go.
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = tmp.path().join("mine");
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let state = State {
+            root: other.clone(),
+            ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(5432))]),
+            ..State::default()
+        };
+        let dir = state_dir(&other);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("state.json"),
+            serde_json::to_vec_pretty(&state).unwrap(),
+        )
+        .unwrap();
+
+        let claimed: Vec<_> = claimed_ports(&state_dir(&mine))
+            .into_iter()
+            .filter(|(o, _, _)| o.root != mine)
+            .collect();
+        let clear = |ports: &BTreeMap<String, PortClaim>| {
+            !ports
+                .values()
+                .any(|claim| claimed.iter().any(|(_, _, port)| *port == claim.port))
+        };
+
+        // Ports nobody else names: safe to remember as clear.
+        assert!(clear(&BTreeMap::from([(
+            "redis".to_string(),
+            PortClaim::fixed(6379)
+        )])));
+
+        // A neighbour names 5432, so this is not clear even though that daemon
+        // may be stopped right now. Liveness decides the verdict, and liveness
+        // is not visible here, so the answer must not be reused.
+        assert!(!clear(&BTreeMap::from([(
+            "pg".to_string(),
+            PortClaim::fixed(5432)
+        )])));
+
+        // Judged over every claim, so an unrelated overlap still blocks reuse.
+        assert!(!clear(&BTreeMap::from([
+            ("redis".to_string(), PortClaim::fixed(6379)),
+            ("pg".to_string(), PortClaim::fixed(5432)),
+        ])));
+    }
+
+    #[test]
+    fn the_fingerprint_notices_a_neighbour_changing() {
+        // The hook skips the scan when this is unchanged, so it has to move for
+        // anything that could change the answer.
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = tmp.path().join("mine");
+        let other = tmp.path().join("other");
+        let write = |root: &Path, port: u16| {
+            let state = State {
+                root: root.to_path_buf(),
+                ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(port))]),
+                ..State::default()
+            };
+            let dir = state_dir(root);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("state.json"),
+                serde_json::to_vec_pretty(&state).unwrap(),
+            )
+            .unwrap();
+        };
+        std::fs::create_dir_all(&mine).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+
+        let before = siblings_fingerprint(&state_dir(&mine));
+        assert_eq!(before, siblings_fingerprint(&state_dir(&mine)), "stable");
+
+        // A project appearing must be noticed.
+        write(&other, 5432);
+        let appeared = siblings_fingerprint(&state_dir(&mine));
+        assert_ne!(before, appeared);
+
+        // So must that project rewriting its claims.
+        write(&other, 15432);
+        assert_ne!(appeared, siblings_fingerprint(&state_dir(&mine)));
+
+        // Our own state file is not a neighbour, so it never moves the value.
+        let neighbours = siblings_fingerprint(&state_dir(&mine));
+        write(&mine, 6379);
+        assert_eq!(neighbours, siblings_fingerprint(&state_dir(&mine)));
+    }
+
+    #[test]
+    fn a_removed_daemon_keeps_its_claim_while_it_may_still_run() {
+        let with_port = |name: &str, port: u16| super::super::Daemon {
+            name: name.to_string(),
+            source: PathBuf::from("/project/mise.toml"),
+            root: PathBuf::from("/project"),
+            table: toml::Table::new(),
+            preset: None,
+            task: None,
+            tool: None,
+            exports: Default::default(),
+            imported: false,
+            port: Some(PortClaim::fixed(port)),
+        };
+        let set = |daemons: Vec<super::super::Daemon>| DaemonSet {
+            daemons: daemons.into_iter().map(|d| (d.name.clone(), d)).collect(),
+            ..Default::default()
+        };
+        let previous = BTreeMap::from([
+            ("postgres".to_string(), PortClaim::fixed(5432)),
+            ("redis".to_string(), PortClaim::fixed(6379)),
+        ]);
+
+        // Redis is dropped from the config but keeps its id, so it may still be
+        // running. Losing its claim would tell the next project 6379 is free.
+        let kept = carry_port_claims(&previous, &set(vec![with_port("postgres", 5432)]));
+        assert_eq!(kept["redis"].port, 6379, "a removed daemon keeps its claim");
+        assert_eq!(kept["postgres"].port, 5432);
+
+        // A redeclared daemon takes its current port, not the recorded one.
+        let moved = carry_port_claims(&previous, &set(vec![with_port("redis", 6400)]));
+        assert_eq!(moved["redis"].port, 6400);
+
+        // Still declared but no longer holding a mise-resolved port: nothing
+        // manages one for it, so the stale claim goes.
+        let mut bare = with_port("redis", 0);
+        bare.port = None;
+        let dropped = carry_port_claims(&previous, &set(vec![bare]));
+        assert!(!dropped.contains_key("redis"));
+        assert_eq!(dropped["postgres"].port, 5432);
+    }
+
+    #[test]
+    fn only_the_daemons_being_started_have_their_ports_checked() {
+        // Registration covers a whole project, so an unrelated daemon whose
+        // port is taken elsewhere must not block the one being started.
+        let ports = BTreeMap::from([
+            ("postgres".to_string(), PortClaim::fixed(5432)),
+            ("redis".to_string(), PortClaim::fixed(6379)),
+        ]);
+        let names = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+
+        // Starting redis never considers the Postgres claim, so another
+        // project serving 5432 cannot block it.
+        let scoped = ports_being_started(&ports, &names(&["redis"]));
+        assert_eq!(scoped.keys().collect::<Vec<_>>(), ["redis"]);
+        assert_eq!(scoped["redis"].port, 6379);
+
+        // A bare start covers everything it will launch.
+        assert_eq!(
+            ports_being_started(&ports, &names(&["postgres", "redis"])).len(),
+            2
+        );
+        // A name with no claim, and no names at all, leave nothing to check.
+        assert!(ports_being_started(&ports, &names(&["web"])).is_empty());
+        assert!(ports_being_started(&ports, &[]).is_empty());
+    }
+
+    #[test]
+    fn a_stopped_daemon_does_not_reserve_its_port() {
+        // The scan deliberately reports a candidate without consulting
+        // liveness; `Runtime::check_port_conflicts` probes before failing, so a
+        // stopped project cannot hold a default port hostage. Two projects
+        // taking turns on 5432 has to keep working.
+        let tmp = tempfile::tempdir().unwrap();
+        let theirs = tmp.path().join("stopped");
+        std::fs::create_dir_all(&theirs).unwrap();
+        let state = State {
+            root: theirs.clone(),
+            ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(5432))]),
+            ..State::default()
+        };
+        let dir = state_dir(&theirs);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("state.json"),
+            serde_json::to_vec_pretty(&state).unwrap(),
+        )
+        .unwrap();
+        let found = claimed_ports(&state_dir(tmp.path()));
+        assert!(
+            found.iter().any(|(s, _, p)| s.root == theirs && *p == 5432),
+            "a persisted claim is only a candidate, not a verdict"
+        );
+    }
+
+    #[test]
     fn groups_render_with_qualified_daemon_ids() {
         let daemon = |name: &str| super::super::Daemon {
             name: name.to_string(),
@@ -677,6 +1152,7 @@ mod tests {
             tool: None,
             exports: Default::default(),
             imported: false,
+            port: None,
         };
         let set = DaemonSet {
             daemons: ["api", "worker"]
@@ -734,6 +1210,7 @@ mod tests {
             tool: None,
             exports: Default::default(),
             imported: false,
+            port: None,
         };
         let state = State {
             profile: vec!["dev".into()],
