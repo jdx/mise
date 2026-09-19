@@ -2666,6 +2666,27 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// Return `VersionInfo` with `created_at: None` if timestamps are not available.
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>>;
 
+    /// Release date for a single version, for backends whose listing cannot
+    /// afford to date every version it returns.
+    ///
+    /// A version listing carries release dates so a release-age cutoff can hide
+    /// versions that are too new, and a version with no date counts as old
+    /// enough to install. That default is right for a backend whose source has
+    /// no dates at all, but it lets the cutoff lapse for one that dated only
+    /// part of its listing — `go:`, where reading a private module's dates
+    /// costs a VCS round trip apiece, dates only the newest few. Resolution
+    /// calls this for a candidate it is about to select that arrived undated,
+    /// so a backend pays one query per version the cutoff actually hides.
+    ///
+    /// Returning `None`, the default, keeps the shared behavior.
+    async fn fetch_version_created_at(
+        &self,
+        _config: &Arc<Config>,
+        _version: &str,
+    ) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Backend-specific fast path for the absolute latest stable version.
     ///
     /// Do not call this from CLI/toolset code. Use `latest_version` instead so
@@ -2991,7 +3012,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         };
         let filter = !self.include_prereleases(selection_opts);
         let versions = self.fuzzy_match_filter(versions, query, filter);
-        Ok(self.version_order(selection_opts)?.order(versions))
+        let mut versions = self.version_order(selection_opts)?.order(versions);
+        // Every caller that resolves a request — `latest`, a prefix, a partial
+        // version — takes the last entry of this list, so the cutoff has to be
+        // exact by the time it is returned.
+        if let Some(before) = before_date {
+            self.drop_matches_hidden_by_cutoff(config, &mut versions, before, selection_opts)
+                .await?;
+        }
+        Ok(versions)
     }
 
     /// Remote versions the release-age cutoff excluded, in listing order.
@@ -3008,10 +3037,23 @@ pub(crate) trait Backend: Debug + Send + Sync {
         before: Timestamp,
     ) -> eyre::Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let backend = self.ba().full();
         let hidden: Vec<VersionInfo> = self
             .list_remote_versions_with_info_with_selection_options(config, &opts, false)
             .await?
             .into_iter()
+            .map(|mut v| {
+                // A version the listing could not afford to date may still have
+                // been dated on demand while the cutoff was applied. Without
+                // that, the versions this message exists to name are exactly the
+                // ones it cannot see.
+                if v.created_at.is_none()
+                    && let Some(created_at) = on_demand_release_date(&backend, &v.version)
+                {
+                    v.created_at = Some(created_at);
+                }
+                v
+            })
             .filter(|v| {
                 v.created_at_timestamp()
                     .is_some_and(|created| created >= before)
@@ -3087,8 +3129,94 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 }
             };
             matches = self.version_order(selection_opts)?.order(matches);
+            // `list_versions_matching_with_selection_options` already did this
+            // for the list above; this branch built its own.
+            if let Some(before) = before_date {
+                self.drop_matches_hidden_by_cutoff(config, &mut matches, before, selection_opts)
+                    .await?;
+            }
         }
         Ok(find_match_in_list(&matches, query))
+    }
+
+    /// Drop the candidates a release-age cutoff hides but the listing left undated.
+    ///
+    /// `VersionInfo::filter_by_date` keeps an undated version, so a backend that
+    /// could only afford to date part of its listing stops honoring the cutoff
+    /// past that point. Ask [`Backend::fetch_version_created_at`] for the dates
+    /// that decide the outcome: resolution takes the last entry of an ordered
+    /// candidate list, so only the trailing candidates need one, and the walk
+    /// stops at the first candidate that survives.
+    ///
+    /// The check on what gets returned is exact; picking the *newest* eligible
+    /// version is not. A backend whose version order is not chronological can
+    /// land on an older version than it strictly had to, which is the safe
+    /// direction for a supply-chain cutoff.
+    async fn drop_matches_hidden_by_cutoff(
+        &self,
+        config: &Arc<Config>,
+        matches: &mut Vec<String>,
+        before: Timestamp,
+        selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<()> {
+        if matches.is_empty() {
+            return Ok(());
+        }
+        let backend = self.ba().full();
+        // Cached from the listing this candidate set was built from.
+        let dated: HashSet<String> = self
+            .list_remote_versions_with_info_with_selection_options(config, selection_opts, false)
+            .await?
+            .into_iter()
+            .filter(|v| v.created_at.is_some())
+            .map(|v| v.version)
+            .collect();
+        while let Some(candidate) = matches.last() {
+            if dated.contains(candidate) {
+                // Already checked against the cutoff by `filter_by_date`.
+                break;
+            }
+            // Reuse an answer this run already paid for; the error message
+            // below asks for the same versions again.
+            let created_at = match on_demand_release_date(&backend, candidate) {
+                Some(created_at) => Some(created_at),
+                None => match self.fetch_version_created_at(config, candidate).await {
+                    Ok(created_at) => {
+                        remember_on_demand_release_date(&backend, candidate, created_at.as_deref());
+                        created_at
+                    }
+                    Err(err) => {
+                        // Allow a version whose date could not be read, the same as
+                        // one from a backend that has no dates at all. These lookups
+                        // reach the network one candidate at a time, so failing the
+                        // resolution here would turn a slow proxy or VCS host into
+                        // an install error for a request that resolved fine before
+                        // the cutoff could be checked at all. Say so, though: it
+                        // means this version went in unchecked.
+                        warn!(
+                            "{}@{candidate}: could not read its release date to check the {before} cutoff, allowing it: {err:#}",
+                            self.id()
+                        );
+                        None
+                    }
+                },
+            };
+            let info = VersionInfo {
+                version: candidate.clone(),
+                created_at,
+                ..Default::default()
+            };
+            if !info.hidden_by_date(before) {
+                break;
+            }
+            debug!(
+                "Dropping {}@{candidate}: released {:?}, after the {before} cutoff",
+                self.id(),
+                info.created_at
+            );
+            matches.pop();
+        }
+        Ok(())
     }
 
     /// Get the latest version, optionally filtered by release date.
@@ -4771,9 +4899,15 @@ mod latest_version_tests {
         stable_info: Option<VersionInfo>,
         remote_versions: Vec<VersionInfo>,
         listing_keys: &'static [&'static str],
+        /// Dates this backend will only hand over one version at a time, the
+        /// way `go:` does for a module it has to reach over VCS.
+        lazy_dates: BTreeMap<String, String>,
+        /// Make every date lookup fail, the way an unreachable proxy or VCS host does.
+        lazy_dates_fail: bool,
         stable_calls: AtomicUsize,
         stable_info_calls: AtomicUsize,
         list_calls: AtomicUsize,
+        lazy_date_calls: AtomicUsize,
     }
 
     impl LatestBackend {
@@ -4795,10 +4929,30 @@ mod latest_version_tests {
                     },
                 ],
                 listing_keys: &[],
+                lazy_dates: BTreeMap::new(),
+                lazy_dates_fail: false,
                 stable_calls: AtomicUsize::new(0),
                 stable_info_calls: AtomicUsize::new(0),
                 list_calls: AtomicUsize::new(0),
+                lazy_date_calls: AtomicUsize::new(0),
             }
+        }
+
+        fn with_lazy_dates(mut self, lazy_dates: &[(&str, &str)]) -> Self {
+            self.lazy_dates = lazy_dates
+                .iter()
+                .map(|(version, date)| (version.to_string(), date.to_string()))
+                .collect();
+            self
+        }
+
+        fn with_failing_lazy_dates(mut self) -> Self {
+            self.lazy_dates_fail = true;
+            self
+        }
+
+        fn lazy_date_calls(&self) -> usize {
+            self.lazy_date_calls.load(Ordering::SeqCst)
         }
 
         fn with_stable_result(mut self, stable_result: Option<&str>) -> Self {
@@ -4858,6 +5012,18 @@ mod latest_version_tests {
             Ok(self.remote_versions.clone())
         }
 
+        async fn fetch_version_created_at(
+            &self,
+            _config: &Arc<Config>,
+            version: &str,
+        ) -> eyre::Result<Option<String>> {
+            self.lazy_date_calls.fetch_add(1, Ordering::SeqCst);
+            if self.lazy_dates_fail {
+                bail!("simulated release-date lookup failure");
+            }
+            Ok(self.lazy_dates.get(version).cloned())
+        }
+
         async fn latest_stable_version(
             &self,
             _config: &Arc<Config>,
@@ -4881,6 +5047,206 @@ mod latest_version_tests {
         ) -> Result<ToolVersion> {
             unreachable!()
         }
+    }
+
+    /// A listing that dates only part of what it returns, the shape `go:`
+    /// produces for a module it has to reach over VCS.
+    fn partially_dated_backend(name: &str) -> LatestBackend {
+        LatestBackend::new(name)
+            .with_stable_result(None)
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2024-01-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "2.0.0".to_string(),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "3.0.0".to_string(),
+                    ..Default::default()
+                },
+            ])
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_resolves_dates_the_listing_left_out() {
+        let config = Config::get().await.unwrap();
+        let backend = partially_dated_backend("test-lazy-dates")
+            .with_lazy_dates(&[("3.0.0", "2025-12-01"), ("2.0.0", "2025-01-01")]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        // 3.0.0 is undated in the listing, so the shared filter keeps it; asking
+        // for its date shows it is past the cutoff and 2.0.0 is not.
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2.0.0")
+        );
+        // One query per version the cutoff hid, and the walk stops at 2.0.0
+        // rather than dating 1.0.0, which the listing already dated.
+        assert_eq!(backend.lazy_date_calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_resolves_dates_for_a_prefix_request() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-cutoff-prefix-path")
+            .with_stable_result(None)
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2024-01-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "1.0.1".to_string(),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "1.0.2".to_string(),
+                    ..Default::default()
+                },
+            ])
+            .with_lazy_dates(&[("1.0.2", "2025-12-01"), ("1.0.1", "2025-01-01")]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        // A prefix request resolves through `list_versions_matching_with_opts`
+        // and takes the last match, so the cutoff has to be exact there too.
+        assert_eq!(
+            backend
+                .list_versions_matching_with_opts(&config, "1.0", Some(before), false)
+                .await
+                .unwrap(),
+            vec!["1.0.0".to_string(), "1.0.1".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_reads_each_release_date_once() {
+        let config = Config::get().await.unwrap();
+        let backend = partially_dated_backend("test-lazy-dates-memo")
+            .with_lazy_dates(&[("3.0.0", "2025-12-01"), ("2.0.0", "2025-01-01")]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        for _ in 0..2 {
+            assert_eq!(
+                backend
+                    .latest_version(&config, Some("latest".to_string()), Some(before))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some("2.0.0")
+            );
+        }
+        // Each date costs a network round trip, and the second resolution — or
+        // the error message explaining the cutoff — must not pay for it again.
+        assert_eq!(backend.lazy_date_calls(), 2);
+    }
+
+    #[test]
+    fn remembered_release_dates_evict_oldest_first() {
+        let mut dates: OnDemandReleaseDates = (0..5)
+            .map(|i| {
+                (
+                    ("go:tool".to_string(), format!("1.0.{i}")),
+                    "2025-01-01".to_string(),
+                )
+            })
+            .collect();
+
+        evict_oldest_release_dates(&mut dates, 3);
+
+        // Room for one more, and what went is the oldest — a resolution still
+        // explaining its cutoff keeps the dates it just stored.
+        assert_eq!(dates.len(), 2);
+        assert!(dates.contains_key(&("go:tool".to_string(), "1.0.4".to_string())));
+        assert!(!dates.contains_key(&("go:tool".to_string(), "1.0.0".to_string())));
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_retries_a_version_it_could_not_date() {
+        let config = Config::get().await.unwrap();
+        // No date for 3.0.0: offline, an unreachable source and unparseable
+        // metadata all look like this. Holding onto that answer would leave the
+        // version unchecked for the rest of the process.
+        let backend = partially_dated_backend("test-lazy-dates-inconclusive");
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        for _ in 0..2 {
+            assert_eq!(
+                backend
+                    .latest_version(&config, Some("latest".to_string()), Some(before))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some("3.0.0")
+            );
+        }
+        assert_eq!(backend.lazy_date_calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_allows_a_version_whose_date_lookup_fails() {
+        let config = Config::get().await.unwrap();
+        // An unreachable proxy or VCS host must not turn into a resolution
+        // error for a request that resolved before the cutoff was checkable.
+        let backend = partially_dated_backend("test-lazy-dates-unreachable")
+            .with_lazy_dates(&[("3.0.0", "2025-12-01")])
+            .with_failing_lazy_dates();
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+        assert_eq!(backend.lazy_date_calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_keeps_versions_a_backend_cannot_date() {
+        let config = Config::get().await.unwrap();
+        // No lazy dates: the default `fetch_version_created_at` returns None,
+        // which has to leave the "undated versions are eligible" rule alone.
+        let backend = partially_dated_backend("test-undatable");
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_does_not_redate_versions_the_listing_dated() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-already-dated").with_stable_result(None);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        // 2.0.0 (2025-01-01) is dated and older than the cutoff, so nothing
+        // needs a second look.
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2.0.0")
+        );
+        assert_eq!(backend.lazy_date_calls(), 0);
     }
 
     #[tokio::test]
@@ -5542,9 +5908,12 @@ mod latest_version_tests {
             stable_info: None,
             remote_versions: vec![],
             listing_keys: &[],
+            lazy_dates: BTreeMap::new(),
+            lazy_dates_fail: false,
             stable_calls: AtomicUsize::new(0),
             stable_info_calls: AtomicUsize::new(0),
             list_calls: AtomicUsize::new(0),
+            lazy_date_calls: AtomicUsize::new(0),
         };
 
         assert_eq!(
@@ -5899,6 +6268,67 @@ struct SharedHookEnv {
     /// completing since then makes it stale.
     generation: u64,
     env: IndexMap<String, String>,
+}
+
+/// Release dates read one version at a time during this run, keyed by resolved
+/// backend and version.
+///
+/// The key is `BackendArg::full()`, not the short name: a registry entry can
+/// offer several backends under one short name, and a date read for one of
+/// them says nothing about the same version of another.
+///
+/// `Backend::fetch_version_created_at` goes to the network, and two separate
+/// things need each answer: the walk that applies a release-age cutoff, and the
+/// error message that explains which versions the cutoff hid. Without a shared
+/// record the message re-reads the cached listing, where those versions are
+/// still undated, and falls back to a bare "no versions found" — dropping the
+/// remedy that tells the user which version to pin or how to lower the cutoff.
+///
+/// Only an answer is kept, never the absence of one. "No date" is what a
+/// backend reports for an offline run, a source that could not be reached and
+/// metadata it could not parse, and holding onto that would keep a version
+/// unchecked for the rest of the process. A release date that was read, on the
+/// other hand, describes a release that already happened and cannot change.
+type OnDemandReleaseDates = IndexMap<(String, String), String>;
+static ON_DEMAND_RELEASE_DATES: LazyLock<Mutex<OnDemandReleaseDates>> =
+    LazyLock::new(Default::default);
+
+/// How many dates to keep. Reaching this needs a cutoff deep enough to walk
+/// past a listing's dated versions, repeated across hundreds of tools, so a CLI
+/// run never comes close; the bound is here so a long-lived process (a daemon,
+/// an embedded use) cannot grow this without end.
+const ON_DEMAND_RELEASE_DATE_LIMIT: usize = 1024;
+
+fn remember_on_demand_release_date(backend: &str, version: &str, created_at: Option<&str>) {
+    let Some(created_at) = created_at else {
+        return;
+    };
+    if let Ok(mut dates) = ON_DEMAND_RELEASE_DATES.lock() {
+        evict_oldest_release_dates(&mut dates, ON_DEMAND_RELEASE_DATE_LIMIT);
+        dates.insert(
+            (backend.to_string(), version.to_string()),
+            created_at.to_string(),
+        );
+    }
+}
+
+/// Make room for one more date by dropping the oldest.
+///
+/// The oldest rather than the whole map: another resolution may still be
+/// relying on a date it stored to say which versions its cutoff hid. Losing one
+/// costs a repeated lookup, nothing more.
+fn evict_oldest_release_dates(dates: &mut OnDemandReleaseDates, limit: usize) {
+    while dates.len() >= limit {
+        dates.shift_remove_index(0);
+    }
+}
+
+fn on_demand_release_date(backend: &str, version: &str) -> Option<String> {
+    ON_DEMAND_RELEASE_DATES
+        .lock()
+        .ok()?
+        .get(&(backend.to_string(), version.to_string()))
+        .cloned()
 }
 
 static POSTINSTALL_ENV: LazyLock<TokioMutex<Option<SharedHookEnv>>> =

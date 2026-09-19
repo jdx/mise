@@ -43,16 +43,21 @@ only the newest 100 versions through a module proxy, or the newest 10 through
 `go list`. All versions remain in the list; versions outside these limits have
 no release date.
 
-::: warning Release-age filtering
-[`minimum_release_age`](/configuration/settings.html#minimum_release_age) allows
-versions with no known release date. If a module publishes more than 100
-versions through a proxy, or 10 through `go list`, within the configured age
-window, mise may select a version newer than the cutoff. For example, a `90d`
-window may not be fully enforced for a module with more than 10 releases in
-that period when discovery uses `go list`.
+A version with no release date is still checked against
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age):
+before mise settles on one, it reads that single version's date and moves
+further back while the answer is newer than the cutoff. A cutoff deep enough to
+reach past the dated versions therefore costs one query per version it skips,
+which can make the first resolution of a module with many releases noticeably
+slower through `go list`. The direct `latest` query includes a release date, and
+if that release is too recent mise falls back to the full list and dates
+candidates from there.
 
-The direct `latest` query includes a release date, but if that release is too
-recent, mise falls back to the full list and the same limitation applies.
+::: warning Unreachable sources
+If reading a version's date fails outright — an unreachable proxy, a VCS host
+that times out — mise warns and allows that version rather than failing the
+install. A version can therefore still slip past the cutoff on a bad network,
+and the warning is what tells you it happened.
 :::
 
 ### Private modules
