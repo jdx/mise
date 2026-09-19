@@ -591,25 +591,36 @@ fn is_absolute_launchd_path(path: &str) -> bool {
 /// expects.
 const PROCESS_TYPES: [&str; 4] = ["Background", "Standard", "Adaptive", "Interactive"];
 
-/// Match a configured process type case-insensitively and return launchd's own
-/// spelling.
+/// Accept exactly launchd's own spelling of a process type.
 ///
-/// launchd compares the value exactly and ignores anything it does not know, so
-/// `background` would be accepted by the plist parser and then quietly do
-/// nothing. Normalizing means a lowercase config still lands in the right band,
-/// and anything genuinely unrecognized is an error here rather than a job that
-/// silently runs at default priority.
+/// launchd compares `ProcessType` exactly and ignores a value it does not know,
+/// so a wrong spelling would be accepted by the plist parser and then quietly
+/// do nothing: the config would claim a band the job is not in. That is what
+/// makes this worth rejecting rather than passing through.
+///
+/// Exact rather than case-insensitive, so that `schema/mise.json` can say the
+/// same thing. The schema is an enum of these four strings, and JSON Schema has
+/// no case-insensitive enum: matching loosely here would mean either an
+/// unreadable character-class regex in the schema, or editors red-lining a
+/// config mise accepts. One spelling keeps parser, schema and docs in exact
+/// agreement, and it is the spelling Apple documents.
+///
+/// A value that differs only in case or surrounding space is still a typo worth
+/// naming precisely, so the error suggests the canonical form rather than
+/// silently accepting it.
 fn canonical_process_type(value: &str, name: &str) -> Result<String> {
-    PROCESS_TYPES
+    if let Some(exact) = PROCESS_TYPES.iter().find(|candidate| **candidate == value) {
+        return Ok((*exact).to_string());
+    }
+    let suggestion = PROCESS_TYPES
         .iter()
         .find(|candidate| candidate.eq_ignore_ascii_case(value.trim()))
-        .map(|candidate| (*candidate).to_string())
-        .ok_or_else(|| {
-            eyre::eyre!(
-                "agent '{name}' `process_type` must be one of {}, got '{value}'",
-                PROCESS_TYPES.join(", ")
-            )
-        })
+        .map(|candidate| format!(" (did you mean '{candidate}'?)"))
+        .unwrap_or_default();
+    Err(eyre::eyre!(
+        "agent '{name}' `process_type` must be one of {}, got '{value}'{suggestion}",
+        PROCESS_TYPES.join(", ")
+    ))
 }
 
 fn expand_path_string(path: &str) -> String {
@@ -694,20 +705,13 @@ mod tests {
         )
     }
 
-    /// launchd compares `ProcessType` exactly, so a value it does not recognize
-    /// is ignored and the job quietly runs in the default band. Each accepted
-    /// spelling therefore has to come back out in launchd's own capitalization.
+    /// The four launchd spells, and only those, so `schema/mise.json` can carry
+    /// the same enum without an editor red-lining a config mise accepts.
     #[test]
-    fn process_type_is_normalized_to_launchd_spelling() {
-        for (input, expected) in [
-            ("Background", "Background"),
-            ("background", "Background"),
-            ("  Adaptive  ", "Adaptive"),
-            ("INTERACTIVE", "Interactive"),
-            ("standard", "Standard"),
-        ] {
-            let request = request_with_process_type(input).unwrap();
-            assert_eq!(request.process_type.as_deref(), Some(expected), "{input}");
+    fn process_type_accepts_launchds_own_spelling() {
+        for expected in ["Background", "Standard", "Adaptive", "Interactive"] {
+            let request = request_with_process_type(expected).unwrap();
+            assert_eq!(request.process_type.as_deref(), Some(expected));
         }
     }
 
@@ -724,9 +728,33 @@ mod tests {
         }
     }
 
+    /// A near miss is the likely typo, and the one a bare list of valid values
+    /// reads as unhelpful for, so the error names the exact fix. Still an
+    /// error: accepting it is what would put the schema and the parser at odds.
+    #[test]
+    fn a_near_miss_process_type_suggests_the_exact_spelling() {
+        for input in ["background", "  Adaptive  ", "INTERACTIVE"] {
+            let err = request_with_process_type(input).unwrap_err().to_string();
+            assert!(err.contains("did you mean"), "{input:?}: {err}");
+        }
+        // Quoted, so trailing space is visible in the message rather than
+        // leaving the reader staring at an apparently correct value.
+        let err = request_with_process_type("  Adaptive  ")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("'  Adaptive  '"), "{err}");
+        assert!(err.contains("'Adaptive'"), "{err}");
+
+        // A value that is not close to anything gets the list and no guess.
+        let err = request_with_process_type("Realtime")
+            .unwrap_err()
+            .to_string();
+        assert!(!err.contains("did you mean"), "{err}");
+    }
+
     #[test]
     fn process_type_reaches_the_plist_only_when_set() {
-        let with = request_with_process_type("background").unwrap();
+        let with = request_with_process_type("Background").unwrap();
         let rendered = String::from_utf8(render_plist(&with).unwrap()).unwrap();
         assert!(rendered.contains("<key>ProcessType</key>"));
         assert!(rendered.contains("<string>Background</string>"));

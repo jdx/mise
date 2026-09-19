@@ -58,9 +58,11 @@ as pipes and redirections need an explicitly invoked shell or a wrapper script.
 `process_type` is the scheduling band launchd puts the job in: `Background`,
 `Standard`, `Adaptive` or `Interactive`. `Background` is the usual choice for
 work that should yield to the user, since launchd throttles CPU and disk I/O for
-that band. The value is matched case-insensitively and written in launchd's own
-spelling; anything else is an error, because launchd ignores a `ProcessType` it
-does not recognize and the job would silently run in the default band.
+that band. Write it exactly as shown, which is launchd's own spelling and what
+the JSON schema validates against; anything else is an error, because launchd
+ignores a `ProcessType` it does not recognize and the job would silently run in
+the default band. A value that is only miscapitalized is still rejected, with
+the right spelling named in the message.
 
 `keep_alive` and `keep_alive_on_failure` are mutually exclusive. Set only one:
 the former keeps the process running after any exit, while the latter restarts
