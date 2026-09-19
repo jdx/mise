@@ -1407,7 +1407,18 @@ impl DaemonSet {
     /// collide: a group conflicting with a daemon of the same name there is
     /// rejected when configuration loads.
     pub(crate) fn resolve_bare(&self, root: &Path, name: &str) -> Option<BareName<'_>> {
-        root.ancestors().find_map(|ancestor| {
+        for ancestor in root.ancestors() {
+            // A daemon declared here claims the word, so the walk stops: an
+            // ancestor's group of the same name does not reach past a nearer
+            // project's daemon. None means a plain daemon name, which the
+            // caller qualifies itself.
+            if self
+                .daemons
+                .values()
+                .any(|d| !d.imported && d.root == ancestor && d.name == name)
+            {
+                return None;
+            }
             if self
                 .groups
                 .iter()
@@ -1419,10 +1430,11 @@ impl DaemonSet {
             if let Some(id) = self.aliases.get(&key) {
                 return Some(BareName::Import(id.as_str()));
             }
-            self.import_errors
-                .get(&key)
-                .map(|err| BareName::Unresolved(err.as_str()))
-        })
+            if let Some(err) = self.import_errors.get(&key) {
+                return Some(BareName::Unresolved(err.as_str()));
+            }
+        }
+        None
     }
 
     /// Whether `root` reaches an import under this name, its own or inherited.
@@ -3541,6 +3553,35 @@ three = ["two", "c"]
     /// A group covers the daemons its project declares. Naming one reached
     /// with `project` is refused rather than silently dropped, because mise
     /// would expand a group the registered configuration does not.
+    /// A daemon declared nearer claims its own name. An ancestor's group of the
+    /// same word must not take it, or the daemon could not be started by the
+    /// short name at all: a group selector never falls back to a daemon.
+    #[test]
+    fn a_nearer_daemon_outranks_an_ancestors_group_of_the_same_name() {
+        let set = load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.web]\nrun = 'child web'\n",
+            ),
+            (
+                "/parent/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nweb = ['api']\n",
+            ),
+        ]))
+        .unwrap();
+        // From the child, `web` is its daemon, not the parent's group.
+        assert!(
+            set.resolve_bare(Path::new("/parent/child"), "web")
+                .is_none(),
+            "a plain daemon name resolves to nothing for the caller to qualify"
+        );
+        // From the parent, the same word is still that project's group.
+        assert!(matches!(
+            set.resolve_bare(Path::new("/parent"), "web"),
+            Some(BareName::Group)
+        ));
+    }
+
     #[test]
     fn a_group_cannot_name_an_imported_daemon() {
         let _serial = import_lock();

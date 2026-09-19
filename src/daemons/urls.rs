@@ -373,6 +373,13 @@ pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabel
         }
     };
     let worktree = checkout.worktree.as_deref().and_then(worktree_label);
+    // A worktree whose name yields no label cannot be told from the primary
+    // checkout by the suffix, which would hand both one hostname for two
+    // different ports. Without a name for this copy there is no hostname for
+    // it at all.
+    if checkout.worktree.is_some() && worktree.is_none() {
+        return Ok(RootLabels::default());
+    }
     Ok(RootLabels { project, worktree })
 }
 
@@ -787,6 +794,39 @@ mod tests {
         let resolved = labels(&nested, &settings(None)).unwrap();
         assert_eq!(resolved.project.as_deref(), Some("shop"));
         assert_eq!(resolved.worktree.as_deref(), Some("shop-pr-42"));
+    }
+
+    /// Without a name for this copy there is no hostname for it. Leaving the
+    /// worktree component off would give it the primary checkout's hostname,
+    /// and two checkouts would advertise one host for two different ports.
+    #[test]
+    fn a_worktree_that_cannot_be_named_gets_no_hostname() {
+        let tmp = tempfile::tempdir().unwrap();
+        let primary = tmp.path().join("shop");
+        let private = primary.join(".git").join("worktrees").join("odd");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(primary.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
+        // Nothing in this directory name survives being folded into a label.
+        let linked = tmp.path().join("---");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::fs::write(
+            linked.join(".git"),
+            format!("gitdir: {}\n", private.display()),
+        )
+        .unwrap();
+
+        let resolved = labels(&linked, &settings(Some("shop"))).unwrap();
+        assert_eq!(resolved, RootLabels::default());
+        assert!(resolved.suffix("localhost").is_none());
+        // The primary checkout keeps its own, which is the one at stake.
+        assert_eq!(
+            labels(&primary, &settings(Some("shop")))
+                .unwrap()
+                .suffix("localhost")
+                .unwrap(),
+            "shop.localhost"
+        );
     }
 
     /// A bare repository with worktrees beside it has no ordinary checkout, so
