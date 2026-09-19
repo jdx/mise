@@ -8,6 +8,8 @@ INSTALLS="$MISE_DATA_DIR/installs/npm-commander"
 mise install npm:commander@13.0.0-0
 assert_fail "test -L $INSTALLS/latest"
 assert_fail "test -L $INSTALLS/13"
+# with no stable install, `latest` still resolves to the pre-release
+assert "MISE_OFFLINE=1 mise where npm:commander@latest" "$INSTALLS/13.0.0-0"
 
 # links an older mise wrote before it could tell the target is a pre-release
 ln -s ./13.0.0-0 "$INSTALLS/latest"
