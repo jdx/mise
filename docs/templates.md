@@ -103,6 +103,62 @@ Tera also supports powerful [expressions](https://keats.github.io/tera/#expressi
 Tera also supports [control structures such as <span v-pre>`if`</span> and
 <span v-pre>`for`</span>](https://keats.github.io/tera/#control-structures).
 
+### Parameterized Snippets with Components
+
+Use [Tera components](https://keats.github.io/tera/#components) when one task needs
+to expand a snippet several times with different arguments. Components generate
+text within the task's script, so the resulting commands run with that task's
+tools, environment, working directory, and shell.
+
+Define components and call them in the same `run` string:
+
+```toml
+[tasks.demo]
+vars = { opt = "from-task" }
+run = """
+{% component wrap(opt="none") %}
+echo run --opt={{ opt | quote }} --end
+{% endcomponent %}
+{% component twice(opt) %}
+{{ <wrap opt={opt} /> }}
+{{ <wrap opt={"nested-" ~ opt} /> }}
+{% endcomponent %}
+
+{{ <wrap opt={vars.opt} /> }}
+{{ <wrap opt="other" /> }}
+{{ <twice opt={vars.opt} /> }}
+{{ <wrap /> }}
+"""
+```
+
+`mise run demo` prints:
+
+```text
+run --opt=from-task --end
+run --opt=other --end
+run --opt=from-task --end
+run --opt=nested-from-task --end
+run --opt=none --end
+```
+
+The calls demonstrate task-local arguments, repeated expansion, nesting, and a
+default for an omitted argument. String literals use quotes; expressions such as
+`vars.opt` go inside braces in a component call. Pass the values a component needs
+as arguments. The example uses `quote` for a POSIX shell; the generated commands
+and quoting must suit the task's shell.
+
+Components are available with mise's default Tera v2 engine, not with the
+`tera_v1` compatibility setting. Keep definitions with their calls: mise does not
+provide a shared component-file loader, and definitions in one task or template
+string are not a supported library for other tasks or strings. Putting a
+component definition in top-level `[vars]` does not defer it until a task runs;
+those values [resolve when the config loads](/configuration/vars.html#when-vars-are-resolved).
+
+[Task templates](/tasks/templates.html) share task definitions through `extends`.
+They can share a whole `run` string containing components, but they do not splice
+snippets into a task's own `run`. For shared shell logic across different scripts,
+use functions in a sourced shell file.
+
 ### Tera v2 Migration
 
 mise uses Tera v2. Some Tera v1 syntax and built-ins changed in Tera v2. mise
@@ -138,7 +194,8 @@ Tera v2 also adds useful syntax that replaces many old helper filters:
 - ternaries, such as `"prod" if release else "dev"`
 
 Not every Tera v1 behavior can be made compatible. Undefined variable access is
-stricter in Tera v2, and Tera v1 macros are not supported by mise templates.
+stricter in Tera v2, and its default engine does not support Tera v1 macros. Use
+[components](#parameterized-snippets-with-components) for parameterized snippets.
 As a temporary escape hatch, set `MISE_TERA_V1=1` before running mise to render
 templates with Tera v1. In shared `mise.toml` files, prefer the backward-compatible
 env form because older mise releases treat it as a normal environment variable
