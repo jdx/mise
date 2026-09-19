@@ -2205,7 +2205,7 @@ With no subcommand, list configured and previously managed daemons.
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[ARGS]…" required=#false double_dash=automatic var=#true
     }
-    cmd register help="Prepare all project daemons for on-demand startup without starting them." {
+    cmd register help="Prepare all project daemons for on-demand startup without starting them." effect=write {
         long_help #"""
 Prepare all project daemons for on-demand startup without starting them.
 
