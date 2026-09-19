@@ -160,14 +160,28 @@ fn is_a_mount_point(root: &Path) -> bool {
     let Some(parent) = root.parent() else {
         return true;
     };
-    let container = parent.to_string_lossy().replace('\\', "/");
-    let container = container.trim_end_matches('/');
-    // macOS puts external volumes in /Volumes; Linux desktops use /media,
-    // /run/media/<user> or /mnt.
-    matches!(container, "/Volumes" | "/media" | "/mnt")
-        || parent
-            .parent()
-            .is_some_and(|grandparent| grandparent.ends_with("run/media"))
+    // macOS puts external volumes straight in /Volumes, and /mnt is the
+    // traditional spot for a hand-mounted one.
+    if matches!(as_container(parent).as_str(), "/Volumes" | "/mnt") {
+        return true;
+    }
+    // Linux desktops mount per user, at /media/<user>/<label> or
+    // /run/media/<user>/<label>, and sometimes straight at /media/<label>.
+    let one_deeper = parent.parent().map(as_container);
+    matches!(as_container(parent).as_str(), "/media")
+        || one_deeper.is_some_and(|dir| matches!(dir.as_str(), "/media" | "/run/media"))
+}
+
+/// A directory path in the one spelling these comparisons are written in:
+/// forward slashes, no trailing one.
+fn as_container(path: &Path) -> String {
+    let path = path.to_string_lossy().replace('\\', "/");
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// The directory holding every project's daemon state.
@@ -855,13 +869,18 @@ mod tests {
         // The disk is unplugged, but /Volumes keeps the other disks, so neither
         // the empty-ancestor nor the missing-parent sign shows.
         assert!(is_a_mount_point(Path::new("/Volumes/Disk")));
-        assert!(is_a_mount_point(Path::new("/media/usb")));
         assert!(is_a_mount_point(Path::new("/mnt/data")));
-        assert!(is_a_mount_point(Path::new("/run/media/coder/usb")));
         assert!(is_a_mount_point(Path::new("/")));
-        // Ordinary project directories are not.
+        // Linux desktops mount per user, a level below /media itself.
+        assert!(is_a_mount_point(Path::new("/media/usb")));
+        assert!(is_a_mount_point(Path::new("/media/coder/usb")));
+        assert!(is_a_mount_point(Path::new("/run/media/coder/usb")));
+        // Ordinary project directories are not, including one that lives on a
+        // mounted volume: unplugging that takes its parent with it, which is
+        // the other sign.
         assert!(!is_a_mount_point(Path::new("/home/coder/src/mise")));
         assert!(!is_a_mount_point(Path::new("/Volumes/Disk/project")));
+        assert!(!is_a_mount_point(Path::new("/media/coder/usb/project")));
     }
 
     #[test]
