@@ -592,9 +592,27 @@ impl fmt::Display for TokenSource {
 fn canonical_token_host(host: &str) -> &str {
     match host {
         "api.github.com" => "github.com",
+        // Repository file contents, authenticated by the same github.com token.
+        "raw.githubusercontent.com" => "github.com",
         h if is_ghe_com_api_host(h) => h.strip_prefix("api.").unwrap_or(h),
         other => other,
     }
+}
+
+/// Repository file contents, e.g. `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`.
+///
+/// A private repository's files are a 404 without a token and a 200 with one, so
+/// this host needs the same bearer token `api.github.com` gets. It is not an API
+/// host, so it gets no `x-github-api-version` header, and it is deliberately
+/// distinct from the release-asset hosts below: those URLs are pre-signed, and
+/// sending an Authorization header alongside the signature makes the storage
+/// backend reject the request. `resolve_token` enforces that separately by
+/// refusing to resolve a token for an asset host at all.
+pub(crate) fn is_github_raw_content_url(url: &url::Url) -> bool {
+    // https only. A token must never ride a cleartext request, and nothing
+    // legitimately fetches raw content over http: the scheme check costs
+    // nothing and closes the downgrade.
+    url.scheme() == "https" && url.host_str() == Some("raw.githubusercontent.com")
 }
 
 fn is_github_release_asset_host(host: &str) -> bool {
@@ -806,7 +824,12 @@ fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String,
         return Some((token, TokenSource::TokensFile));
     }
 
-    let is_ghcom = host == "github.com" || host == "api.github.com";
+    // Classify through the canonical host so every github.com-backed service is
+    // covered by one rule. raw.githubusercontent.com is the case that matters:
+    // treated as an enterprise host it would be handed
+    // MISE_GITHUB_ENTERPRISE_TOKEN below, sending a credential for a private
+    // GHES instance to a public GitHub service.
+    let is_ghcom = canonical_token_host(host) == "github.com";
     let lookup_hosts = token_lookup_hosts(host);
 
     // 1. Enterprise token (non-github.com only)
@@ -837,8 +860,13 @@ fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String,
         return Some((token, TokenSource::CredentialCommand));
     }
 
-    // 4. native GitHub OAuth device-flow token
-    if let Some(token) = oauth::resolve_token(host) {
+    // 4. native GitHub OAuth device-flow token. Asked about the canonical host
+    // for the same reason as the credential command above: the resolver matches
+    // the configured OAuth endpoint, which knows `github.com` and
+    // `api.github.com` but not `raw.githubusercontent.com`, so passing the raw
+    // host would silently return no token for a user authenticated by device
+    // flow rather than by GITHUB_TOKEN.
+    if let Some(token) = oauth::resolve_token(canonical_token_host(host)) {
         return Some((token, TokenSource::GithubOauth));
     }
 
@@ -902,6 +930,19 @@ pub(crate) fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
         } else {
             TOKEN_SOURCES.lock().unwrap().remove(host);
         }
+    }
+
+    // Not an API URL, so the block above skipped it, but a private repository's
+    // raw file still needs the token.
+    if !is_github_api_url(&url)
+        && is_github_raw_content_url(&url)
+        && let Some((token, source)) = resolve_token("raw.githubusercontent.com")
+    {
+        remember_token_source("raw.githubusercontent.com", &token, source);
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
+        );
     }
 
     if is_github_api_url(&url) && url.path().contains("/releases/assets/") {
@@ -1409,6 +1450,64 @@ something_else = "value"
         );
     }
 
+    /// An enterprise token is scoped to a private GHES instance and must never
+    /// be sent to a public github.com service. raw.githubusercontent.com is the
+    /// trap: it is neither `github.com` nor `api.github.com` literally, so a
+    /// host-string comparison classifies it as enterprise and leaks the token.
+    #[test]
+    fn test_enterprise_token_is_not_sent_to_public_raw_content() {
+        // Takes the env lock, snapshots the token vars, restores them on drop.
+        let _guard = GithubTokenGuard::new();
+        // Only an enterprise token configured, which is the leaking case.
+        env::remove_var("GITHUB_TOKEN");
+        env::set_var("MISE_GITHUB_ENTERPRISE_TOKEN", "ghes-secret");
+
+        for host in ["raw.githubusercontent.com", "github.com", "api.github.com"] {
+            // `resolve_token` would allow git credential helpers to run, which
+            // can block or prompt; the enterprise exclusion is unaffected by
+            // skipping them.
+            if let Some((token, _)) = resolve_token_inner(host, false) {
+                assert_ne!(
+                    token, "ghes-secret",
+                    "{host} must not receive MISE_GITHUB_ENTERPRISE_TOKEN"
+                );
+            }
+        }
+    }
+
+    /// The token must never ride a cleartext request.
+    #[test]
+    fn test_raw_githubusercontent_over_http_gets_no_token() {
+        with_github_token(|| {
+            let headers =
+                get_headers("http://raw.githubusercontent.com/owner/repo/main/file.txt").unwrap();
+            assert!(
+                !headers.contains_key(reqwest::header::AUTHORIZATION),
+                "an http raw-content URL must not carry the token"
+            );
+        });
+    }
+
+    /// A private repository's raw file is a 404 without a token and a 200 with
+    /// one, so this host does need the bearer token. Pinned separately from the
+    /// API hosts because it must NOT also receive the API version header, and
+    /// separately from the asset hosts, which must receive no token at all.
+    #[test]
+    fn test_raw_githubusercontent_uses_github_token() {
+        with_github_token(|| {
+            let headers =
+                get_headers("https://raw.githubusercontent.com/owner/repo/main/file.txt").unwrap();
+            assert!(
+                headers.contains_key(reqwest::header::AUTHORIZATION),
+                "raw.githubusercontent.com should carry the github.com token"
+            );
+            assert!(
+                !headers.contains_key("x-github-api-version"),
+                "raw.githubusercontent.com is not an API host"
+            );
+        });
+    }
+
     #[test]
     fn test_only_github_api_urls_use_github_token() {
         with_github_token(|| {
@@ -1416,7 +1515,6 @@ something_else = "value"
                 "https://github.com/api/v3/repos/owner/repo/releases",
                 "https://github.com/cuotos/ecs-exec-pf/releases/download/v0.3.0/ecs-exec-pf_0.3.0_Linux_x86_64.tar.gz",
                 "https://github.example.com/owner/repo/releases/download/v1.0.0/file.tar.gz",
-                "https://raw.githubusercontent.com/owner/repo/main/file.txt",
                 "https://objects.githubusercontent.com/github-production-release-asset",
                 "https://objects-origin.githubusercontent.com/github-production-release-asset",
                 "https://release-assets.githubusercontent.com/github-production-release-asset",
