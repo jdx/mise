@@ -639,17 +639,23 @@ pub(crate) fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Where a path sits in a git repository: which checkout holds it, and the
-/// primary checkout of the repository that checkout belongs to.
+/// Where a path sits in a git repository: which checkout holds it, and which
+/// repository that checkout belongs to.
 ///
-/// Both are needed to name a working copy: the primary identifies the project
-/// across all its checkouts, and the linked worktree, when there is one,
-/// distinguishes this copy from the others.
+/// Both are needed to name a working copy. The repository identifies the
+/// project across all of its checkouts, and the linked worktree, when there is
+/// one, distinguishes this copy from the others.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Checkout {
-    /// The main checkout's directory, or None for a worktree of a bare
-    /// repository, which has no ordinary checkout.
-    pub primary: Option<PathBuf>,
+    /// The directory the repository lives in: an ordinary checkout's own
+    /// directory, or the one holding a bare repository and the worktrees
+    /// beside it. None outside any git repository.
+    ///
+    /// Not a working tree. A bare repository has none, and this still names
+    /// its directory, because the question here is which project a path
+    /// belongs to. For the narrower question of which working copy may share
+    /// another's trust records, see `main_checkout_equivalent`.
+    pub repository: Option<PathBuf>,
     /// This linked worktree's own directory, when `path` is inside one.
     pub worktree: Option<PathBuf>,
 }
@@ -662,7 +668,7 @@ pub(crate) fn checkout_of(path: &Path) -> Checkout {
             // The main checkout, or a nested independent repository; either way
             // the search stops rather than consulting an outer repository.
             return Checkout {
-                primary: Some(dir.to_path_buf()),
+                repository: Some(dir.to_path_buf()),
                 worktree: None,
             };
         }
@@ -671,7 +677,7 @@ pub(crate) fn checkout_of(path: &Path) -> Checkout {
         }
         if worktree_gitdir(&dotgit).is_some() {
             return Checkout {
-                primary: repository_root(&dotgit),
+                repository: repository_root(&dotgit),
                 worktree: Some(dir.to_path_buf()),
             };
         }
@@ -681,7 +687,7 @@ pub(crate) fn checkout_of(path: &Path) -> Checkout {
         // exactly as a `.git` directory does.
         if !is_submodule_gitdir(&dotgit) {
             return Checkout {
-                primary: Some(dir.to_path_buf()),
+                repository: Some(dir.to_path_buf()),
                 worktree: None,
             };
         }

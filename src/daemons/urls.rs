@@ -349,7 +349,7 @@ fn worktree_label(dir: &Path) -> Option<String> {
 /// derives them so the two always name the same host.
 ///
 /// The project label is the explicit `[daemons_settings] namespace` before any
-/// per-worktree suffix, otherwise the primary checkout's directory name. The
+/// per-worktree suffix, otherwise the repository's directory name. The
 /// worktree label is present only in a linked worktree; in the primary checkout
 /// a daemon sits directly under the project, as `api.shop.localhost`.
 ///
@@ -363,9 +363,11 @@ pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabel
         // Not the hashed default namespace: that is derived from the root path,
         // so every checkout would produce a different project label and the
         // worktree component would be saying it twice. Pitchfork names the
-        // project after the primary checkout's directory, so mise does too.
+        // project after the repository's directory, so mise does too: the
+        // checkout's own for an ordinary repository, and for a bare one the
+        // directory holding it and the worktrees beside it.
         None => {
-            let dir = checkout.primary.as_deref().unwrap_or(root.as_path());
+            let dir = checkout.repository.as_deref().unwrap_or(root.as_path());
             dir.file_name()
                 .and_then(|name| sanitize_label(&name.to_string_lossy()))
         }
