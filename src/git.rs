@@ -671,7 +671,7 @@ pub(crate) fn checkout_of(path: &Path) -> Checkout {
         }
         if worktree_gitdir(&dotgit).is_some() {
             return Checkout {
-                primary: main_checkout_root(&dotgit),
+                primary: repository_root(&dotgit),
                 worktree: Some(dir.to_path_buf()),
             };
         }
@@ -809,6 +809,18 @@ fn read_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
 }
 
 /// Resolves a linked worktree's `.git` file to the root of the main checkout
+/// The directory a linked worktree's repository sits in: the parent of its
+/// common git directory, whether that is a checkout's `.git` or a bare repo.
+///
+/// This names the repository, so every worktree of it agrees, which is what
+/// [`Checkout::primary`] is for. It is not [`main_checkout_root`], which
+/// answers a narrower question — which working copy may share trust records —
+/// and so refuses a bare repository, having no working copy to point at.
+fn repository_root(dotgit_file: &Path) -> Option<PathBuf> {
+    let common = worktree_common_dir(&worktree_gitdir(dotgit_file)?)?;
+    common.parent().map(|p| p.to_path_buf())
+}
+
 fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     let common = worktree_common_dir(&worktree_gitdir(dotgit_file)?)?;
     if common.file_name() == Some(OsStr::new(".git")) {

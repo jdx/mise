@@ -787,6 +787,62 @@ mod tests {
         assert_eq!(resolved.worktree.as_deref(), Some("shop-pr-42"));
     }
 
+    /// A bare repository with worktrees beside it has no ordinary checkout, so
+    /// the repository directory names the project. Falling back to the root's
+    /// own directory would repeat the worktree label in the hostname, and would
+    /// give sibling projects in one worktree different project labels.
+    #[test]
+    fn a_bare_repositorys_worktrees_share_one_project_label() {
+        let tmp = tempfile::tempdir().unwrap();
+        // The usual layout: one directory holding the bare repository and the
+        // worktrees checked out beside it. That directory is the project, which
+        // is also what pitchfork names: the parent of the common git dir.
+        let project = tmp.path().join("shop");
+        let bare = project.join("repo.git");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let worktree = |name: &str| {
+            let private = bare.join("worktrees").join(name);
+            std::fs::create_dir_all(&private).unwrap();
+            std::fs::write(private.join("commondir"), "../..\n").unwrap();
+            let root = project.join(name);
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(
+                root.join(".git"),
+                format!("gitdir: {}\n", private.display()),
+            )
+            .unwrap();
+            root
+        };
+        let main = worktree("main");
+        let feature = worktree("feature");
+
+        // The project is named once, by the repository, and the worktree
+        // component stays distinct from it.
+        let resolved = labels(&main, &settings(None)).unwrap();
+        assert_eq!(resolved.project.as_deref(), Some("shop"));
+        assert_eq!(resolved.worktree.as_deref(), Some("main"));
+        assert_eq!(resolved.suffix("localhost").unwrap(), "main.shop.localhost");
+        assert_eq!(
+            labels(&feature, &settings(None))
+                .unwrap()
+                .project
+                .as_deref(),
+            Some("shop"),
+            "every worktree of one repository names the same project"
+        );
+
+        // Sibling projects inside one worktree share both labels.
+        let api = main.join("packages").join("api");
+        let web = main.join("packages").join("web");
+        std::fs::create_dir_all(&api).unwrap();
+        std::fs::create_dir_all(&web).unwrap();
+        assert_eq!(
+            labels(&api, &settings(None)).unwrap(),
+            labels(&web, &settings(None)).unwrap()
+        );
+    }
+
     /// A submodule is its own working copy, but the copy that distinguishes it
     /// is the worktree containing it: the same submodule checked out under two
     /// worktrees is two copies, and naming both after the submodule's own

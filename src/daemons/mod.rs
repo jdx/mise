@@ -326,20 +326,31 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             )?,
         );
     }
+    // Both collision checks below identify a daemon by its root and its name:
+    // two projects whose directories share a basename derive one project label,
+    // so the names alone do not tell them apart. The root is the canonical one,
+    // which is what the hostname and the port were derived from, so the identity
+    // and the value it guards cannot disagree about which directory is meant.
+    let mut canonical: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
+    let mut canonical_root = |root: &Path| -> PathBuf {
+        canonical
+            .entry(root.to_path_buf())
+            .or_insert_with(|| root.canonicalize().unwrap_or_else(|_| root.to_path_buf()))
+            .clone()
+    };
     // The proxy cannot route two daemons to one hostname, and pitchfork routes
     // neither side of a collision rather than choosing, so mise never
     // advertises one either. Checked once every daemon is built, because a
-    // preset's hostname is resolved on its own path. A daemon is identified by
-    // its root and its name: two projects whose directories share a basename
-    // derive one project label, so the names alone do not tell them apart.
+    // preset's hostname is resolved on its own path.
     let mut claimed_hosts: BTreeMap<String, (PathBuf, String)> = BTreeMap::new();
     for daemon in set.daemons.values() {
         let Some(host) = daemon.host.clone() else {
             continue;
         };
+        let root = canonical_root(&daemon.root);
         if let Some((other_root, other)) =
-            claimed_hosts.insert(host.clone(), (daemon.root.clone(), daemon.name.clone()))
-            && (other_root != daemon.root || other != daemon.name)
+            claimed_hosts.insert(host.clone(), (root.clone(), daemon.name.clone()))
+            && (other_root != root || other != daemon.name)
         {
             warn_once!(
                 "[daemons] {other} in {} and {} in {} both resolve to {host}, so pitchfork routes neither. Give one of them a different proxy label, or set proxy = false on it.",
@@ -380,20 +391,11 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // from: two roots reaching one directory through different paths resolve to
     // one port, and comparing the paths as written would call them distinct.
     let mut claimed_ports: BTreeMap<(PathBuf, u16), String> = BTreeMap::new();
-    let mut canonical: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
     for daemon in set.daemons.values() {
         let Some(claim) = daemon.port else {
             continue;
         };
-        let root = canonical
-            .entry(daemon.root.clone())
-            .or_insert_with(|| {
-                daemon
-                    .root
-                    .canonicalize()
-                    .unwrap_or_else(|_| daemon.root.clone())
-            })
-            .clone();
+        let root = canonical_root(&daemon.root);
         if let Some(other) = claimed_ports.insert((root, claim.port), daemon.name.clone())
             && other != daemon.name
         {
