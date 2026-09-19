@@ -781,7 +781,7 @@ rules, so another service can be pointed at it without any port arithmetic:
 
 ```toml
 [daemons.api]
-run = "npm run dev -- --port $API_PORT"
+run = "exec npm run dev -- --port $API_PORT"
 port = { auto = true, base = 3000 }
 
 [env]
