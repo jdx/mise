@@ -486,9 +486,11 @@ fi
 
 ## Sharing Flags Between Tasks {#shared-flags}
 
-When several tasks accept the same flags — especially flags with `choices` that must
-stay in sync — declare them once as a _flagset_ in a `.usage.kdl` file, then `use`
-the set from each task that takes them:
+Define shared flags once in a `.usage.kdl` file to keep their names, help text,
+and validation consistent across tasks. An `include` loads the file, and `use`
+adds a named _flagset_ to the task's arguments.
+
+For example, save this flagset in your project root:
 
 ```kdl [shared.usage.kdl]
 flagset "common" {
@@ -501,6 +503,22 @@ flagset "common" {
 }
 ```
 
+### Include Shared Flags in a Task
+
+In a file task, include the file from a `#USAGE` comment. Use
+`$MISE_CONFIG_ROOT` to locate it relative to the task's configuration root:
+
+```bash [mise-tasks/deploy]
+#!/usr/bin/env bash
+#USAGE include file="$MISE_CONFIG_ROOT/shared.usage.kdl"
+#USAGE use "common"
+#USAGE flag "--replicas <n>" help="How many to run"
+echo "env=${usage_env?} replicas=${usage_replicas?}"
+```
+
+For a TOML task, build the include path with the
+<span v-pre>`{{ config_root }}`</span> template variable instead:
+
 ```toml [mise.toml]
 [tasks.deploy]
 usage = """
@@ -508,39 +526,53 @@ include file="{{ config_root }}/shared.usage.kdl"
 use "common"
 flag "--replicas <n>" help="How many to run"
 """
-run = 'echo "env=$usage_env replicas=$usage_replicas"'
+run = 'echo "env=${usage_env?} replicas=${usage_replicas?}"'
 ```
 
-A file task pulls in the same set from its `#USAGE` header:
+Choose either task definition. Both accept `--env`, `--dry-run`, and
+`--replicas`, and reject values outside the choices for `--env`:
 
-```bash [mise-tasks/deploy]
-#!/usr/bin/env bash
-#USAGE include file="$MISE_CONFIG_ROOT/shared.usage.kdl"
-#USAGE use "common"
-#USAGE flag "--replicas <n>" help="How many to run"
-echo "env=$usage_env replicas=$usage_replicas"
+```shell
+mise run deploy --env staging --replicas 3
+mise run deploy --help
 ```
 
-Both tasks now accept `--env`, `--dry-run`, and `--replicas`, and both reject
-`--env nope`. A `use` expands where it is written, so shared flags appear in
-`--help` in the position the `use` node occupies.
+Shared flags appear in `--help` where the `use` node is written. Including a
+flag defines its interface; the task's script must implement its behavior. These
+examples only print the selected environment and replica count.
 
-Relative `include` paths in file tasks resolve from the directory containing the
-task file. Include paths also expand `$NAME` and `${NAME}` from mise's startup
-environment; mise additionally supplies `MISE_CONFIG_ROOT`, `MISE_PROJECT_ROOT`,
-`MISE_TASK_DIR`, and `MISE_TASK_FILE`. Use `$$` for a literal dollar sign. An
-undefined variable is reported as an invalid usage spec; as with other invalid
-file-task usage headers, the task stays loadable without that interface. Task
-and project `env` directives are resolved later and cannot select an included
-usage file.
+### Include Paths in File Tasks
 
-A `mise.toml` task can instead build a path with
-<span v-pre>`{{ config_root }}`</span>. File-task `#USAGE` comments are not rendered
-as Tera templates, so use shell-style environment references there rather than
-<span v-pre>`{{ env.VAR }}`</span>.
+Relative paths resolve from the directory containing the task file, regardless
+of the directory where you run mise. For `mise-tasks/deploy`, this includes
+`shared.usage.kdl` from the project root:
 
-To share configuration other than arguments — tools, env, dependencies — between
-tasks in the same project, see [task templates](/tasks/templates).
+```bash
+#USAGE include file="../shared.usage.kdl"
+```
+
+Include paths also support `$NAME` and `${NAME}` references to environment
+variables, with `$$` for a literal dollar sign. mise makes these variables
+available when parsing a file task's usage specification:
+
+- Variables inherited when mise starts.
+- `MISE_CONFIG_ROOT` and `MISE_PROJECT_ROOT`, when the corresponding roots are available.
+- `MISE_TASK_DIR` and `MISE_TASK_FILE`, for the task's directory and file path.
+
+These paths resolve consistently for execution, help, task listing, and
+validation. File-task `#USAGE` comments are not rendered as Tera templates: use
+`$MISE_CONFIG_ROOT`, for example, rather than
+<span v-pre>`{{ config_root }}`</span>.
+
+::: warning Include variables must be available before the task runs
+Task and project `env` directives are applied after usage parsing, so they cannot
+supply variables for include paths. If an include references an undefined
+variable, mise reports an invalid usage specification. The task remains loadable,
+but its usage-defined argument parsing, help, and validation are unavailable.
+:::
+
+To share tools, environment variables, or dependencies between tasks in the same
+project, see [task templates](/tasks/templates).
 
 ## Bash Variable Expansion for Usage Variables {#bash-variable-expansion}
 
