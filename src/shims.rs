@@ -628,13 +628,17 @@ pub(crate) async fn reshim_for(
     if matches!(requested_scope, ShimScope::System)
         && crate::system_install::needs_elevation(&shims_dir)
     {
-        let desired = get_desired_shims(config, &mise_bin, ts, scope, force).await?;
+        // The root helper publishes symlinks to `mise_bin` and removes the
+        // mise-owned shims that no installed tool provides any more.
+        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope, false).await?;
         return crate::system_install::links(
             &shims_dir,
-            desired
+            diffs
+                .desired
                 .into_iter()
                 .map(|name| (name, mise_bin.to_path_buf()))
                 .collect(),
+            diffs.extra.into_iter().collect(),
         );
     }
     file::create_dir_all(&shims_dir)?;

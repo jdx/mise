@@ -10,7 +10,14 @@ use eyre::Result;
 pub(crate) struct PublishSystemInstall {}
 
 impl PublishSystemInstall {
-    pub(crate) fn run(self) -> Result<()> {
-        crate::system_install::apply_from_stdin()
+    pub(crate) fn run(&self) -> Result<()> {
+        #[cfg(unix)]
+        {
+            crate::system_install::apply_from_stdin()
+        }
+        #[cfg(not(unix))]
+        {
+            eyre::bail!("system installation publication is only supported on Unix")
+        }
     }
 }

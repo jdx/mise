@@ -95,16 +95,31 @@ fn rebuild_symlinks_in_dir(
         .filter(|v| is_concrete_install(v))
         .collect::<HashSet<_>>();
     let symlinks = list_symlinks_for_dir(config, Some(ts), backend, installs_dir);
+    let default_alias = Alias::default();
+    let aliases = &config
+        .all_aliases
+        .get(&backend.ba().short)
+        .unwrap_or(&default_alias)
+        .versions;
+    let alias_names = configured_alias_names(aliases, installs_dir);
     #[cfg(unix)]
     if installs_dir.parent() == Some(crate::config::Settings::get().system_installs_dir())
         && crate::system_install::needs_elevation(installs_dir)
     {
+        // The root helper only creates, retargets and removes symlinks, so the
+        // pruning below is computed here and sent along with the desired links.
+        let remove = stale_generated_symlinks(backend, installs_dir, &symlinks, &alias_names)?
+            .into_iter()
+            .chain(missing_symlinks_in_dir(installs_dir)?)
+            .filter_map(|path| path.file_name().map(|n| n.to_string_lossy().to_string()))
+            .collect();
         return crate::system_install::links(
             installs_dir,
             symlinks
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
+            remove,
         );
     }
     for (from, to) in &symlinks {
@@ -134,18 +149,7 @@ fn rebuild_symlinks_in_dir(
         }
         make_symlink_or_file(to, &from)?;
     }
-    let default_alias = Alias::default();
-    let aliases = &config
-        .all_aliases
-        .get(&backend.ba().short)
-        .unwrap_or(&default_alias)
-        .versions;
-    prune_stale_generated_symlinks(
-        backend,
-        installs_dir,
-        &symlinks,
-        &configured_alias_names(aliases, installs_dir),
-    )?;
+    prune_stale_generated_symlinks(backend, installs_dir, &symlinks, &alias_names)?;
     remove_missing_symlinks_in_dir(installs_dir)?;
     Ok(())
 }
@@ -344,13 +348,28 @@ fn prune_stale_generated_symlinks(
     desired: &IndexMap<String, PathBuf>,
     alias_names: &HashSet<String>,
 ) -> Result<()> {
+    for path in stale_generated_symlinks(backend, installs_dir, desired, alias_names)? {
+        trace!("Removing stale runtime symlink: {}", path.display());
+        file::remove_file(&path)?;
+    }
+    Ok(())
+}
+
+/// Generated symlinks that point at a version no longer eligible for them.
+fn stale_generated_symlinks(
+    backend: &Arc<dyn Backend>,
+    installs_dir: &Path,
+    desired: &IndexMap<String, PathBuf>,
+    alias_names: &HashSet<String>,
+) -> Result<Vec<PathBuf>> {
     let namespace = generated_symlink_namespace(installs_dir);
     if namespace.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
     let eligible = installed_versions_in_dir(backend, installs_dir)
         .into_iter()
         .collect::<HashSet<_>>();
+    let mut stale = vec![];
     for path in file::ls(installs_dir)? {
         let name = path
             .file_name()
@@ -365,11 +384,10 @@ fn prune_stale_generated_symlinks(
             && let Some(target) = target.file_name().map(|t| t.to_string_lossy().to_string())
             && !eligible.contains(&target)
         {
-            trace!("Removing stale runtime symlink: {}", path.display());
-            file::remove_file(&path)?;
+            stale.push(path);
         }
     }
-    Ok(())
+    Ok(stale)
 }
 
 fn is_concrete_install(v: &str) -> bool {
@@ -399,9 +417,23 @@ pub(crate) fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> 
     if !installs_dir.exists() {
         return Ok(());
     }
+    for path in missing_symlinks_in_dir(installs_dir)? {
+        trace!("Removing missing symlink: {}", path.display());
+        file::remove_file(path)?;
+    }
+    // remove install dir if empty (ignore metadata)
+    file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
+    Ok(())
+}
+
+/// Runtime symlinks whose target no longer exists.
+fn missing_symlinks_in_dir(installs_dir: &Path) -> Result<Vec<PathBuf>> {
+    if !installs_dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut missing = vec![];
     for entry in std::fs::read_dir(installs_dir)? {
-        let entry = entry?;
-        let path = entry.path();
+        let path = entry?.path();
         // On Windows runtime symlinks are regular files containing the relative
         // target, so `path.exists()` cannot detect a dangling pointer — resolve
         // the stored target and check that instead. On unix this is equivalent
@@ -409,13 +441,10 @@ pub(crate) fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> 
         if let Some(target) = runtime_symlink_target(&path)
             && !installs_dir.join(target).exists()
         {
-            trace!("Removing missing symlink: {}", path.display());
-            file::remove_file(path)?;
+            missing.push(path);
         }
     }
-    // remove install dir if empty (ignore metadata)
-    file::remove_dir_ignore(installs_dir, vec![".mise.backend.json", ".mise.backend"])?;
-    Ok(())
+    Ok(missing)
 }
 
 pub(crate) fn is_runtime_symlink(path: &Path) -> bool {

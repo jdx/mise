@@ -55,6 +55,7 @@ enum Request {
     Links {
         directory: PathBuf,
         links: Vec<(String, PathBuf)>,
+        remove: Vec<String>,
     },
 }
 
@@ -120,17 +121,28 @@ pub(crate) async fn install<B: Backend + ?Sized>(
     Ok(installed)
 }
 
-pub(crate) fn links(directory: &Path, links: Vec<(String, PathBuf)>) -> Result<()> {
+/// Publish `links` into `directory` and delete the symlinks named in `remove`.
+/// Entries that already match are dropped before deciding whether to elevate.
+pub(crate) fn links(
+    directory: &Path,
+    links: Vec<(String, PathBuf)>,
+    remove: Vec<String>,
+) -> Result<()> {
     let links = links
         .into_iter()
         .filter(|(name, target)| fs::read_link(directory.join(name)).ok().as_ref() != Some(target))
         .collect::<Vec<_>>();
-    if links.is_empty() {
+    let remove = remove
+        .into_iter()
+        .filter(|name| directory.join(name).is_symlink())
+        .collect::<Vec<_>>();
+    if links.is_empty() && remove.is_empty() {
         return Ok(());
     }
     let mut input = serde_json::to_vec(&Request::Links {
         directory: directory.to_path_buf(),
         links,
+        remove,
     })?;
     input.push(b'\n');
     publish(&input[..])
@@ -375,15 +387,31 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
                 }
                 return Err(err.into());
             }
+            // The per-tool manifest takes precedence over the consolidated one, so
+            // a failure between the two commits must put the old tool manifest back
+            // alongside the old tree.
+            let previous_tool_manifest = match fs::read_to_string(&tool_manifest) {
+                Ok(text) => Some(text),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+                Err(err) => return Err(err.into()),
+            };
             if let Err(err) = tool_metadata.commit().and_then(|()| metadata.commit()) {
                 // Keep the previous tool usable when metadata publication fails.
-                let rollback = fs::rename(&destination, &tree).and_then(|()| {
-                    if exists {
-                        fs::rename(&backup, &destination)
-                    } else {
-                        Ok(())
-                    }
-                });
+                let rollback = fs::rename(&destination, &tree)
+                    .and_then(|()| {
+                        if exists {
+                            fs::rename(&backup, &destination)
+                        } else {
+                            Ok(())
+                        }
+                    })
+                    .and_then(|()| match &previous_tool_manifest {
+                        Some(text) => fs::write(&tool_manifest, text),
+                        None => match fs::remove_file(&tool_manifest) {
+                            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                            result => result,
+                        },
+                    });
                 if let Err(rollback) = rollback {
                     let recovery = stage.keep();
                     bail!(
@@ -394,22 +422,46 @@ fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
                 return Err(err);
             }
         }
-        Request::Links { links, .. } => {
+        Request::Links { links, remove, .. } => {
+            for name in remove {
+                ensure!(crate::file::is_plain_file_name(&name), "invalid link name");
+                let path = directory.join(name);
+                match fs::symlink_metadata(&path) {
+                    Ok(metadata) => {
+                        ensure!(
+                            metadata.file_type().is_symlink(),
+                            "refusing to remove non-symlink {}",
+                            path.display()
+                        );
+                        fs::remove_file(&path)?;
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => return Err(err.into()),
+                }
+            }
             for (name, target) in links {
                 ensure!(crate::file::is_plain_file_name(&name), "invalid link name");
-                let destination = directory.join(name);
+                if target.is_relative() {
+                    safe_link(Path::new(&name), &target)?;
+                }
+                let destination = directory.join(&name);
                 if let Ok(metadata) = fs::symlink_metadata(&destination) {
                     ensure!(
                         metadata.file_type().is_symlink(),
                         "refusing to replace {}",
                         destination.display()
                     );
-                    if fs::read_link(&destination)? == target {
+                    let existing = fs::read_link(&destination)?;
+                    if existing == target {
                         continue;
                     }
+                    // Runtime links retarget between relative versions; shims
+                    // retarget between absolute `mise` executables. A link whose
+                    // target has a different shape or name was not made by mise.
                     ensure!(
-                        !fs::read_link(&destination)?.is_absolute() && !target.is_absolute(),
-                        "refusing to replace unrelated shim {}",
+                        existing.is_absolute() == target.is_absolute()
+                            && (target.is_relative() || existing.file_name() == target.file_name()),
+                        "refusing to replace unrelated link {}",
                         destination.display()
                     );
                 }
@@ -550,15 +602,51 @@ mod tests {
         archive.finish()?;
         assert!(apply_for_owner(&malicious[..], owner).is_err());
         assert_eq!(fs::read_to_string(root.join("uv/1/tool"))?, "binary");
-        let request = Request::Links {
-            directory: root.join("uv"),
-            links: vec![("latest".into(), PathBuf::from("./1"))],
+        let links_request = |links: Vec<(&str, &str)>, remove: Vec<&str>| -> Result<Vec<u8>> {
+            let mut bytes = serde_json::to_vec(&Request::Links {
+                directory: root.join("uv"),
+                links: links
+                    .into_iter()
+                    .map(|(name, target)| (name.to_string(), PathBuf::from(target)))
+                    .collect(),
+                remove: remove.into_iter().map(str::to_string).collect(),
+            })?;
+            bytes.push(b'\n');
+            Ok(bytes)
         };
-        let mut links = serde_json::to_vec(&request)?;
-        links.push(b'\n');
+        let links = links_request(vec![("latest", "./1")], vec![])?;
         apply_for_owner(&links[..], owner)?;
         apply_for_owner(&links[..], owner)?;
         assert_eq!(fs::read_to_string(root.join("uv/latest/tool"))?, "binary");
+        // Relative targets may not escape the directory.
+        let escape = links_request(vec![("evil", "../../outside")], vec![])?;
+        assert!(apply_for_owner(&escape[..], owner).is_err());
+        assert!(fs::symlink_metadata(root.join("uv/evil")).is_err());
+        // Shims retarget between `mise` executables but not to unrelated links.
+        let old_mise = source.path().join("mise");
+        let new_mise = source.path().join("bin").join("mise");
+        fs::create_dir(source.path().join("bin"))?;
+        fs::write(&old_mise, "old")?;
+        fs::write(&new_mise, "new")?;
+        let shim = links_request(vec![("uv", old_mise.to_str().unwrap())], vec![])?;
+        apply_for_owner(&shim[..], owner)?;
+        let shim = links_request(vec![("uv", new_mise.to_str().unwrap())], vec![])?;
+        apply_for_owner(&shim[..], owner)?;
+        assert_eq!(fs::read_link(root.join("uv/uv"))?, new_mise);
+        let unrelated = links_request(
+            vec![("uv", source.path().join("tool").to_str().unwrap())],
+            vec![],
+        )?;
+        assert!(apply_for_owner(&unrelated[..], owner).is_err());
+        assert_eq!(fs::read_link(root.join("uv/uv"))?, new_mise);
+        // Removal only deletes symlinks, and tolerates names that are gone.
+        let remove = links_request(vec![], vec!["latest", "uv", "missing"])?;
+        apply_for_owner(&remove[..], owner)?;
+        assert!(fs::symlink_metadata(root.join("uv/latest")).is_err());
+        assert!(fs::symlink_metadata(root.join("uv/uv")).is_err());
+        let remove_dir = links_request(vec![], vec!["1"])?;
+        assert!(apply_for_owner(&remove_dir[..], owner).is_err());
+        assert!(root.join("uv/1").is_dir());
         fs::set_permissions(&root, fs::Permissions::from_mode(0o777))?;
         assert!(validate_directory(&root, owner).is_err());
         Ok(())

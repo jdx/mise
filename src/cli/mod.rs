@@ -71,7 +71,6 @@ mod packslip;
 mod patrons;
 mod plugins;
 pub(crate) mod prune;
-#[cfg(unix)]
 mod publish_system_install;
 mod registry;
 #[cfg(debug_assertions)]
@@ -305,7 +304,6 @@ pub(crate) enum Commands {
     Plugins(plugins::Plugins),
     Deps(deps::Deps),
     Prune(prune::Prune),
-    #[cfg(unix)]
     #[usage(name = "__publish-system-install", hide = true)]
     PublishSystemInstall(publish_system_install::PublishSystemInstall),
     Registry(registry::Registry),
@@ -373,6 +371,7 @@ impl Commands {
                 | Self::HookEnv(_)
                 | Self::HookNotFound(_)
                 | Self::Implode(_)
+                | Self::PublishSystemInstall(_)
                 | Self::SelfUpdate(_)
                 | Self::Settings(_)
                 | Self::Shell(_)
@@ -392,6 +391,7 @@ impl Commands {
                 | Self::Deactivate(_)
                 | Self::HookEnv(_)
                 | Self::HookNotFound(_)
+                | Self::PublishSystemInstall(_)
                 | Self::Ssh(_)
         )
     }
@@ -448,7 +448,6 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run().await,
             Self::Deps(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
-            #[cfg(unix)]
             Self::PublishSystemInstall(cmd) => cmd.run(),
             Self::Registry(cmd) => cmd.run().await,
             #[cfg(debug_assertions)]
@@ -1020,6 +1019,12 @@ impl Cli {
             && let Some(result) = token.run_git_credential()
         {
             return result;
+        }
+        // The system publication helper runs as root: nothing beyond settings
+        // may run before it, or root-owned caches, registries and updates land
+        // in the invoking user's directories.
+        if let Some(Commands::PublishSystemInstall(cmd)) = &cli.command {
+            return cmd.run();
         }
         let auto_update_command_eligible = !print_version
             && cli

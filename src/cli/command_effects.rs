@@ -39,6 +39,10 @@ use usage::SpecCommandEffect::{self, Destructive, Read, Write};
 
 /// Commands whose effect is fixed, keyed by their full path under `mise`.
 pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
+    // Root-only helper: `mise install --system` streams a prepared tool
+    // archive into it through sudo and it replaces files under the system
+    // installs directory.
+    ("__publish-system-install", Destructive),
     ("activate", Read),
     ("backends", Read),
     ("backends ls", Read),
@@ -336,11 +340,6 @@ pub(super) const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap packages brew tap", Write),
     #[cfg(unix)]
     ("bootstrap packages brew untap", Write),
-    // Root-only helper: `mise install --system` streams a prepared tool
-    // archive into it through sudo and it replaces files under the system
-    // installs directory.
-    #[cfg(unix)]
-    ("__publish-system-install", Destructive),
     #[cfg(debug_assertions)]
     ("render-help", Write),
 ];

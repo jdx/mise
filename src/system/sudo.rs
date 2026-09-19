@@ -243,7 +243,10 @@ pub(crate) fn run_with_reader(
     )?;
     let status = child.wait()?;
     if !status.success() {
-        bail!("elevated bootstrap helper failed with {status}");
+        bail!(
+            "elevated helper `{program} {}` failed with {status}",
+            args.join(" ")
+        );
     }
     Ok(())
 }
