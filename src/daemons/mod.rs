@@ -3572,16 +3572,24 @@ three = ["two", "c"]
             ),
         ]))
         .unwrap();
+        // Derived, not spelled out: a root's own path is what the walk compares,
+        // and it is not the string the config was written under.
+        let child = set.daemons["web"].root.clone();
+        let parent = set.daemons["api"].root.clone();
+        assert!(
+            child != parent && child.starts_with(&parent),
+            "the two projects must be nested and distinct for this to mean anything: {child:?} under {parent:?}"
+        );
         // From the child, `web` is its daemon, not the parent's group. The word
         // has to come back claimed, not merely unresolved, or a group of the
         // same name in any loaded project answers for it instead.
         assert!(matches!(
-            set.resolve_bare(Path::new("/parent/child"), "web"),
+            set.resolve_bare(&child, "web"),
             Some(BareName::Daemon)
         ));
         // From the parent, the same word is still that project's group.
         assert!(matches!(
-            set.resolve_bare(Path::new("/parent"), "web"),
+            set.resolve_bare(&parent, "web"),
             Some(BareName::Group)
         ));
     }

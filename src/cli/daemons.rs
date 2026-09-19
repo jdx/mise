@@ -862,22 +862,29 @@ mod tests {
             ),
         ]))
         .unwrap();
-        let child = std::path::Path::new("/parent/child");
+        // Derived, not spelled out: a root's own path is what the comparison
+        // turns on, and it is not the string the config was written under.
+        let child = set.daemons["web"].root.clone();
+        let parent = set.daemons["api"].root.clone();
 
+        assert!(
+            child != parent && child.starts_with(&parent),
+            "the two projects must be nested and distinct for this to mean anything: {child:?} under {parent:?}"
+        );
         // The child's own daemon, even though a group elsewhere shares the word.
-        assert_eq!(bare_selector(&set, child, "web"), None);
+        assert_eq!(bare_selector(&set, &child, "web"), None);
         // From the parent, that word is still the parent's group.
         assert_eq!(
-            bare_selector(&set, std::path::Path::new("/parent"), "web"),
+            bare_selector(&set, &parent, "web"),
             Some(Selector::Group("web".into()))
         );
         // A group no nearer daemon claims still resolves from the child.
         assert_eq!(
-            bare_selector(&set, child, "stack"),
+            bare_selector(&set, &child, "stack"),
             Some(Selector::Group("stack".into()))
         );
         // A word nothing declares is left for the caller to qualify.
-        assert_eq!(bare_selector(&set, child, "nothing"), None);
+        assert_eq!(bare_selector(&set, &child, "nothing"), None);
     }
 
     #[test]
