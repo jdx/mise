@@ -168,19 +168,31 @@ pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
             .stdin(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .output()?;
-        for id in String::from_utf8_lossy(&output.stdout).split_whitespace() {
-            let info = std::process::Command::new("pkgutil")
-                .args(["--pkg-info-plist", id])
-                .stdin(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .output()?;
-            if !info.status.success() {
-                bail!("brew-cask: pkgutil could not read package receipt '{id}'");
-            }
-            versions.push(pkg_info_version(&info.stdout)?);
-        }
+        versions.extend(pkg_receipt_versions_from_ids(
+            String::from_utf8_lossy(&output.stdout).split_whitespace(),
+            |id| {
+                std::process::Command::new("pkgutil")
+                    .args(["--pkg-info-plist", id])
+                    .stdin(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .output()
+                    .ok()
+                    .filter(|info| info.status.success())
+                    .map(|info| info.stdout)
+            },
+        ));
     }
     Ok(versions)
+}
+
+pub(super) fn pkg_receipt_versions_from_ids<'a>(
+    ids: impl IntoIterator<Item = &'a str>,
+    mut read_info: impl FnMut(&str) -> Option<Vec<u8>>,
+) -> Vec<String> {
+    ids.into_iter()
+        .filter_map(|id| read_info(id))
+        .filter_map(|info| pkg_info_version(&info).ok())
+        .collect()
 }
 
 /// Extracts `pkg-version` from `pkgutil --pkg-info-plist` output.

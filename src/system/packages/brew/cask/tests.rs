@@ -8366,6 +8366,21 @@ fn reads_pkg_version_from_pkgutil_info_plist() -> Result<()> {
 }
 
 #[test]
+fn pkg_receipt_versions_keep_readable_receipts_after_partial_failures() {
+    let versions = pkg_receipt_versions_from_ids(["missing", "current", "malformed"], |id| {
+        match id {
+            "current" => Some(
+                br#"<plist version="1.0"><dict><key>pkg-version</key><string>1.102.4</string></dict></plist>"#
+                    .to_vec(),
+            ),
+            "malformed" => Some(br#"<plist version="1.0"><dict></dict></plist>"#.to_vec()),
+            _ => None,
+        }
+    });
+    assert_eq!(versions, ["1.102.4"]);
+}
+
+#[test]
 fn auto_updates_pkg_cask_upgrade_consults_package_receipts() -> Result<()> {
     let mut cask = test_cask("microsoft-outlook", "16.113.26091740");
     cask.auto_updates = true;
