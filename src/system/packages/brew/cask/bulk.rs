@@ -26,7 +26,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 
 use super::model::Cask;
-use crate::http::HTTP_FETCH;
+use crate::config::Settings;
+use crate::http::HTTP;
 
 const BULK_URL: &str = "https://formulae.brew.sh/api/cask.json";
 
@@ -44,6 +45,38 @@ const BULK_URL: &str = "https://formulae.brew.sh/api/cask.json";
 /// and past it the conditional request is almost always a 304 carrying no body,
 /// so the cost is one small round trip per run rather than one per cask.
 const STALE_AFTER: Duration = Duration::from_secs(450);
+
+/// How old a cached document may be and still answer a lookup whose refresh
+/// failed.
+///
+/// Reaching for yesterday's bytes when today's fetch failed is right, but not
+/// forever, because not every refresh failure heals on its own. A document
+/// whose shape `build_index` no longer understands fails identically on every
+/// run, and so does a permanently retired endpoint, while the per-cask endpoint
+/// would have answered correctly the whole time. Unbounded, that is precisely
+/// the silent staleness `STALE_AFTER` exists to prevent, just reached by a
+/// different route: an install failing because the vendor dropped the download
+/// URL the cached version names.
+///
+/// Generous, because the bound is there to stop indefinite drift rather than to
+/// second-guess a bad afternoon upstream. Past it, lookups fall back to the
+/// per-cask endpoint: slower, and correct.
+const FALLBACK_AFTER: Duration = Duration::from_secs(7 * 86_400);
+
+/// Total wall clock allowed for one refresh, retries and body included.
+///
+/// The fetch client's 20s per-request cap was wrong for a ~19MB body, but
+/// removing it leaves nothing bounding a mirror that dribbles bytes slowly
+/// enough to keep resetting `read_timeout` and never finishes. This is an
+/// optimization that must not hold up package resolution, and the bound follows
+/// from that: resolving 150 casks one request at a time takes well under a
+/// minute, so a bulk fetch still running after two has already lost to the path
+/// it replaces, whatever it eventually returns. Past it the refresh is abandoned
+/// and lookups fall back.
+///
+/// Clamped by `http_download_timeout` so that someone who has deliberately
+/// tightened downloads is not overridden by this.
+const REFRESH_DEADLINE: Duration = Duration::from_secs(120);
 
 /// Bumped when the sidecar's meaning changes, so an older one is rebuilt rather
 /// than misread.
@@ -115,12 +148,37 @@ fn checked_path() -> PathBuf {
     dir().join("cask.last-checked")
 }
 
+/// Whether a file can actually be created in the cache directory.
+///
+/// `create_dir_all` returns `Ok` the moment the directory exists, which says
+/// nothing about being allowed to put anything in it, so on a read-only cache
+/// it is not a preflight at all. The probe is named per process so two mise
+/// runs cannot delete each other's.
+///
+/// Deliberately not a test for free space: an empty file needs no data blocks,
+/// so a full disk passes this and fails later at `write_atomic`, which leaves
+/// the previous document in place and is handled like any other refresh
+/// failure.
+fn cache_is_writable() -> bool {
+    let probe = dir().join(format!("cask.probe-{}", std::process::id()));
+    let writable = std::fs::write(&probe, []).is_ok();
+    let _ = std::fs::remove_file(&probe);
+    writable
+}
+
+/// Whether there is a document on disk worth reading or revalidating.
+///
+/// An empty file is not one. It is the shape a truncated write or an
+/// out-of-space failure leaves behind, and every caller that treats it as a
+/// document (a conditional request, a freshness check) ends up confirming
+/// something unreadable rather than replacing it.
+fn usable_document() -> bool {
+    std::fs::metadata(document_path()).is_ok_and(|m| m.len() > 0)
+}
+
 /// Fresh means "asked upstream recently AND still have a document to read".
 fn is_fresh() -> bool {
-    if std::fs::metadata(document_path()).is_ok_and(|m| m.len() == 0) {
-        return false;
-    }
-    if !document_path().exists() {
+    if !usable_document() {
         return false;
     }
     std::fs::metadata(checked_path())
@@ -149,22 +207,46 @@ fn mark_checked() -> Result<()> {
 /// per-cask requests this is meant to replace. A mirror without `cask.json`, or
 /// an outage, merely doubles the request count instead.
 ///
-/// Memoizing the attempt makes one failure cost one attempt. The outcome is not
-/// stored because the caller does not branch on it: see `cask()`.
-static REFRESHED: OnceCell<()> = OnceCell::const_new();
+/// Memoizing the attempt makes one failure cost one attempt.
+static REFRESHED: OnceCell<bool> = OnceCell::const_new();
 
 /// Attempt a refresh at most once per process, logging a failure once rather
-/// than once per cask.
-async fn refresh_once() {
-    REFRESHED
+/// than once per cask. Returns whether it succeeded.
+async fn refresh_once() -> bool {
+    *REFRESHED
         .get_or_init(|| async {
-            if let Err(err) = refresh().await {
-                debug!(
-                    "brew-cask: bulk index refresh failed ({err:#}); using the cached document if there is one"
-                );
+            let deadline = REFRESH_DEADLINE.min(Settings::get().http_download_timeout());
+            match tokio::time::timeout(deadline, refresh()).await {
+                Ok(Ok(())) => true,
+                Err(_) => {
+                    debug!(
+                        "brew-cask: bulk index refresh exceeded {deadline:?}; falling back to per-cask metadata"
+                    );
+                    false
+                }
+                Ok(Err(err)) => {
+                    debug!(
+                        "brew-cask: bulk index refresh failed ({err:#}); falling back to the cached document if it is recent enough"
+                    );
+                    false
+                }
             }
         })
-        .await;
+        .await
+}
+
+/// Whether a document left by an earlier run may answer for a failed refresh.
+///
+/// Measured from `checked_path()`, which only moves when upstream actually
+/// answered, so this is the age of the last successful check rather than of the
+/// last attempt. No stamp at all means nothing was ever fetched here, which is
+/// not a stale cache but an absent one.
+fn within_fallback_window() -> bool {
+    std::fs::metadata(checked_path())
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|stamp| SystemTime::now().duration_since(stamp).ok())
+        .is_some_and(|age| age < FALLBACK_AFTER)
 }
 
 /// Fetch the document if the cached copy is missing or past the staleness
@@ -176,24 +258,54 @@ async fn refresh() -> Result<()> {
         return Ok(());
     }
 
+    // Before the request, not after it. Every byte downloaded into a cache that
+    // cannot be written is waste paid again by the next process, and nothing is
+    // learned afterwards that was not knowable beforehand. Failing here sends
+    // every lookup to the per-cask endpoint, which is what mise did before this
+    // cache existed.
+    crate::file::create_dir_all(dir()).wrap_err("the Homebrew cask index cache is not writable")?;
+    eyre::ensure!(
+        cache_is_writable(),
+        "the Homebrew cask index cache directory is not writable"
+    );
+
     let mut headers = HeaderMap::new();
     // Ask conditionally when there is something to compare against. Sending the
     // stored Last-Modified rather than an ETag keeps the sidecar simple; the
     // server offers both and either yields a 304.
+    //
+    // `usable_document()` rather than `path.exists()`, and for the same reason
+    // `is_fresh` does not count an empty file as fresh. A zero-length or
+    // otherwise damaged local copy alongside a surviving `cask.last-modified`
+    // would otherwise earn a 304 on every run: the stamp renews, the document
+    // stays broken, `load_index` rebuilds and bails, and the cache never repairs
+    // itself while still costing a round trip per process. Asking
+    // unconditionally gets a 200 and a real document back.
     if let Some(stamp) = std::fs::read_to_string(dir().join("cask.last-modified"))
         .ok()
-        .filter(|_| path.exists())
+        .filter(|_| usable_document())
         && let Ok(value) = HeaderValue::from_str(stamp.trim())
     {
         headers.insert(IF_MODIFIED_SINCE, value);
     }
 
-    let resp = HTTP_FETCH
+    // `HTTP`, not `HTTP_FETCH`. The fetch client is for version lookups, and it
+    // is the one client kind that puts a single timeout around the whole
+    // request, body included: 20s by default, which is a budget for a few KB of
+    // JSON and not for ~19MB (2MB gzipped). A link that cannot move that in 20s
+    // is not exotic (tethered, hotel wifi, a throttled office egress), and
+    // because a timeout counts as transient the whole download would then be
+    // retried `http_retries` times, turning one slow request into a minute of
+    // stalling before falling back to the per-cask endpoint that would have
+    // worked. `HTTP` applies `connect_timeout` and `read_timeout` instead, so a
+    // dead connection still fails promptly while a slow but progressing
+    // download is allowed to finish.
+    let resp = HTTP
         .get_async_with_headers_allow_error_status(BULK_URL, &headers)
         .await
         .wrap_err("failed to fetch the Homebrew cask index")?;
 
-    if resp.status() == reqwest::StatusCode::NOT_MODIFIED && path.exists() {
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED && usable_document() {
         // Unchanged upstream, so the document and its index are both still
         // whatever they were. Only the window restarts.
         //
@@ -205,7 +317,7 @@ async fn refresh() -> Result<()> {
         // offsets would be trusted for a renewed 24 hours. Leaving both alone
         // means `load_index` still decides on the evidence, and rebuilds if
         // they disagree.
-        mark_checked()?;
+        mark_checked_best_effort();
         return Ok(());
     }
 
@@ -251,8 +363,25 @@ async fn refresh() -> Result<()> {
     write_index(&index)?;
     // Last, so that a refresh which dies partway leaves the cache stale rather
     // than fresh-but-unindexed: the next run retries instead of trusting it.
-    mark_checked()?;
+    mark_checked_best_effort();
     Ok(())
+}
+
+/// Stamp the window, and treat failing to do so as not worth failing over.
+///
+/// The document and its index are already published by the time this runs, so
+/// the only consequence of no stamp is asking upstream again next time, which is
+/// safe. Propagating the error instead would make `refresh` report failure for a
+/// cache it just wrote correctly, and on a cold cache that is actively harmful:
+/// `within_fallback_window` finds no stamp at all, so every lookup discards the
+/// document this call just downloaded and falls back, and the next process
+/// repeats the whole download.
+fn mark_checked_best_effort() {
+    if let Err(err) = mark_checked() {
+        debug!(
+            "brew-cask: could not stamp the bulk index check time ({err:#}); will re-check next run"
+        );
+    }
 }
 
 fn write_index(index: &Index) -> Result<()> {
@@ -270,6 +399,22 @@ fn load_index_file() -> Result<Index> {
     Ok(serde_json::from_slice(&raw)?)
 }
 
+/// Whether every recorded range lies inside a document of `size` bytes.
+///
+/// The fingerprint check proves the index was built from this document; it says
+/// nothing about the ranges themselves, which arrive as numbers from a file on
+/// disk. `read_range` allocates `len` bytes up front, so a corrupted or
+/// hand-edited `len` is an allocation of that size: `[0, u64::MAX]` aborts the
+/// process on capacity overflow. That would take down package resolution from
+/// inside the one function written to be incapable of it, so the ranges are
+/// checked before anything trusts them.
+fn ranges_fit(index: &Index, size: u64) -> bool {
+    index
+        .casks
+        .values()
+        .all(|&(offset, len)| matches!(offset.checked_add(len), Some(end) if end <= size))
+}
+
 /// Load the sidecar, rebuilding it when it does not describe the document next
 /// to it.
 fn load_index() -> Result<Index> {
@@ -278,15 +423,41 @@ fn load_index() -> Result<Index> {
         && index.version == INDEX_VERSION
         && index.source_size == size
         && index.source_mtime_ns == mtime
+        && ranges_fit(&index, size)
     {
         return Ok(index);
     }
     let body = std::fs::read(document_path())?;
-    let mut index = build_index(&body)?;
+    let mut index = match build_index(&body) {
+        Ok(index) => index,
+        Err(err) => {
+            // These bytes can never answer a lookup, and `usable_document` cannot
+            // tell: a document truncated to `[` is non-empty. Left in place it is
+            // worse than nothing, because `cask.last-modified` survives with it,
+            // so every later run revalidates it, is told 304, renews the window
+            // on garbage, and falls back anyway. Removing both makes the next
+            // refresh unconditional, which is the only thing that repairs this.
+            //
+            // Only on an indexing failure. A `write_index` failure below leaves a
+            // perfectly good document alone.
+            discard_document();
+            return Err(err);
+        }
+    };
     index.source_size = size;
     index.source_mtime_ns = mtime;
     write_index(&index)?;
     Ok(index)
+}
+
+/// Drop a cached document and the validator that would revalidate it.
+///
+/// Best effort: if the removal fails the next run simply finds the same state
+/// and tries again, which is where it already was.
+fn discard_document() {
+    debug!("brew-cask: discarding an unusable cached bulk index so the next run refetches it");
+    let _ = crate::file::remove_file(document_path());
+    let _ = crate::file::remove_file(dir().join("cask.last-modified"));
 }
 
 /// Walk the top-level array and record each element's byte range.
@@ -323,6 +494,14 @@ fn build_index(body: &[u8]) -> Result<Index> {
     if casks.is_empty() {
         eyre::bail!("the Homebrew cask index parsed to zero casks");
     }
+
+    // Drop any alias that names a live cask. `cask()` prefers the token map
+    // anyway, but an alias that can never be reached is a trap for the next
+    // reader, and doing it here rather than only at lookup time means the two
+    // maps cannot disagree. Done after the loop because the cask claiming a name
+    // may be indexed after the one retiring it, so neither insertion order nor
+    // last-writer-wins can decide this on its own.
+    aliases.retain(|alias, _| !casks.contains_key(alias));
 
     Ok(Index {
         version: INDEX_VERSION,
@@ -403,14 +582,21 @@ fn top_level_elements(body: &[u8]) -> Result<Vec<(usize, usize)>> {
 /// caller remembering to catch. Each failure logs before falling back, so a
 /// persistently broken cache is visible at debug level rather than silent.
 pub(super) async fn cask(token: &str) -> Option<Cask> {
-    // Deliberately not branched on. A failed refresh is not a reason to ignore a
-    // document an earlier run already fetched: those bytes are still metadata
-    // Homebrew published, and they are newer than nothing. If the refresh failed
-    // because the network is unreachable, then the per-cask endpoint this would
-    // otherwise fall back to is unreachable too, so discarding the cache trades a
-    // slightly stale answer for no answer at all. When there is no cached
-    // document, `load_index` below fails and the fallback happens there.
-    refresh_once().await;
+    // A failed refresh is not by itself a reason to ignore a document an earlier
+    // run already fetched: those bytes are still metadata Homebrew published,
+    // and if the refresh failed because the network is unreachable then the
+    // per-cask endpoint this would otherwise fall back to is unreachable too, so
+    // discarding the cache would trade a slightly stale answer for no answer.
+    //
+    // Bounded, though. Some refresh failures never heal, and serving a cached
+    // document indefinitely would reintroduce the staleness `STALE_AFTER` is
+    // set short to avoid. Past the bound this falls back like any other miss.
+    if !refresh_once().await && !within_fallback_window() {
+        debug!(
+            "brew-cask: no bulk index within the fallback window; falling back to per-cask metadata"
+        );
+        return None;
+    }
     // Validating the index and then reading through it is one operation, for the
     // same reason publishing is. Without the lock a concurrent publication can
     // replace the document in between, and if the stale range happens to parse
@@ -438,11 +624,22 @@ pub(super) async fn cask(token: &str) -> Option<Cask> {
         }
     };
 
-    let canonical = index
-        .aliases
-        .get(token)
-        .map(String::as_str)
-        .unwrap_or(token);
+    // A live token wins over another cask's old token. Homebrew reuses a name
+    // after retiring it: if `foo` is retired into `foo@legacy`, that cask
+    // records `old_tokens: ["foo"]`, and a later, unrelated `foo` can be
+    // published. Consulting the alias map first would resolve `foo` to
+    // `foo@legacy`, and `validate_cask_identity` would accept it, because on the
+    // official API it trusts `old_tokens` — so mise would install the wrong
+    // software, silently, where the per-cask endpoint would have been right.
+    let canonical = if index.casks.contains_key(token) {
+        token
+    } else {
+        index
+            .aliases
+            .get(token)
+            .map(String::as_str)
+            .unwrap_or(token)
+    };
     let &(offset, len) = index.casks.get(canonical)?;
 
     // Read and parse are fallible for a reason that is nobody's fault: another
@@ -530,6 +727,60 @@ mod tests {
         let slice = &DOC.as_bytes()[offset as usize..(offset + len) as usize];
         let value: serde_json::Value = serde_json::from_slice(slice).unwrap();
         assert_eq!(value["token"], "beta");
+    }
+
+    /// Homebrew reuses a cask name after retiring it. The retired cask records
+    /// the old name in `old_tokens`, so for a window both a live `foo` and a
+    /// `foo@legacy` claiming `foo` exist, and resolving `foo` to the retired one
+    /// installs the wrong software: `validate_cask_identity` accepts it, because
+    /// on the official API an `old_tokens` match is trusted.
+    #[test]
+    fn a_live_token_is_not_shadowed_by_another_casks_old_token() {
+        // The claimant is listed FIRST, so last-writer-wins on insertion order
+        // would not save this on its own.
+        const REUSED: &str = r#"[
+          {"token":"foo@legacy","version":"1.0","old_tokens":["foo"]},
+          {"token":"foo","version":"2.0"}
+        ]"#;
+
+        let index = build_index(REUSED.as_bytes()).unwrap();
+        assert!(
+            !index.aliases.contains_key("foo"),
+            "an alias naming a live cask must not survive indexing"
+        );
+
+        let &(offset, len) = index.casks.get("foo").unwrap();
+        let slice = &REUSED.as_bytes()[offset as usize..(offset + len) as usize];
+        let value: serde_json::Value = serde_json::from_slice(slice).unwrap();
+        assert_eq!(value["version"], "2.0", "resolved the retired cask");
+    }
+
+    /// An old token that names nothing live still resolves, which is the whole
+    /// point of carrying them.
+    #[test]
+    fn an_old_token_still_resolves_when_nothing_live_claims_it() {
+        let index = build_index(DOC.as_bytes()).unwrap();
+        assert_eq!(
+            index.aliases.get("beta-old").map(String::as_str),
+            Some("beta")
+        );
+    }
+
+    /// `read_range` allocates from the recorded length before reading, so a
+    /// range the document cannot contain is an allocation the document cannot
+    /// justify. The fingerprint check does not cover this: it proves which
+    /// document the index was built from, not that its numbers are sane.
+    #[test]
+    fn ranges_reaching_past_the_document_are_rejected() {
+        let mut index = build_index(DOC.as_bytes()).unwrap();
+        let size = DOC.len() as u64;
+        assert!(ranges_fit(&index, size));
+
+        index.casks.insert("huge".to_string(), (0, u64::MAX));
+        assert!(!ranges_fit(&index, size), "overflowing length accepted");
+
+        index.casks.insert("huge".to_string(), (size, 1));
+        assert!(!ranges_fit(&index, size), "range past the end accepted");
     }
 
     #[test]

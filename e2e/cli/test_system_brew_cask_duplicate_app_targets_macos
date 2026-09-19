@@ -89,10 +89,14 @@ try:
 
     # Count the bulk probes rather than folding them into a set, which would hide
     # how many there were. This fixture answers 404, so the cache never warms and
-    # every process retries: exactly one attempt per process is the contract. A
-    # refresh that is not memoized would retry once per cask lookup instead, and
-    # against a mirror that has no cask.json that is strictly more requests than
-    # the per-cask path this replaces.
+    # every process retries: exactly one attempt per process is the contract.
+    #
+    # Note that this cannot distinguish per-process from per-lookup on its own,
+    # because each invocation here declares a single cask and fails before
+    # dependency resolution. The memoization is pinned by the no-bulk phase of
+    # test_system_brew_cask_bulk_index_macos, which resolves two casks in one
+    # process. What this does catch is the count drifting at all: a retry loop,
+    # or a probe per artifact rather than per package.
     bulk = [path for path in requests if path == BULK_PATH]
     assert len(bulk) == runs, (len(bulk), runs, requests)
 finally:
