@@ -100,7 +100,7 @@ pub(super) async fn fetch_cask_url(
         // either, and an official cask has no tap story to tell. Mirrors
         // `api::formula`.
         .wrap_err_with(|| format!("failed to fetch Homebrew cask '{requested_token}'"))?;
-    let mut cask = cask_from_api_json(json, &super::super::tag::host_tag())
+    let mut cask = cask_from_api_json(json, super::super::tag::cask_variation_tag().as_deref())
         .wrap_err_with(|| format!("failed to fetch Homebrew cask '{requested_token}'"))?;
     cask.raw_base = raw_base;
     validate_cask_identity(&cask, requested_token, official_api)?;
@@ -114,12 +114,13 @@ pub(super) async fn fetch_cask_url(
 /// bottle tag (`arm64_sequoia`, `x86_64_linux`, ...). Like Homebrew's
 /// `API.merge_variations`, the host's exact tag is merged shallowly over the
 /// top level; there is no fallback to an older tag, because the API writes an
-/// entry for every tag whose values differ.
-pub(super) fn cask_from_api_json(mut json: Value, tag: &str) -> Result<Cask> {
+/// entry for every tag whose values differ. With no tag (a macOS release mise
+/// does not know yet), the top level applies.
+pub(super) fn cask_from_api_json(mut json: Value, tag: Option<&str>) -> Result<Cask> {
     if let Some(fields) = json.as_object_mut()
         && let Some(Value::Object(variation)) = fields
             .remove("variations")
-            .and_then(|mut variations| variations.get_mut(tag).map(Value::take))
+            .and_then(|mut variations| Some(variations.get_mut(tag?)?.take()))
     {
         fields.extend(variation);
     }
@@ -128,7 +129,10 @@ pub(super) fn cask_from_api_json(mut json: Value, tag: &str) -> Result<Cask> {
         .iter()
         .any(|key| json.get(key).is_none_or(Value::is_null))
     {
-        bail!("brew-cask: not available for this platform ({tag})");
+        bail!(
+            "brew-cask: not available for this platform ({})",
+            tag.unwrap_or("unknown")
+        );
     }
     Ok(serde_json::from_value(json)?)
 }

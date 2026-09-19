@@ -63,10 +63,44 @@ pub(super) fn select(files: &HashMap<String, BottleFile>) -> Option<(String, &Bo
         .find_map(|tag| files.get(&tag).map(|f| (tag, f)))
 }
 
+/// The host's tag for cask `variations`, or `None` on a macOS release mise
+/// does not know yet. Unlike bottles, a cask variation must match exactly: the
+/// top level describes the newest release, so the nearest older tag would
+/// select an older build.
+pub(super) fn cask_variation_tag() -> Option<String> {
+    if cfg!(target_os = "macos") {
+        macos_variation_tag(*MACOS_MAJOR)
+    } else {
+        candidates().into_iter().next()
+    }
+}
+
+fn macos_variation_tag(major: u32) -> Option<String> {
+    MACOS_VERSIONS
+        .iter()
+        .find(|(known, _)| *known == major)
+        .map(|(_, name)| format!("arm64_{name}"))
+}
+
 /// The host's exact preferred tag (for `variations` lookups)
 pub(super) fn host_tag() -> String {
     candidates()
         .into_iter()
         .next()
         .unwrap_or_else(|| "all".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cask_variation_tag_matches_only_a_known_macos_release() {
+        assert_eq!(macos_variation_tag(15).as_deref(), Some("arm64_sequoia"));
+        assert_eq!(macos_variation_tag(26).as_deref(), Some("arm64_tahoe"));
+        // a release newer than MACOS_VERSIONS must not borrow Tahoe's variation
+        assert_eq!(macos_variation_tag(27), None);
+        // `sw_vers` failed
+        assert_eq!(macos_variation_tag(0), None);
+    }
 }

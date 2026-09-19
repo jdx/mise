@@ -269,7 +269,7 @@ fn raycast_api_json() -> Value {
 
 #[test]
 fn cask_api_json_applies_the_host_variation() -> Result<()> {
-    let cask = cask_from_api_json(raycast_api_json(), "arm64_sequoia")?;
+    let cask = cask_from_api_json(raycast_api_json(), Some("arm64_sequoia"))?;
     assert_eq!(cask.version, "1.104.29");
     assert_eq!(
         cask.url,
@@ -286,7 +286,10 @@ fn cask_api_json_applies_the_host_variation() -> Result<()> {
 #[test]
 fn cask_api_json_keeps_the_top_level_without_a_host_variation() -> Result<()> {
     // no fallback to an older tag: Tahoe has no entry, so the top level applies
-    let cask = cask_from_api_json(raycast_api_json(), "arm64_tahoe")?;
+    let cask = cask_from_api_json(raycast_api_json(), Some("arm64_tahoe"))?;
+    assert_eq!(cask.version, "2.4.1.0");
+    // nor on a macOS release newer than mise knows, which has no tag
+    let cask = cask_from_api_json(raycast_api_json(), None)?;
     assert_eq!(cask.version, "2.4.1.0");
     assert_eq!(
         cask.url,
@@ -310,7 +313,7 @@ fn cask_api_json_variation_inherits_fields_it_omits() -> Result<()> {
             },
         },
     });
-    let cask = cask_from_api_json(json, "x86_64_linux")?;
+    let cask = cask_from_api_json(json, Some("x86_64_linux"))?;
     assert_eq!(cask.version, "2.1.267");
     assert_eq!(cask.url, "https://example.com/2.1.267/linux-x64/claude");
     assert_eq!(cask.sha256.as_deref(), Some("linux"));
@@ -319,7 +322,7 @@ fn cask_api_json_variation_inherits_fields_it_omits() -> Result<()> {
 
 #[test]
 fn cask_api_json_rejects_a_platform_the_cask_does_not_support() {
-    let err = cask_from_api_json(raycast_api_json(), "arm64_linux").unwrap_err();
+    let err = cask_from_api_json(raycast_api_json(), Some("arm64_linux")).unwrap_err();
     assert!(
         err.to_string()
             .contains("not available for this platform (arm64_linux)"),
@@ -329,7 +332,7 @@ fn cask_api_json_rejects_a_platform_the_cask_does_not_support() {
     // shaped like visual-studio-code: a url survives, but the version does not
     let mut json = raycast_api_json();
     json["variations"]["arm64_linux"]["url"] = "https://example.com/darwin/stable".into();
-    let err = cask_from_api_json(json, "arm64_linux").unwrap_err();
+    let err = cask_from_api_json(json, Some("arm64_linux")).unwrap_err();
     assert!(
         err.to_string()
             .contains("not available for this platform (arm64_linux)"),
