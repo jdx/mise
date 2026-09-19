@@ -449,6 +449,9 @@ export const commands: { [key: string]: Command } = {
       tui: {
         hide: false,
       },
+      urls: {
+        hide: false,
+      },
     },
   },
   deactivate: {

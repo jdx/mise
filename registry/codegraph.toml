@@ -1,0 +1,4 @@
+backends = ["aqua:colbymchenry/codegraph"]
+description = "Pre-indexed code knowledge graph for coding agents"
+test = { cmd = "codegraph --version", expected = "{{version}}" }
+version_order = "semver"

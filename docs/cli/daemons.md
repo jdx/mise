@@ -29,6 +29,7 @@ With no subcommand, list configured and previously managed daemons.
 - [`mise daemons status [ARGS]…`](/cli/daemons/status.html)
 - [`mise daemons stop [ARGS]…`](/cli/daemons/stop.html)
 - [`mise daemons tui [ARGS]…`](/cli/daemons/tui.html)
+- [`mise daemons urls [--json]`](/cli/daemons/urls.html)
 
 <!-- generated reference navigation -->
 

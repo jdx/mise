@@ -32,6 +32,7 @@ enum Commands {
     Restart(Args),
     #[usage(visible_alias = "list")]
     Ls(List),
+    Urls(UrlsArgs),
     Logs(Args),
     Status(Args),
     Tui(TuiArgs),
@@ -84,6 +85,18 @@ struct Prune {
     dry_run: bool,
 }
 
+/// Show each project daemon's port and its proxy hostname URL.
+///
+/// Hostnames do not move between git worktrees, so an HTTP service can be
+/// addressed by URL while concurrent checkouts keep separate ports. A daemon
+/// with no port, or with proxy = false, is listed with its port alone.
+#[derive(Debug, Default, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct UrlsArgs {
+    #[usage(long)]
+    json: bool,
+}
+
 #[derive(Debug, usage_rs::Args)]
 struct Init {
     preset: String,
@@ -114,6 +127,7 @@ impl Daemons {
             Some(Commands::Status(args)) => ("status", args.args, false),
             Some(Commands::Tui(args)) => ("tui", args.args, false),
             Some(Commands::Ls(list)) => ("ls", vec![], list.json),
+            Some(Commands::Urls(list)) => ("urls", vec![], list.json),
             None => ("ls", vec![], self.list.json),
         };
         let config = Config::get().await?;
@@ -168,31 +182,16 @@ impl Daemons {
             warn!("[daemons.{name}] is unavailable: {err}");
         }
         let install = matches!(action, "start" | "restart");
-        let names: Vec<String> = requested_names
+        let proxy = daemons::urls::proxy_settings();
+        let selectors: Vec<Selector> = requested_names
             .iter()
             .map(|name| {
                 let resolved = loaded.resolve_alias(name);
                 if name.contains('/') {
-                    return Ok(resolved);
+                    return Ok(Selector::Name(resolved));
                 }
-                // Ask this project what the word means, nearest declaration
-                // first. An import becomes the ID it answers to; a group stays
-                // bare so `selects` expands it against the project that
-                // declares it, which is also how a group in an unrelated
-                // project keeps its own meaning.
-                match loaded.resolve_bare(&project_root, name) {
-                    Some(daemons::BareName::Import(id)) => return Ok(id.to_string()),
-                    // An unresolved import has no ID; the check above already
-                    // refused it, so this only keeps the name intact.
-                    Some(daemons::BareName::Group | daemons::BareName::Unresolved(_)) => {
-                        return Ok(name.clone());
-                    }
-                    None => {}
-                }
-                // A group no project in this tree declares can still belong to
-                // one of the other loaded roots, which resolves it itself.
-                if loaded.groups.iter().any(|group| group.name == *name) {
-                    return Ok(name.clone());
+                if let Some(selector) = bare_selector(loaded, &project_root, name) {
+                    return Ok(selector);
                 }
                 let owner = loaded
                     .daemons
@@ -217,17 +216,10 @@ impl Daemons {
                     }
                 };
                 let daemon_name = resolved.rsplit('/').next().unwrap_or(&resolved);
-                Ok(format!("{namespace}/{daemon_name}"))
+                Ok(Selector::Name(format!("{namespace}/{daemon_name}")))
             })
+            .chain(groups.iter().cloned().map(|g| Ok(Selector::Group(g))))
             .collect::<Result<_>>()?;
-        // Selectors carry the resolved names, so a group and an imported
-        // daemon's local alias are matched the same way from here on.
-        let selectors: Vec<Selector> = names
-            .iter()
-            .cloned()
-            .map(Selector::Name)
-            .chain(groups.iter().cloned().map(Selector::Group))
-            .collect();
         let mut root_ids = Vec::new();
         let mut root_sets = Vec::new();
         for root in &roots {
@@ -284,6 +276,9 @@ impl Daemons {
                 let root = roots[index].clone();
                 index += 1;
                 let scoped = runtime::config_for_root(&config, &root).await?;
+                if project_root.starts_with(&root) {
+                    scoped.seed_daemons(loaded.for_root(&root));
+                }
                 let declarations = scoped.daemons()?;
                 for dependency_root in declarations.roots() {
                     if !roots.contains(&dependency_root) {
@@ -337,6 +332,9 @@ impl Daemons {
         };
         let mut pending = Vec::new();
         let mut rows = Vec::new();
+        // The hostname components each listed root contributes, for the stack
+        // and project pages `mise daemons urls` prints alongside the daemons.
+        let mut listed_roots: Vec<(PathBuf, Option<daemons::urls::RootLabels>)> = Vec::new();
         let mut matched = false;
         let mut root_entries: Vec<_> = roots
             .into_iter()
@@ -354,7 +352,7 @@ impl Daemons {
             // dependency closure, which already accounts for daemons in other
             // projects that nothing named directly.
             let in_closure = install && !starting.for_root(&root).daemons.is_empty();
-            if install && !in_closure && (!names.is_empty() || root != project_root) {
+            if install && !in_closure && (!requested_names.is_empty() || root != project_root) {
                 continue;
             }
             // Each root resolves the request against its own groups, so a `default`
@@ -415,7 +413,12 @@ impl Daemons {
             }
             let (scoped, ts) = runtime::toolset(&scoped, install).await?;
             let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
-            if action == "ls" {
+            if matches!(action, "ls" | "urls") {
+                // Every listed root, labels or not. A root kept only by its
+                // recorded ids declares nothing now and so contributes no
+                // labels, and skipping it here would drop its daemons from the
+                // listing entirely rather than showing them without URLs.
+                listed_roots.push((root.clone(), set.labels.get(&root).cloned()));
                 // Reported per root so a developer can see what a worktree costs
                 // before deleting it (or before running `mise daemons prune`).
                 let state_dir = daemons::state_dir(&root);
@@ -474,30 +477,29 @@ impl Daemons {
                     } else {
                         None
                     };
-                    rows.push(serde_json::json!({ "id": id, "name": name, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "root": root, "state_dir": state_dir, "data_size": data_size, "data_size_human": daemons::prune::human_size(data_size) }));
+                    let host = daemon.and_then(|d| d.host.as_deref());
+                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(proxy_mode), "state_dir": state_dir, "data_size": data_size, "data_size_human": daemons::prune::human_size(data_size) }));
                 }
                 continue;
             }
             let runtime = runtime?;
-            let root_starting = set.restricted_to(&starting);
+            // What this invocation will start here, plus whatever those daemons
+            // depend on, since pitchfork starts dependencies with them.
+            let here = set.restricted_to(&starting);
             if install {
-                // Validate what this invocation will start, plus whatever those
-                // daemons depend on, since pitchfork starts dependencies with
-                // them. An unrelated daemon is registered but not started, so a
+                // An unrelated daemon is registered but not started, so a
                 // missing tool or task reference of its own must not fail this
                 // command.
-                runtime::validate_tools(&root_starting, &scoped, &ts).await?;
-                root_starting.validate_tasks(&scoped).await?;
+                runtime::validate_tools(&here, &scoped, &ts).await?;
+                here.validate_tasks(&scoped).await?;
                 // This root's own configuration, which the check above cannot
                 // see: a referenced project declares its own imports.
-                daemons::ensure_not_blocked(&set, &root_starting, Some(&root))?;
+                daemons::ensure_not_blocked(&set, &here, Some(&root))?;
             }
-            // Only the daemons this root launches have their ports checked, so
-            // an unrelated one whose port is busy elsewhere cannot block them.
-            let starting_names = root_starting.names();
+            let launching = starting_names(&set, &ids, &root_selectors, &here);
             let (state, _project_lock) = if install {
                 let (state, lock) = runtime
-                    .prepare(&root, &set, true, !foreign, &starting_names)
+                    .prepare(&root, &set, true, !foreign, &launching)
                     .await?;
                 (state, Some(lock))
             } else {
@@ -559,10 +561,10 @@ impl Daemons {
         for (runtime, root, forwarded, _project_lock) in pending {
             runtime.exec(&root, forwarded).await?;
         }
-        if action == "ls" {
+        if matches!(action, "ls" | "urls") {
             if json {
                 miseprintln!("{}", serde_json::to_string_pretty(&rows)?);
-            } else {
+            } else if action == "ls" {
                 let mut table =
                     crate::ui::table::MiseTable::new(false, &["Daemon", "Status", "Source"]);
                 for row in rows {
@@ -573,6 +575,8 @@ impl Daemons {
                     ]);
                 }
                 table.print()?;
+            } else {
+                print_urls(&rows, &listed_roots, proxy)?;
             }
         } else if !matched {
             bail!("no matching project daemons; define [daemons] in mise.toml");
@@ -729,6 +733,140 @@ fn hint_prunable_state() {
     );
 }
 
+/// Print every daemon's stable hostname next to the port it actually binds,
+/// grouped by project root, followed by the pages pitchfork serves for the
+/// whole stack. A daemon with `proxy = false` is listed with its port alone, so
+/// a database is visible here rather than looking absent.
+fn print_urls(
+    rows: &[serde_json::Value],
+    roots: &[(PathBuf, Option<daemons::urls::RootLabels>)],
+    proxy: &daemons::urls::ProxySettings,
+) -> Result<()> {
+    for (root, labels) in roots {
+        let display = crate::file::display_path(root);
+        miseprintln!("{display}");
+        let mut table =
+            crate::ui::table::MiseTable::new(false, &["Daemon", "URL", "Port", "Proxy", "Status"]);
+        for row in rows
+            .iter()
+            .filter(|row| row["root"].as_str().map(std::path::Path::new) == Some(root.as_path()))
+        {
+            table.add_row(vec![
+                comfy_table::Cell::new(row["id"].as_str().unwrap_or_default()),
+                comfy_table::Cell::new(row["url"].as_str().unwrap_or("-")),
+                comfy_table::Cell::new(
+                    row["port"]
+                        .as_u64()
+                        .map(|port| port.to_string())
+                        .unwrap_or_else(|| "-".into()),
+                ),
+                comfy_table::Cell::new(row["proxy"].as_str().unwrap_or("off")),
+                comfy_table::Cell::new(row["status"].as_str().unwrap_or_default()),
+            ]);
+        }
+        table.print()?;
+        // A root that declares nothing now has no labels and so no pages. The
+        // primary checkout has no stack page of its own either; its stack is
+        // the project, so only a worktree prints both.
+        let Some(labels) = labels else {
+            continue;
+        };
+        if let Some(stack) = proxy.stack_url(labels) {
+            miseprintln!("  stack:   {stack}");
+        }
+        if let Some(project) = proxy.project_url(labels) {
+            miseprintln!("  project: {project}");
+        }
+    }
+    Ok(())
+}
+
+/// How the proxy treats a daemon: `off` when it opted out, otherwise what it
+/// does with TLS. Pitchfork terminates TLS unless the daemon asked it not to,
+/// so an unset `proxy_tls` reports that default rather than nothing.
+fn proxy_mode(daemon: &daemons::Daemon) -> &str {
+    if daemon.host.is_none() {
+        return "off";
+    }
+    daemon
+        .table
+        .get("proxy_tls")
+        .and_then(toml::Value::as_str)
+        .unwrap_or("terminate")
+}
+
+/// Daemon names this invocation will launch, so only their ports are conflict
+/// checked. Selectors are matched against qualified ids, exactly as the daemon
+/// selection does: a bare name never matches a selector written as
+/// `<namespace>/<name>`, which would drop that daemon from the check while it
+/// still started.
+/// What a bare word selects, or None for a daemon name the caller qualifies.
+///
+/// Asks this project what the word means, nearest declaration first. An import
+/// becomes the ID it answers to; a group stays bare so `selects` expands it
+/// against the project that declares it, which is also how a group in an
+/// unrelated project keeps its own meaning.
+fn bare_selector(
+    loaded: &daemons::DaemonSet,
+    project_root: &std::path::Path,
+    name: &str,
+) -> Option<Selector> {
+    match loaded.resolve_bare(project_root, name) {
+        Some(daemons::BareName::Import(id)) => Some(Selector::Name(id.to_string())),
+        Some(daemons::BareName::Group) => Some(Selector::Group(name.to_string())),
+        // An unresolved import has no ID; the caller refuses it separately, so
+        // this only keeps the name intact.
+        Some(daemons::BareName::Unresolved(_)) => Some(Selector::Name(name.to_string())),
+        // A daemon this project's hierarchy declares claims the word. A group
+        // selector never falls back to a daemon, so letting one answer here
+        // would leave that daemon unstartable by its own short name.
+        Some(daemons::BareName::Daemon) => None,
+        // A group no project in this tree declares can still belong to one of
+        // the other loaded roots, which resolves it itself.
+        None => loaded
+            .groups
+            .iter()
+            .any(|group| group.name == name)
+            .then(|| Selector::Group(name.to_string())),
+    }
+}
+
+fn starting_names(
+    set: &daemons::DaemonSet,
+    ids: &[String],
+    selectors: &[Selector],
+    here: &daemons::DaemonSet,
+) -> Vec<String> {
+    let named: Vec<String> = ids
+        .iter()
+        .filter(|id| selectors.is_empty() || selectors.iter().any(|s| selects(set, id, s)))
+        .filter_map(|id| {
+            let name = id.rsplit('/').next().unwrap_or(id);
+            set.daemons.contains_key(name).then(|| name.to_string())
+        })
+        .collect();
+    // Pitchfork starts a daemon's dependencies with it, so their ports are
+    // about to be bound too and belong in the check. Naming only what the
+    // selectors matched would let a dependency collide with another project
+    // and say nothing.
+    let mut names: Vec<String> = set
+        .with_dependencies(&named)
+        .daemons
+        .values()
+        .map(|daemon| daemon.name.clone())
+        .collect();
+    // `ids` records what this root already had. A root reached only because
+    // something depends on it arrives with none, so the ids alone would name
+    // nothing here while its daemons still start. `here` is this root's part of
+    // the dependency closure, which is what the command actually launches.
+    for daemon in here.daemons.values() {
+        if !names.contains(&daemon.name) {
+            names.push(daemon.name.clone());
+        }
+    }
+    names
+}
+
 fn matches_name(id: &str, name: &str) -> bool {
     id == name || id.rsplit('/').next() == Some(name)
 }
@@ -743,6 +881,7 @@ enum Selector {
 }
 
 impl Selector {
+    /// The word the user typed, for a message that has to name it back.
     fn name(&self) -> &str {
         match self {
             Selector::Name(name) | Selector::Group(name) => name,
@@ -883,6 +1022,103 @@ mod tests {
                 (path, cf)
             })
             .collect()
+    }
+
+    /// The selector decision for a bare word, which is where an ancestor's
+    /// group could take a nearer project's daemon name: `resolve_bare` refusing
+    /// to answer is not enough, because the fallback below it scans every
+    /// loaded group.
+    #[test]
+    fn a_daemon_keeps_its_own_short_name_against_any_group() {
+        let set = daemons::load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.web]\nrun = 'child web'\n",
+            ),
+            (
+                "/parent/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nweb = ['api']\n\
+                 [daemon_groups.stack]\ndaemons = ['api']\n",
+            ),
+        ]))
+        .unwrap();
+        // Derived, not spelled out: a root's own path is what the comparison
+        // turns on, and it is not the string the config was written under.
+        let child = set.daemons["web"].root.clone();
+        let parent = set.daemons["api"].root.clone();
+
+        assert!(
+            child != parent && child.starts_with(&parent),
+            "the two projects must be nested and distinct for this to mean anything: {child:?} under {parent:?}"
+        );
+        // The child's own daemon, even though a group elsewhere shares the word.
+        assert_eq!(bare_selector(&set, &child, "web"), None);
+        // From the parent, that word is still the parent's group.
+        assert_eq!(
+            bare_selector(&set, &parent, "web"),
+            Some(Selector::Group("web".into()))
+        );
+        // A group no nearer daemon claims still resolves from the child.
+        assert_eq!(
+            bare_selector(&set, &child, "stack"),
+            Some(Selector::Group("stack".into()))
+        );
+        // A word nothing declares is left for the caller to qualify.
+        assert_eq!(bare_selector(&set, &child, "nothing"), None);
+    }
+
+    #[test]
+    fn qualified_selectors_still_reach_the_port_check() {
+        // A root whose daemons this command does not reach through the closure.
+        let empty = daemons::DaemonSet::default();
+        let set = daemons::load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\n[daemons.web]\nrun = 'web'\n",
+        )]))
+        .unwrap();
+        let ids = ["ns/api".to_string(), "ns/web".to_string()];
+
+        // Selecting by qualified id must still reach the conflict check. A bare
+        // name never matches such a selector, so filtering on names would have
+        // returned nothing here while the daemon was still started.
+        let qualified = [Selector::Name("ns/api".to_string())];
+        assert_eq!(starting_names(&set, &ids, &qualified, &empty), ["api"]);
+
+        // The short spelling selects the same daemon, and only that one.
+        let bare = [Selector::Name("api".to_string())];
+        assert_eq!(starting_names(&set, &ids, &bare, &empty), ["api"]);
+
+        // No selectors means everything this root would launch.
+        assert_eq!(starting_names(&set, &ids, &[], &empty), ["api", "web"]);
+
+        // An id with no matching daemon contributes nothing.
+        let stale = ["ns/gone".to_string()];
+        assert!(starting_names(&set, &stale, &[], &empty).is_empty());
+
+        // Pitchfork starts a daemon's dependencies with it, so their ports are
+        // bound by this same command and have to reach the conflict check.
+        // Naming only what the selector matched would let one collide with
+        // another project in silence.
+        let set = daemons::load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nrun = 'server'\nport = 3000\ndepends = ['db']\n\
+             [daemons.db]\nrun = 'db'\nport = 5432\n",
+        )]))
+        .unwrap();
+        let ids = ["ns/api".to_string(), "ns/db".to_string()];
+        let mut launching =
+            starting_names(&set, &ids, &[Selector::Name("ns/api".to_string())], &empty);
+        launching.sort();
+        assert_eq!(launching, ["api", "db"]);
+
+        // A root reached only because something depends on it is added with no
+        // recorded ids, so the ids name nothing for it. What this command
+        // launches there comes from the closure instead, and has to reach the
+        // check or a transitive dependency binds a port unannounced.
+        let mut launching =
+            starting_names(&set, &[], &[Selector::Name("ns/api".to_string())], &set);
+        launching.sort();
+        assert_eq!(launching, ["api", "db"]);
     }
 
     #[test]

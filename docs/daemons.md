@@ -505,6 +505,31 @@ would exceed `65535`.
 There are 511 possible worktree offsets. With the default base and stride,
 PostgreSQL uses `5433`–`5943` in linked worktrees and Redis uses `6380`–`6890`.
 
+The variable is a convenience, so a name that cannot produce a usable one costs only
+the variable and never the daemon. Two daemons whose names differ only by punctuation,
+such as `web-ui` and `web_ui`, would claim the same variable, so neither exports it and
+mise warns. A name beginning with a digit cannot be a shell variable at all, so it goes
+without one and mise warns. Both daemons run normally in either case, and their ports
+still reach pitchfork, which injects `$PORT` into the process it starts regardless. The
+same name decides `<NAME>_URL`, described in
+[Stable URLs per worktree](#stable-urls-per-worktree), so a name that withholds one
+withholds both.
+
+Two daemons in one project cannot share a port, and mise says so when the configuration
+loads rather than letting the second fail to bind. Two instances of one preset are the
+usual way to reach this, since they share a base port: give the second its own `port`,
+or its own `base` when both use `port = "auto"`.
+
+```toml
+[daemons]
+postgres = "18"
+
+[daemons.analytics]
+preset = "postgres"
+version = "18"
+port = { auto = true, base = 5500 }
+```
+
 ### Project layout and port stability
 
 Mise detects the enclosing checkout even when `mise.toml` is nested in a directory
@@ -555,6 +580,181 @@ These checks do not reserve ports or detect every listener. An unmanaged process
 an unreachable supervisor, or two projects starting simultaneously can still
 cause an ordinary bind failure. Mise keeps the selected port rather than trying
 another one, so existing shells retain the same connection settings.
+
+## Stable URLs per worktree
+
+Ports separate concurrent checkouts, but they also mean every service has to be told
+which port its neighbours ended up on. For anything that speaks HTTP, pitchfork's
+reverse proxy removes that step: it routes a stable hostname to whatever port the
+daemon actually bound, and mise derives the same hostname while configuration loads.
+
+Every proxied daemon is reachable at a hostname. A daemon is proxied when it
+configures a `port` and has not opted out with `proxy = false`:
+
+```
+<daemon>.<project>.<tld>              in the primary checkout
+<daemon>.<worktree>.<project>.<tld>   in a linked git worktree
+```
+
+The daemon component is the daemon's own name, the project component comes from the
+project's pitchfork namespace, and a linked worktree adds a component of its own. A
+project with `namespace = "shop"` checked out at `~/src/shop` therefore serves its
+`api` daemon at `https://api.shop.localhost`, and a linked worktree at
+`~/src/shop-pr-42` serves the same daemon at `https://api.shop-pr-42.shop.localhost`.
+Both can run at once, and neither URL changes when a port moves.
+
+Mise exports that URL as `<NAME>_URL` next to `<NAME>_PORT`, using the same naming
+rules, so another service can be pointed at it without any port arithmetic:
+
+```toml
+[daemons.api]
+run = "npm run dev"
+port = "auto"
+
+[env]
+APP_BASE_URL = "{{ env.API_URL }}"
+```
+
+Every HTTP service in the stack can reference its neighbours this way, which is what
+lets several worktrees of one project run concurrently without a per-worktree port
+table. Databases keep `port = "auto"` instead: the proxy speaks HTTP, and a Postgres
+or Redis client does not, so the `postgres` and `redis` presets opt out of it and keep
+exporting `PGPORT`, `DATABASE_URL`, and `REDIS_URL`.
+
+A daemon without a `port` is never routed and gets no URL, and neither is one that
+opted out. `mise daemons urls` still lists both, with their ports.
+
+### Per-daemon proxy settings
+
+A daemon can take a different hostname label, or opt out of the proxy entirely:
+
+```toml
+# https://front.shop.localhost, not https://web.…
+[daemons.web]
+run = "npm run dev"
+port = 5173
+proxy = "front"
+
+# No hostname and no WORKER_URL; reachable only on its port.
+[daemons.worker]
+run = "npm run worker"
+port = 9000
+proxy = false
+```
+
+**Set `proxy = false` on any daemon that does not speak HTTP.** The proxy serves
+HTTP, so a custom Redis or Postgres daemon would otherwise be given an `https://`
+hostname and a `REDIS_URL` or `DATABASE_URL` pointing at it, which is not what a
+client of that database expects. The database presets already do this for you.
+
+`proxy = true` turns routing back on for a daemon that a preset opted out of, using
+the daemon's own name as the label.
+
+`proxy_tls` chooses what the proxy does with TLS for that daemon. The default,
+`"terminate"`, means the proxy serves HTTPS and forwards plain HTTP to the daemon.
+Use `"passthrough"` when the daemon serves TLS itself and the connection should reach
+it unbroken:
+
+```toml
+[daemons.api]
+run = "npm run dev:https"
+port = 3000
+proxy_tls = "passthrough"
+```
+
+Both keys are forwarded to pitchfork unchanged. Hostname routing needs pitchfork
+2.26.0 or later; an older supervisor starts the daemons normally but does not serve
+the hostnames.
+
+### Naming the project and the worktree
+
+The project component is the explicit `[daemons_settings] namespace`, before any
+per-worktree suffix, so `namespace_per_worktree` keeps separating daemon IDs while
+the worktree component does the separating in hostnames. Without an explicit
+namespace, both mise and pitchfork name the project after the primary checkout's
+directory.
+
+A bare repository has no primary checkout, so each worktree beside it names itself
+and gets no worktree component: a daemon in `shop/main` is `api.main.localhost`, not
+`api.main.shop.localhost`. The directory holding a bare repository often holds
+unrelated ones too, and naming the project after it would put them on one label.
+
+Because there is no worktree component, an explicit `namespace` in a file every such
+worktree shares gives them all one hostname, and `worktree_label` cannot separate
+them: it applies only to the worktree component. Each worktree runs in its own
+process, so neither one can see the other to report the clash the way an ordinary
+hostname collision is reported; mise warns when a checkout that names itself has a
+namespace its siblings could inherit. Give each checkout a namespace of its own
+instead, in a gitignored `mise.local.toml`:
+
+```toml
+# mise.local.toml, in one worktree of the bare repository
+[daemons_settings]
+namespace = "shop-pr-42"
+```
+
+The worktree component is the linked worktree's directory name. To name it yourself,
+set `worktree_label` in a pitchfork configuration file inside that worktree, which is
+where pitchfork reads it:
+
+```toml
+# pitchfork.local.toml, in the worktree
+worktree_label = "pr-42"
+```
+
+Mise reads the key from the same place, so the URL it exports and the hostname the
+proxy serves stay the same. Use `pitchfork.local.toml` and gitignore it: a tracked
+file is shared by every checkout, and a worktree label has to differ between them.
+
+Labels are folded to lowercase letters, digits and `-`. Two daemons, worktrees or
+projects whose names fold to one label collide, and pitchfork routes none of them;
+mise withholds those URLs and warns, rather than exporting an endpoint the proxy
+refuses. The daemons still run on their ports.
+
+One case has a winner. When exactly one claimant is a daemon this project reached
+with `project`, the project that declares it registers it from its own
+configuration, where nothing collides, so pitchfork serves that one and the local
+daemons get no URL. The warning says which claimant that is.
+
+### Seeing the URLs
+
+`mise daemons urls` prints every daemon's hostname next to the port it binds, grouped
+by project root, with the pages pitchfork serves for the whole stack:
+
+```sh
+mise daemons urls
+```
+
+```
+~/src/shop-pr-42
+Daemon         URL                                 Port  Proxy        Status
+shop/api       https://api.pr-42.shop.localhost    3117  terminate    running
+shop/web       https://front.pr-42.shop.localhost  5173  passthrough  running
+shop/postgres  -                                   5679  off          running
+  stack:   https://pr-42.shop.localhost
+  project: https://shop.localhost
+```
+
+The proxy column is the daemon's `proxy_tls` mode, or `off` when it has no hostname.
+Such a daemon is listed with its port alone rather than omitted, so a database is
+visible here too. `mise daemons ls --json` carries the same information in its `host`,
+`url`, and `proxy` fields. The primary checkout has no stack page of its own; its
+stack is the project.
+
+### Where the scheme and port come from
+
+Mise derives the URL the way pitchfork does: the scheme follows `proxy.https`, the TLD
+follows `proxy.tld`, and the port appears only when it is not the standard one for that
+scheme. It reads those from `/etc/pitchfork/config.toml` and
+`~/.config/pitchfork/config.toml`, with `PITCHFORK_PROXY_*` environment variables
+taking precedence, which are the settings layers that apply wherever the daemon is
+started from. A project-level `[settings.proxy]` is deliberately not consulted, because
+it would make a URL depend on the directory the supervisor happened to start in.
+
+With no pitchfork configuration at all, mise assumes pitchfork's defaults: HTTPS on
+port 443 under `.localhost`, so a URL is exported before the proxy is switched on. See
+pitchfork's [port management guide](https://pitchfork.jdx.dev/guides/port-management)
+for enabling the proxy and trusting its certificate.
 
 ## Data and configuration
 
