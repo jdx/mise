@@ -163,19 +163,35 @@ pub(super) fn pkg_receipt_versions(pkg_ids: &[String]) -> Result<Vec<String>> {
     }
     let mut versions = Vec::new();
     for pattern in pkg_ids {
-        let Some(ids) = pkgutil(&[&format!("--pkgs={pattern}")]) else {
-            continue;
-        };
+        let ids = pkgutil_matching_ids(pattern);
         versions.extend(pkg_receipt_versions_from_ids(
-            String::from_utf8_lossy(&ids).split_whitespace(),
+            ids.iter().map(String::as_str),
             |id| pkgutil(&["--pkg-info-plist", id]),
         ));
     }
     Ok(versions)
 }
 
-/// Runs `pkgutil` and returns its stdout, or `None` if it could not run or
-/// exited unsuccessfully (as a query with no matching receipt can).
+/// Lists the receipt IDs matching a Homebrew pkgutil pattern. As in
+/// `pkg_id_installed`, the printed IDs are authoritative and the exit status
+/// is ignored, because a query can exit unsuccessfully either way.
+fn pkgutil_matching_ids(pattern: &str) -> Vec<String> {
+    std::process::Command::new("pkgutil")
+        .arg(format!("--pkgs={pattern}"))
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .split_whitespace()
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Runs a per-receipt `pkgutil` query and returns its stdout, or `None` if it
+/// could not run or exited unsuccessfully.
 fn pkgutil(args: &[&str]) -> Option<Vec<u8>> {
     std::process::Command::new("pkgutil")
         .args(args)
@@ -216,10 +232,7 @@ pub(super) fn pkg_receipt_apps(pkg_ids: &[String]) -> Vec<PathBuf> {
     }
     let mut apps = Vec::new();
     for pattern in pkg_ids {
-        let Some(ids) = pkgutil(&[&format!("--pkgs={pattern}")]) else {
-            continue;
-        };
-        for id in String::from_utf8_lossy(&ids).split_whitespace() {
+        for id in &pkgutil_matching_ids(pattern) {
             let location = pkgutil(&["--pkg-info-plist", id])
                 .and_then(|info| pkg_info_string(&info, "install-location"));
             let dirs = pkgutil(&["--only-dirs", "--files", id]);
