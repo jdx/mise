@@ -1117,6 +1117,43 @@ mod tests {
         assert!(ports_being_started(&ports, &[]).is_empty());
     }
 
+    /// `state_dir` canonicalizes before hashing, so both spellings of a
+    /// symlinked project land in one state directory and the scan excludes it
+    /// by directory. The stored `root` is whichever spelling wrote it last,
+    /// which is why the exclusion cannot rest on comparing that.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_root_does_not_conflict_with_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("project");
+        std::fs::create_dir_all(&real).unwrap();
+        let link = tmp.path().join("linked");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        // Written under one spelling...
+        let dir = state_dir(&real);
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = State {
+            root: real.clone(),
+            ports: BTreeMap::from([("db".to_string(), PortClaim::fixed(5432))]),
+            ..State::default()
+        };
+        std::fs::write(
+            dir.join("state.json"),
+            serde_json::to_vec_pretty(&state).unwrap(),
+        )
+        .unwrap();
+
+        // ...and read under the other, which resolves to the same directory.
+        assert_eq!(state_dir(&link), dir, "both spellings share a state dir");
+        assert!(
+            !claimed_ports(&state_dir(&link))
+                .iter()
+                .any(|(other, _, _)| other.root == real),
+            "a project must not find its own claim through a symlink"
+        );
+    }
+
     #[test]
     fn a_stopped_daemon_does_not_reserve_its_port() {
         // The scan deliberately reports a candidate without consulting
