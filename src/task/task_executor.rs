@@ -102,7 +102,7 @@ struct PreparedTaskContext {
 ///
 /// Extended-length paths are exempt: `/` is an ordinary character after the `\\?\` prefix, so
 /// rewriting it there could change which file the value names. Unix paths are returned unchanged.
-fn task_env_path(path: &Path) -> String {
+pub(super) fn task_env_path(path: &Path) -> String {
     let path = path.display().to_string();
     #[cfg(windows)]
     {

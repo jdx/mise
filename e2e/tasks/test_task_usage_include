@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+mkdir -p mise-tasks
+
+cat <<'EOF' >shared.usage.kdl
+flagset "shared" {
+  flag "--environment <environment>" help="Deployment environment"
+}
+EOF
+
+cat <<'EOF' >mise-tasks/deploy
+#!/usr/bin/env bash
+#USAGE include file="$MISE_CONFIG_ROOT/shared.usage.kdl"
+#USAGE use "shared"
+echo "environment=$usage_environment"
+EOF
+chmod +x mise-tasks/deploy
+
+# Execution, help, task listing, and validation all resolve the same include.
+assert "mise run deploy --environment production" "environment=production"
+assert_contains "mise run deploy --help" "--environment <environment>"
+assert_contains "mise tasks ls --usage" 'flag --environment help="Deployment environment"'
+assert_contains "mise tasks validate deploy" "All 1 task(s) validated successfully"
+
+# Ambient variables are available consistently too.
+mkdir -p usage
+cp shared.usage.kdl usage/ambient.usage.kdl
+cat <<'EOF' >mise-tasks/ambient
+#!/usr/bin/env bash
+#USAGE include file="$USAGE_ROOT/ambient.usage.kdl"
+#USAGE use "shared"
+echo "environment=$usage_environment"
+EOF
+chmod +x mise-tasks/ambient
+
+assert "USAGE_ROOT=$PWD/usage mise run ambient --environment staging" "environment=staging"
+assert_contains "USAGE_ROOT=$PWD/usage mise run ambient --help" "--environment <environment>"
+
+# An undefined include variable is reported without making other tasks unloadable.
+cat <<'EOF' >mise-tasks/undefined
+#!/usr/bin/env bash
+#USAGE include file="$MISSING_USAGE_ROOT/shared.usage.kdl"
+echo ran
+EOF
+chmod +x mise-tasks/undefined
+
+output="$(mise run undefined 2>&1)"
+assert_contains_text "$output" "undefined environment variable MISSING_USAGE_ROOT"
+assert_contains_text "$output" "ran"

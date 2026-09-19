@@ -17,7 +17,7 @@ use petgraph::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::iter::once;
@@ -1127,14 +1127,22 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     }
 }
 
+#[cfg(test)]
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
+    parse_task_script_usage_with_env(file, None)
+}
+
+fn parse_task_script_usage_with_env(
+    file: &Path,
+    env: Option<&EnvMap>,
+) -> usage::Result<usage::Spec> {
     let script = std::fs::read_to_string(file)?;
     // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
     let raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
     if raw.trim().is_empty() {
         return usage::Spec::parse_script(file);
     }
-    parse_task_usage_raw(file, &hoist_root_usage_mounts(&raw).unwrap_or(raw))
+    parse_task_usage_raw(file, &hoist_root_usage_mounts(&raw).unwrap_or(raw), env)
 }
 
 /// Render a usage spec failure with the detail its `Display` leaves behind.
@@ -1161,8 +1169,8 @@ pub(crate) fn parse_task_usage_field(task_name: &str, spec: &str) -> Result<usag
 ///
 /// A file task's spec failing must not take the whole task load down, the same way one
 /// unrecognised `#MISE` key does not: every task in the project is parsed in one loop.
-fn parse_task_script_usage_or_warn(file: &Path) -> usage::Spec {
-    match parse_task_script_usage(file) {
+fn parse_task_script_usage_or_warn(file: &Path, env: Option<&EnvMap>) -> usage::Spec {
+    match parse_task_script_usage_with_env(file, env) {
         Ok(spec) => spec,
         // Reading the script is the first thing this does, and a script that was discovered
         // and has since been deleted or made unreadable fails there. Calling that an invalid
@@ -1185,8 +1193,18 @@ fn parse_task_script_usage_or_warn(file: &Path) -> usage::Spec {
     }
 }
 
-fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
-    let mut spec: usage::Spec = raw.parse()?;
+fn parse_task_usage_raw(
+    file: &Path,
+    raw: &str,
+    env: Option<&EnvMap>,
+) -> usage::Result<usage::Spec> {
+    let mut spec = match env {
+        Some(env) => {
+            let env: HashMap<_, _> = env.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            usage::Spec::parse_str_with_path_and_env(raw, file, &env)?
+        }
+        None => usage::Spec::parse_str_with_path(raw, file)?,
+    };
     if spec.bin.is_empty()
         && let Some(name) = file.file_name().and_then(|n| n.to_str())
     {
@@ -2115,7 +2133,11 @@ impl Task {
             clear_usage_env(&mut env);
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
-            (parse_task_script_usage_or_warn(&file), vec![])
+            let include_env = self.usage_include_env(config, &file);
+            (
+                parse_task_script_usage_or_warn(&file, Some(&include_env)),
+                vec![],
+            )
         } else {
             let scripts_only = self.run_script_strings();
             let parser_dir = match cwd {
@@ -2180,7 +2202,8 @@ impl Task {
     ) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
-            parse_task_script_usage_or_warn(&file)
+            let env = self.usage_include_env(config, &file);
+            parse_task_script_usage_or_warn(&file, Some(&env))
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(dir)
@@ -2200,7 +2223,8 @@ impl Task {
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
         let mut spec = if let Some(file) = self.file_path_raw() {
-            parse_task_script_usage_or_warn(&file)
+            let env = self.usage_include_env(config, &file);
+            parse_task_script_usage_or_warn(&file, Some(&env))
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(self.config_root.clone())
@@ -2210,6 +2234,27 @@ impl Task {
         self.populate_spec_metadata(&mut spec);
         self.populate_usage_about(&mut spec);
         Ok(spec)
+    }
+
+    fn usage_include_env(&self, config: &Config, file: &Path) -> EnvMap {
+        let mut env = env::PRISTINE_ENV.clone();
+        let path = task_executor::task_env_path;
+        env.insert("MISE_TASK_FILE".to_string(), path(file));
+        if let Some(dir) = file.parent() {
+            env.insert("MISE_TASK_DIR".to_string(), path(dir));
+        }
+        if let Some(root) = &self.config_root {
+            env.insert("MISE_CONFIG_ROOT".to_string(), path(root));
+        }
+        let project_root = if self.global || self.is_remote() {
+            config.project_root.as_ref().or(self.config_root.as_ref())
+        } else {
+            self.config_root.as_ref().or(config.project_root.as_ref())
+        };
+        if let Some(root) = project_root {
+            env.insert("MISE_PROJECT_ROOT".to_string(), path(root));
+        }
+        env
     }
 
     pub(crate) fn validate_template_syntax_for_preflight(&self, input: &str) -> Result<()> {
@@ -4696,6 +4741,49 @@ exec shapeme "$@"
             assert_eq!(spec.cmd.flags.len(), 1, "{label}");
             assert_eq!(&spec.cmd.flags[0].name, "force", "{label}");
         }
+    }
+
+    #[test]
+    fn test_parse_task_script_usage_resolves_relative_includes() {
+        let dir = tempfile::tempdir().unwrap();
+        let included = dir.path().join("shared.usage.kdl");
+        let task = dir.path().join("build");
+        std::fs::write(&included, "flagset \"shared\" {\n  flag \"--release\"\n}\n").unwrap();
+        std::fs::write(
+            &task,
+            "#!/usr/bin/env bash\n#USAGE include file=\"./shared.usage.kdl\"\n#USAGE use \"shared\"\n",
+        )
+        .unwrap();
+
+        let spec = super::parse_task_script_usage(&task).unwrap();
+
+        assert_eq!(spec.cmd.flags.len(), 1);
+        assert_eq!(spec.cmd.flags[0].long, ["release"]);
+    }
+
+    #[tokio::test]
+    async fn test_file_task_usage_expands_mise_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let included = dir.path().join("shared.usage.kdl");
+        let task = dir.path().join("build");
+        std::fs::write(&included, "flagset \"shared\" {\n  flag \"--release\"\n}\n").unwrap();
+        std::fs::write(
+            &task,
+            "#!/usr/bin/env bash\n#USAGE include file=\"$MISE_CONFIG_ROOT/shared.usage.kdl\"\n#USAGE use \"shared\"\n",
+        )
+        .unwrap();
+        let task = Task {
+            name: "build".to_string(),
+            file: Some(PathBuf::from("build")),
+            config_root: Some(dir.path().to_path_buf()),
+            ..Default::default()
+        };
+        let config = Config::get().await.unwrap();
+
+        let spec = task.parse_usage_spec_for_display(&config).await.unwrap();
+
+        assert_eq!(spec.cmd.flags.len(), 1);
+        assert_eq!(spec.cmd.flags[0].long, ["release"]);
     }
 
     #[test]
