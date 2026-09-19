@@ -123,7 +123,11 @@ impl HookEnv {
             .chain(PREV_SESSION.watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
-        if !self.force && hook_env::should_exit_early(slow_path_watch_files, self.reason) {
+        if self.force {
+            // Activation forces its first run, which skips should_exit_early, but that
+            // run is still the shell's entry into the current directory.
+            hook_env::schedule_dir_change_hooks();
+        } else if hook_env::should_exit_early(slow_path_watch_files, self.reason) {
             trace!("should_exit_early true");
             return Ok(());
         }

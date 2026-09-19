@@ -59,3 +59,8 @@ assert_contains "mise hook-env 2>&1" "HOOK-CD"
 assert_contains "mise hook-env 2>&1" "HOOK-ENTER"
 assert_not_contains "mise hook-env 2>&1" "HOOK-LEAVE"
 eval "$(mise hook-env)"
+
+# A forced run in the same directory is a refresh, not an entry
+assert_not_contains "mise hook-env --force 2>&1" "HOOK-ENTER"
+# Activation forces its first run in a new shell; that run enters the project (#13348)
+assert_contains "env -u __MISE_SESSION mise hook-env --force 2>&1" "HOOK-ENTER"

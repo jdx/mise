@@ -357,10 +357,7 @@ pub(crate) fn should_exit_early(
         return false;
     }
     // Schedule hooks on directory change (can't do this in fast-path)
-    if dir_change().is_some() {
-        hooks::schedule_hook(hooks::Hooks::Leave);
-        hooks::schedule_hook(hooks::Hooks::Cd);
-        hooks::schedule_hook(hooks::Hooks::Enter);
+    if schedule_dir_change_hooks() {
         return false;
     }
     // Check full watch_files list from config (may include more than config files)
@@ -385,6 +382,19 @@ pub(crate) fn should_exit_early(
         return false;
     }
     trace!("early-exit");
+    true
+}
+
+/// Schedules the leave, cd, and enter hooks when the directory differs from the
+/// previous session's, including the first run after activation. Returns whether
+/// it scheduled them.
+pub(crate) fn schedule_dir_change_hooks() -> bool {
+    if dir_change().is_none() {
+        return false;
+    }
+    hooks::schedule_hook(hooks::Hooks::Leave);
+    hooks::schedule_hook(hooks::Hooks::Cd);
+    hooks::schedule_hook(hooks::Hooks::Enter);
     true
 }
 
