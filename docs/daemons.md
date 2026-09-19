@@ -5,15 +5,26 @@ description: Run project databases, message brokers, and development servers wit
 # Daemons
 
 ::: warning Experimental
-Daemon management requires `experimental = true`. It requires
-[pitchfork 2.25.0](https://github.com/jdx/pitchfork/releases/tag/v2.25.0) or later
-for external configuration support.
+Daemon management requires `experimental = true` and
+[pitchfork](https://pitchfork.jdx.dev/) for process supervision. Install or update
+Pitchfork before following this guide.
 :::
 
 Use daemons for processes that keep running between task invocations, such as a
 database, message broker, or development server. Declare them in `mise.toml`;
 mise provides the project configuration and tool environment, while
 [pitchfork](https://pitchfork.jdx.dev/) manages the processes and readiness checks.
+
+## Recommended setup
+
+For a stack with application servers, databases, shared repositories, and git
+worktrees, follow [Set up a development stack](/daemons/development-stack.html).
+It walks through one configuration from explicit startup to stable browser URLs
+and a supervisor that starts at login.
+
+Use presets for infrastructure, `run` for application servers, and `depends` for
+startup ordering. Keep definitions in the project that owns each process. The
+sections below are the reference for adapting that setup.
 
 ## Quick start
 
@@ -771,8 +782,8 @@ rules, so another service can be pointed at it without any port arithmetic:
 
 ```toml
 [daemons.api]
-run = "npm run dev"
-port = "auto"
+run = "exec npm run dev -- --port $API_PORT"
+port = { auto = true, base = 3000 }
 
 [env]
 APP_BASE_URL = "{{ env.API_URL }}"
@@ -825,9 +836,8 @@ port = 3000
 proxy_tls = "passthrough"
 ```
 
-Both keys are forwarded to pitchfork unchanged. Hostname routing needs pitchfork
-2.26.0 or later; an older supervisor starts the daemons normally but does not serve
-the hostnames.
+Both keys are forwarded to pitchfork unchanged. Update Pitchfork if an older
+supervisor starts the daemons but does not serve their hostnames.
 
 ### Naming the project and the worktree
 
