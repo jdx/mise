@@ -517,6 +517,9 @@ Print the script to disable mise in the current shell session
 \fBdaemons start\fR
 Arguments passed to pitchfork; daemon names may be short or qualified.
 .TP
+\fBdaemons register\fR
+Prepare all project daemons for on\-demand startup without starting them.
+.TP
 \fBdaemons stop\fR
 Arguments passed to pitchfork; daemon names may be short or qualified.
 .TP
@@ -3882,6 +3885,24 @@ Print help
 Arguments passed to pitchfork; daemon names may be short or qualified.
 .PP
 \fBUsage:\fR mise daemons start [OPTIONS] [<ARGS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS REGISTER"
+Prepare all project daemons for on\-demand startup without starting them.
+
+Install missing tools, validate daemon definitions and dependencies, and
+register the generated configuration with Pitchfork. Includes imported
+dependencies and daemons outside the default group. Existing daemons keep
+running; this command does not start or restart them.
+
+A running Pitchfork supervisor with its proxy enabled can then start a
+registered HTTP daemon when a request reaches its hostname.
+.PP
+\fBUsage:\fR mise daemons register [OPTIONS]
 .PP
 \fBOptions:\fR
 .PP
