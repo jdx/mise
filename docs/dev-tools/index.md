@@ -378,6 +378,59 @@ alias mx="mise x --"
 Similarly, `mise run` [executes tasks](/tasks/) and also activates the mise
 environment with all of your tools.
 
+## System installations
+
+Use [`mise install --system`](/cli/install.html#flags) to install tools in a
+shared system directory. For example, run this as your normal user:
+
+```sh
+mise install --system uv
+```
+
+The default destination on Unix is `/usr/local/share/mise/installs`. Set
+`MISE_SYSTEM_DATA_DIR` to use a different system data directory, or
+[`system_installs_dir`](/configuration/settings.html#system_installs_dir) to
+change only the installation directory. Installing a tool does not select it for
+use; declare its version in configuration or pass it to `mise exec`.
+
+On Unix, mise downloads, verifies, and unpacks supported tools as your user, then
+invokes `sudo` to place the prepared installation in the system directory. Cache
+and project lockfile updates also run as your user. Updates to system shims and
+version symlinks use sudo when needed. If you already have write access to the
+destination, mise installs directly without sudo.
+
+### Supported tools
+
+Automatic elevation supports the `aqua`, `github`, `gitlab`, `forgejo`, `http`,
+and `s3` backends. The tool must work after being moved from a temporary directory
+to its final location and must not have a tool-level `postinstall` hook. Symlinks
+within the installation are preserved, but links pointing outside it are rejected.
+
+Other backends, tools with `postinstall` hooks, and tools that embed their
+installation path (such as Python virtual environments) need a directory you can
+write to when installing as a normal user. These restrictions do not apply when
+mise installs directly into a writable directory.
+
+### Permissions and sudo
+
+- Interactive installations can prompt for your sudo password in the terminal.
+  Noninteractive installations require sudo to work without a password prompt.
+- Set [`system_packages.sudo`](/configuration/settings.html#system_packages.sudo)
+  to `false` to disable automatic elevation. Installations that need sudo then
+  fail; installations into writable directories still work.
+- For elevated installations, the destination and its existing ancestors must
+  be owned by root and must not be writable by other users. Root-owned sticky
+  directories, such as `/tmp`, are allowed.
+- Use `mise install --system --force uv` to replace an installed version. mise
+  prepares the replacement before changing the existing installation.
+
+::: warning
+`sudo mise install --system` still works, but runs the entire installation as
+root and warns that it can leave root-owned files in your home directory. Prefer
+running mise as your normal user and letting it invoke sudo when needed. Running
+mise directly as root, for example in a container, remains supported.
+:::
+
 ## Auto-Install Mechanisms
 
 mise provides several mechanisms to automatically install missing tools or versions as needed. Below, these are grouped by how and when they are triggered, with relevant settings for each. The general mechanisms below require [auto_install](/configuration/settings.html#auto_install), with separate controls for execution, tasks, and missing commands. See [lazy tools](/dev-tools/shims.html#lazy-tools) for explicit declarations that defer installation until a command is first used.
@@ -403,27 +456,3 @@ If you type a command in your shell (e.g., `node`) and it is not found, mise can
 ::: tip
 Disable auto_install for specific tools by setting [`auto_install_disable_tools`](/configuration/settings.html#auto_install_disable_tools) to a list of tool names.
 :::
-
-## System installations
-
-Run `mise install --system uv` as your normal user. On Unix, mise invokes sudo
-when it needs to publish a tool into a protected system directory. Downloads,
-verification, caches, configuration, and project lockfiles remain unprivileged.
-If the system directory is already writable by your user (for example, after a
-one-time `chown`), no elevation happens at all. Running `sudo mise install --system`
-still works but warns, because everything then runs as root and can leave
-root-owned files in your home directory. Direct root execution (for example, in
-containers) is unchanged.
-
-Automatic elevation initially supports the `aqua`, `github`, `gitlab`, `forgejo`,
-`http`, and `s3` binary-download backends. Tools must be relocatable and cannot use
-a `postinstall` hook. Backends that build environments with embedded installation
-paths, such as Python virtualenvs, must use a user-writable installation directory.
-
-The system destination must have root-owned ancestors that other users cannot
-modify. Root-owned sticky directories, such as `/tmp`, are permitted. Mise stages
-the complete installation before publishing it; `--force` replaces an existing
-version. Internal absolute symlinks are rebased, and external symlinks are rejected.
-
-Elevation honors `system_packages.sudo = false`. Noninteractive installation
-requires passwordless sudo; interactive installation prompts on the terminal.
