@@ -5457,13 +5457,11 @@ fn parses_pkg_installer_choices() {
             choices: vec![
                 PkgChoice {
                     identifier: "com.microsoft.autoupdate".to_string(),
-                    attribute: "selected".to_string(),
-                    setting: PkgChoiceSetting::Integer(0),
+                    change: PkgChoiceChange::Selected(false),
                 },
                 PkgChoice {
                     identifier: "com.example.tools".to_string(),
-                    attribute: "customLocation".to_string(),
-                    setting: PkgChoiceSetting::String("/opt/example".to_string()),
+                    change: PkgChoiceChange::CustomLocation("/opt/example".to_string()),
                 },
             ],
         })
@@ -5501,6 +5499,23 @@ fn rejects_unsupported_pkg_options() {
         choice(
             serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": 1, "extra": 1}),
         ),
+        // The setting must suit the attribute, and the attribute must be one
+        // installer documents.
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": "/opt"}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "selected", "attributeSetting": 2}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "customLocation", "attributeSetting": 0}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "customLocation", "attributeSetting": ""}),
+        ),
+        choice(
+            serde_json::json!({"choiceIdentifier": "a", "choiceAttribute": "hidden", "attributeSetting": 1}),
+        ),
     ] {
         assert!(parse_pkg_artifact(&value).is_err(), "{value}");
     }
@@ -5511,13 +5526,15 @@ fn writes_pkg_choices_as_installer_plist() -> Result<()> {
     let choices = [
         PkgChoice {
             identifier: "com.microsoft.autoupdate".to_string(),
-            attribute: "selected".to_string(),
-            setting: PkgChoiceSetting::Integer(0),
+            change: PkgChoiceChange::Selected(false),
         },
         PkgChoice {
             identifier: "com.example.tools".to_string(),
-            attribute: "customLocation".to_string(),
-            setting: PkgChoiceSetting::String("/opt/example".to_string()),
+            change: PkgChoiceChange::CustomLocation("/opt/example".to_string()),
+        },
+        PkgChoice {
+            identifier: "com.example.docs".to_string(),
+            change: PkgChoiceChange::Visible(true),
         },
     ];
 
@@ -5531,9 +5548,13 @@ fn writes_pkg_choices_as_installer_plist() -> Result<()> {
     tools.insert("attributeSetting".into(), "/opt/example".into());
     tools.insert("choiceAttribute".into(), "customLocation".into());
     tools.insert("choiceIdentifier".into(), "com.example.tools".into());
+    let mut docs = plist::Dictionary::new();
+    docs.insert("attributeSetting".into(), plist::Value::Integer(1.into()));
+    docs.insert("choiceAttribute".into(), "visible".into());
+    docs.insert("choiceIdentifier".into(), "com.example.docs".into());
     assert_eq!(
         parsed,
-        plist::Value::Array(vec![outlook.into(), tools.into()])
+        plist::Value::Array(vec![outlook.into(), tools.into(), docs.into()])
     );
     Ok(())
 }

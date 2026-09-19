@@ -167,21 +167,23 @@ struct PkgArtifact {
     choices: Vec<PkgChoice>,
 }
 
-/// One entry of `installer`'s choice changes: set `attribute` (`selected`,
-/// `enabled`, `visible`, or `customLocation`) of the choice `identifier`.
+/// One entry of `installer`'s choice changes: an attribute change for the
+/// choice `identifier`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PkgChoice {
     identifier: String,
-    attribute: String,
-    setting: PkgChoiceSetting,
+    change: PkgChoiceChange,
 }
 
-/// `installer` takes 0/1 for the boolean attributes and a path string for
+/// The attributes `installer(8)` documents for `-applyChoiceChangesXML`, each
+/// paired with the setting it takes: 0/1 for the flags, a path for
 /// `customLocation`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum PkgChoiceSetting {
-    Integer(i64),
-    String(String),
+enum PkgChoiceChange {
+    Selected(bool),
+    Enabled(bool),
+    Visible(bool),
+    CustomLocation(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3263,11 +3265,16 @@ fn pkg_choices_plist(choices: &[PkgChoice]) -> Result<Vec<u8>> {
         .map(|choice| {
             let mut entry = plist::Dictionary::new();
             entry.insert("choiceIdentifier".into(), choice.identifier.clone().into());
-            entry.insert("choiceAttribute".into(), choice.attribute.clone().into());
-            let setting = match &choice.setting {
-                PkgChoiceSetting::Integer(value) => plist::Value::Integer((*value).into()),
-                PkgChoiceSetting::String(value) => plist::Value::String(value.clone()),
+            let flag = |value: bool| plist::Value::Integer(i64::from(value).into());
+            let (attribute, setting) = match &choice.change {
+                PkgChoiceChange::Selected(value) => ("selected", flag(*value)),
+                PkgChoiceChange::Enabled(value) => ("enabled", flag(*value)),
+                PkgChoiceChange::Visible(value) => ("visible", flag(*value)),
+                PkgChoiceChange::CustomLocation(path) => {
+                    ("customLocation", plist::Value::String(path.clone()))
+                }
             };
+            entry.insert("choiceAttribute".into(), attribute.into());
             entry.insert("attributeSetting".into(), setting);
             plist::Value::Dictionary(entry)
         })

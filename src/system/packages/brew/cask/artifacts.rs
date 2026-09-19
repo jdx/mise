@@ -290,8 +290,9 @@ pub(super) fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
 
 /// Homebrew's pkg stanza accepts only `choices` besides the deprecated
 /// `allow_untrusted`. Homebrew writes each choice verbatim into the plist for
-/// `installer -applyChoiceChangesXML`, which needs all three keys, so an
-/// incomplete or unknown shape is rejected here rather than by `installer`.
+/// `installer -applyChoiceChangesXML`, which needs all three keys and a setting
+/// that suits the attribute, so an incomplete, unknown, or mismatched choice is
+/// rejected here rather than by `installer`.
 fn parse_pkg_choices(options: &Value) -> Result<Vec<PkgChoice>> {
     let options = options
         .as_object()
@@ -318,22 +319,32 @@ fn parse_pkg_choices(options: &Value) -> Result<Vec<PkgChoice>> {
                     .get(field)
                     .and_then(Value::as_str)
                     .filter(|value| !value.is_empty())
-                    .map(str::to_string)
                     .ok_or_else(|| eyre!("brew-cask: pkg choice {field} must be a string"))
             };
-            let setting = match choice.get("attributeSetting") {
-                Some(Value::String(value)) => Some(PkgChoiceSetting::String(value.clone())),
-                Some(value) => value.as_i64().map(PkgChoiceSetting::Integer),
-                None => None,
-            }
-            .ok_or_else(|| {
-                eyre!("brew-cask: pkg choice attributeSetting must be an integer or string")
-            })?;
-            Ok(PkgChoice {
-                identifier: string_field("choiceIdentifier")?,
-                attribute: string_field("choiceAttribute")?,
-                setting,
-            })
+            let identifier = string_field("choiceIdentifier")?.to_string();
+            let attribute = string_field("choiceAttribute")?;
+            let setting = choice.get("attributeSetting");
+            let flag = || match setting.and_then(Value::as_i64) {
+                Some(0) => Ok(false),
+                Some(1) => Ok(true),
+                _ => bail!("brew-cask: pkg choice {attribute} setting must be 0 or 1"),
+            };
+            let change = match attribute {
+                "selected" => PkgChoiceChange::Selected(flag()?),
+                "enabled" => PkgChoiceChange::Enabled(flag()?),
+                "visible" => PkgChoiceChange::Visible(flag()?),
+                "customLocation" => PkgChoiceChange::CustomLocation(
+                    setting
+                        .and_then(Value::as_str)
+                        .filter(|path| !path.is_empty())
+                        .ok_or_else(|| {
+                            eyre!("brew-cask: pkg choice customLocation setting must be a path")
+                        })?
+                        .to_string(),
+                ),
+                _ => bail!("brew-cask: unsupported pkg choice attribute {attribute}"),
+            };
+            Ok(PkgChoice { identifier, change })
         })
         .collect()
 }
