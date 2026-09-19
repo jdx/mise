@@ -23,6 +23,12 @@ pub(crate) struct InstalledToolInfo {
     /// recover this from `version` alone, and the install is not yet visible
     /// to `mise ls`.
     pub requested_version: String,
+    /// Canonical backend identifier used by the completed installation. Backend
+    /// options are omitted because they may contain registry credentials.
+    pub backend: String,
+    /// Exact installation directory for this resolved version, never a floating
+    /// runtime symlink such as `latest` or a version prefix.
+    pub install_path: String,
 }
 
 impl From<&ToolVersion> for InstalledToolInfo {
@@ -31,8 +37,27 @@ impl From<&ToolVersion> for InstalledToolInfo {
             name: tv.ba().short.clone(),
             version: tv.version.clone(),
             requested_version: tv.request.version(),
+            backend: hook_backend_identifier(&tv.ba().full_without_opts()),
+            install_path: tv.install_path().to_string_lossy().to_string(),
         }
     }
+}
+
+/// Remove URL secrets and query options before exposing a backend to hooks.
+fn hook_backend_identifier(full: &str) -> String {
+    let Some((backend, value)) = full.split_once(':') else {
+        return full.to_string();
+    };
+    let Ok(mut url) = url::Url::parse(value) else {
+        return full.to_string();
+    };
+    if url.scheme() != "ssh" {
+        let _ = url.set_username("");
+    }
+    let _ = url.set_password(None);
+    url.set_query(None);
+    url.set_fragment(None);
+    format!("{backend}:{url}")
 }
 
 #[derive(
@@ -866,6 +891,64 @@ mod tests {
     #[derive(Deserialize)]
     struct TestHook {
         hook: HookDef,
+    }
+
+    #[test]
+    fn installed_tool_info_serializes_opaque_versions_and_exact_paths() {
+        let info = InstalledToolInfo {
+            name: "opencodex".into(),
+            version: "preview/channel@build+7".into(),
+            requested_version: "latest".into(),
+            backend: "npm:@bitkyc08/opencodex".into(),
+            install_path: "/tmp/data with spaces/installs/opencodex/preview/channel@build+7".into(),
+        };
+
+        assert_eq!(
+            serde_json::to_value(info).unwrap(),
+            serde_json::json!({
+                "name": "opencodex",
+                "version": "preview/channel@build+7",
+                "requested_version": "latest",
+                "backend": "npm:@bitkyc08/opencodex",
+                "install_path": "/tmp/data with spaces/installs/opencodex/preview/channel@build+7",
+            })
+        );
+    }
+
+    #[test]
+    fn hook_backend_identifiers_remove_url_credentials() {
+        assert_eq!(
+            hook_backend_identifier(
+                "http:https://build:secret@example.com/tools/archive.tgz?token=secret#bin"
+            ),
+            "http:https://example.com/tools/archive.tgz"
+        );
+        assert_eq!(
+            hook_backend_identifier(
+                "asdf:ssh://git:secret@gitlab.dev/org/plugin.git?token=secret#ref"
+            ),
+            "asdf:ssh://git@gitlab.dev/org/plugin.git"
+        );
+        assert_eq!(
+            hook_backend_identifier("npm:@bitkyc08/opencodex"),
+            "npm:@bitkyc08/opencodex"
+        );
+    }
+
+    #[test]
+    fn installed_tool_info_preserves_windows_path_spelling() {
+        let info = InstalledToolInfo {
+            name: "opencodex".into(),
+            version: "2.59.0".into(),
+            requested_version: "latest".into(),
+            backend: "npm:@bitkyc08/opencodex".into(),
+            install_path: r"C:\Data Root\mise\installs\opencodex\2.59.0".into(),
+        };
+
+        assert_eq!(
+            serde_json::to_value(info).unwrap()["install_path"],
+            r"C:\Data Root\mise\installs\opencodex\2.59.0"
+        );
     }
 
     #[test]

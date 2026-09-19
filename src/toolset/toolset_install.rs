@@ -382,6 +382,12 @@ impl Toolset {
         let (installed, failed, attempted_failures) = self
             .install_with_deps(config, versions, opts, install_progress.as_deref())
             .await;
+        // Capture the completed installation itself before config reload, floating-link
+        // rebuilds, or a caller's later config write can change what a second lookup sees.
+        // `installed` contains every success even when a sibling failed, so partial-failure
+        // hooks retain the successful installation records.
+        let installed_tools: Vec<InstalledToolInfo> =
+            installed.iter().map(InstalledToolInfo::from).collect();
         let failed_backends = attempted_failures
             .iter()
             .filter_map(|tr| tr.backend().ok())
@@ -486,8 +492,6 @@ impl Toolset {
             // `self` was re-resolved after the config reload above and still
             // contains explicitly requested and task-only tools that are not
             // present in the reloaded project config.
-            let installed_tools: Vec<InstalledToolInfo> =
-                installed.iter().map(InstalledToolInfo::from).collect();
             hooks::run_one_hook_with_context(
                 config,
                 self,

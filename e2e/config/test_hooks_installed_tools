@@ -10,11 +10,9 @@ dummy = "latest"
 postinstall = "echo INSTALLED_TOOLS=\$MISE_INSTALLED_TOOLS"
 EOF
 
-# Remove any existing dummy installation to force reinstall
-rm -rf "$MISE_DATA_DIR/installs/dummy"
-
 # Run install and capture output
 output=$(mise install dummy 2>&1)
+installed_tools=$(printf '%s\n' "$output" | sed -n 's/^.*INSTALLED_TOOLS=//p' | tail -n 1)
 
 # Check that MISE_INSTALLED_TOOLS is set and contains JSON
 if [[ $output == *'INSTALLED_TOOLS=[{"name":"dummy"'* ]]; then
@@ -49,9 +47,14 @@ if [[ $output == *'"version":"latest"'* ]]; then
   exit 1
 fi
 
+# The backend is the canonical identifier without options, and install_path is
+# the concrete version directory rather than a floating selector.
+assert "printf '%s' '$installed_tools' | jq -r '.[0].backend'" "asdf:dummy"
+installed_version=$(printf '%s' "$installed_tools" | jq -r '.[0].version')
+assert "printf '%s' '$installed_tools' | jq -r '.[0].install_path'" "$MISE_DATA_DIR/installs/dummy/$installed_version"
+
 # A version prefix resolves to a concrete version but is reported verbatim
-rm -rf "$MISE_DATA_DIR/installs/dummy"
-output3=$(mise install dummy@1 2>&1)
+output3=$(MISE_INSTALLS_DIR="$MISE_DATA_DIR/installs-prefix" mise install dummy@1 2>&1)
 if [[ $output3 == *'"version":"1.1.0","requested_version":"1"'* ]]; then
   echo "✓ MISE_INSTALLED_TOOLS reports a version prefix verbatim"
 else
@@ -61,7 +64,6 @@ else
 fi
 
 # An alias is reported by its alias name, not the version it points at
-rm -rf "$MISE_DATA_DIR/installs/dummy"
 cat <<EOF >mise.toml
 [alias.dummy]
 myalias = "1.0.0"
@@ -72,7 +74,7 @@ dummy = "myalias"
 [hooks]
 postinstall = "echo INSTALLED_TOOLS=\$MISE_INSTALLED_TOOLS"
 EOF
-output4=$(mise install 2>&1)
+output4=$(MISE_INSTALLS_DIR="$MISE_DATA_DIR/installs-alias" mise install 2>&1)
 if [[ $output4 == *'"version":"1.0.0","requested_version":"myalias"'* ]]; then
   echo "✓ MISE_INSTALLED_TOOLS reports an alias verbatim"
 else
@@ -82,7 +84,6 @@ else
 fi
 
 # Restore the original `latest` config for the no-op check below
-rm -rf "$MISE_DATA_DIR/installs/dummy"
 cat <<EOF >mise.toml
 [tools]
 dummy = "latest"
@@ -90,8 +91,6 @@ dummy = "latest"
 [hooks]
 postinstall = "echo INSTALLED_TOOLS=\$MISE_INSTALLED_TOOLS"
 EOF
-mise install >/dev/null 2>&1
-
 # A no-op `mise install` (everything already installed) still runs postinstall,
 # now with an empty JSON array rather than an unset variable (#10574)
 output2=$(mise install 2>&1)
@@ -102,3 +101,24 @@ else
   echo "Output: $output2"
   exit 1
 fi
+
+# A batch hook still receives successful installations when another requested
+# version fails, while the overall install remains unsuccessful.
+cat <<EOF >mise.toml
+[tools]
+dummy = ["1.0.0", "other-dummy"]
+
+[hooks]
+postinstall = "echo INSTALLED_TOOLS=\$MISE_INSTALLED_TOOLS"
+EOF
+set +e
+output5=$(MISE_INSTALLS_DIR="$MISE_DATA_DIR/installs-partial" mise install 2>&1)
+status5=$?
+set -e
+if [[ $status5 == 0 ]]; then
+  echo "✗ partial install should retain the failed command status"
+  echo "Output: $output5"
+  exit 1
+fi
+installed_tools5=$(printf '%s\n' "$output5" | sed -n 's/^.*INSTALLED_TOOLS=//p' | tail -n 1)
+assert "printf '%s' '$installed_tools5' | jq -r 'map(select(.version == \"1.0.0\")) | length'" "1"
