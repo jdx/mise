@@ -17,6 +17,11 @@ when you commit changes to your repository.
 
 Staged files are passed to the task as `STAGED`.
 
+Hooks that git hands a message file — `commit-msg`, `prepare-commit-msg`,
+`applypatch-msg` and `sendemail-validate` — forward git's arguments to the task. Other
+hooks do not, so a `pre-push` hook's remote name and URL are not appended to the task's
+command.
+
 For more advanced pre-commit functionality, see mise's sister project: <https://hk.jdx.dev/>
 
 ## Arguments
