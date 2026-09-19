@@ -23,17 +23,27 @@ use std::time::{Duration, SystemTime};
 use eyre::{Result, WrapErr};
 use reqwest::header::{HeaderMap, HeaderValue, IF_MODIFIED_SINCE, LAST_MODIFIED};
 use serde::{Deserialize, Serialize};
+use tokio::sync::OnceCell;
 
 use super::model::Cask;
 use crate::http::HTTP_FETCH;
 
 const BULK_URL: &str = "https://formulae.brew.sh/api/cask.json";
 
-/// How long the cached document is trusted without asking upstream. Matches
-/// Homebrew's own default (`HOMEBREW_API_AUTO_UPDATE_SECS`, 24h): within the
-/// window there is no request at all, and after it a conditional request is
-/// usually a 304 carrying no body.
-const STALE_AFTER: Duration = Duration::from_secs(86_400);
+/// How long the cached document is trusted without asking upstream.
+///
+/// Homebrew's `HOMEBREW_API_AUTO_UPDATE_SECS` default, which is 450s and not the
+/// 24h of the similarly named `HOMEBREW_AUTO_UPDATE_SECS`. The distinction
+/// matters: mise resolves metadata afresh on every run today, so a window of a
+/// day would be a real regression rather than a cache. It hides a version
+/// published this morning, and it breaks any cask whose vendor drops the old
+/// download URL on release, which is common enough to be the usual reason a
+/// cask install fails.
+///
+/// The shorter window is close to free. Inside it there is no request at all,
+/// and past it the conditional request is almost always a 304 carrying no body,
+/// so the cost is one small round trip per run rather than one per cask.
+const STALE_AFTER: Duration = Duration::from_secs(450);
 
 /// Bumped when the sidecar's meaning changes, so an older one is rebuilt rather
 /// than misread.
@@ -125,6 +135,36 @@ fn mark_checked() -> Result<()> {
     crate::file::create_dir_all(dir())?;
     crate::file::write_atomic(checked_path(), [])?;
     Ok(())
+}
+
+/// Whether this process has already attempted a refresh.
+///
+/// `cask()` runs once per declared cask, and each call used to re-enter
+/// `refresh()`. That is free on the happy path, where `is_fresh()`
+/// short-circuits immediately, but a refresh that *fails* leaves nothing behind
+/// recording the attempt. A 200 whose body `build_index` rejects (an upstream
+/// format change, a captive portal, a proxy serving HTML) returns before
+/// `mark_checked()`, so the next cask downloads the same ~19MB again: a machine
+/// declaring 150 casks would fetch it 150 times, which is far worse than the
+/// per-cask requests this is meant to replace. A mirror without `cask.json`, or
+/// an outage, merely doubles the request count instead.
+///
+/// Memoizing the attempt makes one failure cost one attempt. The outcome is not
+/// stored because the caller does not branch on it: see `cask()`.
+static REFRESHED: OnceCell<()> = OnceCell::const_new();
+
+/// Attempt a refresh at most once per process, logging a failure once rather
+/// than once per cask.
+async fn refresh_once() {
+    REFRESHED
+        .get_or_init(|| async {
+            if let Err(err) = refresh().await {
+                debug!(
+                    "brew-cask: bulk index refresh failed ({err:#}); using the cached document if there is one"
+                );
+            }
+        })
+        .await;
 }
 
 /// Fetch the document if the cached copy is missing or past the staleness
@@ -363,12 +403,14 @@ fn top_level_elements(body: &[u8]) -> Result<Vec<(usize, usize)>> {
 /// caller remembering to catch. Each failure logs before falling back, so a
 /// persistently broken cache is visible at debug level rather than silent.
 pub(super) async fn cask(token: &str) -> Option<Cask> {
-    if let Err(err) = refresh().await {
-        // An unreachable index is not fatal: the per-cask path still works, and
-        // failing here would turn a cache miss into a failed run.
-        debug!("brew-cask: bulk index unavailable ({err:#}); falling back to per-cask metadata");
-        return None;
-    }
+    // Deliberately not branched on. A failed refresh is not a reason to ignore a
+    // document an earlier run already fetched: those bytes are still metadata
+    // Homebrew published, and they are newer than nothing. If the refresh failed
+    // because the network is unreachable, then the per-cask endpoint this would
+    // otherwise fall back to is unreachable too, so discarding the cache trades a
+    // slightly stale answer for no answer at all. When there is no cached
+    // document, `load_index` below fails and the fallback happens there.
+    refresh_once().await;
     // Validating the index and then reading through it is one operation, for the
     // same reason publishing is. Without the lock a concurrent publication can
     // replace the document in between, and if the stale range happens to parse
