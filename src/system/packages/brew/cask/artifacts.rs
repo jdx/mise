@@ -289,10 +289,10 @@ pub(super) fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
 }
 
 /// Homebrew's pkg stanza accepts only `choices` besides the deprecated
-/// `allow_untrusted`. Each choice is a flat dictionary that Homebrew writes
-/// verbatim into the plist for `installer -applyChoiceChangesXML`, so only
-/// values with a plist equivalent are accepted.
-fn parse_pkg_choices(options: &Value) -> Result<Vec<serde_json::Map<String, Value>>> {
+/// `allow_untrusted`. Homebrew writes each choice verbatim into the plist for
+/// `installer -applyChoiceChangesXML`, which needs all three keys, so an
+/// incomplete or unknown shape is rejected here rather than by `installer`.
+fn parse_pkg_choices(options: &Value) -> Result<Vec<PkgChoice>> {
     let options = options
         .as_object()
         .ok_or_else(|| eyre!("brew-cask: pkg options must be an object"))?;
@@ -308,15 +308,32 @@ fn parse_pkg_choices(options: &Value) -> Result<Vec<serde_json::Map<String, Valu
             let choice = choice
                 .as_object()
                 .ok_or_else(|| eyre!("brew-cask: pkg choices must be objects"))?;
-            if choice.is_empty() {
-                bail!("brew-cask: pkg choices must not be empty");
+            reject_unsupported_artifact_fields(
+                "pkg choice",
+                choice,
+                &["choiceIdentifier", "choiceAttribute", "attributeSetting"],
+            )?;
+            let string_field = |field: &str| {
+                choice
+                    .get(field)
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .ok_or_else(|| eyre!("brew-cask: pkg choice {field} must be a string"))
+            };
+            let setting = match choice.get("attributeSetting") {
+                Some(Value::String(value)) => Some(PkgChoiceSetting::String(value.clone())),
+                Some(value) => value.as_i64().map(PkgChoiceSetting::Integer),
+                None => None,
             }
-            for (key, value) in choice {
-                if !matches!(value, Value::String(_) | Value::Number(_) | Value::Bool(_)) {
-                    bail!("brew-cask: pkg choice {key} must be a string, number, or boolean");
-                }
-            }
-            Ok(choice.clone())
+            .ok_or_else(|| {
+                eyre!("brew-cask: pkg choice attributeSetting must be an integer or string")
+            })?;
+            Ok(PkgChoice {
+                identifier: string_field("choiceIdentifier")?,
+                attribute: string_field("choiceAttribute")?,
+                setting,
+            })
         })
         .collect()
 }

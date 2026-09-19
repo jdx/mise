@@ -164,7 +164,24 @@ struct PkgArtifact {
     source: String,
     /// Choice changes for `installer -applyChoiceChangesXML`, e.g. deselecting
     /// a bundled updater. Empty installs the package's default choices.
-    choices: Vec<serde_json::Map<String, Value>>,
+    choices: Vec<PkgChoice>,
+}
+
+/// One entry of `installer`'s choice changes: set `attribute` (`selected`,
+/// `enabled`, `visible`, or `customLocation`) of the choice `identifier`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PkgChoice {
+    identifier: String,
+    attribute: String,
+    setting: PkgChoiceSetting,
+}
+
+/// `installer` takes 0/1 for the boolean attributes and a path string for
+/// `customLocation`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PkgChoiceSetting {
+    Integer(i64),
+    String(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3240,40 +3257,24 @@ fn pkg_installer_args(source: &Path, choices: Option<&Path>) -> Vec<String> {
 
 /// Serializes pkg choices as the XML plist array that `installer
 /// -applyChoiceChangesXML` reads, matching Homebrew's `Plist::Emit.dump`.
-fn pkg_choices_plist(choices: &[serde_json::Map<String, Value>]) -> Result<Vec<u8>> {
+fn pkg_choices_plist(choices: &[PkgChoice]) -> Result<Vec<u8>> {
     let choices = choices
         .iter()
         .map(|choice| {
-            choice
-                .iter()
-                .map(|(key, value)| Ok((key.clone(), pkg_choice_plist_value(key, value)?)))
-                .collect::<Result<plist::Dictionary>>()
-                .map(plist::Value::Dictionary)
+            let mut entry = plist::Dictionary::new();
+            entry.insert("choiceIdentifier".into(), choice.identifier.clone().into());
+            entry.insert("choiceAttribute".into(), choice.attribute.clone().into());
+            let setting = match &choice.setting {
+                PkgChoiceSetting::Integer(value) => plist::Value::Integer((*value).into()),
+                PkgChoiceSetting::String(value) => plist::Value::String(value.clone()),
+            };
+            entry.insert("attributeSetting".into(), setting);
+            plist::Value::Dictionary(entry)
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect();
     let mut xml = Vec::new();
     plist::Value::Array(choices).to_writer_xml(&mut xml)?;
     Ok(xml)
-}
-
-fn pkg_choice_plist_value(key: &str, value: &Value) -> Result<plist::Value> {
-    Ok(match value {
-        Value::String(value) => plist::Value::String(value.clone()),
-        Value::Bool(value) => plist::Value::Boolean(*value),
-        Value::Number(number) => {
-            if let Some(value) = number.as_i64() {
-                plist::Value::Integer(value.into())
-            } else if let Some(value) = number.as_u64() {
-                plist::Value::Integer(value.into())
-            } else {
-                number
-                    .as_f64()
-                    .map(plist::Value::Real)
-                    .ok_or_else(|| eyre!("brew-cask: pkg choice {key} is not a number"))?
-            }
-        }
-        _ => bail!("brew-cask: pkg choice {key} must be a string, number, or boolean"),
-    })
 }
 
 fn stage_font(stage: &Path, caskroom: &Path, font: &FontArtifact) -> Result<()> {
