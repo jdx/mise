@@ -115,10 +115,16 @@ impl<T: NativeGraph> GraphRef<T> {
             Self::Inline { graph, .. } => Ok(graph),
             Self::Sidecar { dir, digest, cell } => cell
                 .get_or_init(|| {
-                    let text = std::fs::read_to_string(dir.join(T::GRAPH_FILE))
+                    let raw = std::fs::read_to_string(dir.join(T::GRAPH_FILE))
                         .map_err(|e| e.to_string())?;
-                    let text = normalize_newlines(&text).into_owned();
-                    if digest_bytes(text.as_bytes()) != *digest {
+                    let text = normalize_newlines(&raw).into_owned();
+                    // Older versions hashed the bytes as they found them, so a
+                    // lockfile written from a CRLF checkout records the CRLF
+                    // digest. Keep accepting it; the next save records the
+                    // normalized one.
+                    if digest_bytes(text.as_bytes()) != *digest
+                        && digest_bytes(raw.as_bytes()) != *digest
+                    {
                         return Err(
                             "digest mismatch; run `mise lock` to accept the edited graph".into(),
                         );
@@ -377,8 +383,27 @@ impl SidecarWrites {
             }
         };
         self.referenced.insert(dir.clone());
-        if matches!(graph, GraphRef::Sidecar { dir: source, .. } if *source == dir && source.is_dir())
+        if let GraphRef::Sidecar {
+            dir: source,
+            digest,
+            cell,
+        } = graph
+            && *source == dir
+            && source.is_dir()
         {
+            // A legacy CRLF digest is upgraded to the normalized one whenever
+            // the graph has already been loaded, so a lockfile written from a
+            // Windows checkout heals itself without re-reading the sidecar.
+            if let Some(Ok(loaded)) = cell.get() {
+                let identity = digest_text(&loaded.graph_text()?);
+                if identity != *digest {
+                    return Ok(GraphRef::Sidecar {
+                        dir,
+                        digest: identity,
+                        cell: cell.clone(),
+                    });
+                }
+            }
             return Ok(graph.clone());
         }
         let body = match graph.load() {
@@ -975,6 +1000,60 @@ uv = { project = {}, graph = { version = 1 } }
         for (file, contents) in crlf {
             assert_eq!(std::fs::read_to_string(&file).unwrap(), contents);
         }
+    }
+
+    #[test]
+    fn legacy_crlf_digests_keep_verifying_and_heal_on_save() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        let mut lock = Lockfile::default();
+        let mut tool = entry("pypi:fixture");
+        tool.uv = Some(uv().into());
+        lock.tools.insert("pypi:fixture".into(), vec![tool]);
+        lock.save(&path).unwrap();
+
+        // An older mise on a Windows checkout accepted the CRLF working copy as
+        // an edit and recorded the digest of those raw bytes.
+        let graph_file = sidecar_root(&path).join("pypi-fixture/1.0.0/uv.lock");
+        let crlf = std::fs::read_to_string(&graph_file)
+            .unwrap()
+            .replace('\n', "\r\n");
+        std::fs::write(&graph_file, &crlf).unwrap();
+        let normalized = digest_text(&crlf);
+        let legacy = digest_bytes(crlf.as_bytes());
+        assert_ne!(legacy, normalized);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, text.replace(&normalized, &legacy)).unwrap();
+
+        // Upgrading to a mise that hashes normalized text must not invalidate it.
+        let lock = Lockfile::read(&path).unwrap();
+        let graph = lock.tools["pypi:fixture"][0].uv.as_ref().unwrap();
+        assert_eq!(graph.identity(), legacy);
+        assert_eq!(graph.load().unwrap(), &uv());
+
+        // Saving after the graph was loaded records the normalized digest, and
+        // the sidecar bytes stay as git checked them out.
+        lock.save(&path).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(saved.contains(&normalized), "{saved}");
+        assert!(!saved.contains(&legacy), "{saved}");
+        assert_eq!(std::fs::read_to_string(&graph_file).unwrap(), crlf);
+        let lock = Lockfile::read(&path).unwrap();
+        assert_eq!(
+            lock.tools["pypi:fixture"][0]
+                .uv
+                .as_ref()
+                .unwrap()
+                .load()
+                .unwrap(),
+            &uv()
+        );
+
+        // A graph that was never opened keeps its recorded digest untouched.
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, text.replace(&normalized, &legacy)).unwrap();
+        Lockfile::read(&path).unwrap().save(&path).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains(&legacy));
     }
 
     #[test]
