@@ -324,16 +324,31 @@ fn create_directory(path: &Path, owner: u32) -> Result<()> {
 }
 
 fn apply(input: impl BufRead) -> Result<()> {
-    apply_for_owner(input, 0)
+    let settings = crate::config::Settings::get();
+    let roots = [
+        settings.system_installs_dir().to_path_buf(),
+        settings.system_shims_dir(),
+    ];
+    apply_for_owner(input, 0, &roots)
 }
 
-fn apply_for_owner(mut input: impl BufRead, owner: u32) -> Result<()> {
+/// `roots` are the only directories a request may publish into: the system
+/// installs directory (or a tool directory inside it) and the system shims
+/// directory, as configured for the helper's own user.
+fn apply_for_owner(mut input: impl BufRead, owner: u32, roots: &[PathBuf]) -> Result<()> {
     let mut header = String::new();
     input.read_line(&mut header)?;
     let request: Request = serde_json::from_str(&header)?;
     let directory = match &request {
         Request::Install { directory, .. } | Request::Links { directory, .. } => directory,
     };
+    ensure!(
+        roots
+            .iter()
+            .any(|root| directory == root || directory.parent() == Some(root.as_path())),
+        "refusing to publish outside the system installs or shims directories: {}; configure MISE_SYSTEM_DATA_DIR or system_installs_dir for root as well",
+        directory.display()
+    );
     create_directory(directory, owner)?;
     let directory = fs::canonicalize(directory)?;
     let lock_path = directory.join(".mise-publish.lock");
@@ -604,11 +619,12 @@ mod tests {
         input.push(b'\n');
         input.extend(&bytes);
         let owner = nix::unistd::geteuid().as_raw();
-        apply_for_owner(&input[..], owner)?;
+        let roots = [root.clone()];
+        apply_for_owner(&input[..], owner, &roots)?;
         assert_eq!(fs::read_to_string(root.join("uv/1/alias"))?, "binary");
         assert!(root.join(".mise-installs.toml").is_file());
         assert!(root.join("uv/.mise.backend.toml").is_file());
-        assert!(apply_for_owner(&input[..], owner).is_err());
+        assert!(apply_for_owner(&input[..], owner, &roots).is_err());
         assert_eq!(fs::read_to_string(root.join("uv/1/tool"))?, "binary");
         let reserved = Request::Install {
             directory: root.clone(),
@@ -620,7 +636,7 @@ mod tests {
         let mut reserved = serde_json::to_vec(&reserved)?;
         reserved.push(b'\n');
         reserved.extend(&bytes);
-        assert!(apply_for_owner(&reserved[..], owner).is_err());
+        assert!(apply_for_owner(&reserved[..], owner, &roots).is_err());
         assert!(root.join("uv/.mise.backend.toml").is_file());
 
         // A malformed replacement must leave the previous installation intact.
@@ -637,7 +653,7 @@ mod tests {
         let mut header = jdx_tar::Header::new_gnu(jdx_tar::EntryType::Symlink);
         archive.append_link(&mut header, "escape", "../../outside")?;
         archive.finish()?;
-        assert!(apply_for_owner(&malicious[..], owner).is_err());
+        assert!(apply_for_owner(&malicious[..], owner, &roots).is_err());
         assert_eq!(fs::read_to_string(root.join("uv/1/tool"))?, "binary");
         let links_request = |links: Vec<(&str, &str)>, remove: Vec<&str>| -> Result<Vec<u8>> {
             let mut bytes = serde_json::to_vec(&Request::Links {
@@ -653,12 +669,12 @@ mod tests {
             Ok(bytes)
         };
         let links = links_request(vec![("latest", "./1")], vec![])?;
-        apply_for_owner(&links[..], owner)?;
-        apply_for_owner(&links[..], owner)?;
+        apply_for_owner(&links[..], owner, &roots)?;
+        apply_for_owner(&links[..], owner, &roots)?;
         assert_eq!(fs::read_to_string(root.join("uv/latest/tool"))?, "binary");
         // Relative targets may not escape the directory.
         let escape = links_request(vec![("evil", "../../outside")], vec![])?;
-        assert!(apply_for_owner(&escape[..], owner).is_err());
+        assert!(apply_for_owner(&escape[..], owner, &roots).is_err());
         assert!(fs::symlink_metadata(root.join("uv/evil")).is_err());
         // Shims retarget between `mise` executables but not to unrelated links.
         let old_mise = source.path().join("mise");
@@ -667,29 +683,39 @@ mod tests {
         fs::write(&old_mise, "old")?;
         fs::write(&new_mise, "new")?;
         let shim = links_request(vec![("uv", old_mise.to_str().unwrap())], vec![])?;
-        apply_for_owner(&shim[..], owner)?;
+        apply_for_owner(&shim[..], owner, &roots)?;
         let shim = links_request(vec![("uv", new_mise.to_str().unwrap())], vec![])?;
-        apply_for_owner(&shim[..], owner)?;
+        apply_for_owner(&shim[..], owner, &roots)?;
         assert_eq!(fs::read_link(root.join("uv/uv"))?, new_mise);
         let unrelated = links_request(
             vec![("uv", source.path().join("tool").to_str().unwrap())],
             vec![],
         )?;
-        assert!(apply_for_owner(&unrelated[..], owner).is_err());
+        assert!(apply_for_owner(&unrelated[..], owner, &roots).is_err());
         assert_eq!(fs::read_link(root.join("uv/uv"))?, new_mise);
         // Removal only deletes symlinks, and tolerates names that are gone.
         let remove = links_request(vec![], vec!["latest", "uv", "missing"])?;
-        apply_for_owner(&remove[..], owner)?;
+        apply_for_owner(&remove[..], owner, &roots)?;
         assert!(fs::symlink_metadata(root.join("uv/latest")).is_err());
         assert!(fs::symlink_metadata(root.join("uv/uv")).is_err());
         let remove_dir = links_request(vec![], vec!["1"])?;
-        assert!(apply_for_owner(&remove_dir[..], owner).is_err());
+        assert!(apply_for_owner(&remove_dir[..], owner, &roots).is_err());
         assert!(root.join("uv/1").is_dir());
+        // Requests may only target the configured roots and their tool directories.
+        let mut outside = serde_json::to_vec(&Request::Links {
+            directory: destination.path().join("etc"),
+            links: vec![("ssh".into(), PathBuf::from("./1"))],
+            remove: vec![],
+            replace: vec!["ssh".into()],
+        })?;
+        outside.push(b'\n');
+        assert!(apply_for_owner(&outside[..], owner, &roots).is_err());
+        assert!(fs::symlink_metadata(destination.path().join("etc")).is_err());
         // A legacy real directory in a selector slot is only replaced when named.
         fs::create_dir(root.join("uv/latest"))?;
         fs::write(root.join("uv/latest/tool"), "stale")?;
         let stale = links_request(vec![("latest", "./1")], vec![])?;
-        assert!(apply_for_owner(&stale[..], owner).is_err());
+        assert!(apply_for_owner(&stale[..], owner, &roots).is_err());
         assert!(root.join("uv/latest").is_dir());
         let mut migrate = serde_json::to_vec(&Request::Links {
             directory: root.join("uv"),
@@ -698,7 +724,7 @@ mod tests {
             replace: vec!["latest".into()],
         })?;
         migrate.push(b'\n');
-        apply_for_owner(&migrate[..], owner)?;
+        apply_for_owner(&migrate[..], owner, &roots)?;
         assert!(root.join("uv/latest").is_symlink());
         assert_eq!(fs::read_to_string(root.join("uv/latest/tool"))?, "binary");
         fs::set_permissions(&root, fs::Permissions::from_mode(0o777))?;

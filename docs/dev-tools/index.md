@@ -423,6 +423,11 @@ mise installs directly into a writable directory.
   directories, such as `/tmp`, are allowed.
 - Use `mise install --system --force uv` to replace an installed version. mise
   prepares the replacement before changing the existing installation.
+- The elevated helper only writes inside the system installs and shims
+  directories as root sees them. It runs without configuration files, so a
+  custom location must reach root through the environment, for example by
+  keeping `MISE_SYSTEM_DATA_DIR` (or `MISE_SYSTEM_INSTALLS_DIR` and
+  `MISE_SYSTEM_SHIMS_DIR`) in sudo's `env_keep`.
 
 ::: warning
 `sudo mise install --system` still works, but runs the entire installation as
