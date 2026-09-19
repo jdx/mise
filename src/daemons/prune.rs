@@ -497,12 +497,32 @@ fn names_this_as_unknown(stderr: &str, id: &str) -> bool {
     if !lowered.contains("daemon") {
         return false;
     }
-    // The whole id, standing on its own. A short name is too easy to hit by
-    // accident -- a daemon called `file` or `found` appears in ordinary I/O
-    // text -- and the whole id appears inside paths, which is where an error
-    // about a socket would carry it. This is the id pitchfork was given, so an
-    // answer about it quotes it as given.
-    mentions_on_its_own(&lowered, &id.to_lowercase())
+    // Two ways to be sure the message is about this daemon rather than merely
+    // containing its name. The whole id standing on its own is one, and the
+    // name written straight after the word "daemon" is the other, which is how
+    // these messages read: "daemon ns/db not found", "no such daemon: db".
+    //
+    // Both are needed. A short name on its own is too easy to hit by accident,
+    // since a daemon called `file` or `found` has a name that appears in
+    // ordinary I/O text, and the whole id appears inside paths, which is where
+    // an error about a missing socket would carry it. Older pitchfork versions
+    // report only the short name, and refusing those would strand their state.
+    let id = id.to_lowercase();
+    let name = id.rsplit('/').next().unwrap_or(&id);
+    mentions_on_its_own(&lowered, &id) || is_named_after_the_word_daemon(&lowered, &id, name)
+}
+
+/// Whether the message names this daemon right where it says "daemon".
+fn is_named_after_the_word_daemon(haystack: &str, id: &str, name: &str) -> bool {
+    let tidy = |token: &str| {
+        token
+            .trim_matches(|c: char| !c.is_alphanumeric() && !matches!(c, '/' | '-' | '_' | '.'))
+            .to_string()
+    };
+    let tokens: Vec<String> = haystack.split_whitespace().map(tidy).collect();
+    tokens
+        .windows(2)
+        .any(|pair| pair[0].trim_end_matches(':') == "daemon" && (pair[1] == id || pair[1] == name))
 }
 
 /// Whether `needle` appears in `haystack` as a thing being named rather than as
@@ -1117,8 +1137,16 @@ mod tests {
             "daemon socket missing: no such file /run/pitchfork/ns/db.sock",
             "ns/db"
         ));
-        // Only the short name is not the id that was asked about.
-        assert!(!names_this_as_unknown("no such daemon: db", "ns/db"));
+        // Older pitchfork versions name only the short daemon, which is still
+        // an answer when it is written where the daemon belongs.
+        assert!(names_this_as_unknown("no such daemon: db", "ns/db"));
+        assert!(names_this_as_unknown("Daemon db not found", "ns/db"));
+        // The same name somewhere else in the sentence is not.
+        assert!(!names_this_as_unknown(
+            "daemon supervisor: no such db file",
+            "ns/db"
+        ));
+        assert!(!names_this_as_unknown("daemon ns/other not found", "ns/db"));
         assert!(!names_this_as_unknown(
             "No such file or directory (os error 2)",
             "ns/db"
