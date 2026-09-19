@@ -824,6 +824,31 @@ fn read_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
     })
 }
 
+/// Whether this linked worktree's repository has other worktrees beside it.
+///
+/// Asked only of a checkout that names itself, where the hostname carries no
+/// worktree component: a namespace such a checkout shares with a sibling then
+/// resolves to one hostname for both, and each runs in its own process, so
+/// neither load can see the other to report it. `false` for anything that is
+/// not a linked worktree, which has no siblings by this definition.
+pub(crate) fn has_sibling_worktrees(worktree_root: &Path) -> bool {
+    let Some(gitdir) = worktree_gitdir(&worktree_root.join(".git")) else {
+        return false;
+    };
+    // `worktree_gitdir` already established that this is `<common>/worktrees/
+    // <name>`, so the parent holds one entry per worktree of the repository.
+    let Some(registry) = gitdir.parent() else {
+        return false;
+    };
+    std::fs::read_dir(registry)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .nth(1)
+        .is_some()
+}
+
 /// Resolves a linked worktree's `.git` file to the root of the main checkout.
 ///
 /// Two questions share this answer: which working copy may share trust

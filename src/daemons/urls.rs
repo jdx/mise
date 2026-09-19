@@ -369,9 +369,8 @@ pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabel
         // Not the hashed default namespace: that is derived from the root path,
         // so every checkout would produce a different project label and the
         // worktree component would be saying it twice. Pitchfork names the
-        // project after the repository's directory, so mise does too: the
-        // checkout's own for an ordinary repository, and for a bare one the
-        // directory holding it and the worktrees beside it.
+        // project after the checkout that stands for it, so mise does too: the
+        // main checkout, or the worktree itself where there is no main one.
         None => {
             let dir = checkout.repository.as_deref().unwrap_or(root.as_path());
             dir.file_name()
@@ -385,6 +384,21 @@ pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabel
     // it at all.
     if checkout.worktree.is_some() && worktree.is_none() {
         return Ok(RootLabels::default());
+    }
+    // A checkout that names itself has no worktree component to be told apart
+    // by, so a namespace its siblings inherit is the whole hostname for all of
+    // them. Each runs in its own process, so no load ever sees the pair and
+    // the usual collision warning cannot fire; say it here, where the shape is
+    // visible, rather than leave two daemons racing for one route in silence.
+    if worktree.is_none()
+        && settings.namespace.is_some()
+        && crate::git::has_sibling_worktrees(&root)
+    {
+        warn_once!(
+            "[daemons] {} is a worktree of a repository with no main checkout, so its hostnames carry no worktree component and every sibling worktree inheriting namespace {} resolves to the same one, which pitchfork cannot route. Give each checkout its own [daemons_settings] namespace in a gitignored mise.local.toml.",
+            root.display(),
+            settings.namespace.as_deref().unwrap_or_default()
+        );
     }
     Ok(RootLabels { project, worktree })
 }
@@ -961,6 +975,69 @@ mod tests {
         let resolved = labels(&submodule, &settings(Some("shop"))).unwrap();
         assert_eq!(resolved.worktree.as_deref(), Some("shop-pr-42"));
         assert_eq!(resolved.project.as_deref(), Some("shop"));
+    }
+
+    /// A checkout that names itself cannot see its siblings from its own
+    /// process, so the registry under the repository's `worktrees/` is what
+    /// says whether a namespace it shares could reach another one.
+    #[test]
+    fn siblings_are_counted_from_the_worktree_registry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = tmp.path().join("shop.git");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let add = |name: &str| {
+            let private = bare.join("worktrees").join(name);
+            std::fs::create_dir_all(&private).unwrap();
+            std::fs::write(private.join("commondir"), "../..\n").unwrap();
+            let root = tmp.path().join(name);
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(
+                root.join(".git"),
+                format!("gitdir: {}\n", private.display()),
+            )
+            .unwrap();
+            root
+        };
+        let only = add("main");
+        assert!(
+            !crate::git::has_sibling_worktrees(&only),
+            "one worktree has no sibling to collide with"
+        );
+        let second = add("feature");
+        assert!(crate::git::has_sibling_worktrees(&only));
+        assert!(crate::git::has_sibling_worktrees(&second));
+
+        // An ordinary checkout is not a linked worktree and has no siblings by
+        // this definition, however many worktrees hang off it.
+        let ordinary = tmp.path().join("plain");
+        std::fs::create_dir_all(ordinary.join(".git")).unwrap();
+        assert!(!crate::git::has_sibling_worktrees(&ordinary));
+    }
+
+    /// `git clone --separate-git-dir` leaves a common dir with an arbitrary
+    /// name, which is not a main checkout's `.git`. Pitchfork's
+    /// `primary_from_worktree_gitdir` refuses it for that reason, so a linked
+    /// worktree of such a clone names itself in both, and the URL mise exports
+    /// is the one the proxy serves.
+    #[test]
+    fn a_worktree_of_a_separate_git_dir_clone_names_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let common = tmp.path().join("gitdirs").join("shop");
+        let private = common.join("worktrees").join("pr-42");
+        std::fs::create_dir_all(&private).unwrap();
+        std::fs::write(common.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(private.join("commondir"), "../..\n").unwrap();
+        let linked = tmp.path().join("shop-pr-42");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::fs::write(
+            linked.join(".git"),
+            format!("gitdir: {}\n", private.display()),
+        )
+        .unwrap();
+        let resolved = labels(&linked, &settings(None)).unwrap();
+        assert_eq!(resolved.project.as_deref(), Some("shop-pr-42"));
+        assert_eq!(resolved.worktree, None);
     }
 
     /// Pitchfork reads `worktree_label` from the checkout's own configuration

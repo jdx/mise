@@ -681,8 +681,11 @@ unrelated ones too, and naming the project after it would put them on one label.
 
 Because there is no worktree component, an explicit `namespace` in a file every such
 worktree shares gives them all one hostname, and `worktree_label` cannot separate
-them: it applies only to the worktree component. Give each checkout a namespace of
-its own instead, in a gitignored `mise.local.toml`:
+them: it applies only to the worktree component. Each worktree runs in its own
+process, so neither one can see the other to report the clash the way an ordinary
+hostname collision is reported; mise warns when a checkout that names itself has a
+namespace its siblings could inherit. Give each checkout a namespace of its own
+instead, in a gitignored `mise.local.toml`:
 
 ```toml
 # mise.local.toml, in one worktree of the bare repository
