@@ -2295,6 +2295,11 @@ pub(crate) fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
             tmp.path(),
             archive.to_path_buf()
         )
+        // Display licenses without an interactive pager before accepting them.
+        .env("PAGER", "cat")
+        // DMGs can require license acceptance even with -quiet. Supply one
+        // answer directly so unattended installs do not wait for terminal input.
+        .stdin_bytes("Y\n")
         .run()?;
         let copy_result = copy_dir_all_preserve_symlinks(tmp.path(), dest);
         let detach_result = cmd!("hdiutil", "detach", tmp.path()).run();
@@ -2796,6 +2801,71 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn un_dmg_accepts_license_and_extracts_app() -> Result<()> {
+        check_dmg_extraction("licensed.dmg")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn un_dmg_extracts_app_without_license() -> Result<()> {
+        check_dmg_extraction("ordinary.dmg")
+    }
+
+    #[cfg(unix)]
+    fn check_dmg_extraction(archive: &str) -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let hdiutil = tmp.path().join("hdiutil");
+        // Emulate the external tool, including a bounded license prompt so a
+        // regression fails instead of hanging the test runner.
+        write(
+            &hdiutil,
+            r#"#!/bin/bash
+set -eu
+case "$1" in
+  attach)
+    if [[ "$6" == *licensed.dmg ]]; then
+      [[ "${PAGER:-}" == cat ]] || exit 45
+      IFS= read -r -t 2 answer || exit 42
+      [[ "$answer" == Y ]] || exit 43
+    fi
+    mkdir -p "$5/Example.app/Contents"
+    printf 'app payload' > "$5/Example.app/Contents/payload"
+    ln -s payload "$5/Example.app/Contents/link"
+    ;;
+  detach)
+    printf '%s' "$2" > "$0.detached"
+    ;;
+  *) exit 44 ;;
+esac
+"#,
+        )?;
+        make_executable(&hdiutil)?;
+        let mut env = crate::test::EnvVarGuard::new();
+        let mut paths = vec![tmp.path().to_path_buf()];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        env.set("PATH", std::env::join_paths(paths)?);
+        env.set("PAGER", "less");
+        let dest = tmp.path().join("extracted");
+
+        un_dmg(&tmp.path().join(archive), &dest)?;
+
+        assert_eq!(
+            read_to_string(dest.join("Example.app/Contents/payload"))?,
+            "app payload"
+        );
+        assert!(dest.join("Example.app/Contents/link").is_symlink());
+        let mount = read_to_string(tmp.path().join("hdiutil.detached"))?;
+        assert!(
+            !Path::new(&mount).exists(),
+            "temporary mount directory was not cleaned up"
+        );
+        Ok(())
+    }
 
     /// Whether a directory entry is there at all, without resolving it.
     ///
