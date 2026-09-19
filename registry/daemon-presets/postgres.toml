@@ -1,10 +1,25 @@
 binary = "postgres"
+data_version_file = "PG_VERSION"
 description = "PostgreSQL database"
 port = 5432
 tool = "postgres"
 
+[version]
+pattern = 'postgres \(PostgreSQL\) (\d+)'
+
 [options]
-database = "postgres"
+# Also used as a URI component and a SQL identifier.
+database = { type = "string", default = "postgres", pattern = '^[A-Za-z0-9_]+$' }
+
+[[init.steps]]
+run = ["initdb", "-D", "{{ data }}", "-U", "postgres", "--auth=trust"]
+
+[[init.steps]]
+run = ["postgres", "--single", "-D", "{{ data }}", "postgres"]
+stdin = """
+CREATE DATABASE "{{ database }}";
+"""
+when = "{% if database != 'postgres' %}true{% endif %}"
 
 [daemon]
 # The reverse proxy speaks HTTP; a database client does not.

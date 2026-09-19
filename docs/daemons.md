@@ -1,5 +1,5 @@
 ---
-description: Manage project daemons and persistent PostgreSQL and Redis databases with pitchfork.
+description: Manage project daemons and persistent database, messaging, and authorization services with pitchfork.
 ---
 
 # Daemons
@@ -78,8 +78,10 @@ Fields such as `ready_port`, `ready_cmd`, and `auto` configure pitchfork's daemo
 behavior. Set a readiness check that reflects when your service can accept work;
 the example above waits for port 3000. Use an integer `port` for a fixed port or
 [automatic ports](#ports-across-git-worktrees) to run services across worktrees.
-Custom daemons also accept pitchfork's structured `port` table; presets accept
-only an integer or mise's automatic port syntax.
+A preset's additional listeners are named in `ports`, and an automatic port moves
+them with it. Custom daemons also accept pitchfork's structured `port` table;
+presets accept only an integer or mise's automatic port syntax.
+
 User-provided strings retain pitchfork template syntax; mise renders only the
 embedded preset templates.
 
@@ -423,24 +425,128 @@ namespace_per_worktree = false
 Only use this when you intend to share daemon IDs. Starting daemons from multiple
 worktrees at once can cause collisions.
 
-## Database presets
+## Service presets
 
-| Preset     | Tool       | Default port | Environment defaults                                       |
-| ---------- | ---------- | ------------ | ---------------------------------------------------------- |
-| `postgres` | `postgres` | 5432         | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `DATABASE_URL` |
-| `redis`    | `redis`    | 6379         | `REDIS_URL`                                                |
+Presets configure the service command, readiness check, data directory, and
+environment defaults. They are currently Unix-only. The `nats` and `spicedb`
+presets also require `curl` on `PATH` for their HTTP readiness checks.
 
-Both bind to loopback and require their configured ports to be free. Use
-[`port = "auto"`](#ports-across-git-worktrees) to derive ports for linked worktrees.
-PostgreSQL uses the `postgres` user with local trust authentication. Any process
-that can reach its loopback port can connect without a password. These presets
-are for development on a trusted local machine; use a custom daemon with
-authentication for shared or untrusted environments.
-Redis enables append-only persistence. These presets are currently Unix-only.
+| Preset        | Tool          | Default port | Named ports                           | Environment defaults                                       |
+| ------------- | ------------- | ------------ | ------------------------------------- | ---------------------------------------------------------- |
+| `postgres`    | `postgres`    | 5432         |                                       | `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `DATABASE_URL` |
+| `redis`       | `redis`       | 6379         |                                       | `REDIS_URL`                                                |
+| `cockroachdb` | `cockroach`   | 26257        | `http_port` 8080                      | `COCKROACH_HOST`, `COCKROACH_URL`, `DATABASE_URL`          |
+| `nats`        | `nats-server` | 4222         | `monitor_port` 8222                   | `NATS_URL`, `NATS_MONITORING_URL`                          |
+| `spicedb`     | `spicedb`     | 50051        | `http_port` 8443, `metrics_port` 9090 | `SPICEDB_ENDPOINT`, `SPICEDB_PRESHARED_KEY`                |
 
-Use `options.database` to create a different PostgreSQL database during first
-initialization. Names may contain letters, numbers, and underscores. Changing this
-option later does not create another database in an existing cluster.
+::: warning Local development only
+The default configurations use loopback addresses and either no authentication or
+a fixed development key. Use them only on a trusted local machine. For shared or
+untrusted environments, configure a custom daemon with appropriate authentication
+and network restrictions.
+:::
+
+PostgreSQL uses the `postgres` database user with local trust authentication.
+CockroachDB runs a single insecure node with the `root` database user. Redis enables
+append-only persistence, and NATS enables JetStream by default. SpiceDB uses an
+in-memory datastore unless you configure a persistent one.
+
+### Ports
+
+All configured ports must be free; mise does not automatically choose alternatives.
+The primary port and named ports must also be distinct within each daemon. Use
+[`port = "auto"`](#ports-across-git-worktrees) to derive ports for linked
+worktrees; a preset's named ports move with its primary port, so each checkout
+keeps a complete set. A named port you set yourself is used exactly as written.
+
+Override a named port alongside the primary one:
+
+```toml
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+port = 26258
+ports.http_port = 8081
+```
+
+### Preset options
+
+| Preset        | Option                                    | Default         | Purpose                                                                             |
+| ------------- | ----------------------------------------- | --------------- | ----------------------------------------------------------------------------------- |
+| `postgres`    | `database`                                | `postgres`      | Database created during first initialization                                        |
+| `cockroachdb` | `database`                                | `defaultdb`     | Database named in the exported connection strings                                   |
+| `cockroachdb` | `databases`                               | `[]`            | Databases created at first initialization; `name=region` also sets a primary region |
+| `cockroachdb` | `settings`                                | `[]`            | `SET CLUSTER SETTING` statements applied at initialization                          |
+| `cockroachdb` | `locality`, `max_offset`                  | empty           | `--locality` and `--max-offset` start flags                                         |
+| `nats`        | `jetstream`                               | `true`          | Enable JetStream persistence in the daemon's data directory                         |
+| `nats`        | `config`, `tls_cert`, `tls_key`, `tls_ca` | empty           | File paths passed to `nats-server`                                                  |
+| `spicedb`     | `datastore_engine`, `datastore_uri`       | `memory`, empty | Backing datastore; `migrate head` runs for non-memory engines                       |
+| `spicedb`     | `preshared_key`                           | `mise-dev-key`  | gRPC preshared key, also exported                                                   |
+| `spicedb`     | `datastore_daemon`                        | empty           | Daemon this instance waits for before starting                                      |
+
+Set these values under `options`, for example `options.database = "app"`.
+File paths resolve relative to the project root, and a leading `~/` expands to
+your home directory. Database names in `database` and
+`databases` may contain only letters, numbers, and underscores. Other options are
+validated against their preset's declared types and patterns.
+
+A CockroachDB database entry may name a primary region, as
+`options.databases = ["entirecore=us-east-2"]`. The region has to exist on the
+node, so set `locality` to declare it; mise passes that locality to the
+short-lived node it runs during initialization as well, which is where the
+region is applied.
+
+Supplying a NATS `config` hands JetStream to that file. Mise then passes neither
+`--jetstream` nor `--store_dir`, because a duplicate `store_dir` is fatal to
+nats-server, so the file alone decides whether JetStream runs and where it keeps
+data. Without a config the preset stores JetStream data in the daemon's own
+directory.
+
+Some options must be configured together:
+
+- NATS requires both `tls_cert` and `tls_key` to enable TLS. Setting `tls_ca` also
+  requires `tls_cert` and `tls_key`, and turns on client certificate verification:
+  supplying a CA without verifying against it would accept any client.
+- SpiceDB requires both a non-`memory` `datastore_engine` and a `datastore_uri` to
+  use a persistent datastore. Setting only one is an error.
+
+Options used during first initialization, such as database names and CockroachDB
+cluster settings, do not modify an existing data directory when changed. SpiceDB
+migrations run on every start and use the current datastore options.
+
+### Example: CockroachDB, SpiceDB, and NATS
+
+This configuration stores application data and SpiceDB's authorization data in
+separate CockroachDB databases, with NATS available for messaging:
+
+```toml
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+options.database = "app"
+options.databases = ["app", "spicedb"]
+
+[daemons.spicedb]
+preset = "spicedb"
+version = "1"
+options.datastore_engine = "cockroachdb"
+options.datastore_uri = "postgresql://root@127.0.0.1:26257/spicedb?sslmode=disable"
+options.datastore_daemon = "crdb"
+
+[daemons.events]
+preset = "nats"
+version = "2"
+```
+
+Run `mise daemons start` to start the stack. On first initialization, mise creates
+the `app` and `spicedb` databases. Once CockroachDB is ready, mise runs
+`spicedb migrate head` before starting SpiceDB. The migration runs on every start
+so that schema changes are applied after a compatible upgrade or datastore reset.
+
+`options.database = "app"` selects the database in the exported `DATABASE_URL` and
+`COCKROACH_URL`; `options.databases` controls which databases are created.
+
+### Environment and tool versions
 
 Explicit `[env]` values override exported defaults. When multiple instances export
 the same variable, the last declaration wins; use explicit `[env]` values to choose
@@ -764,9 +870,14 @@ files override ordinary pitchfork definitions with the same daemon ID. Edit the
 source `[daemons]` declaration, not the generated file.
 
 Data lives in `data/<daemon-name>/` beside the generated configuration. It survives
-version-request changes and daemon removal. Initialization is serialized and published
-only after success. Existing data is never automatically deleted. Major-version
-changes require an explicit migration or reset; incompatible data fails before startup.
+version-request changes and daemon removal; mise never deletes it automatically.
+Major-version changes require an explicit migration or reset. Incompatible data
+fails before startup.
+
+Initialization is serialized and runs in a staging directory. Mise moves the data
+into place only after initialization succeeds. When setup requires a live server,
+as CockroachDB database creation does, mise starts a temporary instance on
+automatically selected ports and stops it before moving the data into place.
 
 To reset a database, stop its daemon, locate its data directory, and explicitly remove
 that instance's data. Back up anything you want to retain first. Use the database's

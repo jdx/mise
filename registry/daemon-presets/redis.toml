@@ -3,6 +3,9 @@ description = "Redis database"
 port = 6379
 tool = "redis"
 
+[version]
+pattern = 'v=(\d+)'
+
 [options]
 
 [daemon]

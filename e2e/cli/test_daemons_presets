@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Preset rendering only: no service is installed or started here.
+
+export MISE_OFFLINE=1
+cat >~/bin/pitchfork <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  usage) echo 'cmd config help="External files" {' ;;
+  status) exit 1 ;;
+  supervisor) echo '{"status":"down"}' ;;
+  project) echo '[]' ;;
+esac
+SH
+chmod u+x ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+
+[daemons.events]
+preset = "nats"
+version = "2"
+ports.monitor_port = 8333
+options.config = "conf/nats.conf"
+
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+port = 26258
+options.database = "entirecore"
+options.databases = ["entirecore", "spicedb"]
+options.locality = "region=us-east-2"
+
+[daemons.authz]
+preset = "spicedb"
+version = "1"
+options.datastore_engine = "cockroachdb"
+options.datastore_uri = "postgresql://root@127.0.0.1:26258/spicedb?sslmode=disable"
+options.datastore_daemon = "crdb"
+TOML
+
+assert_contains "mise daemons ls --json" '"preset": "cockroachdb"'
+assert_contains "mise daemons ls --json" '"preset": "nats"'
+assert_contains "mise daemons ls --json" '"preset": "spicedb"'
+
+# Named ports, path options, and list options all reach the rendered definitions.
+assert_contains "mise env -s bash" "NATS_MONITORING_URL='http://127.0.0.1:8333'"
+assert_contains "mise env -s bash" "COCKROACH_URL='postgresql://root@127.0.0.1:26258/entirecore?sslmode=disable'"
+assert_contains "mise env -s bash" "SPICEDB_ENDPOINT='127.0.0.1:50051'"
+assert_contains "mise env -s bash" "SPICEDB_PRESHARED_KEY=mise-dev-key"
+
+# Unknown ports and values failing a preset's declared pattern are rejected.
+cat >mise.toml <<'TOML'
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+ports.grpc_port = 1234
+TOML
+assert_fail_contains "mise daemons ls 2>&1" 'unknown cockroachdb port'
+
+cat >mise.toml <<'TOML'
+[daemons.crdb]
+preset = "cockroachdb"
+version = "26"
+options.databases = ["good", "bad; name"]
+TOML
+assert_fail_contains "mise daemons ls 2>&1" 'must match'

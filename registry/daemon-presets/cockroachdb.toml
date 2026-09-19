@@ -1,0 +1,90 @@
+binary = "cockroach"
+description = "CockroachDB distributed SQL database"
+port = 26257
+tool = "cockroach"
+
+[version]
+pattern = 'v(\d+)\.'
+
+[ports]
+http_port = 8080
+
+[options]
+# Also used as a URI component and a SQL identifier.
+database = { type = "string", default = "defaultdb", pattern = '^[A-Za-z0-9_]+$' }
+# `name`, or `name=region` to give that database a primary region. A region
+# requires `locality` to name it, which is what makes it exist on the node.
+databases = { type = "list", default = [
+], pattern = '^[A-Za-z0-9_]+(=[A-Za-z0-9_-]+)?$', entry_value_in = { option = "locality", key = "region" } }
+locality = { type = "string", default = "", pattern = '^[A-Za-z0-9_=,.-]+$' }
+max_offset = { type = "string", default = "", pattern = '^[0-9]+(ns|us|ms|s)$' }
+settings = { type = "list", default = [
+], pattern = "^[A-Za-z0-9_.]+ *= *([A-Za-z0-9_.:+-]+|'[A-Za-z0-9_.:+ -]*')$" }
+
+# Databases and cluster settings need a live node, so initialization runs one on
+# throwaway ports against the staged store before it is published.
+[init.server]
+ready = [
+  "cockroach",
+  "sql",
+  "--insecure",
+  "--host=127.0.0.1:{{ init_port }}",
+  "-e",
+  "SELECT 1",
+]
+run = [
+  "cockroach",
+  "start-single-node",
+  "--insecure",
+  "--store={{ data }}",
+  "--listen-addr=127.0.0.1:{{ init_port }}",
+  "--http-addr=127.0.0.1:{{ init_http_port }}",
+  # The node must carry its locality here too, or a database cannot be given a
+  # primary region: the region does not exist on a node that never declared it.
+  "{% if locality %}--locality={{ locality }}{% endif %}",
+  "{% if max_offset %}--max-offset={{ max_offset }}{% endif %}",
+]
+when = "{% if databases or settings %}true{% endif %}"
+
+[[init.steps]]
+for_each = "databases"
+run = [
+  "cockroach",
+  "sql",
+  "--insecure",
+  "--host=127.0.0.1:{{ init_port }}",
+  "-e",
+  'CREATE DATABASE IF NOT EXISTS "{{ item_key }}"',
+]
+
+[[init.steps]]
+for_each = "databases"
+run = [
+  "cockroach",
+  "sql",
+  "--insecure",
+  "--host=127.0.0.1:{{ init_port }}",
+  "-e",
+  'ALTER DATABASE "{{ item_key }}" SET PRIMARY REGION "{{ item_value }}"',
+]
+when = "{% if item_value %}true{% endif %}"
+
+[[init.steps]]
+for_each = "settings"
+run = [
+  "cockroach",
+  "sql",
+  "--insecure",
+  "--host=127.0.0.1:{{ init_port }}",
+  "-e",
+  "SET CLUSTER SETTING {{ item }}",
+]
+
+[daemon]
+ready_cmd = "cockroach sql --insecure --host=127.0.0.1:{{ port }} -e 'SELECT 1'"
+run = "cockroach start-single-node --insecure --store={{ data }} --listen-addr=127.0.0.1:{{ port }} --http-addr=127.0.0.1:{{ http_port }}{% if locality %} --locality={{ locality }}{% endif %}{% if max_offset %} --max-offset={{ max_offset }}{% endif %}"
+
+[exports]
+COCKROACH_HOST = "127.0.0.1:{{ port }}"
+COCKROACH_URL = "postgresql://root@127.0.0.1:{{ port }}/{{ database }}?sslmode=disable"
+DATABASE_URL = "postgresql://root@127.0.0.1:{{ port }}/{{ database }}?sslmode=disable"
