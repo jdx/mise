@@ -677,8 +677,18 @@ directory.
 A bare repository has no primary checkout, so each worktree beside it names itself
 and gets no worktree component: a daemon in `shop/main` is `api.main.localhost`, not
 `api.main.shop.localhost`. The directory holding a bare repository often holds
-unrelated ones too, and naming the project after it would put them on one label. Set
-an explicit `namespace` to group such worktrees under a project of your choosing.
+unrelated ones too, and naming the project after it would put them on one label.
+
+Because there is no worktree component, an explicit `namespace` in a file every such
+worktree shares gives them all one hostname, and `worktree_label` cannot separate
+them: it applies only to the worktree component. Give each checkout a namespace of
+its own instead, in a gitignored `mise.local.toml`:
+
+```toml
+# mise.local.toml, in one worktree of the bare repository
+[daemons_settings]
+namespace = "shop-pr-42"
+```
 
 The worktree component is the linked worktree's directory name. To name it yourself,
 set `worktree_label` in a pitchfork configuration file inside that worktree, which is

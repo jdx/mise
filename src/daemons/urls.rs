@@ -909,6 +909,21 @@ mod tests {
             "each worktree of a bare repository names itself"
         );
 
+        // With no worktree component, a namespace these checkouts share is the
+        // whole hostname, and `worktree_label` cannot separate them because it
+        // names a component they do not have. Pitchfork reads the namespace
+        // from the same checkout and lands on the same label, so this is the
+        // shape to document against, not one to correct here.
+        let shared = labels(&main, &settings(Some("shop"))).unwrap();
+        assert_eq!(shared.project.as_deref(), Some("shop"));
+        assert_eq!(shared.worktree, None);
+        std::fs::write(
+            main.join("pitchfork.local.toml"),
+            "worktree_label = 'one'\n",
+        )
+        .unwrap();
+        assert_eq!(labels(&main, &settings(Some("shop"))).unwrap(), shared);
+
         // Sibling projects inside one worktree share both labels.
         let api = main.join("packages").join("api");
         let web = main.join("packages").join("web");
