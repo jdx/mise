@@ -1,0 +1,50 @@
+binary = "spicedb"
+description = "SpiceDB authorization database"
+port = 50051
+tool = "spicedb"
+
+[version]
+args = ["version"]
+pattern = 'v(\d+)\.'
+
+[ports]
+http_port = 8443
+metrics_port = 9090
+
+[options]
+datastore_engine = { type = "string", default = "memory", pattern = '^[a-z0-9-]+$', requires = [
+  "datastore_uri",
+] }
+datastore_uri = { type = "string", default = "", requires = [
+  "datastore_engine",
+] }
+preshared_key = { type = "string", default = "mise-dev-key", pattern = '^\S+$' }
+# Name of the daemon hosting the datastore, so SpiceDB starts after it is ready.
+datastore_daemon = { type = "string", default = "", pattern = '^[A-Za-z0-9_.-]+$' }
+
+# The schema lives in the datastore, not in this daemon's data directory, so the
+# local marker cannot tell whether it is current. Migrating is idempotent.
+[[init.steps]]
+always = true
+run = [
+  "spicedb",
+  "migrate",
+  "head",
+  "--datastore-engine",
+  "{{ datastore_engine }}",
+  "--datastore-conn-uri",
+  "{{ datastore_uri }}",
+]
+when = "{% if datastore_engine != 'memory' %}true{% endif %}"
+
+[daemon]
+depends = ["{{ datastore_daemon }}"]
+# The reverse proxy speaks HTTP; the primary port serves gRPC, and the HTTP
+# API lives on http_port.
+proxy = false
+ready_cmd = "curl -fsS http://127.0.0.1:{{ http_port }}/healthz"
+run = "spicedb serve --grpc-addr 127.0.0.1:{{ port }} --http-addr 127.0.0.1:{{ http_port }} --http-enabled --metrics-addr 127.0.0.1:{{ metrics_port }} --grpc-preshared-key {{ preshared_key }} --datastore-engine {{ datastore_engine }}{% if datastore_uri %} --datastore-conn-uri {{ datastore_uri }}{% endif %}"
+
+[exports]
+SPICEDB_ENDPOINT = "127.0.0.1:{{ port }}"
+SPICEDB_PRESHARED_KEY = "{{ preshared_key }}"

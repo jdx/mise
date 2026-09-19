@@ -1246,10 +1246,20 @@ fn env_var_base(name: &str) -> Option<String> {
 /// Pitchfork's structured `port`, pinned to the port mise already rendered into
 /// the daemon's command line and `[env]` exports.
 pub(crate) fn expected_port(port: u16) -> toml::Value {
+    expected_ports(&[port])
+}
+
+/// A preset may bind several listeners, so every port it claims is reserved.
+pub(crate) fn expected_ports(ports: &[u16]) -> toml::Value {
     toml::Value::Table(toml::Table::from_iter([
         (
             "expect".into(),
-            toml::Value::Array(vec![toml::Value::Integer(i64::from(port))]),
+            toml::Value::Array(
+                ports
+                    .iter()
+                    .map(|port| toml::Value::Integer(i64::from(*port)))
+                    .collect(),
+            ),
         ),
         ("bump".into(), toml::Value::Boolean(false)),
     ]))

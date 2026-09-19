@@ -8,6 +8,7 @@
     "tool",
     "binary",
     "port",
+    "version",
     "daemon",
     "exports",
     "options"
@@ -23,9 +24,36 @@
       "type": "string"
     },
     "port": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 65535
+      "$ref": "#/$defs/port"
+    },
+    "ports": {
+      "description": "Additional named ports with their defaults.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/port"
+      }
+    },
+    "version": {
+      "description": "How to read the binary's major version for data-compatibility checks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern"],
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pattern": {
+          "description": "Regex with exactly one capture group holding the major version.",
+          "type": "string"
+        }
+      }
+    },
+    "data_version_file": {
+      "description": "File the tool writes with its own major version, cross-checked against the mise marker.",
+      "type": "string"
     },
     "daemon": {
       "type": "object",
@@ -38,13 +66,145 @@
       "additionalProperties": true
     },
     "options": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "default"],
+            "properties": {
+              "type": {
+                "enum": ["string", "path", "list", "int", "bool"]
+              },
+              "default": {},
+              "pattern": {
+                "description": "Regex every non-empty value, or list entry, must match.",
+                "type": "string"
+              },
+              "requires": {
+                "description": "Options that must also be changed from their own default whenever this one is changed from its default.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "ignored_with": {
+                "description": "Options whose presence makes this one a no-op; setting both warns.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "entry_value_in": {
+                "description": "For a list of key=value entries, the option and tier that must declare each entry's value.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["option", "key"],
+                "properties": {
+                  "option": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "init": {
+      "description": "Declarative first-time initialization of the daemon's data directory.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "server": {
+          "description": "Ephemeral server started on throwaway ports while the steps run.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["run", "ready"],
+          "properties": {
+            "run": {
+              "$ref": "#/$defs/argv"
+            },
+            "ready": {
+              "$ref": "#/$defs/argv"
+            },
+            "when": {
+              "$ref": "#/$defs/when"
+            }
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run"],
+            "properties": {
+              "run": {
+                "$ref": "#/$defs/argv"
+              },
+              "when": {
+                "$ref": "#/$defs/when"
+              },
+              "for_each": {
+                "description": "Name of a list option; the step runs once per entry with `item` bound.",
+                "type": "string"
+              },
+              "stdin": {
+                "type": "string"
+              },
+              "always": {
+                "description": "Run on every start, not only the first. Not allowed alongside init.server.",
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
     },
     "exports": {
       "type": "object",
       "additionalProperties": {
         "type": "string"
       }
+    }
+  },
+  "$defs": {
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "argv": {
+      "description": "Command and arguments, rendered with the preset template context.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "when": {
+      "description": "Template that must render to something other than empty, false, or 0.",
+      "type": "string"
     }
   }
 }

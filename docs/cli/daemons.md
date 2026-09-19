@@ -12,7 +12,8 @@ description: "[experimental] Manage project daemons with pitchfork"
 
 [experimental] Manage project daemons with pitchfork
 
-Define commands or managed Postgres/Redis presets in [daemons].
+Define commands or managed service presets in [daemons]: cockroachdb,
+nats, postgres, redis, spicedb.
 With no subcommand, list configured and previously managed daemons.
 
 ## Flags

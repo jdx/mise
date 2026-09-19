@@ -1,0 +1,34 @@
+binary = "nats-server"
+description = "NATS messaging server"
+port = 4222
+tool = "nats-server"
+
+[version]
+pattern = 'v(\d+)\.'
+
+[ports]
+monitor_port = 8222
+
+[options]
+config = { type = "path", default = "" }
+# A configuration file owns JetStream, including where it stores data, so mise
+# passes neither flag with `config` set and cannot contradict it.
+jetstream = { type = "bool", default = true, ignored_with = ["config"] }
+# Supplying a CA turns on client certificate verification. `--tlscacert` alone
+# only loads the CA; `--tlsverify` is what makes the server check a client against it.
+tls_ca = { type = "path", default = "", requires = ["tls_cert"] }
+tls_cert = { type = "path", default = "", requires = ["tls_key"] }
+tls_key = { type = "path", default = "", requires = ["tls_cert"] }
+
+[daemon]
+# The reverse proxy speaks HTTP; NATS clients do not, and the HTTP monitoring
+# endpoint lives on monitor_port.
+proxy = false
+ready_cmd = "curl -fsS http://127.0.0.1:{{ monitor_port }}/healthz"
+run = "nats-server --addr 127.0.0.1 --port {{ port }} --http_port {{ monitor_port }}{% if not config %}{% if jetstream %} --jetstream --store_dir {{ data }}{% endif %}{% endif %}{% if config %} --config {{ config }}{% endif %}{% if tls_cert %} --tls --tlscert {{ tls_cert }} --tlskey {{ tls_key }}{% endif %}{% if tls_ca %} --tlsverify --tlscacert {{ tls_ca }}{% endif %}"
+
+[exports]
+NATS_MONITORING_URL = "http://127.0.0.1:{{ monitor_port }}"
+# With TLS on, the server accepts only TLS connections, which clients select
+# with the `tls://` scheme.
+NATS_URL = "{% if tls_cert %}tls{% else %}nats{% endif %}://127.0.0.1:{{ port }}"

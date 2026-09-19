@@ -10,7 +10,8 @@ use std::path::PathBuf;
 
 /// [experimental] Manage project daemons with pitchfork
 ///
-/// Define commands or managed Postgres/Redis presets in [daemons].
+/// Define commands or managed service presets in [daemons]: cockroachdb,
+/// nats, postgres, redis, spicedb.
 /// With no subcommand, list configured and previously managed daemons.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
@@ -101,7 +102,11 @@ struct UrlsArgs {
 struct Init {
     preset: String,
     data: PathBuf,
-    database: String,
+    /// Database name, as configurations generated before `--context` passed it.
+    legacy_database: Option<String>,
+    /// Resolved preset ports and options as a JSON object.
+    #[usage(long)]
+    context: Option<String>,
 }
 
 impl Daemons {
@@ -117,7 +122,15 @@ impl Daemons {
         Settings::ensure_not_safe("managing daemons")?;
         let (action, args, json) = match self.command {
             Some(Commands::Init(args)) => {
-                return daemons::presets::initialize(&args.preset, &args.data, &args.database);
+                // A pitchfork configuration generated before this command took
+                // `--context` still passes the database positionally. Whether that
+                // value means anything depends on the preset, so hand both along.
+                return daemons::presets::initialize(
+                    &args.preset,
+                    &args.data,
+                    args.context.as_deref(),
+                    args.legacy_database.as_deref(),
+                );
             }
             Some(Commands::Prune(args)) => return args.run().await,
             Some(Commands::Start(args)) => ("start", args.args, false),

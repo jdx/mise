@@ -246,7 +246,7 @@ cat >mise.toml <<'TOML'
 [daemons]
 unknown_preset = "1"
 TOML
-assert_contains "mise daemons ls 2>&1 || true" 'available presets: postgres, redis'
+assert_contains "mise daemons ls 2>&1 || true" 'available presets: cockroachdb, nats, postgres, redis, spicedb'
 cat >mise.toml <<'TOML'
 [daemons.bad]
 version = "18"

@@ -2195,7 +2195,8 @@ cmd daemons args_conflicts_with_subcommands=#true help="[experimental] Manage pr
     long_help #"""
 [experimental] Manage project daemons with pitchfork
 
-Define commands or managed Postgres/Redis presets in [daemons].
+Define commands or managed service presets in [daemons]: cockroachdb,
+nats, postgres, redis, spicedb.
 With no subcommand, list configured and previously managed daemons.
 """#
     flag --json
@@ -2260,10 +2261,13 @@ daemons have stopped or cannot unregister their configuration.
         flag "-h --help" help="Print help" action=help builtin=#true
     }
     cmd __init hide=#true {
+        flag --context help="Resolved preset ports and options as a JSON object." {
+            arg <CONTEXT>
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <PRESET>
         arg <DATA>
-        arg <DATABASE>
+        arg "[LEGACY_DATABASE]" help="Database name, as configurations generated before `--context` passed it." required=#false
     }
 }
 cmd direnv hide=#true help="Output direnv function to use mise inside direnv" effect=read {

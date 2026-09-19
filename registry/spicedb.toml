@@ -1,0 +1,5 @@
+backends = ["github:authzed/spicedb"]
+bins = ["spicedb"]
+description = "Open source fine-grained permissions database inspired by Google Zanzibar"
+test = { cmd = "spicedb version", expected = "v{{version}}" }
+version_order = "semver"

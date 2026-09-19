@@ -6015,13 +6015,22 @@
             "properties": {
               "preset": {
                 "type": "string",
-                "enum": ["postgres", "redis"]
+                "enum": ["cockroachdb", "nats", "postgres", "redis", "spicedb"]
               },
               "version": {
                 "type": "string"
               },
               "port": {
                 "$ref": "#/$defs/daemon_port"
+              },
+              "ports": {
+                "type": "object",
+                "description": "Overrides for the preset's additional named ports.",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
               },
               "options": {
                 "type": "object"
