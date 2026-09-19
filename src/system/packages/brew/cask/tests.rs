@@ -8414,6 +8414,15 @@ Library/Application Support/Tailscale
         [PathBuf::from("/Applications/Karabiner-Elements.app")]
     );
     assert!(receipt_app_bundles("/", "usr/local/bin\n").is_empty());
+    // The install location can be the bundle itself, with a payload of
+    // `Contents/...`.
+    assert_eq!(
+        receipt_app_bundles(
+            "/Applications/NoMachine.app",
+            "Contents\nContents/MacOS\nContents/Frameworks/Helper.app\n"
+        ),
+        [PathBuf::from("/Applications/NoMachine.app")]
+    );
 }
 
 #[test]

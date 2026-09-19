@@ -244,18 +244,34 @@ pub(super) fn pkg_receipt_apps(pkg_ids: &[String]) -> Vec<PathBuf> {
     apps
 }
 
-/// Picks the outermost `.app` directories from `pkgutil --only-dirs --files`
-/// output, which lists paths relative to the receipt's install location.
+/// Picks the outermost `.app` bundles from `pkgutil --only-dirs --files`
+/// output, which lists paths relative to the receipt's install location. The
+/// install location can itself be inside a bundle (a payload of `Contents/...`
+/// installed to `/Applications/Foo.app`), so the full path is searched.
 pub(super) fn receipt_app_bundles(install_location: &str, dirs: &str) -> Vec<PathBuf> {
-    let is_app = |path: &Path| path.extension().is_some_and(|ext| ext == "app");
     let root = Path::new("/").join(install_location);
-    dirs.lines()
-        .map(str::trim)
-        .filter(|dir| !dir.is_empty())
-        .map(Path::new)
-        .filter(|dir| is_app(dir) && !dir.ancestors().skip(1).any(is_app))
-        .map(|dir| root.join(dir))
-        .collect()
+    let outermost_app = |path: &Path| {
+        let mut prefix = PathBuf::new();
+        for component in path.components() {
+            prefix.push(component);
+            if prefix.extension().is_some_and(|ext| ext == "app") {
+                return Some(prefix);
+            }
+        }
+        None
+    };
+    let mut apps = std::iter::once(root.clone())
+        .chain(
+            dirs.lines()
+                .map(str::trim)
+                .filter(|dir| !dir.is_empty())
+                .map(|dir| root.join(dir)),
+        )
+        .filter_map(|path| outermost_app(&path))
+        .collect::<Vec<_>>();
+    apps.sort();
+    apps.dedup();
+    apps
 }
 
 fn pkg_info_string(plist: &[u8], key: &str) -> Option<String> {
