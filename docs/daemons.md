@@ -708,6 +708,11 @@ projects whose names fold to one label collide, and pitchfork routes neither; mi
 withholds both URLs for the same pair and warns, rather than exporting an endpoint
 the proxy refuses. The daemons still run on their ports.
 
+One case has a winner. When only one side of the collision is a daemon this project
+reached with `project`, the project that declares it registers it from its own
+configuration, where nothing collides, so pitchfork serves that one and the local
+daemon gets no URL. The warning says which side that is.
+
 ### Seeing the URLs
 
 `mise daemons urls` prints every daemon's hostname next to the port it binds, grouped

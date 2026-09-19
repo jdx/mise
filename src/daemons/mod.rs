@@ -211,6 +211,24 @@ pub(crate) fn state_dir(root: &Path) -> PathBuf {
         ))
 }
 
+/// Which side of a hostname collision pitchfork still serves, as
+/// `(keeps, loses)`, or `None` when it serves neither.
+///
+/// The sides are not symmetric. A daemon this project only imported is
+/// registered by the project that declares it, from that project's own
+/// configuration, where nothing collides; mise rewrites that file whole and it
+/// is not this project's to overrule. So a single imported side keeps the
+/// hostname and the local one must not advertise it. Two imported sides leave
+/// pitchfork two claimants and it routes neither, just as two local sides,
+/// both withdrawn here, leave it none.
+fn routed_side<'a>(a: (&'a str, bool), b: (&'a str, bool)) -> Option<(&'a str, &'a str)> {
+    match (a.1, b.1) {
+        (true, false) => Some((a.0, b.0)),
+        (false, true) => Some((b.0, a.0)),
+        _ => None,
+    }
+}
+
 pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     let mut declarations = IndexMap::new();
     let mut settings: IndexMap<PathBuf, DaemonSettings> = IndexMap::new();
@@ -346,22 +364,32 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // neither side of a collision rather than choosing, so mise never
     // advertises one either. Checked once every daemon is built, because a
     // preset's hostname is resolved on its own path.
-    let mut claimed_hosts: BTreeMap<String, (PathBuf, String)> = BTreeMap::new();
+    let mut claimed_hosts: BTreeMap<String, (PathBuf, String, bool)> = BTreeMap::new();
     for daemon in set.daemons.values() {
         let Some(host) = daemon.host.clone() else {
             continue;
         };
         let root = canonical_root(&daemon.root);
-        if let Some((other_root, other)) =
-            claimed_hosts.insert(host.clone(), (root.clone(), daemon.name.clone()))
-            && (other_root != root || other != daemon.name)
+        if let Some((other_root, other, other_imported)) = claimed_hosts.insert(
+            host.clone(),
+            (root.clone(), daemon.name.clone(), daemon.imported),
+        ) && (other_root != root || other != daemon.name)
         {
-            warn_once!(
-                "[daemons] {other} in {} and {} in {} both resolve to {host}, so pitchfork routes neither. Give one of them a different proxy label, or set proxy = false on it.",
-                other_root.display(),
-                daemon.name,
-                daemon.root.display()
-            );
+            let outcome = routed_side((&other, other_imported), (&daemon.name, daemon.imported));
+            match outcome {
+                Some((keeps, loses)) => warn_once!(
+                    "[daemons] {other} in {} and {} in {} both resolve to {host}. {keeps} is declared by the project it is imported from, which registers it from its own configuration, so pitchfork serves that one and {loses} gets no URL. Give one of them a different proxy label, or set proxy = false on it.",
+                    other_root.display(),
+                    daemon.name,
+                    daemon.root.display()
+                ),
+                None => warn_once!(
+                    "[daemons] {other} in {} and {} in {} both resolve to {host}, so pitchfork routes neither. Give one of them a different proxy label, or set proxy = false on it.",
+                    other_root.display(),
+                    daemon.name,
+                    daemon.root.display()
+                ),
+            }
             state.ambiguous_hosts.insert(host);
         }
     }
@@ -3647,6 +3675,25 @@ three = ["two", "c"]
         assert_eq!(
             set.daemons["database"].host.as_deref(),
             Some("database.shop.localhost")
+        );
+    }
+
+    /// A hostname collision has a winner only when exactly one side is
+    /// imported: that project registers it from its own configuration, which
+    /// this project neither sees nor rewrites on its behalf. Saying "pitchfork
+    /// routes neither" there would describe a hostname that is in fact served.
+    #[test]
+    fn only_a_lone_imported_side_keeps_a_collided_hostname() {
+        assert_eq!(routed_side(("local", false), ("other", false)), None);
+        assert_eq!(routed_side(("far", true), ("near", true)), None);
+        assert_eq!(
+            routed_side(("far", true), ("near", false)),
+            Some(("far", "near"))
+        );
+        // The same pair in the order the other daemon was seen first.
+        assert_eq!(
+            routed_side(("near", false), ("far", true)),
+            Some(("far", "near"))
         );
     }
 
