@@ -162,30 +162,8 @@ impl Daemons {
                 if name.contains('/') {
                     return Ok(Selector::Name(resolved));
                 }
-                // Ask this project what the word means, nearest declaration
-                // first. An import becomes the ID it answers to; a group stays
-                // bare so `selects` expands it against the project that
-                // declares it, which is also how a group in an unrelated
-                // project keeps its own meaning.
-                match loaded.resolve_bare(&project_root, name) {
-                    Some(daemons::BareName::Import(id)) => {
-                        return Ok(Selector::Name(id.to_string()));
-                    }
-                    // A group stays unqualified: pinning it to one namespace
-                    // would stop each project resolving it against its own
-                    // [daemon_groups].
-                    Some(daemons::BareName::Group) => return Ok(Selector::Group(name.clone())),
-                    // An unresolved import has no ID; the check above already
-                    // refused it, so this only keeps the name intact.
-                    Some(daemons::BareName::Unresolved(_)) => {
-                        return Ok(Selector::Name(name.clone()));
-                    }
-                    None => {}
-                }
-                // A group no project in this tree declares can still belong to
-                // one of the other loaded roots, which resolves it itself.
-                if loaded.groups.iter().any(|group| group.name == *name) {
-                    return Ok(Selector::Group(name.clone()));
+                if let Some(selector) = bare_selector(loaded, &project_root, name) {
+                    return Ok(selector);
                 }
                 let owner = loaded
                     .daemons
@@ -642,6 +620,37 @@ fn proxy_mode(daemon: &daemons::Daemon) -> &str {
 /// selection does: a bare name never matches a selector written as
 /// `<namespace>/<name>`, which would drop that daemon from the check while it
 /// still started.
+/// What a bare word selects, or None for a daemon name the caller qualifies.
+///
+/// Asks this project what the word means, nearest declaration first. An import
+/// becomes the ID it answers to; a group stays bare so `selects` expands it
+/// against the project that declares it, which is also how a group in an
+/// unrelated project keeps its own meaning.
+fn bare_selector(
+    loaded: &daemons::DaemonSet,
+    project_root: &std::path::Path,
+    name: &str,
+) -> Option<Selector> {
+    match loaded.resolve_bare(project_root, name) {
+        Some(daemons::BareName::Import(id)) => Some(Selector::Name(id.to_string())),
+        Some(daemons::BareName::Group) => Some(Selector::Group(name.to_string())),
+        // An unresolved import has no ID; the caller refuses it separately, so
+        // this only keeps the name intact.
+        Some(daemons::BareName::Unresolved(_)) => Some(Selector::Name(name.to_string())),
+        // A daemon this project's hierarchy declares claims the word. A group
+        // selector never falls back to a daemon, so letting one answer here
+        // would leave that daemon unstartable by its own short name.
+        Some(daemons::BareName::Daemon) => None,
+        // A group no project in this tree declares can still belong to one of
+        // the other loaded roots, which resolves it itself.
+        None => loaded
+            .groups
+            .iter()
+            .any(|group| group.name == name)
+            .then(|| Selector::Group(name.to_string())),
+    }
+}
+
 fn starting_names(
     set: &daemons::DaemonSet,
     ids: &[String],
@@ -833,6 +842,42 @@ mod tests {
                 (path, cf)
             })
             .collect()
+    }
+
+    /// The selector decision for a bare word, which is where an ancestor's
+    /// group could take a nearer project's daemon name: `resolve_bare` refusing
+    /// to answer is not enough, because the fallback below it scans every
+    /// loaded group.
+    #[test]
+    fn a_daemon_keeps_its_own_short_name_against_any_group() {
+        let set = daemons::load(&files(&[
+            (
+                "/parent/child/mise.toml",
+                "[daemons.web]\nrun = 'child web'\n",
+            ),
+            (
+                "/parent/mise.toml",
+                "[daemons.api]\nrun = 'api'\n[daemon_groups]\nweb = ['api']\n\
+                 [daemon_groups.stack]\ndaemons = ['api']\n",
+            ),
+        ]))
+        .unwrap();
+        let child = std::path::Path::new("/parent/child");
+
+        // The child's own daemon, even though a group elsewhere shares the word.
+        assert_eq!(bare_selector(&set, child, "web"), None);
+        // From the parent, that word is still the parent's group.
+        assert_eq!(
+            bare_selector(&set, std::path::Path::new("/parent"), "web"),
+            Some(Selector::Group("web".into()))
+        );
+        // A group no nearer daemon claims still resolves from the child.
+        assert_eq!(
+            bare_selector(&set, child, "stack"),
+            Some(Selector::Group("stack".into()))
+        );
+        // A word nothing declares is left for the caller to qualify.
+        assert_eq!(bare_selector(&set, child, "nothing"), None);
     }
 
     #[test]

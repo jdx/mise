@@ -105,6 +105,10 @@ pub(crate) struct Group {
 
 /// What a bare name resolves to for a project; see [`DaemonSet::resolve_bare`].
 pub(crate) enum BareName<'a> {
+    /// A daemon this project or an ancestor declares. The caller qualifies it
+    /// itself; what matters here is that the word is claimed, so no group of
+    /// the same name elsewhere answers for it.
+    Daemon,
     /// A group declared by this project or an ancestor, expanded per project.
     Group,
     /// A daemon reached with `project`, and the qualified ID it answers to.
@@ -1410,14 +1414,13 @@ impl DaemonSet {
         for ancestor in root.ancestors() {
             // A daemon declared here claims the word, so the walk stops: an
             // ancestor's group of the same name does not reach past a nearer
-            // project's daemon. None means a plain daemon name, which the
-            // caller qualifies itself.
+            // project's daemon, and neither does one in an unrelated project.
             if self
                 .daemons
                 .values()
                 .any(|d| !d.imported && d.root == ancestor && d.name == name)
             {
-                return None;
+                return Some(BareName::Daemon);
             }
             if self
                 .groups
@@ -3569,12 +3572,13 @@ three = ["two", "c"]
             ),
         ]))
         .unwrap();
-        // From the child, `web` is its daemon, not the parent's group.
-        assert!(
-            set.resolve_bare(Path::new("/parent/child"), "web")
-                .is_none(),
-            "a plain daemon name resolves to nothing for the caller to qualify"
-        );
+        // From the child, `web` is its daemon, not the parent's group. The word
+        // has to come back claimed, not merely unresolved, or a group of the
+        // same name in any loaded project answers for it instead.
+        assert!(matches!(
+            set.resolve_bare(Path::new("/parent/child"), "web"),
+            Some(BareName::Daemon)
+        ));
         // From the parent, the same word is still that project's group.
         assert!(matches!(
             set.resolve_bare(Path::new("/parent"), "web"),
