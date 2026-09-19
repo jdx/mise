@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 root = Path(sys.argv[1]).resolve()
 prefix = root / "brew-prefix"
 requests = []
+BULK_PATH = "/api/cask.json"
 cases = {
     "case-only": ("Example.app", "example.app"),
     "unicode": ("Caf\u00e9.app", "Cafe\u0301.app"),
@@ -32,6 +33,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         requests.append(self.path)
+        # The bulk cask index is probed before the per-cask endpoint. This
+        # fixture does not publish one, which is an ordinary answer: mise falls
+        # back to the per-cask request below, which is what this test exercises.
+        # 404 rather than the 500 used for genuine violations, so a real
+        # dependency or archive fetch still fails loudly.
+        if self.path == BULK_PATH:
+            self.send_error(404)
+            return
         token = self.path.removeprefix("/api/cask/").removesuffix(".json")
         if self.path != f"/api/cask/{token}.json" or token not in cases:
             self.send_error(500, "must reject duplicate targets before fetching dependencies or archive")
@@ -56,6 +65,7 @@ env = dict(os.environ, MISE_SYSTEM_BREW_PREFIX=str(prefix),
            MISE_URL_REPLACEMENTS=json.dumps({"https://formulae.brew.sh": base}))
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
+runs = 0
 try:
     for token, (_, second) in cases.items():
         (root / "mise.toml").write_text(
@@ -64,6 +74,7 @@ try:
         for options in [("--dry-run",), ()]:
             command = ["mise", "bootstrap", "packages", "apply", "--yes", *options]
             result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=30)
+            runs += 1
             output = result.stdout + result.stderr
             print("$ " + " ".join(command), flush=True)
             print(output, end="", flush=True)
@@ -71,7 +82,23 @@ try:
             assert "duplicate app target" in output, output
             assert second in output, output
             assert not prefix.exists(), "duplicate targets must fail before prefix or Caskroom creation"
-    assert set(requests) == {f"/api/cask/{token}.json" for token in cases}, requests
+    # Every cask is still resolved through its own endpoint, and nothing beyond
+    # that is fetched.
+    per_cask = [path for path in requests if path != BULK_PATH]
+    assert set(per_cask) == {f"/api/cask/{token}.json" for token in cases}, requests
+
+    # Count the bulk probes rather than folding them into a set, which would hide
+    # how many there were. This fixture answers 404, so the cache never warms and
+    # every process retries: exactly one attempt per process is the contract.
+    #
+    # Note that this cannot distinguish per-process from per-lookup on its own,
+    # because each invocation here declares a single cask and fails before
+    # dependency resolution. The memoization is pinned by the no-bulk phase of
+    # test_system_brew_cask_bulk_index_macos, which resolves two casks in one
+    # process. What this does catch is the count drifting at all: a retry loop,
+    # or a probe per artifact rather than per package.
+    bulk = [path for path in requests if path == BULK_PATH]
+    assert len(bulk) == runs, (len(bulk), runs, requests)
 finally:
     server.shutdown()
     thread.join()
