@@ -886,11 +886,18 @@ impl BrewCaskManager {
             }
             // A pkg-only cask names no app, so check the bundles its package
             // receipts installed. Nothing has been installed yet at this point.
-            if artifacts.apps.is_empty()
-                && !artifacts.pkgs.is_empty()
-                && pkg_app_is_running(&artifacts.pkg_ids)
-            {
-                return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
+            // The locked receipt's IDs find what the installed version put
+            // down even if the cask has since changed its pkgutil patterns.
+            if artifacts.apps.is_empty() && !artifacts.pkgs.is_empty() {
+                let mut pkg_ids = artifacts.pkg_ids.clone();
+                if let Some(receipt) = &locked_ownership {
+                    pkg_ids.extend(receipt.pkg_ids.iter().cloned());
+                }
+                pkg_ids.sort();
+                pkg_ids.dedup();
+                if pkg_app_is_running(&pkg_ids) {
+                    return leave_running_app(&cask, &mut flight_targets, &tmp_caskroom, &stage);
+                }
             }
         }
         let mut metadata_only_apps = Vec::new();
