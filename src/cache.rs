@@ -506,14 +506,20 @@ fn remove_entry(entry: &CacheEntry) -> Result<()> {
     } else {
         file::remove_file(&entry.path)
     };
+    forgive_if_gone(&entry.path, result)
+}
+
+/// Excuses a removal that failed because the entry is no longer there.
+///
+/// Another mise process pruning the same root may have taken it — before the
+/// call, or from under a removal already walking it. Only an entry that is
+/// genuinely gone is excused: a dangling link still stats here, and a stat that
+/// fails for any other reason — an unreadable parent, say — leaves the removal
+/// failure to be reported.
+fn forgive_if_gone(path: &Path, result: Result<()>) -> Result<()> {
     match result {
         Ok(()) => Ok(()),
-        // Another mise process pruning the same root may have taken the entry
-        // between the listing and this call. Only an entry that is genuinely
-        // gone is excused: a dangling link still stats here, and a stat that
-        // fails for any other reason — an unreadable parent, say — leaves the
-        // removal failure to be reported.
-        Err(err) => match entry.path.symlink_metadata() {
+        Err(err) => match path.symlink_metadata() {
             Err(stat) if stat.kind() == std::io::ErrorKind::NotFound => Ok(()),
             _ => Err(err),
         },
@@ -649,10 +655,12 @@ fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<DirPrun
             announce(&entry.path);
             if !opts.dry_run {
                 // The repository's removal: it decides by `symlink_metadata`, so
-                // a link goes as a link; it retries when a writer recreates
+                // a link goes as a link, and it retries when a writer recreates
                 // entries under the walk, which a bare `remove_dir_all` reports
-                // as a failed prune; and a path already gone is a no-op.
-                file::remove_all_with_retry(&entry.path)?;
+                // as a failed prune. It forgives a path that is already gone
+                // when it looks, but not one that goes while it is walking, so
+                // that case is forgiven here.
+                forgive_if_gone(&entry.path, file::remove_all_with_retry(&entry.path))?;
             }
             removed.size += recheck.held.size;
             removed.count += recheck.held.count + 1;
@@ -907,6 +915,22 @@ mod tests {
             !cache.path().join("side-effects").exists(),
             "a hollow directory tree was left behind"
         );
+    }
+
+    /// A removal that fails is reported, unless the reason it failed is that the
+    /// entry is no longer there to remove.
+    #[test]
+    fn a_removal_is_excused_only_when_the_entry_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("present");
+        fs::write(&present, "x").unwrap();
+        let gone = dir.path().join("gone");
+
+        let failure = || Err(eyre::eyre!(std::io::Error::other("removal failed")));
+
+        assert!(forgive_if_gone(&gone, failure()).is_ok());
+        assert!(forgive_if_gone(&present, failure()).is_err());
+        assert!(forgive_if_gone(&present, Ok(())).is_ok());
     }
 
     /// The mechanism behind it: a wholly stale directory hands itself to its
