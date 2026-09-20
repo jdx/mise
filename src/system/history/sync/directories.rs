@@ -357,12 +357,14 @@ mod tests {
                     autosave: true,
                     encrypt: false,
                     variants: vec![variant("linux"), variant("macos")],
+                    exclude: vec![],
                 },
                 Enrollment {
                     path: file.tree_path(&file.path)?,
                     autosave: true,
                     encrypt: false,
                     variants: vec![],
+                    exclude: vec![],
                 },
             ],
             permissions: std::collections::BTreeMap::from([
@@ -476,6 +478,7 @@ mod tests {
                         ..Default::default()
                     },
                 ],
+                exclude: vec![],
             }],
             permissions: std::collections::BTreeMap::from([(containing.clone(), 0o700)]),
             ..Default::default()
@@ -489,6 +492,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![linux()],
+                exclude: vec![],
             }],
             permissions: std::collections::BTreeMap::from([(own.clone(), 0o750)]),
             ..Default::default()
@@ -554,6 +558,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: vec![],
             }],
             ..Default::default()
         };
@@ -636,6 +641,7 @@ mod tests {
                     autosave: true,
                     encrypt: false,
                     variants: vec![],
+                    exclude: vec![],
                 },
                 // a nested enrollment for another platform only
                 Enrollment {
@@ -646,6 +652,7 @@ mod tests {
                         os: vec!["windows".into()],
                         ..Default::default()
                     }],
+                    exclude: vec![],
                 },
             ],
             ..Default::default()
@@ -725,12 +732,14 @@ mod tests {
                     autosave: true,
                     encrypt: false,
                     variants: vec![],
+                    exclude: vec![],
                 },
                 Enrollment {
                     path: outer.tree_path(&platform)?,
                     autosave: true,
                     encrypt: false,
                     variants: vec![variant("linux"), variant("macos")],
+                    exclude: vec![],
                 },
             ],
             permissions: std::collections::BTreeMap::from([
@@ -799,12 +808,14 @@ mod tests {
                     autosave: true,
                     encrypt: false,
                     variants: vec![],
+                    exclude: vec![],
                 },
                 Enrollment {
                     path: outer.tree_path(&settings.path)?,
                     autosave: true,
                     encrypt: false,
                     variants: vec![variant("linux"), variant("macos")],
+                    exclude: vec![],
                 },
             ],
             permissions: std::collections::BTreeMap::from([(outer.tree_path(&private)?, 0o700)]),
@@ -874,6 +885,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants,
+            exclude: vec![],
         };
         // adopted: the directory is enrolled per platform with no record of
         // its own, and carries another platform's containing record
@@ -1009,6 +1021,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![variant("linux"), variant("macos")],
+                exclude: vec![],
             }],
             permissions: std::collections::BTreeMap::from([
                 (containing.replacen("home/", "home@linux/", 1), 0o700),
@@ -1026,6 +1039,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: vec![],
             }],
             permissions: std::collections::BTreeMap::from([(containing.clone(), 0o750)]),
             ..Default::default()
@@ -1099,6 +1113,7 @@ mod tests {
                     autosave: true,
                     encrypt: false,
                     variants: vec![],
+                    exclude: vec![],
                 },
                 Enrollment {
                     path: containing.clone(),
@@ -1110,6 +1125,7 @@ mod tests {
                             ..Default::default()
                         })
                         .to_vec(),
+                    exclude: vec![],
                 },
             ],
             // the local head: the enrolled stream's record was dropped (the
@@ -1182,6 +1198,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants,
+            exclude: vec![],
         };
         // the local head knows the directory only as a containing parent
         let local = Manifest {
@@ -1286,6 +1303,7 @@ mod tests {
                         ..Default::default()
                     })
                     .to_vec(),
+                exclude: vec![],
             }],
             permissions: std::collections::BTreeMap::from([(containing.clone(), 0o700)]),
             ..Default::default()
@@ -1371,6 +1389,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: vec![],
             }],
             ..Default::default()
         };
