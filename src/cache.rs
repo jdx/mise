@@ -507,11 +507,16 @@ fn remove_entry(entry: &CacheEntry) -> Result<()> {
         file::remove_file(&entry.path)
     };
     match result {
+        Ok(()) => Ok(()),
         // Another mise process pruning the same root may have taken the entry
-        // between the listing and this call. A dangling link still stats here,
-        // so only an entry that is genuinely gone is excused.
-        Err(_) if entry.path.symlink_metadata().is_err() => Ok(()),
-        result => result,
+        // between the listing and this call. Only an entry that is genuinely
+        // gone is excused: a dangling link still stats here, and a stat that
+        // fails for any other reason — an unreadable parent, say — leaves the
+        // removal failure to be reported.
+        Err(err) => match entry.path.symlink_metadata() {
+            Err(stat) if stat.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(err),
+        },
     }
 }
 
