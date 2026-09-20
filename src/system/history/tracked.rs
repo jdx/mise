@@ -59,6 +59,14 @@ pub(crate) struct TrackedEntry {
     /// [`crate::system::files::is_excluded`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    /// The entry's own `include` globs, relative to its path and matched
+    /// like `exclude`.
+    ///
+    /// `None` means no list was declared and the whole tree is captured.
+    /// `Some` means one was, and only what it names is — including
+    /// `Some([])`, which selects nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 impl TrackedEntry {
@@ -76,6 +84,104 @@ impl TrackedEntry {
     /// entry. The entry path itself is never excluded by its own list.
     pub(crate) fn is_excluded(&self, path: &Path) -> bool {
         excluded_by_entry(&self.path, &self.exclude, path)
+    }
+
+    /// The compiled `include` patterns.
+    pub(crate) fn include_patterns(&self) -> Option<Vec<glob::Pattern>> {
+        Some(
+            self.include
+                .as_ref()?
+                .iter()
+                .filter_map(|pattern| glob::Pattern::new(pattern).ok())
+                .collect(),
+        )
+    }
+
+    /// An `include` pattern that names something inside `directory`, if
+    /// one does. Used to explain why a pattern reaching into a nested
+    /// repository selects nothing, rather than leaving the user to
+    /// wonder whether they wrote it wrong.
+    pub(crate) fn include_reaching_into(&self, directory: &Path) -> Option<&str> {
+        let rel = directory.strip_prefix(&self.path).ok()?;
+        let prefix = format!("{}/", rel.to_string_lossy().replace('\\', "/"));
+        self.include
+            .iter()
+            .flatten()
+            .find(|pattern| pattern.replace('\\', "/").starts_with(&prefix))
+            .map(String::as_str)
+    }
+
+    /// Whether the entry's `include` list selects `path`.
+    ///
+    /// **Rule 1: without an `include` list the whole tracked tree is
+    /// considered. Rule 2: with one, only matching paths are. Rule 3: an
+    /// explicit `exclude` still wins over `include`.** Rules 1 and 2 live
+    /// here; rule 3 is the order the two lists are applied in, at every
+    /// call site.
+    ///
+    /// The entry path itself is always included, as it is never excluded
+    /// by the entry's own list: the list selects within the entry, it
+    /// does not un-declare it.
+    pub(crate) fn is_included(&self, path: &Path) -> bool {
+        let Some(patterns) = self.include_patterns() else {
+            return true;
+        };
+        // a list that names nothing selects nothing, the entry's own path
+        // included: "declared and empty" is a choice, not the absence of
+        // one, and an entry that is itself a file is still subject to it
+        if patterns.is_empty() {
+            return false;
+        }
+        match path.strip_prefix(&self.path) {
+            Ok(rel) if !rel.as_os_str().is_empty() => {
+                crate::system::files::is_excluded(rel, &patterns)
+            }
+            _ => true,
+        }
+    }
+
+    /// Whether an `include` pattern names `path`, as opposed to `path`
+    /// being the entry itself — which no pattern selected.
+    ///
+    /// Rule 4 asks this rather than `is_included`, so that declaring a
+    /// list on an entry that *is* a credential-named file does not lift
+    /// the guard for it. Overriding the guard means a pattern that names
+    /// the file, which is something only a directory entry can have.
+    fn selected_by_pattern(&self, path: &Path) -> bool {
+        let Some(patterns) = self.include_patterns() else {
+            return false;
+        };
+        match path.strip_prefix(&self.path) {
+            Ok(rel) if !rel.as_os_str().is_empty() => {
+                crate::system::files::is_excluded(rel, &patterns)
+            }
+            _ => false,
+        }
+    }
+
+    /// Why a capture leaves `path` out under this entry, if it does,
+    /// with rule 4 applied.
+    ///
+    /// The one place rule 4 is decided. The walk, `mise dot save <path>`,
+    /// `mise dot track`'s preflight and its dry run all ask here, so none
+    /// of them can promise something the others will not do.
+    pub(crate) fn capture_exclusion(&self, path: &Path) -> Option<&'static str> {
+        let reason = capture_exclusion(path, &self.policy)?;
+        // **An `include` list is a selection, and selection decides what
+        // is captured.** A list the user wrote is the user choosing these
+        // paths, so the builtin credential filtering that applies when no
+        // list is given does not overrule it — a literal and a glob carry
+        // the same authority, because "how specific was the pattern" is
+        // not a question the user was answering.
+        //
+        // What the file is encrypted with is a separate question, decided
+        // by `encrypt`. So a credential-like file selected for plaintext
+        // capture is captured, and said out loud everywhere selection is
+        // shown.
+        if reason == CREDENTIAL_REASON && self.selected_by_pattern(path) {
+            return None;
+        }
+        Some(reason)
     }
 
     pub(crate) fn tree_path(&self, path: &Path) -> Result<String> {
@@ -101,6 +207,7 @@ impl TrackedEntry {
             variant: None,
             declared_in: None,
             exclude: vec![],
+            include: None,
         }
     }
 }
@@ -133,7 +240,13 @@ pub(crate) struct Walk {
     /// Every captured file with the entry that owns it and its policy.
     pub files: BTreeMap<PathBuf, (usize, Policy)>,
     pub omitted: Vec<PathReason>,
-    /// Nested repositories, captured as a commit pointer without their files.
+    /// Credential-named files an `include` list selected for plaintext
+    /// capture, so every report can say so.
+    pub plaintext: Vec<PathReason>,
+    /// For each entry with an `include` list, how many files its tree
+    /// holds in all, so a report can say how much the list selects.
+    pub considered: BTreeMap<usize, u64>,
+    /// Repositories found inside a tracked directory, skipped whole.
     pub nested: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
     pub warnings: Vec<String>,
@@ -252,6 +365,12 @@ impl TrackedSet {
                     .iter()
                     .map(|pattern| pattern.as_str().to_owned())
                     .collect(),
+                include: request.include.as_ref().map(|patterns| {
+                    patterns
+                        .iter()
+                        .map(|pattern| pattern.as_str().to_owned())
+                        .collect()
+                }),
             });
             set.manifest.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
             let declared_in = Some(request.origin.config.clone());
@@ -268,6 +387,12 @@ impl TrackedSet {
                         .iter()
                         .map(|pattern| pattern.as_str().to_owned())
                         .collect();
+                    entry.include = request.include.as_ref().map(|patterns| {
+                        patterns
+                            .iter()
+                            .map(|pattern| pattern.as_str().to_owned())
+                            .collect()
+                    });
                     match select::select(&request.variants, &environments) {
                         Selection::Single => {}
                         Selection::Variant(variant) => {
@@ -345,7 +470,7 @@ impl TrackedSet {
         let Some(owner) = self.entry_for(path) else {
             return Ok(false);
         };
-        if capture_exclusion(path, &owner.policy).is_some() {
+        if owner.capture_exclusion(path).is_some() {
             return Ok(false);
         }
         if hard_exclusions().iter().any(|dir| path.starts_with(dir)) {
@@ -370,9 +495,11 @@ impl TrackedSet {
         Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
     }
 
-    /// Whether the exclusion lists drop `path`: the global globs read
-    /// against its owning entry's path, then that entry's own list, which
-    /// a global `!glob` does not re-include.
+    /// Whether the selection lists drop `path`: the global globs read
+    /// against its owning entry's path, then that entry's own `exclude`,
+    /// which a global `!glob` does not re-include, and last its
+    /// `include` list — so **rule 3 holds, an explicit `exclude` wins
+    /// over `include`**.
     ///
     /// The one composition. `would_retain` adds the filesystem checks a
     /// capture also makes; the watcher asks this alone, because it is
@@ -400,7 +527,9 @@ impl TrackedSet {
                 // the walk judges it.
                 let judged = path != owner.path
                     || std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir());
-                (judged && exclude.is_match(path, &owner.path)) || owner.is_excluded(path)
+                (judged && exclude.is_match(path, &owner.path))
+                    || owner.is_excluded(path)
+                    || !owner.is_included(path)
             }
             None => true,
         }
@@ -449,17 +578,37 @@ impl TrackedSet {
         // Protected files are excluded from capture itself, never kept in
         // a hidden local-only history. Explicit encryption permits key files
         // to be tracked without storing their plaintext.
-        walk.files.retain(|path, (_, policy)| {
-            if let Some(reason) = capture_exclusion(path, policy) {
-                walk.omitted.push(PathReason {
-                    path: display_path(path),
-                    reason: reason.into(),
-                });
-                false
-            } else {
-                true
-            }
+        walk.files.retain(|path, (index, policy)| {
+            let Some(owner) = set.entries.get(*index) else {
+                return capture_exclusion(path, policy).is_none();
+            };
+            // rule 4 lives on the entry, so every reader gets the same
+            // answer; a file it lets through is announced, because it
+            // goes into history in plaintext and to any connected origin
+            let Some(reason) = owner.capture_exclusion(path) else {
+                if capture_exclusion(path, policy).is_some() {
+                    walk.plaintext.push(PathReason {
+                        path: display_path(path),
+                        reason: "selected by an include list; saved in plaintext".into(),
+                    });
+                }
+                return true;
+            };
+            walk.omitted.push(PathReason {
+                path: display_path(path),
+                reason: reason.into(),
+            });
+            false
         });
+        // a credential-named file saved because an entry named it exactly
+        // is worth saying out loud on every capture, not only in
+        // `mise dot paths`: it goes to any connected origin as plaintext
+        for plaintext in &walk.plaintext {
+            walk.warnings.push(format!(
+                "{}: an include list selects it, so it is saved in plaintext although it looks like a credential store; `encrypt = true` saves it encrypted instead",
+                plaintext.path
+            ));
+        }
         walk.entries = set.entries.clone();
         let config = normalize(&global_config_dir());
         let mut roots: BTreeMap<String, CaptureRoot> = BTreeMap::new();
@@ -518,6 +667,7 @@ impl TrackedSet {
                 state: "live".into(),
                 declared_in: entry.declared_in.as_deref().map(display_path),
                 exclude: entry.exclude.clone(),
+                include: entry.include.clone(),
             })
             .collect();
         let mut omitted = walk.omitted.clone();
@@ -577,6 +727,11 @@ fn walk_entry(
         if exclude.is_match(&entry.path, &entry.path) {
             return;
         }
+        // a declared-but-empty `include` selects nothing, and an entry
+        // that is itself a file is no exception
+        if !entry.is_included(&entry.path) {
+            return;
+        }
         match classify_file(&meta) {
             Ok(_) => {
                 walk.files.insert(entry.path.clone(), (index, entry.policy));
@@ -598,6 +753,7 @@ fn walk_entry(
                     || hard.iter().any(|dir| dir == candidate.path())))
         });
     let entry_exclude = entry.exclude_patterns();
+    let entry_include = entry.include_patterns();
     let mut files = 0u64;
     let mut bytes = 0u64;
     let mut walker = walker;
@@ -657,20 +813,38 @@ fn walk_entry(
             }
             continue;
         }
+        // **A repository inside a tracked directory is skipped whatever
+        // the entry's `include` list says.** Decided before the include
+        // list, so a pattern naming paths inside one cannot reach in —
+        // and so the skip is still reported when the list does not select
+        // the directory itself. There is a supported way to capture those
+        // files, and the message names it.
         if file_type.is_dir() {
             if path.join(".git").exists() {
-                // A repository found inside a tracked directory is skipped
-                // whole, and nothing is written for it — not its files, not
-                // a commit pointer. A pointer would name objects this
-                // history does not have, and there is a supported way to
-                // get the files: track the repository itself.
+                let reason = match entry.include_reaching_into(path) {
+                    Some(pattern) => format!(
+                        "{NESTED_REPOSITORY_REASON}; the include pattern {pattern:?} selects nothing inside it"
+                    ),
+                    None => NESTED_REPOSITORY_REASON.to_string(),
+                };
                 walk.nested.push(PathReason {
                     path: display_path(path),
-                    reason: NESTED_REPOSITORY_REASON.into(),
+                    reason,
                 });
                 walker.skip_current_dir();
             }
             continue;
+        }
+        // rule 2: with an `include` list, only matching paths are
+        // considered. Applied after the exclude lists, so rule 3 holds: an
+        // explicit exclusion wins.
+        if let Some(entry_include) = &entry_include {
+            *walk.considered.entry(index).or_default() += 1;
+            match path.strip_prefix(&entry.path) {
+                Ok(rel) if !crate::system::files::is_excluded(rel, entry_include) => continue,
+                Err(_) => continue,
+                Ok(_) => {}
+            }
         }
         let meta = match candidate.metadata() {
             Ok(meta) => meta,
@@ -812,6 +986,21 @@ pub(crate) fn excluded_by_entry(entry_path: &Path, patterns: &[String], path: &P
     }
 }
 
+/// Whether `patterns` (an entry's own `include` list, relative to
+/// `entry_path`) select `path`; the entry path itself always is. The
+/// mirror of [`excluded_by_entry`], for a replay reading the list a
+/// checkpoint recorded.
+pub(crate) fn included_by_entry(entry_path: &Path, patterns: &[String], path: &Path) -> bool {
+    let patterns: Vec<glob::Pattern> = patterns
+        .iter()
+        .filter_map(|pattern| glob::Pattern::new(pattern).ok())
+        .collect();
+    match path.strip_prefix(entry_path) {
+        Ok(rel) if !rel.as_os_str().is_empty() => crate::system::files::is_excluded(rel, &patterns),
+        _ => true,
+    }
+}
+
 /// Whether the display path `path` is `root` itself or lies below it.
 ///
 /// **Two display paths are compared through one normalized form, never
@@ -882,6 +1071,9 @@ pub(crate) struct EntryPreview {
     pub bytes: u64,
     pub omitted: Vec<PathReason>,
     pub nested: Vec<PathReason>,
+    /// Credential-named files this entry captures in the clear, so a dry
+    /// run promises what the first save will really do.
+    pub plaintext: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
 }
 
@@ -916,6 +1108,12 @@ impl Walk {
         };
         preview.omitted = self.omitted.iter().filter(|r| owned(r)).cloned().collect();
         preview.nested = self.nested.iter().filter(|r| owned(r)).cloned().collect();
+        preview.plaintext = self
+            .plaintext
+            .iter()
+            .filter(|r| owned(r))
+            .cloned()
+            .collect();
         let display = set.entries[index].display();
         preview.incomplete = self
             .incomplete
@@ -937,7 +1135,7 @@ pub(crate) fn count_and_size(files: usize, bytes: u64) -> String {
     )
 }
 
-fn with_separators(n: usize) -> String {
+pub(crate) fn with_separators(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, ch) in digits.chars().enumerate() {
@@ -1840,6 +2038,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: vec![],
+                include: None,
             }],
             ..Default::default()
         };
@@ -2208,6 +2407,7 @@ mod tests {
                 content: None,
                 mode,
                 exclude: vec![],
+                include: None,
                 manifest: None,
                 base: tmp.path().to_path_buf(),
                 origin: ResourceOrigin {
@@ -2812,6 +3012,226 @@ mod tests {
         ));
     }
 
+    /// The four rules of a tracked entry's `include` list, each pinned
+    /// on the same tree.
+    #[test]
+    fn an_include_list_selects_what_a_tracked_directory_saves() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules/deep")).unwrap();
+        std::fs::create_dir_all(root.join("sessions")).unwrap();
+        std::fs::write(root.join("config.toml"), "keep").unwrap();
+        std::fs::write(root.join("notes.md"), "noise").unwrap();
+        std::fs::write(root.join("rules/one.md"), "keep").unwrap();
+        std::fs::write(root.join("rules/deep/two.md"), "keep").unwrap();
+        std::fs::write(root.join("sessions/one.jsonl"), "noise").unwrap();
+
+        let captured = |include: Option<&[&str]>, exclude: &[&str]| -> Vec<String> {
+            let mut entry = entry(&root);
+            entry.include = include.map(|p| p.iter().map(|p| (*p).to_string()).collect());
+            entry.exclude = exclude.iter().map(|p| (*p).to_string()).collect();
+            let mut set = TrackedSet::default();
+            set.push(entry);
+            let walk = set.walk().unwrap();
+            let mut names: Vec<String> = walk
+                .files
+                .keys()
+                .map(|path| {
+                    path.strip_prefix(&root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                })
+                .collect();
+            names.sort();
+            // the walk and every other reader have to agree
+            for path in walk.files.keys() {
+                assert!(set.would_retain(path).unwrap(), "{}", path.display());
+            }
+            names
+        };
+
+        // rule 1: no list means the whole tree
+        assert_eq!(
+            captured(None, &[]),
+            [
+                "config.toml",
+                "notes.md",
+                "rules/deep/two.md",
+                "rules/one.md",
+                "sessions/one.jsonl"
+            ]
+        );
+        // rule 2: with a list, only what it names — and a directory
+        // pattern takes everything under it
+        assert_eq!(
+            captured(Some(&["config.toml", "rules/**"]), &[]),
+            ["config.toml", "rules/deep/two.md", "rules/one.md"]
+        );
+        // a new sibling appears without being named, and stays out
+        std::fs::write(root.join("telemetry.json"), "noise").unwrap();
+        assert_eq!(
+            captured(Some(&["config.toml", "rules/**"]), &[]),
+            ["config.toml", "rules/deep/two.md", "rules/one.md"]
+        );
+        // a declared but empty list selects nothing, and is never read as
+        // no list at all — that would capture the whole tree
+        assert!(captured(Some(&[]), &[]).is_empty());
+        // rule 3: an explicit exclude wins over an include
+        assert_eq!(
+            captured(Some(&["config.toml", "rules/**"]), &["rules/deep"]),
+            ["config.toml", "rules/one.md"]
+        );
+    }
+
+    /// An `include` list is a selection, and selection decides what is
+    /// captured: a literal and a glob carry the same authority, and
+    /// either one selecting a credential-named file captures it — in
+    /// plaintext, said out loud. Without a list, the builtin filtering
+    /// applies as it always has, so an existing declaration is
+    /// unaffected by this feature.
+    #[test]
+    fn an_include_list_decides_what_is_captured_and_says_when_it_is_plaintext() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("fish");
+        std::fs::create_dir_all(root.join("functions")).unwrap();
+        std::fs::write(root.join("functions/hello.fish"), "function hello; end").unwrap();
+        std::fs::write(root.join("functions/secrets.fish"), "set -x TOKEN x").unwrap();
+
+        let walk_with = |include: Option<&[&str]>, encrypt: bool| {
+            let mut entry = entry(&root);
+            entry.include = include.map(|p| p.iter().map(|p| (*p).to_string()).collect());
+            entry.policy.encrypt = encrypt;
+            let mut set = TrackedSet::default();
+            set.push(entry);
+            set.walk().unwrap()
+        };
+        let holds = |walk: &Walk, name: &str| walk.files.keys().any(|p| p.ends_with(name));
+
+        // no list: the builtin filtering applies, exactly as before
+        let walk = walk_with(None, false);
+        assert!(holds(&walk, "hello.fish"));
+        assert!(!holds(&walk, "secrets.fish"));
+        assert!(walk.plaintext.is_empty());
+        assert!(
+            walk.omitted
+                .iter()
+                .any(|o| o.path.ends_with("secrets.fish"))
+        );
+
+        // a list selects, and a glob is as authoritative as a literal
+        for include in [
+            &["functions/secrets.fish"][..],
+            &["functions/*.fish"][..],
+            &["**"][..],
+        ] {
+            let walk = walk_with(Some(include), false);
+            assert!(holds(&walk, "secrets.fish"), "{include:?}");
+            assert!(walk.omitted.is_empty(), "{include:?}");
+            assert_eq!(walk.plaintext.len(), 1, "{include:?}");
+            assert!(
+                walk.plaintext[0].path.ends_with("secrets.fish"),
+                "{include:?}"
+            );
+            // and every reader agrees with the walk
+            let mut set = TrackedSet::default();
+            let mut owner = entry(&root);
+            owner.include = Some(include.iter().map(|p| (*p).to_string()).collect());
+            set.push(owner);
+            assert!(
+                set.would_retain(&root.join("functions/secrets.fish"))
+                    .unwrap(),
+                "{include:?}"
+            );
+        }
+
+        // encryption is a separate question: the file is captured either
+        // way, and nothing is stored in the clear
+        let walk = walk_with(Some(&["functions/secrets.fish"]), true);
+        assert!(holds(&walk, "secrets.fish"));
+        assert!(walk.plaintext.is_empty());
+    }
+
+    /// A declared-but-empty list selects nothing, an entry that is
+    /// itself a file included — and declaring a list on such an entry
+    /// never lifts the credential guard for it, because no pattern named
+    /// the file. Overriding the guard is something only a pattern does.
+    #[test]
+    fn an_empty_include_selects_nothing_even_for_a_single_file_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("app");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("credentials"), "token").unwrap();
+        let file = dir.join("credentials");
+
+        let walk_with = |include: Option<&[&str]>| {
+            let mut e = entry(&file);
+            e.include = include.map(|p| p.iter().map(|p| (*p).to_string()).collect());
+            let mut set = TrackedSet::default();
+            set.push(e);
+            (set.walk().unwrap(), set)
+        };
+        // no list: the guard applies, as it always has
+        let (walk, set) = walk_with(None);
+        assert!(walk.files.is_empty());
+        assert!(!set.would_retain(&file).unwrap());
+        // an empty list selects nothing at all
+        let (walk, set) = walk_with(Some(&[]));
+        assert!(walk.files.is_empty());
+        assert!(walk.plaintext.is_empty());
+        assert!(!set.would_retain(&file).unwrap());
+        // and a list on a file entry does not name the file, so the
+        // guard still stands: this is not the direct-entry override
+        let (walk, set) = walk_with(Some(&["credentials"]));
+        assert!(walk.files.is_empty(), "{:?}", walk.files);
+        assert!(walk.plaintext.is_empty());
+        assert!(!set.would_retain(&file).unwrap());
+        // the supported spelling is a pattern on the directory entry
+        let mut owner = entry(&dir);
+        owner.include = Some(vec!["credentials".to_string()]);
+        let mut set = TrackedSet::default();
+        set.push(owner);
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&file));
+        assert_eq!(walk.plaintext.len(), 1);
+        assert!(set.would_retain(&file).unwrap());
+    }
+
+    /// A repository inside a tracked directory is skipped whatever the
+    /// entry's `include` list says, and a pattern reaching into it is
+    /// told that it selects nothing — there is a supported way to
+    /// capture those files, and it is not this.
+    #[test]
+    fn an_include_list_cannot_reach_into_a_nested_repository() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("hammerspoon");
+        let plugin = root.join("Spoons/Sky.spoon");
+        std::fs::create_dir_all(plugin.join(".git")).unwrap();
+        std::fs::write(plugin.join("init.lua"), "return {}").unwrap();
+        std::fs::write(root.join("init.lua"), "top").unwrap();
+
+        let walk_with = |include: &[&str]| {
+            let mut entry = entry(&root);
+            entry.include = Some(include.iter().map(|p| (*p).to_string()).collect());
+            let mut set = TrackedSet::default();
+            set.push(entry);
+            set.walk().unwrap()
+        };
+        // a pattern that names paths inside it selects nothing, and the
+        // skip says which pattern that was
+        let walk = walk_with(&["Spoons/Sky.spoon/**"]);
+        assert!(walk.files.is_empty(), "{:?}", walk.files);
+        assert_eq!(walk.nested.len(), 1);
+        assert!(walk.nested[0].reason.contains("selects nothing inside it"));
+        assert!(walk.nested[0].reason.contains("Spoons/Sky.spoon/**"));
+        // and a list that does not select the directory at all still
+        // reports the repository rather than passing over it silently
+        let walk = walk_with(&["init.lua"]);
+        assert!(walk.files.contains_key(&root.join("init.lua")));
+        assert_eq!(walk.nested.len(), 1);
+        assert_eq!(walk.nested[0].reason, NESTED_REPOSITORY_REASON);
+    }
+
     #[test]
     fn display_under_accepts_either_separator() {
         assert!(display_under("~/.ssh", "~/.ssh"));
@@ -3076,6 +3496,7 @@ mod tests {
             content: None,
             mode: FileMode::Track,
             exclude: vec![glob::Pattern::new("sessions").unwrap()],
+            include: None,
             manifest: None,
             base: home.clone(),
             origin: ResourceOrigin {

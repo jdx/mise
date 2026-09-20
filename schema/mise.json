@@ -4358,6 +4358,13 @@
                   "type": "string"
                 }
               },
+              "include": {
+                "type": "array",
+                "description": "history only (mode = \"track\"): the only paths of the tracked directory that are captured, relative to it and matched like \"exclude\"; without it the whole tree is captured with the builtin credential filtering, and an explicit \"exclude\" still wins. A selected file is captured even when it looks like a credential store, in plaintext unless the entry sets encrypt",
+                "items": {
+                  "type": "string"
+                }
+              },
               "manifest": {
                 "type": "string",
                 "description": "source manifest used to select managed files from a directory",

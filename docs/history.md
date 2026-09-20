@@ -543,9 +543,28 @@ mise dot include '~/.config/hypr/plugins/**'
 mise dot paths
 ```
 
-Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
-earlier matching exclusion. `paths` lists tracked paths and files omitted
-from saves.
+Exclusions are stored in `[history] exclude`, which applies to every
+tracked path. A later `!glob` reverses an earlier matching exclusion.
+`paths` lists tracked paths and files omitted from saves.
+
+::: tip Two different lists
+`mise dot include <glob>` is the inverse of `mise dot exclude`: it takes
+a glob back out of the global `[history] exclude` list. The per-entry
+`include` list below is a different thing — it belongs to one
+`[dotfiles]` entry and names what that directory saves rather than what
+it skips.
+
+```sh
+mise dot exclude '~/.codex/sessions/**'   # add to the global skip list
+mise dot include '~/.codex/sessions/**'   # take it back out again
+```
+
+```toml
+[dotfiles]                                                  # per-entry
+"~/.codex" = { mode = "track", include = ["config.toml"] }
+```
+
+:::
 
 A path is excluded when the last rule matching it, or any of its
 ancestors below the tracked path, is an exclusion. So an excluded
@@ -608,6 +627,86 @@ anchored to the directory):
 
 Both lists apply: a file must pass the global globs and the entry's own,
 and a global `!glob` does not re-include what the entry excludes.
+
+### Choosing what a tracked directory saves
+
+Some directories are mostly noise. `~/.codex` holds a handful of files
+worth keeping and tens of thousands of session transcripts, and listing
+every kind of noise as an exclusion is a losing game — the next version
+of the tool adds another. An `include` list turns the choice around:
+name what to keep, and everything else stays out, including whatever
+appears later.
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+```
+
+The rules, in order:
+
+1. Without `include`, the whole tracked tree is considered.
+2. With `include`, only matching paths are.
+3. An explicit `exclude` still wins over `include`.
+4. An `include` list is a selection, and selection decides what is
+   captured: a file it names is captured even when the builtin credential
+   filtering would otherwise leave it out. A literal and a glob carry the
+   same authority — `include = ["**"]` selects credential-named files
+   too. Anything selected that looks like a credential store is reported
+   as captured in plaintext, wherever selection is shown.
+
+An `include` list that is present but empty selects nothing, which is not
+the same as having no list at all — including on an entry that is itself
+a file. Declaring a list on such an entry does not lift the credential
+guard either: overriding it means a pattern that names the file, which
+only a directory entry can have. A pattern that is not a valid glob is
+an error naming the entry and the pattern, for either list: a list mise
+could not read in full would silently capture more than you asked for.
+
+`include` patterns are relative to the tracked path and matched like the
+entry's own `exclude` list: a pattern without `/` matches any single path
+component, one with `/` is anchored to the tracked path, and either kind
+matching a directory takes everything under it. The global
+`[history] exclude` list is a different thing and matches absolute paths,
+which is why the two anchor differently.
+
+Rule 4 is how to save a file the credential guard misreads. A shell
+function file whose name merely contains "secrets" is the case from
+[discussion #13410](https://github.com/jdx/mise/discussions/13410):
+
+```toml
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/secrets.fish"] }
+```
+
+Nothing about existing declarations changes. Without an `include` list a
+tracked entry gets the builtin credential filtering exactly as it does
+today, so upgrading mise never starts capturing something a declaration
+written before this feature kept out. Selecting a credential file always
+means adding an `include`, which no configuration has until you write
+one.
+
+Selection and encryption are separate questions. `include` decides _what_
+is captured; `encrypt` decides _how_. A credential file you genuinely
+want in history belongs in an encrypted entry:
+
+```toml
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/secrets.fish"], encrypt = true }
+```
+
+::: warning
+A file captured this way is stored in plaintext in history and pushed to
+any connected origin, and older commits keep it. mise warns on every
+save. Use [encrypted tracking](#encrypted-shared-files) —
+`encrypt = true`, or `mise dot track <path> --encrypt` — for anything
+that really is a credential.
+:::
+
+`mise dot paths` and `mise dot track --dry-run` show the list and how
+much it selects, for example `~/.codex: 2 of 22,972 files (include
+list)`, and list a file captured under rule 4 as `plaintext:`. Narrowing
+an include list drops paths earlier checkpoints held from every
+checkpoint after it; `mise dot save` says how many when it happens.
 
 Credential files and `*.local.toml` are omitted by default. A
 `*.local.toml` file is this machine's own configuration and is never
@@ -976,10 +1075,16 @@ captures its working files**, always without `.git`:
 mise dot track ~/.hammerspoon/Spoons/SkyRocket.spoon
 ```
 
-Reaching into it from a parent entry does not work and is not meant to:
-an `include` pattern on the parent that names paths inside the nested
-repository selects nothing, and mise says so rather than leaving you to
-wonder whether the pattern was wrong. The alternative is to leave the
+Reaching into it from a parent entry does not work and is not meant to.
+A repository is skipped whatever the parent entry's `include` list says,
+and a pattern naming paths inside it is told that it selects nothing,
+rather than leaving you to wonder whether the pattern was wrong:
+
+````console
+nested: ~/.config/nested/plugin (a separate Git repository; track it
+        directly to capture its working files; the include pattern
+        "plugin/**" selects nothing inside it)
+``` The alternative is to leave the
 directory to the tool that installs it, or remove its `.git` so it
 becomes ordinary content.
 
@@ -1018,7 +1123,7 @@ Claude Code installed:
 ```toml
 [settings]
 history.describe_command = "claude -p --output-format text --no-session-persistence 'Describe this change to my configuration files in one line of at most 120 characters, plain text, no quotes.'"
-```
+````
 
 This sends change details, including unencrypted file diffs, to the command
 you configure. Excluded private files are not named, and encrypted file

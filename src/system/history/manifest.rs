@@ -22,6 +22,12 @@ pub(crate) struct Enrollment {
     /// when set, so a setup without them stays readable by older clients.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    /// The entry's own `include` globs, relative to its path. Written
+    /// only when the entry declares a list, so a setup without one stays
+    /// readable by older clients — and a declared but empty list, which
+    /// selects nothing, is not mistaken for no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -265,6 +271,12 @@ impl Manifest {
                         &theirs.exclude,
                         &format!("{path}: exclude"),
                     )?,
+                    include: choose(
+                        &before.include,
+                        &ours.include,
+                        &theirs.include,
+                        &format!("{path}: include"),
+                    )?,
                 }),
                 _ => choose(&before, &ours, &theirs, path)?.cloned(),
             };
@@ -338,6 +350,7 @@ impl Manifest {
             let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
             entry.variant = variant;
             entry.exclude = enrollment.exclude.clone();
+            entry.include = enrollment.include.clone();
             tracked.entries.push(entry);
         }
         Ok(tracked)
@@ -440,12 +453,15 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
-            for pattern in &entry.exclude {
-                if let Err(err) = glob::Pattern::new(pattern) {
-                    bail!(
-                        "invalid exclude pattern {pattern:?} for {}: {err}",
-                        entry.path
-                    );
+            let include: &[String] = entry.include.as_deref().unwrap_or_default();
+            for (key, patterns) in [("exclude", entry.exclude.as_slice()), ("include", include)] {
+                for pattern in patterns {
+                    if let Err(err) = glob::Pattern::new(pattern) {
+                        bail!(
+                            "invalid {key} pattern {pattern:?} for {}: {err}",
+                            entry.path
+                        );
+                    }
                 }
             }
             for variant in &entry.variants {
@@ -896,6 +912,7 @@ mod tests {
             encrypt: false,
             variants: vec![],
             exclude: vec![],
+            include: None,
         }
     }
 
@@ -969,6 +986,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: vec![],
+                include: None,
             }],
             ..Default::default()
         };
@@ -1023,6 +1041,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![active, inactive],
                 exclude: vec![],
+                include: None,
             }],
             ..Default::default()
         };
@@ -1094,6 +1113,7 @@ mod tests {
             encrypt: false,
             variants: vec![],
             exclude: vec![],
+            include: None,
         };
         let mut manifest = Manifest {
             enrollment: vec![enrollment.clone()],
@@ -1122,6 +1142,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: vec!["sessions".into()],
+                include: None,
             }],
             ..Default::default()
         };

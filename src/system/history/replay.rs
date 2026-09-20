@@ -1413,9 +1413,14 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     {
         return PathState::Uncovered;
     }
-    // the entry's own list, recorded with the checkpoint: a file it left
-    // out was never known to be absent
+    // the entry's own lists, recorded with the checkpoint: a file either
+    // of them left out was never known to be absent
     if super::tracked::excluded_by_entry(&root, &owner.exclude, &local) {
+        return PathState::Uncovered;
+    }
+    if let Some(include) = &owner.include
+        && !super::tracked::included_by_entry(&root, include, &local)
+    {
         return PathState::Uncovered;
     }
     // everything readable says the checkpoint covered this path — but a

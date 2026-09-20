@@ -109,13 +109,20 @@ impl DotfilesTrack {
                 .find(|req| req.target == target && req.mode == FileMode::Track);
             let mut entry =
                 TrackedEntry::new(normalize_target(&target), "track", self.policy(existing));
-            // re-tracking previews under the entry's own exclude list
+            // re-tracking previews under the entry's own exclude and
+            // include lists
             if let Some(existing) = existing {
                 entry.exclude = existing
                     .exclude
                     .iter()
                     .map(|pattern| pattern.as_str().to_owned())
                     .collect();
+                entry.include = existing.include.as_ref().map(|patterns| {
+                    patterns
+                        .iter()
+                        .map(|pattern| pattern.as_str().to_owned())
+                        .collect()
+                });
             }
             preview_set.push(entry);
             resolved.push(target);
@@ -176,22 +183,33 @@ impl DotfilesTrack {
             if !policy.autosave {
                 manual.push(target_key.clone());
             }
-            // a file the guard drops must not look protected once tracked:
-            // say so before the declaration is written
-            if !target.is_dir()
-                && let Some(reason) = capture_exclusion(&target, &policy)
-            {
-                let advice = if reason == CREDENTIAL_REASON {
-                    "; `mise dot track --encrypt` saves it encrypted"
-                } else {
-                    ""
-                };
-                warn!("dotfiles: {target_key} will be omitted from every save ({reason}){advice}");
-            }
             let set = &preview_set;
             let entry_index = set
                 .entry_index_for(&normalize_target(&target))
                 .expect("every target is an entry of the preview set");
+            // What the capture will really do, asked of the entry that
+            // will do it, so this cannot promise the opposite of what the
+            // first save then reports: a credential-named file named
+            // exactly is captured, not omitted.
+            if !target.is_dir() {
+                let owner = &set.entries[entry_index];
+                match owner.capture_exclusion(&target) {
+                    Some(reason) => {
+                        let advice = if reason == CREDENTIAL_REASON {
+                            "; `mise dot track --encrypt` saves it encrypted"
+                        } else {
+                            ""
+                        };
+                        warn!(
+                            "dotfiles: {target_key} will be omitted from every save ({reason}){advice}"
+                        );
+                    }
+                    None if capture_exclusion(&target, &policy).is_some() => warn!(
+                        "dotfiles: {target_key} looks like a credential store and an include list selects it, so it is saved in plaintext and shared with any connected origin; `mise dot track --encrypt` saves it encrypted instead"
+                    ),
+                    None => {}
+                }
+            }
             let preview = preview_walk.preview_of(set, entry_index);
             let summary = preview.summary();
             if self.dry_run {
@@ -204,19 +222,34 @@ impl DotfilesTrack {
                 for glob in &set.entries[entry_index].exclude {
                     miseprintln!("  exclude ({target_key}): {glob}");
                 }
+                for glob in set.entries[entry_index].include.iter().flatten() {
+                    miseprintln!("  include ({target_key}): {glob}");
+                }
+                if let Some(considered) = preview_walk.considered.get(&entry_index) {
+                    miseprintln!(
+                        "  {target_key}: {} of {} files (include list)",
+                        crate::system::history::tracked::with_separators(preview.files),
+                        crate::system::history::tracked::with_separators(*considered as usize)
+                    );
+                }
                 // nothing is enrolled yet, so `mise dot paths` cannot list
                 // these until the path is tracked: a bounded list here
-                let lines: Vec<String> = preview
-                    .omitted
-                    .iter()
-                    .map(|omitted| format!("omitted: {} ({})", omitted.path, omitted.reason))
-                    .chain(
-                        preview
-                            .nested
-                            .iter()
-                            .map(|nested| format!("nested: {} ({})", nested.path, nested.reason)),
-                    )
-                    .collect();
+                let lines: Vec<String> =
+                    preview
+                        .plaintext
+                        .iter()
+                        .map(|plaintext| {
+                            format!("plaintext: {} ({})", plaintext.path, plaintext.reason)
+                        })
+                        .chain(preview.omitted.iter().map(|omitted| {
+                            format!("omitted: {} ({})", omitted.path, omitted.reason)
+                        }))
+                        .chain(
+                            preview.nested.iter().map(|nested| {
+                                format!("nested: {} ({})", nested.path, nested.reason)
+                            }),
+                        )
+                        .collect();
                 for line in lines.iter().take(DRY_RUN_LINES) {
                     miseprintln!("  {line}");
                 }
@@ -261,7 +294,11 @@ impl DotfilesTrack {
                 .and_then(|table| table.get("exclude"))
                 .and_then(Item::as_array)
                 .cloned();
-            let entry = self.entry(existing, &previous, previous_exclude);
+            let previous_include = previous_table
+                .and_then(|table| table.get("include"))
+                .and_then(Item::as_array)
+                .cloned();
+            let entry = self.entry(existing, &previous, previous_exclude, previous_include);
             let dotfiles = doc
                 .entry("dotfiles")
                 .or_insert(Item::Table(toml_edit::Table::new()));
@@ -351,6 +388,7 @@ impl DotfilesTrack {
         existing: Option<&FileRequest>,
         previous: &[String],
         previous_exclude: Option<Array>,
+        previous_include: Option<Array>,
     ) -> InlineTable {
         let mut table = InlineTable::new();
         table.insert("mode", string("track"));
@@ -384,6 +422,21 @@ impl DotfilesTrack {
                 list
             });
             table.insert("exclude", Value::Array(list));
+        }
+        // and its `include` list, on the same terms
+        if existing.is_some() && written("include") {
+            let list = previous_include.unwrap_or_else(|| {
+                let mut list = Array::new();
+                for pattern in existing
+                    .iter()
+                    .filter_map(|req| req.include.as_ref())
+                    .flatten()
+                {
+                    list.push(string(pattern.as_str()));
+                }
+                list
+            });
+            table.insert("include", Value::Array(list));
         }
         let mut variants: Vec<Variant> =
             existing.map(|req| req.variants.clone()).unwrap_or_default();
@@ -896,6 +949,7 @@ mod declaration_tests {
             content: None,
             mode: FileMode::Track,
             exclude: vec![],
+            include: None,
             manifest: None,
             base: PathBuf::from("/home/test"),
             origin: ResourceOrigin {
@@ -910,15 +964,15 @@ mod declaration_tests {
         };
         // this file wrote both fields: they stay written at their values
         let previous = ["mode", "autosave", "encrypt"].map(String::from);
-        let table = command.entry(Some(&existing), &previous, None);
+        let table = command.entry(Some(&existing), &previous, None, None);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(true));
         assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
         // another layer wrote them (the composed flags say explicit): this
         // file must not pin the inherited values
-        let table = command.entry(Some(&existing), &["mode".to_string()], None);
+        let table = command.entry(Some(&existing), &["mode".to_string()], None, None);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
-        let table = command.entry(None, &[], None);
+        let table = command.entry(None, &[], None, None);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
         // an inherited non-default value is not pinned either; this
@@ -926,25 +980,26 @@ mod declaration_tests {
         let mut inherited = existing.clone();
         inherited.policy.autosave = false;
         inherited.policy.encrypt = true;
-        let table = command.entry(Some(&inherited), &["mode".to_string()], None);
+        let table = command.entry(Some(&inherited), &["mode".to_string()], None, None);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
         let flagged = DotfilesTrack {
             no_autosave: true,
             ..command
         };
-        let table = flagged.entry(Some(&inherited), &["mode".to_string()], None);
+        let table = flagged.entry(Some(&inherited), &["mode".to_string()], None, None);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(false));
         assert!(table.get("encrypt").is_none());
         // an inherited exclude list is not pinned either; one this file
         // wrote is kept, even when empty
         let mut listed = existing.clone();
         listed.exclude = vec![glob::Pattern::new("sessions").unwrap()];
-        let table = flagged.entry(Some(&listed), &["mode".to_string()], None);
+        let table = flagged.entry(Some(&listed), &["mode".to_string()], None, None);
         assert!(table.get("exclude").is_none());
         let table = flagged.entry(
             Some(&listed),
             &["mode".to_string(), "exclude".to_string()],
+            None,
             None,
         );
         assert_eq!(
@@ -966,6 +1021,7 @@ mod declaration_tests {
             Some(&listed),
             &["mode".to_string(), "exclude".to_string()],
             Some(raw),
+            None,
         );
         assert_eq!(
             table
@@ -979,6 +1035,7 @@ mod declaration_tests {
         let table = flagged.entry(
             Some(&cleared),
             &["mode".to_string(), "exclude".to_string()],
+            None,
             None,
         );
         assert_eq!(
