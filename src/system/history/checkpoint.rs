@@ -615,7 +615,16 @@ impl Store {
             None => String::new(),
         };
         if let Some(repo) = &self.repo {
+            // The record is read back from Git so every machine reads the
+            // same one. Skipped repositories are the exception: nothing is
+            // written to the tree for them, and the shared commit trailer
+            // is a format older clients parse with `deny_unknown_fields`,
+            // so adding a field for them would stop those clients reading
+            // this history at all. The list stays in this machine's own
+            // record, which is where a rollback here consults it.
+            let nested = std::mem::take(&mut checkpoint.tree.coverage.nested);
             checkpoint = repo.read_meta(&commit)?;
+            checkpoint.tree.coverage.nested = nested;
         }
         store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
         index.entries.push(IndexEntry {

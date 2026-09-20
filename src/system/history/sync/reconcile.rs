@@ -131,7 +131,7 @@ pub(crate) struct Conflict {
 /// Why sync neither applies nor removes a nested repository: the pointer
 /// travels with the published tree, but the objects it names live in
 /// another repository.
-pub(crate) const NESTED_NOT_SHARED: &str = "nested repository; its files are not shared";
+pub(crate) const NESTED_NOT_SHARED: &str = "a separate Git repository; a pointer from an older mise, skipped — track it directly to capture its working files";
 /// What one path needs after reconciliation.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PathPlan {
