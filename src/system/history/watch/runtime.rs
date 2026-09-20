@@ -1227,7 +1227,7 @@ impl State {
             return false;
         }
         match self.watched.entry_for(path) {
-            Some(entry) => entry.policy.autosave,
+            Some(entry) => entry.policy.autosave && !entry.is_excluded(path),
             None => false,
         }
     }
@@ -1243,9 +1243,10 @@ impl State {
         }
         self.watched
             .entry_for(path)
-            .is_some_and(|entry| entry.policy.autosave)
+            .is_some_and(|entry| entry.policy.autosave && !entry.is_excluded(path))
             || self.tracked.entry_for(path).is_some_and(|entry| {
                 entry.policy.autosave
+                    && !entry.is_excluded(path)
                     && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
             })
     }

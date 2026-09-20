@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# A tracked directory carries its own exclude list, relative to its path,
+# on top of the global [history] exclude globs.
+require_cmd git
+repo="$MISE_STATE_DIR/history/repo.git"
+mkdir -p ~/.codex/sessions/deep ~/.codex/config/sessions ~/.codex/cache
+echo 'model = "x"' >~/.codex/config.toml
+echo 'a session' >~/.codex/sessions/one.jsonl
+echo 'deeper' >~/.codex/sessions/deep/two.jsonl
+echo 'kept' >~/.codex/config/sessions/keep.toml
+echo 'index' >~/.codex/cache/index
+echo 'log' >~/.codex/debug.log
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions/**", "cache", "*.log"] }
+TOML
+
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'model = "x"'
+assert "git --git-dir=$repo show HEAD:home/.codex/config/sessions/keep.toml" 'kept'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/one.jsonl"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/deep/two.jsonl"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/cache/index"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/debug.log"
+
+# The entry is valid and its patterns are reported.
+assert "mise dot paths --json | jq '.invalid | length'" 0
+assert "mise dot paths --json | jq -r '.entries[0].exclude | join(\",\")'" 'sessions/**,cache,*.log'
+assert "mise dot paths --json | jq -r '.entries[0].files'" 2
+assert_contains 'mise dot paths' 'exclude (~/.codex): sessions/**'
+assert_contains 'mise dot track --dry-run ~/.codex' '~/.codex: 2 files'
+
+# An excluded path cannot be saved explicitly, and a global re-include does
+# not override the entry's list.
+assert_fail 'mise dot save ~/.codex/sessions/one.jsonl' 'excluded, missing, or omitted'
+assert_succeed "mise dot exclude '!~/.codex/cache/**'"
+echo 'changed' >~/.codex/cache/index
+echo 'model = "y"' >~/.codex/config.toml
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'model = "y"'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/cache/index"
+
+# Re-tracking with the command keeps the entry's list.
+assert_succeed 'mise dot track ~/.codex --no-autosave'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'exclude = ["sessions/**", "cache", "*.log"]'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'autosave = false'
+
+# The other combinations stay invalid.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", source = "x" }
+TOML
+assert_contains 'mise dot paths' 'invalid: ~/.codex'

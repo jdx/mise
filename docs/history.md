@@ -547,6 +547,19 @@ Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
 earlier matching exclusion. `paths` lists tracked paths and files omitted
 from saves.
 
+A tracked directory can also carry its own `exclude` list, relative to the
+tracked path, with the rules of a deployment entry's list (a pattern
+without `/` matches a path component anywhere below it; one with `/` is
+anchored to the directory):
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions", "*.log"] }
+```
+
+Both lists apply: a file must pass the global globs and the entry's own,
+and a global `!glob` does not re-include what the entry excludes.
+
 Credential files and `*.local.toml` are omitted by default. A file is
 treated as a credential store when its name is `.netrc` or matches `*.age`,
 `*.key`, `*.pem`, `*.gpg`, `*.kdbx`, `id_*`, `*token*`, `*secret*`,
