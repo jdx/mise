@@ -1739,6 +1739,16 @@ pub(crate) fn run_reload(reload: &IndexMap<String, String>, touched: &[PathBuf])
     }
 }
 
+/// The form [`run_reload`] matches a written path in: a symlinked `$HOME`
+/// resolved like the globs' home, the rest kept as written so a file behind a
+/// directory link mise itself created still matches a glob under the link.
+pub(crate) fn reload_path(path: &Path) -> PathBuf {
+    match path.strip_prefix(*crate::dirs::HOME) {
+        Ok(rest) => normalize(&crate::dirs::HOME).join(rest),
+        Err(_) => path.to_path_buf(),
+    }
+}
+
 /// Restoring configuration never runs bootstrap: say when declarations may
 /// now differ from the applied setup.
 fn config_hint(touched: &[PathBuf]) {
@@ -1755,5 +1765,21 @@ fn config_hint(touched: &[PathBuf]) {
             "history: {} changed; declarations may differ from the applied setup — run `mise bootstrap --dry-run` to see",
             config_files.join(", ")
         );
+    }
+}
+
+#[cfg(test)]
+mod reload_tests {
+    use super::*;
+
+    #[test]
+    fn reload_path_resolves_home_only() {
+        let home = normalize(&crate::dirs::HOME);
+        assert_eq!(
+            reload_path(&crate::dirs::HOME.join(".config/hypr/monitors.conf")),
+            home.join(".config/hypr/monitors.conf")
+        );
+        let outside = PathBuf::from("/etc/hosts");
+        assert_eq!(reload_path(&outside), outside);
     }
 }

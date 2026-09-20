@@ -1603,7 +1603,7 @@ impl Bootstrap {
                     force_hint: "use --force-dotfiles or run `mise dot apply --force`",
                     yes: self.yes,
                 };
-                if !system::files::apply(&config, &files, &opts, &secrets)? {
+                if !system::files::apply(&config, &files, &opts, &secrets, &mut vec![])? {
                     return Ok(declined());
                 }
             }
@@ -1619,7 +1619,7 @@ impl Bootstrap {
                     verbose: false,
                     yes: self.yes,
                 };
-                if !system::edits::apply(&config, &edits, &opts)? {
+                if !system::edits::apply(&config, &edits, &opts, &mut vec![])? {
                     return Ok(declined());
                 }
             }

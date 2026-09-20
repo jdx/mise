@@ -2267,20 +2267,30 @@ pub(crate) struct ApplyPlan<'a> {
 /// targets (a real file where a symlink should go, a directory where a file
 /// should go) are an error unless `force` is set — content updates for
 /// copy/template entries are not conflicts, overwriting is their job. Returns
-/// `false` when the user declines the confirmation prompt.
+/// `false` when the user declines the confirmation prompt. The target paths
+/// written or removed are appended to `written` as each entry is applied,
+/// so a caller still sees what changed when a later entry fails; nothing is
+/// appended on a dry run.
 pub(crate) fn apply(
     config: &Config,
     requests: &[FileRequest],
     opts: &ApplyOpts,
     secrets: &SecretValues,
+    written: &mut Vec<PathBuf>,
 ) -> Result<bool> {
-    execute_apply(config, plan_apply(config, requests, opts, secrets)?, opts)
+    execute_apply(
+        config,
+        plan_apply(config, requests, opts, secrets)?,
+        opts,
+        written,
+    )
 }
 
 pub(crate) fn execute_apply(
     config: &Config,
     plan: ApplyPlan<'_>,
     opts: &ApplyOpts,
+    written: &mut Vec<PathBuf>,
 ) -> Result<bool> {
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
@@ -2352,13 +2362,14 @@ pub(crate) fn execute_apply(
             }
             let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
             file::remove_file(&link.target)?;
+            written.push(link.target.clone());
             journal::commit_changes(pending);
         }
     }
     for (req, rendered) in &plan.todo {
         let pending =
             journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
-        apply_one(req, rendered.as_deref())?;
+        apply_one(req, rendered.as_deref(), written)?;
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
         }
@@ -3397,22 +3408,42 @@ pub(crate) fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
     missing
 }
 
-fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+/// Write one entry. Each path is appended to `written` at the point it is
+/// first mutated — after the removal of what was there, or else after its
+/// own write lands — so a caller sees exactly the files that changed when a
+/// later write fails: the target of a whole-file entry, each file a
+/// directory copy or symlink-each places, anything cleared to make room, and
+/// each stale link symlink-each prunes. A symlink to a directory also lists
+/// the files it exposes, so a `[history.reload]` glob under the target
+/// matches. Directories created on the way are not listed.
+fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBuf>) -> Result<()> {
     debug!("files: {}", describe(req)?);
     if let Some(parent) = req.target.parent() {
         file::create_dir_all(parent)?;
     }
     match req.mode {
         FileMode::Symlink => {
-            remove_existing(&req.target)?;
-            link_path(&req.source, &req.target, true)?;
+            replace_recorded(&req.target, written, || {
+                link_path(&req.source, &req.target, true)
+            })?;
+            // the link is in place; listing what it exposes only feeds
+            // reload matching, so a walk that fails must not fail the apply
+            if req.source.is_dir() {
+                match walk_source_files(req) {
+                    Ok(files) => written.extend(files.into_iter().map(|(_, target)| target)),
+                    Err(err) => warn!(
+                        "files: cannot list {} for reload matching: {err:#}",
+                        req.source.display_user()
+                    ),
+                }
+            }
         }
         FileMode::SymlinkEach => {
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need
             for dir in needed_dirs(req)? {
-                if dir.exists() && !dir.is_dir() {
-                    remove_existing(&dir)?;
+                if dir.exists() && !dir.is_dir() && remove_existing(&dir)? {
+                    written.push(dir);
                 }
             }
             // even an empty source dir must produce the target dir, or the
@@ -3425,18 +3456,17 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 if let Some(parent) = target.parent() {
                     file::create_dir_all(parent)?;
                 }
-                remove_existing(&target)?;
-                link_path(&source, &target, false)?;
+                replace_recorded(&target, written, || link_path(&source, &target, false))?;
             }
-            prune_stale_links(req)?;
+            prune_stale_links(req, written)?;
         }
         FileMode::Copy => {
             if req.source.is_dir() {
                 // additive: overwrite matching files, leave files mise
                 // doesn't manage in place — only a type mismatch (vetted
                 // as a conflict) removes the target
-                if req.target.exists() && !req.target.is_dir() {
-                    remove_existing(&req.target)?;
+                if req.target.exists() && !req.target.is_dir() && remove_existing(&req.target)? {
+                    written.push(req.target.clone());
                 }
                 // even an empty source dir must produce the target dir,
                 // or the entry would never converge
@@ -3448,26 +3478,54 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                         file::create_dir_all(parent)?;
                     }
                     if target.is_symlink() {
+                        // a link is replaced: recorded once it is gone. The
+                        // source is opened and checked first and the copy
+                        // reads from that handle, so one that cannot be
+                        // copied leaves the link alone and one that changes
+                        // meanwhile cannot leave the target missing
+                        let mut from = CopySource::open(&source, &target)?;
                         file::remove_file(&target)?;
+                        written.push(target.clone());
+                        let to = std::fs::File::create(&target)
+                            .wrap_err_with(copy_failure(&source, &target))?;
+                        from.copy_into(to)?;
+                    } else if target.is_file() {
+                        overwrite_recorded(&source, &target, written)?;
+                    } else {
+                        match std::fs::symlink_metadata(&target) {
+                            // absent: recorded once it exists, even if the
+                            // copy that created it then failed
+                            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                                create_recorded(&target, written, || file::copy(&source, &target))?;
+                            }
+                            // something else is there (a directory, say):
+                            // a copy that fails leaves it as it was, so it
+                            // is recorded only once the copy succeeded
+                            Ok(_) => {
+                                file::copy(&source, &target)?;
+                                written.push(target.clone());
+                            }
+                            Err(err) => return Err(err.into()),
+                        }
                     }
-                    file::copy(&source, &target)?;
                 }
             } else {
-                remove_existing(&req.target)?;
-                file::copy(&req.source, &req.target)?;
+                replace_recorded(&req.target, written, || {
+                    file::copy(&req.source, &req.target)
+                })?;
             }
         }
         FileMode::Template => {
             let rendered = rendered.expect("rendered template content");
-            remove_existing(&req.target)?;
-            file::write(&req.target, rendered)?;
+            replace_recorded(&req.target, written, || file::write(&req.target, rendered))?;
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
         }
         FileMode::Track => unreachable!("tracked files are never written"),
         FileMode::Content => {
-            remove_existing(&req.target)?;
-            file::write(&req.target, req.content.as_deref().expect("inline content"))?;
+            replace_recorded(&req.target, written, || {
+                file::write(&req.target, req.content.as_deref().expect("inline content"))
+            })?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -3482,7 +3540,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
 /// they emptied out. A directory only goes when the links we just removed were
 /// all that was in it and the entry has no source file left that needs it, so
 /// user content — and the target directory itself — always survives.
-fn prune_stale_links(req: &FileRequest) -> Result<()> {
+fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()> {
     let stale = stale_links(req)?;
     if stale.is_empty() {
         return Ok(());
@@ -3490,6 +3548,7 @@ fn prune_stale_links(req: &FileRequest) -> Result<()> {
     for path in &stale {
         debug!("files: removing stale link {}", path.display_user());
         file::remove_file(path)?;
+        written.push(path.clone());
     }
     let needed: std::collections::HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
     // deepest first, so emptying a nested directory can empty its parent too
@@ -3516,13 +3575,120 @@ fn prune_stale_links(req: &FileRequest) -> Result<()> {
 
 /// remove whatever sits at `path` so it can be replaced — conflicts have
 /// already been vetted (or --force given) by the time this runs
-fn remove_existing(path: &Path) -> Result<()> {
+fn remove_existing(path: &Path) -> Result<bool> {
     if path.is_symlink() || path.is_file() {
         file::remove_file(path)?;
     } else if path.is_dir() {
         file::remove_all(path)?;
+    } else {
+        return Ok(false);
     }
-    Ok(())
+    Ok(true)
+}
+
+/// A copy source held open, so the destination is touched only once the
+/// source has been opened and checked, and the copy reads from that same
+/// handle — a source replaced or removed meanwhile cannot leave the
+/// destination cleared with nothing to put in its place.
+struct CopySource<'a> {
+    file: std::fs::File,
+    metadata: std::fs::Metadata,
+    source: &'a Path,
+    target: &'a Path,
+}
+
+impl<'a> CopySource<'a> {
+    /// Open `source` for copying to `target`, with the check `fs::copy`
+    /// performs before it touches its destination: the source must be a
+    /// regular file (or a link to one).
+    fn open(source: &'a Path, target: &'a Path) -> Result<Self> {
+        let failed = copy_failure(source, target);
+        let file = std::fs::File::open(source).wrap_err_with(&failed)?;
+        let metadata = file.metadata().wrap_err_with(&failed)?;
+        if !metadata.is_file() {
+            bail!(
+                "{}: the source path is neither a regular file nor a symlink to a regular file",
+                failed()
+            );
+        }
+        Ok(Self {
+            file,
+            metadata,
+            source,
+            target,
+        })
+    }
+
+    /// Write the source's content and permission bits into the open `to`,
+    /// as `fs::copy` would.
+    fn copy_into(&mut self, mut to: std::fs::File) -> Result<()> {
+        let failed = copy_failure(self.source, self.target);
+        std::io::copy(&mut self.file, &mut to).wrap_err_with(&failed)?;
+        to.set_permissions(self.metadata.permissions())
+            .wrap_err_with(&failed)?;
+        Ok(())
+    }
+}
+
+fn copy_failure<'a>(source: &'a Path, target: &'a Path) -> impl Fn() -> String + 'a {
+    move || {
+        format!(
+            "failed copy: {} -> {}",
+            source.display_user(),
+            target.display_user()
+        )
+    }
+}
+
+/// Overwrite the existing regular file at `target` with `source` in place,
+/// as `file::copy` would (content and permission bits), recording the target
+/// in `written` once it has been opened for truncation — the first mutation.
+/// The source is opened and checked first, so a source that is not a regular
+/// file (a directory behind a link, say) fails before the target is touched.
+/// An open that fails (a read-only target file or filesystem) changes
+/// nothing and records nothing.
+fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
+    let mut from = CopySource::open(source, target)?;
+    let to = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(target)
+        .wrap_err_with(copy_failure(source, target))?;
+    written.push(target.to_path_buf());
+    from.copy_into(to)
+}
+
+/// Run `write` against a `target` that does not exist yet, recording the
+/// target in `written` if it exists afterwards: after a successful write,
+/// and after one that failed only once it had created the file (its on-disk
+/// state changed either way). A write that failed before creating anything
+/// records nothing.
+pub(crate) fn create_recorded(
+    target: &Path,
+    written: &mut Vec<PathBuf>,
+    write: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let result = write();
+    if result.is_ok() || std::fs::symlink_metadata(target).is_ok() {
+        written.push(target.to_path_buf());
+    }
+    result
+}
+
+/// Clear `target` and run `write` in its place, recording the target in
+/// `written` at its first mutation: right after the removal when something
+/// was there (a write that then fails still leaves the old content gone),
+/// otherwise as [`create_recorded`] does.
+fn replace_recorded(
+    target: &Path,
+    written: &mut Vec<PathBuf>,
+    write: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    if remove_existing(target)? {
+        written.push(target.to_path_buf());
+        return write();
+    }
+    create_recorded(target, written, write)
 }
 
 /// `allow_windows_symlink` is false for `symlink-each`, which stays on the Windows copy path:
@@ -3689,8 +3855,11 @@ variants = [{{ {field} = "linux" }}]"#
                 }
             })
             .collect::<Vec<_>>();
-        prune_stale_links(&req)?;
+        let mut written = vec![];
+        prune_stale_links(&req, &mut written)?;
         assert!(!nested.exists());
+        // the removed links are listed, the pruned directory is not
+        assert_eq!(written, vec![nested.join("a"), nested.join("b")]);
         let committed = journal
             .iter()
             .enumerate()
@@ -3902,6 +4071,278 @@ variants = [{{ {field} = "linux" }}]"#
 
     fn symlink_req(source: &Path, target: &Path) -> FileRequest {
         link_req(source, target, FileMode::Symlink)
+    }
+
+    #[test]
+    fn apply_one_lists_only_the_files_it_wrote() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("sub"))?;
+        file::write(source.join("a.toml"), "a")?;
+        file::write(source.join("sub/b.toml"), "b")?;
+        let file_source = dir.path().join("file");
+        file::write(&file_source, "file")?;
+
+        // a single-file copy lists its target once it is written, not the
+        // directories created on the way
+        let target = dir.path().join("one/settings.toml");
+        let mut written = vec![];
+        apply_one(
+            &link_req(&file_source, &target, FileMode::Copy),
+            None,
+            &mut written,
+        )?;
+        assert_eq!(written, vec![target]);
+
+        // a directory copy lists each file as it lands
+        let target = dir.path().join("all");
+        let mut written = vec![];
+        apply_one(
+            &link_req(&source, &target, FileMode::Copy),
+            None,
+            &mut written,
+        )?;
+        written.sort();
+        assert_eq!(
+            written,
+            vec![target.join("a.toml"), target.join("sub/b.toml")]
+        );
+
+        // a directory copy that fails part-way lists the files written
+        // before the failure and nothing after it: a file where `sub` must
+        // become a directory stops the walk after `a.toml`
+        let target = dir.path().join("partial");
+        file::create_dir_all(&target)?;
+        file::write(target.join("sub"), "in the way")?;
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert_eq!(written, vec![target.join("a.toml")]);
+
+        // a write that fails before touching its target lists nothing
+        let target = dir.path().join("partial/sub/settings.toml");
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&file_source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(written.is_empty());
+
+        // an existing target that was cleared before the write failed is
+        // mutated (its old content is gone), so it is listed
+        let target = dir.path().join("replaced");
+        file::write(&target, "old")?;
+        let missing_source = dir.path().join("missing");
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&missing_source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(!target.exists());
+        assert_eq!(written, vec![target]);
+        // the same failed write against an absent target lists nothing
+        let target = dir.path().join("never");
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&missing_source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_copy_leaves_an_existing_file_alone_when_the_source_is_not_a_file() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("real"))?;
+        // a link to a directory walks as a file-like entry but is not one
+        std::os::unix::fs::symlink(source.join("real"), source.join("entry"))?;
+        let target = dir.path().join("target");
+        file::create_dir_all(&target)?;
+        file::write(target.join("entry"), "keep me")?;
+
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert_eq!(file::read_to_string(target.join("entry"))?, "keep me");
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_copy_leaves_an_existing_link_alone_when_the_source_is_not_a_file() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("real"))?;
+        std::os::unix::fs::symlink(source.join("real"), source.join("entry"))?;
+        let elsewhere = dir.path().join("elsewhere");
+        file::write(&elsewhere, "keep me")?;
+        let target = dir.path().join("target");
+        file::create_dir_all(&target)?;
+        std::os::unix::fs::symlink(&elsewhere, target.join("entry"))?;
+
+        // the source cannot be copied, so the link it would replace stays
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert_eq!(std::fs::read_link(target.join("entry"))?, elsewhere);
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn directory_copy_does_not_record_an_existing_directory_the_copy_left_alone() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(&source)?;
+        file::write(source.join("entry"), "file")?;
+        // a directory where the copy wants a file: the copy fails without
+        // touching it, so nothing changed and nothing is recorded
+        let target = dir.path().join("target");
+        file::create_dir_all(target.join("entry"))?;
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(target.join("entry").is_dir());
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn create_recorded_lists_a_target_the_failed_write_created() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let target = dir.path().join("created");
+        // the write created the file before failing: its state changed
+        let mut written = vec![];
+        let result = create_recorded(&target, &mut written, || {
+            file::write(&target, "partial")?;
+            bail!("disk full")
+        });
+        assert!(result.is_err());
+        assert_eq!(written, vec![target.clone()]);
+        // the write failed before creating anything: nothing to reload
+        let target = dir.path().join("never");
+        let mut written = vec![];
+        let result = create_recorded(&target, &mut written, || bail!("permission denied"));
+        assert!(result.is_err());
+        assert!(written.is_empty());
+        // and a successful write is recorded as before
+        let mut written = vec![];
+        create_recorded(&target, &mut written, || file::write(&target, "ok"))?;
+        assert_eq!(written, vec![target]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_copy_records_an_existing_file_only_once_it_is_opened_for_writing() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(&source)?;
+        file::write(source.join("a.toml"), "new")?;
+        let target = dir.path().join("target");
+        file::create_dir_all(&target)?;
+        file::write(target.join("a.toml"), "old")?;
+
+        // an existing writable file is overwritten in place and recorded
+        let mut written = vec![];
+        apply_one(
+            &link_req(&source, &target, FileMode::Copy),
+            None,
+            &mut written,
+        )?;
+        assert_eq!(written, vec![target.join("a.toml")]);
+        assert_eq!(file::read_to_string(target.join("a.toml"))?, "new");
+
+        // a read-only existing file cannot be opened for truncation: nothing
+        // changes and nothing is recorded (root can open it regardless, so
+        // the case is skipped there)
+        file::write(target.join("a.toml"), "old")?;
+        std::fs::set_permissions(
+            target.join("a.toml"),
+            std::fs::Permissions::from_mode(0o444),
+        )?;
+        if std::fs::OpenOptions::new()
+            .write(true)
+            .open(target.join("a.toml"))
+            .is_ok()
+        {
+            return Ok(());
+        }
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(written.is_empty());
+        assert_eq!(file::read_to_string(target.join("a.toml"))?, "old");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_symlink_listing_is_best_effort() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("sub"))?;
+        file::write(source.join("sub/hidden.toml"), "x")?;
+        // an unreadable subdirectory makes the walk fail (unless running as
+        // root, where the walk simply succeeds); the link still lands and is
+        // recorded either way
+        std::fs::set_permissions(source.join("sub"), std::fs::Permissions::from_mode(0o000))?;
+        let target = dir.path().join("target");
+        let mut written = vec![];
+        let result = apply_one(&symlink_req(&source, &target), None, &mut written);
+        std::fs::set_permissions(source.join("sub"), std::fs::Permissions::from_mode(0o755))?;
+        result?;
+        assert!(target.is_symlink());
+        assert_eq!(written.first(), Some(&target));
+        Ok(())
     }
 
     #[test]
