@@ -45,6 +45,14 @@ enum Claim {
     Containing,
 }
 
+/// One permission key that claims a directory, with the tree paths under
+/// which that directory may exist.
+struct Key<'a> {
+    claim: Claim,
+    portable: &'a String,
+    candidates: Vec<String>,
+}
+
 fn claim(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> Option<Claim> {
     if super::run::eligible(roots, tracked, branch_path) {
         return Some(Claim::Enrolled);
@@ -86,8 +94,11 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         .chain(saved.permissions.keys())
         .collect();
     // one step per directory: an enrolled directory's own stream outranks
-    // the record it gets as the parent of other enrolled paths
-    let mut claimed: std::collections::BTreeMap<PathBuf, (Claim, &String)> = Default::default();
+    // the record it gets as the parent of other enrolled paths. Every key
+    // that claims the directory is kept, best first, so the local record is
+    // found under a key that no longer governs (a containing parent since
+    // enrolled in its own stream)
+    let mut claimed: std::collections::BTreeMap<PathBuf, Vec<Key<'_>>> = Default::default();
     for portable in paths {
         let Some(claim) = claim(&roots, tracked, portable) else {
             continue;
@@ -125,12 +136,16 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         if !present {
             continue;
         }
-        let best = claimed.entry(path).or_insert((claim, portable));
-        if claim < best.0 {
-            *best = (claim, portable);
-        }
+        let keys = claimed.entry(path).or_default();
+        keys.push(Key {
+            claim,
+            portable,
+            candidates,
+        });
+        keys.sort_by_key(|key| key.claim);
     }
-    for (path, (_, portable)) in claimed {
+    for (path, keys) in claimed {
+        let portable = keys[0].portable;
         let before = observe(&path)?;
         let desired = tracked
             .manifest
@@ -144,16 +159,23 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         if before.map(|(_, _, bits)| bits) == Some(desired) {
             continue;
         }
-        let was_directory = local
-            .as_deref()
-            .map(|head| repo.object_at(head, portable))
-            .transpose()?
-            .flatten()
-            .is_some_and(|(mode, _)| mode == "040000");
-        if was_directory
-            && before.map(|(_, _, bits)| bits)
-                != Some(saved.permissions.get(portable).copied().unwrap_or(0o755))
-        {
+        let mut was_directory = false;
+        if let Some(head) = local.as_deref() {
+            for candidate in keys.iter().flat_map(|key| &key.candidates) {
+                if repo
+                    .object_at(head, candidate)?
+                    .is_some_and(|(mode, _)| mode == "040000")
+                {
+                    was_directory = true;
+                    break;
+                }
+            }
+        }
+        let saved_bits = keys
+            .iter()
+            .find_map(|key| saved.permissions.get(key.portable).copied())
+            .unwrap_or(0o755);
+        if was_directory && before.map(|(_, _, bits)| bits) != Some(saved_bits) {
             bail!(
                 "{} has unsaved directory permission changes; save them before pulling. Sharing is paused",
                 crate::file::display_path(&path)
@@ -392,6 +414,103 @@ mod tests {
         Ok(())
     }
 
+    /// A directory saved as a containing parent and since enrolled in its own
+    /// stream keeps its local record: an unsaved chmod is still detected
+    /// under the superseded key instead of being overwritten.
+    #[test]
+    fn a_superseded_key_still_guards_an_unsaved_local_change() -> Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::checkpoint::test_checkpoint;
+        use crate::system::history::manifest::Enrollment;
+        use crate::system::history::shadow::Overlay;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-superseded-")
+            .tempdir_in(&roots.home)?;
+        let private = normalize(scratch.path()).join("private");
+        std::fs::create_dir(&private)?;
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700))?;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let file = TrackedEntry::new(private.join("settings.json"), "track", policy);
+        let mut directory = TrackedEntry::new(private.clone(), "track", policy);
+        directory.variant = Some("linux".into());
+        let containing = roots.branch_path(&private, None).unwrap();
+        let own = directory.tree_path(&private)?;
+        let blob = repo.hash_blob(b"{}")?;
+        let plain_only = repo.compose(
+            &repo.empty_object("tree")?,
+            &[Overlay {
+                path: file.tree_path(&file.path)?,
+                object: Some(("100644".into(), blob.clone())),
+            }],
+        )?;
+        let enrollment = |path: String, variants| Enrollment {
+            path,
+            autosave: true,
+            encrypt: false,
+            variants,
+        };
+        // the local head knows the directory only as a containing parent
+        let local = Manifest {
+            enrollment: vec![enrollment(file.tree_path(&file.path)?, vec![])],
+            permissions: std::collections::BTreeMap::from([(containing.clone(), 0o700)]),
+            ..Default::default()
+        };
+        let head = local.write(&repo, &plain_only)?;
+        repo.write_checkpoint(Some(&head), &test_checkpoint("local", Some(&head)))?;
+        // since then the directory was enrolled in its own Linux stream, and
+        // another machine recorded that stream at 0750
+        let both = repo.compose(
+            &plain_only,
+            &[Overlay {
+                path: directory.tree_path(&private.join("notes"))?,
+                object: Some(("100644".into(), blob)),
+            }],
+        )?;
+        let incoming = Manifest {
+            enrollment: vec![
+                enrollment(file.tree_path(&file.path)?, vec![]),
+                enrollment(
+                    containing.clone(),
+                    vec![crate::system::history::select::Variant {
+                        os: vec!["linux".into()],
+                        ..Default::default()
+                    }],
+                ),
+            ],
+            permissions: std::collections::BTreeMap::from([
+                (containing.clone(), 0o700),
+                (own.clone(), 0o750),
+            ]),
+            ..Default::default()
+        };
+        let tree = incoming.write(&repo, &both)?;
+        let tracked = TrackedSet {
+            entries: vec![file, directory],
+            manifest: incoming,
+            ..Default::default()
+        };
+        // the live mode matches the local record under the old key: applied
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].desired, 0o750);
+        // an unsaved chmod is still detected under the old key
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o711))?;
+        let err = plan(&repo, &tracked, &tree).unwrap_err();
+        assert!(
+            err.to_string().contains("unsaved directory permission"),
+            "{err}"
+        );
+        Ok(())
+    }
+
     /// A containing record names the variant-less path, but the directory
     /// may exist in the tree only under a variant stream (every file inside
     /// it is a Linux-only file): the planner still applies it on a fresh
@@ -454,6 +573,31 @@ mod tests {
         assert_eq!(steps[0].path, private);
         assert_eq!(steps[0].desired, 0o700);
         assert!(steps[0].before.is_none());
+
+        // the local head holds the directory only under the variant stream
+        // too: an unsaved chmod is still detected before an incoming mode
+        // could overwrite it
+        use crate::system::history::checkpoint::test_checkpoint;
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir(&private)?;
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700))?;
+        repo.write_checkpoint(Some(&tree), &test_checkpoint("local", Some(&tree)))?;
+        let mut incoming = tracked.manifest.clone();
+        incoming.permissions.insert(containing.clone(), 0o750);
+        let tree = incoming.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            manifest: incoming,
+            ..tracked
+        };
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].desired, 0o750);
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o711))?;
+        let err = plan(&repo, &tracked, &tree).unwrap_err();
+        assert!(
+            err.to_string().contains("unsaved directory permission"),
+            "{err}"
+        );
         Ok(())
     }
 
