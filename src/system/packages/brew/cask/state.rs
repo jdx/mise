@@ -1822,14 +1822,27 @@ pub(super) fn archive_filename(raw: &str) -> Option<String> {
 
 fn decoded_path_segment(segment: &str) -> Option<String> {
     let decoded = urlencoding::decode(segment).ok()?.into_owned();
-    let unusable = decoded.is_empty()
-        || decoded == "."
-        || decoded == ".."
-        || decoded.ends_with([' ', '.'])
-        || decoded.chars().any(|c| {
-            c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
-        });
-    (!unusable).then_some(decoded)
+    (!is_unusable_file_name(&decoded)).then_some(decoded)
+}
+
+/// Whether `name` cannot stand as a single path component under the staging
+/// directory.
+///
+/// The first group is about containment rather than platform convention: each
+/// would put the staged artifact somewhere other than the name the cask
+/// declares, and `%2F` in particular survives URL normalization. The second is
+/// Windows path syntax and applies only there — `Foo?.ttf` is an ordinary file
+/// name on macOS and Linux, and rejecting it would strand the cask on the
+/// mismatching encoded basename this decoding exists to avoid.
+fn is_unusable_file_name(name: &str) -> bool {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+        return true;
+    }
+    cfg!(windows)
+        && (name.ends_with([' ', '.'])
+            || name.chars().any(|c| {
+                c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '\\' | '|' | '?' | '*')
+            }))
 }
 
 pub(super) fn split_tap_name(name: &str) -> Option<(&str, &str, &str)> {

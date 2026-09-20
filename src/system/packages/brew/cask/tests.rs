@@ -4266,20 +4266,65 @@ fn archive_filename_decodes_percent_escapes() {
 }
 
 #[test]
-fn archive_filename_keeps_escapes_that_decode_to_an_unusable_name() {
-    // A decoded separator or traversal would escape the staging directory, and
-    // the encoded segment is inert as a path component.
+fn archive_filename_keeps_escapes_that_decode_outside_the_staging_dir() {
+    // `%2F` and `%00` survive URL normalization, so the guard is what keeps
+    // them from becoming a separator or a truncating NUL in the staged name.
+    // The encoded segment is inert as a path component.
     for url in [
         "https://example.com/evil%2F..%2Fpwned.ttf",
-        "https://example.com/%2E%2E",
         "https://example.com/tool%00.pkg",
     ] {
         let name = archive_filename(url).expect("url has a final path segment");
-        assert!(
-            !name.contains(['/', '\\']) && name != ".." && !name.contains('\0'),
-            "{url} staged as {name}"
-        );
+        assert!(!name.contains(['/', '\0']), "{url} staged as {name}");
     }
+}
+
+#[test]
+fn archive_filename_has_no_segment_when_the_path_is_only_dot_segments() {
+    // `url::Url::parse` resolves encoded dot segments away, so they never
+    // reach the decoding guard; the result is an empty final segment.
+    for url in [
+        "https://example.com/",
+        "https://example.com/%2E",
+        "https://example.com/%2E%2E",
+    ] {
+        assert_eq!(archive_filename(url).as_deref(), Some(""), "{url}");
+    }
+    assert_eq!(
+        archive_filename("https://example.com/a/%2E%2E/b.ttf").as_deref(),
+        Some("b.ttf")
+    );
+}
+
+#[test]
+fn raw_artifact_name_falls_back_when_the_url_has_no_final_segment() -> Result<()> {
+    // Staging under an empty name would target the staging directory itself.
+    let tmp = tempfile::tempdir()?;
+    let archive = tmp.path().join("cached-name");
+    std::fs::write(&archive, b"#!/bin/sh\n")?;
+    let mut cask = test_cask("example", "1.0.0");
+    cask.url = "https://example.com/%2E%2E".to_string();
+
+    assert_eq!(
+        raw_cask_artifact_name(&cask, &archive, "cached-name")?,
+        ("cached-name".to_string(), true)
+    );
+    Ok(())
+}
+
+/// `?` is an ordinary character in a macOS or Linux file name, so a cask that
+/// escapes one in its URL must still decode to the name it declares.
+#[test]
+#[cfg(not(windows))]
+fn archive_filename_decodes_names_windows_would_reject() {
+    assert_eq!(
+        archive_filename("https://example.com/Foo%3F.ttf").as_deref(),
+        Some("Foo?.ttf")
+    );
+    assert_eq!(
+        archive_filename("https://example.com/Bar%2A%7CBaz.ttf").as_deref(),
+        Some("Bar*|Baz.ttf")
+    );
 }
 
 #[test]
