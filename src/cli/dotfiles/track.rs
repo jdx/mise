@@ -61,7 +61,13 @@ pub(crate) struct DotfilesTrack {
 impl DotfilesTrack {
     /// Write the requested declarations and capture their initial history baseline.
     pub(crate) async fn run(self) -> Result<()> {
-        let _declarations = declaration_lock()?;
+        // a dry run reads and walks but writes nothing, so it must not
+        // hold up (or be held up by) a declaration command
+        let _declarations = if self.dry_run {
+            None
+        } else {
+            Some(declaration_lock()?)
+        };
         let config = Config::get().await?;
         if self.encrypt && !Settings::get().history.enabled {
             bail!("dotfiles: cannot enroll encrypted paths while history is disabled");
@@ -140,10 +146,16 @@ impl DotfilesTrack {
                 };
                 warn!("dotfiles: {target_key} will be omitted from every save ({reason}){advice}");
             }
-            let preview = preview_set(&target, policy)?.walk()?;
+            let set = preview_set(&target, policy)?;
+            let preview = set.walk()?;
             let summary = preview.summary();
             if self.dry_run {
                 miseprintln!("{target_key}: {summary}");
+                // what an exclusion glob left out is not walked at all, so
+                // the globs in force are the only account of it
+                for glob in &set.exclude {
+                    miseprintln!("  exclude: {glob}");
+                }
                 for line in omission_report(&preview.omitted, &preview.nested) {
                     miseprintln!("  {line}");
                 }
