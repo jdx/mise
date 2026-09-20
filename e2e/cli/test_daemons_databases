@@ -18,7 +18,7 @@ redis_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0
 # A compound override must initialize first and leave the database as the tracked PID.
 cat >start-postgres <<'SH'
 #!/bin/sh
-data=$(find "$MISE_STATE_DIR/daemons" -path '*/data/postgres' -type d -print -quit)
+data="$PWD/.data/my postgres"
 test -f "$data/PG_VERSION" || exit 1
 exec postgres -D "$data" -p "$PGPORT" -h 127.0.0.1 -k ''
 SH
@@ -28,6 +28,7 @@ pitchfork = "system"
 postgres = "18"
 [daemons.postgres]
 preset = "postgres"
+data_dir = ".data/my postgres"
 version = "18"
 port = $pg_port
 options.database = "integration"
@@ -46,6 +47,8 @@ cat >>mise.toml <<'TOML'
 locked = true
 TOML
 mise daemons start
+assert "test -f '.data/my postgres/PG_VERSION'"
+assert_contains "mise daemons ls --json | jq -r '.[] | select(.name == \"postgres\") | .data_dir'" "$PWD/.data/my postgres"
 pg_pid=$(mise daemons ls --json | jq -r '.[] | select(.name == "postgres") | .pid')
 assert_contains "ps -p '$pg_pid' -o comm=" postgres
 assert_contains "mise daemons ls --json" '"status": "running"'
@@ -76,7 +79,7 @@ assert_contains "mise exec -- mise daemons __init redis '$TMPDIR/incomplete' 2>&
 assert_contains "cat '$TMPDIR/incomplete/user-data'" preserved
 
 # A missing PostgreSQL marker reports incomplete initialization clearly.
-pg_data=$(find "$MISE_STATE_DIR/daemons" -path '*/data/postgres' -type d -print -quit)
+pg_data="$PWD/.data/my postgres"
 mv "$pg_data/PG_VERSION" "$pg_data/PG_VERSION.saved"
 assert_contains "mise exec -- mise daemons __init postgres '$pg_data' --context '{\"database\":\"integration\"}' 2>&1 || true" 'daemon data was not initialized completely'
 mv "$pg_data/PG_VERSION.saved" "$pg_data/PG_VERSION"

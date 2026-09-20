@@ -506,7 +506,7 @@ impl Daemons {
                         None
                     };
                     let host = daemon.and_then(|d| d.host.as_deref());
-                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(proxy_mode), "state_dir": state_dir, "data_size": data_size, "data_size_human": daemons::prune::human_size(data_size) }));
+                    rows.push(serde_json::json!({ "id": id, "name": name, "root": root, "source": daemon.map(|d| &d.source), "preset": daemon.and_then(|d| d.preset.as_ref()), "status": status.as_ref().and_then(|s| s["status"].as_str()).unwrap_or("available"), "pid": status.as_ref().and_then(|s| s["pid"].as_u64()), "port": claim.map(|c| c.port), "port_auto": claim.map(|c| c.is_auto()), "host": host, "url": host.map(|h| proxy.url(h)), "proxy": daemon.map(proxy_mode), "data_dir": daemon.and_then(|d| d.data_dir.as_ref()), "state_dir": state_dir, "data_size": data_size, "data_size_human": daemons::prune::human_size(data_size) }));
                 }
                 continue;
             }

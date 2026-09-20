@@ -365,6 +365,7 @@ mod tests {
                             root: PathBuf::from("/project"),
                             table: toml::Table::new(),
                             preset: None,
+                            data_dir: None,
                             task: None,
                             tool: None,
                             exports: Default::default(),
