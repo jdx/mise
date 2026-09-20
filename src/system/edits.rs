@@ -27,7 +27,7 @@
 
 use std::path::{Path, PathBuf};
 
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -1139,11 +1139,15 @@ fn edit_paths(path: &Path) -> Vec<(PathBuf, Capture)> {
 }
 
 /// Write one edit, appending its path to `written` at the point the file is
-/// first mutated: before the write when the file exists (the write truncates
-/// it in place, so a failure part-way still leaves it changed — the journal
-/// preimage is only restored by a later recovery run), otherwise once the
-/// write succeeds.
+/// first mutated. An existing file is truncated in place (preserving its
+/// permissions), so it is recorded once it has been opened for truncation:
+/// an open that fails (a read-only file or filesystem) changes nothing and
+/// records nothing, while a write that fails after it still leaves the file
+/// changed — the journal preimage is only restored by a later recovery run.
+/// A new file is recorded once it exists, even if the write that created it
+/// then failed.
 fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf>) -> Result<()> {
+    use std::io::Write;
     debug!("edits: {} ({})", req.path.display_user(), req.describe_op());
     if let Some(parent) = req.path.parent() {
         file::create_dir_all(parent)?;
@@ -1155,13 +1159,17 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
         String::new()
     };
     let out = apply_to_string(req, desired, &text)?;
+    let failed = || format!("failed write: {}", req.path.display_user());
     if existed {
+        let mut target = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&req.path)
+            .wrap_err_with(failed)?;
         written.push(req.path.clone());
-    }
-    // file::write truncates in place, preserving the file's permissions
-    file::write(&req.path, &out)?;
-    if !existed {
-        written.push(req.path.clone());
+        target.write_all(out.as_bytes()).wrap_err_with(failed)?;
+    } else {
+        crate::system::files::create_recorded(&req.path, written, || file::write(&req.path, &out))?;
     }
     Ok(())
 }
@@ -1227,6 +1235,52 @@ fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn apply_one_records_an_existing_file_only_once_it_is_opened_for_writing() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join(".zshrc");
+        file::write(&path, "before\n")?;
+        let req = EditRequest {
+            path_raw: path.to_string_lossy().to_string(),
+            path: path.clone(),
+            id: "activate".into(),
+            op: EditOp::Line {
+                line: "eval \"$(mise activate zsh)\"".into(),
+                position: LinePosition::Append,
+            },
+            base: dir.path().to_path_buf(),
+            config_path: dir.path().join("mise.toml"),
+            origin: ResourceOrigin {
+                config: dir.path().join("mise.toml"),
+                config_root: dir.path().to_path_buf(),
+                environment: vec![],
+                source: None,
+            },
+        };
+
+        // a writable file is recorded and edited
+        let mut written = vec![];
+        apply_one(&req, None, &mut written)?;
+        assert_eq!(written, vec![path.clone()]);
+        assert!(file::read_to_string(&path)?.contains("mise activate"));
+
+        // a read-only file cannot be opened for truncation: nothing changes
+        // and nothing is recorded (root can open it regardless, so the case
+        // is skipped there)
+        file::write(&path, "before\n")?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444))?;
+        if std::fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            return Ok(());
+        }
+        let mut written = vec![];
+        assert!(apply_one(&req, None, &mut written).is_err());
+        assert!(written.is_empty());
+        assert_eq!(file::read_to_string(&path)?, "before\n");
+        Ok(())
+    }
 
     #[test]
     fn test_infer_comment() {

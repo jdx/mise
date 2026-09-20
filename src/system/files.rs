@@ -3477,19 +3477,15 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                     if let Some(parent) = target.parent() {
                         file::create_dir_all(parent)?;
                     }
-                    // an existing file is truncated in place by the copy,
-                    // so it counts as mutated from the moment the copy
-                    // starts; a link is replaced
-                    let existed = target.is_symlink() || target.exists();
                     if target.is_symlink() {
+                        // a link is replaced: recorded once it is gone
                         file::remove_file(&target)?;
-                    }
-                    if existed {
                         written.push(target.clone());
-                    }
-                    file::copy(&source, &target)?;
-                    if !existed {
-                        written.push(target);
+                        file::copy(&source, &target)?;
+                    } else if target.is_file() {
+                        overwrite_recorded(&source, &target, written)?;
+                    } else {
+                        create_recorded(&target, written, || file::copy(&source, &target))?;
                     }
                 }
             } else {
@@ -3569,24 +3565,63 @@ fn remove_existing(path: &Path) -> Result<bool> {
     Ok(true)
 }
 
+/// Overwrite the existing regular file at `target` with `source` in place,
+/// as `file::copy` would (content and permission bits), recording the target
+/// in `written` once it has been opened for truncation — the first mutation.
+/// An open that fails (a read-only file or filesystem) changes nothing and
+/// records nothing.
+fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
+    let failed = || {
+        format!(
+            "failed copy: {} -> {}",
+            source.display_user(),
+            target.display_user()
+        )
+    };
+    let mut from = std::fs::File::open(source).wrap_err_with(failed)?;
+    let mut to = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(target)
+        .wrap_err_with(failed)?;
+    written.push(target.to_path_buf());
+    std::io::copy(&mut from, &mut to).wrap_err_with(failed)?;
+    to.set_permissions(from.metadata()?.permissions())
+        .wrap_err_with(failed)?;
+    Ok(())
+}
+
+/// Run `write` against a `target` that does not exist yet, recording the
+/// target in `written` if it exists afterwards: after a successful write,
+/// and after one that failed only once it had created the file (its on-disk
+/// state changed either way). A write that failed before creating anything
+/// records nothing.
+pub(crate) fn create_recorded(
+    target: &Path,
+    written: &mut Vec<PathBuf>,
+    write: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let result = write();
+    if result.is_ok() || std::fs::symlink_metadata(target).is_ok() {
+        written.push(target.to_path_buf());
+    }
+    result
+}
+
 /// Clear `target` and run `write` in its place, recording the target in
 /// `written` at its first mutation: right after the removal when something
 /// was there (a write that then fails still leaves the old content gone),
-/// otherwise once the write succeeds.
+/// otherwise as [`create_recorded`] does.
 fn replace_recorded(
     target: &Path,
     written: &mut Vec<PathBuf>,
     write: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
-    let removed = remove_existing(target)?;
-    if removed {
+    if remove_existing(target)? {
         written.push(target.to_path_buf());
+        return write();
     }
-    write()?;
-    if !removed {
-        written.push(target.to_path_buf());
-    }
-    Ok(())
+    create_recorded(target, written, write)
 }
 
 /// `allow_windows_symlink` is false for `symlink-each`, which stays on the Windows copy path:
@@ -4064,6 +4099,82 @@ variants = [{{ {field} = "linux" }}]"#
             .is_err()
         );
         assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn create_recorded_lists_a_target_the_failed_write_created() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let target = dir.path().join("created");
+        // the write created the file before failing: its state changed
+        let mut written = vec![];
+        let result = create_recorded(&target, &mut written, || {
+            file::write(&target, "partial")?;
+            bail!("disk full")
+        });
+        assert!(result.is_err());
+        assert_eq!(written, vec![target.clone()]);
+        // the write failed before creating anything: nothing to reload
+        let target = dir.path().join("never");
+        let mut written = vec![];
+        let result = create_recorded(&target, &mut written, || bail!("permission denied"));
+        assert!(result.is_err());
+        assert!(written.is_empty());
+        // and a successful write is recorded as before
+        let mut written = vec![];
+        create_recorded(&target, &mut written, || file::write(&target, "ok"))?;
+        assert_eq!(written, vec![target]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_copy_records_an_existing_file_only_once_it_is_opened_for_writing() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(&source)?;
+        file::write(source.join("a.toml"), "new")?;
+        let target = dir.path().join("target");
+        file::create_dir_all(&target)?;
+        file::write(target.join("a.toml"), "old")?;
+
+        // an existing writable file is overwritten in place and recorded
+        let mut written = vec![];
+        apply_one(
+            &link_req(&source, &target, FileMode::Copy),
+            None,
+            &mut written,
+        )?;
+        assert_eq!(written, vec![target.join("a.toml")]);
+        assert_eq!(file::read_to_string(target.join("a.toml"))?, "new");
+
+        // a read-only existing file cannot be opened for truncation: nothing
+        // changes and nothing is recorded (root can open it regardless, so
+        // the case is skipped there)
+        file::write(target.join("a.toml"), "old")?;
+        std::fs::set_permissions(
+            target.join("a.toml"),
+            std::fs::Permissions::from_mode(0o444),
+        )?;
+        if std::fs::OpenOptions::new()
+            .write(true)
+            .open(target.join("a.toml"))
+            .is_ok()
+        {
+            return Ok(());
+        }
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(written.is_empty());
+        assert_eq!(file::read_to_string(target.join("a.toml"))?, "old");
         Ok(())
     }
 
