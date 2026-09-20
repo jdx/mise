@@ -639,7 +639,7 @@ pub(crate) fn expand(
         Some(path) if path.trim().is_empty() => {
             bail!("[daemons.{name}].data_dir must not be empty")
         }
-        Some(path) => root.join(path),
+        Some(path) => root.join(crate::file::replace_path(path)),
         None => state_dir(root).join("data").join(name),
     };
     // Resolve the proxy before rendering, so a preset's own default label and a
@@ -1304,6 +1304,20 @@ mod tests {
             daemon.data_dir,
             Some(state_dir(Path::new("/project")).join("data/postgres"))
         );
+    }
+
+    #[test]
+    fn custom_data_directory_expands_home_before_resolving_from_root() {
+        let daemon = render("postgres", toml::toml! { data_dir = "~/my postgres" });
+        let expected = crate::env::HOME.join("my postgres");
+        assert_eq!(daemon.data_dir.as_ref(), Some(&expected));
+        assert!(
+            daemon.table["run"]
+                .as_str()
+                .unwrap()
+                .contains(&quote(expected.to_string_lossy()))
+        );
+        assert!(!daemon.table.contains_key("data_dir"));
     }
 
     #[test]

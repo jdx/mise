@@ -969,7 +969,7 @@ data_dir = ".data/postgres"
 ```
 
 Relative paths resolve from the declaring project's root; absolute paths are also
-accepted. Add `/.data/` to `.gitignore`. Each worktree then owns its data while
+accepted, and `~/` expands to your home directory. Add `/.data/` to `.gitignore`. Each worktree then owns its data while
 runtime state and generated configuration remain in mise's state directory.
 Avoid pointing simultaneously running instances at the same directory.
 
