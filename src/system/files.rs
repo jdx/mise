@@ -3478,7 +3478,10 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                         file::create_dir_all(parent)?;
                     }
                     if target.is_symlink() {
-                        // a link is replaced: recorded once it is gone
+                        // a link is replaced: recorded once it is gone. The
+                        // source is checked first, as `fs::copy` would, so
+                        // one that cannot be copied leaves the link alone
+                        ensure_copy_source(&source, &target)?;
                         file::remove_file(&target)?;
                         written.push(target.clone());
                         file::copy(&source, &target)?;
@@ -3577,6 +3580,25 @@ fn remove_existing(path: &Path) -> Result<bool> {
         return Ok(false);
     }
     Ok(true)
+}
+
+/// The check `fs::copy` performs before it touches its destination: the
+/// source must be a regular file (or a link to one).
+fn ensure_copy_source(source: &Path, target: &Path) -> Result<()> {
+    let failed = || {
+        format!(
+            "failed copy: {} -> {}",
+            source.display_user(),
+            target.display_user()
+        )
+    };
+    if !std::fs::metadata(source).wrap_err_with(failed)?.is_file() {
+        bail!(
+            "{}: the source path is neither a regular file nor a symlink to a regular file",
+            failed()
+        );
+    }
+    Ok(())
 }
 
 /// Overwrite the existing regular file at `target` with `source` in place,
@@ -4147,6 +4169,34 @@ variants = [{{ {field} = "linux" }}]"#
             .is_err()
         );
         assert_eq!(file::read_to_string(target.join("entry"))?, "keep me");
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_copy_leaves_an_existing_link_alone_when_the_source_is_not_a_file() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("real"))?;
+        std::os::unix::fs::symlink(source.join("real"), source.join("entry"))?;
+        let elsewhere = dir.path().join("elsewhere");
+        file::write(&elsewhere, "keep me")?;
+        let target = dir.path().join("target");
+        file::create_dir_all(&target)?;
+        std::os::unix::fs::symlink(&elsewhere, target.join("entry"))?;
+
+        // the source cannot be copied, so the link it would replace stays
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert_eq!(std::fs::read_link(target.join("entry"))?, elsewhere);
         assert!(written.is_empty());
         Ok(())
     }
