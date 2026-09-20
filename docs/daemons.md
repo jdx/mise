@@ -950,7 +950,7 @@ for enabling the proxy and trusting its certificate.
 ## Data and configuration
 
 Mise generates configuration under `$MISE_STATE_DIR/daemons/<project-hash>/` and
-registers it with pitchfork. Nothing is written into the project tree. Registered
+registers it with pitchfork. By default, nothing is written into the project tree. Registered
 files override ordinary pitchfork definitions with the same daemon ID. Edit the
 source `[daemons]` declaration, not the generated file.
 
@@ -958,6 +958,26 @@ Data lives in `data/<daemon-name>/` beside the generated configuration. It survi
 version-request changes and daemon removal; mise never deletes it automatically.
 Major-version changes require an explicit migration or reset. Incompatible data
 fails before startup.
+
+To keep a preset's data inside each checkout, set `data_dir`:
+
+```toml
+[daemons.postgres]
+preset = "postgres"
+version = "18"
+data_dir = ".data/postgres"
+```
+
+Relative paths resolve from the declaring project's root; absolute paths are also
+accepted, and `~/` expands to your home directory. Add `/.data/` to `.gitignore`. Each worktree then owns its data while
+runtime state and generated configuration remain in mise's state directory.
+Avoid pointing simultaneously running instances at the same directory.
+
+Changing `data_dir` does not move existing data. Stop the daemon before copying
+or migrating its data, and retain a backup until the new location is verified.
+`mise daemons prune` only removes generated state; it leaves data outside that
+state directory untouched. Removing a worktree
+or cleaning ignored files can delete data stored inside it.
 
 First-time initialization is serialized and runs in a staging directory. Mise
 moves the data into place only after initialization succeeds. When setup requires a live server,
@@ -978,14 +998,15 @@ Changed definitions take effect on the next start or explicit restart.
 Use `mise daemons ls --json` to locate a project's daemon data and check its size
 before deleting the project or a worktree. Each daemon row includes:
 
-| Field             | Value                                                                       |
-| ----------------- | --------------------------------------------------------------------------- |
-| `root`            | Project directory                                                           |
-| `state_dir`       | Directory containing the project's generated configuration, state, and data |
-| `data_size`       | Total size of the project's daemon data in bytes                            |
-| `data_size_human` | The same size formatted for display                                         |
+| Field             | Value                                                                         |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `root`            | Project directory                                                             |
+| `data_dir`        | Resolved preset data directory (`null` for custom commands)                   |
+| `state_dir`       | Directory containing generated configuration, state, and default data         |
+| `data_size`       | Total size of default data under `state_dir` in bytes (excludes custom paths) |
+| `data_size_human` | The same size formatted for display                                           |
 
-These fields describe the whole project, so daemons from the same project report
+Except for `data_dir`, these fields describe the whole project, so daemons from the same project report
 the same values.
 
 ### Pruning deleted projects

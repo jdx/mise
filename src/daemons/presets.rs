@@ -635,7 +635,13 @@ pub(crate) fn expand(
         warn!("[daemons.{name}] {preset_name} option {key:?} has no effect with {other:?} set");
     }
 
-    let data = state_dir(root).join("data").join(name);
+    let data = match super::take_string(&mut overrides, "data_dir")? {
+        Some(path) if path.trim().is_empty() => {
+            bail!("[daemons.{name}].data_dir must not be empty")
+        }
+        Some(path) => root.join(crate::file::replace_path(path)),
+        None => state_dir(root).join("data").join(name),
+    };
     // Resolve the proxy before rendering, so a preset's own default label and a
     // user override both reach `{{ url }}`. `proxy` and `proxy_tls` are the two
     // override keys that have to be applied early; everything else in
@@ -738,6 +744,7 @@ pub(crate) fn expand(
         root: root.into(),
         table,
         preset: Some(preset_name.into()),
+        data_dir: Some(data.into()),
         task: None,
         tool: Some((tool, version.into())),
         exports,
@@ -1275,6 +1282,69 @@ mod tests {
                     "unrendered export in {name}: {value}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn custom_data_directory_is_root_relative_and_shell_quoted() {
+        for path in [
+            ".data/my postgres",
+            "/tmp/my postgres",
+            ".data/it's postgres",
+        ] {
+            let daemon = render("postgres", toml::toml! { data_dir = path });
+            let expected = Path::new("/project").join(path);
+            assert_eq!(daemon.data_dir.as_ref(), Some(&expected));
+            let run = daemon.table["run"].as_str().unwrap();
+            assert!(run.contains(&quote(expected.to_string_lossy())));
+            assert!(!daemon.table.contains_key("data_dir"));
+        }
+        let daemon = render("postgres", toml::Table::new());
+        assert_eq!(
+            daemon.data_dir,
+            Some(state_dir(Path::new("/project")).join("data/postgres"))
+        );
+    }
+
+    #[test]
+    fn custom_data_directory_expands_home_before_resolving_from_root() {
+        let daemon = render("postgres", toml::toml! { data_dir = "~/my postgres" });
+        let expected = crate::env::HOME.join("my postgres");
+        assert_eq!(daemon.data_dir.as_ref(), Some(&expected));
+        assert!(
+            daemon.table["run"]
+                .as_str()
+                .unwrap()
+                .contains(&quote(expected.to_string_lossy()))
+        );
+        assert!(!daemon.table.contains_key("data_dir"));
+    }
+
+    #[test]
+    fn custom_data_directory_rejects_empty_or_non_string_values() {
+        for value in [
+            toml::Value::String(String::new()),
+            toml::Value::String("  ".into()),
+            toml::Value::Integer(42),
+        ] {
+            let mut overrides = toml::Table::new();
+            overrides.insert("data_dir".into(), value);
+            let error = expand(
+                "postgres",
+                "postgres",
+                "18",
+                overrides,
+                Extras {
+                    init: &[],
+                    port: None,
+                    labels: &labels(),
+                    imported: false,
+                },
+                Path::new("/project/mise.toml"),
+                Path::new("/project"),
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("data_dir"));
         }
     }
 

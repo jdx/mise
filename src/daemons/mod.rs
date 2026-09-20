@@ -127,6 +127,8 @@ pub(crate) struct Daemon {
     pub root: PathBuf,
     pub table: toml::Table,
     pub preset: Option<String>,
+    /// Resolved persistent storage for presets, independent of runtime state.
+    pub data_dir: Option<PathBuf>,
     /// Task this daemon runs, when declared with `task = "..."`. Retained so
     /// the reference can be checked against the loaded task list, which is not
     /// available while configuration is still being parsed.
@@ -884,6 +886,7 @@ fn build(
         root,
         table,
         preset: None,
+        data_dir: None,
         task,
         tool: None,
         exports,

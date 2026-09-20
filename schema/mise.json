@@ -6030,6 +6030,11 @@
               ]
             },
             "properties": {
+              "data_dir": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Persistent preset data directory, relative to the declaring project root or absolute. Defaults to mise state storage."
+              },
               "preset": {
                 "type": "string",
                 "enum": ["cockroachdb", "nats", "postgres", "redis", "spicedb"]
