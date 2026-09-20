@@ -1350,8 +1350,25 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
     if !covered {
         return PathState::Uncovered;
     }
+    let local = file::replace_path(Path::new(display));
     if let Ok(exclude) = super::tracked::ExcludeSet::new(&coverage.exclude)
-        && exclude.is_match(&file::replace_path(Path::new(display)))
+        && exclude.is_match(&local)
+    {
+        return PathState::Uncovered;
+    }
+    // the entry's own list, recorded with the checkpoint: a file it left
+    // out was never known to be absent
+    let owner = coverage
+        .entries
+        .iter()
+        .filter(|entry| under(&entry.path))
+        .max_by_key(|entry| entry.path.len());
+    if let Some(entry) = owner
+        && super::tracked::excluded_by_entry(
+            &file::replace_path(Path::new(&entry.path)),
+            &entry.exclude,
+            &local,
+        )
     {
         return PathState::Uncovered;
     }

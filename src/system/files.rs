@@ -618,11 +618,14 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
         && first.content == second.content
         && first.mode == second.mode
         && first.manifest == second.manifest
-        && first
-            .exclude
-            .iter()
-            .map(glob::Pattern::as_str)
-            .eq(second.exclude.iter().map(glob::Pattern::as_str))
+        // a track entry's list is a policy a later layer may change, like
+        // autosave; a deployment entry's list is part of what it deploys
+        && (first.mode == FileMode::Track
+            || first
+                .exclude
+                .iter()
+                .map(glob::Pattern::as_str)
+                .eq(second.exclude.iter().map(glob::Pattern::as_str)))
         && (first.mode != FileMode::Template
             || first.base == second.base
                 && config.bootstrap_tera_ctx(&first.origin.config)
@@ -3967,6 +3970,45 @@ variants = [{{ {field} = "linux" }}]"#
     #[test]
     fn test_exclude_empty_matches_nothing() {
         assert!(!is_excluded(Path::new("mise.toml"), &[]));
+    }
+
+    #[test]
+    fn a_later_layer_overrides_a_track_entry_exclude_list() {
+        let request = |exclude: Vec<&str>, explicit: bool| FileRequest {
+            target_raw: "~/.codex".into(),
+            target: PathBuf::from("/home/test/.codex"),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Track,
+            exclude: exclude
+                .into_iter()
+                .map(|p| glob::Pattern::new(p).unwrap())
+                .collect(),
+            manifest: None,
+            base: PathBuf::from("/home/test"),
+            origin: crate::system::resources::ResourceOrigin {
+                config: PathBuf::from("/home/test/.config/mise/config.toml"),
+                config_root: PathBuf::from("/home/test/.config/mise"),
+                environment: vec![],
+                source: None,
+            },
+            policy: FilePolicy {
+                explicit: ExplicitFields {
+                    exclude: explicit,
+                    ..Default::default()
+                },
+                ..FilePolicy::for_mode(FileMode::Track)
+            },
+            variants: vec![],
+            enabled: true,
+        };
+        let mut first = request(vec!["sessions"], true);
+        first.override_from(request(vec!["cache"], true));
+        assert_eq!(first.exclude[0].as_str(), "cache");
+        assert!(first.policy.explicit.exclude);
+        let mut first = request(vec!["sessions"], true);
+        first.override_from(request(vec![], false));
+        assert_eq!(first.exclude[0].as_str(), "sessions");
     }
 
     #[test]

@@ -18,6 +18,10 @@ pub(crate) struct Enrollment {
     pub autosave: bool,
     pub encrypt: bool,
     pub variants: Vec<Variant>,
+    /// The entry's own `exclude` globs, relative to its path. Written only
+    /// when set, so a setup without them stays readable by older clients.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -258,6 +262,12 @@ impl Manifest {
                         &theirs.variants,
                         &format!("{path}: variants"),
                     )?,
+                    exclude: choose(
+                        &before.exclude,
+                        &ours.exclude,
+                        &theirs.exclude,
+                        &format!("{path}: exclude"),
+                    )?,
                 }),
                 _ => choose(&before, &ours, &theirs, path)?.cloned(),
             };
@@ -330,6 +340,7 @@ impl Manifest {
             policy.encrypt = enrollment.encrypt;
             let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
             entry.variant = variant;
+            entry.exclude = enrollment.exclude.clone();
             tracked.entries.push(entry);
         }
         Ok(tracked)
@@ -876,6 +887,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
+            exclude: vec![],
         }
     }
 
@@ -948,6 +960,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: vec![],
             }],
             ..Default::default()
         };
@@ -1001,6 +1014,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![active, inactive],
+                exclude: vec![],
             }],
             ..Default::default()
         };
@@ -1071,6 +1085,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
+            exclude: vec![],
         };
         let mut manifest = Manifest {
             enrollment: vec![enrollment.clone()],
