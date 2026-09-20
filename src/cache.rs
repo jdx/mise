@@ -618,6 +618,18 @@ fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<DirPrun
     }
     for (entry, holds) in evictable {
         if entry.is_dir() {
+            // Classified once already, and classified again here: a cache
+            // writer may have published into the subtree since, and what is
+            // about to be deleted is the whole of it rather than the entries
+            // that were read. A subtree that now holds something fresh prunes
+            // by file on this pass and is evicted by a later one.
+            let recheck = prune_dir(&entry.path, true, opts)?;
+            if !recheck.all_stale {
+                removed.size += recheck.removed.size;
+                removed.count += recheck.removed.count;
+                all_stale = false;
+                continue;
+            }
             announce(&entry.path);
             if !opts.dry_run {
                 // `remove_dir_all` unlinks a symlink rather than following it,
@@ -633,8 +645,8 @@ fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<DirPrun
                     }
                 }
             }
-            removed.size += holds.size;
-            removed.count += holds.count + 1;
+            removed.size += recheck.held.size;
+            removed.count += recheck.held.count + 1;
         } else {
             remove(&entry)?;
             removed.size += holds.size;
