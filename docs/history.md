@@ -87,6 +87,17 @@ mise dot save ~/.config/app/state.json
 Tracking saves the first version immediately. Later edits wait for an
 explicit save. Check [watcher health](#health) if expected saves are missing.
 
+Before tracking a directory, see what it expands to:
+
+```sh
+mise dot track --dry-run ~/.codex
+mise dot paths --preview ~/.codex
+```
+
+Both print the file count and total size (and what a save would leave out)
+without tracking anything. Trim a large tree with a scoped exclusion such as
+`mise dot exclude '~/.codex/sessions/**'` before tracking it.
+
 ## Comparing
 
 List the checkpoints where a file changed, newest first:

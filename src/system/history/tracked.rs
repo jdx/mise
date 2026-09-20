@@ -659,6 +659,67 @@ pub(crate) fn display_under(path: &str, root: &str) -> bool {
             .is_some_and(|rest| rest.starts_with(['/', '\\']))
 }
 
+/// A tree this large is worth a second look before it is tracked: more
+/// files than this, or more bytes, and `mise dot track` warns.
+pub(crate) const LARGE_TREE_FILES: usize = 5_000;
+pub(crate) const LARGE_TREE_BYTES: u64 = 256 * 1024 * 1024;
+
+impl Walk {
+    /// How many files the walk captures.
+    pub(crate) fn file_count(&self) -> usize {
+        self.roots.iter().map(|root| root.files.len()).sum()
+    }
+
+    /// The bytes of the captured files.
+    pub(crate) fn bytes(&self) -> u64 {
+        self.roots.iter().map(|root| root.bytes).sum()
+    }
+
+    /// `22,972 files, 1.2 GiB`.
+    pub(crate) fn summary(&self) -> String {
+        count_and_size(self.file_count(), self.bytes())
+    }
+
+    /// Whether the tree is large enough to warn about before tracking it.
+    pub(crate) fn is_large(&self) -> bool {
+        self.file_count() > LARGE_TREE_FILES || self.bytes() > LARGE_TREE_BYTES
+    }
+}
+
+/// `1 file, 12 B` or `22,972 files, 1.2 GiB`.
+pub(crate) fn count_and_size(files: usize, bytes: u64) -> String {
+    format!(
+        "{} {}, {}",
+        with_separators(files),
+        if files == 1 { "file" } else { "files" },
+        bytesize::ByteSize::b(bytes).display().iec()
+    )
+}
+
+fn with_separators(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// The set tracking `path` alone would capture, under the `[history]`
+/// exclusions: what `mise dot paths --preview` lists and what `mise dot
+/// track` sizes up before it writes a declaration.
+pub(crate) fn preview_set(path: &Path, policy: Policy) -> Result<TrackedSet> {
+    let mut set = TrackedSet {
+        exclude: super::config::exclude_globs()?,
+        ..Default::default()
+    };
+    set.push(TrackedEntry::new(normalize_target(path), "track", policy));
+    Ok(set)
+}
+
 /// The lines a capture reports about what it left out: every omission and
 /// nested repository with its reason when there are few, otherwise one
 /// summary.
@@ -1336,6 +1397,31 @@ mod tests {
         assert!(walk.nested.is_empty());
         assert!(set.would_capture(&plugin.join("init.lua")).unwrap());
         assert!(!set.would_capture(&plugin.join(".git/HEAD")).unwrap());
+    }
+
+    #[test]
+    fn walk_summaries_count_files_and_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("tree");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("a"), "12345").unwrap();
+        std::fs::write(root.join("sub/b"), "123").unwrap();
+        std::fs::write(root.join("sub/secret.key"), "x").unwrap();
+        let set = preview_set(&root, Policy::for_mode(FileMode::Track)).unwrap();
+        assert_eq!(set.entries.len(), 1);
+        assert_eq!(set.entries[0].path, normalize_target(&root));
+        let walk = set.walk().unwrap();
+        assert_eq!(walk.file_count(), 2);
+        assert_eq!(walk.bytes(), 8);
+        assert_eq!(walk.summary(), "2 files, 8 B");
+        assert_eq!(walk.omitted.len(), 1);
+        assert!(!walk.is_large());
+        assert_eq!(count_and_size(1, 0), "1 file, 0 B");
+        assert_eq!(with_separators(0), "0");
+        assert_eq!(with_separators(999), "999");
+        assert_eq!(with_separators(1000), "1,000");
+        assert_eq!(with_separators(22972), "22,972");
+        assert_eq!(with_separators(1234567), "1,234,567");
     }
 
     #[test]
