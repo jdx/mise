@@ -380,10 +380,11 @@ impl DotfilesTrack {
                 Value::Boolean(toml_edit::Formatted::new(policy.autosave)),
             );
         }
-        // re-tracking keeps the entry's own exclude list, including an
-        // explicitly empty one this file wrote to clear a lower layer's
+        // re-tracking keeps the entry's own exclude list when this file
+        // wrote it (an explicitly empty one included); a list inherited
+        // from another layer stays with that layer, like the policies
         if let Some(existing) = existing
-            && (!existing.exclude.is_empty() || written("exclude"))
+            && written("exclude")
         {
             let mut list = Array::new();
             for pattern in &existing.exclude {
@@ -816,6 +817,30 @@ mod declaration_tests {
         let table = flagged.entry(Some(&inherited), &["mode".to_string()]);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(false));
         assert!(table.get("encrypt").is_none());
+        // an inherited exclude list is not pinned either; one this file
+        // wrote is kept, even when empty
+        let mut listed = existing.clone();
+        listed.exclude = vec![glob::Pattern::new("sessions").unwrap()];
+        let table = flagged.entry(Some(&listed), &["mode".to_string()]);
+        assert!(table.get("exclude").is_none());
+        let table = flagged.entry(Some(&listed), &["mode".to_string(), "exclude".to_string()]);
+        assert_eq!(
+            table
+                .get("exclude")
+                .and_then(Value::as_array)
+                .map(|a| a.len()),
+            Some(1)
+        );
+        let mut cleared = existing.clone();
+        cleared.exclude = vec![];
+        let table = flagged.entry(Some(&cleared), &["mode".to_string(), "exclude".to_string()]);
+        assert_eq!(
+            table
+                .get("exclude")
+                .and_then(Value::as_array)
+                .map(|a| a.len()),
+            Some(0)
+        );
         // the keys are read from either table form
         for text in [
             "[dotfiles]\n\"~/.zshrc\" = { mode = \"track\", autosave = true }\n",
