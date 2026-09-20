@@ -12,7 +12,7 @@ use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{
-    CREDENTIAL_REASON, TrackedSet, capture_exclusion, normalize_target, preview_set_with,
+    CREDENTIAL_REASON, TrackedEntry, TrackedSet, capture_exclusion, normalize_target,
 };
 
 /// Track a file or directory in place
@@ -86,10 +86,16 @@ impl DotfilesTrack {
         let mut locations = BTreeMap::new();
         let mut declared: Vec<(String, PathBuf)> = vec![];
         let mut manual = vec![];
-        // what each path expands to, sized up before anything is written;
-        // the exclusion globs are read once for every path of this run
+        // what each path expands to, sized up before anything is written:
+        // one walk of every target of this run beside the entries already
+        // tracked, so nested targets partition instead of the outer one
+        // counting the inner one's files too
         let exclude = crate::system::history::config::exclude_globs()?;
-        let mut previews: Vec<String> = vec![];
+        let mut preview_set = TrackedSet {
+            exclude: exclude.clone(),
+            ..Default::default()
+        };
+        let mut resolved: Vec<PathBuf> = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
                 .components()
@@ -98,6 +104,22 @@ impl DotfilesTrack {
                 bail!("{target_raw}: target must be absolute or start with ~/");
             }
             crate::system::history::tracked::ensure_portable_ancestors(&target)?;
+            let existing = managed
+                .iter()
+                .find(|req| req.target == target && req.mode == FileMode::Track);
+            preview_set.push(TrackedEntry::new(
+                normalize_target(&target),
+                "track",
+                self.policy(existing),
+            ));
+            resolved.push(target);
+        }
+        for entry in TrackedSet::from_config(&config)?.entries {
+            preview_set.push(entry);
+        }
+        let preview_walk = preview_set.walk()?;
+        let mut previews: Vec<String> = vec![];
+        for target in resolved {
             let target_key = normalized_target(&target);
             if !target.exists() && !target.is_symlink() {
                 warn!(
@@ -151,8 +173,12 @@ impl DotfilesTrack {
                 };
                 warn!("dotfiles: {target_key} will be omitted from every save ({reason}){advice}");
             }
-            let set = preview_set_with(&target, policy, exclude.clone());
-            let preview = set.walk()?;
+            let set = &preview_set;
+            let preview = preview_walk.preview_of(
+                set,
+                set.entry_index_for(&normalize_target(&target))
+                    .expect("every target is an entry of the preview set"),
+            );
             let summary = preview.summary();
             if self.dry_run {
                 miseprintln!("{target_key}: {summary}");
