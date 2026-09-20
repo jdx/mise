@@ -41,6 +41,11 @@ jobs:
       (github.event_name == 'release' && !github.event.release.prerelease) ||
       (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     runs-on: ubuntu-latest
+    # Serialize publishes per flavor so two releases cannot interleave their
+    # tag updates; the floating-tag check below handles ordering.
+    concurrency:
+      group: docker-images-${{ matrix.flavor }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -61,6 +66,7 @@ jobs:
       - name: Resolve release tag
         id: release
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           # The tag reaches shell expansions and Docker tags below, so accept
@@ -70,10 +76,26 @@ jobs:
             exit 1
           fi
           version="${TAG#v}"
+          minor="${version%.*}"
+          # Only the newest release may move the floating tags, and only the
+          # newest release of a month may move that month's tag. A delayed
+          # release event or a manual rebuild of an older tag then republishes
+          # its immutable version tag without pulling `latest` backwards.
+          releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')"
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          newest_in_minor="$(grep -m1 -x "v$minor\.[0-9]*" <<< "$releases" || true)"
+          is_latest=false
+          is_newest_in_minor=false
+          [[ "$latest" == "$TAG" ]] && is_latest=true
+          [[ "$newest_in_minor" == "$TAG" ]] && is_newest_in_minor=true
+          echo "latest release: $latest; newest in $minor: $newest_in_minor"
           {
             echo "tag=$TAG"
             echo "version=$version"
-            echo "minor=${version%.*}"
+            echo "minor=$minor"
+            echo "is_latest=$is_latest"
+            echo "is_newest_in_minor=$is_newest_in_minor"
           } >> "$GITHUB_OUTPUT"
       - name: Download and verify release binaries
         env:
@@ -124,8 +146,8 @@ jobs:
             ghcr.io/jdx/mise
           tags: |
             type=raw,value=${{ steps.release.outputs.version }}${{ matrix.tag_suffix }}
-            type=raw,value=${{ steps.release.outputs.minor }}${{ matrix.tag_suffix }}
-            type=raw,value=${{ matrix.floating_tag }}
+            type=raw,value=${{ steps.release.outputs.minor }}${{ matrix.tag_suffix }},enable=${{ steps.release.outputs.is_newest_in_minor }}
+            type=raw,value=${{ matrix.floating_tag }},enable=${{ steps.release.outputs.is_latest }}
           labels: |
             org.opencontainers.image.version=${{ steps.release.outputs.version }}
       - name: Build and push

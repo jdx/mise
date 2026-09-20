@@ -9,6 +9,7 @@ on: # zizmor: ignore[dangerous-triggers] no permissions, no checkout, and it onl
     workflows:
       - cloudflare-deploy
       - copr-publish
+      - docker
       - docs
       - npm-publish
       - ppa-publish
