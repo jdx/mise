@@ -1222,17 +1222,12 @@ impl State {
         {
             return false;
         }
-        if self.exclude.is_match(path) {
-            return false;
-        }
-        match self.watched.entry_for(path) {
-            Some(entry) => {
-                entry.policy.autosave
-                    && !entry.is_excluded(path)
-                    && !tracked::inside_nested_repository(entry, path)
-            }
-            None => false,
-        }
+        // exclusion is read relative to the entry that owns the path, so
+        // the owner is found first
+        self.watched
+            .entry_for(path)
+            .is_some_and(|entry| entry.policy.autosave && !tracked::inside_nested_repository(entry, path))
+            && !self.watched.excluded_by_lists(&self.exclude, path)
     }
 
     /// Whether a path that does not exist right now may still be one the
@@ -1241,19 +1236,18 @@ impl State {
     /// target between two versions, say. A path nothing declares for
     /// automatic saving any more is not kept for being missing.
     fn may_cover_missing(&self, path: &Path) -> bool {
-        if self.hard.iter().any(|dir| path.starts_with(dir)) || self.exclude.is_match(path) {
+        if self.hard.iter().any(|dir| path.starts_with(dir)) {
             return false;
         }
-        self.watched.entry_for(path).is_some_and(|entry| {
-            entry.policy.autosave
-                && !entry.is_excluded(path)
-                && !tracked::inside_nested_repository(entry, path)
-        }) || self.tracked.entry_for(path).is_some_and(|entry| {
-            entry.policy.autosave
-                && !entry.is_excluded(path)
-                && !tracked::inside_nested_repository(entry, path)
-                && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
-        })
+        (self
+            .watched
+            .entry_for(path)
+            .is_some_and(|entry| entry.policy.autosave && !tracked::inside_nested_repository(entry, path))
+            && !self.watched.excluded_by_lists(&self.exclude, path))
+            || (self.tracked.entry_for(path).is_some_and(|entry| {
+                entry.policy.autosave && !tracked::inside_nested_repository(entry, path)
+                    && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
+            }) && !self.tracked.excluded_by_lists(&self.exclude, path))
     }
 }
 

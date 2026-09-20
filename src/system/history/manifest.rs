@@ -172,10 +172,7 @@ impl Manifest {
         });
         for (display, bits) in modes {
             let path = crate::file::replace_path(display);
-            let owner = entries
-                .iter()
-                .filter(|entry| path.starts_with(&entry.path))
-                .max_by_key(|entry| entry.path.components().count());
+            let owner = super::tracked::owning_entry(entries, &path);
             let contains_entries = entries
                 .iter()
                 .any(|entry| entry.path.starts_with(&path) && entry.path != path);
@@ -370,11 +367,14 @@ impl Manifest {
         paths
     }
 
+    /// The enrollment that owns a portable path: the most specific one,
+    /// by component count, as [`crate::system::history::tracked::owning_entry`]
+    /// decides for live paths. Byte length is not the same rule.
     fn owner(&self, path: &str) -> Option<&Enrollment> {
         self.enrollment
             .iter()
             .filter(|entry| path == entry.path || strictly_below(path, &entry.path))
-            .max_by_key(|entry| entry.path.len())
+            .max_by_key(|entry| entry.path.split('/').count())
     }
 
     /// Carry inactive streams and repository-owned files from the same parent
