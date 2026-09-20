@@ -1802,9 +1802,34 @@ pub(super) fn remove_stale_versions(token_dir: &Path, current_version: &str) -> 
     Ok(())
 }
 
+/// The last path segment of `raw`, percent-decoded.
+///
+/// Cask URLs escape characters that are literal in the artifact the cask
+/// declares: Google Fonts serves `MPLUS1Code%5Bwght%5D.ttf` for
+/// font-m-plus-1-code's `font "MPLUS1Code[wght].ttf"`. A raw (non-archive)
+/// download is staged under this name, so an encoded one never matches the
+/// artifact lookup. Homebrew unescapes the same basename.
+///
+/// Decoding can also produce a name that would escape the staging directory
+/// (`%2F`, `%2E%2E`) or that no filesystem accepts, so an unusable result falls
+/// back to the encoded segment — which is the value this returned before
+/// decoding, and is inert as a path component.
 pub(super) fn archive_filename(raw: &str) -> Option<String> {
     let url = url::Url::parse(raw).ok()?;
-    url.path_segments()?.next_back().map(str::to_string)
+    let segment = url.path_segments()?.next_back()?;
+    Some(decoded_path_segment(segment).unwrap_or_else(|| segment.to_string()))
+}
+
+fn decoded_path_segment(segment: &str) -> Option<String> {
+    let decoded = urlencoding::decode(segment).ok()?.into_owned();
+    let unusable = decoded.is_empty()
+        || decoded == "."
+        || decoded == ".."
+        || decoded.ends_with([' ', '.'])
+        || decoded.chars().any(|c| {
+            c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        });
+    (!unusable).then_some(decoded)
 }
 
 pub(super) fn split_tap_name(name: &str) -> Option<(&str, &str, &str)> {

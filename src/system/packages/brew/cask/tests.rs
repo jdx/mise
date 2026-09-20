@@ -4246,6 +4246,71 @@ fn detects_a_single_nested_dmg() -> Result<()> {
 }
 
 #[test]
+fn archive_filename_decodes_percent_escapes() {
+    assert_eq!(
+        archive_filename(
+            "https://github.com/google/fonts/raw/main/ofl/mplus1code/MPLUS1Code%5Bwght%5D.ttf"
+        ),
+        Some("MPLUS1Code[wght].ttf".to_string())
+    );
+    assert_eq!(
+        archive_filename(
+            "https://github.com/google/fonts/raw/main/ofl/aronesans/AROneSans%5BARRR%2Cwght%5D.ttf"
+        ),
+        Some("AROneSans[ARRR,wght].ttf".to_string())
+    );
+    assert_eq!(
+        archive_filename("https://example.com/Some%20App%201.2.dmg"),
+        Some("Some App 1.2.dmg".to_string())
+    );
+}
+
+#[test]
+fn archive_filename_keeps_escapes_that_decode_to_an_unusable_name() {
+    // A decoded separator or traversal would escape the staging directory, and
+    // the encoded segment is inert as a path component.
+    for url in [
+        "https://example.com/evil%2F..%2Fpwned.ttf",
+        "https://example.com/%2E%2E",
+        "https://example.com/tool%00.pkg",
+    ] {
+        let name = archive_filename(url).expect("url has a final path segment");
+        assert!(
+            !name.contains(['/', '\\']) && name != ".." && !name.contains('\0'),
+            "{url} staged as {name}"
+        );
+    }
+}
+
+#[test]
+fn stages_a_font_whose_url_percent_encodes_its_name() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let archive = tmp.path().join("cached-name");
+    std::fs::write(&archive, b"\0\x01\0\0font")?;
+    let mut cask = test_cask("font-m-plus-1-code", "1.0.0");
+    cask.url = "https://github.com/google/fonts/raw/main/ofl/mplus1code/MPLUS1Code%5Bwght%5D.ttf"
+        .to_string();
+    cask.artifacts = vec![serde_json::json!({
+        "font": ["MPLUS1Code[wght].ttf"],
+        "target": "/$HOME/Library/Fonts/MPLUS1Code[wght].ttf",
+    })];
+
+    // The staged name is what `stage_font` then looks the artifact up by.
+    let (staged, _) = raw_cask_artifact_name(&cask, &archive, "cached-name")?;
+    assert_eq!(staged, "MPLUS1Code[wght].ttf");
+
+    let stage = tmp.path().join("stage");
+    std::fs::create_dir_all(&stage)?;
+    std::fs::write(stage.join(&staged), b"font")?;
+    let font = cask_artifacts(&cask)?.fonts.into_iter().next().unwrap();
+    assert_eq!(
+        find_file_artifact(&stage, &font.source),
+        Some(stage.join(&staged))
+    );
+    Ok(())
+}
+
+#[test]
 fn raw_executable_keeps_url_filename() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let archive = tmp.path().join("cached-name");
