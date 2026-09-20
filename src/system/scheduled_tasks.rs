@@ -328,10 +328,14 @@ fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
         );
     };
     let path = quote_argument(&launch_path(&request.name, &digest).to_string_lossy());
+    // the name goes last, after `--`: a service may be named `-agent`, and
+    // as a bare positional that would be read as options and never reach the
+    // launcher. Names are letters, digits, `.`, `_` and `-`, so nothing here
+    // needs quoting.
     Ok((
         mise.to_string(),
         format!(
-            "bootstrap __service-exec {} --launch {path} --digest {digest}",
+            "bootstrap __service-exec --launch {path} --digest {digest} -- {}",
             request.name
         ),
     ))
@@ -781,7 +785,7 @@ mod tests {
         let path = launch_path("agent", &digest);
         assert!(path.is_absolute(), "{}", path.display());
         let expected = format!(
-            "<Arguments>bootstrap __service-exec agent --launch {} --digest {digest}</Arguments>",
+            "<Arguments>bootstrap __service-exec --launch {} --digest {digest} -- agent</Arguments>",
             escape(&quote_argument(&path.to_string_lossy()))
         );
         assert!(xml.contains(&expected), "{xml}\nexpected {expected}");
@@ -864,6 +868,18 @@ mod tests {
         request.environment.insert("A".into(), "one\0two".into());
         let err = render_xml(&request, "me").unwrap_err().to_string();
         assert!(err.contains("contains a NUL"), "{err}");
+    }
+
+    /// A service may be named `-agent`; the action must still name it in a
+    /// way the launcher parses rather than reading it as options.
+    #[test]
+    fn a_name_that_looks_like_options_still_reaches_the_launcher() {
+        let mut request = ScheduledTaskRequest::new("-agent");
+        request.command = "C:\\Tools\\agent.exe --serve".to_string();
+        request.launcher = Some("mise.exe".to_string());
+        request.environment.insert("A".into(), "1".into());
+        let xml = render_xml(&request, "me").unwrap();
+        assert!(xml.contains(" -- -agent</Arguments>"), "{xml}");
     }
 
     /// A path with a space in it still reaches the launcher as one argument.

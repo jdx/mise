@@ -1610,11 +1610,12 @@ mod tests {
             "mise",
             "bootstrap",
             "__service-exec",
-            "mise-history",
             "--launch",
             "C:\\state\\mise-history.launches/abc.json",
             "--digest",
             "abc",
+            "--",
+            "mise-history",
         ]));
 
         // every other dotfiles command has a terminal reading it

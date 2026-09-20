@@ -44,7 +44,7 @@ builtin = "history-watch"
         # sets one runs through mise, which applies it. Nothing the
         # declaration holds reaches a command line on the way: the
         # environment travels beside the definition, named by its digest.
-        $agent.definition | Should -BeLike '*<Arguments>bootstrap __service-exec agent --launch *--digest *'
+        $agent.definition | Should -BeLike '*<Arguments>bootstrap __service-exec --launch *--digest * -- agent</Arguments>*'
         $agent.definition | Should -Not -BeLike '*cmd.exe*'
         $agent.definition | Should -Not -BeLike '*RUST_LOG*'
         $agent.current | Should -Be 'not installed'
