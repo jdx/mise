@@ -182,6 +182,16 @@ impl DotfilesTrack {
                     miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);
                 }
             }
+            // a truncated tree must be visible before it is approved, since
+            // the baseline walks under the same cap
+            if !self.dry_run {
+                for incomplete in &preview.incomplete {
+                    warn!(
+                        "dotfiles: {}: {}; the rest would not be captured either",
+                        incomplete.path, incomplete.reason
+                    );
+                }
+            }
             if preview.is_large() {
                 warn!(
                     "dotfiles: {target_key} is a large tree ({summary}); exclude what does not belong in history, for example `mise dot exclude '{target_key}/<subdir>/**'`, or track its files individually"
