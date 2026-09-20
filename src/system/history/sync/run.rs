@@ -44,6 +44,13 @@ pub(crate) struct PendingApplication {
     pub local: Option<Object>,
 }
 
+/// A path sync leaves alone, and why; listed by `mise dot status`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct SkippedPath {
+    pub branch_path: String,
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Resolution {
     pub local: Option<Object>,
@@ -78,6 +85,9 @@ pub(crate) struct SyncStatus {
     pub conflicts: Vec<Conflict>,
     #[serde(default)]
     pub pending_applications: Vec<PendingApplication>,
+    /// Paths neither applied nor removed, with why (nested repositories).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<SkippedPath>,
     /// Repository metadata and inactive streams can change without live writes.
     #[serde(default)]
     pub pending_repository: bool,
@@ -607,6 +617,15 @@ fn record_pending(
         .iter()
         .filter_map(|plan| plan.conflict.clone())
         .collect();
+    status.skipped = plans
+        .iter()
+        .filter_map(|plan| {
+            Some(SkippedPath {
+                branch_path: plan.branch_path.clone(),
+                reason: plan.skipped.clone()?,
+            })
+        })
+        .collect();
     status.pending_applications = plans
         .iter()
         .filter(|plan| plan.conflict.is_none())
@@ -738,7 +757,8 @@ fn prepare(
         // machine no longer declares or selects.
         plans.retain(|plan| eligible(&roots, set, &plan.branch_path));
         for (path, object) in shared {
-            if !eligible(&roots, set, path)
+            if reconcile::is_gitlink(Some(object))
+                || !eligible(&roots, set, path)
                 || local_manifest.file_permissions(path, Some(object))
                     == set.manifest.file_permissions(path, Some(object))
             {

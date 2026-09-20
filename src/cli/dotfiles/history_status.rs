@@ -15,6 +15,10 @@ pub(crate) struct HistoryReport {
     /// Files under a tracked entry that every save leaves out, with why.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<crate::system::history::store::PathReason>,
+    /// Nested repositories under a tracked entry, saved as a commit pointer
+    /// without their files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested: Vec<crate::system::history::store::PathReason>,
     pub checkpoints: usize,
     pub latest: Option<LatestReport>,
     pub pending_operations: usize,
@@ -44,6 +48,9 @@ pub(crate) struct SyncReport {
     pub consecutive_failures: u32,
     pub application_failure: Option<String>,
     pub validation_error: Option<String>,
+    /// Paths sync neither applies nor removes, with why.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<(String, String)>,
 }
 
 pub(crate) fn sync_report(
@@ -87,6 +94,16 @@ pub(crate) fn sync_report(
         consecutive_failures: status.consecutive_failures,
         application_failure: status.application_failure.clone(),
         validation_error: status.validation_error.clone(),
+        skipped: status
+            .skipped
+            .iter()
+            .filter_map(|skipped| {
+                roots
+                    .locate(&skipped.branch_path)
+                    .path()
+                    .map(|path| (crate::file::display_path(path), skipped.reason.clone()))
+            })
+            .collect(),
     }))
 }
 
@@ -107,6 +124,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             tracked_entries: 0,
             tracked_files: 0,
             omitted: vec![],
+            nested: vec![],
             checkpoints: 0,
             latest: None,
             pending_operations: 0,
@@ -134,6 +152,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         tracked_entries: tracked.entries.len(),
         tracked_files,
         omitted: walk.omitted,
+        nested: walk.nested,
         checkpoints: entries.len(),
         latest,
         pending_operations,
@@ -168,10 +187,10 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
         ),
         None => miseprintln!("  no checkpoint recorded yet; `mise dot save` records one."),
     }
-    if !report.omitted.is_empty() {
+    if !report.omitted.is_empty() || !report.nested.is_empty() {
         miseprintln!(
             "  {}.",
-            crate::system::history::tracked::omission_summary(&report.omitted)
+            crate::system::history::tracked::omission_summary(&report.omitted, &report.nested)
         );
     }
     if report.pending_operations > 0 {
@@ -238,6 +257,9 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             }
             if let Some(error) = &sync.validation_error {
                 miseprintln!("  incoming setup is invalid: {error}");
+            }
+            for (path, reason) in &sync.skipped {
+                miseprintln!("  not shared: {path} ({reason})");
             }
         }
     }

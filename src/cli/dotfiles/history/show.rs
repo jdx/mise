@@ -128,6 +128,9 @@ impl HistoryShow {
         for omitted in &coverage.omitted {
             miseprintln!("  omitted: {} ({})", omitted.path, omitted.reason);
         }
+        for nested in &coverage.nested {
+            miseprintln!("  nested: {} ({})", nested.path, nested.reason);
+        }
         for incomplete in &coverage.incomplete {
             miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);
         }

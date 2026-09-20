@@ -896,12 +896,27 @@ records that mode, so a fresh machine recreates the directory private rather
 than world-readable. Home and the configuration directory themselves are
 never recorded.
 
-A symlink is saved as a link. A nested Git repository is saved as a pointer
-to its commit. mise reports oversized files, special files, and unreadable
-paths it cannot save. It keeps their previous saved versions while saving
-other files, so check reported omissions before relying on a checkpoint.
-Explicit exclusions remove paths from future checkpoints. Encryption
-failures stop a save rather than storing plaintext.
+A symlink is saved as a link. mise reports oversized files, special files,
+and unreadable paths it cannot save. It keeps their previous saved versions
+while saving other files, so check reported omissions before relying on a
+checkpoint. Explicit exclusions remove paths from future checkpoints.
+Encryption failures stop a save rather than storing plaintext.
+
+A directory with its own `.git` inside a tracked tree (a plugin cloned
+into `~/.hammerspoon/Spoons`, a vendored theme) is a nested repository.
+A checkpoint records only its commit id, as a Git pointer: its files are
+not saved, not shared with other machines, and not restored by a rollback.
+`mise dot save`, `mise dot track`, `mise dot status`, and `mise dot paths`
+report each nested repository, and `mise dot pull` lists the pointer as
+skipped rather than creating an empty directory, failing on it, or
+pausing the setup because another machine's pointer differs. The pointer
+itself still travels with the shared history, so two machines that have
+the same repository at different commits each publish their own and the
+shared branch alternates between them on every sync; that is noisy, but
+touches no file on disk. To save its files, track the directory as its
+own entry (`mise dot track ~/.hammerspoon/Spoons/Sky.spoon`) or remove
+its `.git` so it becomes ordinary content; otherwise leave it to the tool
+that installs it.
 
 Commands that modify or capture tracked files save checkpoints before and
 after their work. Their metadata includes operation labels and the link

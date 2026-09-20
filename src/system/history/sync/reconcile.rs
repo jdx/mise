@@ -128,6 +128,10 @@ pub(crate) struct Conflict {
     pub base: Option<Object>,
 }
 
+/// Why sync neither applies nor removes a nested repository: the pointer
+/// travels with the published tree, but the objects it names live in
+/// another repository.
+pub(crate) const NESTED_NOT_SHARED: &str = "nested repository; its files are not shared";
 /// What one path needs after reconciliation.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PathPlan {
@@ -137,6 +141,8 @@ pub(crate) struct PathPlan {
     /// `Some(None)` applies a deletion.
     pub apply: Option<Option<Object>>,
     pub conflict: Option<Conflict>,
+    /// Why the path is neither applied nor removed here, when it is not.
+    pub skipped: Option<String>,
     /// The record after publication succeeds (application updates
     /// `applied` and `acknowledged` when it is written).
     pub next: SyncRecord,
@@ -154,6 +160,11 @@ fn version(object: Option<&Object>) -> Option<Object> {
 
 fn kind(object: Option<&Object>) -> Option<&str> {
     object.map(|(mode, _)| if mode == "120000" { "link" } else { "file" })
+}
+
+/// A commit pointer to a nested repository rather than content.
+pub(crate) fn is_gitlink(object: Option<&Object>) -> bool {
+    object.is_some_and(|(mode, _)| mode == "160000")
 }
 
 /// Runs the table for every path of `shared` (S), `upstream` (T), and the
@@ -192,6 +203,19 @@ pub(crate) fn reconcile(
             plan.next.acknowledged = s_version.clone();
             plan.next.reconciled = s_version.clone();
             plan.next.applied = s_version;
+            plans.push(plan);
+            continue;
+        }
+
+        // A nested repository is a commit pointer, not content: writing it
+        // would need objects this repository does not have, and removing
+        // it would delete a repository. It is never applied, never removed,
+        // and never a conflict; the pointer is published with the tree.
+        if is_gitlink(s) || is_gitlink(t) {
+            plan.skipped = Some(NESTED_NOT_SHARED.into());
+            plan.next.acknowledged = t_version.clone();
+            plan.next.reconciled = t_version.clone();
+            plan.next.applied = t_version;
             plans.push(plan);
             continue;
         }
@@ -472,6 +496,80 @@ mod tests {
                 assert_eq!(plans[0].apply, Some(Some(merged.clone())));
             }
         }
+    }
+
+    #[test]
+    fn a_nested_repository_pointer_is_skipped_not_applied_or_removed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let path = || "home/.hammerspoon/Spoons/Sky.spoon".to_string();
+        let pointer = |sha: &str| ("160000".to_string(), sha.to_string());
+        // a fresh machine without the directory: never a creation
+        let upstream = Upstream {
+            files: [(path(), pointer("aaaa"))].into(),
+            commit: Some("upstream".into()),
+        };
+        let plans = reconcile(
+            &repo,
+            &BTreeMap::new(),
+            &upstream,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        assert_eq!(plans.len(), 1);
+        assert!(plans[0].apply.is_none());
+        assert!(plans[0].publish.is_none());
+        assert!(plans[0].conflict.is_none());
+        assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
+        assert_eq!(plans[0].next.applied, Some(pointer("aaaa")));
+        // a machine whose nested repository is at another commit: never a
+        // conflict that pauses the setup, never a removal
+        let shared = [(path(), pointer("bbbb"))].into();
+        let plans = reconcile(
+            &repo,
+            &shared,
+            &upstream,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        assert!(plans[0].conflict.is_none());
+        assert!(plans[0].apply.is_none());
+        assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
+        // the pointer disappearing upstream never deletes the repository here
+        let upstream = Upstream {
+            files: BTreeMap::new(),
+            commit: Some("upstream".into()),
+        };
+        let state = [(
+            path(),
+            SyncRecord {
+                acknowledged: Some(pointer("aaaa")),
+                reconciled: Some(pointer("aaaa")),
+                applied: Some(pointer("aaaa")),
+                upstream_commit: None,
+            },
+        )]
+        .into();
+        let plans = reconcile(&repo, &shared, &upstream, &state, &BTreeSet::new()).unwrap();
+        assert!(plans[0].apply.is_none());
+        assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
+        // an identical pointer on both sides is simply in sync
+        let upstream = Upstream {
+            files: [(path(), pointer("bbbb"))].into(),
+            commit: Some("upstream".into()),
+        };
+        let plans = reconcile(
+            &repo,
+            &shared,
+            &upstream,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        assert!(plans[0].is_noop());
+        assert!(plans[0].skipped.is_none());
     }
 
     #[test]
