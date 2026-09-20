@@ -12,8 +12,7 @@ use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{
-    CREDENTIAL_REASON, TrackedSet, capture_exclusion, normalize_target, omission_report,
-    preview_set,
+    CREDENTIAL_REASON, TrackedSet, capture_exclusion, normalize_target, preview_set,
 };
 
 /// Track a file or directory in place
@@ -156,8 +155,13 @@ impl DotfilesTrack {
                 for glob in &set.exclude {
                     miseprintln!("  exclude: {glob}");
                 }
-                for line in omission_report(&preview.omitted, &preview.nested) {
-                    miseprintln!("  {line}");
+                // nothing is enrolled yet, so `mise dot paths` could not
+                // list these later: every one is printed here
+                for omitted in &preview.omitted {
+                    miseprintln!("  omitted: {} ({})", omitted.path, omitted.reason);
+                }
+                for nested in &preview.nested {
+                    miseprintln!("  nested: {} ({})", nested.path, nested.reason);
                 }
                 for incomplete in &preview.incomplete {
                     miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);
