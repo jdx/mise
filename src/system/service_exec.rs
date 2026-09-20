@@ -20,32 +20,46 @@
 use eyre::{Result, bail};
 
 // only the Windows action reads a launch back; elsewhere the tests do
+use std::path::Path;
+
+// only the Windows action reads a launch back; elsewhere the tests do
 #[cfg(any(windows, test))]
-use crate::system::scheduled_tasks::{ServiceLaunch, launch_path};
+use crate::system::scheduled_tasks::ServiceLaunch;
 
 /// Run the service registered under `name`, whose launch must hash to
 /// `digest`. Returns once it exits, with its exit code.
 #[cfg(windows)]
-pub(crate) fn run(name: &str, digest: &str) -> Result<i32> {
-    let launch = read_launch(name, digest)?;
+pub(crate) fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
+    let launch = read_launch(name, launch, digest)?;
     // The console Task Scheduler allocated for this process alone, which
     // the service is about to be started without. A `__service-exec` run by
     // hand in a terminal shares that terminal's console and keeps it.
     crate::windows_console::detach_if_unattended();
     let mut child = spawn(&launch)?;
-    // The service dies with this process, however this process dies: a
+    // The service must die with this process, however this process dies: a
     // `/end` terminates the launcher without running any code here, and an
-    // orphaned service would go on holding whatever the restarted one needs.
-    let _confined = confine(&child);
-    // Windows always has one; anything but zero is the failure
+    // orphan would go on holding the watch lock the restarted service needs.
+    // Without the job there is no way to promise that, so a service that
+    // could not be confined is stopped rather than left running loose.
+    let confined = match confine(&child) {
+        Ok(job) => job,
+        Err(err) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(err);
+        }
+    };
+    let code = child.wait()?.code().unwrap_or(1);
+    drop(confined);
+    // Windows always has an exit code; anything but zero is the failure
     // `RestartOnFailure` acts on.
-    Ok(child.wait()?.code().unwrap_or(1))
+    Ok(code)
 }
 
 /// Only Task Scheduler registers this action: systemd and launchd both set
 /// a service's environment themselves, so nothing has to carry it for them.
 #[cfg(not(windows))]
-pub(crate) fn run(_name: &str, _digest: &str) -> Result<i32> {
+pub(crate) fn run(_name: &str, _launch: &Path, _digest: &str) -> Result<i32> {
     bail!("user services run through mise only on windows")
 }
 
@@ -54,18 +68,17 @@ pub(crate) fn run(_name: &str, _digest: &str) -> Result<i32> {
 /// one left over from a definition that was replaced — does not run under a
 /// task that was registered for something else.
 #[cfg(any(windows, test))]
-fn read_launch(name: &str, digest: &str) -> Result<ServiceLaunch> {
-    let path = launch_path(name);
-    let Ok(stored) = std::fs::read_to_string(&path) else {
+fn read_launch(name: &str, path: &Path, digest: &str) -> Result<ServiceLaunch> {
+    let Ok(stored) = std::fs::read_to_string(path) else {
         bail!(
             "user service '{name}' has no stored launch at {}; run `mise bootstrap services apply`",
-            crate::file::display_path(&path)
+            crate::file::display_path(path)
         );
     };
     if crate::hash::hash_blake3_to_str(&stored) != digest {
         bail!(
             "user service '{name}' is registered for a different environment than {} holds; run `mise bootstrap services apply`",
-            crate::file::display_path(&path)
+            crate::file::display_path(path)
         );
     }
     Ok(serde_json::from_str(&stored)?)
@@ -106,7 +119,7 @@ impl Drop for Job {
 }
 
 #[cfg(windows)]
-fn confine(child: &std::process::Child) -> Option<Job> {
+fn confine(child: &std::process::Child) -> Result<Job> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -117,7 +130,10 @@ fn confine(child: &std::process::Child) -> Option<Job> {
     // SAFETY: an unnamed job object with default security.
     let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
     if job.is_null() {
-        return None;
+        bail!(
+            "could not create the job object the service is confined to: {}",
+            std::io::Error::last_os_error()
+        );
     }
     let job = Job(job);
     let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
@@ -132,14 +148,20 @@ fn confine(child: &std::process::Child) -> Option<Job> {
         )
     };
     if set == 0 {
-        return None;
+        bail!(
+            "could not set the job object to end the service with this process: {}",
+            std::io::Error::last_os_error()
+        );
     }
     // SAFETY: the child is alive — it has not been waited on — so its handle
     // is valid for the length of this call.
     if unsafe { AssignProcessToJobObject(job.0, child.as_raw_handle()) } == 0 {
-        return None;
+        bail!(
+            "could not confine the service to a job object: {}",
+            std::io::Error::last_os_error()
+        );
     }
-    Some(job)
+    Ok(job)
 }
 
 #[cfg(test)]
@@ -149,8 +171,8 @@ mod tests {
     #[test]
     fn a_launch_must_be_the_one_the_action_names() {
         let name = "service-exec-digest";
-        let path = launch_path(name);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mise-history.launch.json");
         let launch = ServiceLaunch {
             program: "agent.exe".to_string(),
             args: "--serve".to_string(),
@@ -162,18 +184,18 @@ mod tests {
         std::fs::write(&path, &stored).unwrap();
 
         let digest = crate::hash::hash_blake3_to_str(&stored);
-        assert_eq!(read_launch(name, &digest).unwrap(), launch);
+        assert_eq!(read_launch(name, &path, &digest).unwrap(), launch);
 
         // what an edit behind mise's back looks like: the action still names
         // the environment the task was registered with, and this is not it
-        let err = read_launch(name, "0").unwrap_err().to_string();
+        let err = read_launch(name, &path, "0").unwrap_err().to_string();
         assert!(
             err.contains("registered for a different environment"),
             "{err}"
         );
 
         std::fs::remove_file(&path).unwrap();
-        let err = read_launch(name, &digest).unwrap_err().to_string();
+        let err = read_launch(name, &path, &digest).unwrap_err().to_string();
         assert!(err.contains("no stored launch"), "{err}");
     }
 }

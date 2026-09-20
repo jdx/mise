@@ -222,22 +222,44 @@ pub(crate) struct ServiceLaunch {
 
 /// The launch a task carries, or `None` when its action starts the program
 /// itself because there is no environment to carry.
-fn launch(request: &ScheduledTaskRequest) -> Option<ServiceLaunch> {
+///
+/// `cmd.exe` is gone, so a shell's metacharacters are carried as written.
+/// What Windows itself cannot represent still is not: a process environment
+/// is `KEY=VALUE` pairs in a NUL-separated block, so a name that is empty or
+/// contains `=`, and any string containing a NUL, have nowhere to go.
+/// Rejecting them here means a declaration that cannot run fails while its
+/// definition is rendered, rather than registering a task that Task
+/// Scheduler starts and Windows refuses.
+fn launch(request: &ScheduledTaskRequest) -> Result<Option<ServiceLaunch>> {
     if request.environment.is_empty() {
-        return None;
+        return Ok(None);
+    }
+    for (key, value) in &request.environment {
+        if key.is_empty() || key.contains(['=', '\0']) {
+            bail!(
+                "user service '{}': environment name {key:?} cannot be a Windows environment variable",
+                request.name
+            );
+        }
+        if value.contains('\0') {
+            bail!(
+                "user service '{}': environment value for {key} contains a NUL, which cannot be passed to a process",
+                request.name
+            );
+        }
     }
     let (program, args) = split_command(&request.command);
-    Some(ServiceLaunch {
+    Ok(Some(ServiceLaunch {
         program,
         args,
         environment: request.environment.clone(),
-    })
+    }))
 }
 
 /// The launch as it is stored: one line of JSON, so the bytes on disk are
 /// the bytes the action's digest covers.
 pub(crate) fn render_launch(request: &ScheduledTaskRequest) -> Result<Option<String>> {
-    launch(request)
+    launch(request)?
         .map(|launch| Ok(serde_json::to_string(&launch)?))
         .transpose()
 }
@@ -261,9 +283,13 @@ pub(crate) fn launch_path(name: &str) -> PathBuf {
 ///
 /// The digest pins the action to the launch it was rendered from, so the
 /// registered definition changes whenever the environment does, and a
-/// launch edited behind mise's back does not run.
+/// launch edited behind mise's back does not run. The launch is named by
+/// absolute path: Task Scheduler starts the service from the user's logon
+/// environment, which need not be the one `apply` ran under, so a
+/// `MISE_STATE_DIR` set only for the apply would otherwise leave the
+/// service looking for its launch somewhere it was never written.
 fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
-    let Some(launch) = launch(request) else {
+    let Some(launch) = launch(request)? else {
         return Ok(split_command(&request.command));
     };
     let Some(mise) = request.launcher.as_deref() else {
@@ -273,13 +299,27 @@ fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
         );
     };
     let digest = crate::hash::hash_blake3_to_str(&serde_json::to_string(&launch)?);
+    let path = quote_argument(&launch_path(&request.name).to_string_lossy());
     Ok((
         mise.to_string(),
         format!(
-            "bootstrap __service-exec {} --digest {digest}",
+            "bootstrap __service-exec {} --launch {path} --digest {digest}",
             request.name
         ),
     ))
+}
+
+/// Quote one argument for the command line Task Scheduler hands to
+/// `CreateProcess`. A path is the only thing that goes through here, so the
+/// backslash-before-quote rule the runtime's parser applies cannot arise:
+/// the quotes are added around the whole value and a path cannot contain
+/// one.
+fn quote_argument(value: &str) -> String {
+    if value.contains(char::is_whitespace) {
+        format!("\"{value}\"")
+    } else {
+        value.to_string()
+    }
 }
 
 /// Whether what is on disk is what `request` renders now: its definition
@@ -439,18 +479,34 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        // before the task that reads it is registered, and removed when the
-        // declaration stopped setting an environment, so what is on disk is
-        // never a launch no registered action is pinned to
+        // The launch goes down before the task that reads it is registered,
+        // and a task that stopped setting an environment leaves none behind.
+        // What was there is kept until the registration commits: the task
+        // registered right now is pinned to it by digest, so replacing it
+        // and then failing to register its replacement would leave a working
+        // service unable to start until some later apply succeeded.
+        let replaced = std::fs::read(&launch_path).ok();
         match &launch {
             Some(launch) => std::fs::write(&launch_path, launch)?,
             None => {
                 let _ = std::fs::remove_file(&launch_path);
             }
         }
-        std::fs::write(&staging, &rendered)?;
+        let restore_launch = || match &replaced {
+            Some(previous) => {
+                let _ = std::fs::write(&launch_path, previous);
+            }
+            None => {
+                let _ = std::fs::remove_file(&launch_path);
+            }
+        };
+        if let Err(err) = std::fs::write(&staging, &rendered) {
+            restore_launch();
+            return Err(err.into());
+        }
         if let Err(err) = schtasks(&create).await {
             let _ = std::fs::remove_file(&staging);
+            restore_launch();
             return Err(err);
         }
         // written, not renamed: a rename does not replace an existing
@@ -707,12 +763,16 @@ mod tests {
         );
         let launch = render_launch(&request).unwrap().unwrap();
         let digest = crate::hash::hash_blake3_to_str(&launch);
-        assert!(
-            xml.contains(&format!(
-                "<Arguments>bootstrap __service-exec agent --digest {digest}</Arguments>"
-            )),
-            "{xml}"
+        // the launch is named by absolute path: the service is started from
+        // the user's logon environment, which need not have the
+        // `MISE_STATE_DIR` the apply ran under
+        let path = launch_path("agent");
+        assert!(path.is_absolute(), "{}", path.display());
+        let expected = format!(
+            "<Arguments>bootstrap __service-exec agent --launch {} --digest {digest}</Arguments>",
+            escape(&quote_argument(&path.to_string_lossy()))
         );
+        assert!(xml.contains(&expected), "{xml}\nexpected {expected}");
         // nothing the declaration holds reaches a command line
         assert!(!xml.contains("RUST_LOG"), "{xml}");
         assert!(!xml.contains("agent.exe"), "{xml}");
@@ -756,6 +816,41 @@ mod tests {
         assert_eq!(launch.args, "--filter a&b|c<d>e^f");
         assert_eq!(launch.environment["P"], "%PATH%;C:\\x");
         assert_eq!(launch.environment["Q"], "a \"quoted\" & piped | value");
+    }
+
+    /// A shell's metacharacters are carried as written now, but Windows
+    /// still cannot hold every name: an environment is `KEY=VALUE` pairs in
+    /// a NUL-separated block. Those are refused while the definition is
+    /// rendered, so a task that Windows would refuse to start is never
+    /// registered in the first place.
+    #[test]
+    fn names_windows_cannot_hold_are_still_refused() {
+        for (key, value) in [("A=B", "1"), ("", "1"), ("A\0B", "1")] {
+            let mut request = sample();
+            request.launcher = Some("mise.exe".to_string());
+            request.environment.insert(key.into(), value.into());
+            let err = render_xml(&request, "me").unwrap_err().to_string();
+            assert!(
+                err.contains("cannot be a Windows environment"),
+                "{key:?}: {err}"
+            );
+        }
+
+        let mut request = sample();
+        request.launcher = Some("mise.exe".to_string());
+        request.environment.insert("A".into(), "one\0two".into());
+        let err = render_xml(&request, "me").unwrap_err().to_string();
+        assert!(err.contains("contains a NUL"), "{err}");
+    }
+
+    /// A path with a space in it still reaches the launcher as one argument.
+    #[test]
+    fn a_launch_path_with_spaces_is_quoted() {
+        assert_eq!(quote_argument("C:\\x\\y.json"), "C:\\x\\y.json");
+        assert_eq!(
+            quote_argument("C:\\Program Files\\y.json"),
+            "\"C:\\Program Files\\y.json\""
+        );
     }
 
     /// Carrying an environment takes a mise that will still be there when

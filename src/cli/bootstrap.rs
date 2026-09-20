@@ -444,6 +444,10 @@ struct BootstrapServiceExec {
     /// The user service to run
     name: String,
 
+    /// The stored launch to run it from
+    #[usage(long, value_name = "PATH")]
+    launch: String,
+
     /// The digest of the launch the task was registered with
     #[usage(long, value_name = "HASH")]
     digest: String,
@@ -2816,7 +2820,7 @@ impl BootstrapServiceExec {
         // The service outlives every other thing this process has to do, so
         // it is waited for off the runtime's workers rather than on one.
         let code = tokio::task::spawn_blocking(move || {
-            system::service_exec::run(&self.name, &self.digest)
+            system::service_exec::run(&self.name, std::path::Path::new(&self.launch), &self.digest)
         })
         .await??;
         match code {

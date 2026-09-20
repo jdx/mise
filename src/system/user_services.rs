@@ -51,6 +51,9 @@ pub(crate) struct UserServiceRequest {
     /// executable to run through (see `unresolved`).
     pub command: Option<String>,
     pub unresolved: Option<String>,
+    /// The durable mise executable a Windows task that sets `environment`
+    /// runs through; `None` when none was found, which `unresolved` reports.
+    pub launcher: Option<String>,
     pub builtin: Option<String>,
     pub restart: ServiceRestart,
     pub nice: Option<i8>,
@@ -109,7 +112,7 @@ impl UserServiceRequest {
                 description.get_or_insert_with(|| definition.description.to_string());
                 restart.get_or_insert(definition.restart);
                 nice = definition.nice;
-                match executable {
+                match &executable {
                     Some(exe) => Some(
                         std::iter::once(quote_program(&exe.to_string_lossy()))
                             .chain(definition.args.iter().map(|arg| arg.to_string()))
@@ -133,11 +136,29 @@ impl UserServiceRequest {
                 Some(command.to_string())
             }
         };
+        // On Windows a service that sets `environment` runs through mise,
+        // which applies it (Task Scheduler's XML has no environment block).
+        // Without a durable mise there is nothing to carry it with. Reported
+        // per service, the way the builtin case is: a staged binary is a
+        // whole-host condition, and failing the render would take every
+        // other bootstrap resource down with this one.
+        let launcher = executable.map(|exe| exe.to_string_lossy().to_string());
+        if cfg!(windows)
+            && !config.environment.is_empty()
+            && launcher.is_none()
+            && unresolved.is_none()
+        {
+            unresolved = Some(
+                "no durable mise executable to carry `environment`; install mise on this host first"
+                    .to_string(),
+            );
+        }
         Ok(Self {
             name,
             description,
             command,
             unresolved,
+            launcher,
             builtin: config.builtin,
             restart: restart.unwrap_or_default(),
             nice,
@@ -225,12 +246,7 @@ impl UserServiceRequest {
         request.command = self.command.clone().unwrap_or_default();
         request.restart_on_failure = self.restart != ServiceRestart::Never;
         request.environment = self.environment.clone();
-        // Task Scheduler's XML has no environment block, so a declaration
-        // that sets one runs through mise; only look for one when it does.
-        request.launcher = (!self.environment.is_empty())
-            .then(durable_mise_executable)
-            .flatten()
-            .map(|exe| exe.to_string_lossy().to_string());
+        request.launcher = self.launcher.clone();
         request.working_directory = self.working_directory.clone();
         request.start = self.start();
         request.at_logon = self.enabled;

@@ -597,6 +597,9 @@ sets `environment` registers this as its action instead of naming its
 program directly. It applies the stored environment, starts the service,
 and stays for its lifetime as the process Task Scheduler tracks.
 """#
+        flag --launch help="The stored launch to run it from" required=#true {
+            arg <PATH>
+        }
         flag --digest help="The digest of the launch the task was registered with" required=#true {
             arg <HASH>
         }
