@@ -414,13 +414,46 @@ Synchronization uses Git ancestry, fast-forwards, and merge commits. Pushes
 retain the saved commits and their Git author identities. A rejected push
 triggers another fetch and reconciliation. mise leaves divergent or
 unrelated histories intact for you to resolve; it does not force-push.
-When a sync refuses unrelated histories, either discard the local
-checkpoints with `mise bootstrap --adopt <url> --replace-history --yes`
-(see [removing plaintext from history](#remove-plaintext-from-history)),
-or keep them by connecting an empty repository, or a branch you pushed the
-local history to, with `mise dot origin set <url> --branch <name>`.
 Before writing incoming changes, it checks the complete batch, including
 configuration, required sources, committed files, and unsaved local edits.
+
+### Resolve unrelated histories
+
+If local checkpoints and the origin branch have no shared Git ancestry,
+`mise dot origin set` or `mise dot sync` refuses to synchronize them. Neither
+history is replaced, even if the files have identical contents. Choose which
+history to keep before trying again.
+
+**Keep local checkpoints.** Connect an empty repository:
+
+```sh
+mise dot origin set <empty-repository-url>
+```
+
+To use the existing repository instead, first use Git to push your local
+history to a new branch there, then connect that branch:
+
+```sh
+mise dot origin set <url> --branch <name>
+```
+
+The branch must already exist; `origin set` only creates a branch when the
+repository has no branches.
+
+**Adopt the origin's history.** If the origin is a mise setup repository
+with enrollment metadata, you can discard local checkpoints and replace
+them with its history:
+
+```sh
+mise bootstrap --adopt <url> --replace-history --yes
+```
+
+Back up any local history you want to retain before running this command.
+It replaces checkpoint history; existing files that differ still require a
+decision before setup can finish. This recovery path requires a mise setup
+repository and does not apply to an ordinary Git repository without mise
+enrollment metadata. See [removing plaintext from history](#remove-plaintext-from-history)
+if you are replacing history to remove a secret.
 
 ## Capturing an external command
 
