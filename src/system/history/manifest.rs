@@ -131,20 +131,19 @@ impl Manifest {
             let contains_entries = entries
                 .iter()
                 .any(|entry| entry.path.starts_with(&path) && entry.path != path);
-            let variant = match owner {
-                Some(entry) => entry.variant.as_deref(),
+            let portable = match owner {
+                Some(entry) => roots
+                    .branch_path(&path, entry.variant.as_deref())
+                    .ok_or_else(|| eyre::eyre!("cannot map permission path {display}"))?,
                 // a directory containing entries is one filesystem object:
-                // recorded once, without a variant
-                None if contains_entries => None,
+                // recorded once, without a variant; one outside every root,
+                // or the root itself, is never recorded
+                None if contains_entries => match roots.branch_path(&path, None) {
+                    Some(portable) if portable.contains('/') => portable,
+                    _ => continue,
+                },
                 None => continue,
             };
-            let portable = roots
-                .branch_path(&path, variant)
-                .ok_or_else(|| eyre::eyre!("cannot map permission path {display}"))?;
-            // the root itself is never recorded
-            if owner.is_none() && !portable.contains('/') {
-                continue;
-            }
             self.permissions.insert(portable, *bits);
         }
         self.remove_unenrolled_permissions();
