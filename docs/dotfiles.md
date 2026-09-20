@@ -710,7 +710,10 @@ and a matching directory takes everything under it.
 
 The entry's list applies on top of the global `[history] exclude` globs;
 both must let a file through, and a global `!glob` does not re-include a
-file the entry excludes. `mise dot paths` lists each entry's patterns.
+file the entry excludes. `mise dot paths` lists each entry's patterns, and
+each checkpoint records them, so a rollback leaves a file the list kept
+out alone. The list is part of the shared enrollment, like `autosave`;
+every machine of a setup that uses it needs a mise that knows the field.
 
 ### Stop tracking a file
 

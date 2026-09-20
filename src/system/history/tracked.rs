@@ -75,15 +75,7 @@ impl TrackedEntry {
     /// the entry whose entry-relative form matches, as for a deployment
     /// entry. The entry path itself is never excluded by its own list.
     pub(crate) fn is_excluded(&self, path: &Path) -> bool {
-        if self.exclude.is_empty() {
-            return false;
-        }
-        match path.strip_prefix(&self.path) {
-            Ok(rel) if !rel.as_os_str().is_empty() => {
-                crate::system::files::is_excluded(rel, &self.exclude_patterns())
-            }
-            _ => false,
-        }
+        excluded_by_entry(&self.path, &self.exclude, path)
     }
 
     pub(crate) fn tree_path(&self, path: &Path) -> Result<String> {
@@ -255,6 +247,11 @@ impl TrackedSet {
                 autosave: request.policy.autosave,
                 encrypt: request.policy.encrypt,
                 variants: request.variants.clone(),
+                exclude: request
+                    .exclude
+                    .iter()
+                    .map(|pattern| pattern.as_str().to_owned())
+                    .collect(),
             });
             set.manifest.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
             let declared_in = Some(request.origin.config.clone());
@@ -484,6 +481,7 @@ impl TrackedSet {
                 encrypt: entry.policy.encrypt,
                 state: "live".into(),
                 declared_in: entry.declared_in.as_deref().map(display_path),
+                exclude: entry.exclude.clone(),
             })
             .collect();
         let mut omitted = walk.omitted.clone();
@@ -727,6 +725,22 @@ pub(crate) fn is_builtin_credential(path: &Path, name: &str) -> bool {
 /// How many omissions a capture report lists one by one before it
 /// summarizes them and points at `mise dot paths`.
 pub(crate) const OMISSION_LINES: usize = 10;
+
+/// Whether `patterns` (an entry's own `exclude` list, relative to
+/// `entry_path`) drop `path`; the entry path itself never is.
+pub(crate) fn excluded_by_entry(entry_path: &Path, patterns: &[String], path: &Path) -> bool {
+    if patterns.is_empty() {
+        return false;
+    }
+    let patterns: Vec<glob::Pattern> = patterns
+        .iter()
+        .filter_map(|pattern| glob::Pattern::new(pattern).ok())
+        .collect();
+    match path.strip_prefix(entry_path) {
+        Ok(rel) if !rel.as_os_str().is_empty() => crate::system::files::is_excluded(rel, &patterns),
+        _ => false,
+    }
+}
 
 /// Whether the display path `path` is `root` itself or lies below it.
 /// Display paths use the platform separator (`\` on Windows), so the
@@ -1239,6 +1253,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: vec![],
             }],
             ..Default::default()
         };
@@ -1730,6 +1745,46 @@ mod tests {
         let walk = set.walk().unwrap();
         assert!(walk.files.is_empty());
         assert!(!set.would_retain(&root.join("cache/index")).unwrap());
+        assert_eq!(
+            set.coverage(&walk).entries[0].exclude,
+            vec!["cache".to_string()]
+        );
+    }
+
+    #[test]
+    fn entry_excludes_travel_through_the_enrollment_manifest() {
+        use crate::system::files::FileRequest;
+        use crate::system::resources::ResourceOrigin;
+        let home = normalize(&dirs::HOME);
+        let target = home.join(".mise-test-entry-exclude");
+        let mut set = TrackedSet::default();
+        set.add_requests([FileRequest {
+            target_raw: "~/.mise-test-entry-exclude".into(),
+            target: target.clone(),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Track,
+            exclude: vec![glob::Pattern::new("sessions").unwrap()],
+            manifest: None,
+            base: home.clone(),
+            origin: ResourceOrigin {
+                config: home.join(".config/mise/config.toml"),
+                config_root: home.join(".config/mise"),
+                environment: vec![],
+                source: None,
+            },
+            policy: Policy::for_mode(FileMode::Track),
+            variants: vec![],
+            enabled: true,
+        }]);
+        assert_eq!(set.manifest.enrollment.len(), 1);
+        assert_eq!(
+            set.manifest.enrollment[0].exclude,
+            vec!["sessions".to_string()]
+        );
+        let rebuilt = set.manifest.tracking().unwrap();
+        assert_eq!(rebuilt.entries[0].exclude, vec!["sessions".to_string()]);
+        assert!(rebuilt.entries[0].is_excluded(&target.join("sessions/one")));
     }
 
     #[test]
