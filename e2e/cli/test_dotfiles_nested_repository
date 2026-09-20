@@ -118,15 +118,45 @@ assert_succeed 'mise dot sync'
 assert_succeed 'mise dot pull --yes'
 assert_succeed 'mise dot sync'
 
+# A machine that only inherits the pointer (no checkout on disk) adopts
+# while another machine's pointer is upstream, then diverges.
+fifth="$(dirname "$HOME")/nested-fifth"
+wrapper "$fifth" "$PWD/fifth"
+e="$PWD/fifth"
+assert_contains "$e bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'skipped: nested repository'
+assert_fail "test -e $fifth/.hammerspoon/Spoons/Sky.spoon"
+echo 'e' >"$fifth/.hammerspoon/only-on-e.lua"
+assert_succeed "$e dot save"
+
 # Removing the nested .git turns the pointer into ordinary content: the
 # next save captures the files (not a pointer-only change), and the other
-# machines receive them.
+# machines receive them. Pulling another machine's pointer change first
+# keeps the files (the pointer is never reintroduced), and the sync after
+# it publishes them.
 rm -rf "$plugin/.git"
 assert_succeed 'mise dot save'
 assert "git --git-dir=$repo show HEAD:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
 assert_not_contains 'mise dot paths' 'nested:'
+echo 'return { second = 3 }' >"$second/.hammerspoon/Spoons/Sky.spoon/init.lua"
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com commit -qam second-3
+echo 'hs.alert("b3")' >"$second/.hammerspoon/init.lua"
+assert_succeed "$b dot save"
+assert_succeed "$b dot sync"
+assert_succeed 'mise dot sync --fetch-only'
+assert_succeed 'mise dot pull --yes'
+assert "cat ~/.hammerspoon/init.lua" 'hs.alert("b3")'
+assert "cat $plugin/init.lua" 'return {}'
+assert "git --git-dir=$repo show HEAD:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
 assert_succeed 'mise dot sync'
 assert "git --git-dir=$origin show main:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+
+# The inheriting machine receives the converted files: the pointer it
+# never had on disk is not its own, and its divergence is no obstacle.
+assert_succeed "$e dot sync --fetch-only"
+assert_succeed "$e dot pull --yes"
+assert "cat $fifth/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+assert_fail "test -e $fifth/.hammerspoon/Spoons/Sky.spoon/.git"
+assert_succeed "$e dot sync"
 assert_succeed "$c dot sync"
 assert_succeed "$c dot pull --yes"
 assert "cat $third/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
@@ -139,7 +169,7 @@ echo 'hs.alert("changed on b")' >"$second/.hammerspoon/init.lua"
 assert_succeed "$b dot save"
 assert_fail "$b dot sync 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
 assert_fail "$b dot pull --yes 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
-assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { second = 2 }'
+assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { second = 3 }'
 assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"
 assert "git -C $second/.hammerspoon/Spoons/Sky.spoon status --porcelain | wc -l | tr -d ' '" 0
 assert "git --git-dir=$origin show main:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'

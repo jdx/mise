@@ -1137,19 +1137,25 @@ pub(super) fn incoming_repository_tree(
     }
     let (merged, conflicts) = repo.merge_tree(local, remote)?;
     // a nested repository's pointer is this machine's own: another
-    // machine's differing pointer is neither incoming nor a conflict
+    // machine's differing pointer is neither incoming nor a conflict, and
+    // against this machine's content it resolves to the content, as it
+    // does when publishing, so the merged tree carries our object there
     let local_tree = repo.output_tree_of(local)?;
-    let tree = repo.with_pointers_of(&tracked.manifest.write(repo, &merged)?, &local_tree)?;
-    // a pointer on the other side is never applied here, and against
-    // this machine's content it resolves to the content when publishing
     let mut conflicts = conflicts;
+    let mut ours = vec![];
     for index in (0..conflicts.len()).rev() {
-        if reconcile::is_pointer_conflict(repo, local, remote, &conflicts[index])?
-            || reconcile::is_gitlink(repo.object_at(remote, &conflicts[index])?.as_ref())
-        {
+        let path = &conflicts[index];
+        if reconcile::is_pointer_conflict(repo, local, remote, path)? {
             conflicts.remove(index);
+        } else if reconcile::is_gitlink(repo.object_at(remote, path)?.as_ref()) {
+            ours.push(crate::system::history::shadow::Overlay {
+                object: repo.object_at(local, path)?,
+                path: conflicts.remove(index),
+            });
         }
     }
+    let merged = repo.compose(&merged, &ours)?;
+    let tree = repo.with_pointers_of(&tracked.manifest.write(repo, &merged)?, &local_tree)?;
     let roots = Roots::current();
     if local_tree == tree && conflicts.is_empty() {
         return Ok(None);
