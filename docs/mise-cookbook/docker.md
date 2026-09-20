@@ -1,41 +1,50 @@
 ---
-description: "Use the official mise images or install a pinned, verified mise inside your own image, use it to run project commands, or preinstall tools outside user home directories for shared development containers."
+description: "Use mise in Docker: choose an official image, pin releases, install project tools, and share tools in development containers."
 ---
 
 # Docker Cookbook
 
-Use the official mise images, copy a pinned mise binary into your own image,
-or install mise from a package or verified release download. Then use mise to
-run project commands, or preinstall tools outside user home directories for
-shared development containers. Building these examples requires Docker and a
-running container engine.
+Use the Debian image to run mise and install project tools, or copy the static
+mise binary into an existing image. This cookbook also covers verified downloads
+and shared tool installations for development containers.
 
 ## Official images
 
-Every release publishes two images to `ghcr.io/jdx/mise` and Docker Hub
-(`jdxcode/mise`) for `linux/amd64` and `linux/arm64`. The mise binary inside
-each image is the release asset itself, checked against the release's
-minisign-signed checksums before the image is built.
+Release images are published to `ghcr.io/jdx/mise` and Docker Hub (`jdxcode/mise`)
+for `linux/amd64` and `linux/arm64`. Both registries use the same tags.
 
-| Tags                                          | Contents                                                                                    | Use it for                                                     |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `latest`, `2026.9`, `2026.9.11`               | `FROM scratch`: the static musl `mise` binary at `/usr/local/bin/mise` plus CA certificates | `COPY --from=` source for any base image                       |
-| `debian`, `2026.9-debian`, `2026.9.11-debian` | `debian:trixie-slim` with the glibc `mise` binary, `ca-certificates`, `curl`, and `git`     | Running mise directly in CI jobs, devcontainers, or for repros |
+| Image       | Example tags                                  | Use it for                                         |
+| ----------- | --------------------------------------------- | -------------------------------------------------- |
+| Scratch     | `2026.9.11`, `2026.9`, `latest`               | Copying the static musl binary into your own image |
+| Debian slim | `2026.9.11-debian`, `2026.9-debian`, `debian` | Running mise in CI jobs and development containers |
 
-Both images set `MISE_DATA_DIR=/mise`, `MISE_CONFIG_DIR=/mise`,
-`MISE_CACHE_DIR=/mise/cache`, and put `/mise/shims` on `PATH`. Neither
-preinstalls any tool; `mise install` does that for the project. The `2026.9`
-style tag follows the latest patch release of that month, and `latest` and
-`debian` follow the newest release.
+The scratch image contains `/usr/local/bin/mise` and CA certificates. It has no
+shell or package manager. The Debian image uses `debian:trixie-slim` and includes
+the glibc mise binary, `ca-certificates`, `curl`, and `git`. Neither image
+preinstalls tools managed by mise.
 
-The `dev` tag is a large image built from source for mise's own tooling. It is
-not a supported image; do not depend on it.
+Both images set `MISE_DATA_DIR=/mise`, `MISE_CONFIG_DIR=/mise`, and
+`MISE_CACHE_DIR=/mise/cache`, and add `/mise/shims` to `PATH`. The build verifies
+the release binaries against minisign-signed checksums before copying them into
+the images.
+
+Use a full version tag to select a release. Month tags such as `2026.9` and
+floating tags (`latest` and `debian`) change as images are published. For an
+exact image, [pin its digest](#pin-an-image-by-digest).
+
+::: warning Migrating from the previous image
+`latest` now selects the scratch image. If you used the previous source-built
+image as a CI or development environment, switch to `debian` and install the
+tools your project needs. The old image remains available as `dev` for mise's
+internal tooling; it is unsupported for general use.
+:::
 
 ### Copy the binary into your own image
 
-The scratch image is the source for a single `COPY` line. Its binary is
-statically linked, so the same line works on Debian, Alpine, distroless, and
-any other base:
+Copy `/usr/local/bin/mise` from the scratch image into your Linux image. The
+statically linked binary runs on both glibc and musl systems, including Debian
+and Alpine. The destination still needs CA certificates for HTTPS and any
+OS dependencies required by your tools:
 
 ```Dockerfile [Dockerfile]
 FROM debian:13-slim
@@ -52,18 +61,15 @@ ENV MISE_CACHE_DIR="/mise/cache"
 ENV PATH="/mise/shims:$PATH"
 ```
 
-To pin the exact bytes rather than a tag, reference the image by digest.
-`docker buildx imagetools inspect ghcr.io/jdx/mise:2026.9.11` prints it, and
-tools such as Renovate and Dependabot can keep a pinned digest current:
+`COPY --from` copies only the binary: it does not inherit the source image's
+certificates or environment variables. The example installs certificates and
+sets the mise directories explicitly.
 
-```Dockerfile
-COPY --from=ghcr.io/jdx/mise@sha256:<digest> /usr/local/bin/mise /usr/local/bin/mise
-```
+### Use the Debian image as a base
 
-### Use the debian image as a base
-
-The debian image has no `ENTRYPOINT`, so it works as a plain base image and
-as a CI job image:
+The Debian image has no `ENTRYPOINT`, so it works as a base image and lets CI
+runners supply their own shell command. This example assumes `mise.toml`
+declares Node.js and the application starts with `node server.js`:
 
 ```Dockerfile [Dockerfile]
 FROM ghcr.io/jdx/mise:2026.9.11-debian
@@ -76,25 +82,66 @@ COPY . .
 CMD ["mise", "exec", "--", "node", "server.js"]
 ```
 
-Add any OS packages your tools need with `apt-get`; the image only ships
-`ca-certificates`, `curl`, and `git`. To reproduce a mise issue in a clean
-environment, run it interactively:
+Add OS packages required by your tools with `apt-get`. For GitLab CI, see the
+[CI image example](/continuous-integration.html#use-the-official-image).
+
+### Pin an image by digest
+
+A version tag selects a release, but a rebuilt image can change what that tag
+points to. To select an exact image, inspect its digest:
 
 ```shell
-docker run -it --rm ghcr.io/jdx/mise:debian bash
+docker buildx imagetools inspect ghcr.io/jdx/mise:2026.9.11
 ```
+
+Replace `<digest>` below with the digest from that output:
+
+```Dockerfile
+COPY --from=ghcr.io/jdx/mise@sha256:<digest> /usr/local/bin/mise /usr/local/bin/mise
+```
+
+The same syntax works in `FROM` and CI image references. Inspect the `-debian`
+tag to get the Debian image's digest.
+
+## Installing project tools
+
+Before building, exclude local credentials from the Docker build context with
+a `.dockerignore` file. Adapt these patterns to your project:
+
+```gitignore [.dockerignore]
+.env
+.env.*
+*.tfvars
+*.tfvars.json
+```
+
+To install project tools as a build layer, copy the project config before its
+source files:
+
+```Dockerfile
+WORKDIR /app
+COPY mise.toml ./
+RUN mise trust && mise install
+COPY . .
+```
+
+Also copy `mise.lock` if the project uses a lockfile, plus any files the config
+reads. If an install hook needs application files, copy those before `mise install`.
+Keep credentials out of the build context rather than relying on later image layers to remove them.
+Use `mise exec -- <command>` or `mise run <task>` in `RUN` and `CMD` instructions;
+Docker build shells do not run interactive activation hooks.
 
 ## Installing mise yourself
 
-If you would rather not depend on the official images, these methods install a
-specific mise version without piping a remote script to a shell.
+If you need to install mise directly into an existing base image, choose a
+package repository, a verified release download, a committed wrapper, or the
+install script below.
 
 ### Distribution packages
 
 The [apt](/installing-mise.html#apt), [dnf](/installing-mise.html#dnf), and
-[apk](/installing-mise.html#apk) repositories verify packages with the
-distribution's own signing checks. This Debian example uses
-`extrepo`:
+[apk](/installing-mise.html#apk) installation methods use the package manager's signature verification. This
+Debian example uses `extrepo` to configure the mise apt repository:
 
 ```Dockerfile [Dockerfile]
 # syntax=docker/dockerfile:1
@@ -117,9 +164,9 @@ pin it with apt version constraints instead.
 
 ### Verified release download
 
-Each release ships `SHASUMS256.txt` signed with minisign and GPG. This
-downloads one release binary and checks it against the signed checksums, so
-the build fails if either the binary or the checksum file was altered:
+Each release ships `SHASUMS256.txt` signed with minisign and GPG. This Debian
+example downloads the glibc binary for `amd64` or `arm64`, verifies the checksum
+file with minisign, and checks the binary before installing it:
 
 ```Dockerfile [Dockerfile]
 FROM debian:13-slim
@@ -151,21 +198,20 @@ The public key above is the mise release key from
 ### Committed wrapper
 
 [`mise generate install-script -l -w`](/cli/generate/install-script.html)
-writes a `bin/mise` wrapper whose checksums were verified when it was
-generated. Commit it, copy it into the image, and it installs that pinned
-version on first use. See
+writes a `bin/mise` wrapper from a signature-verified installer with embedded
+checksums. Commit the wrapper, copy it into the image, and call `./bin/mise`
+to install and run its pinned version on first use. See
 [Continuous integration](/continuous-integration.html#bootstrapping).
 
 ### Install script
 
-The `mise.run` installer picks the platform and verifies the download's
-checksum itself. Set `MISE_VERSION` to pin the release:
+The `mise.run` installer selects the platform and checks the binary's checksum. Set `MISE_VERSION` to pin the release:
 
 ```Dockerfile [Dockerfile]
 FROM debian:13-slim
 
-RUN apt-get update  \
-    && apt-get -y --no-install-recommends install  \
+RUN apt-get update \
+    && apt-get -y --no-install-recommends install \
         # install any other dependencies you might need
         curl git ca-certificates build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -176,39 +222,11 @@ ENV MISE_CONFIG_DIR="/mise"
 ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 ENV PATH="/mise/shims:$PATH"
-# ENV MISE_VERSION="..."
+ENV MISE_VERSION="2026.9.11"
 
 RUN curl --proto '=https' --proto-redir '=https' \
     --fail --show-error --silent --location https://mise.run | sh
 ```
-
-## Installing project tools
-
-Whichever way mise got into the image, exclude local credentials from the
-build context before building:
-
-```gitignore [.dockerignore]
-.env
-.env.*
-*.tfvars
-*.tfvars.json
-```
-
-To install project tools as a build layer, copy the project config before its
-source files:
-
-```Dockerfile
-WORKDIR /app
-COPY mise.toml ./
-RUN mise install
-COPY . .
-```
-
-Also copy `mise.lock` if the project uses a lockfile, plus any files the config
-reads. If an install hook needs application files, copy those before `mise install`.
-Keep credentials out of the build context rather than relying on later image layers to remove them.
-Use `mise exec -- <command>` or `mise run <task>` in `RUN` and `CMD` instructions;
-Docker build shells do not run interactive activation hooks.
 
 ## Shared tools in multi-user containers
 
@@ -242,7 +260,9 @@ python  3.15.0 (system)
 ```
 
 Users can install additional versions in their own directory — those take priority over
-system versions. To customize the system directory, set `MISE_SYSTEM_DATA_DIR`.
+system versions. When using an official image as the base, override its shared
+`MISE_DATA_DIR`, `MISE_CONFIG_DIR`, and `MISE_CACHE_DIR` for each user if you want
+private directories. To customize the system directory, set `MISE_SYSTEM_DATA_DIR`.
 
 You can also configure additional shared directories with `MISE_SHARED_INSTALL_DIRS`
 (paths separated by `:` on Unix and `;` on Windows) or the `shared_install_dirs` setting.

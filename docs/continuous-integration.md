@@ -111,6 +111,8 @@ when a workflow intentionally supplies its own configuration. See the
 
 ## GitLab CI
 
+### Use a committed wrapper
+
 This `.gitlab-ci.yml` uses a Debian image and the [committed wrapper](#bootstrapping). It assumes
 the same Node.js project as the generic example above. Add any OS packages required by your
 tools to `before_script`, or build a CI image with those packages already installed.
@@ -139,10 +141,12 @@ architecture. Remove `mise.lock` from the key if the project does not have one, 
 install command to `mise install --locked` if it does. The example also requires a `build`
 script in `package.json`. The localized wrapper sets the mise directories used by the cache.
 
+### Use the official image
+
 The [official `-debian` image](/mise-cookbook/docker.html#official-images)
 already contains mise, `curl`, `git`, and CA certificates, so a job can use it
-directly. Point the data directory into the project so the cache above still
-applies:
+directly, without a bootstrap wrapper or an `ENTRYPOINT` override. Set the mise
+data and cache directories inside the project so GitLab can cache them:
 
 ```yaml
 build-job:
@@ -163,6 +167,11 @@ build-job:
     - mise exec -- npm ci
     - mise exec -- npm run build
 ```
+
+This example also assumes an amd64 runner and a Node.js project with a `build`
+script. Adjust the cache prefix for other architectures. Remove `mise.lock`
+from the cache key if absent; if present, use `mise install --locked` to enforce
+it. Add any OS packages your tools require in `before_script` or a custom image.
 
 ## Xcode Cloud
 
