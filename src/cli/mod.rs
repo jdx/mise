@@ -994,9 +994,6 @@ impl Cli {
         if let Some(Commands::Install(install)) = &mut cli.command {
             install.inherit_root_yes(cli.yes);
         }
-        if cli.command.as_ref().is_some_and(Commands::runs_unattended) {
-            crate::windows_console::hide_if_unattended();
-        }
         config_file::set_implicitly_trust_active_config(
             cli.command
                 .as_ref()
@@ -1042,6 +1039,13 @@ impl Cli {
         // in the invoking user's directories.
         if let Some(Commands::PublishSystemInstall(cmd)) = &cli.command {
             return cmd.run();
+        }
+        // After everything that can still refuse this invocation — a bad
+        // `--cd`, unbuildable settings, an untrusted config — so their errors
+        // land in a console somebody can still read, and before the
+        // auto-update that could otherwise leave the window up for a download.
+        if cli.command.as_ref().is_some_and(Commands::runs_unattended) {
+            crate::windows_console::hide_if_unattended();
         }
         let auto_update_command_eligible = !print_version
             && cli

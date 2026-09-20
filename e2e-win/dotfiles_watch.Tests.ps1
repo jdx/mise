@@ -119,7 +119,9 @@ builtin = "history-watch"
         $watch = @('bootstrap', 'dotfiles', 'watch')
 
         # A console of its own, which is what Task Scheduler gives it and what
-        # says nobody is reading: the watcher hides that window.
+        # says nobody is reading: the watcher hides that window. Exit 5 here
+        # would mean `Start-Process` stopped giving it a real console window,
+        # leaving nothing for this case to be about.
         $alone = Start-Process -FilePath 'mise' -PassThru -ArgumentList $watch
         try {
             Wait-Watcher $true | Should -BeTrue
@@ -129,18 +131,23 @@ builtin = "history-watch"
         }
         Wait-Watcher $false | Should -BeTrue
 
-        # Sharing this test host's console instead, the way a shell waiting on
-        # `mise dot watch` does. Somebody is reading, so the window stays up —
-        # and a probe that called every console hidden would fail here.
-        $shared = Start-Process -FilePath 'mise' -PassThru -NoNewWindow `
-            -RedirectStandardOutput (Join-Path $TestDrive 'watch.out') `
-            -RedirectStandardError (Join-Path $TestDrive 'watch.err') `
-            -ArgumentList $watch
+        # A console of its own again, but with `cmd.exe` in it too — which is
+        # how a service that sets `environment` runs, and what says somebody is
+        # reading. The window must stay up, and a probe that called every
+        # console hidden would fail here. Probing `cmd` reaches the console the
+        # watcher is in, so its own pid never has to be found.
+        #
+        # Deliberately not this test host's console: on a runner that is a
+        # pseudoconsole there is no window there to call visible, which is exit
+        # 5 rather than 3.
+        $shared = Start-Process -FilePath 'cmd.exe' -PassThru -ArgumentList @(
+            '/c', "mise $($watch -join ' ')")
         try {
             Wait-Watcher $true | Should -BeTrue
             Get-ConsoleProbe $shared.Id | Should -Be 3
         } finally {
-            Stop-Process -Id $shared.Id -Force -ErrorAction Ignore
+            # `cmd` does not take the watcher with it, so the tree goes together
+            taskkill.exe /T /F /PID $shared.Id 2>&1 | Out-Null
         }
         # the store is left with no watcher holding it, so this file can grow
         # another case without inheriting one
