@@ -357,10 +357,6 @@ impl Commands {
         }
     }
 
-    /// Whether this parsed command may trigger a pre-command automatic update.
-    ///
-    /// This operates on clap's canonical command variant so aliases such as
-    /// `dr` inherit the same policy as `doctor`.
     /// Commands that run as a service, with no terminal reading their output.
     ///
     /// Windows gives a Scheduled Task's console program a console of its own,
@@ -375,6 +371,10 @@ impl Commands {
         }
     }
 
+    /// Whether this parsed command may trigger a pre-command automatic update.
+    ///
+    /// This operates on clap's canonical command variant so aliases such as
+    /// `dr` inherit the same policy as `doctor`.
     fn allows_auto_update(&self) -> bool {
         !matches!(
             self,
