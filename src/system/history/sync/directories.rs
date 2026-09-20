@@ -69,12 +69,13 @@ fn claim(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> Option<Claim
     .then_some(Claim::Containing)
 }
 
-/// Whether the tree holds the directory, decided in its governing stream:
-/// an enrolled path covering it says what it is there, and a file or link
-/// at that path is never turned into a directory because another stream
-/// holds one. A containing directory (no enrolled path covers it) is
-/// present when any stream of a path inside it holds it as a directory and
-/// none holds something else there.
+/// Whether the tree holds the directory, decided in its governing stream
+/// first: when an enrolled path covers it, a directory there means present
+/// and a file or link there means it is never turned into a directory
+/// because another stream holds one. When that stream has nothing there
+/// (every file inside lives in a nested variant stream), or no enrolled
+/// path covers it, the directory is present when some stream of a path
+/// inside it holds it as a directory and none holds something else there.
 fn present(
     repo: &HistoryRepo,
     tree: &str,
@@ -91,8 +92,8 @@ fn present(
         return Ok(false);
     };
     let covered = entries.iter().any(|entry| path.starts_with(&entry.path));
-    if covered {
-        return Ok(is_directory(&governing)? == Some(true));
+    if covered && let Some(is_directory) = is_directory(&governing)? {
+        return Ok(is_directory);
     }
     let mut candidates = vec![governing];
     for entry in entries {
@@ -747,6 +748,79 @@ mod tests {
         // a fresh machine: no directory step is planned for the file's path
         let steps = plan(&repo, &tracked, &tree)?;
         assert!(steps.iter().all(|step| step.path != platform), "{steps:?}");
+        Ok(())
+    }
+
+    /// An intermediate directory under an unqualified enrollment whose files
+    /// all live in a nested variant stream has no object in its governing
+    /// stream; it is still present through that inner stream, so a fresh
+    /// machine recreates it with its recorded mode instead of the default.
+    #[test]
+    fn a_covered_directory_present_only_in_an_inner_stream_is_planned() -> Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::manifest::Enrollment;
+        use crate::system::history::shadow::Overlay;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-inner-stream-")
+            .tempdir_in(&roots.home)?;
+        let configs = normalize(scratch.path()).join("configs");
+        let private = configs.join("private");
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let outer = TrackedEntry::new(configs.clone(), "track", policy);
+        let mut settings = TrackedEntry::new(private.join("settings.json"), "track", policy);
+        settings.variant = Some("linux".into());
+        // the only file inside `private` lives in the Linux stream
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[Overlay {
+                path: settings.tree_path(&settings.path)?,
+                object: Some(("100644".into(), repo.hash_blob(b"{}")?)),
+            }],
+        )?;
+        assert!(
+            repo.object_at(&files, &outer.tree_path(&private)?)?
+                .is_none()
+        );
+        let variant = |os: &str| crate::system::history::select::Variant {
+            os: vec![os.into()],
+            ..Default::default()
+        };
+        let manifest = Manifest {
+            enrollment: vec![
+                Enrollment {
+                    path: outer.tree_path(&configs)?,
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![],
+                },
+                Enrollment {
+                    path: outer.tree_path(&settings.path)?,
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![variant("linux"), variant("macos")],
+                },
+            ],
+            permissions: std::collections::BTreeMap::from([(outer.tree_path(&private)?, 0o700)]),
+            ..Default::default()
+        };
+        let tree = manifest.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            entries: vec![outer, settings],
+            manifest,
+            ..Default::default()
+        };
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].path, private);
+        assert_eq!(steps[0].desired, 0o700);
+        assert!(steps[0].before.is_none());
         Ok(())
     }
 
