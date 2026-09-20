@@ -23,6 +23,7 @@ assert_contains 'mise dot paths --preview ~/.codex' '~/.codex/sessions/two.jsonl
 # A scoped exclusion trims the tree before it is tracked.
 assert_succeed "mise dot exclude '~/.codex/sessions/**'"
 assert_contains 'mise dot track --dry-run ~/.codex' '~/.codex: 1 file, 12 B'
+assert_contains 'mise dot track --dry-run ~/.codex' 'exclude: ~/.codex/sessions/**'
 
 # Tracking reports the same count and size.
 assert_contains 'mise dot track ~/.codex 2>&1' 'tracking ~/.codex (1 file, 12 B; declared in'
