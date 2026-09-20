@@ -182,6 +182,15 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<()> {
     if glob.is_empty() {
         eyre::bail!("a glob is required");
     }
+    // refuse at the point the user writes it, so a pattern the matcher
+    // would only warn about later never reaches the configuration
+    if add
+        && let Some(reason) = crate::system::history::tracked::unusable_pattern(
+            glob.strip_prefix('!').unwrap_or(glob),
+        )
+    {
+        eyre::bail!("{glob}: {reason}");
+    }
     let global = crate::config::global_config_path();
     let changed = crate::cli::dotfiles::track::edit_exclude(glob, add)?;
     match (add, changed) {

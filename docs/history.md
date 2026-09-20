@@ -547,6 +547,55 @@ Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
 earlier matching exclusion. `paths` lists tracked paths and files omitted
 from saves.
 
+A path is excluded when the last rule matching it, or any of its
+ancestors below the tracked path, is an exclusion. So an excluded
+directory takes its contents with it, and a later `!glob` naming a file
+inside it still brings that file back. mise skips an excluded directory
+rather than enumerating it — whether it is written as `sessions`,
+`sessions/**` or an absolute path — which is only a speed-up: the files
+under it would each have been excluded anyway. A `!glob` that could
+re-include something inside makes mise walk it after all.
+
+A pattern with no path separator matches any single path component, so
+`cache` excludes a file called `cache` and everything inside a directory
+called `cache`, wherever it sits — the same reading a tracked entry's own
+`exclude` list has. A pattern that is absolute after `~`
+expansion matches the file's absolute path, both as written and
+normalized the way tracked paths are, so it still matches when an
+ancestor directory is a symlink. Any other pattern is relative to the
+tracked path: it matches at any depth below it, as if written with a
+leading `**/`, and is never resolved against the working directory, so
+`**/*.log` and `sessions/**` mean the same thing wherever the command
+runs and a `sessions` directory somewhere above the tracked path does
+not match. A leading `./` is
+ignored, so `./keys/**` means what `keys/**` means. In a pattern that
+names a path, `*` stops at a separator and `**` crosses them, as in a
+`.gitignore`: `keys/*.pem` is one directory deep, `keys/**/*.pem` is any
+depth. On Windows both `/` and `\` count as separators.
+
+Patterns support `~`, which expands to your home directory. Environment
+variables are not supported: `mise dot exclude` refuses a pattern
+containing `$` and tells you to write `~/…` or an absolute path, because
+a literal `$VAR` would never match anything and an exclusion that
+silently matches nothing keeps capturing the files you meant to leave
+out. A pattern already in your configuration that mise cannot use — one
+with a `$`, or a glob it cannot parse — is reported by name and skipped;
+the rest of the list keeps working, and a rollback reads the list the
+same way a capture did.
+
+A rollback only removes a file when the checkpoint positively records
+that it covered and captured it. A checkpoint written by a different
+version of the matcher, or a repository the checkpoint recorded as
+skipped, mean the record cannot answer the question — and the answer to a question that cannot be
+answered is never to delete the file. mise reports those paths as
+skipped instead.
+
+The credential guard reads patterns differently on purpose: it tests the
+file's own name, never a directory above it. Exclusion asks whether a
+path should be saved, which a directory can answer for everything below
+it; the guard asks whether a file is a credential store, which a
+directory called `oauth` or `token-cache` says nothing about.
+
 A tracked directory can also carry its own `exclude` list, relative to the
 tracked path, with the rules of a deployment entry's list (a pattern
 without `/` matches a path component anywhere below it; one with `/` is
@@ -560,7 +609,9 @@ anchored to the directory):
 Both lists apply: a file must pass the global globs and the entry's own,
 and a global `!glob` does not re-include what the entry excludes.
 
-Credential files and `*.local.toml` are omitted by default. A file is
+Credential files and `*.local.toml` are omitted by default. A
+`*.local.toml` file is this machine's own configuration and is never
+captured, not even with `--encrypt`. A file is
 treated as a credential store when its name is `.netrc` or matches `*.age`,
 `*.key`, `*.pem`, `*.gpg`, `*.kdbx`, `id_*`, `*token*`, `*secret*`,
 `credentials*`, or `oauth*` (under the mise configuration directory also
