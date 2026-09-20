@@ -715,20 +715,121 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
             display_path(&global)
         );
     };
-    let present = array.iter().any(|value| value.as_str() == Some(glob));
-    let changed = if add && !present {
-        array.push(Value::String(toml_edit::Formatted::new(glob.to_string())));
-        true
-    } else if !add && present {
-        array.retain(|value| value.as_str() != Some(glob));
-        true
+    let changed = if add {
+        append_rule(array, glob)
     } else {
-        false
+        drop_glob(array, glob)
     };
     if changed {
         crate::file::write(&global, doc.to_string())?;
     }
     Ok(changed)
+}
+
+/// The entries of a list as plain strings, for comparing an edit's result
+/// with what was there before.
+fn list_entries(array: &toml_edit::Array) -> Vec<Option<String>> {
+    array
+        .iter()
+        .map(|value| value.as_str().map(str::to_string))
+        .collect()
+}
+
+/// Puts `glob` in force in a list the last matching pattern decides, and
+/// reports whether that changed it.
+///
+/// **The rule: append the requested rule at the end, after removing any
+/// earlier entry whose pattern string is exactly the requested one, in
+/// either polarity. Report it as already in force only when that leaves
+/// the list unchanged.**
+///
+/// This decides the question without reasoning about whether one glob
+/// subsumes another. The list is last-match-wins, so the appended rule
+/// decides every file the pattern matches whatever overlapping globs sit
+/// earlier — `["foo", "!foo*"]` really does re-include `foo` until
+/// `exclude foo` appends its own copy, and testing literal membership
+/// would have called that "already excluded" and written nothing.
+/// Dropping the earlier entries that spell the pattern exactly cannot
+/// change any other path's outcome either, because a pattern bears only
+/// on the paths it matches and the appended copy already decides those.
+fn append_rule(array: &mut toml_edit::Array, glob: &str) -> bool {
+    let before = list_entries(array);
+    array.retain(|value| match value.as_str() {
+        Some(entry) => entry != glob && entry.strip_prefix('!') != Some(glob),
+        None => true,
+    });
+    array.push(string(glob));
+    list_entries(array) != before
+}
+
+/// Removes `glob` from the list, and reports whether that changed
+/// anything. This is not [`append_rule`] with a negation: `mise dot
+/// include` takes back a glob the user wrote with `mise dot exclude`, so
+/// it removes that entry rather than appending `!glob` beside it, and it
+/// leaves a hand-written `!glob` alone — that entry already re-includes,
+/// which is what the caller wants.
+fn drop_glob(array: &mut toml_edit::Array, glob: &str) -> bool {
+    let before = list_entries(array);
+    array.retain(|value| value.as_str() != Some(glob));
+    list_entries(array) != before
+}
+
+#[cfg(test)]
+mod exclude_list_tests {
+    use super::*;
+
+    fn array(entries: &[&str]) -> toml_edit::Array {
+        let mut array = toml_edit::Array::new();
+        for entry in entries {
+            array.push(string(entry));
+        }
+        array
+    }
+
+    fn entries(array: &toml_edit::Array) -> Vec<String> {
+        array
+            .iter()
+            .filter_map(|value| value.as_str().map(str::to_string))
+            .collect()
+    }
+
+    /// The list is last-match-wins, so an edit appends its rule and drops
+    /// the pattern's earlier entries, and reports no change only when
+    /// that leaves the list as it was.
+    #[test]
+    fn an_edit_appends_its_rule_and_reports_a_change_only_when_the_list_moves() {
+        let mut list = array(&["foo"]);
+        assert!(!append_rule(&mut list, "foo"));
+        assert_eq!(entries(&list), ["foo"]);
+
+        // the earlier `foo` is not the rule in force here: `!foo*` is
+        let mut list = array(&["foo", "!foo*"]);
+        assert!(append_rule(&mut list, "foo"));
+        assert_eq!(entries(&list), ["!foo*", "foo"]);
+
+        let mut list = array(&["foo", "!foo"]);
+        assert!(append_rule(&mut list, "foo"));
+        assert_eq!(entries(&list), ["foo"]);
+
+        // every other rule keeps its place and its meaning
+        let mut list = array(&["foo", "*.key", "!foo", "sessions/**"]);
+        assert!(append_rule(&mut list, "foo"));
+        assert_eq!(entries(&list), ["*.key", "sessions/**", "foo"]);
+    }
+
+    /// `mise dot include` takes back a glob `mise dot exclude` wrote, so
+    /// it removes that entry rather than negating it.
+    #[test]
+    fn an_include_removes_the_glob_rather_than_negating_it() {
+        let mut list = array(&["*.log", "cache"]);
+        assert!(drop_glob(&mut list, "cache"));
+        assert_eq!(entries(&list), ["*.log"]);
+        assert!(!drop_glob(&mut list, "cache"));
+        // a hand-written re-include is left alone
+        let mut list = array(&["*.log", "!important.log"]);
+        assert!(!drop_glob(&mut list, "important.log"));
+        assert_eq!(entries(&list), ["*.log", "!important.log"]);
+    }
 }
 
 #[cfg(test)]

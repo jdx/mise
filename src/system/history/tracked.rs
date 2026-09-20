@@ -133,6 +133,8 @@ pub(crate) struct Walk {
     /// Every captured file with the entry that owns it and its policy.
     pub files: BTreeMap<PathBuf, (usize, Policy)>,
     pub omitted: Vec<PathReason>,
+    /// The `[history] exclude` rules as they expanded for this walk.
+    pub exclude_expanded: Vec<super::store::ExpandedRule>,
     /// Nested repositories, captured as a commit pointer without their files.
     pub nested: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
@@ -314,19 +316,14 @@ impl TrackedSet {
 
     /// The most specific entry covering `path`.
     pub(crate) fn entry_for(&self, path: &Path) -> Option<&TrackedEntry> {
-        self.entries
-            .iter()
-            .filter(|entry| path.starts_with(&entry.path))
-            .max_by_key(|entry| entry.path.components().count())
+        owning_entry(&self.entries, path)
     }
 
     pub(crate) fn entry_index_for(&self, path: &Path) -> Option<usize> {
+        let owner = owning_entry(&self.entries, path)?;
         self.entries
             .iter()
-            .enumerate()
-            .filter(|(_, entry)| path.starts_with(&entry.path))
-            .max_by_key(|(_, entry)| entry.path.components().count())
-            .map(|(index, _)| index)
+            .position(|entry| std::ptr::eq(entry, owner))
     }
 
     /// Whether a capture of this set would include `path`: under an entry,
@@ -372,9 +369,22 @@ impl TrackedSet {
         if nested {
             return Ok(false);
         }
-        // the entry's own list is applied after the global one and is not
-        // re-included by a global `!glob`
-        Ok(!self.exclude_set()?.is_match(path) && !owner.is_excluded(path))
+        Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
+    }
+
+    /// Whether the exclusion lists drop `path`: the global globs read
+    /// against its owning entry's path, then that entry's own list, which
+    /// a global `!glob` does not re-include.
+    ///
+    /// The one composition. `would_retain` adds the filesystem checks a
+    /// capture also makes; the watcher asks this alone, because it is
+    /// deciding what to watch rather than what a walk found. Both pick
+    /// the owner with [`owning_entry`], so they cannot disagree.
+    pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
+        match self.entry_for(path) {
+            Some(owner) => exclude.is_match(path, &owner.path) || owner.is_excluded(path),
+            None => true,
+        }
     }
 
     pub(crate) fn exclude_set(&self) -> Result<ExcludeSet> {
@@ -392,6 +402,7 @@ impl TrackedSet {
             ..Default::default()
         };
         walk.manifest.exclude = set.exclude.clone();
+        walk.exclude_expanded = exclude.expanded().to_vec();
         for (index, entry) in set.entries.iter().enumerate() {
             walk_entry(set, index, entry, &exclude, &hard, &mut walk);
         }
@@ -474,6 +485,15 @@ impl TrackedSet {
         Coverage {
             entries,
             exclude: self.exclude.clone(),
+            // a coverage built without a walk — a protective checkpoint,
+            // say — still has to record what the patterns expanded to
+            exclude_expanded: if walk.exclude_expanded.is_empty() {
+                self.exclude_set()
+                    .map(|exclude| exclude.expanded().to_vec())
+                    .unwrap_or_default()
+            } else {
+                walk.exclude_expanded.clone()
+            },
             incomplete: walk.incomplete.clone(),
             omitted,
             nested: walk.nested.clone(),
@@ -520,7 +540,7 @@ fn walk_entry(
     if !meta.is_dir() {
         // an exclusion wins over a direct declaration as it does over a
         // directory walk: what the user excluded never enters a snapshot.
-        if exclude.is_match(&entry.path) {
+        if exclude.is_match(&entry.path, &entry.path) {
             return;
         }
         match classify_file(&meta) {
@@ -573,10 +593,17 @@ fn walk_entry(
         {
             continue;
         }
-        if exclude.is_match(path) {
+        let file_type = candidate.file_type();
+        // an excluded directory is not entered at all: `~/.codex/sessions`
+        // can hold tens of thousands of files, and none of them can come
+        // back into the capture
+        if file_type.is_dir() && exclude.prunes_directory(path, &entry.path) {
+            walker.skip_current_dir();
             continue;
         }
-        let file_type = candidate.file_type();
+        if exclude.is_match(path, &entry.path) {
+            continue;
+        }
         // the entry's own exclusions: a matching directory is not entered
         if !entry_exclude.is_empty()
             && let Ok(rel) = path.strip_prefix(&entry.path)
@@ -912,35 +939,596 @@ fn glob_set(patterns: &[&str]) -> GlobSet {
 /// deciding: a `!glob` after a broader glob re-includes what it matches.
 #[derive(Debug, Default)]
 pub(crate) struct ExcludeSet {
-    patterns: Vec<(globset::GlobMatcher, bool)>,
+    list: PatternList,
 }
 
 impl ExcludeSet {
     pub(crate) fn new(globs: &[String]) -> Result<Self> {
-        let mut patterns = vec![];
-        for glob in globs {
-            let (pattern, negated) = match glob.strip_prefix('!') {
-                Some(rest) => (rest, true),
-                None => (glob.as_str(), false),
-            };
-            let expanded = file::replace_path(Path::new(pattern));
-            patterns.push((
-                Glob::new(&expanded.to_string_lossy())?.compile_matcher(),
-                negated,
-            ));
-        }
-        Ok(Self { patterns })
+        Ok(Self {
+            list: PatternList::new(globs)?,
+        })
     }
 
-    /// Whether `path` is excluded: the last matching pattern decides.
-    pub(crate) fn is_match(&self, path: &Path) -> bool {
-        let mut excluded = false;
-        for (matcher, negated) in &self.patterns {
-            if matcher.is_match(path) {
-                excluded = !negated;
+    /// The rules a checkpoint recorded, read back without parsing them.
+    pub(crate) fn from_expanded(rules: &[super::store::ExpandedRule]) -> Result<Self> {
+        Ok(Self {
+            list: PatternList::from_expanded(rules)?,
+        })
+    }
+
+    /// Whether `path`, tracked under `root`, is excluded.
+    ///
+    /// **A path is excluded when the last rule that matches it, or any of
+    /// its ancestors down to the tracked root, is an exclusion.** So an
+    /// excluded directory takes its contents with it — the reading a
+    /// tracked entry's own `exclude` list already has — and a later
+    /// `!glob` naming something inside it still re-includes that, because
+    /// it is the later rule.
+    ///
+    /// Because a descendant is excluded by its own ancestor's match,
+    /// pruning an excluded directory out of the walk can only ever be a
+    /// speed-up: every file under it would have been excluded one by one
+    /// anyway, and the walk and the callers that never walk — `mise dot
+    /// save <path>`, the watcher — cannot disagree.
+    ///
+    /// Ancestors stop at the tracked root. A pattern is about what the
+    /// user tracks, not about where their home directory happens to live.
+    pub(crate) fn is_match(&self, path: &Path, root: &Path) -> bool {
+        self.decide(path, root, false)
+    }
+
+    /// Whether the walk can skip `dir` whole: the rules exclude the
+    /// directory itself, or a rule of the form `<P>/**` names everything
+    /// under it. The second case is the spelling the docs show, and
+    /// without it `~/.codex/sessions` was still enumerated file by file.
+    ///
+    /// This belongs here and not in [`Self::is_match`] because pruning is
+    /// a pure optimization: the matcher is ancestor-aware, so every file
+    /// under an excluded directory is excluded whether or not the walk
+    /// visits it. A missed prune is only slower, and a prune that fires
+    /// cannot change which files are captured.
+    pub(crate) fn prunes_directory(&self, dir: &Path, root: &Path) -> bool {
+        self.decide(dir, root, true) && !self.may_reinclude_below(dir)
+    }
+
+    fn decide(&self, path: &Path, root: &Path, as_directory: bool) -> bool {
+        if self.list.rules.is_empty() {
+            return false;
+        }
+        // Everything is compared as `/`-separated text. A pattern is
+        // written that way whatever platform it is read on, a path is not,
+        // and normalizing once here is the only place the two forms can
+        // fail to line up.
+        let relative_path = if path == root {
+            path.file_name().map(PathBuf::from)
+        } else {
+            path.strip_prefix(root).map(Path::to_path_buf).ok()
+        }
+        .unwrap_or_else(|| path.to_path_buf());
+        let mut candidates = vec![];
+        for ancestor in path.ancestors() {
+            candidates.push(separators(ancestor));
+            if ancestor == root {
+                break;
             }
         }
-        excluded
+        let relative: Vec<String> = relative_path
+            .ancestors()
+            .filter(|ancestor| !ancestor.as_os_str().is_empty())
+            .map(separators)
+            .collect();
+        let components: Vec<&str> = relative
+            .first()
+            .map(|relative| {
+                relative
+                    .split('/')
+                    .filter(|component| !component.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.list
+            .rules
+            .iter()
+            .rfind(|rule| {
+                if as_directory {
+                    rule.covers_directory(&candidates, &relative, &components)
+                } else {
+                    rule.matches_any(&candidates, &relative, &components)
+                }
+            })
+            .is_some_and(|rule| !rule.negated)
+    }
+
+    /// The patterns this list could not evaluate, as written.
+    ///
+    /// **An exclusion rule that cannot be evaluated never causes a live
+    /// file to be deleted.** Warning and carrying on is right where the
+    /// risk is capturing something unintended; it is wrong where the
+    /// risk is destroying data, so a reader that is about to remove a
+    /// file asks this first and leaves the file alone when it is not
+    /// empty.
+    pub(crate) fn unevaluable(&self) -> &[String] {
+        &self.list.unevaluable
+    }
+
+    /// The patterns as they expanded here, for a checkpoint to record.
+    ///
+    /// **A replay reads the recorded expansion and never consults the
+    /// environment.** A pattern is written once and read back in whatever
+    /// environment a rollback runs in, where the same `$VAR` may be
+    /// unset, empty, or simply different — and nothing at replay time can
+    /// tell "still means what it meant" from "means something else now".
+    /// Recording what was actually in effect removes the question.
+    pub(crate) fn expanded(&self) -> &[super::store::ExpandedRule] {
+        &self.list.expanded
+    }
+
+    /// Whether any `!pattern` could re-include something below `dir`.
+    ///
+    /// **A matching directory is pruned from the walk only when no
+    /// negated pattern could re-include anything beneath it. When one
+    /// could, the directory is walked and its files are filtered
+    /// individually.** Pruning is an optimization; last-match-wins is the
+    /// semantics, and the semantics win. A list with no negations — which
+    /// is almost every list — keeps the whole saving.
+    ///
+    /// Deliberately conservative: a negated pattern that names no
+    /// directory of its own, or one whose directory overlaps `dir` in
+    /// either direction, disables pruning for that subtree.
+    pub(crate) fn may_reinclude_below(&self, dir: &Path) -> bool {
+        // the comparison is between a pattern prefix and a path, so it
+        // gets the same normalization the matcher gives them: `/` on
+        // every platform, compared component by component
+        let dir = separators(dir);
+        self.list
+            .rules
+            .iter()
+            .filter(|rule| rule.negated)
+            .any(|rule| {
+                if rule.anchor != Anchor::Absolute || rule.reinclude_roots.is_empty() {
+                    return true;
+                }
+                rule.reinclude_roots
+                    .iter()
+                    .any(|root| under_or_above(root, &dir))
+            })
+    }
+}
+
+/// How a `[history]` pattern list is matched.
+///
+/// **A pattern with no path separator matches any single path
+/// component, so `cache` matches a file named `cache` and everything
+/// inside a directory named `cache`. A pattern that is absolute after `~` and environment expansion matches
+/// the file's absolute path, both as written and normalized exactly as
+/// tracked paths are, so it still matches through a symlinked ancestor.
+/// Any other pattern is relative: it matches at any depth, as if written
+/// with a leading `**/`, and is never resolved against the working
+/// directory. A leading `./` is ignored. On Windows both `/` and `\`
+/// count as separators.**
+///
+/// Within the list the last matching pattern decides and a leading `!`
+/// negates, so `!glob` re-includes what an earlier glob excluded.
+///
+/// Each case answers a way the previous matcher failed. An absolute
+/// pattern has to be normalized the way the walk normalizes what it
+/// captures, or a pattern naming the live `~/…` location silently misses
+/// whenever an ancestor is a symlink. `\` counts as a separator on
+/// Windows because that is what `display_path` writes, so a path copied
+/// out of mise's own output would otherwise be read back as a file-name
+/// glob. A relative pattern is neither resolved nor left to fail:
+/// resolving it would bind `**/*.log` to whichever directory the command
+/// ran in, and matching it as written against an absolute path would
+/// make `keys/**` match nothing at all while the config looked correct.
+/// A leading `./` is ignored, so `./keys/**` means what `keys/**` means.
+///
+/// This is the matcher for the global `[history] exclude` list. A
+/// tracked entry's own `exclude` list is a separate thing — patterns
+/// there are relative to the entry and use
+/// [`crate::system::files::is_excluded`] — but both read a
+/// separator-free pattern as naming any path component, so the two lists
+/// agree about what `cache` means.
+///
+/// The builtin credential heuristic deliberately does not read patterns
+/// this way: [`is_builtin_credential`] tests the file name alone. The
+/// two questions are different. Exclusion asks whether a *path* should
+/// be saved, which a directory can answer for everything below it.
+/// The guard asks whether a *file* is a credential store, which is a
+/// property of its own name — a directory called `oauth` or
+/// `token-cache` says nothing about the files inside it.
+#[derive(Debug, Default)]
+pub(crate) struct PatternList {
+    rules: Vec<PatternRule>,
+    /// Each evaluable rule as it expanded, negation carried as a field
+    /// and the pattern opaque. A checkpoint records these so a replay
+    /// never has to consult the environment it happens to be running in,
+    /// and never has to parse a pattern back out of a string.
+    expanded: Vec<super::store::ExpandedRule>,
+    /// Patterns that could not be evaluated at all, as written. A rule
+    /// naming an environment variable that is not set is left out of
+    /// `rules` — expanding it to nothing would make it match far more
+    /// than the user named — but it is remembered here, because a reader
+    /// that is deciding whether to delete a live file has to know the
+    /// list is incomplete rather than assume it is empty.
+    unevaluable: Vec<String>,
+}
+
+/// What a pattern is matched against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Anchor {
+    /// No path separator: any single component of the root-relative path.
+    Name,
+    /// Absolute after expansion: the path itself or an ancestor of it.
+    Absolute,
+    /// Anything else: the root-relative path, at any depth below the
+    /// tracked root. Never the absolute path — a `sessions` directory
+    /// somewhere above the tracked root is not what `sessions/**` means.
+    Relative,
+}
+
+#[derive(Debug)]
+struct PatternRule {
+    matchers: Vec<globset::GlobMatcher>,
+    /// For a glob of the form `<P>/**`, a matcher for `<P>` itself. The
+    /// glob matches what is under the directory, never the directory
+    /// path, so this is what lets the walk recognise the directory and
+    /// skip it whole.
+    directory_matchers: Vec<globset::GlobMatcher>,
+    /// For a negated path rule, the directories its matches must live
+    /// under: each glob's literal leading prefix, cut at the last
+    /// separator, `/`-separated like everything else the matcher
+    /// compares. Empty means the rule could match anywhere.
+    reinclude_roots: Vec<String>,
+    negated: bool,
+    anchor: Anchor,
+}
+
+impl PatternRule {
+    /// Compiles one already-expanded pattern. `negated` is given, never
+    /// read out of the text: the pattern is opaque from here on.
+    fn compile(body: &str, negated: bool) -> Result<Self> {
+        let anchor = if !is_path_anchored(body) {
+            Anchor::Name
+        } else if file::replace_path(Path::new(body)).is_absolute() {
+            Anchor::Absolute
+        } else {
+            Anchor::Relative
+        };
+        let globs = if anchor == Anchor::Name {
+            vec![body.to_string()]
+        } else {
+            anchored_globs(body)
+        };
+        // a path glob is gitignore-like: `*` stops at a separator, `**`
+        // crosses them. A name glob matches one component, so there is no
+        // separator in it to stop at.
+        let compile = |glob: &str| -> Result<globset::GlobMatcher> {
+            let compiled = if anchor != Anchor::Name {
+                globset::GlobBuilder::new(glob)
+                    .literal_separator(true)
+                    .build()?
+            } else {
+                Glob::new(glob)?
+            };
+            Ok(compiled.compile_matcher())
+        };
+        let mut matchers = vec![];
+        let mut directory_matchers = vec![];
+        for glob in &globs {
+            matchers.push(compile(glob)?);
+            if let Some(directory) = glob.strip_suffix("/**")
+                && !directory.is_empty()
+            {
+                directory_matchers.push(compile(directory)?);
+            }
+        }
+        let reinclude_roots = if negated && anchor == Anchor::Absolute {
+            globs.iter().filter_map(|glob| literal_root(glob)).collect()
+        } else {
+            vec![]
+        };
+        Ok(Self {
+            matchers,
+            directory_matchers,
+            reinclude_roots,
+            negated,
+            anchor,
+        })
+    }
+
+    /// Whether the rule matches any of `candidates` — the path and its
+    /// ancestors down to the tracked root — or, for a name pattern, any
+    /// component of the path relative to that root.
+    /// `candidates` are the path and its ancestors down to the tracked
+    /// root, `relative` the path relative to that root, and `components`
+    /// its components — all already written with `/`, because that is
+    /// what the patterns were compiled to.
+    fn matches_any(&self, candidates: &[String], relative: &[String], components: &[&str]) -> bool {
+        match self.anchor {
+            Anchor::Absolute => candidates.iter().any(|c| self.is_glob_match(c)),
+            Anchor::Relative => relative.iter().any(|r| self.is_glob_match(r)),
+            Anchor::Name => components.iter().any(|c| self.is_glob_match(c)),
+        }
+    }
+
+    fn is_glob_match(&self, candidate: &str) -> bool {
+        self.matchers
+            .iter()
+            .any(|matcher| matcher.is_match(Path::new(candidate)))
+    }
+
+    /// Whether the rule covers `dir` as a whole: it matches the directory
+    /// itself, or it is a `<P>/**` naming everything under it.
+    fn covers_directory(
+        &self,
+        candidates: &[String],
+        relative: &[String],
+        components: &[&str],
+    ) -> bool {
+        if self.matches_any(candidates, relative, components) {
+            return true;
+        }
+        let against: &[String] = match self.anchor {
+            Anchor::Absolute => candidates,
+            Anchor::Relative => relative,
+            // a name glob has no `/`, so it has no `/**` form either
+            Anchor::Name => return false,
+        };
+        against.iter().any(|candidate| {
+            self.directory_matchers
+                .iter()
+                .any(|matcher| matcher.is_match(Path::new(candidate)))
+        })
+    }
+}
+
+/// Expands `$VAR`, `${VAR}` and a leading `~` in a pattern body, before
+/// anything is decided about it. Classification depends on the expanded
+/// form — `$HOME/.config/app/**` has to be read as the absolute path it
+/// names, not as a relative pattern that would match at any depth.
+///
+/// `None` means a variable in the pattern is not set. The rule is then
+/// left out of the list entirely rather than expanded to nothing:
+/// `$UNSET/keys/**` would otherwise become `/keys/**`, matching paths the
+/// user never named.
+fn expand_pattern(body: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut rest = body;
+    while let Some(index) = rest.find('$') {
+        out.push_str(&rest[..index]);
+        let after = &rest[index + 1..];
+        // `$$` is a literal `$`, so a path like `report$$Q1.json` can be
+        // written at all; without it an unset `Q1` would drop the rule and
+        // a set one would silently retarget it
+        if let Some(after) = after.strip_prefix('$') {
+            out.push('$');
+            rest = after;
+            continue;
+        }
+        let (name, tail) = match after.strip_prefix('{') {
+            Some(braced) => match braced.find('}') {
+                Some(end) => (&braced[..end], &braced[end + 1..]),
+                // an unclosed `${` is not a variable reference
+                None => {
+                    out.push('$');
+                    rest = after;
+                    continue;
+                }
+            },
+            None => {
+                let end = after
+                    .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .unwrap_or(after.len());
+                (&after[..end], &after[end..])
+            }
+        };
+        if name.is_empty() {
+            out.push('$');
+            rest = after;
+            continue;
+        }
+        // an empty value is not a value: expanding it in place would turn
+        // `$EMPTY/keys/**` into `/keys/**`, which matches from the
+        // filesystem root. Treated exactly like an unset variable.
+        let value = std::env::var(name).ok().filter(|value| !value.is_empty())?;
+        out.push_str(&value);
+        rest = tail;
+    }
+    out.push_str(rest);
+    Some(
+        file::replace_path(Path::new(&out))
+            .to_string_lossy()
+            .into_owned(),
+    )
+}
+
+/// Whether the pattern, as the user wrote it, names a place every
+/// machine has. Read from the text before any expansion, because a
+/// `$MYVAR` whose value happens to sit under home is still not portable.
+fn is_portable_pattern(body: &str) -> bool {
+    let home = ["~", "$HOME", "${HOME}"];
+    home.iter().any(|prefix| {
+        body == *prefix
+            || body.strip_prefix(prefix).is_some_and(|rest| {
+                rest.starts_with('/') || (cfg!(windows) && rest.starts_with('\\'))
+            })
+    })
+}
+
+/// Whether a pattern names a path rather than a file name.
+fn is_path_anchored(body: &str) -> bool {
+    body.contains('/') || (cfg!(windows) && body.contains('\\'))
+}
+
+/// The glob texts a path-anchored pattern is compiled from: the path as
+/// written, and — when the two differ — its normalized form.
+///
+/// Both are needed. Normalizing is what lets a pattern naming the live
+/// `~/…` location match a file the walk reached through a symlinked
+/// ancestor. Keeping the form as written is what lets the same pattern
+/// match a path that was never normalized, which is every path a caller
+/// hands to [`TrackedSet::would_retain`] and every entry pushed with a
+/// raw path — a `/tmp` that is really `/private/tmp`, a Windows 8.3
+/// short name. Matching either is right for a list of globs where the
+/// two spellings name the same file.
+fn anchored_globs(body: &str) -> Vec<String> {
+    let expanded = Path::new(body);
+    if !expanded.is_absolute() {
+        // a leading `./` says nothing a relative pattern does not already
+        // say, and keeping it would produce `**/./keys/**`, which matches
+        // nothing at all
+        let text = separators(
+            &expanded
+                .components()
+                .filter(|component| !matches!(component, std::path::Component::CurDir))
+                .collect::<PathBuf>(),
+        );
+        return vec![if text.starts_with("**/") {
+            text
+        } else {
+            format!("**/{text}")
+        }];
+    }
+    let written = separators(expanded);
+    let normalized = separators(&normalize_target(expanded));
+    if normalized == written {
+        vec![written]
+    } else {
+        vec![written, normalized]
+    }
+}
+
+/// The directory a glob's matches must live under: its literal leading
+/// part, cut at the last separator. `None` when the glob starts with a
+/// metacharacter, and so could match anywhere.
+fn literal_root(glob: &str) -> Option<String> {
+    let literal = match glob.find(['*', '?', '[', '{']) {
+        Some(index) => &glob[..index],
+        None => glob,
+    };
+    let root = literal.rsplit_once('/').map(|(root, _)| root)?;
+    (!root.is_empty()).then(|| root.to_string())
+}
+
+/// How one expanded rule is written down.
+///
+/// **A pattern the user wrote with `~` or `$HOME` is portable: it is
+/// recorded against the root the history tree already stores paths under
+/// and re-resolved per machine. Any other pattern is frozen as the
+/// absolute path this machine expanded it to.**
+///
+/// The decision is the pattern's syntax, never where its expansion
+/// happens to point. `~/.codex/sessions/**` names the same place on
+/// every machine, so freezing it would stop it matching anywhere else —
+/// and a rule that stops matching makes a rollback read excluded files
+/// as absent and delete them. `$MYVAR/**` names whatever it named there
+/// and then, even when that value sits under the home directory, so
+/// re-resolving it would retarget the rule at another machine's files.
+fn record_rule(negated: bool, body: &str, portable: bool) -> super::store::ExpandedRule {
+    let expanded = Path::new(body);
+    let portable = (portable && expanded.is_absolute())
+        .then(|| super::sync::layout::Roots::current().portable_pattern(expanded))
+        .flatten();
+    match portable {
+        Some((root, relative)) => super::store::ExpandedRule {
+            negated,
+            root: Some(root.to_string()),
+            pattern: relative,
+        },
+        None => super::store::ExpandedRule {
+            negated,
+            root: None,
+            pattern: separators(expanded),
+        },
+    }
+}
+
+/// Whether two `/`-separated paths are the same or one contains the
+/// other, compared by whole components so `/a/bc` is not below `/a/b`.
+fn under_or_above(one: &str, other: &str) -> bool {
+    let (shorter, longer) = if one.len() <= other.len() {
+        (one, other)
+    } else {
+        (other, one)
+    };
+    longer == shorter
+        || longer
+            .strip_prefix(shorter)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// A path as the patterns are written: `/`-separated on every platform.
+fn separators(path: &Path) -> String {
+    let text = path.to_string_lossy().into_owned();
+    if cfg!(windows) {
+        text.replace('\\', "/")
+    } else {
+        text
+    }
+}
+
+impl PatternList {
+    /// A list already expanded and recorded, read back without parsing:
+    /// each rule's negation comes from its own field, its pattern is used
+    /// as it stands, and a portable root is resolved against this
+    /// machine. A root this machine does not have leaves the rule
+    /// unevaluable rather than guessed at.
+    pub(crate) fn from_expanded(rules: &[super::store::ExpandedRule]) -> Result<Self> {
+        let roots = super::sync::layout::Roots::current();
+        let mut compiled = vec![];
+        let mut unevaluable = vec![];
+        for rule in rules {
+            let body = match &rule.root {
+                Some(root) => match roots.resolve_portable(root, &rule.pattern) {
+                    Some(path) => separators(&path),
+                    None => {
+                        warn!(
+                            "history: a recorded exclusion names the root {root:?}, which this machine does not have"
+                        );
+                        unevaluable.push(format!("{root}/{}", rule.pattern));
+                        continue;
+                    }
+                },
+                None => rule.pattern.clone(),
+            };
+            compiled.push(PatternRule::compile(&body, rule.negated)?);
+        }
+        Ok(Self {
+            rules: compiled,
+            expanded: rules.to_vec(),
+            unevaluable,
+        })
+    }
+
+    pub(crate) fn new(patterns: &[String]) -> Result<Self> {
+        let mut rules = vec![];
+        let mut unevaluable = vec![];
+        let mut expanded = vec![];
+        for pattern in patterns {
+            let (body, negated) = match pattern.strip_prefix('!') {
+                Some(rest) => (rest, true),
+                None => (pattern.as_str(), false),
+            };
+            // portability is the one thing decided from the text, before
+            // expansion; everything else — whether the pattern is
+            // anchored, whether it is absolute — is a fact about the path
+            // it names
+            let portable = is_portable_pattern(body);
+            let Some(body) = expand_pattern(body) else {
+                warn!(
+                    "history: ignoring pattern {pattern:?}: it names an environment variable that is not set"
+                );
+                unevaluable.push(pattern.clone());
+                continue;
+            };
+            expanded.push(record_rule(negated, &body, portable));
+            rules.push(PatternRule::compile(&body, negated)?);
+        }
+        Ok(Self {
+            rules,
+            expanded,
+            unevaluable,
+        })
     }
 }
 
@@ -1061,6 +1649,39 @@ pub(crate) fn tree_path_to_display(tree_path: &str) -> String {
 /// Root aliases are portable through the home/config mapping. Aliases below
 /// those roots are not: canonicalizing them would silently change the enrolled
 /// destination on another machine. The leaf itself may still be a symlink.
+/// The entry that owns `path`: the most specific one it lies under.
+///
+/// One rule, one place. Capture, `mise dot save <path>`, the watcher and
+/// a replay all have to agree about which entry owns a file, because
+/// each reads that entry's own lists and uses its path as the root the
+/// global patterns are measured against. Ranking by byte length instead
+/// of component count picks a different entry whenever a shallower path
+/// simply has a longer name, and the two readings then disagree about
+/// what a checkpoint covers.
+pub(crate) fn owning_entry<'a>(
+    entries: &'a [TrackedEntry],
+    path: &Path,
+) -> Option<&'a TrackedEntry> {
+    entries
+        .iter()
+        .filter(|entry| path.starts_with(&entry.path))
+        .max_by_key(|entry| entry.path.components().count())
+}
+
+/// The most specific of `items` that `path` lies under, for the display
+/// paths a checkpoint or a manifest records. The same rule as
+/// [`owning_entry`], counting components rather than bytes.
+pub(crate) fn owning_display<'a, T: 'a>(
+    items: impl IntoIterator<Item = &'a T>,
+    path: &str,
+    key: impl Fn(&T) -> &str,
+) -> Option<&'a T> {
+    items
+        .into_iter()
+        .filter(|item| display_under(path, key(item)))
+        .max_by_key(|item| Path::new(key(item)).components().count())
+}
+
 /// The permission key under which the enrollment this machine selects
 /// governs a path: the stream of the closest enrolled path at or above it,
 /// else, for a directory with enrolled paths inside it, the variant-less
@@ -1072,10 +1693,7 @@ pub(crate) fn governing_key(
     entries: &[TrackedEntry],
     path: &Path,
 ) -> Option<String> {
-    let owner = entries
-        .iter()
-        .filter(|entry| path.starts_with(&entry.path))
-        .max_by_key(|entry| entry.path.components().count());
+    let owner = owning_entry(entries, path);
     match owner {
         Some(entry) => roots.branch_path(path, entry.variant.as_deref()),
         None if entries
@@ -1187,6 +1805,8 @@ pub(crate) fn display_to_tree_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// Tracked root for the matcher tests: ancestors stop here.
+    const ROOT: &str = "/nonexistent-mise-test";
     use super::*;
 
     #[cfg(unix)]
@@ -1394,6 +2014,649 @@ mod tests {
         let mut encrypted = policy;
         encrypted.encrypt = true;
         assert_eq!(capture_exclusion(&dir.join("id_ed25519"), &encrypted), None);
+    }
+
+    /// A pattern is matched against the path only when it holds a
+    /// separator, and `\` is one only where the platform writes it.
+    #[test]
+    fn a_pattern_is_anchored_only_when_it_holds_a_separator() {
+        assert!(is_path_anchored("~/.config/app/**"));
+        assert!(is_path_anchored("keys/*.pem"));
+        assert!(!is_path_anchored("*.pem"));
+        assert!(!is_path_anchored("cache"));
+        assert_eq!(is_path_anchored("~\\.config\\app"), cfg!(windows));
+    }
+
+    /// A path glob is gitignore-like: `*` stops at a separator and `**`
+    /// crosses them, so `keys/*.pem` is one directory deep.
+    #[test]
+    fn a_star_in_a_path_pattern_stops_at_a_separator() {
+        let root = Path::new(ROOT);
+        let set = ExcludeSet::new(&["keys/*.pem".to_string()]).unwrap();
+        assert!(set.is_match(&root.join("app/keys/a.pem"), root));
+        assert!(!set.is_match(&root.join("app/keys/sub/a.pem"), root));
+        let set = ExcludeSet::new(&["keys/**/*.pem".to_string()]).unwrap();
+        assert!(set.is_match(&root.join("app/keys/a.pem"), root));
+        assert!(set.is_match(&root.join("app/keys/sub/a.pem"), root));
+    }
+
+    /// A pattern with no separator matches any single path component, so
+    /// it takes a matching directory's contents with it — the same
+    /// reading a tracked entry's own `exclude` list already has.
+    #[test]
+    fn a_name_glob_excludes_any_path_component() {
+        let set = ExcludeSet::new(&["cache".to_string()]).unwrap();
+        assert!(set.is_match(
+            Path::new("/nonexistent-mise-test/.codex/cache"),
+            Path::new(ROOT)
+        ));
+        assert!(set.is_match(
+            Path::new("/nonexistent-mise-test/.codex/cache/index"),
+            Path::new(ROOT)
+        ));
+        assert!(set.is_match(
+            Path::new("/nonexistent-mise-test/cache/deep/index"),
+            Path::new(ROOT)
+        ));
+        assert!(!set.is_match(
+            Path::new("/nonexistent-mise-test/.codex/config.toml"),
+            Path::new(ROOT)
+        ));
+        assert!(!set.is_match(
+            Path::new("/nonexistent-mise-test/.codex/cached"),
+            Path::new(ROOT)
+        ));
+        let set = ExcludeSet::new(&["*.log".to_string()]).unwrap();
+        assert!(set.is_match(
+            Path::new("/nonexistent-mise-test/a/b/run.log"),
+            Path::new(ROOT)
+        ));
+        // the last matching pattern decides, and `!` re-includes
+        let set = ExcludeSet::new(&["cache".to_string(), "!cache".to_string()]).unwrap();
+        assert!(!set.is_match(
+            Path::new("/nonexistent-mise-test/.codex/cache"),
+            Path::new(ROOT)
+        ));
+        // the guard asks a different question and keeps reading names only
+        assert!(!is_builtin_credential(
+            Path::new("/nonexistent-mise-test/oauth/notes.txt"),
+            "notes.txt"
+        ));
+    }
+
+    /// An excluded directory is not enumerated. `~/.codex/sessions` can
+    /// hold tens of thousands of files and none of them can re-enter the
+    /// capture, so reading the directory at all is wasted work. An
+    /// unreadable directory makes the difference visible: descending into
+    /// it records an `unreadable` omission, skipping it records nothing.
+    #[cfg(unix)]
+    #[test]
+    fn an_excluded_directory_is_not_descended_into() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("sessions")).unwrap();
+        std::fs::write(root.join("config.toml"), "keep").unwrap();
+        std::fs::write(root.join("sessions/one.jsonl"), "drop").unwrap();
+        std::fs::set_permissions(
+            root.join("sessions"),
+            std::fs::Permissions::from_mode(0o000),
+        )
+        .unwrap();
+        let restore = || {
+            std::fs::set_permissions(
+                root.join("sessions"),
+                std::fs::Permissions::from_mode(0o700),
+            )
+            .unwrap()
+        };
+        if std::fs::read_dir(root.join("sessions")).is_ok() {
+            // running as root, where the permission says nothing
+            restore();
+            return;
+        }
+        // every spelling of "exclude this directory" prunes it: a bare
+        // name, the gitignore form the docs show, and an absolute path
+        for pattern in [
+            "sessions".to_string(),
+            "sessions/**".to_string(),
+            format!("{}/sessions/**", root.display()),
+        ] {
+            let mut set = TrackedSet {
+                exclude: vec![pattern.clone()],
+                ..Default::default()
+            };
+            set.push(entry(&root));
+            let walk = set.walk().unwrap();
+            assert_eq!(walk.files.len(), 1, "{pattern}");
+            assert!(
+                walk.files.contains_key(&root.join("config.toml")),
+                "{pattern}"
+            );
+            assert!(walk.omitted.is_empty(), "{pattern}: {:?}", walk.omitted);
+        }
+        // but a negation that could re-include something inside makes the
+        // walk descend after all, and the unreadable directory shows it
+        let mut set = TrackedSet {
+            exclude: vec![
+                "sessions/**".to_string(),
+                "!sessions/keep.jsonl".to_string(),
+            ],
+            ..Default::default()
+        };
+        set.push(entry(&root));
+        let walk = set.walk().unwrap();
+        assert!(
+            walk.omitted
+                .iter()
+                .any(|omitted| omitted.reason.starts_with("unreadable")),
+            "{:?}",
+            walk.omitted
+        );
+        restore();
+    }
+
+    /// A relative pattern matches at any depth and means the same thing
+    /// wherever the command runs: never bound to `$PWD`, and never left
+    /// matching nothing because the path it is compared with is
+    /// absolute.
+    #[test]
+    fn a_relative_pattern_matches_at_any_depth_and_ignores_the_working_directory() {
+        let cwd = std::env::current_dir().unwrap();
+        let log = ExcludeSet::new(&["**/*.log".to_string()]).unwrap();
+        assert!(log.is_match(
+            Path::new("/nonexistent-mise-test/a/b/c.log"),
+            Path::new(ROOT)
+        ));
+        assert!(log.is_match(&cwd.join("a/b/c.log"), Path::new(ROOT)));
+        assert!(!log.is_match(
+            Path::new("/nonexistent-mise-test/a/b/c.txt"),
+            Path::new(ROOT)
+        ));
+
+        // `sessions/**` used to match nothing at all, and briefly matched
+        // only under whichever directory the command ran in; a leading
+        // `./` says nothing extra and must not break the pattern
+        for pattern in ["sessions/**", "./sessions/**"] {
+            let sessions = ExcludeSet::new(&[pattern.to_string()]).unwrap();
+            for root in [Path::new("/nonexistent-mise-test/.codex"), cwd.as_path()] {
+                assert!(
+                    sessions.is_match(&root.join("sessions/one.jsonl"), Path::new(ROOT)),
+                    "{pattern} under {}",
+                    root.display()
+                );
+            }
+            assert!(!sessions.is_match(
+                Path::new("/nonexistent-mise-test/.codex/config.toml"),
+                Path::new(ROOT)
+            ));
+        }
+        // a relative pattern is relative to the tracked root: a
+        // `sessions` directory in the path above the root must not make
+        // `sessions/**` swallow the whole tracked tree
+        let above = ExcludeSet::new(&["sessions/**".to_string()]).unwrap();
+        let nested_root = Path::new("/nonexistent-mise-test/sessions/.codex");
+        assert!(!above.is_match(&nested_root.join("config.toml"), nested_root));
+        assert!(above.is_match(&nested_root.join("sessions/one.jsonl"), nested_root));
+
+        let keys = ExcludeSet::new(&["./keys/**".to_string()]).unwrap();
+        assert!(keys.is_match(
+            Path::new("/nonexistent-mise-test/.config/app/keys/id"),
+            Path::new(ROOT)
+        ));
+    }
+
+    /// An absolute pattern naming the live `~/…` location has to match a
+    /// file the walk reached through a symlinked ancestor, which it only
+    /// does when the pattern is normalized the way tracked paths are.
+    #[cfg(unix)]
+    #[test]
+    fn an_absolute_pattern_follows_a_symlinked_ancestor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(real.join("app")).unwrap();
+        std::fs::write(real.join("app/store.kdb"), "vault").unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        // what the walk captures: the normalized path under the real directory
+        let walked = normalize_target(&link.join("app/store.kdb"));
+        assert!(walked.starts_with(normalize_target(&real)));
+        // what the user writes: the location they know, through the link
+        let pattern = link.join("app/**").to_string_lossy().into_owned();
+        let set = ExcludeSet::new(std::slice::from_ref(&pattern)).unwrap();
+        assert!(set.is_match(&walked, Path::new(ROOT)));
+    }
+
+    /// A pattern must also match the path exactly as it was written,
+    /// not only its normalized form. A tracked entry pushed with an
+    /// un-normalized path — a temp directory reached through a symlink,
+    /// a Windows 8.3 short name — is walked as written, so normalizing
+    /// only the pattern would silently stop the exclusion matching.
+    #[cfg(unix)]
+    #[test]
+    fn an_absolute_pattern_matches_the_path_as_written_too() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(real.join("codex")).unwrap();
+        std::fs::write(real.join("codex/one.jsonl"), "drop").unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let root = link.join("codex");
+        let pattern = format!("{}/**", root.display());
+        let set = ExcludeSet::new(std::slice::from_ref(&pattern)).unwrap();
+        // as written
+        assert!(set.is_match(&root.join("one.jsonl"), Path::new(ROOT)));
+        // and normalized, the way a configured entry is walked
+        assert!(set.is_match(&normalize_target(&root).join("one.jsonl"), Path::new(ROOT)));
+    }
+
+    /// A pattern is classified by the path it names, not by the text the
+    /// user typed, so `$HOME/…` behaves exactly like `~/…` — including
+    /// under a negation. A pattern naming an unset variable is left out
+    /// rather than expanded to nothing, which would have turned
+    /// `$UNSET/keys/**` into `/keys/**`.
+    #[test]
+    fn a_pattern_is_expanded_before_it_is_classified() {
+        let home = crate::dirs::HOME.to_path_buf();
+        let target = home.join(".mise-test-expand/app/keys/id");
+        for pattern in [
+            "~/.mise-test-expand/app/**",
+            "$HOME/.mise-test-expand/app/**",
+        ] {
+            let set = ExcludeSet::new(&[pattern.to_string()]).unwrap();
+            assert!(set.is_match(&target, Path::new(ROOT)), "{pattern}");
+            assert!(
+                !set.is_match(Path::new("/elsewhere/app/keys/id"), Path::new(ROOT)),
+                "{pattern}"
+            );
+        }
+        // `${VAR}` too, and a negation still negates
+        let set = ExcludeSet::new(&[
+            "${HOME}/.mise-test-expand/app/**".to_string(),
+            "!$HOME/.mise-test-expand/app/keys/**".to_string(),
+        ])
+        .unwrap();
+        assert!(!set.is_match(&target, Path::new(ROOT)));
+        assert!(set.is_match(&home.join(".mise-test-expand/app/other"), Path::new(ROOT)));
+
+        // an unset variable leaves the rule out; it must not become
+        // `/keys/**`, and it must not panic
+        let set = ExcludeSet::new(&["$MISE_TEST_UNSET_PATTERN_VAR/keys/**".to_string()]).unwrap();
+        assert!(!set.is_match(Path::new("/keys/id"), Path::new(ROOT)));
+        assert!(!set.is_match(&target, Path::new(ROOT)));
+        // an expanded value that begins with `!` is data, not syntax: the
+        // rule stays an exclusion, because negation is recorded as a
+        // field and the pattern is never parsed back out of a string
+        // SAFETY: single-threaded test setup, before any matcher is built
+        unsafe { std::env::set_var("MISE_TEST_BANG_PATTERN_VAR", "!private") };
+        let bang = ExcludeSet::new(&["$MISE_TEST_BANG_PATTERN_VAR/**".to_string()]).unwrap();
+        assert_eq!(bang.expanded().len(), 1);
+        assert!(!bang.expanded()[0].negated);
+        assert_eq!(bang.expanded()[0].pattern, "!private/**");
+        let recorded = ExcludeSet::from_expanded(bang.expanded()).unwrap();
+        let root = Path::new("/nonexistent-mise-test");
+        assert!(recorded.is_match(&root.join("!private/secret"), root));
+        // a genuinely negated rule round-trips as negated
+        let negated =
+            ExcludeSet::new(&["cache".to_string(), "!cache/keep.conf".to_string()]).unwrap();
+        assert!(negated.expanded()[1].negated);
+        assert_eq!(negated.expanded()[1].pattern, "cache/keep.conf");
+        let recorded = ExcludeSet::from_expanded(negated.expanded()).unwrap();
+        assert!(recorded.is_match(&root.join("cache/index"), root));
+        assert!(!recorded.is_match(&root.join("cache/keep.conf"), root));
+        // a `!` anywhere but the first character is just a character
+        let middle = ExcludeSet::new(&["oh!no.txt".to_string()]).unwrap();
+        assert!(!middle.expanded()[0].negated);
+        assert!(middle.is_match(&root.join("a/oh!no.txt"), root));
+        unsafe { std::env::remove_var("MISE_TEST_BANG_PATTERN_VAR") };
+
+        // an empty value is not a value: `$EMPTY/keys/**` must not
+        // become `/keys/**`, matching from the filesystem root
+        // SAFETY: single-threaded test setup, before any matcher is built
+        unsafe { std::env::set_var("MISE_TEST_EMPTY_PATTERN_VAR", "") };
+        let empty = ExcludeSet::new(&["$MISE_TEST_EMPTY_PATTERN_VAR/keys/**".to_string()]).unwrap();
+        assert!(!empty.is_match(Path::new("/keys/id"), Path::new("/")));
+        assert_eq!(empty.unevaluable().len(), 1);
+        unsafe { std::env::remove_var("MISE_TEST_EMPTY_PATTERN_VAR") };
+
+        // a lone `$` is literal, not a variable reference
+        assert!(ExcludeSet::new(&["cost$".to_string()]).is_ok());
+
+        // `$$` writes a literal `$`, so a real path holding one can be
+        // named at all
+        let literal = ExcludeSet::new(&["report$$Q1.json".to_string()]).unwrap();
+        assert!(literal.is_match(
+            Path::new("/nonexistent-mise-test/a/report$Q1.json"),
+            Path::new(ROOT)
+        ));
+        assert!(!literal.is_match(
+            Path::new("/nonexistent-mise-test/a/report.json"),
+            Path::new(ROOT)
+        ));
+    }
+
+    /// Pruning a matching directory must not swallow a later `!pattern`
+    /// that re-includes something inside it: last-match-wins is the
+    /// semantics, and the pruning is only an optimization.
+    #[test]
+    fn a_negation_below_an_excluded_directory_still_re_includes() {
+        // the matcher alone, with no walk: if this part ever fails the
+        // cause is the matching, and if only the walk below fails the
+        // cause is pruning skipping the directory before the negation is
+        // consulted
+        let root = Path::new(ROOT);
+        let rules = ["cache".to_string(), "!cache/keep.conf".to_string()];
+        let set = ExcludeSet::new(&rules).unwrap();
+        for (file, excluded) in [("cache/index", true), ("cache/keep.conf", false)] {
+            let path = root.join(file);
+            assert_eq!(
+                set.is_match(&path, root),
+                excluded,
+                "matcher: {file} under {} should be excluded={excluded}",
+                root.display()
+            );
+        }
+        assert!(
+            set.may_reinclude_below(&root.join("cache")),
+            "a negation naming something inside the directory must keep it walked"
+        );
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        let cache = root.join("cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(root.join("config.toml"), "keep").unwrap();
+        std::fs::write(cache.join("index"), "drop").unwrap();
+        std::fs::write(cache.join("keep.conf"), "keep").unwrap();
+        for negation in [
+            format!("!{}/cache/keep.conf", root.display()),
+            "!cache/keep.conf".to_string(),
+        ] {
+            let mut set = TrackedSet {
+                exclude: vec!["cache".to_string(), negation.clone()],
+                ..Default::default()
+            };
+            set.push(entry(&root));
+            let walk = set.walk().unwrap();
+            let mut names: Vec<String> = walk
+                .files
+                .keys()
+                .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+                .collect();
+            names.sort();
+            assert_eq!(names, ["config.toml", "keep.conf"], "{negation}");
+        }
+        // the walk and the callers that never walk must agree about every
+        // file, which is what pruning could otherwise have broken
+        let mut set = TrackedSet {
+            exclude: vec![
+                "cache".to_string(),
+                format!("!{}/cache/keep.conf", root.display()),
+            ],
+            ..Default::default()
+        };
+        set.push(entry(&root));
+        let walk = set.walk().unwrap();
+        for file in ["config.toml", "cache/index", "cache/keep.conf"] {
+            let path = root.join(file);
+            assert_eq!(
+                walk.files.contains_key(&path),
+                set.would_retain(&path).unwrap(),
+                "{file}"
+            );
+        }
+
+        // with nothing to re-include, the directory is still pruned
+        let exclude = ExcludeSet::new(&["cache".to_string()]).unwrap();
+        assert!(
+            !exclude.may_reinclude_below(&cache),
+            "no negation at all, so {} must be prunable",
+            cache.display()
+        );
+        // a negation somewhere else entirely does not disable pruning.
+        // The path is built from the temp directory rather than written
+        // as `/somewhere/else`, which is not absolute on Windows and
+        // would be read as a relative pattern matching at any depth.
+        let elsewhere = tmp.path().join("elsewhere/keep.conf");
+        let exclude =
+            ExcludeSet::new(&["cache".to_string(), format!("!{}", elsewhere.display())]).unwrap();
+        assert!(
+            !exclude.may_reinclude_below(&cache),
+            "a negation at {} cannot re-include anything below {}",
+            elsewhere.display(),
+            cache.display()
+        );
+    }
+
+    /// The invariant that keeps this family of bugs from recurring:
+    /// the capture walk, `would_retain`, the watcher's own filter and a
+    /// replay's reading of the recorded coverage must agree about every
+    /// path. All four pick the owning entry the same way — most specific
+    /// wins — and evaluate exclusion with the same ancestor-aware,
+    /// last-match-wins matcher over one shared composition.
+    #[test]
+    fn capture_would_retain_watcher_and_replay_agree_about_every_path() {
+        use crate::system::history::replay::{PathState, classify_coverage};
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("a");
+        let inner = outer.join("b");
+        std::fs::create_dir_all(inner.join("cache")).unwrap();
+        std::fs::write(outer.join("outer.toml"), "keep").unwrap();
+        // owned by the inner entry, and the global `b` must not reach it
+        // through the outer entry's root
+        std::fs::write(inner.join("inner.toml"), "keep").unwrap();
+        std::fs::write(inner.join("cache/index"), "drop").unwrap();
+        std::fs::write(inner.join("cache/keep.conf"), "keep").unwrap();
+
+        let mut set = TrackedSet {
+            exclude: vec![
+                "b".to_string(),
+                "cache".to_string(),
+                format!("!{}/cache/keep.conf", inner.display()),
+            ],
+            ..Default::default()
+        };
+        set.push(entry(&outer));
+        set.push(entry(&inner));
+        let walk = set.walk().unwrap();
+        let coverage = set.coverage(&walk);
+
+        // every path is built with `join`, so on Windows the live paths
+        // carry `\` while the patterns carry `/`: one test pins the
+        // separator handling on both platforms
+        for (file, expected) in [
+            (outer.join("outer.toml"), true),
+            (inner.join("inner.toml"), true),
+            (inner.join("cache/index"), false),
+            (inner.join("cache/keep.conf"), true),
+        ] {
+            let display = display_path(&file);
+            assert_eq!(
+                walk.files.contains_key(&file),
+                expected,
+                "capture {display}"
+            );
+            assert_eq!(
+                set.would_retain(&file).unwrap(),
+                expected,
+                "would_retain {display}"
+            );
+            assert_eq!(
+                !set.excluded_by_lists(&set.exclude_set().unwrap(), &file),
+                expected,
+                "watcher {display}"
+            );
+            let covered = !matches!(classify_coverage(&coverage, &display), PathState::Uncovered);
+            assert_eq!(covered, expected, "replay {display}");
+        }
+
+        // a replay reads the expansion the checkpoint recorded, never the
+        // environment it is running in
+        assert!(
+            coverage
+                .exclude_expanded
+                .iter()
+                .any(|rule| rule.pattern.contains("cache")),
+            "{:?}",
+            coverage.exclude_expanded
+        );
+        let display = display_path(outer.join("outer.toml"));
+        let mut changed = coverage.clone();
+        changed.exclude = vec!["$MISE_TEST_UNSET_PATTERN_VAR/**".to_string()];
+        assert!(
+            !matches!(
+                classify_coverage(&changed, &display),
+                PathState::Unevaluable(_)
+            ),
+            "the recorded expansion decides, so the as-written list cannot make it unknown"
+        );
+
+        // a checkpoint written before expansions were recorded is still
+        // readable when nothing in its list could expand differently
+        let mut plain = coverage.clone();
+        plain.exclude_expanded.clear();
+        assert!(!matches!(
+            classify_coverage(&plain, &display),
+            PathState::Unevaluable(_)
+        ));
+        // but one whose list could name a variable cannot be classified
+        // at all, and must not be read as "absent"
+        let mut legacy = plain.clone();
+        legacy
+            .exclude
+            .push("$MISE_TEST_UNSET_PATTERN_VAR/**".to_string());
+        assert!(matches!(
+            classify_coverage(&legacy, &display),
+            PathState::Unevaluable(_)
+        ));
+
+        // a rule that cannot be evaluated is unknown, never absent
+        let mut unevaluable = plain.clone();
+        unevaluable
+            .exclude
+            .push("$MISE_TEST_UNSET_PATTERN_VAR/cache/**".to_string());
+        assert!(matches!(
+            classify_coverage(&unevaluable, &display),
+            PathState::Unevaluable(_)
+        ));
+
+        // the same fixture read back through the recorded rules, which is
+        // what a replay on another machine does
+        let replayed = super::ExcludeSet::from_expanded(&coverage.exclude_expanded).unwrap();
+        for (file, excluded) in [
+            (outer.join("outer.toml"), false),
+            (inner.join("cache/index"), true),
+            (inner.join("cache/keep.conf"), false),
+        ] {
+            let owner = set.entry_for(&file).unwrap();
+            assert_eq!(
+                replayed.is_match(&file, &owner.path),
+                excluded,
+                "recorded rules: {}",
+                display_path(&file)
+            );
+        }
+
+        // a recorded rule keeps its negation as a field, so an expanded
+        // value beginning with `!` cannot turn an exclusion into a
+        // re-inclusion when the checkpoint is read back
+        let recorded = crate::system::history::store::ExpandedRule {
+            negated: false,
+            root: None,
+            pattern: separators(&inner.join("**")),
+        };
+        let mut injected = coverage.clone();
+        injected.exclude_expanded = vec![
+            crate::system::history::store::ExpandedRule {
+                negated: false,
+                root: None,
+                pattern: "!private/**".to_string(),
+            },
+            recorded,
+        ];
+        assert!(matches!(
+            classify_coverage(&injected, &display_path(inner.join("inner.toml"))),
+            PathState::Uncovered
+        ));
+    }
+
+    /// "Capture here, replay there" is what every exclusion rule has to
+    /// survive. A rule naming a place every machine has is recorded
+    /// against that root and resolved per machine; one naming a place
+    /// only this machine knows is frozen; one naming a root this machine
+    /// does not have is unevaluable, never guessed at.
+    #[test]
+    fn a_recorded_rule_is_portable_where_the_path_it_names_is() {
+        let home = normalize(&dirs::HOME);
+        // `~/…` and `$HOME/…` are the same place on every machine, so
+        // they are stored home-relative rather than frozen to this home
+        for pattern in ["~/.mise-test-portable/**", "$HOME/.mise-test-portable/**"] {
+            let set = ExcludeSet::new(&[pattern.to_string()]).unwrap();
+            let recorded = &set.expanded()[0];
+            assert_eq!(recorded.root.as_deref(), Some("home"), "{pattern}");
+            assert_eq!(recorded.pattern, ".mise-test-portable/**", "{pattern}");
+            // read back, it resolves against this machine's home
+            let replayed = ExcludeSet::from_expanded(set.expanded()).unwrap();
+            assert!(
+                replayed.is_match(&home.join(".mise-test-portable/x"), &home),
+                "{pattern}"
+            );
+            assert!(replayed.unevaluable().is_empty(), "{pattern}");
+        }
+
+        // portability is decided from what the user wrote, not from
+        // where the expansion points: a variable whose value sits under
+        // home is still frozen, or a replay on another machine would
+        // retarget the rule at that machine's files
+        // SAFETY: single-threaded test setup, before any matcher is built
+        unsafe {
+            std::env::set_var(
+                "MISE_TEST_UNDER_HOME_VAR",
+                home.join("work").to_str().unwrap(),
+            )
+        };
+        let under_home = ExcludeSet::new(&["$MISE_TEST_UNDER_HOME_VAR/**".to_string()]).unwrap();
+        assert_eq!(
+            under_home.expanded()[0].root,
+            None,
+            "a variable is never portable"
+        );
+        assert_eq!(
+            under_home.expanded()[0].pattern,
+            separators(&home.join("work/**"))
+        );
+        unsafe { std::env::remove_var("MISE_TEST_UNDER_HOME_VAR") };
+        // while the same place written with `~` follows the home it is
+        // replayed under
+        let written_home = ExcludeSet::new(&["~/work/**".to_string()]).unwrap();
+        assert_eq!(written_home.expanded()[0].root.as_deref(), Some("home"));
+        assert_eq!(written_home.expanded()[0].pattern, "work/**");
+
+        // a rule naming somewhere only this machine knows is frozen, as
+        // the variable may mean something else or nothing elsewhere
+        unsafe { std::env::set_var("MISE_TEST_PORTABLE_VAR", "/nonexistent-mise-test/app") };
+        let set = ExcludeSet::new(&["$MISE_TEST_PORTABLE_VAR/cache/**".to_string()]).unwrap();
+        assert_eq!(set.expanded()[0].root, None);
+        assert_eq!(
+            set.expanded()[0].pattern,
+            "/nonexistent-mise-test/app/cache/**"
+        );
+        unsafe { std::env::remove_var("MISE_TEST_PORTABLE_VAR") };
+        // and it keeps meaning what it meant, whatever the variable says now
+        let replayed = ExcludeSet::from_expanded(set.expanded()).unwrap();
+        let root = Path::new("/nonexistent-mise-test/app");
+        assert!(replayed.is_match(&root.join("cache/index"), root));
+
+        // a root this machine does not have leaves the rule unevaluable,
+        // so a replay says it cannot tell instead of deleting
+        let unknown = [crate::system::history::store::ExpandedRule {
+            negated: false,
+            root: Some("elsewhere".to_string()),
+            pattern: "cache/**".to_string(),
+        }];
+        let replayed = ExcludeSet::from_expanded(&unknown).unwrap();
+        assert_eq!(replayed.unevaluable().len(), 1);
+        assert!(!replayed.is_match(&home.join("cache/index"), &home));
     }
 
     #[test]

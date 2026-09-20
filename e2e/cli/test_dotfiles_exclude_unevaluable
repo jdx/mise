@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# A checkpoint records its exclusions as written. When a rollback cannot
+# evaluate one of them — an environment variable that is not set here —
+# it must leave the paths it cannot account for alone rather than delete
+# a live file the snapshot never held.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+export MISE_TEST_APP_DIR="$HOME/.config/app"
+mkdir -p ~/.config/app/cache
+echo 'model = "x"' >~/.config/app/config.toml
+
+# the exclusion is written with a variable, and is evaluable right now
+mkdir -p "$MISE_CONFIG_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[history]
+exclude = ["$MISE_TEST_APP_DIR/cache/**"]
+TOML
+assert_succeed 'mise dot track ~/.config/app'
+echo 'scratch' >~/.config/app/cache/index
+assert_succeed 'mise dot save'
+checkpoint="$(mise dot history --json | jq -r '.[0].uuid')"
+
+# the excluded file is not in the checkpoint, and the tracked one is
+repo="$MISE_STATE_DIR/history/repo.git"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.config/app/cache/index"
+assert "git --git-dir=$repo show HEAD:home/.config/app/config.toml" 'model = "x"'
+
+# A rollback reads the expansion the checkpoint recorded, so the variable
+# being unset, empty, or simply different cannot change what it thinks
+# the checkpoint covered, and the live file survives all three.
+for value in unset '' "$HOME/.config/elsewhere"; do
+  if [ "$value" = unset ]; then
+    unset MISE_TEST_APP_DIR
+  else
+    export MISE_TEST_APP_DIR="$value"
+  fi
+  assert_succeed "mise dot rollback --to $checkpoint --all --yes"
+  assert 'cat ~/.config/app/cache/index' 'scratch'
+  assert 'cat ~/.config/app/config.toml' 'model = "x"'
+done
+export MISE_TEST_APP_DIR="$HOME/.config/app"
+
+# The rollbacks above read what the checkpoint recorded rather than the
+# environment; a checkpoint written before that was recorded is covered
+# by the unit tests, which can build one directly.

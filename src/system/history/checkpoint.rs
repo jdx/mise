@@ -661,11 +661,7 @@ impl Store {
         }
         let mut overlays = vec![];
         for held in &draft.held {
-            let Some(entry) = entries
-                .iter()
-                .filter(|entry| held.starts_with(&entry.path))
-                .max_by_key(|entry| entry.path.components().count())
-            else {
+            let Some(entry) = super::tracked::owning_entry(entries, held) else {
                 continue;
             };
             let tree_path = entry.tree_path(held)?;

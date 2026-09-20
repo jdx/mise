@@ -1278,21 +1278,39 @@ fn decide(
                     "?".into(),
                 ),
                 PathState::Omitted(reason) => (Action::Skip(reason), from, "?".into()),
+                PathState::Unevaluable(reason) => (Action::Skip(reason), from, "?".into()),
             }
         }
         (None, None) => (Action::Unchanged, "missing".into(), "missing".into()),
     }
 }
 
-enum PathState {
+pub(crate) enum PathState {
+    /// The checkpoint positively covered this path and did not hold it,
+    /// so it was absent. Only this answer permits removing a live file.
     Absent,
     Uncovered,
     Omitted(String),
+    /// The checkpoint's own exclusion rules cannot be evaluated here, so
+    /// whether it covered this path is unknown.
+    ///
+    /// **An exclusion rule that cannot be evaluated never causes a live
+    /// file to be deleted.** A checkpoint records its globs as written,
+    /// and one naming an environment variable resolves differently — or
+    /// not at all — in another environment. Dropping such a rule is safe
+    /// while capturing, where the cost is saving something unintended;
+    /// here the cost would be destroying a file the snapshot never held.
+    Unevaluable(String),
 }
 
 /// What a checkpoint says about a path it does not hold.
 fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
-    let coverage = &checkpoint.tree.coverage;
+    classify_coverage(&checkpoint.tree.coverage, display)
+}
+
+/// The same question asked of a coverage record on its own, so the
+/// answer can be compared with what a capture decided from the same set.
+pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str) -> PathState {
     let under = |prefix: &str| super::tracked::display_under(display, prefix);
     for omitted in &coverage.omitted {
         if under(&omitted.path) {
@@ -1304,33 +1322,62 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
             return PathState::Omitted(format!("scan incomplete: {}", incomplete.reason));
         }
     }
-    let covered = coverage.entries.iter().any(|entry| under(&entry.path));
-    if !covered {
+    // the most-specific entry owns the path, exactly as
+    // `TrackedSet::entry_for` decides during capture. Picking the first
+    // declared ancestor instead would judge a nested entry's files by the
+    // outer entry's root, and a replay would then call a file uncovered
+    // that the checkpoint actually holds.
+    let Some(owner) =
+        super::tracked::owning_display(&coverage.entries, display, |entry| entry.path.as_str())
+    else {
         return PathState::Uncovered;
-    }
+    };
     let local = file::replace_path(Path::new(display));
-    if let Ok(exclude) = super::tracked::ExcludeSet::new(&coverage.exclude)
-        && exclude.is_match(&local)
+    let root = file::replace_path(Path::new(&owner.path));
+    // The checkpoint's exclusions are read from the expansion recorded
+    // with it, never re-expanded here: the same `$VAR` may be unset,
+    // empty, or simply different in the environment a rollback runs in,
+    // and nothing at this point can tell "still means what it meant" from
+    // "means something else now".
+    // A checkpoint from before expansions were recorded can still be read
+    // when nothing in its list could expand differently: a pattern with no
+    // `$` is its own expansion. Only one that could have named a variable
+    // is unclassifiable.
+    let legacy = coverage.exclude_expanded.is_empty()
+        && coverage.exclude.iter().any(|pattern| pattern.contains('$'));
+    let exclude = if coverage.exclude_expanded.is_empty() {
+        super::tracked::ExcludeSet::new(&coverage.exclude).ok()
+    } else {
+        super::tracked::ExcludeSet::from_expanded(&coverage.exclude_expanded).ok()
+    };
+    if let Some(exclude) = &exclude
+        && !legacy
+        && exclude.is_match(&local, &root)
     {
         return PathState::Uncovered;
     }
     // the entry's own list, recorded with the checkpoint: a file it left
     // out was never known to be absent
-    let owner = coverage
-        .entries
-        .iter()
-        .filter(|entry| under(&entry.path))
-        .max_by_key(|entry| entry.path.len());
-    if let Some(entry) = owner
-        && super::tracked::excluded_by_entry(
-            &file::replace_path(Path::new(&entry.path)),
-            &entry.exclude,
-            &local,
-        )
-    {
+    if super::tracked::excluded_by_entry(&root, &owner.exclude, &local) {
         return PathState::Uncovered;
     }
-    PathState::Absent
+    // everything readable says the checkpoint covered this path — but a
+    // rule that could not be read, or one this checkpoint never recorded
+    // the expansion of, makes that a guess, and a guess must not delete a
+    // file
+    if legacy {
+        return PathState::Unevaluable(
+            "this checkpoint predates recorded exclusion expansions, so what it covered cannot be determined".into(),
+        );
+    }
+    match exclude {
+        Some(exclude) if !exclude.unevaluable().is_empty() => PathState::Unevaluable(format!(
+            "an exclusion cannot be evaluated here: {}",
+            exclude.unevaluable().join(", ")
+        )),
+        None => PathState::Unevaluable("an exclusion cannot be read".into()),
+        Some(_) => PathState::Absent,
+    }
 }
 
 fn print_plan(steps: &[Step], exec: &Execution, tracked: &TrackedSet) -> Result<()> {

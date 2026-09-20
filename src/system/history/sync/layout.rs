@@ -40,6 +40,54 @@ impl Roots {
         is_safe_branch_path(&path).then_some(path)
     }
 
+    /// The portable form of a local *pattern*: the root it lives under
+    /// and the rest of it, `/`-separated.
+    ///
+    /// The same precedence as [`Self::branch_path`] — configuration
+    /// directory first, then home — so an exclusion rule is recorded the
+    /// way the tree already records the paths it excludes, and resolves
+    /// per machine. A pattern is stored as data rather than used as a ref
+    /// name, so the branch-name restrictions do not apply to it.
+    pub(crate) fn portable_pattern(&self, local: &Path) -> Option<(&'static str, String)> {
+        // A pattern is expanded with `replace_path`, which joins the raw
+        // home, while these roots are normalized. Both spellings name the
+        // same directory, so both are tried: otherwise a `~/…` rule on a
+        // machine whose home is reached through a symlink would be
+        // silently recorded as unportable and stop matching after a pull.
+        //
+        // Only `~` and `$HOME` patterns reach here, and both expand from
+        // `dirs::HOME`, so the two sides always agree on case — which is
+        // what makes `strip_prefix` safe on a case-insensitive filesystem.
+        let raw_home = crate::file::replace_path(Path::new("~"));
+        let raw_config = global_config_dir();
+        for (root, base) in [
+            ("config", &self.config_dir),
+            ("config", &raw_config),
+            ("home", &self.home),
+            ("home", &raw_home),
+        ] {
+            if let Ok(relative) = local.strip_prefix(base) {
+                return Some((root, slash(relative)));
+            }
+        }
+        None
+    }
+
+    /// The local path a portable root and remainder name here, or `None`
+    /// when this machine has no such root.
+    pub(crate) fn resolve_portable(&self, root: &str, relative: &str) -> Option<PathBuf> {
+        let base = match root {
+            "home" => &self.home,
+            "config" => &self.config_dir,
+            _ => return None,
+        };
+        Some(if relative.is_empty() {
+            base.clone()
+        } else {
+            base.join(relative)
+        })
+    }
+
     /// The root a local path is mapped under, with the same precedence as
     /// [`Self::branch_path`]: the configuration directory first, then home.
     pub(crate) fn root_of(&self, local: &Path) -> Option<&Path> {
