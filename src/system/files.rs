@@ -3485,7 +3485,21 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                     } else if target.is_file() {
                         overwrite_recorded(&source, &target, written)?;
                     } else {
-                        create_recorded(&target, written, || file::copy(&source, &target))?;
+                        match std::fs::symlink_metadata(&target) {
+                            // absent: recorded once it exists, even if the
+                            // copy that created it then failed
+                            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                                create_recorded(&target, written, || file::copy(&source, &target))?;
+                            }
+                            // something else is there (a directory, say):
+                            // a copy that fails leaves it as it was, so it
+                            // is recorded only once the copy succeeded
+                            Ok(_) => {
+                                file::copy(&source, &target)?;
+                                written.push(target.clone());
+                            }
+                            Err(err) => return Err(err.into()),
+                        }
                     }
                 }
             } else {
@@ -4133,6 +4147,30 @@ variants = [{{ {field} = "linux" }}]"#
             .is_err()
         );
         assert_eq!(file::read_to_string(target.join("entry"))?, "keep me");
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn directory_copy_does_not_record_an_existing_directory_the_copy_left_alone() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(&source)?;
+        file::write(source.join("entry"), "file")?;
+        // a directory where the copy wants a file: the copy fails without
+        // touching it, so nothing changed and nothing is recorded
+        let target = dir.path().join("target");
+        file::create_dir_all(target.join("entry"))?;
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(target.join("entry").is_dir());
         assert!(written.is_empty());
         Ok(())
     }
