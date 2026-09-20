@@ -71,7 +71,20 @@ pub(crate) fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
         }
     };
     drop(job);
-    Ok(code)
+    // Leave with the service's own status, whole.
+    //
+    // Windows statuses are 32 bits and services use the range — HRESULTs and
+    // `STATUS_` values among them — but a Rust `main` returns a byte, and
+    // mise narrows to one on the way out (`exit::status`). A status whose low
+    // byte happens to be zero, such as 256 or 0x80070100, would reach Task
+    // Scheduler as success: `RestartOnFailure` would not fire for a service
+    // that had failed, and `schtasks /query` would show it as having
+    // succeeded. `cmd.exe`, which this replaced, passed the value through.
+    //
+    // Nothing is left to unwind here. The service has exited and been reaped,
+    // the job object closed with it, and a launcher writes no output anyone
+    // is waiting to see.
+    std::process::exit(code)
 }
 
 /// Only Task Scheduler registers this action: systemd and launchd both set
