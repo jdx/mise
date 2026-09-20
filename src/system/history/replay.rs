@@ -1293,12 +1293,7 @@ enum PathState {
 /// What a checkpoint says about a path it does not hold.
 fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
     let coverage = &checkpoint.tree.coverage;
-    let under = |prefix: &str| {
-        display == prefix
-            || display
-                .strip_prefix(prefix)
-                .is_some_and(|rest| rest.starts_with('/'))
-    };
+    let under = |prefix: &str| super::tracked::display_under(display, prefix);
     for omitted in &coverage.omitted {
         if under(&omitted.path) {
             return PathState::Omitted(omitted.reason.clone());
