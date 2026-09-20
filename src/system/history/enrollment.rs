@@ -103,12 +103,17 @@ pub(crate) fn resolve(
     manifest.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
     manifest.remove_unenrolled_permissions();
     let mut resolved = manifest.tracking()?;
+    // the manifest carries the shared policies; where the entry was
+    // declared and its own exclude list are this machine's configuration
     for entry in &mut resolved.entries {
-        entry.declared_in = tracked
+        let declared = tracked
             .entries
             .iter()
-            .find(|declared| declared.path == entry.path)
-            .and_then(|declared| declared.declared_in.clone());
+            .find(|declared| declared.path == entry.path);
+        entry.declared_in = declared.and_then(|declared| declared.declared_in.clone());
+        entry.exclude = declared
+            .map(|declared| declared.exclude.clone())
+            .unwrap_or_default();
     }
     resolved.required_sources = tracked.required_sources.clone();
     resolved.invalid = tracked.invalid.clone();

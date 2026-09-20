@@ -108,11 +108,17 @@ impl DotfilesTrack {
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);
             let normalized = normalize_target(&target);
-            preview_set.push(TrackedEntry::new(
-                normalized.clone(),
-                "track",
-                self.policy(existing),
-            ));
+            let mut entry =
+                TrackedEntry::new(normalized.clone(), "track", self.policy(existing));
+            // re-tracking previews under the entry's own exclude list
+            if let Some(existing) = existing {
+                entry.exclude = existing
+                    .exclude
+                    .iter()
+                    .map(|pattern| pattern.as_str().to_owned())
+                    .collect();
+            }
+            preview_set.push(entry);
             resolved.push((target, normalized));
         }
         // every declaration is in the set, so a target nested under one
@@ -370,6 +376,16 @@ impl DotfilesTrack {
                 "autosave",
                 Value::Boolean(toml_edit::Formatted::new(policy.autosave)),
             );
+        }
+        // re-tracking keeps the entry's own exclude list
+        if let Some(existing) = existing
+            && !existing.exclude.is_empty()
+        {
+            let mut list = Array::new();
+            for pattern in &existing.exclude {
+                list.push(string(pattern.as_str()));
+            }
+            table.insert("exclude", Value::Array(list));
         }
         let mut variants: Vec<Variant> =
             existing.map(|req| req.variants.clone()).unwrap_or_default();

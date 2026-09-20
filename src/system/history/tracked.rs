@@ -54,9 +54,38 @@ pub(crate) struct TrackedEntry {
     /// The shared stream of a tracked file with variants.
     pub variant: Option<String>,
     pub declared_in: Option<PathBuf>,
+    /// The entry's own `exclude` globs, relative to its path, with the
+    /// rules of a deployment entry's list (see
+    /// [`crate::system::files::is_excluded`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
 }
 
 impl TrackedEntry {
+    /// The compiled `exclude` patterns; an invalid one was already
+    /// reported when the declaration was read.
+    pub(crate) fn exclude_patterns(&self) -> Vec<glob::Pattern> {
+        self.exclude
+            .iter()
+            .filter_map(|pattern| glob::Pattern::new(pattern).ok())
+            .collect()
+    }
+
+    /// Whether the entry's own `exclude` list drops `path`: a path below
+    /// the entry whose entry-relative form matches, as for a deployment
+    /// entry. The entry path itself is never excluded by its own list.
+    pub(crate) fn is_excluded(&self, path: &Path) -> bool {
+        if self.exclude.is_empty() {
+            return false;
+        }
+        match path.strip_prefix(&self.path) {
+            Ok(rel) if !rel.as_os_str().is_empty() => {
+                crate::system::files::is_excluded(rel, &self.exclude_patterns())
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn tree_path(&self, path: &Path) -> Result<String> {
         super::sync::layout::Roots::current()
             .branch_path(path, self.variant.as_deref())
@@ -79,6 +108,7 @@ impl TrackedEntry {
             policy,
             variant: None,
             declared_in: None,
+            exclude: vec![],
         }
     }
 }
@@ -236,6 +266,11 @@ impl TrackedSet {
                         request.policy,
                     );
                     entry.declared_in = declared_in;
+                    entry.exclude = request
+                        .exclude
+                        .iter()
+                        .map(|pattern| pattern.as_str().to_owned())
+                        .collect();
                     match select::select(&request.variants, &environments) {
                         Selection::Single => {}
                         Selection::Variant(variant) => {
@@ -333,7 +368,9 @@ impl TrackedSet {
         if inside_nested_repository(owner, path) {
             return Ok(false);
         }
-        Ok(!self.exclude_set()?.is_match(path))
+        // the entry's own list is applied after the global one and is not
+        // re-included by a global `!glob`
+        Ok(!self.exclude_set()?.is_match(path) && !owner.is_excluded(path))
     }
 
     pub(crate) fn exclude_set(&self) -> Result<ExcludeSet> {
@@ -523,6 +560,7 @@ fn walk_entry(
                 && (candidate.file_name() == ".git"
                     || hard.iter().any(|dir| dir == candidate.path())))
         });
+    let entry_exclude = entry.exclude_patterns();
     let mut files = 0u64;
     let mut bytes = 0u64;
     let mut walker = walker;
@@ -565,6 +603,16 @@ fn walk_entry(
             continue;
         }
         let file_type = candidate.file_type();
+        // the entry's own exclusions: a matching directory is not entered
+        if !entry_exclude.is_empty()
+            && let Ok(rel) = path.strip_prefix(&entry.path)
+            && crate::system::files::is_excluded(rel, &entry_exclude)
+        {
+            if file_type.is_dir() {
+                walker.skip_current_dir();
+            }
+            continue;
+        }
         if file_type.is_dir() {
             if path.join(".git").exists() {
                 // A repository found inside a tracked directory is skipped
@@ -1621,6 +1669,67 @@ mod tests {
         assert_eq!(with_separators(1000), "1,000");
         assert_eq!(with_separators(22972), "22,972");
         assert_eq!(with_separators(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn an_entry_excludes_relative_to_its_own_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("sessions/deep")).unwrap();
+        std::fs::create_dir_all(root.join("config/sessions")).unwrap();
+        std::fs::create_dir_all(root.join("cache")).unwrap();
+        std::fs::write(root.join("config.toml"), "keep").unwrap();
+        std::fs::write(root.join("notes.md"), "drop").unwrap();
+        std::fs::write(root.join("sessions/one.jsonl"), "drop").unwrap();
+        std::fs::write(root.join("sessions/deep/two.jsonl"), "drop").unwrap();
+        std::fs::write(root.join("config/sessions/keep.toml"), "keep").unwrap();
+        std::fs::write(root.join("cache/index"), "drop").unwrap();
+        // a component pattern matches anywhere, an anchored one only at
+        // the entry root, and a matching directory takes its subtree
+        let mut entry = entry(&root);
+        entry.exclude = vec!["*.md".into(), "sessions/**".into(), "cache".into()];
+        let mut set = TrackedSet::default();
+        set.push(entry);
+        let walk = set.walk().unwrap();
+        assert_eq!(walk.files.len(), 2);
+        assert!(walk.files.contains_key(&root.join("config.toml")));
+        assert!(
+            walk.files
+                .contains_key(&root.join("config/sessions/keep.toml"))
+        );
+        assert!(walk.omitted.is_empty());
+        assert!(set.would_retain(&root.join("config.toml")).unwrap());
+        assert!(!set.would_retain(&root.join("notes.md")).unwrap());
+        assert!(
+            !set.would_retain(&root.join("sessions/deep/two.jsonl"))
+                .unwrap()
+        );
+        assert!(!set.would_retain(&root.join("cache/index")).unwrap());
+        assert!(
+            set.would_retain(&root.join("config/sessions/keep.toml"))
+                .unwrap()
+        );
+        // the entry path itself is never dropped by its own list
+        let mut entry =
+            super::TrackedEntry::new(root.clone(), "track", Policy::for_mode(FileMode::Track));
+        entry.exclude = vec!["codex".into()];
+        assert!(!entry.is_excluded(&root));
+        assert!(!entry.is_excluded(tmp.path()));
+        // a global `!glob` re-include does not override an entry's list
+        let mut entry =
+            super::TrackedEntry::new(root.clone(), "track", Policy::for_mode(FileMode::Track));
+        entry.exclude = vec!["cache".into()];
+        let mut set = TrackedSet {
+            exclude: vec![
+                format!("{}/**", root.display()),
+                format!("!{}/cache/**", root.display()),
+            ],
+            ..Default::default()
+        };
+        set.push(entry);
+        let walk = set.walk().unwrap();
+        assert!(walk.files.is_empty());
+        assert!(!set.would_retain(&root.join("cache/index")).unwrap());
     }
 
     #[test]

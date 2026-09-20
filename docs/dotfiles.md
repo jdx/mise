@@ -389,9 +389,10 @@ matching wildcards so each source expands to a unique target:
 ## Excluding files
 
 Modes that walk a source directory — `symlink-each`, and `copy` with a
-directory source — take an `exclude` list of glob patterns. This is the way
-to point an entry at a directory you don't fully own, such as the one holding
-`mise.toml` itself:
+directory source — take an `exclude` list of glob patterns, as does a
+[tracked directory](#files-directories-and-symlinks) (relative to the
+tracked path). This is the way to point an entry at a directory you don't
+fully own, such as the one holding `mise.toml` itself:
 
 ```toml
 [dotfiles]
@@ -691,10 +692,25 @@ machine when sharing history.
 
 Add an explicit tracking entry for each file or directory you want to
 save, including the mise configuration directory or `dotfiles.root`.
-Track entries cannot contain `source`, `content`, `exclude`, or `manifest`.
+Track entries cannot contain `source`, `content`, or `manifest`.
 `mise dot paths` reports such combinations as invalid and
 leaves them out of history. The `track` command exits non-zero if the
 entry it writes is not active.
+
+A tracked directory can carry its own `exclude` list. The patterns are
+relative to the tracked path and follow the rules of
+[excluding files](#excluding-files): a pattern without `/` matches a path
+component anywhere below the directory, one with `/` is anchored to it,
+and a matching directory takes everything under it.
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions", "*.log"] }
+```
+
+The entry's list applies on top of the global `[history] exclude` globs;
+both must let a file through, and a global `!glob` does not re-include a
+file the entry excludes. `mise dot paths` lists each entry's patterns.
 
 ### Stop tracking a file
 
