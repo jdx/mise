@@ -322,9 +322,14 @@ default = "30d"
 description = "Delete files in cache that have not been accessed in this duration"
 docs = """
 The age of the cache before it is considered stale. mise will occasionally delete cache files which
-have not been accessed in this amount of time.
+have not been accessed in this amount of time, and `mise cache prune` sweeps by the same age.
 
-Set to `0s` to keep cache files indefinitely.
+Set to `0s` to keep cache files indefinitely. Both the occasional sweep and `mise cache prune` stop
+for it; the command says so rather than pruning anyway. Sub-second durations such as `500ms` are
+ages like any other, not a way to disable it.
+
+This governs the cache directories only. Cached environments expire by
+[`env_cache_ttl`](/configuration/settings.html#env_cache_ttl) and are pruned on their own terms.
 """
 env = "MISE_CACHE_PRUNE_AGE"
 type = "Duration"
