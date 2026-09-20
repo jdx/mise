@@ -67,6 +67,11 @@ impl DotfilesApply {
             info!("no dotfiles configured in [dotfiles]");
             return Ok(true);
         }
+        // resolved from the trusted layers before anything is written, so
+        // nothing this apply writes can change which commands run afterwards
+        let reload = system::history::config::reload_commands()?;
+        let mut written = vec![];
+        let mut accepted = true;
         if !files.is_empty() {
             let opts = system::files::ApplyOpts {
                 dry_run: self.dry_run,
@@ -75,21 +80,30 @@ impl DotfilesApply {
                 force_hint: "use --force",
                 yes: self.yes,
             };
-            if !system::files::apply(&config, &files, &opts, &secrets)? {
-                return Ok(false);
-            }
+            let outcome = system::files::apply(&config, &files, &opts, &secrets)?;
+            written.extend(outcome.written);
+            accepted = outcome.accepted;
         }
-        if !edits.is_empty() {
+        if accepted && !edits.is_empty() {
             let opts = system::edits::ApplyOpts {
                 part: "dotfiles",
                 dry_run: self.dry_run,
                 verbose: Settings::get().verbose,
                 yes: self.yes,
             };
-            if !system::edits::apply(&config, &edits, &opts)? {
-                return Ok(false);
-            }
+            let outcome = system::edits::apply(&config, &edits, &opts)?;
+            written.extend(outcome.written);
+            accepted = outcome.accepted;
         }
-        Ok(true)
+        // a dry run writes nothing, so nothing is reloaded; a declined edit
+        // prompt still leaves the files written before it
+        if !self.dry_run && !written.is_empty() {
+            let touched = written
+                .iter()
+                .map(|path| system::history::replay::reload_path(path))
+                .collect::<Vec<_>>();
+            system::history::replay::run_reload(&reload, &touched);
+        }
+        Ok(accepted)
     }
 }

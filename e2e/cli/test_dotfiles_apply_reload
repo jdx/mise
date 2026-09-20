@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# `mise dot apply` runs the `[history.reload]` commands whose glob matches a
+# target it wrote, once each, after every write — like pull, rollback and undo.
+# shellcheck disable=SC2016
+
+config="$MISE_CONFIG_DIR/config.toml"
+mkdir -p "$MISE_CONFIG_DIR/dotfiles/app" "$MISE_CONFIG_DIR/dotfiles/hypr" ~/.zshrc.d
+echo 'theme = dark' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+echo 'monitor=DP-1' >"$MISE_CONFIG_DIR/dotfiles/hypr/monitors.conf"
+echo 'keep me' >~/.zshrc.d/local.zsh
+cat <<EOF >"$config"
+[dotfiles]
+"~/.config/app/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+"~/.config/hypr" = "dotfiles/hypr"
+"~/.zshrc.d/local.zsh/activate" = { block = 'eval "\$(mise activate zsh)"' }
+
+[history.reload]
+"~/.config/app/**" = "echo app >> $HOME/reloads"
+"~/.config/hypr/**" = "echo hypr >> $HOME/reloads"
+"~/.zshrc.d/**" = "echo zsh >> $HOME/reloads"
+"~/.config/other/**" = "echo other >> $HOME/reloads"
+EOF
+
+# a dry run writes nothing and reloads nothing
+assert_succeed "mise dot apply --dry-run"
+assert_fail "test -e ~/reloads"
+assert_fail "test -e ~/.config/app/settings.toml"
+
+# every matching command runs once, after the writes; an unmatched one never
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.config/app/settings.toml" "theme = dark"
+assert "readlink ~/.config/hypr" "$MISE_CONFIG_DIR/dotfiles/hypr"
+assert_contains "cat ~/.zshrc.d/local.zsh" "mise activate zsh"
+assert "cat ~/reloads" $'app\nhypr\nzsh'
+
+# nothing to write, nothing to reload
+rm ~/reloads
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e ~/reloads"
+
+# only the commands matching what was actually written run
+echo 'theme = light' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.config/app/settings.toml" "theme = light"
+assert "cat ~/reloads" "app"
+
+# a single command runs once even when several written targets and globs
+# match it
+rm ~/reloads
+echo 'theme = dark' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+cat <<EOF >"$config"
+[dotfiles]
+"~/.config/app/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+"~/.config/app/keys.toml" = { content = "leader = space\n" }
+
+[history.reload]
+"~/.config/app/**" = "echo app >> $HOME/reloads"
+"~/.config/app/keys.toml" = "echo app >> $HOME/reloads"
+EOF
+assert_succeed "mise dot apply --yes"
+assert "cat ~/reloads" "app"

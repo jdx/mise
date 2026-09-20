@@ -213,6 +213,13 @@ loads these commands from system and global configuration before starting
 the operation. See [recovery details](#recovery-details) for interrupted
 writes and concurrent edits.
 
+The same commands run after `mise dot apply` writes a matching target: a
+symlink or copy it creates, a template it renders, or an edit it applies.
+A dry run writes nothing and reloads nothing, and `mise dot sync` never
+writes live files, so it runs no reload commands either. A glob under a
+directory that an entry symlinks matches, so `"~/.config/hypr/**"` fires for
+a `"~/.config/hypr" = "dotfiles/hypr"` entry.
+
 ## Sharing across machines
 
 Connect a private Git repository, called an **origin**, to share tracked
@@ -349,8 +356,10 @@ successful application. For conflicts involving tracking or encryption
 settings, inactive platform variants, or multiple Git merge bases, follow
 the reported Git-level repair instructions in a separate checkout.
 
-Pull saves a checkpoint first, records each file it writes, and runs reload
-hooks afterwards. You can reverse it with `mise dot undo`.
+Pull saves a checkpoint first, records each file it writes, and runs
+[reload hooks](#reload-an-application-after-restoring-files) afterwards,
+as `rollback`, `undo`, and `mise dot apply` do. You can reverse it with
+`mise dot undo`.
 Writes happen one file at a time; interrupted work uses the
 [recovery process](#recovery-details).
 

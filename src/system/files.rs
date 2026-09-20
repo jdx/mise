@@ -2263,17 +2263,40 @@ pub(crate) struct ApplyPlan<'a> {
     reconciliation: SymlinkEachReconciliation,
 }
 
+/// What an apply of whole-file or edit entries did.
+#[derive(Debug, Default)]
+pub(crate) struct ApplyOutcome {
+    /// `false` when the user declined the confirmation prompt
+    pub accepted: bool,
+    /// target paths written or removed, in order; empty on a dry run and
+    /// when everything was already applied
+    pub written: Vec<PathBuf>,
+}
+
+impl ApplyOutcome {
+    pub(crate) fn accepted(written: Vec<PathBuf>) -> Self {
+        Self {
+            accepted: true,
+            written,
+        }
+    }
+
+    pub(crate) fn declined() -> Self {
+        Self::default()
+    }
+}
+
 /// Apply all entries that aren't already in the desired state. Conflicting
 /// targets (a real file where a symlink should go, a directory where a file
 /// should go) are an error unless `force` is set — content updates for
-/// copy/template entries are not conflicts, overwriting is their job. Returns
-/// `false` when the user declines the confirmation prompt.
+/// copy/template entries are not conflicts, overwriting is their job. The
+/// outcome is declined when the user declines the confirmation prompt.
 pub(crate) fn apply(
     config: &Config,
     requests: &[FileRequest],
     opts: &ApplyOpts,
     secrets: &SecretValues,
-) -> Result<bool> {
+) -> Result<ApplyOutcome> {
     execute_apply(config, plan_apply(config, requests, opts, secrets)?, opts)
 }
 
@@ -2281,7 +2304,7 @@ pub(crate) fn execute_apply(
     config: &Config,
     plan: ApplyPlan<'_>,
     opts: &ApplyOpts,
-) -> Result<bool> {
+) -> Result<ApplyOutcome> {
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
@@ -2296,7 +2319,7 @@ pub(crate) fn execute_apply(
             }
         }
         info!("files: all files are applied");
-        return Ok(true);
+        return Ok(ApplyOutcome::accepted(vec![]));
     }
     if opts.dry_run {
         for link in &plan.reconciliation.stale_links {
@@ -2312,7 +2335,7 @@ pub(crate) fn execute_apply(
                 print_diff(config, req, rendered.as_deref())?;
             }
         }
-        return Ok(true);
+        return Ok(ApplyOutcome::accepted(vec![]));
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = plan
@@ -2330,9 +2353,10 @@ pub(crate) fn execute_apply(
             .join(", ");
         if !prompt::confirm(format!("files: apply {list}?"))?.is_yes() {
             info!("files: skipped");
-            return Ok(false);
+            return Ok(ApplyOutcome::declined());
         }
     }
+    let mut written = vec![];
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
             let item = link.target.display_user().to_string();
@@ -2353,12 +2377,17 @@ pub(crate) fn execute_apply(
             let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
             file::remove_file(&link.target)?;
             journal::commit_changes(pending);
+            written.push(link.target.clone());
         }
     }
     for (req, rendered) in &plan.todo {
         let pending =
             journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
+        // computed before the write: a symlink-each entry's stale links are
+        // gone once it converges
+        let targets = written_targets(req)?;
         apply_one(req, rendered.as_deref())?;
+        written.extend(targets);
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
         }
@@ -2390,7 +2419,41 @@ pub(crate) fn execute_apply(
         .unique()
         .collect::<Vec<_>>();
     info!("files: applied {}", applied.join(", "));
-    Ok(true)
+    Ok(ApplyOutcome::accepted(written))
+}
+
+/// The paths an apply of `req` writes or removes, for matching against
+/// `[history.reload]` globs: the entry's target, or for a directory-walking
+/// mode each file it creates under the target and each stale link it prunes.
+/// A symlink to a directory lists the files it exposes too, so a glob under
+/// the target matches. Directories created on the way are not listed.
+fn written_targets(req: &FileRequest) -> Result<Vec<PathBuf>> {
+    Ok(match req.mode {
+        FileMode::Track => vec![],
+        FileMode::Symlink if req.source.is_dir() => std::iter::once(req.target.clone())
+            .chain(
+                walk_source_files(req)?
+                    .into_iter()
+                    .map(|(_, target)| target),
+            )
+            .collect(),
+        FileMode::Symlink | FileMode::Template | FileMode::Content => vec![req.target.clone()],
+        FileMode::Copy if req.source.is_dir() => walk_source_files(req)?
+            .into_iter()
+            .map(|(_, target)| target)
+            .collect(),
+        FileMode::Copy => vec![req.target.clone()],
+        FileMode::SymlinkEach => {
+            let mut targets = vec![];
+            for (source, target) in walk_source_files(req)? {
+                if check_symlink(&source, &target)? != FileState::Applied {
+                    targets.push(target);
+                }
+            }
+            targets.extend(stale_links(req)?);
+            targets
+        }
+    })
 }
 
 /// Plan and validate an apply without changing targets. Templates are rendered
@@ -3902,6 +3965,56 @@ variants = [{{ {field} = "linux" }}]"#
 
     fn symlink_req(source: &Path, target: &Path) -> FileRequest {
         link_req(source, target, FileMode::Symlink)
+    }
+
+    #[test]
+    fn written_targets_lists_the_paths_an_apply_writes() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::create_dir_all(source.join("conf.d"))?;
+        file::write(source.join("a.toml"), "a")?;
+        file::write(source.join("conf.d/b.toml"), "b")?;
+        let file_source = dir.path().join("file");
+        file::write(&file_source, "file")?;
+
+        // whole-file modes write the target itself
+        assert_eq!(
+            written_targets(&symlink_req(&file_source, &target))?,
+            vec![target.clone()]
+        );
+        assert_eq!(
+            written_targets(&link_req(&file_source, &target, FileMode::Copy))?,
+            vec![target.clone()]
+        );
+        // a directory symlink exposes the files beneath it as well
+        let mut exposed = written_targets(&symlink_req(&source, &target))?;
+        exposed.sort();
+        assert_eq!(
+            exposed,
+            vec![
+                target.clone(),
+                target.join("a.toml"),
+                target.join("conf.d/b.toml")
+            ]
+        );
+        // tracked files are never written
+        assert!(written_targets(&link_req(&file_source, &target, FileMode::Track))?.is_empty());
+        // directory-walking modes list each file under the target, not the
+        // directories on the way
+        let mut copied = written_targets(&link_req(&source, &target, FileMode::Copy))?;
+        copied.sort();
+        assert_eq!(
+            copied,
+            vec![target.join("a.toml"), target.join("conf.d/b.toml")]
+        );
+        let mut linked = written_targets(&link_req(&source, &target, FileMode::SymlinkEach))?;
+        linked.sort();
+        assert_eq!(
+            linked,
+            vec![target.join("a.toml"), target.join("conf.d/b.toml")]
+        );
+        Ok(())
     }
 
     #[test]

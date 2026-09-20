@@ -34,7 +34,7 @@ use serde::Deserialize;
 use crate::config::{Config, ConfigMap};
 use crate::file;
 use crate::path::PathExt;
-use crate::system::files::FileState;
+use crate::system::files::{ApplyOutcome, FileState};
 use crate::system::history::journal::{self, Capture};
 use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
@@ -604,9 +604,13 @@ pub(crate) struct ApplyOpts {
 
 /// Apply all edits that aren't already in the desired state. Edits never
 /// replace files, so there is no --force here — but corrupted markers and
-/// symlink targets are reported as errors rather than guessed at. Returns
-/// `false` when the user declines the confirmation prompt.
-pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts) -> Result<bool> {
+/// symlink targets are reported as errors rather than guessed at. The
+/// outcome is declined when the user declines the confirmation prompt.
+pub(crate) fn apply(
+    config: &Config,
+    requests: &[EditRequest],
+    opts: &ApplyOpts,
+) -> Result<ApplyOutcome> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
     let mut problems = vec![];
     for req in requests {
@@ -693,7 +697,7 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
     }
     if todo.is_empty() {
         info!("edits: all edits are applied");
-        return Ok(true);
+        return Ok(ApplyOutcome::accepted(vec![]));
     }
     if opts.dry_run {
         for (req, desired) in &todo {
@@ -711,7 +715,7 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
                 miseprintln!("  desired {}", req.describe_op());
             }
         }
-        return Ok(true);
+        return Ok(ApplyOutcome::accepted(vec![]));
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = todo
@@ -721,13 +725,15 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
             .join(", ");
         if !prompt::confirm(format!("edits: apply {list}?"))?.is_yes() {
             info!("edits: skipped");
-            return Ok(false);
+            return Ok(ApplyOutcome::declined());
         }
     }
+    let mut written = vec![];
     for (req, desired) in &todo {
         let pending = journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
         apply_one(req, desired.as_deref())?;
         journal::commit_changes(pending);
+        written.push(req.path.clone());
     }
     let applied = todo
         .iter()
@@ -735,7 +741,7 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
         .collect::<Vec<_>>()
         .join(", ");
     info!("edits: applied {applied}");
-    Ok(true)
+    Ok(ApplyOutcome::accepted(written))
 }
 
 /// Print unified patches for the changes required to converge edit entries.
