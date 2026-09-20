@@ -4,6 +4,12 @@
 //! with `schtasks /create /xml`. The rendered definition is kept under
 //! `$MISE_STATE_DIR/user-services/<name>.xml` so drift is detected against
 //! what mise wrote, independent of the exporter's formatting.
+//!
+//! A task that sets `environment` keeps a second file, `<name>.launch.json`:
+//! Task Scheduler's XML has no environment block, so such a task runs
+//! through mise, which reads the environment back from there. The action
+//! names that file by digest, so a changed environment changes the
+//! definition and drift is still one comparison (see `exec_action`).
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -22,6 +28,11 @@ pub(crate) struct ScheduledTaskRequest {
     pub command: String,
     pub restart_on_failure: bool,
     pub environment: IndexMap<String, String>,
+    /// The durable mise executable a task that sets `environment` runs
+    /// through. Task Scheduler's XML has no environment block, so mise
+    /// carries it (see `exec_action`); `None` when there is no mise to
+    /// carry it with.
+    pub launcher: Option<String>,
     pub working_directory: Option<String>,
     /// Whether the task should be running now.
     pub start: bool,
@@ -71,6 +82,7 @@ impl ScheduledTaskRequest {
             command: String::new(),
             restart_on_failure: false,
             environment: IndexMap::new(),
+            launcher: None,
             working_directory: None,
             start: true,
             at_logon: true,
@@ -196,59 +208,93 @@ pub(crate) fn render_xml(request: &ScheduledTaskRequest, user_id: &str) -> Resul
     Ok(out)
 }
 
-/// Split the command line into the executable and its arguments. Task
-/// Scheduler has no environment block, so variables are set through
-/// `cmd.exe`, which reinterprets some characters; values that it would
-/// change are rejected rather than passed through differently.
-fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
-    let (program, args) = split_command(&request.command);
+/// What a task that sets `environment` runs, stored beside its definition
+/// because Task Scheduler's XML has nowhere to put it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ServiceLaunch {
+    pub program: String,
+    /// The rest of the command line, kept as one string and passed to the
+    /// program unchanged. Splitting it would hand the program mise's idea
+    /// of where its arguments end instead of its own.
+    pub args: String,
+    pub environment: IndexMap<String, String>,
+}
+
+/// The launch a task carries, or `None` when its action starts the program
+/// itself because there is no environment to carry.
+fn launch(request: &ScheduledTaskRequest) -> Option<ServiceLaunch> {
     if request.environment.is_empty() {
-        return Ok((program, args));
+        return None;
     }
-    let mut sets = vec![];
-    for (key, value) in &request.environment {
-        if key.is_empty() || key.contains(['=', '"', '%', '\n', '\r']) {
-            bail!(
-                "user service '{}': environment key {key:?} cannot be set through cmd.exe",
-                request.name
-            );
-        }
-        if let Some(c) = value
-            .chars()
-            .find(|c| matches!(c, '"' | '%' | '&' | '|' | '<' | '>' | '^' | '\n' | '\r'))
-        {
-            bail!(
-                "user service '{}': environment value for {key} contains {c:?}, which cmd.exe would reinterpret; set it inside the program instead",
-                request.name
-            );
-        }
-        sets.push(format!("set \"{key}={value}\""));
-    }
-    // the command line goes through cmd.exe too: what it would split or
-    // chain is rejected the same way, rather than run differently
-    if let Some(c) = format!("{program} {args}")
-        .chars()
-        .find(|c| matches!(c, '%' | '&' | '|' | '<' | '>' | '^' | '\n' | '\r'))
-    {
+    let (program, args) = split_command(&request.command);
+    Some(ServiceLaunch {
+        program,
+        args,
+        environment: request.environment.clone(),
+    })
+}
+
+/// The launch as it is stored: one line of JSON, so the bytes on disk are
+/// the bytes the action's digest covers.
+pub(crate) fn render_launch(request: &ScheduledTaskRequest) -> Result<Option<String>> {
+    launch(request)
+        .map(|launch| Ok(serde_json::to_string(&launch)?))
+        .transpose()
+}
+
+/// Where the launch a task was registered with is kept.
+pub(crate) fn launch_path(name: &str) -> PathBuf {
+    crate::dirs::STATE
+        .join("user-services")
+        .join(format!("{name}.launch.json"))
+}
+
+/// The executable and arguments the task's `<Exec>` action runs.
+///
+/// With no environment to carry, that is the declared command itself. Task
+/// Scheduler's XML has no environment block, so a task that sets one starts
+/// mise instead: it applies the environment and runs the service as its
+/// child (`bootstrap __service-exec`, see `crate::system::service_exec`).
+/// Nothing the declaration contains reaches a command line on the way —
+/// the environment and the command line travel as JSON — so no key, value,
+/// or argument has to be rejected for what a shell would make of it.
+///
+/// The digest pins the action to the launch it was rendered from, so the
+/// registered definition changes whenever the environment does, and a
+/// launch edited behind mise's back does not run.
+fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
+    let Some(launch) = launch(request) else {
+        return Ok(split_command(&request.command));
+    };
+    let Some(mise) = request.launcher.as_deref() else {
         bail!(
-            "user service '{}': the command contains {c:?}, which cmd.exe would reinterpret when `environment` is set; move it into a script",
+            "user service '{}' sets `environment`, which mise carries for it; install mise on this host first",
             request.name
         );
-    }
-    let program = if program.contains(char::is_whitespace) {
-        format!("\"{program}\"")
-    } else {
-        program
     };
-    let rest = if args.is_empty() {
-        program
-    } else {
-        format!("{program} {args}")
-    };
+    let digest = crate::hash::hash_blake3_to_str(&serde_json::to_string(&launch)?);
     Ok((
-        "cmd.exe".to_string(),
-        format!("/c {} && {rest}", sets.join(" && ")),
+        mise.to_string(),
+        format!(
+            "bootstrap __service-exec {} --digest {digest}",
+            request.name
+        ),
     ))
+}
+
+/// Whether what is on disk is what `request` renders now: its definition
+/// and, for a task that carries an environment, the launch its registered
+/// action is pinned to.
+fn stored_is_current(request: &ScheduledTaskRequest, user_id: &str) -> Result<bool> {
+    if std::fs::read(definition_path(&request.name)).unwrap_or_default()
+        != render_definition(request, user_id)?
+    {
+        return Ok(false);
+    }
+    let Some(launch) = render_launch(request)? else {
+        return Ok(true);
+    };
+    Ok(std::fs::read(launch_path(&request.name)).unwrap_or_default() == launch.into_bytes())
 }
 
 fn split_command(command: &str) -> (String, String) {
@@ -302,8 +348,7 @@ pub(crate) async fn status(requests: &[ScheduledTaskRequest]) -> Result<Vec<Sche
         let state = match registered {
             None => ScheduledTaskState::Missing,
             Some(query) => {
-                let stored = std::fs::read(&path).unwrap_or_default();
-                if stored != render_definition(req, &user_id)? {
+                if !stored_is_current(req, &user_id)? {
                     ScheduledTaskState::Differs
                 } else if query.running {
                     ScheduledTaskState::Running
@@ -349,6 +394,8 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         // definition on disk that status would take for the registered one
         let staging = path.with_extension("xml.new");
         let rendered = render_definition(req, &user_id)?;
+        let launch = render_launch(req)?;
+        let launch_path = launch_path(&req.name);
         let create = [
             "/create".to_string(),
             "/tn".to_string(),
@@ -370,10 +417,15 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         // localized, so it is not parsed)
         let registered = query(&req.task).await?;
         let running = registered.as_ref().is_some_and(|query| query.running);
-        let changed = registered.is_some()
-            && std::fs::read(&path).ok().as_deref() != Some(rendered.as_slice());
+        let changed = registered.is_some() && !stored_is_current(req, &user_id)?;
         let (end_first, start) = transition(running, changed, req.start, req.restart);
         if dry_run {
+            if launch.is_some() {
+                miseprintln!(
+                    "write {}",
+                    shell_words::join([launch_path.display().to_string()])
+                );
+            }
             miseprintln!("write {}", shell_words::join([path.display().to_string()]));
             miseprintln!("schtasks {}", shell_words::join(&create));
             if end_first {
@@ -386,6 +438,15 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
+        }
+        // before the task that reads it is registered, and removed when the
+        // declaration stopped setting an environment, so what is on disk is
+        // never a launch no registered action is pinned to
+        match &launch {
+            Some(launch) => std::fs::write(&launch_path, launch)?,
+            None => {
+                let _ = std::fs::remove_file(&launch_path);
+            }
         }
         std::fs::write(&staging, &rendered)?;
         if let Err(err) = schtasks(&create).await {
@@ -418,9 +479,14 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
 pub(crate) async fn remove_task(name: &str, dry_run: bool) -> Result<bool> {
     let task = task_name(name);
     let path = definition_path(name);
+    let launch = launch_path(name);
     if !exists(name).await? {
-        if path.exists() && !dry_run {
-            std::fs::remove_file(&path)?;
+        if !dry_run {
+            for stale in [&path, &launch] {
+                if stale.exists() {
+                    std::fs::remove_file(stale)?;
+                }
+            }
         }
         return Ok(false);
     }
@@ -432,17 +498,21 @@ pub(crate) async fn remove_task(name: &str, dry_run: bool) -> Result<bool> {
     ];
     if dry_run {
         miseprintln!("schtasks {}", shell_words::join(&args));
-        if path.exists() {
-            miseprintln!(
-                "{}",
-                shell_words::join(["rm".to_string(), path.display().to_string()])
-            );
+        for stale in [&path, &launch] {
+            if stale.exists() {
+                miseprintln!(
+                    "{}",
+                    shell_words::join(["rm".to_string(), stale.display().to_string()])
+                );
+            }
         }
         return Ok(true);
     }
     schtasks(&args).await?;
-    if path.exists() {
-        std::fs::remove_file(&path)?;
+    for stale in [&path, &launch] {
+        if stale.exists() {
+            std::fs::remove_file(stale)?;
+        }
     }
     Ok(true)
 }
@@ -619,34 +689,95 @@ mod tests {
         assert!(!xml.contains("<WorkingDirectory>"));
     }
 
+    /// An environment turns the action into mise, which carries it: the
+    /// declared command moves into the launch stored beside the definition,
+    /// and the action names that launch by digest.
     #[test]
-    fn environment_goes_through_cmd() {
+    fn an_environment_makes_mise_the_action() {
         let mut request = sample();
         request.environment.insert("RUST_LOG".into(), "info".into());
+        request.launcher = Some("C:\\mise\\mise.exe".to_string());
         request.at_logon = false;
         request.restart_on_failure = false;
+
         let xml = render_xml(&request, "me").unwrap();
-        assert!(xml.contains("<Command>cmd.exe</Command>"));
-        assert!(xml.contains(
-            "<Arguments>/c set &quot;RUST_LOG=info&quot; &amp;&amp; C:\\Tools\\agent.exe --serve</Arguments>"
-        ));
+        assert!(
+            xml.contains("<Command>C:\\mise\\mise.exe</Command>"),
+            "{xml}"
+        );
+        let launch = render_launch(&request).unwrap().unwrap();
+        let digest = crate::hash::hash_blake3_to_str(&launch);
+        assert!(
+            xml.contains(&format!(
+                "<Arguments>bootstrap __service-exec agent --digest {digest}</Arguments>"
+            )),
+            "{xml}"
+        );
+        // nothing the declaration holds reaches a command line
+        assert!(!xml.contains("RUST_LOG"), "{xml}");
+        assert!(!xml.contains("agent.exe"), "{xml}");
         assert!(xml.contains("<Enabled>false</Enabled>\n      <UserId>me</UserId>"));
         assert!(!xml.contains("<RestartOnFailure>"));
 
-        let mut request = sample();
-        request.command = "\"C:\\Program Files\\x\\a.exe\" --serve".to_string();
-        request.environment.insert("A".into(), "1".into());
-        let xml = render_xml(&request, "me").unwrap();
-        assert!(xml.contains(
-            "<Arguments>/c set &quot;A=1&quot; &amp;&amp; &quot;C:\\Program Files\\x\\a.exe&quot; --serve</Arguments>"
-        ));
+        // the launch carries the command split the way Task Scheduler would
+        // have passed it, and the environment as declared
+        let launch: ServiceLaunch = serde_json::from_str(&launch).unwrap();
+        assert_eq!(launch.program, "C:\\Tools\\agent.exe");
+        assert_eq!(launch.args, "--serve");
+        assert_eq!(launch.environment["RUST_LOG"], "info");
 
+        // the digest follows the environment, so a changed one is drift
+        let mut changed = request.clone();
+        changed
+            .environment
+            .insert("RUST_LOG".into(), "debug".into());
+        assert_ne!(render_xml(&changed, "me").unwrap(), xml);
+    }
+
+    /// The characters `cmd.exe` used to force a bail on. None of them reach
+    /// a command line now: the environment and the command travel as JSON
+    /// and are applied by mise, so they are carried as written.
+    #[test]
+    fn what_cmd_would_have_reinterpreted_is_carried_as_written() {
         let mut request = sample();
+        request.command = "C:\\Tools\\agent.exe --filter a&b|c<d>e^f".to_string();
+        request.launcher = Some("mise.exe".to_string());
         request
             .environment
             .insert("P".into(), "%PATH%;C:\\x".into());
+        request
+            .environment
+            .insert("Q".into(), "a \"quoted\" & piped | value".into());
+
+        let xml = render_xml(&request, "me").unwrap();
+        assert!(xml.contains("<Command>mise.exe</Command>"), "{xml}");
+        let launch: ServiceLaunch =
+            serde_json::from_str(&render_launch(&request).unwrap().unwrap()).unwrap();
+        assert_eq!(launch.args, "--filter a&b|c<d>e^f");
+        assert_eq!(launch.environment["P"], "%PATH%;C:\\x");
+        assert_eq!(launch.environment["Q"], "a \"quoted\" & piped | value");
+    }
+
+    /// Carrying an environment takes a mise that will still be there when
+    /// the task runs; without one the definition does not render at all,
+    /// rather than registering a task that cannot start.
+    #[test]
+    fn carrying_an_environment_needs_mise() {
+        let mut request = sample();
+        request.environment.insert("A".into(), "1".into());
         let err = render_xml(&request, "me").unwrap_err().to_string();
-        assert!(err.contains("cmd.exe would reinterpret"), "{err}");
+        assert!(err.contains("install mise on this host first"), "{err}");
+    }
+
+    /// Without an environment there is nothing to carry, so the action is
+    /// the declared program and no launch is stored beside it.
+    #[test]
+    fn no_environment_leaves_the_action_alone() {
+        let request = sample();
+        let xml = render_xml(&request, "me").unwrap();
+        assert!(xml.contains("<Command>C:\\Tools\\agent.exe</Command>"));
+        assert!(xml.contains("<Arguments>--serve</Arguments>"));
+        assert!(render_launch(&request).unwrap().is_none());
     }
 
     #[test]

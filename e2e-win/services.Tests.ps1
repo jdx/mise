@@ -40,8 +40,13 @@ builtin = "history-watch"
         $LASTEXITCODE | Should -Be 0
         $status = $json | ConvertFrom-Json
         $agent = $status.user_services | Where-Object { $_.name -eq 'agent' }
-        $agent.definition | Should -BeLike '*<Command>cmd.exe</Command>*'
-        $agent.definition | Should -BeLike '*RUST_LOG=info*'
+        # Task Scheduler's XML has no environment block, so a service that
+        # sets one runs through mise, which applies it. Nothing the
+        # declaration holds reaches a command line on the way: the
+        # environment travels beside the definition, named by its digest.
+        $agent.definition | Should -BeLike '*<Arguments>bootstrap __service-exec agent --digest *'
+        $agent.definition | Should -Not -BeLike '*cmd.exe*'
+        $agent.definition | Should -Not -BeLike '*RUST_LOG*'
         $agent.current | Should -Be 'not installed'
         $history = $status.user_services | Where-Object { $_.name -eq 'mise-history' }
         $history.command | Should -BeLike '* dot watch'

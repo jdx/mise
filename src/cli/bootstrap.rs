@@ -289,6 +289,8 @@ enum Commands {
     InspectSystemFiles(BootstrapInspectSystemFiles),
     #[usage(name = "__inspect-firewall-plan", hide = true)]
     InspectFirewallPlan(BootstrapInspectFirewallPlan),
+    #[usage(name = "__service-exec", hide = true)]
+    ServiceExec(BootstrapServiceExec),
     Accounts(BootstrapAccounts),
     #[usage(hide = true)]
     ConfigRoots(BootstrapConfigRoots),
@@ -429,6 +431,23 @@ struct BootstrapInspectFirewallPlan {}
 
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapInspectSystemFiles {}
+
+/// Run a user service that carries an environment (Windows, internal)
+///
+/// Task Scheduler's task XML has no environment block, so a service that
+/// sets `environment` registers this as its action instead of naming its
+/// program directly. It applies the stored environment, starts the service,
+/// and stays for its lifetime as the process Task Scheduler tracks.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapServiceExec {
+    /// The user service to run
+    name: String,
+
+    /// The digest of the launch the task was registered with
+    #[usage(long, value_name = "HASH")]
+    digest: String,
+}
 
 /// Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
 ///
@@ -2393,6 +2412,7 @@ impl Commands {
             Self::ApplySystemPlan(cmd) => cmd.run(),
             Self::InspectSystemFiles(cmd) => cmd.run(),
             Self::InspectFirewallPlan(cmd) => cmd.run(),
+            Self::ServiceExec(cmd) => cmd.run().await,
             Self::Accounts(cmd) => cmd.run().await,
             Self::ConfigRoots(cmd) => cmd.run().await,
             Self::Compose(cmd) => cmd.run().await,
@@ -2788,6 +2808,21 @@ impl BootstrapFilesStatus {
             return Err(crate::request_exit(1));
         }
         Ok(())
+    }
+}
+
+impl BootstrapServiceExec {
+    async fn run(self) -> Result<()> {
+        // The service outlives every other thing this process has to do, so
+        // it is waited for off the runtime's workers rather than on one.
+        let code = tokio::task::spawn_blocking(move || {
+            system::service_exec::run(&self.name, &self.digest)
+        })
+        .await??;
+        match code {
+            0 => Ok(()),
+            code => Err(crate::exit::request(code)),
+        }
     }
 }
 

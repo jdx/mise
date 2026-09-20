@@ -153,4 +153,58 @@ builtin = "history-watch"
         # another case without inheriting one
         Wait-Watcher $false | Should -BeTrue
     }
+
+    # A service that sets `environment` used to run through
+    # `cmd.exe /c set ... && ...`, and that `cmd.exe` held the console Task
+    # Scheduler allocated for as long as the watcher lived — so the window
+    # stayed even though the watcher itself had given its console up. mise
+    # carries the environment now, and nothing is left attached.
+    It 'runs windowless through a task that sets an environment' {
+        $env:MISE_EXPERIMENTAL = '1'
+        $task = 'mise\mise-history'
+        try {
+            # a watcher left over from an earlier case would hold the lock
+            # this waits on, and the wait below would say nothing
+            Wait-Watcher $false | Should -BeTrue
+
+            @"
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+environment = { E2E_WATCH_MARK = "1" }
+"@ | Out-File -FilePath (Join-Path $env:MISE_CONFIG_DIR 'config.toml') -Encoding utf8NoBOM
+            # `track` declares into the same file, which was just rewritten
+            mise bootstrap dotfiles track ($script:Tracked -replace '\\', '/') 2>&1 | Out-String | Out-Null
+            $LASTEXITCODE | Should -Be 0
+
+            mise bootstrap services apply --yes 2>&1 | Out-String | Out-Null
+            $LASTEXITCODE | Should -Be 0
+            Wait-Watcher $true | Should -BeTrue
+
+            $services = Join-Path $env:MISE_STATE_DIR 'user-services'
+            (Join-Path $services 'mise-history.launch.json') | Should -Exist
+            (Get-Content (Join-Path $services 'mise-history.xml') -Raw) |
+                Should -Not -BeLike '*cmd.exe*'
+
+            # the process Task Scheduler started and tracks, and the watcher
+            # it started in turn
+            $launcher = Get-CimInstance Win32_Process -Filter "Name = 'mise.exe'" |
+                Where-Object { $_.CommandLine -like '*__service-exec*' } |
+                Select-Object -First 1
+            $launcher | Should -Not -BeNullOrEmpty
+            $watcher = Get-CimInstance Win32_Process -Filter "Name = 'mise.exe'" |
+                Where-Object { $_.ParentProcessId -eq $launcher.ProcessId } |
+                Select-Object -First 1
+            $watcher | Should -Not -BeNullOrEmpty
+            $watcher.CommandLine | Should -BeLike '*dot watch*'
+
+            # neither puts a window on the desktop. The probe is the same one
+            # the case above shows can see a console when there is one.
+            Get-ConsoleProbe ([int]$launcher.ProcessId) | Should -Be 4
+            Get-ConsoleProbe ([int]$watcher.ProcessId) | Should -Be 4
+        } finally {
+            mise bootstrap services remove mise-history 2>&1 | Out-String | Out-Null
+            schtasks /delete /tn $task /f 2>&1 | Out-Null
+            $env:MISE_EXPERIMENTAL = '0'
+        }
+    }
 }

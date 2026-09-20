@@ -225,6 +225,12 @@ impl UserServiceRequest {
         request.command = self.command.clone().unwrap_or_default();
         request.restart_on_failure = self.restart != ServiceRestart::Never;
         request.environment = self.environment.clone();
+        // Task Scheduler's XML has no environment block, so a declaration
+        // that sets one runs through mise; only look for one when it does.
+        request.launcher = (!self.environment.is_empty())
+            .then(durable_mise_executable)
+            .flatten()
+            .map(|exe| exe.to_string_lossy().to_string());
         request.working_directory = self.working_directory.clone();
         request.start = self.start();
         request.at_logon = self.enabled;
