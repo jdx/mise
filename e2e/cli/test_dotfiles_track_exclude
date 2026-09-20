@@ -31,6 +31,7 @@ assert "mise dot paths --json | jq -r '.entries[0].files'" 2
 assert_contains 'mise dot paths' 'exclude (~/.codex): sessions/**'
 assert_contains 'mise dot history show' 'exclude (~/.codex): cache'
 assert_contains 'mise dot track --dry-run ~/.codex' '~/.codex: 2 files'
+assert_contains 'mise dot track --dry-run ~/.codex' 'exclude (~/.codex): sessions/**'
 
 # An excluded path cannot be saved explicitly, and a global re-include does
 # not override the entry's list.
@@ -62,6 +63,13 @@ TOML
 assert_succeed 'mise dot track ~/.codex --no-autosave'
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'exclude = ["sessions/**", "cache", "*.log"]'
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'autosave = false'
+# An explicitly empty list survives a rewrite too.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = [] }
+TOML
+assert_succeed 'mise dot track ~/.codex --no-autosave'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'exclude = []'
 
 # The other combinations stay invalid.
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'

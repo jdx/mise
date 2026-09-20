@@ -202,6 +202,9 @@ impl DotfilesTrack {
                 for glob in &set.exclude {
                     miseprintln!("  exclude: {glob}");
                 }
+                for glob in &set.entries[0].exclude {
+                    miseprintln!("  exclude ({target_key}): {glob}");
+                }
                 // nothing is enrolled yet, so `mise dot paths` cannot list
                 // these until the path is tracked: a bounded list here
                 let lines: Vec<String> = preview
@@ -357,9 +360,10 @@ impl DotfilesTrack {
                 Value::Boolean(toml_edit::Formatted::new(policy.autosave)),
             );
         }
-        // re-tracking keeps the entry's own exclude list
+        // re-tracking keeps the entry's own exclude list, including an
+        // explicitly empty one this file wrote to clear a lower layer's
         if let Some(existing) = existing
-            && !existing.exclude.is_empty()
+            && (!existing.exclude.is_empty() || written("exclude"))
         {
             let mut list = Array::new();
             for pattern in &existing.exclude {
