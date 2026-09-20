@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# A package manager's build output is only usable whole. Pruning its files one
+# by one leaves the directory tree standing and empty, which the package manager
+# reads back as an intact entry and restores over an install.
+
+entry="$MISE_CACHE_DIR/npm/aube/cache/side-effects-v1/demo@1.0.0/linux-x64/abc123"
+mkdir -p "$entry/payload/build"
+printf built >"$entry/payload/build/built.node"
+printf '{}' >"$entry/payload/package.json"
+find "$entry" -exec touch -t 202001010000 {} +
+
+# A shard of a content addressed store: hot and cold entries share a directory,
+# and the cold one still has to go.
+shard="$MISE_CACHE_DIR/npm/aube/store/v1/files/ab"
+mkdir -p "$shard"
+printf cold >"$shard/cold-blob"
+touch -t 202001010000 "$shard/cold-blob"
+printf hot >"$shard/hot-blob"
+
+MISE_CACHE_PRUNE_AGE=1s mise cache prune
+
+if [[ -e $MISE_CACHE_DIR/npm/aube/cache/side-effects-v1/demo@1.0.0 ]]; then
+  fail "a stale cache entry was left standing"
+fi
+
+ok "cache prune evicted a wholly stale entry as a unit"
+
+if [[ -e $shard/cold-blob ]]; then
+  fail "a stale blob survived beside a fresh one"
+fi
+
+if [[ ! -e $shard/hot-blob ]]; then
+  fail "a fresh blob was pruned"
+fi
+
+ok "cache prune still reclaims stale files from a directory in use"

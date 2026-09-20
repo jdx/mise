@@ -521,20 +521,37 @@ fn remove_entry(entry: &CacheEntry) -> Result<()> {
 }
 
 pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
-    prune_dir(dir, false, opts)
+    Ok(prune_dir(dir, false, opts)?.removed)
+}
+
+/// What one directory's pass did, and what it holds.
+struct DirPrune {
+    /// What this pass actually deleted below the directory.
+    removed: PruneResults,
+    /// Everything under the directory, deleted or not. A caller that evicts the
+    /// whole directory counts this instead.
+    held: PruneResults,
+    /// Whether every entry under the directory is old enough to prune, which
+    /// makes the directory evictable as a unit.
+    all_stale: bool,
 }
 
 /// `descended` marks a directory prune classified itself, as opposed to a root
 /// it was handed. A root is taken as given — `MISE_CACHE_DIR` may legitimately
 /// be a symlink to the real cache — while a descent is confirmed below.
-fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<PruneResults> {
-    let mut results = PruneResults { size: 0, count: 0 };
-    let remove = |entry: &CacheEntry| {
+fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<DirPrune> {
+    let mut removed = PruneResults { size: 0, count: 0 };
+    let mut held = PruneResults { size: 0, count: 0 };
+    let mut all_stale = true;
+    let announce = |path: &Path| {
         if opts.dry_run || opts.verbose {
-            info!("pruning {}", display_path(&entry.path));
+            info!("pruning {}", display_path(path));
         } else {
-            debug!("pruning {}", display_path(&entry.path));
+            debug!("pruning {}", display_path(path));
         }
+    };
+    let remove = |entry: &CacheEntry| {
+        announce(&entry.path);
         if !opts.dry_run {
             remove_entry(entry)?;
         }
@@ -546,40 +563,89 @@ fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<PruneRe
     // its own right, that listing may describe somewhere else entirely, so
     // nothing under it is removed.
     if descended && !dir.symlink_metadata().is_ok_and(|m| m.file_type().is_dir()) {
-        return Ok(results);
+        return Ok(DirPrune {
+            removed,
+            held,
+            all_stale: false,
+        });
     }
+    // Each evictable entry carries what it holds, so a directory taken whole is
+    // counted from the pass that classified it rather than walked twice.
+    let mut evictable: Vec<(CacheEntry, PruneResults)> = vec![];
     for entry in entries {
         if !entry.is_dir() {
-            if entry.is_stale(opts.age)? {
-                remove(&entry)?;
-                results.size += entry.metadata.len();
-                results.count += 1;
+            held.size += entry.metadata.len();
+            held.count += 1;
+            if !entry.is_stale(opts.age)? {
+                all_stale = false;
+                continue;
             }
+            // Held back: if everything here turns out to be stale, the caller
+            // takes the directory whole rather than hollowing it out.
+            let size = entry.metadata.len();
+            evictable.push((entry, PruneResults { size, count: 1 }));
             continue;
         }
-        let r = prune_dir(&entry.path, true, opts)?;
-        results.size += r.size;
-        results.count += r.count;
-        if !cache_entries(&entry.path)?.is_empty() {
-            continue;
-        }
-        // Re-stat: pruning this directory's contents just moved its mtime.
-        let Ok(metadata) = entry.path.symlink_metadata() else {
-            continue;
-        };
-        let entry = CacheEntry {
-            path: entry.path,
-            metadata,
-        };
-        // only delete empty directories if they're old
-        if entry.metadata.modified()?.elapsed().unwrap_or_default() > opts.age
-            || entry.is_stale(opts.age)?
-        {
-            remove(&entry)?;
-            results.count += 1;
+        let below = prune_dir(&entry.path, true, opts)?;
+        removed.size += below.removed.size;
+        removed.count += below.removed.count;
+        held.size += below.held.size;
+        held.count += below.held.count;
+        if below.all_stale {
+            evictable.push((entry, below.held));
+        } else {
+            all_stale = false;
         }
     }
-    Ok(results)
+    // An empty directory holds nothing to age, so it goes by its own timestamps.
+    if evictable.is_empty()
+        && all_stale
+        && let Ok(metadata) = dir.symlink_metadata()
+    {
+        all_stale = metadata.modified()?.elapsed().unwrap_or_default() > opts.age
+            || metadata.accessed()?.elapsed().unwrap_or_default() > opts.age;
+    }
+    if all_stale && descended {
+        // Everything under this directory is prunable, so the caller evicts it
+        // in one piece. Removing the files one by one is what leaves a cache
+        // entry standing but hollow — a directory tree with nothing in it —
+        // which whatever wrote that entry may then read back as intact.
+        return Ok(DirPrune {
+            removed,
+            held,
+            all_stale: true,
+        });
+    }
+    for (entry, holds) in evictable {
+        if entry.is_dir() {
+            announce(&entry.path);
+            if !opts.dry_run {
+                // `remove_dir_all` unlinks a symlink rather than following it,
+                // and on unix walks by descriptor, so the tree it deletes is
+                // the tree it opened.
+                match std::fs::remove_dir_all(&entry.path) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => {
+                        return Err(err).wrap_err_with(|| {
+                            format!("failed rm -rf: {}", display_path(&entry.path))
+                        });
+                    }
+                }
+            }
+            removed.size += holds.size;
+            removed.count += holds.count + 1;
+        } else {
+            remove(&entry)?;
+            removed.size += holds.size;
+            removed.count += holds.count;
+        }
+    }
+    Ok(DirPrune {
+        removed,
+        held,
+        all_stale,
+    })
 }
 
 #[cfg(test)]
@@ -798,6 +864,71 @@ mod tests {
         prune_dir(&swapped, true, &stale_prune_options()).unwrap();
 
         assert!(file.exists(), "a replaced directory was walked anyway");
+    }
+
+    /// A structured cache entry — a package manager's build output, say — is
+    /// only usable whole. Taking its files one by one leaves the directory tree
+    /// standing and empty, which whatever wrote it may read back as intact.
+    #[test]
+    fn a_wholly_stale_directory_goes_as_one() {
+        let cache = tempfile::tempdir().unwrap();
+        let entry = cache.path().join("side-effects/pkg@1.0.0/linux/abc");
+        fs::create_dir_all(entry.join("build")).unwrap();
+        for path in ["build/built.node", "package.json"] {
+            let path = entry.join(path);
+            fs::write(&path, "x").unwrap();
+            backdate(&path);
+        }
+
+        prune(cache.path(), &stale_prune_options()).unwrap();
+
+        assert!(
+            !cache.path().join("side-effects").exists(),
+            "a hollow directory tree was left behind"
+        );
+    }
+
+    /// The mechanism behind it: a wholly stale directory hands itself to its
+    /// caller untouched instead of deleting its own contents. A tree emptied
+    /// file by file is readable as an intact entry in the meantime, by another
+    /// process or by whatever runs after a prune that stops halfway.
+    #[test]
+    fn a_wholly_stale_directory_defers_to_its_caller() {
+        let cache = tempfile::tempdir().unwrap();
+        let entry = cache.path().join("pkg@1.0.0");
+        fs::create_dir_all(entry.join("build")).unwrap();
+        let built = entry.join("build/built.node");
+        fs::write(&built, "x").unwrap();
+        backdate(&built);
+
+        let below = prune_dir(&entry, true, &stale_prune_options()).unwrap();
+
+        assert!(below.all_stale, "the entry was not seen as evictable");
+        assert_eq!(below.removed.count, 0, "the entry hollowed itself out");
+        assert_eq!(below.held.count, 1);
+        assert!(built.exists());
+    }
+
+    /// Where ages are mixed, the stale files still go individually: a content
+    /// addressed store keeps hot and cold entries side by side in one
+    /// directory, and it has to stay reclaimable.
+    #[test]
+    fn a_directory_in_use_keeps_its_shape_and_loses_its_stale_files() {
+        let cache = tempfile::tempdir().unwrap();
+        let shard = cache.path().join("store/files/ab");
+        fs::create_dir_all(&shard).unwrap();
+        let cold = shard.join("cold-blob");
+        fs::write(&cold, "cold").unwrap();
+        backdate(&cold);
+        let hot = shard.join("hot-blob");
+        fs::write(&hot, "hot").unwrap();
+
+        let results = prune(cache.path(), &stale_prune_options()).unwrap();
+
+        assert!(!cold.exists(), "a stale blob survived beside a fresh one");
+        assert!(hot.exists());
+        assert!(shard.exists(), "a directory still in use was removed");
+        assert_eq!(results.count, 1);
     }
 
     #[cfg(unix)]
