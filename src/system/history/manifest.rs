@@ -79,9 +79,27 @@ impl Manifest {
                     .any(|entry| strictly_below(&entry.path, &plain(path))))
     }
 
+    /// The permission key under which this enrollment governs a directory
+    /// on this machine: the directory (or an enrolled path above it) is
+    /// enrolled, under its selected variant if it has any. `None` when the
+    /// enrollment does not govern the directory itself here, whether because
+    /// only paths inside it are enrolled or because no variant is selected.
+    pub(crate) fn governing_key(&self, path: &str) -> Option<String> {
+        let entry = self.owner(path)?;
+        let environments = super::select::active_environments();
+        match super::select::select(&entry.variants, &environments) {
+            super::select::Selection::Single => Some(path.to_string()),
+            super::select::Selection::Variant(variant) => {
+                let (root, relative) = path.split_once('/')?;
+                Some(format!("{root}@{}/{relative}", variant.name()))
+            }
+            super::select::Selection::NoMatch | super::select::Selection::Ambiguous(_) => None,
+        }
+    }
+
     /// Whether a permission path is the enrolled path of its stream or below
     /// one: the enrollment itself governs it, not only a path inside it.
-    pub(crate) fn enrolls_stream(&self, path: &str) -> bool {
+    fn enrolls_stream(&self, path: &str) -> bool {
         let (stem, _) = path.split_once('/').unwrap_or((path, ""));
         let (_, variant) = stem
             .split_once('@')
