@@ -36,7 +36,13 @@ fn builtin(name: &str) -> Option<Builtin> {
         "history-watch" => Some(Builtin {
             // Windows starts a Scheduled Task's console program in a console
             // of its own; the watcher gives that console up so it does not run
-            // behind a window closing would kill.
+            // behind a window closing would kill. A declaration that also sets
+            // `environment` is the exception: Task Scheduler has no
+            // environment block, so the action runs through `cmd.exe` (see
+            // `scheduled_tasks::exec_action`), and that `cmd.exe` stays
+            // attached for the watcher's lifetime and keeps the window. Giving
+            // it up too means carrying the environment without `cmd.exe`,
+            // which is every Windows user service's problem, not this one's.
             args: if cfg!(windows) {
                 &["dot", "watch", crate::windows_console::FLAG]
             } else {
