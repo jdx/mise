@@ -49,6 +49,9 @@ export const commands: { [key: string]: Command } = {
       "__inspect-system-files": {
         hide: true,
       },
+      "__service-exec": {
+        hide: true,
+      },
       accounts: {
         hide: false,
         subcommands: {

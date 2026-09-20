@@ -588,6 +588,24 @@ Can be passed multiple times or as a comma-separated list.
     cmd __inspect-firewall-plan hide=#true effect=read {
         flag "-h --help" help="Print help" action=help builtin=#true
     }
+    cmd __service-exec hide=#true help="Run a user service that carries an environment (Windows, internal)" {
+        long_help #"""
+Run a user service that carries an environment (Windows, internal)
+
+Task Scheduler's task XML has no environment block, so a service that
+sets `environment` registers this as its action instead of naming its
+program directly. It applies the stored environment, starts the service,
+and stays for its lifetime as the process Task Scheduler tracks.
+"""#
+        flag --launch help="The stored launch to run it from" required=#true {
+            arg <PATH>
+        }
+        flag --digest help="The digest of the launch the task was registered with" required=#true {
+            arg <HASH>
+        }
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <NAME> help="The user service to run"
+    }
     cmd accounts subcommand_required=#true help="Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`" effect=read {
         long_help #"""
 Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
