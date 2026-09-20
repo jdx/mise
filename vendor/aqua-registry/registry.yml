@@ -9847,8 +9847,6 @@ packages:
         asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
-        files:
-          - name: difft
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -9860,8 +9858,6 @@ packages:
         asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
-        files:
-          - name: difft
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -9882,8 +9878,6 @@ packages:
         asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
-        files:
-          - name: difft
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -9898,8 +9892,6 @@ packages:
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: difft
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -9917,8 +9909,6 @@ packages:
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: difft
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -9934,8 +9924,6 @@ packages:
         asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
-        files:
-          - name: difft
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -9948,8 +9936,6 @@ packages:
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: difft
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -9966,8 +9952,6 @@ packages:
         asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
-        files:
-          - name: difft
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -9977,12 +9961,29 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.70.0")
         asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
-        files:
-          - name: difft
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: difft-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
         replacements:
           amd64: x86_64
           arm64: aarch64
@@ -71855,6 +71856,34 @@ packages:
       - name: adr
         src: adr-tools-{{.Version}}/src/adr
   - type: github_release
+    repo_owner: nubjs
+    repo_name: nub
+    description: The fast all-in-one Node.js toolkit
+    files:
+      - name: nub
+        src: bin/nub
+      - name: nubx
+        src: bin/nub
+      - name: nubr
+        src: bin/nub
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: nub-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+          windows: win32
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: nub-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: nucleuscloud
     repo_name: neosync
     description: Open source data anonymization and synthetic data orchestration for developers. Create high fidelity synthetic data and sync it across your environments
@@ -81477,6 +81506,67 @@ packages:
       - version_constraint: "true"
         asset: minienv-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tgz
+  - type: github_release
+    repo_owner: robgonnella
+    repo_name: releasaurus
+    description: A comprehensive release automation tool that streamlines the software release process across multiple programming languages and forge platforms
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.5"
+        asset: releasaurus-{{.Arch}}-{{.OS}}-{{.Version}}
+        format: raw
+        replacements:
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: Version == "v0.4.6"
+        asset: releasaurus-{{.Arch}}-{{.OS}}-{{.Version}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            asset: releasaurus.exe-{{.Arch}}-{{.OS}}-{{.Version}}
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 0.4.10")
+        no_asset: true
+      - version_constraint: "true"
+        asset: releasaurus-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
   - type: github_release
     repo_owner: robinovitch61
     repo_name: kl

@@ -213,6 +213,13 @@ loads these commands from system and global configuration before starting
 the operation. See [recovery details](#recovery-details) for interrupted
 writes and concurrent edits.
 
+The same commands run after `mise dot apply` writes a matching target: a
+symlink or copy it creates, a template it renders, or an edit it applies.
+A dry run writes nothing and reloads nothing, and `mise dot sync` never
+writes live files, so it runs no reload commands either. A glob under a
+directory that an entry symlinks matches, so `"~/.config/hypr/**"` fires for
+a `"~/.config/hypr" = "dotfiles/hypr"` entry.
+
 ## Sharing across machines
 
 Connect a private Git repository, called an **origin**, to share tracked
@@ -349,8 +356,10 @@ successful application. For conflicts involving tracking or encryption
 settings, inactive platform variants, or multiple Git merge bases, follow
 the reported Git-level repair instructions in a separate checkout.
 
-Pull saves a checkpoint first, records each file it writes, and runs reload
-hooks afterwards. You can reverse it with `mise dot undo`.
+Pull saves a checkpoint first, records each file it writes, and runs
+[reload hooks](#reload-an-application-after-restoring-files) afterwards,
+as `rollback`, `undo`, and `mise dot apply` do. You can reverse it with
+`mise dot undo`.
 Writes happen one file at a time; interrupted work uses the
 [recovery process](#recovery-details).
 
@@ -416,6 +425,44 @@ triggers another fetch and reconciliation. mise leaves divergent or
 unrelated histories intact for you to resolve; it does not force-push.
 Before writing incoming changes, it checks the complete batch, including
 configuration, required sources, committed files, and unsaved local edits.
+
+### Resolve unrelated histories
+
+If local checkpoints and the origin branch have no shared Git ancestry,
+`mise dot origin set` or `mise dot sync` refuses to synchronize them. Neither
+history is replaced, even if the files have identical contents. Choose which
+history to keep before trying again.
+
+**Keep local checkpoints.** Connect an empty repository:
+
+```sh
+mise dot origin set <empty-repository-url>
+```
+
+To use the existing repository instead, first use Git to push your local
+history to a new branch there, then connect that branch:
+
+```sh
+mise dot origin set <url> --branch <name>
+```
+
+The branch must already exist; `origin set` only creates a branch when the
+repository has no branches.
+
+**Adopt the origin's history.** If the origin is a mise setup repository
+with enrollment metadata, you can discard local checkpoints and replace
+them with its history:
+
+```sh
+mise bootstrap --adopt <url> --replace-history --yes
+```
+
+Back up any local history you want to retain before running this command.
+It replaces checkpoint history; existing files that differ still require a
+decision before setup can finish. This recovery path requires a mise setup
+repository and does not apply to an ordinary Git repository without mise
+enrollment metadata. See [removing plaintext from history](#remove-plaintext-from-history)
+if you are replacing history to remove a secret.
 
 ## Capturing an external command
 
@@ -818,6 +865,14 @@ History lives in a bare Git repository at `$MISE_STATE_DIR/history/repo.git`,
 separate from the files you edit. Each checkpoint contains the tracked files
 and metadata for their paths, tracking settings, variants, encryption, and
 permissions. The files are ordinary Git tree entries.
+
+Permission metadata covers non-default modes: files that are not `0644` or
+`0755`, tracked directories that are not `0755`, and the directories between
+a tracked path and your home or mise configuration directory that are not
+`0755`. Tracking `~/.claude/settings.json` inside a `0700` `~/.claude`
+records that mode, so a fresh machine recreates the directory private rather
+than world-readable. Home and the configuration directory themselves are
+never recorded.
 
 A symlink is saved as a link. A nested Git repository is saved as a pointer
 to its commit. mise reports oversized files, special files, and unreadable
