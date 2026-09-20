@@ -153,4 +153,76 @@ builtin = "history-watch"
         # another case without inheriting one
         Wait-Watcher $false | Should -BeTrue
     }
+
+    # A service that sets `environment` used to run through
+    # `cmd.exe /c set ... && ...`, and that `cmd.exe` held the console Task
+    # Scheduler allocated for as long as the watcher lived — so the window
+    # stayed even though the watcher itself had given its console up. mise
+    # carries the environment now, and nothing is left attached.
+    It 'runs windowless through a task that sets an environment' {
+        $env:MISE_EXPERIMENTAL = '1'
+        $task = 'mise\mise-history'
+        try {
+            # a watcher left over from an earlier case would hold the lock
+            # this waits on, and the wait below would say nothing
+            Wait-Watcher $false | Should -BeTrue
+
+            # Task Scheduler starts the service with the user's logon
+            # environment, not this session's, so without carrying these the
+            # watcher would use the real config and state directories and
+            # take its lock where Wait-Watcher is not looking. Carrying them
+            # is what `environment` is for, and here it is also what makes
+            # the watcher reachable at all — so this asserts the environment
+            # arrived as much as it asserts the window is gone.
+            $cfgDir = $env:MISE_CONFIG_DIR -replace '\\', '\\'
+            $stateDir = $env:MISE_STATE_DIR -replace '\\', '\\'
+            $trusted = "$TestDrive" -replace '\\', '\\'
+            @"
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_TRUSTED_CONFIG_PATHS = "$trusted", E2E_WATCH_MARK = "1" }
+"@ | Out-File -FilePath (Join-Path $env:MISE_CONFIG_DIR 'config.toml') -Encoding utf8NoBOM
+            # `track` declares into the same file, which was just rewritten
+            mise bootstrap dotfiles track ($script:Tracked -replace '\\', '/') 2>&1 | Out-String | Out-Null
+            $LASTEXITCODE | Should -Be 0
+
+            mise bootstrap services apply --yes 2>&1 | Out-String | Out-Null
+            $LASTEXITCODE | Should -Be 0
+            Wait-Watcher $true | Should -BeTrue
+
+            $services = Join-Path $env:MISE_STATE_DIR 'user-services'
+            # one launch, named by its digest, and the registered action
+            # points at exactly that file
+            $launches = @(Get-ChildItem (Join-Path $services 'mise-history.launches') -Filter '*.json')
+            $launches.Count | Should -Be 1
+            (Get-Content (Join-Path $services 'mise-history.xml') -Raw) |
+                Should -BeLike ('*' + $launches[0].Name + '*')
+            (Get-Content (Join-Path $services 'mise-history.xml') -Raw) |
+                Should -Not -BeLike '*cmd.exe*'
+
+            # the process Task Scheduler started and tracks, and the watcher
+            # it started in turn
+            $launcher = Get-CimInstance Win32_Process -Filter "Name = 'mise.exe'" |
+                Where-Object { $_.CommandLine -like '*__service-exec*' } |
+                Select-Object -First 1
+            $launcher | Should -Not -BeNullOrEmpty
+            $watcher = Get-CimInstance Win32_Process -Filter "Name = 'mise.exe'" |
+                Where-Object { $_.ParentProcessId -eq $launcher.ProcessId } |
+                Select-Object -First 1
+            $watcher | Should -Not -BeNullOrEmpty
+            $watcher.CommandLine | Should -BeLike '*dot watch*'
+
+            # Neither puts a window on the desktop: the launcher hides the
+            # console Task Scheduler gave it, and the service inherits that
+            # same hidden console rather than being handed one of its own.
+            # The probe is the one the case above shows reports 3 when a
+            # window is visible.
+            Get-ConsoleProbe ([int]$launcher.ProcessId) | Should -Be 6
+            Get-ConsoleProbe ([int]$watcher.ProcessId) | Should -Be 6
+        } finally {
+            mise bootstrap services remove mise-history 2>&1 | Out-String | Out-Null
+            schtasks /delete /tn $task /f 2>&1 | Out-Null
+            $env:MISE_EXPERIMENTAL = '0'
+        }
+    }
 }

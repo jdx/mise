@@ -373,6 +373,10 @@ pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
         "bootstrap repos exec",
         "runs an arbitrary command in each repo",
     ),
+    (
+        "bootstrap __service-exec",
+        "runs the command a user service declares",
+    ),
     ("direnv exec", "runs an arbitrary command"),
     ("doctor project", "runs project-defined diagnostic commands"),
     ("en", "starts an interactive shell"),

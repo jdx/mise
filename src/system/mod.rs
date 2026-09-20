@@ -66,6 +66,7 @@ pub(crate) mod repos;
 pub(crate) mod resources;
 pub(crate) mod scheduled_tasks;
 pub(crate) mod secrets;
+pub(crate) mod service_exec;
 #[cfg(target_os = "linux")]
 pub(crate) mod services;
 #[cfg(not(target_os = "linux"))]
