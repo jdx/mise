@@ -28,14 +28,13 @@ use crate::system::files::{FileMode, FilePolicy};
 
 /// Credential names excluded from capture by default.
 const CREDENTIAL_NAMES: &[&str] = &["github_tokens.toml", "hosts.yml", "age.txt"];
-const CREDENTIAL_GLOBS: &[&str] = &[
+/// Key material by name: a `.pub` beside these is the public half and is
+/// not protected.
+const KEY_GLOBS: &[&str] = &["*.age", "*.key", "*.pem", "*.gpg", "id_*"];
+/// Other credential stores by name; a `.pub` suffix means nothing here.
+const SECRET_GLOBS: &[&str] = &[
     ".netrc",
-    "*.age",
-    "*.key",
-    "*.pem",
-    "*.gpg",
     "*.kdbx",
-    "id_*",
     "*token*",
     "*secret*",
     "credentials*",
@@ -606,23 +605,30 @@ pub(crate) const CREDENTIAL_REASON: &str = "credential store; encrypt the file b
 
 /// Why `path` is left out of every capture under `policy`, if it is: a
 /// machine-local configuration file, or a credential store that is not
-/// enrolled with encryption. A `.pub` file is a public key or an age
-/// recipient list, never key material, so it is exempt from the guard.
+/// enrolled with encryption. A `.pub` file matching a key-material
+/// pattern (`id_ed25519.pub`, `signing.gpg.pub`) is the public half and
+/// is exempt; the exemption does not extend to the other patterns, so
+/// `client_secret.pub` stays protected.
 pub(crate) fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static str> {
-    static NAMES: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_names);
-    static GLOBS: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_globs);
     let name = path.file_name()?.to_str()?;
     if name.ends_with(".local.toml") {
         Some("machine-local configuration")
-    } else if !policy.encrypt
-        && !name.ends_with(".pub")
-        && (GLOBS.is_match(name)
-            || (path.starts_with(normalize(&global_config_dir())) && NAMES.is_match(name)))
-    {
+    } else if !policy.encrypt && is_builtin_credential(path, name) {
         Some(CREDENTIAL_REASON)
     } else {
         None
     }
+}
+
+/// Whether the builtin rules protect a file of this name at this path.
+pub(crate) fn is_builtin_credential(path: &Path, name: &str) -> bool {
+    static NAMES: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_names);
+    static KEYS: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(|| glob_set(KEY_GLOBS));
+    static SECRETS: std::sync::LazyLock<GlobSet> =
+        std::sync::LazyLock::new(|| glob_set(SECRET_GLOBS));
+    (KEYS.is_match(name) && !name.ends_with(".pub"))
+        || SECRETS.is_match(name)
+        || (path.starts_with(normalize(&global_config_dir())) && NAMES.is_match(name))
 }
 
 /// How many omissions a capture report lists one by one before it
@@ -675,11 +681,6 @@ pub(crate) fn omission_summary(omitted: &[PathReason]) -> String {
 /// under the global configuration directory.
 fn credential_names() -> GlobSet {
     glob_set(CREDENTIAL_NAMES)
-}
-
-/// Key material by name pattern, private wherever it is captured.
-fn credential_globs() -> GlobSet {
-    glob_set(CREDENTIAL_GLOBS)
 }
 
 fn glob_set(patterns: &[&str]) -> GlobSet {
@@ -1165,6 +1166,19 @@ mod tests {
         assert_eq!(
             capture_exclusion(&dir.join("secrets.fish"), &policy),
             Some(CREDENTIAL_REASON)
+        );
+        // the exemption is for key pairs only: a secret store keeps its
+        // protection whatever its suffix
+        for name in ["client_secret.pub", "oauth_token.pub", "credentials.pub"] {
+            assert_eq!(
+                capture_exclusion(&dir.join(name), &policy),
+                Some(CREDENTIAL_REASON),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            capture_exclusion(&dir.join("signing.gpg.pub"), &policy),
+            None
         );
         assert_eq!(
             capture_exclusion(&dir.join("config.local.toml"), &policy),
