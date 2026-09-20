@@ -134,7 +134,7 @@ You can also use it to run the script with other programming languages.
 console.log("Hello, World!");
 ```
 
-```python
+```python [python]
 #!/usr/bin/env python
 #MISE description="Hello, World in Python"
 
