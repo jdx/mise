@@ -786,6 +786,7 @@ fn prepare(
     };
     let mut plans = reconcile_set(tracked)?;
     apply_resolutions(repo, status, shared, upstream, &mut plans)?;
+    reconcile::skip_pointer_applications(&mut plans);
     status.validation_error = None;
     // Source deletion and invalid source types matter even when the bootstrap
     // configuration itself is unchanged or deliberately not tracked.
@@ -794,6 +795,7 @@ fn prepare(
             let prospective = super::preflight::prospective(repo, tracked, &plans)?;
             plans = reconcile_set(&prospective)?;
             apply_resolutions(repo, status, shared, upstream, &mut plans)?;
+            reconcile::skip_pointer_applications(&mut plans);
             super::preflight::sources(repo, &prospective, &plans)
         })();
         if let Err(error) = validation {

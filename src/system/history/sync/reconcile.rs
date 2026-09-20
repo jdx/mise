@@ -358,10 +358,16 @@ pub(crate) fn reconcile(
             plans.push(plan);
         }
     }
-    // an application that would write a pointer (content here became a
-    // repository elsewhere) is never performed: it is recorded as skipped
-    // and acknowledged, so it neither waits nor blocks publication
-    for plan in &mut plans {
+    skip_pointer_applications(&mut plans);
+    Ok(plans)
+}
+
+/// An application that would write a pointer (content here became a
+/// repository elsewhere, or a decision took the remote side of such a
+/// conflict) is never performed: it is recorded as skipped and
+/// acknowledged, so it neither waits nor blocks publication.
+pub(crate) fn skip_pointer_applications(plans: &mut [PathPlan]) {
+    for plan in plans {
         if plan.conflict.is_none()
             && plan
                 .apply
@@ -375,7 +381,6 @@ pub(crate) fn reconcile(
             plan.next.applied = version;
         }
     }
-    Ok(plans)
 }
 
 enum Merged {
@@ -598,6 +603,17 @@ mod tests {
         assert!(plans[0].conflict.is_none());
         assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
         assert_eq!(plans[0].next.applied, Some(pointer("aaaa")));
+        // a decision that takes the remote pointer over local content is
+        // never written either: the same skip applies after resolutions
+        let mut decided = vec![PathPlan {
+            branch_path: path(),
+            apply: Some(Some(pointer("aaaa"))),
+            ..Default::default()
+        }];
+        skip_pointer_applications(&mut decided);
+        assert!(decided[0].apply.is_none());
+        assert_eq!(decided[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
+        assert_eq!(decided[0].next.applied, Some(pointer("aaaa")));
         // a file against a pointer is a type change, never a silent skip
         let plain = [(path(), obj("plain"))].into();
         let upstream = Upstream {
