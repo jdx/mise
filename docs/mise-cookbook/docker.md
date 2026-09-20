@@ -10,8 +10,8 @@ and shared tool installations for development containers.
 
 ## Official images
 
-Release images are published to `ghcr.io/jdx/mise` and Docker Hub (`jdxcode/mise`)
-for `linux/amd64` and `linux/arm64`. Both registries use the same tags.
+Release images are published for every stable release to `ghcr.io/jdx/mise`
+and Docker Hub (`jdxcode/mise`) for `linux/amd64` and `linux/arm64`. Both registries use the same tags.
 
 | Image       | Example tags                                  | Use it for                                         |
 | ----------- | --------------------------------------------- | -------------------------------------------------- |
