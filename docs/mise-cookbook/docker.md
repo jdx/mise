@@ -1,16 +1,165 @@
 ---
-description: "Install mise inside an image, use it to run project commands, or preinstall tools outside user home directories for shared development containers."
+description: "Use the official mise images or install a pinned, verified mise inside your own image, use it to run project commands, or preinstall tools outside user home directories for shared development containers."
 ---
 
 # Docker Cookbook
 
-Install mise inside an image, use it to run project commands, or preinstall tools
-outside user home directories for shared development containers. Building these
-examples requires Docker and a running container engine.
+Use the official mise images, copy a pinned mise binary into your own image,
+or install mise from a package or verified release download. Then use mise to
+run project commands, or preinstall tools outside user home directories for
+shared development containers. Building these examples requires Docker and a
+running container engine.
 
-## Docker image with mise
+## Official images
 
-Here is an example Dockerfile showing how to install mise in a Docker image.
+Every release publishes two images to `ghcr.io/jdx/mise` and Docker Hub
+(`jdxcode/mise`) for `linux/amd64` and `linux/arm64`. The mise binary inside
+each image is the release asset itself, checked against the release's
+minisign-signed checksums before the image is built.
+
+| Tags                                          | Contents                                                                                    | Use it for                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `latest`, `2026.9`, `2026.9.11`               | `FROM scratch`: the static musl `mise` binary at `/usr/local/bin/mise` plus CA certificates | `COPY --from=` source for any base image                       |
+| `debian`, `2026.9-debian`, `2026.9.11-debian` | `debian:trixie-slim` with the glibc `mise` binary, `ca-certificates`, `curl`, and `git`     | Running mise directly in CI jobs, devcontainers, or for repros |
+
+Both images set `MISE_DATA_DIR=/mise`, `MISE_CONFIG_DIR=/mise`,
+`MISE_CACHE_DIR=/mise/cache`, and put `/mise/shims` on `PATH`. Neither
+preinstalls any tool; `mise install` does that for the project. The `2026.9`
+style tag follows the latest patch release of that month, and `latest` and
+`debian` follow the newest release.
+
+The `dev` tag is a large image built from source for mise's own tooling. It is
+not a supported image; do not depend on it.
+
+### Copy the binary into your own image
+
+The scratch image is the source for a single `COPY` line. Its binary is
+statically linked, so the same line works on Debian, Alpine, distroless, and
+any other base:
+
+```Dockerfile [Dockerfile]
+FROM debian:13-slim
+
+COPY --from=ghcr.io/jdx/mise:2026.9.11 /usr/local/bin/mise /usr/local/bin/mise
+
+RUN apt-get update \
+    && apt-get -y --no-install-recommends install ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV MISE_DATA_DIR="/mise"
+ENV MISE_CONFIG_DIR="/mise"
+ENV MISE_CACHE_DIR="/mise/cache"
+ENV PATH="/mise/shims:$PATH"
+```
+
+To pin the exact bytes rather than a tag, reference the image by digest.
+`docker buildx imagetools inspect ghcr.io/jdx/mise:2026.9.11` prints it, and
+tools such as Renovate and Dependabot can keep a pinned digest current:
+
+```Dockerfile
+COPY --from=ghcr.io/jdx/mise@sha256:<digest> /usr/local/bin/mise /usr/local/bin/mise
+```
+
+### Use the debian image as a base
+
+The debian image has no `ENTRYPOINT`, so it works as a plain base image and
+as a CI job image:
+
+```Dockerfile [Dockerfile]
+FROM ghcr.io/jdx/mise:2026.9.11-debian
+
+WORKDIR /app
+# Also copy mise.lock if the project has one.
+COPY mise.toml ./
+RUN mise trust && mise install
+COPY . .
+CMD ["mise", "exec", "--", "node", "server.js"]
+```
+
+Add any OS packages your tools need with `apt-get`; the image only ships
+`ca-certificates`, `curl`, and `git`. To reproduce a mise issue in a clean
+environment, run it interactively:
+
+```shell
+docker run -it --rm ghcr.io/jdx/mise:debian bash
+```
+
+## Installing mise yourself
+
+If you would rather not depend on the official images, these methods install a
+specific mise version without piping a remote script to a shell.
+
+### Distribution packages
+
+The [apt](/installing-mise.html#apt), [dnf](/installing-mise.html#dnf), and
+[apk](/installing-mise.html#apk) repositories verify packages with the
+distribution's own signing checks. This Debian example uses
+`extrepo`:
+
+```Dockerfile [Dockerfile]
+# syntax=docker/dockerfile:1
+FROM debian:13-slim
+
+RUN <<EOF
+  set -ex
+  apt-get update
+  apt-get install -y extrepo
+  extrepo enable mise
+  apt-get remove -y --auto-remove extrepo # extrepo and its deps are not needed after extrepo enable
+  apt-get update
+  apt-get install -y mise
+  rm -fr /var/lib/apt/lists/*
+EOF
+```
+
+With this approach you cannot choose the mise version with `MISE_VERSION`;
+pin it with apt version constraints instead.
+
+### Verified release download
+
+Each release ships `SHASUMS256.txt` signed with minisign and GPG. This
+downloads one release binary and checks it against the signed checksums, so
+the build fails if either the binary or the checksum file was altered:
+
+```Dockerfile [Dockerfile]
+FROM debian:13-slim
+
+ARG MISE_VERSION=2026.9.11
+ARG MISE_MINISIGN_KEY=RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
+
+RUN apt-get update \
+    && apt-get -y --no-install-recommends install ca-certificates curl git minisign \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    base="https://github.com/jdx/mise/releases/download/v${MISE_VERSION}"; \
+    asset="mise-v${MISE_VERSION}-linux-$(dpkg --print-architecture | sed 's/amd64/x64/')"; \
+    cd /tmp; \
+    curl -fsSLO "$base/SHASUMS256.txt"; \
+    curl -fsSLO "$base/SHASUMS256.txt.minisig"; \
+    curl -fsSLO "$base/$asset"; \
+    minisign -Vm SHASUMS256.txt -P "$MISE_MINISIGN_KEY"; \
+    grep " ./$asset\$" SHASUMS256.txt | sha256sum -c --strict; \
+    install -m 755 "$asset" /usr/local/bin/mise; \
+    rm -f SHASUMS256.txt SHASUMS256.txt.minisig "$asset"
+```
+
+The public key above is the mise release key from
+[`minisign.pub`](https://github.com/jdx/mise/blob/main/minisign.pub). Use the
+`-musl` asset for Alpine and other musl bases.
+
+### Committed wrapper
+
+[`mise generate install-script -l -w`](/cli/generate/install-script.html)
+writes a `bin/mise` wrapper whose checksums were verified when it was
+generated. Commit it, copy it into the image, and it installs that pinned
+version on first use. See
+[Continuous integration](/continuous-integration.html#bootstrapping).
+
+### Install script
+
+The `mise.run` installer picks the platform and verifies the download's
+checksum itself. Set `MISE_VERSION` to pin the release:
 
 ```Dockerfile [Dockerfile]
 FROM debian:13-slim
@@ -33,7 +182,10 @@ RUN curl --proto '=https' --proto-redir '=https' \
     --fail --show-error --silent --location https://mise.run | sh
 ```
 
-Before building, exclude local credentials from the build context:
+## Installing project tools
+
+Whichever way mise got into the image, exclude local credentials from the
+build context before building:
 
 ```gitignore [.dockerignore]
 .env
@@ -42,15 +194,8 @@ Before building, exclude local credentials from the build context:
 *.tfvars.json
 ```
 
-Build and run the Docker image:
-
-```shell
-docker build -t debian-mise .
-docker run -it --rm debian-mise
-```
-
-The image above installs mise itself. To install project tools as a build layer,
-copy the project config before its source files:
+To install project tools as a build layer, copy the project config before its
+source files:
 
 ```Dockerfile
 WORKDIR /app
@@ -75,23 +220,12 @@ Each user's mise finds these system-level tools automatically without any config
 for use without mise. If you want tools other users can run with no mise involved, see
 [How do I install tools other users can run without mise?](/faq.html#how-do-i-install-tools-other-users-can-run-without-mise)
 
-The following example also shows installing mise with `extrepo` on a Debian/Ubuntu image.
-With this approach, you cannot specify `MISE_VERSION` or `MISE_INSTALL_PATH`.
-
 ```Dockerfile [Dockerfile]
-# syntax=docker/dockerfile:1
-FROM debian:13-slim
+FROM ghcr.io/jdx/mise:debian
 
-RUN <<EOF
-  set -ex
-  apt-get update
-  apt-get install -y extrepo
-  extrepo enable mise
-  apt-get remove -y --auto-remove extrepo # extrepo and its deps are not needed after extrepo enable
-  apt-get update
-  apt-get install -y mise build-essential
-  rm -fr /var/lib/apt/lists/*
-EOF
+RUN apt-get update \
+    && apt-get -y --no-install-recommends install build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Pre-install tools to the system-wide shared directory
 RUN mise install --system node@26 python@3.15
@@ -155,10 +289,10 @@ This is useful for reproducing a mise issue in a clean environment.
 ```toml [mise.toml]
 [tasks.docker]
 interactive = true
-run = "docker run -it --rm debian-mise"
+run = "docker run -it --rm ghcr.io/jdx/mise:debian bash"
 ```
 
-Build the image first (see above), then:
+Then:
 
 ```shell
 mise run docker

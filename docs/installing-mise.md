@@ -294,7 +294,13 @@ sudo snap install mise --classic
 
 ### Docker
 
-See the [Docker cookbook](/mise-cookbook/docker) for tips on using mise with Docker.
+Every release publishes images to `ghcr.io/jdx/mise` and Docker Hub
+(`jdxcode/mise`). The bare version tags such as `ghcr.io/jdx/mise:2026.9.11`
+are `scratch` images holding the static mise binary, meant as a
+`COPY --from=` source for your own Dockerfile. The `-debian` tags such as
+`ghcr.io/jdx/mise:2026.9.11-debian` are runnable Debian slim images. See the
+[Docker cookbook](/mise-cookbook/docker) for the full tag list, digest pinning,
+and ways to install a verified mise into an image without the official images.
 
 ::: details Example Dockerfile
 
@@ -371,9 +377,22 @@ mise_platform=linux-x64
 curl -fL -o mise "https://github.com/jdx/mise/releases/download/v${mise_version}/mise-v${mise_version}-${mise_platform}"
 ```
 
-Change both values for your chosen release and platform. Verify the artifact
-against that release's checksum/signature metadata before installing it. The
-`mise.run` installer handles platform selection and checksum checking for you.
+Change both values for your chosen release and platform. Each release also
+ships `SHASUMS256.txt`, signed with minisign (`SHASUMS256.txt.minisig`) and
+GPG (`SHASUMS256.asc`). Verify the checksum file's signature, then the
+download against it, before installing:
+
+```sh
+base="https://github.com/jdx/mise/releases/download/v${mise_version}"
+curl -fL -O "$base/SHASUMS256.txt" -O "$base/SHASUMS256.txt.minisig"
+minisign -Vm SHASUMS256.txt -P RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ
+grep " ./mise-v${mise_version}-${mise_platform}$" SHASUMS256.txt | sed 's| ./mise-.*| mise|' | sha256sum -c
+```
+
+The minisign public key is
+[`minisign.pub`](https://github.com/jdx/mise/blob/main/minisign.pub) in the
+repository. The `mise.run` installer handles platform selection and checksum
+checking for you.
 
 After verifying a downloaded Unix executable, install it to a user-writable path:
 

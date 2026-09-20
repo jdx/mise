@@ -139,6 +139,31 @@ architecture. Remove `mise.lock` from the key if the project does not have one, 
 install command to `mise install --locked` if it does. The example also requires a `build`
 script in `package.json`. The localized wrapper sets the mise directories used by the cache.
 
+The [official `-debian` image](/mise-cookbook/docker.html#official-images)
+already contains mise, `curl`, `git`, and CA certificates, so a job can use it
+directly. Point the data directory into the project so the cache above still
+applies:
+
+```yaml
+build-job:
+  stage: build
+  image: ghcr.io/jdx/mise:2026.9.11-debian
+  variables:
+    MISE_DATA_DIR: $CI_PROJECT_DIR/.mise
+    MISE_CACHE_DIR: $CI_PROJECT_DIR/.mise/cache
+  cache:
+    key:
+      prefix: mise-image-amd64
+      files: [mise.toml, mise.lock]
+    paths:
+      - .mise/installs/
+      - .mise/cache/
+  script:
+    - mise install
+    - mise exec -- npm ci
+    - mise exec -- npm run build
+```
+
 ## Xcode Cloud
 
 Use an Xcode Cloud [post-clone script](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts)
