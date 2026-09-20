@@ -249,13 +249,20 @@ impl DotfilesTrack {
             previews.push(summary);
             // the keys this file's declaration wrote, whether as an inline
             // table or a `[dotfiles."path"]` table
-            let previous: Vec<String> = doc
+            let previous_table = doc
                 .get("dotfiles")
                 .and_then(|dotfiles| dotfiles.get(declaration_key))
-                .and_then(Item::as_table_like)
+                .and_then(Item::as_table_like);
+            let previous: Vec<String> = previous_table
                 .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
                 .unwrap_or_default();
-            let entry = self.entry(existing, &previous);
+            // the list as this file wrote it, so a pattern the loader
+            // could not parse (and warned about) is not silently dropped
+            let previous_exclude = previous_table
+                .and_then(|table| table.get("exclude"))
+                .and_then(Item::as_array)
+                .cloned();
+            let entry = self.entry(existing, &previous, previous_exclude);
             let dotfiles = doc
                 .entry("dotfiles")
                 .or_insert(Item::Table(toml_edit::Table::new()));
@@ -340,7 +347,12 @@ impl DotfilesTrack {
     /// file held before wrote: a policy it wrote explicitly stays written,
     /// even at its default value, while one it inherited from another
     /// layer stays unwritten so that layer keeps deciding it.
-    fn entry(&self, existing: Option<&FileRequest>, previous: &[String]) -> InlineTable {
+    fn entry(
+        &self,
+        existing: Option<&FileRequest>,
+        previous: &[String],
+        previous_exclude: Option<Array>,
+    ) -> InlineTable {
         let mut table = InlineTable::new();
         table.insert("mode", string("track"));
         let policy = self.policy(existing);
@@ -360,16 +372,18 @@ impl DotfilesTrack {
                 Value::Boolean(toml_edit::Formatted::new(policy.autosave)),
             );
         }
-        // re-tracking keeps the entry's own exclude list when this file
-        // wrote it (an explicitly empty one included); a list inherited
-        // from another layer stays with that layer, like the policies
-        if let Some(existing) = existing
-            && written("exclude")
-        {
-            let mut list = Array::new();
-            for pattern in &existing.exclude {
-                list.push(string(pattern.as_str()));
-            }
+        // re-tracking keeps the entry's own exclude list as this file wrote
+        // it (an explicitly empty one, or a pattern the loader rejected,
+        // included); a list inherited from another layer stays with that
+        // layer, like the policies
+        if existing.is_some() && written("exclude") {
+            let list = previous_exclude.unwrap_or_else(|| {
+                let mut list = Array::new();
+                for pattern in existing.iter().flat_map(|req| &req.exclude) {
+                    list.push(string(pattern.as_str()));
+                }
+                list
+            });
             table.insert("exclude", Value::Array(list));
         }
         let mut variants: Vec<Variant> =
@@ -771,15 +785,15 @@ mod declaration_tests {
         };
         // this file wrote both fields: they stay written at their values
         let previous = ["mode", "autosave", "encrypt"].map(String::from);
-        let table = command.entry(Some(&existing), &previous);
+        let table = command.entry(Some(&existing), &previous, None);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(true));
         assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
         // another layer wrote them (the composed flags say explicit): this
         // file must not pin the inherited values
-        let table = command.entry(Some(&existing), &["mode".to_string()]);
+        let table = command.entry(Some(&existing), &["mode".to_string()], None);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
-        let table = command.entry(None, &[]);
+        let table = command.entry(None, &[], None);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
         // an inherited non-default value is not pinned either; this
@@ -787,23 +801,27 @@ mod declaration_tests {
         let mut inherited = existing.clone();
         inherited.policy.autosave = false;
         inherited.policy.encrypt = true;
-        let table = command.entry(Some(&inherited), &["mode".to_string()]);
+        let table = command.entry(Some(&inherited), &["mode".to_string()], None);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
         let flagged = DotfilesTrack {
             no_autosave: true,
             ..command
         };
-        let table = flagged.entry(Some(&inherited), &["mode".to_string()]);
+        let table = flagged.entry(Some(&inherited), &["mode".to_string()], None);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(false));
         assert!(table.get("encrypt").is_none());
         // an inherited exclude list is not pinned either; one this file
         // wrote is kept, even when empty
         let mut listed = existing.clone();
         listed.exclude = vec![glob::Pattern::new("sessions").unwrap()];
-        let table = flagged.entry(Some(&listed), &["mode".to_string()]);
+        let table = flagged.entry(Some(&listed), &["mode".to_string()], None);
         assert!(table.get("exclude").is_none());
-        let table = flagged.entry(Some(&listed), &["mode".to_string(), "exclude".to_string()]);
+        let table = flagged.entry(
+            Some(&listed),
+            &["mode".to_string(), "exclude".to_string()],
+            None,
+        );
         assert_eq!(
             table
                 .get("exclude")
@@ -811,9 +829,33 @@ mod declaration_tests {
                 .map(|a| a.len()),
             Some(1)
         );
+        // the list is carried as written, so a pattern the loader rejected
+        // survives a rewrite
+        let raw: Array = "[\"sessions\", \"[\"]"
+            .parse::<Value>()
+            .unwrap()
+            .as_array()
+            .cloned()
+            .unwrap();
+        let table = flagged.entry(
+            Some(&listed),
+            &["mode".to_string(), "exclude".to_string()],
+            Some(raw),
+        );
+        assert_eq!(
+            table
+                .get("exclude")
+                .and_then(Value::as_array)
+                .map(|a| a.len()),
+            Some(2)
+        );
         let mut cleared = existing.clone();
         cleared.exclude = vec![];
-        let table = flagged.entry(Some(&cleared), &["mode".to_string(), "exclude".to_string()]);
+        let table = flagged.entry(
+            Some(&cleared),
+            &["mode".to_string(), "exclude".to_string()],
+            None,
+        );
         assert_eq!(
             table
                 .get("exclude")

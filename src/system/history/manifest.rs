@@ -440,6 +440,14 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
+            for pattern in &entry.exclude {
+                if let Err(err) = glob::Pattern::new(pattern) {
+                    bail!(
+                        "invalid exclude pattern {pattern:?} for {}: {err}",
+                        entry.path
+                    );
+                }
+            }
             for variant in &entry.variants {
                 let name = variant.name();
                 if name.contains('@')
@@ -1104,5 +1112,23 @@ mod tests {
             manifest.enrollment[0].path = path.into();
             assert!(manifest.validate().is_err());
         }
+    }
+    #[test]
+    fn an_unparsable_enrollment_exclude_pattern_is_rejected() {
+        let mut manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.codex".into(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+                exclude: vec!["sessions".into()],
+            }],
+            ..Default::default()
+        };
+        assert!(manifest.validate().is_ok());
+        manifest.enrollment[0].exclude.push("[".into());
+        let error = manifest.validate().unwrap_err().to_string();
+        assert!(error.contains("invalid exclude pattern"), "{error}");
+        assert!(error.contains("home/.codex"), "{error}");
     }
 }
