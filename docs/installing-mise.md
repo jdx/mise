@@ -294,7 +294,16 @@ sudo snap install mise --classic
 
 ### Docker
 
-See the [Docker cookbook](/mise-cookbook/docker) for tips on using mise with Docker.
+Official images are available from `ghcr.io/jdx/mise` and Docker Hub (`jdxcode/mise`)
+for Linux amd64 and arm64:
+
+- Use `ghcr.io/jdx/mise:2026.9.11-debian` as a CI or development image. It includes
+  mise, `curl`, `git`, and CA certificates; install project tools with `mise install`.
+- Use `ghcr.io/jdx/mise:2026.9.11` as a `COPY --from=` source for the static mise
+  binary at `/usr/local/bin/mise`. This scratch image has no shell.
+
+See the [Docker cookbook](/mise-cookbook/docker.html) for tags, digest pinning,
+migration from the previous image, and other installation methods.
 
 ::: details Example Dockerfile
 
@@ -304,16 +313,7 @@ context. This example copies that configuration, installs its tools, and uses
 lockfile, hook inputs, or application files that your real project needs.
 
 ```dockerfile
-FROM debian:13-slim
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV MISE_INSTALL_PATH=/usr/local/bin/mise
-RUN curl -fsSL https://mise.run -o /tmp/install-mise.sh \
-    && sh /tmp/install-mise.sh \
-    && rm /tmp/install-mise.sh
+FROM ghcr.io/jdx/mise:2026.9.11-debian
 
 WORKDIR /app
 COPY mise.toml ./mise.toml
@@ -371,9 +371,24 @@ mise_platform=linux-x64
 curl -fL -o mise "https://github.com/jdx/mise/releases/download/v${mise_version}/mise-v${mise_version}-${mise_platform}"
 ```
 
-Change both values for your chosen release and platform. Verify the artifact
-against that release's checksum/signature metadata before installing it. The
-`mise.run` installer handles platform selection and checksum checking for you.
+Change both values for your chosen release and platform. Each release also
+ships `SHASUMS256.txt`, signed with minisign (`SHASUMS256.txt.minisig`) and
+GPG (`SHASUMS256.asc`). Verify the checksum file's signature, then the
+download against it, before installing. The following commands require
+`minisign` and `sha256sum` (use `shasum -a 256 -c` on macOS in place of
+`sha256sum -c`), and reuse the variables and `mise` file from the download above:
+
+```sh
+base="https://github.com/jdx/mise/releases/download/v${mise_version}"
+curl -fL -O "$base/SHASUMS256.txt" -O "$base/SHASUMS256.txt.minisig"
+minisign -Vm SHASUMS256.txt -P RWTC3g8W3z4RZK3V3qv7fa1QY4JEWyBtqIHW+85QlJpZc5yG+uNYNBSZ &&
+  grep " ./mise-v${mise_version}-${mise_platform}$" SHASUMS256.txt | sed 's| ./mise-.*| mise|' | sha256sum -c
+```
+
+The minisign public key is
+[`minisign.pub`](https://github.com/jdx/mise/blob/main/minisign.pub) in the
+repository. The `mise.run` installer handles platform selection and checksum
+checking for you.
 
 After verifying a downloaded Unix executable, install it to a user-writable path:
 
