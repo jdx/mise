@@ -308,30 +308,27 @@ pub(crate) fn launch_path(name: &str, digest: &str) -> PathBuf {
     launch_dir(name).join(format!("{digest}.json"))
 }
 
-/// Drop every launch for `name` but the one `keep` names, which is what the
-/// registration that just committed reads.
-///
-/// Safe only under `service_lock`, and only after that registration has
-/// committed. Without the lock this deletes the launch a concurrent apply
-/// has just registered its own task against — no ordering of write,
-/// register, and sweep avoids that — and before the commit it would take the
-/// launch the still-registered task is reading.
-fn sweep_launches(name: &str, keep: Option<&str>) {
-    let dir = launch_dir(name);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return;
-    };
-    let keep = keep.map(|digest| std::ffi::OsString::from(format!("{digest}.json")));
-    for entry in entries.flatten() {
-        if keep.as_deref() == Some(entry.file_name().as_os_str()) {
-            continue;
-        }
-        let _ = std::fs::remove_file(entry.path());
-    }
-    if keep.is_none() {
-        let _ = std::fs::remove_dir(&dir);
-    }
-}
+// Launches are never deleted while the task exists — not the ones a
+// registration has stopped pointing at, and not on a successful apply.
+//
+// Nothing that could delete one can know whether it is still needed. The
+// path is baked into the registered command line, and `__service-exec`
+// reads it only after mise has started up, so an instance that Task
+// Scheduler launched moments earlier — at logon, or from the `/run` of an
+// earlier apply — is still holding a path it has not opened yet. Deleting
+// out from under it gives `no stored launch`, and if `query` had not seen
+// that instance, `IgnoreNew` suppresses the follow-up `/run` and the
+// service simply stays down.
+//
+// `service_lock` does not help: it serializes the two commands that write,
+// and the reader here is a third process that never takes it and could not
+// usefully be made to — a service that declined to start because an apply
+// held a lock would be the same outage by another route.
+//
+// So they accumulate, one per distinct environment a service has ever had,
+// a few hundred bytes each; re-applying an unchanged one writes nothing,
+// because the name is the content. `remove_task` takes the directory, where
+// a starting instance failing is what was asked for.
 
 /// The executable and arguments the task's `<Exec>` action runs.
 ///
@@ -572,12 +569,6 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         // definition on Windows
         std::fs::write(&path, &rendered)?;
         let _ = std::fs::remove_file(&staging);
-        // the registration committed, so whatever the replaced one read is
-        // unreachable; the lock is still held, so nothing else is reading it
-        sweep_launches(
-            &req.name,
-            launch.as_ref().map(|(_, digest)| digest.as_str()),
-        );
         if end_first {
             // it may have exited between the query and now: the HRESULT
             // says so in every locale; the message is matched as a fallback
