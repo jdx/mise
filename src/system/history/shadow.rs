@@ -880,6 +880,10 @@ impl HistoryRepo {
             coverage
                 .incomplete
                 .append(&mut record.tree.coverage.incomplete);
+            // the nested list is the only record of a skipped repository —
+            // nothing is written to the tree for it — so it has to be
+            // carried forward like the other two
+            coverage.nested.append(&mut record.tree.coverage.nested);
             record.tree.coverage = coverage;
             let mut roots: BTreeMap<String, RootRecord> = BTreeMap::new();
             let layout = super::sync::layout::Roots::current();

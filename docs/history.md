@@ -902,21 +902,48 @@ while saving other files, so check reported omissions before relying on a
 checkpoint. Explicit exclusions remove paths from future checkpoints.
 Encryption failures stop a save rather than storing plaintext.
 
+### Nested repositories
+
 A directory with its own `.git` inside a tracked tree (a plugin cloned
-into `~/.hammerspoon/Spoons`, a vendored theme) is a nested repository.
-A checkpoint records only its commit id, as a Git pointer: its files are
-not saved, not shared with other machines, and not restored by a rollback.
-`mise dot save`, `mise dot track`, `mise dot status`, and `mise dot paths`
-report each nested repository, and `mise dot pull` lists the pointer as
+into `~/.hammerspoon/Spoons`, a vendored theme) is a separate repository.
+**mise skips it and records nothing for it** — not its files, and not a
+commit pointer. `mise dot save`, `mise dot track`, `mise dot status` and
+`mise dot paths` each name it and say what to do:
+
+```console
+nested: ~/.hammerspoon/Spoons/SkyRocket.spoon (a separate Git repository;
+        track it directly to capture its working files)
+```
+
+That remedy is the supported one. **Tracking a repository's own directory
+captures its working files**, always without `.git`:
+
+```sh
+mise dot track ~/.hammerspoon/Spoons/SkyRocket.spoon
+```
+
+Reaching into it from a parent entry does not work and is not meant to:
+an `include` pattern on the parent that names paths inside the nested
+repository selects nothing, and mise says so rather than leaving you to
+wonder whether the pattern was wrong. The alternative is to leave the
+directory to the tool that installs it, or remove its `.git` so it
+becomes ordinary content.
+
+A history saved by an older mise may already contain commit pointers.
+Those are read and skipped: `mise dot pull` lists such a pointer as
 skipped rather than creating an empty directory, failing on it, or
-pausing the setup because another machine's pointer differs. The pointer
-itself still travels with the shared history, so two machines that have
-the same repository at different commits each publish their own and the
-shared branch alternates between them on every sync; that is noisy, but
-touches no file on disk. To save its files, track the directory as its
-own entry (`mise dot track ~/.hammerspoon/Spoons/Sky.spoon`) or remove
-its `.git` so it becomes ordinary content; otherwise leave it to the tool
-that installs it.
+pausing the setup because another machine's pointer differs. No new
+pointer is ever written.
+
+Which repositories a checkpoint skipped is recorded on the machine that
+wrote it, not in the shared history, so a rollback there knows the
+checkpoint never held those files — including after you remove the
+`.git` and the directory becomes ordinary content, when looking at the
+filesystem would no longer tell. Other machines find their own nested
+repositories the same way, by looking. The record is best effort: it
+lives in this machine's checkpoint cache, so rebuilding that cache from
+Git loses it, and a rollback then falls back to what the filesystem
+says.
 
 Commands that modify or capture tracked files save checkpoints before and
 after their work. Their metadata includes operation labels and the link
