@@ -366,7 +366,7 @@ impl Commands {
     fn runs_unattended(&self) -> bool {
         match self {
             Self::Dotfiles(cmd) => cmd.is_watch(),
-            Self::Bootstrap(cmd) => cmd.is_dotfiles_watch(),
+            Self::Bootstrap(cmd) => cmd.runs_unattended(),
             _ => false,
         }
     }
@@ -1586,9 +1586,9 @@ mod tests {
         Cli::parse_from_argv(&argv)
     }
 
-    /// Only a watcher that is really about to start gives up its console: it
-    /// happens before the command runs, and what it gives up cannot be handed
-    /// back to print an error with. See jdx/mise#13426.
+    /// Only a command that is really about to run unattended hides its
+    /// console: it happens before the command runs, and a hidden window
+    /// cannot be handed back to print an error in. See jdx/mise#13426.
     #[test]
     fn only_a_starting_watcher_runs_unattended() {
         fn unattended(args: &[&str]) -> bool {
@@ -1602,6 +1602,20 @@ mod tests {
         assert!(unattended(&["mise", "dot", "watch"]));
         assert!(unattended(&["mise", "dotfiles", "watch"]));
         assert!(unattended(&["mise", "bootstrap", "dotfiles", "watch"]));
+
+        // the launcher a Windows user service's task starts is handed a
+        // console the same way, and its window has to go before settings,
+        // config, or an auto-update can hold it on screen
+        assert!(unattended(&[
+            "mise",
+            "bootstrap",
+            "__service-exec",
+            "mise-history",
+            "--launch",
+            "C:\\state\\mise-history.launches/abc.json",
+            "--digest",
+            "abc",
+        ]));
 
         // every other dotfiles command has a terminal reading it
         assert!(!unattended(&["mise", "dot", "status"]));

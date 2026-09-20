@@ -30,11 +30,11 @@ use crate::system::scheduled_tasks::ServiceLaunch;
 #[cfg(windows)]
 pub(crate) fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
     let launch = read_launch(name, launch, digest)?;
-    // The window of the console Task Scheduler allocated for this process
-    // alone. A `__service-exec` run by hand in a terminal shares that
-    // terminal's console, and its window is left alone.
-    crate::windows_console::hide_if_unattended();
-
+    // The console Task Scheduler allocated for this process alone was
+    // hidden right after the parser recognized this command
+    // (`Commands::runs_unattended`), ahead of settings, config, and any
+    // automatic update — the window is closable for as long as it is up,
+    // and closing it would kill the launcher before the service started.
     use std::os::windows::process::CommandExt;
     let mut cmd = std::process::Command::new(&launch.program);
     if !launch.args.is_empty() {

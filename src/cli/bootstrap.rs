@@ -267,11 +267,20 @@ impl Bootstrap {
     /// invocation carrying one is not a watcher starting, whatever it names.
     /// `--from-git` is still its own field here: `run` folds it into `adopt`,
     /// and this is asked before that.
-    pub(crate) fn is_dotfiles_watch(&self) -> bool {
+    /// The dotfile watcher, and the launcher a Windows user service's task
+    /// starts. Both are started by a service manager with nobody reading
+    /// their output, and on Windows both are handed a console whose window
+    /// has to go before anything slow happens — the window can be closed,
+    /// and closing it kills the process behind it.
+    pub(crate) fn runs_unattended(&self) -> bool {
         self.from.is_none()
             && self.adopt.is_none()
             && self.from_git.is_none()
-            && matches!(&self.command, Some(Commands::Dotfiles(cmd)) if cmd.is_watch())
+            && match &self.command {
+                Some(Commands::Dotfiles(cmd)) => cmd.is_watch(),
+                Some(Commands::ServiceExec(_)) => true,
+                _ => false,
+            }
     }
 }
 
