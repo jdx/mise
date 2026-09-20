@@ -213,6 +213,12 @@ fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
     remove()
 }
 
+/// Removes a path whose kind the caller does not know, resolving it first.
+///
+/// Resolving is why this is not what a cache or install walk wants: a link is
+/// judged by what it points at. The remaining caller knows it is handling a
+/// staged Homebrew payload, which has no links pointing out of it.
+#[cfg(unix)]
 pub(crate) fn remove_file_or_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     match path.metadata().map(|m| m.file_type()) {

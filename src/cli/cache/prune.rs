@@ -6,7 +6,6 @@ use crate::toolset::env_cache::CachedEnv;
 use bytesize::ByteSize;
 use eyre::Result;
 use heck::ToKebabCase;
-use std::time::Duration;
 
 /// Remove stale cache files
 ///
@@ -31,12 +30,20 @@ pub(super) struct CachePrune {
 impl CachePrune {
     pub(super) fn run(self) -> Result<()> {
         let settings = Settings::get();
+        // `cache_prune_age = "0s"` is documented as keeping cache files
+        // indefinitely, and the automatic prune stops here for it. Falling back
+        // to the default age instead would make the documented way to turn
+        // pruning off hold for the background pass but not for this command.
+        let Some(age) = settings.cache_prune_age_duration() else {
+            info!(
+                "cache_prune_age is 0s, so cache files are kept indefinitely. Set MISE_CACHE_PRUNE_AGE to prune by age."
+            );
+            return Ok(());
+        };
         let opts = PruneOptions {
             dry_run: self.dry_run,
             verbose: self.verbose > 0,
-            age: settings
-                .cache_prune_age_duration()
-                .unwrap_or(Duration::from_secs(30 * 24 * 60 * 60)),
+            age,
         };
         let mut results = PruneResults { size: 0, count: 0 };
 

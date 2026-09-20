@@ -492,22 +492,37 @@ fn cache_entries(dir: &Path) -> Result<Vec<CacheEntry>> {
     Ok(entries)
 }
 
-/// Unlinks a symlink as a symlink, leaving whatever it names alone.
-fn remove_link(path: &Path) -> Result<()> {
-    trace!("rm {}", display_path(path));
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        // Windows records a directory symlink or junction as a directory entry,
-        // so it unlinks with `remove_dir`. That removes the link; unlike
-        // `remove_dir_all` it never descends into the target.
-        Err(_) if cfg!(windows) => {
-            std::fs::remove_dir(path).wrap_err_with(|| format!("failed rm: {}", display_path(path)))
-        }
-        Err(err) => Err(err).wrap_err_with(|| format!("failed rm: {}", display_path(path))),
+/// Deletes one classified entry, without resolving it.
+///
+/// A symlink goes through the repository's link remover, which unlinks a unix
+/// symlink and deletes a Windows symlink or junction by handle after checking
+/// its reparse tag — `remove_file` refuses the latter outright. Whatever the
+/// link names is left alone either way.
+fn remove_entry(entry: &CacheEntry) -> Result<()> {
+    let result = if entry.is_dir() {
+        file::remove_dir(&entry.path)
+    } else if entry.metadata.is_symlink() {
+        file::remove_symlink_or_junction(&entry.path)
+    } else {
+        file::remove_file(&entry.path)
+    };
+    match result {
+        // Another mise process pruning the same root may have taken the entry
+        // between the listing and this call. A dangling link still stats here,
+        // so only an entry that is genuinely gone is excused.
+        Err(_) if entry.path.symlink_metadata().is_err() => Ok(()),
+        result => result,
     }
 }
 
 pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
+    prune_dir(dir, false, opts)
+}
+
+/// `descended` marks a directory prune classified itself, as opposed to a root
+/// it was handed. A root is taken as given — `MISE_CACHE_DIR` may legitimately
+/// be a symlink to the real cache — while a descent is confirmed below.
+fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<PruneResults> {
     let mut results = PruneResults { size: 0, count: 0 };
     let remove = |entry: &CacheEntry| {
         if opts.dry_run || opts.verbose {
@@ -516,17 +531,19 @@ pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
             debug!("pruning {}", display_path(&entry.path));
         }
         if !opts.dry_run {
-            if entry.is_dir() {
-                file::remove_dir(&entry.path)?;
-            } else if entry.metadata.is_symlink() {
-                remove_link(&entry.path)?;
-            } else {
-                file::remove_file(&entry.path)?;
-            }
+            remove_entry(entry)?;
         }
         Ok::<(), color_eyre::Report>(())
     };
-    for entry in cache_entries(dir)? {
+    let entries = cache_entries(dir)?;
+    // `read_dir` resolves the path it is handed, and the classification that led
+    // here was made an instant earlier. If this path is no longer a directory in
+    // its own right, that listing may describe somewhere else entirely, so
+    // nothing under it is removed.
+    if descended && !dir.symlink_metadata().is_ok_and(|m| m.file_type().is_dir()) {
+        return Ok(results);
+    }
+    for entry in entries {
         if !entry.is_dir() {
             if entry.is_stale(opts.age)? {
                 remove(&entry)?;
@@ -535,7 +552,7 @@ pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
             }
             continue;
         }
-        let r = prune(&entry.path, opts)?;
+        let r = prune_dir(&entry.path, true, opts)?;
         results.size += r.size;
         results.count += r.count;
         if !cache_entries(&entry.path)?.is_empty() {
@@ -757,6 +774,25 @@ mod tests {
 
         assert!(file.exists(), "prune deleted a file outside the cache");
         assert!(package.exists());
+    }
+
+    /// Stands in for a directory swapped for a symlink after prune classified it:
+    /// the descent finds a link where it recorded a directory.
+    #[cfg(unix)]
+    #[test]
+    fn a_descent_that_lands_on_a_link_removes_nothing() {
+        let cache = tempfile::tempdir().unwrap();
+        let install = tempfile::tempdir().unwrap();
+        let file = install.path().join("index.js");
+        fs::write(&file, "module.exports = {}").unwrap();
+        backdate(&file);
+
+        let swapped = cache.path().join("node_modules");
+        std::os::unix::fs::symlink(install.path(), &swapped).unwrap();
+
+        prune_dir(&swapped, true, &stale_prune_options()).unwrap();
+
+        assert!(file.exists(), "a replaced directory was walked anyway");
     }
 
     #[cfg(unix)]
