@@ -1032,30 +1032,6 @@ impl HistoryRepo {
         self.compose(tree, &overlays)
     }
 
-    /// The paths where `local` holds a nested repository pointer and
-    /// `remote` ordinary content: the repository became files on another
-    /// machine. Whether that matters here depends on whether the
-    /// repository is still checked out at the path, which the caller
-    /// decides.
-    pub(crate) fn pointer_content_mismatches(
-        &self,
-        local: &str,
-        remote: &str,
-    ) -> Result<Vec<String>> {
-        let mut paths = vec![];
-        for entry in self.ls_tree(local)? {
-            if entry.mode != "160000" {
-                continue;
-            }
-            if let Some((mode, _)) = self.object_at(remote, &entry.path)?
-                && mode != "160000"
-            {
-                paths.push(entry.path);
-            }
-        }
-        Ok(paths)
-    }
-
     pub(crate) fn ls_tree(&self, spec: &str) -> Result<Vec<TreeEntry>> {
         let out = self
             .git
@@ -2096,28 +2072,6 @@ mod tests {
         assert_eq!(
             repo.with_pointers_of(&with_pointer, &content).unwrap(),
             with_pointer
-        );
-        // only a local pointer against remote content is a mismatch: local
-        // content against a remote pointer is this machine's conversion
-        assert_eq!(
-            repo.pointer_content_mismatches(&with_pointer, &content)
-                .unwrap(),
-            vec!["home/p".to_string()]
-        );
-        assert!(
-            repo.pointer_content_mismatches(&content, &with_pointer)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            repo.pointer_content_mismatches(&with_pointer, &other_pointer)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            repo.pointer_content_mismatches(&with_pointer, &without)
-                .unwrap()
-                .is_empty()
         );
     }
 

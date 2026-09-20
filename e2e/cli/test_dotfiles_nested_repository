@@ -164,3 +164,16 @@ git -C "$fourth/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@ex
 assert_fail "$d bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
 assert "cat $fourth/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { fourth = true }'
 assert "git -C $fourth/.hammerspoon/Spoons/Sky.spoon status --porcelain | wc -l | tr -d ' '" 0
+
+# A repository initialised after the last save is in no saved tree, but
+# it is on disk: an incoming edit under it pauses instead of being written.
+git -C "$third/.hammerspoon/Spoons/Sky.spoon" init -q -b main
+git -C "$third/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com add -A
+git -C "$third/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com commit -q -m third
+echo 'return { edited = true }' >"$plugin/init.lua"
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+assert_fail "$c dot sync 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
+assert_fail "$c dot pull --yes 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
+assert "cat $third/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+assert "git -C $third/.hammerspoon/Spoons/Sky.spoon status --porcelain | wc -l | tr -d ' '" 0
