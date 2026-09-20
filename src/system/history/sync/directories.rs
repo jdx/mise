@@ -8,7 +8,7 @@ use crate::system::history::{
     journal,
     manifest::Manifest,
     shadow::HistoryRepo,
-    tracked::{TrackedEntry, TrackedSet},
+    tracked::{TrackedEntry, TrackedSet, governing_key, mode_from},
 };
 
 #[derive(Clone, Debug)]
@@ -69,38 +69,12 @@ fn claim(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> Option<Claim
     .then_some(Claim::Containing)
 }
 
-/// The mode a manifest wants for a directory, from the enrollment this
-/// machine selects from it: the record under the stream of the enrolled
-/// path covering the directory (absent: the default), else the containing
-/// record when an enrolled path lies inside it (absent: the default), else
-/// nothing. The same computation decides what is applied from the incoming
-/// manifest and what the saved manifest is taken to have applied.
-fn mode_from(
-    roots: &Roots,
-    entries: &[TrackedEntry],
-    permissions: &std::collections::BTreeMap<String, u32>,
-    path: &std::path::Path,
-) -> Option<u32> {
-    let owner = entries
-        .iter()
-        .filter(|entry| path.starts_with(&entry.path))
-        .max_by_key(|entry| entry.path.components().count());
-    let key = match owner {
-        Some(entry) => roots.branch_path(path, entry.variant.as_deref())?,
-        None if entries
-            .iter()
-            .any(|entry| entry.path.starts_with(path) && entry.path != path) =>
-        {
-            roots.branch_path(path, None)?
-        }
-        None => return None,
-    };
-    Some(permissions.get(&key).copied().unwrap_or(0o755))
-}
-
-/// Whether the tree holds the directory in some stream this machine
-/// selects: its own path, or the stream of an enrolled path above or inside
-/// it (a Linux-only file lives under `home@linux/`).
+/// Whether the tree holds the directory, decided in its governing stream:
+/// an enrolled path covering it says what it is there, and a file or link
+/// at that path is never turned into a directory because another stream
+/// holds one. A containing directory (no enrolled path covers it) is
+/// present when any stream of a path inside it holds it as a directory and
+/// none holds something else there.
 fn present(
     repo: &HistoryRepo,
     tree: &str,
@@ -108,24 +82,37 @@ fn present(
     entries: &[TrackedEntry],
     path: &std::path::Path,
 ) -> Result<bool> {
-    let mut candidates: Vec<String> = roots.branch_path(path, None).into_iter().collect();
+    let is_directory = |candidate: &str| -> Result<Option<bool>> {
+        Ok(repo
+            .object_at(tree, candidate)?
+            .map(|(mode, _)| mode == "040000"))
+    };
+    let Some(governing) = governing_key(roots, entries, path) else {
+        return Ok(false);
+    };
+    let covered = entries.iter().any(|entry| path.starts_with(&entry.path));
+    if covered {
+        return Ok(is_directory(&governing)? == Some(true));
+    }
+    let mut candidates = vec![governing];
     for entry in entries {
-        if (path.starts_with(&entry.path) || entry.path.starts_with(path))
+        if entry.path.starts_with(path)
+            && entry.path != path
             && let Ok(stream) = entry.tree_path(path)
             && !candidates.contains(&stream)
         {
             candidates.push(stream);
         }
     }
+    let mut found = false;
     for candidate in &candidates {
-        if repo
-            .object_at(tree, candidate)?
-            .is_some_and(|(mode, _)| mode == "040000")
-        {
-            return Ok(true);
+        match is_directory(candidate)? {
+            Some(true) => found = true,
+            Some(false) => return Ok(false),
+            None => {}
         }
     }
-    Ok(false)
+    Ok(found)
 }
 
 pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Result<Vec<Step>> {
@@ -681,6 +668,85 @@ mod tests {
         let steps = plan(&repo, &tracked, &tree)?;
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].desired, 0o750);
+        Ok(())
+    }
+
+    /// A path that is a file in its governing stream is never given a
+    /// directory step because another stream holds a directory there: a
+    /// Linux-only file `~/configs/platform` under an unqualified `~/configs`
+    /// stays a file on a fresh Linux bootstrap even though macOS captured
+    /// `platform/settings.json` through the outer enrollment.
+    #[test]
+    fn a_file_in_the_governing_stream_is_not_made_a_directory() -> Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::manifest::Enrollment;
+        use crate::system::history::shadow::Overlay;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-mixed-types-")
+            .tempdir_in(&roots.home)?;
+        let configs = normalize(scratch.path()).join("configs");
+        let platform = configs.join("platform");
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let outer = TrackedEntry::new(configs.clone(), "track", policy);
+        let mut inner = TrackedEntry::new(platform.clone(), "track", policy);
+        inner.variant = Some("linux".into());
+        let blob = repo.hash_blob(b"{}")?;
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[
+                // Linux saved `platform` as a file in its own stream
+                Overlay {
+                    path: inner.tree_path(&platform)?,
+                    object: Some(("100644".into(), blob.clone())),
+                },
+                // macOS captured a directory of that name through `configs`
+                Overlay {
+                    path: outer.tree_path(&platform.join("settings.json"))?,
+                    object: Some(("100644".into(), blob)),
+                },
+            ],
+        )?;
+        let variant = |os: &str| crate::system::history::select::Variant {
+            os: vec![os.into()],
+            ..Default::default()
+        };
+        let manifest = Manifest {
+            enrollment: vec![
+                Enrollment {
+                    path: outer.tree_path(&configs)?,
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![],
+                },
+                Enrollment {
+                    path: outer.tree_path(&platform)?,
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![variant("linux"), variant("macos")],
+                },
+            ],
+            permissions: std::collections::BTreeMap::from([
+                (inner.tree_path(&platform)?, 0o600),
+                (outer.tree_path(&platform)?, 0o700),
+            ]),
+            ..Default::default()
+        };
+        let tree = manifest.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            entries: vec![outer, inner],
+            manifest,
+            ..Default::default()
+        };
+        // a fresh machine: no directory step is planned for the file's path
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert!(steps.iter().all(|step| step.path != platform), "{steps:?}");
         Ok(())
     }
 

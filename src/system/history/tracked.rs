@@ -791,6 +791,46 @@ pub(crate) fn tree_path_to_display(tree_path: &str) -> String {
 /// Root aliases are portable through the home/config mapping. Aliases below
 /// those roots are not: canonicalizing them would silently change the enrolled
 /// destination on another machine. The leaf itself may still be a symlink.
+/// The permission key under which the enrollment this machine selects
+/// governs a path: the stream of the closest enrolled path at or above it,
+/// else, for a directory with enrolled paths inside it, the variant-less
+/// containing key; else none. Every reader of directory modes goes through
+/// this, so what a pull applies, what a checkpoint records, and what the
+/// next pull assumes are one definition.
+pub(crate) fn governing_key(
+    roots: &super::sync::layout::Roots,
+    entries: &[TrackedEntry],
+    path: &Path,
+) -> Option<String> {
+    let owner = entries
+        .iter()
+        .filter(|entry| path.starts_with(&entry.path))
+        .max_by_key(|entry| entry.path.components().count());
+    match owner {
+        Some(entry) => roots.branch_path(path, entry.variant.as_deref()),
+        None if entries
+            .iter()
+            .any(|entry| entry.path.starts_with(path) && entry.path != path) =>
+        {
+            roots.branch_path(path, None)
+        }
+        None => None,
+    }
+}
+
+/// The mode a manifest wants for a directory: its record under the
+/// governing key, absent meaning the default; nothing when no enrollment
+/// this machine selects covers the directory.
+pub(crate) fn mode_from(
+    roots: &super::sync::layout::Roots,
+    entries: &[TrackedEntry],
+    permissions: &BTreeMap<String, u32>,
+    path: &Path,
+) -> Option<u32> {
+    let key = governing_key(roots, entries, path)?;
+    Some(permissions.get(&key).copied().unwrap_or(0o755))
+}
+
 pub(crate) fn ensure_portable_ancestors(path: &Path) -> Result<()> {
     eyre::ensure!(
         path.to_str().is_some(),
