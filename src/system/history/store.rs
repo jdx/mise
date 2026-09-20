@@ -363,10 +363,14 @@ impl Checkpoint {
                 .coverage
                 .entries
                 .iter()
+                // the most specific entry owns the path, as it does for a
+                // capture; ranking by byte length picked a different one
+                // whenever a shallower path had a longer name, and the
+                // record then named the wrong variant's stream
                 .filter(|entry| {
                     path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
                 })
-                .max_by_key(|entry| entry.path.len())?;
+                .max_by_key(|entry| Path::new(&entry.path).components().count())?;
             super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
         };
         CommitRecord {
@@ -542,6 +546,23 @@ pub(crate) struct RootRecord {
     pub bytes: u64,
 }
 
+/// One exclusion rule as it was in force when a checkpoint was written.
+///
+/// **A recorded rule keeps its negation as a field, never as a leading
+/// `!` in the pattern.** The pattern is opaque: nothing that reads this
+/// back parses it. Round-tripping through a string would let an expanded
+/// value introduce syntax of its own — `$DIR/**` with `DIR=!private`
+/// would be written as `!private/**` and read back as a re-inclusion, so
+/// a replay would call a file absent that the checkpoint never held, and
+/// delete it.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ExpandedRule {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub negated: bool,
+    pub pattern: String,
+}
+
 /// The effective rules a capture ran under, persisted so a checkpoint can
 /// say for any path whether it was captured, known absent, uncovered, or
 /// omitted.
@@ -550,6 +571,12 @@ pub(crate) struct Coverage {
     pub entries: Vec<CoverageEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    /// The same rules as they expanded when the checkpoint was written.
+    /// Added later, so a checkpoint from before it is missing this and a
+    /// replay treats what it cannot re-evaluate as unknown rather than
+    /// absent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude_expanded: Vec<ExpandedRule>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub incomplete: Vec<PathReason>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
