@@ -33,6 +33,22 @@ assert_contains 'mise dot history show' 'exclude (~/.codex): cache'
 assert_contains 'mise dot track --dry-run ~/.codex' '~/.codex: 2 files'
 assert_contains 'mise dot track --dry-run ~/.codex' 'exclude (~/.codex): sessions/**'
 
+# A dry run over several targets reports each target's own list.
+mkdir -p ~/.zed/logs
+echo 'settings' >~/.zed/settings.json
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions/**", "cache", "*.log"] }
+"~/.zed" = { mode = "track", exclude = ["logs/**"] }
+TOML
+assert_contains 'mise dot track --dry-run ~/.codex ~/.zed' 'exclude (~/.codex): sessions/**'
+assert_contains 'mise dot track --dry-run ~/.codex ~/.zed' 'exclude (~/.zed): logs/**'
+assert_not_contains 'mise dot track --dry-run ~/.codex ~/.zed' 'exclude (~/.zed): sessions/**'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions/**", "cache", "*.log"] }
+TOML
+
 # An excluded path cannot be saved explicitly, and a global re-include does
 # not override the entry's list.
 assert_fail 'mise dot save ~/.codex/sessions/one.jsonl' 'excluded, missing, or omitted'
