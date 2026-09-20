@@ -520,6 +520,13 @@ fn remove_entry(entry: &CacheEntry) -> Result<()> {
     }
 }
 
+/// Whether the path is a directory in its own right, as opposed to a link to
+/// one. `read_dir` and `remove_dir_all` both resolve the path they are handed.
+fn is_real_dir(path: &Path) -> bool {
+    path.symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_dir())
+}
+
 pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
     Ok(prune_dir(dir, false, opts)?.removed)
 }
@@ -557,12 +564,21 @@ fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<DirPrun
         }
         Ok::<(), color_eyre::Report>(())
     };
+    // Checked before the listing as well as after it: `read_dir` resolves the
+    // path it is handed, so a link left in place of a directory would otherwise
+    // have its target listed before the check below turned the pass away.
+    if descended && !is_real_dir(dir) {
+        return Ok(DirPrune {
+            removed,
+            held,
+            all_stale: false,
+        });
+    }
     let entries = cache_entries(dir)?;
-    // `read_dir` resolves the path it is handed, and the classification that led
-    // here was made an instant earlier. If this path is no longer a directory in
-    // its own right, that listing may describe somewhere else entirely, so
-    // nothing under it is removed.
-    if descended && !dir.symlink_metadata().is_ok_and(|m| m.file_type().is_dir()) {
+    // The classification that led here was made an instant earlier. If this path
+    // is no longer a directory in its own right, that listing may describe
+    // somewhere else entirely, so nothing under it is removed.
+    if descended && !is_real_dir(dir) {
         return Ok(DirPrune {
             removed,
             held,
@@ -632,18 +648,11 @@ fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<DirPrun
             }
             announce(&entry.path);
             if !opts.dry_run {
-                // `remove_dir_all` unlinks a symlink rather than following it,
-                // and on unix walks by descriptor, so the tree it deletes is
-                // the tree it opened.
-                match std::fs::remove_dir_all(&entry.path) {
-                    Ok(()) => {}
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => {
-                        return Err(err).wrap_err_with(|| {
-                            format!("failed rm -rf: {}", display_path(&entry.path))
-                        });
-                    }
-                }
+                // The repository's removal: it decides by `symlink_metadata`, so
+                // a link goes as a link; it retries when a writer recreates
+                // entries under the walk, which a bare `remove_dir_all` reports
+                // as a failed prune; and a path already gone is a no-op.
+                file::remove_all_with_retry(&entry.path)?;
             }
             removed.size += recheck.held.size;
             removed.count += recheck.held.count + 1;
