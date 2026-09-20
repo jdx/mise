@@ -71,7 +71,31 @@ impl DotfilesApply {
         // nothing this apply writes can change which commands run afterwards
         let reload = system::history::config::reload_commands()?;
         let mut written = vec![];
-        let mut accepted = true;
+        let result = self.write(&config, &files, &edits, &secrets, &mut written);
+        // a dry run writes nothing, so nothing is reloaded. A declined edit
+        // prompt or a failed later entry still leaves what was written before
+        // it, so its applications are reloaded before the error is reported
+        if !self.dry_run && !written.is_empty() {
+            let touched = written
+                .iter()
+                .map(|path| system::history::replay::reload_path(path))
+                .collect::<Vec<_>>();
+            system::history::replay::run_reload(&reload, &touched);
+        }
+        result
+    }
+
+    /// Apply the whole-file entries, then the edits, appending each written
+    /// target to `written` as it goes. Returns `false` when a prompt was
+    /// declined.
+    fn write(
+        &self,
+        config: &Config,
+        files: &[system::files::FileRequest],
+        edits: &[system::edits::EditRequest],
+        secrets: &system::secrets::SecretValues,
+        written: &mut Vec<std::path::PathBuf>,
+    ) -> Result<bool> {
         if !files.is_empty() {
             let opts = system::files::ApplyOpts {
                 dry_run: self.dry_run,
@@ -80,30 +104,21 @@ impl DotfilesApply {
                 force_hint: "use --force",
                 yes: self.yes,
             };
-            let outcome = system::files::apply(&config, &files, &opts, &secrets)?;
-            written.extend(outcome.written);
-            accepted = outcome.accepted;
+            if !system::files::apply(config, files, &opts, secrets, written)? {
+                return Ok(false);
+            }
         }
-        if accepted && !edits.is_empty() {
+        if !edits.is_empty() {
             let opts = system::edits::ApplyOpts {
                 part: "dotfiles",
                 dry_run: self.dry_run,
                 verbose: Settings::get().verbose,
                 yes: self.yes,
             };
-            let outcome = system::edits::apply(&config, &edits, &opts)?;
-            written.extend(outcome.written);
-            accepted = outcome.accepted;
+            if !system::edits::apply(config, edits, &opts, written)? {
+                return Ok(false);
+            }
         }
-        // a dry run writes nothing, so nothing is reloaded; a declined edit
-        // prompt still leaves the files written before it
-        if !self.dry_run && !written.is_empty() {
-            let touched = written
-                .iter()
-                .map(|path| system::history::replay::reload_path(path))
-                .collect::<Vec<_>>();
-            system::history::replay::run_reload(&reload, &touched);
-        }
-        Ok(accepted)
+        Ok(true)
     }
 }

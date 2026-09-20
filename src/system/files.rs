@@ -2263,48 +2263,35 @@ pub(crate) struct ApplyPlan<'a> {
     reconciliation: SymlinkEachReconciliation,
 }
 
-/// What an apply of whole-file or edit entries did.
-#[derive(Debug, Default)]
-pub(crate) struct ApplyOutcome {
-    /// `false` when the user declined the confirmation prompt
-    pub accepted: bool,
-    /// target paths written or removed, in order; empty on a dry run and
-    /// when everything was already applied
-    pub written: Vec<PathBuf>,
-}
-
-impl ApplyOutcome {
-    pub(crate) fn accepted(written: Vec<PathBuf>) -> Self {
-        Self {
-            accepted: true,
-            written,
-        }
-    }
-
-    pub(crate) fn declined() -> Self {
-        Self::default()
-    }
-}
-
 /// Apply all entries that aren't already in the desired state. Conflicting
 /// targets (a real file where a symlink should go, a directory where a file
 /// should go) are an error unless `force` is set — content updates for
-/// copy/template entries are not conflicts, overwriting is their job. The
-/// outcome is declined when the user declines the confirmation prompt.
+/// copy/template entries are not conflicts, overwriting is their job. Returns
+/// `false` when the user declines the confirmation prompt. The target paths
+/// written or removed are appended to `written` as each entry is applied,
+/// so a caller still sees what changed when a later entry fails; nothing is
+/// appended on a dry run.
 pub(crate) fn apply(
     config: &Config,
     requests: &[FileRequest],
     opts: &ApplyOpts,
     secrets: &SecretValues,
-) -> Result<ApplyOutcome> {
-    execute_apply(config, plan_apply(config, requests, opts, secrets)?, opts)
+    written: &mut Vec<PathBuf>,
+) -> Result<bool> {
+    execute_apply(
+        config,
+        plan_apply(config, requests, opts, secrets)?,
+        opts,
+        written,
+    )
 }
 
 pub(crate) fn execute_apply(
     config: &Config,
     plan: ApplyPlan<'_>,
     opts: &ApplyOpts,
-) -> Result<ApplyOutcome> {
+    written: &mut Vec<PathBuf>,
+) -> Result<bool> {
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
@@ -2319,7 +2306,7 @@ pub(crate) fn execute_apply(
             }
         }
         info!("files: all files are applied");
-        return Ok(ApplyOutcome::accepted(vec![]));
+        return Ok(true);
     }
     if opts.dry_run {
         for link in &plan.reconciliation.stale_links {
@@ -2335,7 +2322,7 @@ pub(crate) fn execute_apply(
                 print_diff(config, req, rendered.as_deref())?;
             }
         }
-        return Ok(ApplyOutcome::accepted(vec![]));
+        return Ok(true);
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = plan
@@ -2353,10 +2340,9 @@ pub(crate) fn execute_apply(
             .join(", ");
         if !prompt::confirm(format!("files: apply {list}?"))?.is_yes() {
             info!("files: skipped");
-            return Ok(ApplyOutcome::declined());
+            return Ok(false);
         }
     }
-    let mut written = vec![];
     for link in &plan.reconciliation.stale_links {
         if link_points_to(&link.source, &link.target) {
             let item = link.target.display_user().to_string();
@@ -2375,19 +2361,19 @@ pub(crate) fn execute_apply(
                 );
             }
             let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
+            written.push(link.target.clone());
             file::remove_file(&link.target)?;
             journal::commit_changes(pending);
-            written.push(link.target.clone());
         }
     }
     for (req, rendered) in &plan.todo {
         let pending =
             journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
-        // computed before the write: a symlink-each entry's stale links are
-        // gone once it converges
-        let targets = written_targets(req)?;
+        // listed before the write, so a write that fails part-way still
+        // reports its targets (and a symlink-each entry's stale links, which
+        // are gone once it converges)
+        written.extend(written_targets(req)?);
         apply_one(req, rendered.as_deref())?;
-        written.extend(targets);
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
         }
@@ -2419,7 +2405,7 @@ pub(crate) fn execute_apply(
         .unique()
         .collect::<Vec<_>>();
     info!("files: applied {}", applied.join(", "));
-    Ok(ApplyOutcome::accepted(written))
+    Ok(true)
 }
 
 /// The paths an apply of `req` writes or removes, for matching against

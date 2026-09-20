@@ -478,7 +478,7 @@ impl DotfilesAdd {
             }
             if let Some(plan) = apply_plan {
                 apply_started = true;
-                system::files::execute_apply(&config, plan, &apply_opts)?;
+                system::files::execute_apply(&config, plan, &apply_opts, &mut vec![])?;
             }
             Ok(())
         })();

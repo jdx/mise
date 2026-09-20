@@ -265,7 +265,7 @@ async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
             force_hint: "use `mise dot apply --force`",
             yes: true,
         };
-        system::files::apply(&config, &files, &opts, &secrets)?;
+        system::files::apply(&config, &files, &opts, &secrets, &mut vec![])?;
     }
     if !edits.is_empty() {
         let opts = system::edits::ApplyOpts {
@@ -274,7 +274,7 @@ async fn apply_target(target: &str, prompt_secrets: bool) -> Result<()> {
             verbose: false,
             yes: true,
         };
-        system::edits::apply(&config, &edits, &opts)?;
+        system::edits::apply(&config, &edits, &opts, &mut vec![])?;
     }
     Ok(())
 }

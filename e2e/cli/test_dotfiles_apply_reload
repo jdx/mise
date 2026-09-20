@@ -59,3 +59,27 @@ cat <<EOF >"$config"
 EOF
 assert_succeed "mise dot apply --yes"
 assert "cat ~/reloads" "app"
+
+# a later entry that fails still leaves the earlier ones written, so their
+# commands run before the error is reported (root can write anywhere, so the
+# failure cannot be provoked there)
+if [ "$(id -u)" != 0 ]; then
+  rm ~/reloads
+  mkdir -p ~/locked
+  chmod 555 ~/locked
+  cat <<EOF >"$config"
+[dotfiles]
+"~/.config/app/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+"~/locked/sub/settings.toml" = { source = "dotfiles/app/settings.toml", mode = "copy" }
+
+[history.reload]
+"~/.config/app/**" = "echo app >> $HOME/reloads"
+"~/locked/**" = "echo locked >> $HOME/reloads"
+EOF
+  echo 'theme = light' >"$MISE_CONFIG_DIR/dotfiles/app/settings.toml"
+  assert_fail "mise dot apply --yes"
+  assert "cat ~/.config/app/settings.toml" "theme = light"
+  assert_fail "test -e ~/locked/sub/settings.toml"
+  assert "cat ~/reloads" $'app\nlocked'
+  chmod 755 ~/locked
+fi
