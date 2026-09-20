@@ -1,4 +1,15 @@
-//! Start suspended so no descendant can escape before assignment to the job.
+//! Starting a child in a job object that ends its whole tree.
+//!
+//! The child is started suspended so no descendant can escape before the
+//! assignment: a job captures only the processes started after a process
+//! joins it, so a child that ran even briefly before assignment could have
+//! left a grandchild outside the job, and that grandchild would survive the
+//! job being closed.
+//!
+//! Used for the history description command, which must not outlive its
+//! timeout, and for a Windows user service, whose whole lifecycle promise is
+//! that Task Scheduler tracks one process whose death takes the service —
+//! and everything the service started — with it.
 
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::os::windows::process::CommandExt;
@@ -18,7 +29,7 @@ use windows_sys::Win32::System::Threading::{
     CREATE_SUSPENDED, OpenThread, ResumeThread, THREAD_SUSPEND_RESUME,
 };
 
-pub(super) struct Job(OwnedHandle);
+pub(crate) struct Job(OwnedHandle);
 
 impl Job {
     fn new() -> Result<Self> {
@@ -84,18 +95,22 @@ impl Job {
             // SAFETY: the snapshot and writable entry remain valid.
             found = unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } != 0;
         }
-        bail!("could not find the suspended description command's primary thread")
+        bail!("could not find the suspended child's primary thread")
     }
 
-    pub(super) fn kill(&self) {
+    pub(crate) fn kill(&self) {
         // SAFETY: the owned handle always refers to this command's job.
         unsafe { TerminateJobObject(self.0.as_raw_handle(), 1) };
     }
 }
 
-pub(super) fn spawn(command: &mut Command) -> Result<(Child, Job)> {
+/// Start `command` in a job object that ends its process tree when the
+/// returned `Job` is dropped. `creation_flags` are the caller's own, which
+/// the suspend flag is added to rather than replacing — `Command`'s setter
+/// overwrites, and a caller that needs `CREATE_NO_WINDOW` needs both.
+pub(crate) fn spawn(command: &mut Command, creation_flags: u32) -> Result<(Child, Job)> {
     let job = Job::new()?;
-    command.creation_flags(CREATE_SUSPENDED);
+    command.creation_flags(creation_flags | CREATE_SUSPENDED);
     let mut child = command.spawn()?;
     if let Err(error) = job.start(&child) {
         // A failure must not leave either a suspended child or an unowned tree.
@@ -121,7 +136,7 @@ mod tests {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        let (mut child, job) = spawn(&mut command).unwrap();
+        let (mut child, job) = spawn(&mut command, 0).unwrap();
         let mut output = child.stdout.take().unwrap();
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {

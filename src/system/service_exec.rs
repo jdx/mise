@@ -19,7 +19,6 @@
 
 use eyre::{Result, bail};
 
-// only the Windows action reads a launch back; elsewhere the tests do
 use std::path::Path;
 
 // only the Windows action reads a launch back; elsewhere the tests do
@@ -35,24 +34,40 @@ pub(crate) fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
     // the service is about to be started without. A `__service-exec` run by
     // hand in a terminal shares that terminal's console and keeps it.
     crate::windows_console::detach_if_unattended();
-    let mut child = spawn(&launch)?;
-    // The service must die with this process, however this process dies: a
-    // `/end` terminates the launcher without running any code here, and an
-    // orphan would go on holding the watch lock the restarted service needs.
-    // Without the job there is no way to promise that, so a service that
-    // could not be confined is stopped rather than left running loose.
-    let confined = match confine(&child) {
-        Ok(job) => job,
+
+    use std::os::windows::process::CommandExt;
+    // CREATE_NO_WINDOW: a console program with no console window, which is
+    // what a service wants. Without it Windows would give this child a
+    // console of its own, since the launcher just gave up the one it had.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut cmd = std::process::Command::new(&launch.program);
+    if !launch.args.is_empty() {
+        // Verbatim, because this is already a command line: Task Scheduler
+        // handed the declared one to the program unchanged, and quoting it
+        // again here would change where the program sees its arguments end.
+        cmd.raw_arg(&launch.args);
+    }
+    cmd.envs(&launch.environment);
+
+    // The service and everything it starts must die with this process,
+    // however this process dies: `schtasks /end` terminates the launcher
+    // without running any code here, and an orphan would go on holding what
+    // the restarted service needs — the watcher's `git` children hold the
+    // shadow repository. `windows_job` starts the child suspended so no
+    // descendant can slip out before the job takes it, and a failure to
+    // confine is a failure to run: an unconfined service is exactly the one
+    // this is meant to prevent.
+    let (mut child, job) = crate::windows_job::spawn(&mut cmd, CREATE_NO_WINDOW)?;
+    let code = match child.wait() {
+        // Windows always has an exit code; anything but zero is the failure
+        // `RestartOnFailure` acts on.
+        Ok(status) => status.code().unwrap_or(1),
         Err(err) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(err);
+            job.kill();
+            return Err(err.into());
         }
     };
-    let code = child.wait()?.code().unwrap_or(1);
-    drop(confined);
-    // Windows always has an exit code; anything but zero is the failure
-    // `RestartOnFailure` acts on.
+    drop(job);
     Ok(code)
 }
 
@@ -82,86 +97,6 @@ fn read_launch(name: &str, path: &Path, digest: &str) -> Result<ServiceLaunch> {
         );
     }
     Ok(serde_json::from_str(&stored)?)
-}
-
-#[cfg(windows)]
-fn spawn(launch: &ServiceLaunch) -> Result<std::process::Child> {
-    use std::os::windows::process::CommandExt;
-    // CREATE_NO_WINDOW: a console program with no console window, which is
-    // what a service wants. Without it Windows would give this child a
-    // console of its own, since the launcher just gave up the one it had.
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = std::process::Command::new(&launch.program);
-    if !launch.args.is_empty() {
-        // Verbatim, because this is already a command line: Task Scheduler
-        // handed the declared one to the program unchanged, and quoting it
-        // again here would change where the program sees its arguments end.
-        cmd.raw_arg(&launch.args);
-    }
-    cmd.envs(&launch.environment)
-        .creation_flags(CREATE_NO_WINDOW);
-    Ok(cmd.spawn()?)
-}
-
-/// A job object the service is put in, killed when its last handle closes.
-/// Holding the handle for the launcher's lifetime is what ties the two
-/// together: whether the launcher returns, panics, or is terminated by
-/// `schtasks /end`, the handle closes with it and takes the service along.
-#[cfg(windows)]
-struct Job(windows_sys::Win32::Foundation::HANDLE);
-
-#[cfg(windows)]
-impl Drop for Job {
-    fn drop(&mut self) {
-        // SAFETY: the handle came from `CreateJobObjectW` and is closed once.
-        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0) };
-    }
-}
-
-#[cfg(windows)]
-fn confine(child: &std::process::Child) -> Result<Job> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-        SetInformationJobObject,
-    };
-
-    // SAFETY: an unnamed job object with default security.
-    let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-    if job.is_null() {
-        bail!(
-            "could not create the job object the service is confined to: {}",
-            std::io::Error::last_os_error()
-        );
-    }
-    let job = Job(job);
-    let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    // SAFETY: `limits` is a live value of the type the information class names.
-    let set = unsafe {
-        SetInformationJobObject(
-            job.0,
-            JobObjectExtendedLimitInformation,
-            std::ptr::from_ref(&limits).cast(),
-            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-        )
-    };
-    if set == 0 {
-        bail!(
-            "could not set the job object to end the service with this process: {}",
-            std::io::Error::last_os_error()
-        );
-    }
-    // SAFETY: the child is alive — it has not been waited on — so its handle
-    // is valid for the length of this call.
-    if unsafe { AssignProcessToJobObject(job.0, child.as_raw_handle()) } == 0 {
-        bail!(
-            "could not confine the service to a job object: {}",
-            std::io::Error::last_os_error()
-        );
-    }
-    Ok(job)
 }
 
 #[cfg(test)]
