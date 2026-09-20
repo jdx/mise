@@ -181,7 +181,12 @@ environment = { E2E_WATCH_MARK = "1" }
             Wait-Watcher $true | Should -BeTrue
 
             $services = Join-Path $env:MISE_STATE_DIR 'user-services'
-            (Join-Path $services 'mise-history.launch.json') | Should -Exist
+            # one launch, named by its digest, and the registered action
+            # points at exactly that file
+            $launches = @(Get-ChildItem (Join-Path $services 'mise-history.launches') -Filter '*.json')
+            $launches.Count | Should -Be 1
+            (Get-Content (Join-Path $services 'mise-history.xml') -Raw) |
+                Should -BeLike ('*' + $launches[0].Name + '*')
             (Get-Content (Join-Path $services 'mise-history.xml') -Raw) |
                 Should -Not -BeLike '*cmd.exe*'
 

@@ -256,19 +256,55 @@ fn launch(request: &ScheduledTaskRequest) -> Result<Option<ServiceLaunch>> {
     }))
 }
 
-/// The launch as it is stored: one line of JSON, so the bytes on disk are
-/// the bytes the action's digest covers.
-pub(crate) fn render_launch(request: &ScheduledTaskRequest) -> Result<Option<String>> {
-    launch(request)?
-        .map(|launch| Ok(serde_json::to_string(&launch)?))
-        .transpose()
+/// The launch as it is stored — one line of JSON, so the bytes on disk are
+/// the bytes its digest covers — together with that digest.
+pub(crate) fn render_launch(request: &ScheduledTaskRequest) -> Result<Option<(String, String)>> {
+    let Some(launch) = launch(request)? else {
+        return Ok(None);
+    };
+    let json = serde_json::to_string(&launch)?;
+    let digest = crate::hash::hash_blake3_to_str(&json);
+    Ok(Some((json, digest)))
 }
 
-/// Where the launch a task was registered with is kept.
-pub(crate) fn launch_path(name: &str) -> PathBuf {
+/// Where a task's launches are kept.
+pub(crate) fn launch_dir(name: &str) -> PathBuf {
     crate::dirs::STATE
         .join("user-services")
-        .join(format!("{name}.launch.json"))
+        .join(format!("{name}.launches"))
+}
+
+/// One file per launch, named by its digest and never rewritten in place.
+///
+/// A task can start at any moment — it has a logon trigger and allows
+/// starting on demand — including while its replacement is being
+/// registered. Naming the file after its content means the registration
+/// that is live right now goes on reading exactly what it was registered
+/// with, whatever is being written beside it, and that a registration which
+/// fails leaves a task whose launch is still there. The launches no
+/// registration can reach are swept once the new one has committed.
+pub(crate) fn launch_path(name: &str, digest: &str) -> PathBuf {
+    launch_dir(name).join(format!("{digest}.json"))
+}
+
+/// Drop every launch for `name` except the one `keep` names, which is what
+/// the registration that just committed reads. Never called before it has:
+/// until then the launch a replaced task is still reading is one of these.
+fn sweep_launches(name: &str, keep: Option<&str>) {
+    let dir = launch_dir(name);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    let keep = keep.map(|digest| std::ffi::OsString::from(format!("{digest}.json")));
+    for entry in entries.flatten() {
+        if keep.as_deref() == Some(entry.file_name().as_os_str()) {
+            continue;
+        }
+        let _ = std::fs::remove_file(entry.path());
+    }
+    if keep.is_none() {
+        let _ = std::fs::remove_dir(&dir);
+    }
 }
 
 /// The executable and arguments the task's `<Exec>` action runs.
@@ -289,7 +325,7 @@ pub(crate) fn launch_path(name: &str) -> PathBuf {
 /// `MISE_STATE_DIR` set only for the apply would otherwise leave the
 /// service looking for its launch somewhere it was never written.
 fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
-    let Some(launch) = launch(request)? else {
+    let Some((_, digest)) = render_launch(request)? else {
         return Ok(split_command(&request.command));
     };
     let Some(mise) = request.launcher.as_deref() else {
@@ -298,8 +334,7 @@ fn exec_action(request: &ScheduledTaskRequest) -> Result<(String, String)> {
             request.name
         );
     };
-    let digest = crate::hash::hash_blake3_to_str(&serde_json::to_string(&launch)?);
-    let path = quote_argument(&launch_path(&request.name).to_string_lossy());
+    let path = quote_argument(&launch_path(&request.name, &digest).to_string_lossy());
     Ok((
         mise.to_string(),
         format!(
@@ -331,10 +366,10 @@ fn stored_is_current(request: &ScheduledTaskRequest, user_id: &str) -> Result<bo
     {
         return Ok(false);
     }
-    let Some(launch) = render_launch(request)? else {
+    let Some((json, digest)) = render_launch(request)? else {
         return Ok(true);
     };
-    Ok(std::fs::read(launch_path(&request.name)).unwrap_or_default() == launch.into_bytes())
+    Ok(std::fs::read(launch_path(&request.name, &digest)).unwrap_or_default() == json.into_bytes())
 }
 
 fn split_command(command: &str) -> (String, String) {
@@ -435,7 +470,6 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         let staging = path.with_extension("xml.new");
         let rendered = render_definition(req, &user_id)?;
         let launch = render_launch(req)?;
-        let launch_path = launch_path(&req.name);
         let create = [
             "/create".to_string(),
             "/tn".to_string(),
@@ -460,10 +494,10 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         let changed = registered.is_some() && !stored_is_current(req, &user_id)?;
         let (end_first, start) = transition(running, changed, req.start, req.restart);
         if dry_run {
-            if launch.is_some() {
+            if let Some((_, digest)) = &launch {
                 miseprintln!(
                     "write {}",
-                    shell_words::join([launch_path.display().to_string()])
+                    shell_words::join([launch_path(&req.name, digest).display().to_string()])
                 );
             }
             miseprintln!("write {}", shell_words::join([path.display().to_string()]));
@@ -479,40 +513,34 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        // The launch goes down before the task that reads it is registered,
-        // and a task that stopped setting an environment leaves none behind.
-        // What was there is kept until the registration commits: the task
-        // registered right now is pinned to it by digest, so replacing it
-        // and then failing to register its replacement would leave a working
-        // service unable to start until some later apply succeeded.
-        let replaced = std::fs::read(&launch_path).ok();
-        match &launch {
-            Some(launch) => std::fs::write(&launch_path, launch)?,
-            None => {
-                let _ = std::fs::remove_file(&launch_path);
+        // The new launch goes down before the task that reads it is
+        // registered, beside rather than over the one the currently
+        // registered task reads: both are valid for as long as either task
+        // can run, and a registration that fails leaves the old task with
+        // its launch intact. Writing it is idempotent — the name is the
+        // content.
+        if let Some((json, digest)) = &launch {
+            std::fs::create_dir_all(launch_dir(&req.name))?;
+            let path = launch_path(&req.name, digest);
+            if std::fs::read(&path).ok().as_deref() != Some(json.as_bytes()) {
+                std::fs::write(&path, json)?;
             }
         }
-        let restore_launch = || match &replaced {
-            Some(previous) => {
-                let _ = std::fs::write(&launch_path, previous);
-            }
-            None => {
-                let _ = std::fs::remove_file(&launch_path);
-            }
-        };
-        if let Err(err) = std::fs::write(&staging, &rendered) {
-            restore_launch();
-            return Err(err.into());
-        }
+        std::fs::write(&staging, &rendered)?;
         if let Err(err) = schtasks(&create).await {
             let _ = std::fs::remove_file(&staging);
-            restore_launch();
             return Err(err);
         }
         // written, not renamed: a rename does not replace an existing
         // definition on Windows
         std::fs::write(&path, &rendered)?;
         let _ = std::fs::remove_file(&staging);
+        // the replaced registration cannot run any more, so whatever it read
+        // is now unreachable
+        sweep_launches(
+            &req.name,
+            launch.as_ref().map(|(_, digest)| digest.as_str()),
+        );
         if end_first {
             // it may have exited between the query and now: the HRESULT
             // says so in every locale; the message is matched as a fallback
@@ -535,14 +563,13 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
 pub(crate) async fn remove_task(name: &str, dry_run: bool) -> Result<bool> {
     let task = task_name(name);
     let path = definition_path(name);
-    let launch = launch_path(name);
+    let launches = launch_dir(name);
     if !exists(name).await? {
         if !dry_run {
-            for stale in [&path, &launch] {
-                if stale.exists() {
-                    std::fs::remove_file(stale)?;
-                }
+            if path.exists() {
+                std::fs::remove_file(&path)?;
             }
+            let _ = std::fs::remove_dir_all(&launches);
         }
         return Ok(false);
     }
@@ -554,7 +581,7 @@ pub(crate) async fn remove_task(name: &str, dry_run: bool) -> Result<bool> {
     ];
     if dry_run {
         miseprintln!("schtasks {}", shell_words::join(&args));
-        for stale in [&path, &launch] {
+        for stale in [&path, &launches] {
             if stale.exists() {
                 miseprintln!(
                     "{}",
@@ -565,11 +592,10 @@ pub(crate) async fn remove_task(name: &str, dry_run: bool) -> Result<bool> {
         return Ok(true);
     }
     schtasks(&args).await?;
-    for stale in [&path, &launch] {
-        if stale.exists() {
-            std::fs::remove_file(stale)?;
-        }
+    if path.exists() {
+        std::fs::remove_file(&path)?;
     }
+    let _ = std::fs::remove_dir_all(&launches);
     Ok(true)
 }
 
@@ -761,12 +787,11 @@ mod tests {
             xml.contains("<Command>C:\\mise\\mise.exe</Command>"),
             "{xml}"
         );
-        let launch = render_launch(&request).unwrap().unwrap();
-        let digest = crate::hash::hash_blake3_to_str(&launch);
+        let (launch, digest) = render_launch(&request).unwrap().unwrap();
         // the launch is named by absolute path: the service is started from
         // the user's logon environment, which need not have the
         // `MISE_STATE_DIR` the apply ran under
-        let path = launch_path("agent");
+        let path = launch_path("agent", &digest);
         assert!(path.is_absolute(), "{}", path.display());
         let expected = format!(
             "<Arguments>bootstrap __service-exec agent --launch {} --digest {digest}</Arguments>",
@@ -785,6 +810,17 @@ mod tests {
         assert_eq!(launch.program, "C:\\Tools\\agent.exe");
         assert_eq!(launch.args, "--serve");
         assert_eq!(launch.environment["RUST_LOG"], "info");
+
+        // content-addressed, so the launch a registered task reads is never
+        // the file a replacement is written to
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&digest),
+            "{}",
+            path.display()
+        );
 
         // the digest follows the environment, so a changed one is drift
         let mut changed = request.clone();
@@ -812,7 +848,7 @@ mod tests {
         let xml = render_xml(&request, "me").unwrap();
         assert!(xml.contains("<Command>mise.exe</Command>"), "{xml}");
         let launch: ServiceLaunch =
-            serde_json::from_str(&render_launch(&request).unwrap().unwrap()).unwrap();
+            serde_json::from_str(&render_launch(&request).unwrap().unwrap().0).unwrap();
         assert_eq!(launch.args, "--filter a&b|c<d>e^f");
         assert_eq!(launch.environment["P"], "%PATH%;C:\\x");
         assert_eq!(launch.environment["Q"], "a \"quoted\" & piped | value");
