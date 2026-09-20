@@ -69,6 +69,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
+          set -euo pipefail
           # The tag reaches shell expansions and Docker tags below, so accept
           # only the mise release format.
           if ! [[ "$TAG" =~ ^v20[0-9]{2}\.[0-9]{1,2}\.[0-9]+$ ]]; then
@@ -81,15 +82,21 @@ jobs:
           # newest release of a month may move that month's tag. A delayed
           # release event or a manual rebuild of an older tag then republishes
           # its immutable version tag without pulling `latest` backwards.
+          # Compare versions numerically: GitHub's /releases/latest and list
+          # order follow publish time, so a draft finished late would otherwise
+          # count as newest. mise release tags are always vYYYY.M.P, which the
+          # check above enforces, so a numeric sort is exact here.
           releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')"
-          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
-          newest_in_minor="$(grep -m1 -x "v$minor\.[0-9]*" <<< "$releases" || true)"
+          versions="$( { grep -E '^v20[0-9]{2}\.[0-9]{1,2}\.[0-9]+$' <<< "$releases" || true; echo "$TAG"; } \
+            | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n)"
+          newest="$(tail -n1 <<< "$versions")"
+          newest_in_minor="$(grep -x "${minor//./\\.}\.[0-9]*" <<< "$versions" | tail -n1)"
           is_latest=false
           is_newest_in_minor=false
-          [[ "$latest" == "$TAG" ]] && is_latest=true
-          [[ "$newest_in_minor" == "$TAG" ]] && is_newest_in_minor=true
-          echo "latest release: $latest; newest in $minor: $newest_in_minor"
+          [[ "$newest" == "$version" ]] && is_latest=true
+          [[ "$newest_in_minor" == "$version" ]] && is_newest_in_minor=true
+          echo "newest release: $newest; newest in $minor: $newest_in_minor"
           {
             echo "tag=$TAG"
             echo "version=$version"
