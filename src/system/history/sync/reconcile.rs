@@ -159,7 +159,17 @@ fn version(object: Option<&Object>) -> Option<Object> {
 }
 
 fn kind(object: Option<&Object>) -> Option<&str> {
-    object.map(|(mode, _)| if mode == "120000" { "link" } else { "file" })
+    object.map(|(mode, _)| match mode.as_str() {
+        "120000" => "link",
+        "160000" => "repository",
+        _ => "file",
+    })
+}
+
+/// A nested repository pointer, or nothing at all: the two sides a pointer
+/// can be compared with without content being at stake.
+fn pointer_or_absent(object: Option<&Object>) -> bool {
+    object.is_none() || is_gitlink(object)
 }
 
 /// A commit pointer to a nested repository rather than content.
@@ -209,9 +219,11 @@ pub(crate) fn reconcile(
 
         // A nested repository is a commit pointer, not content: writing it
         // would need objects this repository does not have, and removing
-        // it would delete a repository. It is never applied, never removed,
-        // and never a conflict; the pointer is published with the tree.
-        if is_gitlink(s) || is_gitlink(t) {
+        // it would delete a repository. Against another pointer or nothing
+        // it is never applied, never removed, and never a conflict; the
+        // pointer is published with the tree. Against content it is a type
+        // change, decided like any other.
+        if (is_gitlink(s) || is_gitlink(t)) && pointer_or_absent(s) && pointer_or_absent(t) {
             plan.skipped = Some(NESTED_NOT_SHARED.into());
             plan.next.acknowledged = t_version.clone();
             plan.next.reconciled = t_version.clone();
@@ -555,6 +567,17 @@ mod tests {
         let plans = reconcile(&repo, &shared, &upstream, &state, &BTreeSet::new()).unwrap();
         assert!(plans[0].apply.is_none());
         assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
+        // a file against a pointer is a type change, never a silent skip
+        let plain = [(path(), obj("plain"))].into();
+        let upstream = Upstream {
+            files: [(path(), pointer("aaaa"))].into(),
+            commit: Some("upstream".into()),
+        };
+        let plans =
+            reconcile(&repo, &plain, &upstream, &BTreeMap::new(), &BTreeSet::new()).unwrap();
+        assert!(plans[0].skipped.is_none());
+        assert!(plans[0].conflict.is_some());
+        assert!(plans[0].apply.is_none());
         // an identical pointer on both sides is simply in sync
         let upstream = Upstream {
             files: [(path(), pointer("bbbb"))].into(),
