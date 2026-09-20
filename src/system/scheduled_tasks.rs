@@ -274,6 +274,27 @@ pub(crate) fn launch_dir(name: &str) -> PathBuf {
         .join(format!("{name}.launches"))
 }
 
+/// Serialize the two commands that move a service's registration and the
+/// launch it reads: `apply` and `remove_task`.
+///
+/// Each reads what is registered, decides from it, and then writes — and the
+/// registration points at a launch file the other may be deleting. An
+/// interleaving can otherwise leave a registered task whose `--launch` is
+/// gone, which never starts and says nothing until someone applies again.
+///
+/// Beside the state it guards rather than hashed into the cache, so two mise
+/// installations sharing a state directory still serialize. Declining is
+/// better than waiting: the other command is about to change the very thing
+/// this one just read.
+fn service_lock(name: &str) -> Result<fslock::LockFile> {
+    let path = crate::dirs::STATE
+        .join("user-services")
+        .join(format!("{name}.lock"));
+    crate::lock_file::LockFile::at(&path)
+        .try_lock()?
+        .ok_or_else(|| eyre!("another command is changing user service '{name}'; retry shortly"))
+}
+
 /// One file per launch, named by its digest and never rewritten in place.
 ///
 /// A task can start at any moment — it has a logon trigger and allows
@@ -287,18 +308,30 @@ pub(crate) fn launch_path(name: &str, digest: &str) -> PathBuf {
     launch_dir(name).join(format!("{digest}.json"))
 }
 
-// Launches a registration no longer reads are left where they are, and go
-// only when the task itself does.
-//
-// Deleting them on apply looks tidier and is not safe: nothing serializes
-// two `bootstrap services apply` runs, so one can delete the launch the
-// other has just registered a task against, leaving a task that cannot start
-// at all. No ordering of write, register, and sweep closes that window
-// without a lock across the pair. A launch is a few hundred bytes and one
-// accumulates per distinct environment a service has ever had — re-applying
-// an unchanged one rewrites nothing, because the name is the content — which
-// is a much smaller problem than a service that will not start.
-// `remove_task` takes the whole directory.
+/// Drop every launch for `name` but the one `keep` names, which is what the
+/// registration that just committed reads.
+///
+/// Safe only under `service_lock`, and only after that registration has
+/// committed. Without the lock this deletes the launch a concurrent apply
+/// has just registered its own task against — no ordering of write,
+/// register, and sweep avoids that — and before the commit it would take the
+/// launch the still-registered task is reading.
+fn sweep_launches(name: &str, keep: Option<&str>) {
+    let dir = launch_dir(name);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    let keep = keep.map(|digest| std::ffi::OsString::from(format!("{digest}.json")));
+    for entry in entries.flatten() {
+        if keep.as_deref() == Some(entry.file_name().as_os_str()) {
+            continue;
+        }
+        let _ = std::fs::remove_file(entry.path());
+    }
+    if keep.is_none() {
+        let _ = std::fs::remove_dir(&dir);
+    }
+}
 
 /// The executable and arguments the task's `<Exec>` action runs.
 ///
@@ -482,6 +515,13 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
             "/HRESULT".to_string(),
         ];
         let run = ["/run".to_string(), "/tn".to_string(), req.task.clone()];
+        // held across the read, the decision, and the write: a preview reads
+        // nothing it then acts on, so it does not take it
+        let _lock = if dry_run {
+            None
+        } else {
+            Some(service_lock(&req.name)?)
+        };
         // what is registered now: a running instance keeps its old process
         // (`IgnoreNew`), so a changed definition or a stop ends it first, and
         // a task that is not running is never ended (its message is
@@ -532,6 +572,12 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         // definition on Windows
         std::fs::write(&path, &rendered)?;
         let _ = std::fs::remove_file(&staging);
+        // the registration committed, so whatever the replaced one read is
+        // unreachable; the lock is still held, so nothing else is reading it
+        sweep_launches(
+            &req.name,
+            launch.as_ref().map(|(_, digest)| digest.as_str()),
+        );
         if end_first {
             // it may have exited between the query and now: the HRESULT
             // says so in every locale; the message is matched as a fallback
@@ -555,6 +601,13 @@ pub(crate) async fn remove_task(name: &str, dry_run: bool) -> Result<bool> {
     let task = task_name(name);
     let path = definition_path(name);
     let launches = launch_dir(name);
+    // across the check and the removal, so an apply cannot register a task
+    // between them and have its launch deleted out from under it
+    let _lock = if dry_run {
+        None
+    } else {
+        Some(service_lock(name)?)
+    };
     if !exists(name).await? {
         if !dry_run {
             if path.exists() {
