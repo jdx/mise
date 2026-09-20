@@ -79,35 +79,54 @@ impl Manifest {
                     .any(|entry| strictly_below(&entry.path, &plain(path))))
     }
 
-    /// The permission key under which this enrollment governs a directory
-    /// on this machine: the directory (or an enrolled path above it) is
-    /// enrolled, under its selected variant if it has any. `None` when the
-    /// enrollment does not govern the directory itself here, whether because
-    /// only paths inside it are enrolled or because no variant is selected.
-    pub(crate) fn governing_key(&self, path: &str) -> Option<String> {
-        let entry = self.owner(path)?;
+    /// The enrolled paths this machine selects from this manifest, each with
+    /// its selected variant: an enrollment with no matching variant here is
+    /// left out. Like [`Self::tracking`], but a pure view for a manifest
+    /// that is not being enrolled (a saved one, read to decide baselines).
+    pub(crate) fn selected_entries(&self) -> Vec<super::tracked::TrackedEntry> {
+        let roots = super::sync::layout::Roots::current();
         let environments = super::select::active_environments();
-        match super::select::select(&entry.variants, &environments) {
-            super::select::Selection::Single => Some(path.to_string()),
-            super::select::Selection::Variant(variant) => {
-                let (root, relative) = path.split_once('/')?;
-                Some(format!("{root}@{}/{relative}", variant.name()))
-            }
-            super::select::Selection::NoMatch | super::select::Selection::Ambiguous(_) => None,
-        }
+        self.enrollment
+            .iter()
+            .filter_map(|enrollment| {
+                let variant = match super::select::select(&enrollment.variants, &environments) {
+                    super::select::Selection::Single => None,
+                    super::select::Selection::Variant(variant) => Some(variant.name()),
+                    super::select::Selection::NoMatch | super::select::Selection::Ambiguous(_) => {
+                        return None;
+                    }
+                };
+                let local = roots.locate(&enrollment.path).path()?.to_path_buf();
+                let mut policy = crate::system::files::FilePolicy::for_mode(
+                    crate::system::files::FileMode::Track,
+                );
+                policy.autosave = enrollment.autosave;
+                policy.encrypt = enrollment.encrypt;
+                let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
+                entry.variant = variant;
+                Some(entry)
+            })
+            .collect()
     }
 
     /// Whether a permission path is the enrolled path of its stream or below
-    /// one: the enrollment itself governs it, not only a path inside it.
+    /// one: some enrollment at or above it exposes that stream. A nested
+    /// enrollment for other platforms does not hide the enclosing one, whose
+    /// stream the path belongs to on machines where the nested one is not
+    /// selected; this is decided without knowing which machine reads it.
     fn enrolls_stream(&self, path: &str) -> bool {
         let (stem, _) = path.split_once('/').unwrap_or((path, ""));
         let (_, variant) = stem
             .split_once('@')
             .map_or((stem, None), |(root, variant)| (root, Some(variant)));
-        self.owner(&plain(path)).is_some_and(|entry| match variant {
-            Some(name) => entry.variants.iter().any(|variant| variant.name() == name),
-            None => entry.variants.is_empty(),
-        })
+        let portable = plain(path);
+        self.enrollment
+            .iter()
+            .filter(|entry| portable == entry.path || strictly_below(&portable, &entry.path))
+            .any(|entry| match variant {
+                Some(name) => entry.variants.iter().any(|variant| variant.name() == name),
+                None => entry.variants.is_empty(),
+            })
     }
 
     pub(crate) fn remove_unenrolled_permissions(&mut self) {
