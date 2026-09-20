@@ -534,8 +534,17 @@ mise dot paths
 
 Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
 earlier matching exclusion. `paths` lists tracked paths and files omitted
-from saves. Protected credential files and `*.local.toml` are excluded by
-default; use [encrypted tracking](#encrypted-shared-files) for credentials
+from saves.
+
+Credential files and `*.local.toml` are omitted by default. A file is
+treated as a credential store when its name is `.netrc` or matches `*.age`,
+`*.key`, `*.pem`, `*.gpg`, `*.kdbx`, `id_*`, `*token*`, `*secret*`,
+`credentials*`, or `oauth*` (under the mise configuration directory also
+`github_tokens.toml`, `hosts.yml`, and `age.txt`). Names ending in `.pub`
+are exempt: a public key or an age recipient list is not key material.
+`mise dot save`, `mise dot track`, and `mise dot status` report what a
+save leaves out, and `mise dot paths` lists every omission with its
+reason. Use [encrypted tracking](#encrypted-shared-files) for credentials
 you want to save.
 
 Logs, caches, databases, and constantly rewritten session state usually

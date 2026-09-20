@@ -601,20 +601,64 @@ fn classify_file(meta: &std::fs::Metadata) -> std::result::Result<u64, String> {
     Ok(size)
 }
 
-fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static str> {
+/// Why the credential guard keeps a file out of capture.
+pub(crate) const CREDENTIAL_REASON: &str = "credential store; encrypt the file before tracking it";
+
+/// Why `path` is left out of every capture under `policy`, if it is: a
+/// machine-local configuration file, or a credential store that is not
+/// enrolled with encryption. A `.pub` file is a public key or an age
+/// recipient list, never key material, so it is exempt from the guard.
+pub(crate) fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static str> {
     static NAMES: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_names);
     static GLOBS: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_globs);
     let name = path.file_name()?.to_str()?;
     if name.ends_with(".local.toml") {
         Some("machine-local configuration")
     } else if !policy.encrypt
+        && !name.ends_with(".pub")
         && (GLOBS.is_match(name)
             || (path.starts_with(normalize(&global_config_dir())) && NAMES.is_match(name)))
     {
-        Some("credential store; encrypt the file before tracking it")
+        Some(CREDENTIAL_REASON)
     } else {
         None
     }
+}
+
+/// How many omissions a capture report lists one by one before it
+/// summarizes them and points at `mise dot paths`.
+pub(crate) const OMISSION_LINES: usize = 10;
+
+/// The lines a capture reports about what it left out: every omission
+/// with its reason when there are few, otherwise one summary.
+pub(crate) fn omission_report(omitted: &[PathReason]) -> Vec<String> {
+    if omitted.is_empty() {
+        vec![]
+    } else if omitted.len() <= OMISSION_LINES {
+        omitted
+            .iter()
+            .map(|omitted| format!("omitted: {} ({})", omitted.path, omitted.reason))
+            .collect()
+    } else {
+        vec![omission_summary(omitted)]
+    }
+}
+
+/// One line naming how many files a capture leaves out and why.
+pub(crate) fn omission_summary(omitted: &[PathReason]) -> String {
+    let credentials = omitted
+        .iter()
+        .filter(|omitted| omitted.reason == CREDENTIAL_REASON)
+        .count();
+    let detail = match credentials {
+        0 => String::new(),
+        n if n == omitted.len() => " (credential store)".into(),
+        n => format!(" ({n} credential store)"),
+    };
+    format!(
+        "{} files omitted from capture{detail}; `mise dot paths` lists them",
+        omitted.len()
+    )
 }
 
 /// Credential stores mise itself knows by name; they mean something only
@@ -1090,6 +1134,71 @@ mod tests {
         assert!(set.would_capture(&included).unwrap());
         assert!(!set.would_capture(&child.join("config.local.toml")).unwrap());
         assert!(!set.would_capture(&child.join("credentials.json")).unwrap());
+    }
+
+    #[test]
+    fn public_keys_are_not_credential_stores() {
+        let policy = Policy::for_mode(FileMode::Track);
+        let dir = Path::new("/nonexistent-mise-test/.ssh");
+        assert_eq!(
+            capture_exclusion(&dir.join("id_ed25519"), &policy),
+            Some(CREDENTIAL_REASON)
+        );
+        assert_eq!(
+            capture_exclusion(&dir.join("id_ed25519.pub"), &policy),
+            None
+        );
+        assert_eq!(
+            capture_exclusion(&dir.join("age-recipients.pub"), &policy),
+            None
+        );
+        assert_eq!(
+            capture_exclusion(&dir.join("secrets.fish"), &policy),
+            Some(CREDENTIAL_REASON)
+        );
+        assert_eq!(
+            capture_exclusion(&dir.join("config.local.toml"), &policy),
+            Some("machine-local configuration")
+        );
+        let mut encrypted = policy;
+        encrypted.encrypt = true;
+        assert_eq!(capture_exclusion(&dir.join("id_ed25519"), &encrypted), None);
+    }
+
+    #[test]
+    fn omission_reports_list_few_and_summarize_many() {
+        let omitted = |n: usize| -> Vec<PathReason> {
+            (0..n)
+                .map(|i| PathReason {
+                    path: format!("~/.config/app/secret{i}"),
+                    reason: CREDENTIAL_REASON.into(),
+                })
+                .collect()
+        };
+        assert!(omission_report(&[]).is_empty());
+        let few = omission_report(&omitted(2));
+        assert_eq!(few.len(), 2);
+        assert_eq!(
+            few[0],
+            format!("omitted: ~/.config/app/secret0 ({CREDENTIAL_REASON})")
+        );
+        let many = omission_report(&omitted(OMISSION_LINES + 1));
+        assert_eq!(
+            many,
+            vec![format!(
+                "{} files omitted from capture (credential store); `mise dot paths` lists them",
+                OMISSION_LINES + 1
+            )]
+        );
+        let mut mixed = omitted(1);
+        mixed.push(PathReason {
+            path: "~/.config/app/config.local.toml".into(),
+            reason: "machine-local configuration".into(),
+        });
+        assert_eq!(
+            omission_summary(&mixed),
+            "2 files omitted from capture (1 credential store); `mise dot paths` lists them"
+        );
     }
 
     #[test]
