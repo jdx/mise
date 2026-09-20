@@ -617,18 +617,31 @@ fn record_pending(
         .iter()
         .filter_map(|plan| plan.conflict.clone())
         .collect();
+    // a pointer is never written here, whatever decided it should be
+    let pointer_application = |plan: &PathPlan| {
+        plan.conflict.is_none()
+            && plan
+                .apply
+                .as_ref()
+                .is_some_and(|object| reconcile::is_gitlink(object.as_ref()))
+    };
     status.skipped = plans
         .iter()
         .filter_map(|plan| {
+            let reason = if pointer_application(plan) {
+                reconcile::NESTED_NOT_SHARED.to_string()
+            } else {
+                plan.skipped.clone()?
+            };
             Some(SkippedPath {
                 branch_path: plan.branch_path.clone(),
-                reason: plan.skipped.clone()?,
+                reason,
             })
         })
         .collect();
     status.pending_applications = plans
         .iter()
-        .filter(|plan| plan.conflict.is_none())
+        .filter(|plan| plan.conflict.is_none() && !pointer_application(plan))
         .filter_map(|plan| {
             let object = plan.apply.clone()?;
             roots.locate(&plan.branch_path).path()?;
