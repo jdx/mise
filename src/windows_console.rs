@@ -67,15 +67,23 @@ pub(crate) fn detach_if_unattended() {
     else {
         return;
     };
+    let mut installed = true;
     for (id, file) in doomed.into_iter().zip(replacements) {
         // Deliberately leaked: a standard handle outlives every owner in the
         // process, and closing it would strand the slot it was installed in.
         // SAFETY: the handle is open and stays open for the life of the process.
-        unsafe { SetStdHandle(id, file.into_raw_handle()) };
+        installed &= unsafe { SetStdHandle(id, file.into_raw_handle()) } != 0;
+    }
+    // A slot that would not take the replacement still points at the console,
+    // and freeing it underneath would turn that slot's next write into the
+    // panic all of this is here to avoid. Keep the console instead: its window
+    // is a smaller problem than a watcher that dies on its first log line.
+    if !installed {
+        return;
     }
     // Console control events cannot reach a process with no console. Ctrl+C
     // and Ctrl+Break come from a terminal this process is not in.
-    // SAFETY: no arguments. A failure leaves the console attached, which is
-    // the state this started in.
+    // SAFETY: no arguments. Should it fail, the console stays with output
+    // going nowhere — a window that should not be there, and nothing worse.
     unsafe { FreeConsole() };
 }

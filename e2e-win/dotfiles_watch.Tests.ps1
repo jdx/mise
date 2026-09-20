@@ -134,5 +134,8 @@ builtin = "history-watch"
         } finally {
             Stop-Process -Id $shared.Id -Force -ErrorAction Ignore
         }
+        # the store is left with no watcher holding it, so this file can grow
+        # another case without inheriting one
+        Wait-Watcher $false | Should -BeTrue
     }
 }
