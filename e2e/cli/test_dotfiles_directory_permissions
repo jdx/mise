@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 require_cmd git
+require_cmd jq
 export MISE_HISTORY_NOTIFY=false
 origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"
@@ -8,9 +9,19 @@ echo private >~/private/nested/config
 chmod 700 ~/private
 chmod 750 ~/private/nested
 assert_succeed 'mise bootstrap dotfiles track ~/private'
+# A tracked file inside a private directory records that directory's mode,
+# not home's, even though only the file is enrolled.
+mkdir -p ~/.claude
+echo '{}' >~/.claude/settings.json
+chmod 700 ~ ~/.claude
+assert_succeed 'mise bootstrap dotfiles track ~/.claude/settings.json'
+repo="$MISE_STATE_DIR/history/repo.git"
+assert "git --git-dir='$repo' show HEAD:.mise-history/manifest.json | jq -r '.permissions[\"home/.claude\"]'" 448
+assert "git --git-dir='$repo' show HEAD:.mise-history/manifest.json | jq -r '.permissions[\"home\"]'" null
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
 second="$(dirname "$HOME")/directory-permissions-b"
 mkdir -p "$second"
+chmod 755 "$second"
 b() {
   (
     cd "$second" || exit
@@ -29,12 +40,19 @@ fi
 assert_succeed "b bootstrap --from-git file://$origin --yes"
 assert "$mode_of $second/private" 700
 assert "$mode_of $second/private/nested" 750
+# The fresh machine recreates the file's parent private; its home is its own.
+assert "$mode_of $second/.claude" 700
+assert "cat $second/.claude/settings.json" '{}'
+assert "$mode_of $second" 755
 chmod 750 ~/private
+chmod 755 ~/.claude
 assert_succeed 'mise bootstrap dotfiles save'
+assert "git --git-dir='$repo' show HEAD:.mise-history/manifest.json | jq -r '.permissions[\"home/.claude\"]'" null
 assert_succeed 'mise bootstrap dotfiles sync'
 assert_succeed 'b bootstrap dotfiles sync'
 assert_succeed 'b bootstrap dotfiles pull --yes'
 assert "$mode_of $second/private" 750
+assert "$mode_of $second/.claude" 755
 chmod 700 ~/private/nested
 assert_succeed 'mise bootstrap dotfiles save'
 assert_succeed 'mise bootstrap dotfiles sync'

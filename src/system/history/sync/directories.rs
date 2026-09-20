@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use eyre::{Result, bail};
 
+use super::layout::{Located, Roots};
 use crate::system::history::{
     journal, manifest::Manifest, shadow::HistoryRepo, tracked::TrackedSet,
 };
@@ -34,6 +35,25 @@ fn observe(_path: &std::path::Path) -> Result<Option<(u64, u64, u32)>> {
     Ok(None)
 }
 
+/// Whether a directory's recorded permissions apply here: it is enrolled (or
+/// below an enrolled path), or it lies strictly between the root and an
+/// enrolled path of the same stream. The root itself is never eligible.
+pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
+    if super::run::eligible(roots, tracked, branch_path) {
+        return true;
+    }
+    let (path, variant) = match roots.locate(branch_path) {
+        Located::Tracked { path, variant } => (path, variant),
+        Located::Config(path) => (path, None),
+        Located::Marker | Located::Unmapped => return false,
+    };
+    path != roots.home
+        && path != roots.config_dir
+        && tracked.entries.iter().any(|entry| {
+            entry.path.starts_with(&path) && entry.path != path && entry.variant == variant
+        })
+}
+
 pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Result<Vec<Step>> {
     if !cfg!(unix) {
         return Ok(vec![]);
@@ -45,7 +65,7 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         .transpose()?
         .flatten()
         .unwrap_or_default();
-    let roots = super::layout::Roots::current();
+    let roots = Roots::current();
     let mut steps = vec![];
     let paths: std::collections::BTreeSet<_> = tracked
         .manifest
@@ -54,7 +74,7 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         .chain(saved.permissions.keys())
         .collect();
     for portable in paths {
-        if !super::run::eligible(&roots, tracked, portable)
+        if !eligible(&roots, tracked, portable)
             || repo
                 .object_at(tree, portable)?
                 .is_none_or(|(mode, _)| mode != "040000")
@@ -160,6 +180,49 @@ fn set_mode(path: &std::path::Path, bits: u32) -> Result<()> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn directories_containing_tracked_files_are_eligible() {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::tracked::TrackedEntry;
+        let roots = Roots {
+            home: "/home/u".into(),
+            config_dir: "/config/mise".into(),
+        };
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut variant = TrackedEntry::new("/home/u/.ssh/config".into(), "track", policy);
+        variant.variant = Some("linux".into());
+        let tracked = TrackedSet {
+            entries: vec![
+                TrackedEntry::new("/home/u/.claude/settings.json".into(), "track", policy),
+                TrackedEntry::new("/config/mise/tasks/private/build".into(), "track", policy),
+                variant,
+            ],
+            ..Default::default()
+        };
+        for path in [
+            "home/.claude",
+            "home/.claude/settings.json",
+            "config/tasks",
+            "config/tasks/private",
+            "home@linux/.ssh",
+        ] {
+            assert!(eligible(&roots, &tracked, path), "{path}");
+        }
+        for path in [
+            "home",
+            "config",
+            "home/.claudia",
+            "home/.claude/other",
+            "home@linux/.claude",
+            "home/.ssh",
+            "config@linux/tasks",
+            "fs/etc",
+        ] {
+            assert!(!eligible(&roots, &tracked, path), "{path}");
+        }
+    }
+
     #[test]
     fn permission_transaction_preserves_concurrent_changes() -> Result<()> {
         let temp = tempfile::tempdir()?;

@@ -810,6 +810,14 @@ separate from the files you edit. Each checkpoint contains the tracked files
 and metadata for their paths, tracking settings, variants, encryption, and
 permissions. The files are ordinary Git tree entries.
 
+Permission metadata covers non-default modes: files that are not `0644` or
+`0755`, tracked directories that are not `0755`, and the directories between
+a tracked path and your home or mise configuration directory that are not
+`0755`. Tracking `~/.claude/settings.json` inside a `0700` `~/.claude`
+records that mode, so a fresh machine recreates the directory private rather
+than world-readable. Home and the configuration directory themselves are
+never recorded.
+
 A symlink is saved as a link. A nested Git repository is saved as a pointer
 to its commit. mise reports oversized files, special files, and unreadable
 paths it cannot save. It keeps their previous saved versions while saving

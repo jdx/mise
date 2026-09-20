@@ -287,15 +287,28 @@ impl Store {
         }
         // Live modes plus the ordinary parent's modes for carried entries.
         // Protective commits use the same history, not a separate saved state.
-        let mut modes = file_modes(&walk);
+        let roots = super::sync::layout::Roots::current();
+        let mut modes = file_modes(&walk, &roots);
         if !manual.carry.is_empty() {
             let carried: Vec<String> = manual
                 .carry
                 .iter()
                 .map(|index| walk.entries[*index].display())
                 .collect();
+            // a directory the live walk observed has its live mode (or the
+            // default), never a carried one
+            let observed: BTreeSet<String> = walk
+                .files
+                .iter()
+                .flat_map(|(path, (owner, _))| {
+                    mode_ancestors(path, &walk.entries[*owner].path, &roots)
+                })
+                .map(display_path)
+                .collect();
             for (path, bits) in self.saved_modes(&index, &carried) {
-                modes.entry(path).or_insert(bits);
+                if !observed.contains(&path) {
+                    modes.entry(path).or_insert(bits);
+                }
             }
         }
         // a held path keeps the mode the previous checkpoint recorded (or
@@ -721,7 +734,8 @@ impl Store {
         Ok((repo.compose(live_tree, &overlays)?, partial_entries))
     }
 
-    /// Manual files carry permission metadata from the ordinary parent.
+    /// Manual files carry permission metadata from the ordinary parent,
+    /// including the directories that contain them.
     fn saved_modes(&self, index: &store::Index, entries: &[String]) -> BTreeMap<String, u32> {
         index
             .entries
@@ -736,7 +750,11 @@ impl Store {
                     .tree
                     .modes
                     .into_iter()
-                    .filter(|(path, _)| entries.iter().any(|entry| under_entry(path, entry)))
+                    .filter(|(path, _)| {
+                        entries
+                            .iter()
+                            .any(|entry| under_entry(path, entry) || under_entry(entry, path))
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -933,11 +951,7 @@ fn retain_omitted(
         if let Some(mode) = record.tree.modes.get(&display) {
             modes.insert(display, *mode);
         }
-        for parent in path
-            .ancestors()
-            .skip(1)
-            .take_while(|parent| parent.starts_with(&entry.path))
-        {
+        for parent in mode_ancestors(path, &entry.path, &roots) {
             if !observed_directories.contains(parent) {
                 let display = display_path(parent);
                 if let Some(mode) = record.tree.modes.get(&display) {
@@ -953,10 +967,35 @@ fn retain_omitted(
     repo.compose(tree, &overlays)
 }
 
+/// The directories whose permissions a captured file carries: every
+/// ancestor strictly below the root it is mapped under (home or the
+/// configuration directory). A parent that holds only one tracked file still
+/// decides who can read it, so a fresh machine must recreate it the same way.
+/// The root itself is never recorded: enrolling a file must not capture
+/// unrelated metadata about home or a custom configuration root. A path
+/// outside every root carries only the explicitly enrolled directory.
+fn mode_ancestors<'a>(
+    path: &'a Path,
+    enrolled: &'a Path,
+    roots: &'a super::sync::layout::Roots,
+) -> impl Iterator<Item = &'a Path> + 'a {
+    let root = roots.root_of(path);
+    path.ancestors()
+        .skip(1)
+        .take_while(move |ancestor| match root {
+            Some(root) => *ancestor != root && ancestor.starts_with(root),
+            None => ancestor.starts_with(enrolled),
+        })
+}
+
 /// The permission bits of captured regular files that git cannot record
-/// (anything but `0644` and `0755`), so a restore can put them back.
+/// (anything but `0644` and `0755`) and of their non-default (not `0755`)
+/// directories, so a restore can put them back.
 #[cfg(unix)]
-fn file_modes(walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
+fn file_modes(
+    walk: &super::tracked::Walk,
+    roots: &super::sync::layout::Roots,
+) -> BTreeMap<String, u32> {
     use std::os::unix::fs::PermissionsExt;
     let mut modes = BTreeMap::new();
     let mut dirs = BTreeSet::new();
@@ -970,14 +1009,8 @@ fn file_modes(walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
                 modes.insert(display_path(path), mode);
             }
         }
-        // Directory permissions belong to an explicitly enrolled directory,
-        // not to its parents. Enrolling an individual file must not capture
-        // unrelated metadata about home or a custom configuration root.
         let enrolled = &walk.entries[*owner].path;
-        for ancestor in path.ancestors().skip(1) {
-            if !ancestor.starts_with(enrolled) {
-                break;
-            }
+        for ancestor in mode_ancestors(path, enrolled, roots) {
             dirs.insert(ancestor.to_path_buf());
         }
     }
@@ -996,7 +1029,10 @@ fn file_modes(walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
 }
 
 #[cfg(not(unix))]
-fn file_modes(_walk: &super::tracked::Walk) -> BTreeMap<String, u32> {
+fn file_modes(
+    _walk: &super::tracked::Walk,
+    _roots: &super::sync::layout::Roots,
+) -> BTreeMap<String, u32> {
     BTreeMap::new()
 }
 
@@ -1321,8 +1357,13 @@ mod tests {
             files: BTreeMap::from([(path.clone(), (0, policy))]),
             ..Default::default()
         };
+        // outside every root, only the explicitly enrolled directory counts
+        let roots = super::super::sync::layout::Roots {
+            home: temp.path().join("elsewhere"),
+            config_dir: temp.path().join("elsewhere/.config/mise"),
+        };
         assert_eq!(
-            file_modes(&walk),
+            file_modes(&walk, &roots),
             BTreeMap::from([
                 (display_path(&enrolled), 0o700),
                 (display_path(&path), 0o600),
@@ -1330,9 +1371,73 @@ mod tests {
         );
         walk.entries[0].path = path.clone();
         assert_eq!(
-            file_modes(&walk),
+            file_modes(&walk, &roots),
             BTreeMap::from([(display_path(&path), 0o600)])
         );
+    }
+
+    /// A tracked file's parents up to (but excluding) home or the
+    /// configuration root are recorded when their mode is not the default,
+    /// so a fresh machine recreates a private parent private.
+    #[cfg(unix)]
+    #[test]
+    fn permission_capture_includes_parents_below_the_root() {
+        use super::super::sync::layout::Roots;
+        use super::super::tracked::{TrackedEntry, Walk};
+        use crate::system::files::{FileMode, FilePolicy};
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let private = home.join(".claude");
+        let public = private.join("public");
+        std::fs::create_dir_all(&public).unwrap();
+        let settings = private.join("settings.json");
+        let notes = public.join("notes");
+        std::fs::write(&settings, "{}").unwrap();
+        std::fs::write(&notes, "notes").unwrap();
+        for (directory, mode) in [(&home, 0o700), (&private, 0o700), (&public, 0o755)] {
+            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut walk = Walk {
+            entries: vec![
+                TrackedEntry::new(settings.clone(), "track", policy),
+                TrackedEntry::new(notes.clone(), "track", policy),
+            ],
+            files: BTreeMap::from([
+                (settings.clone(), (0, policy)),
+                (notes.clone(), (1, policy)),
+            ]),
+            ..Default::default()
+        };
+        let roots = Roots {
+            home: home.clone(),
+            config_dir: home.join(".config/mise"),
+        };
+        // the private parent is recorded; a default parent and home itself
+        // (also 0700) are not
+        assert_eq!(
+            file_modes(&walk, &roots),
+            BTreeMap::from([(display_path(&private), 0o700)])
+        );
+        assert_eq!(
+            mode_ancestors(&notes, &notes, &roots).collect::<Vec<_>>(),
+            vec![public.as_path(), private.as_path()]
+        );
+
+        // the configuration root is a boundary of its own: a file directly
+        // under it carries no directory at all
+        let config_dir = home.join(".config/mise");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config = config_dir.join("config.toml");
+        std::fs::write(&config, "").unwrap();
+        for directory in [home.join(".config"), config_dir.clone()] {
+            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        walk.entries = vec![TrackedEntry::new(config.clone(), "track", policy)];
+        walk.files = BTreeMap::from([(config.clone(), (0, policy))]);
+        assert_eq!(file_modes(&walk, &roots), BTreeMap::new());
     }
 
     fn changes(modified: &[&str], added: &[&str], removed: &[&str]) -> Changes {
