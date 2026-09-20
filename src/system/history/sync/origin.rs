@@ -124,7 +124,11 @@ async fn set_inner(
         }
         RepoState::Unmarked => {
             miseprintln!(
-                "The repository already has content without mise enrollment metadata. Connecting does not import its files or replace unrelated history. Synchronization requires compatible Git ancestry; use an empty origin or reconcile the histories explicitly. Ordinary non-tracking `--from`/`--adopt` workflows remain available."
+                "This repository has content but no mise enrollment metadata. Connecting does not import its files.\n\
+                 A machine with no checkpoints adopts branch `{branch}` as its history. Existing checkpoints can synchronize only if they share Git ancestry with that branch.\n\
+                 To keep unrelated local checkpoints, connect an empty repository with `mise dot origin set <url>`. \
+                 Alternatively, use Git to push the local history to a new remote branch, then connect it with `mise dot origin set <url> --branch <name>`.\n\
+                 To use the repository as bootstrap configuration without enabling history sharing, use `mise bootstrap --from <url>` or `mise bootstrap --adopt <url>`."
             );
         }
     }
