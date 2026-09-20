@@ -27,6 +27,11 @@ assert_contains 'mise dot track --dry-run ~/.many' '~/.many: 1 file, 0 B'
 assert_fail "test -e $MISE_CONFIG_DIR/config.toml"
 assert "mise dot paths --json | jq '.entries | length'" 0
 
+# Nested targets in one command partition: the outer one does not count
+# the inner one's files.
+assert_contains 'mise dot track --dry-run ~/.codex ~/.codex/sessions' '~/.codex: 1 file, 12 B'
+assert_contains 'mise dot track --dry-run ~/.codex ~/.codex/sessions' '~/.codex/sessions: 2 files, 18 B'
+
 # A preview lists the files under the same header.
 assert_contains 'mise dot paths --preview ~/.codex' 'Tracking ~/.codex would capture 3 files, 30 B:'
 assert_contains 'mise dot paths --preview ~/.codex' '~/.codex/sessions/two.jsonl'
