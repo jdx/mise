@@ -1236,7 +1236,7 @@ mod tests {
         crate::file::create_dir_all(runtime_dir.path().join("systemd/private")).unwrap();
         assert!(user_manager_socket_available(runtime_dir.path()));
 
-        crate::file::remove_file_or_dir(runtime_dir.path().join("systemd/private")).unwrap();
+        std::fs::remove_dir(runtime_dir.path().join("systemd/private")).unwrap();
         std::fs::write(runtime_dir.path().join("bus"), "").unwrap();
         assert!(user_manager_socket_available(runtime_dir.path()));
     }

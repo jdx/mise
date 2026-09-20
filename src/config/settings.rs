@@ -1621,7 +1621,10 @@ impl Settings {
 
     pub(crate) fn cache_prune_age_duration(&self) -> Option<Duration> {
         let age = duration::parse_duration(&self.cache_prune_age).unwrap();
-        if age.as_secs() == 0 { None } else { Some(age) }
+        // Exactly `0s` is the documented way to keep cache files indefinitely.
+        // Truncating to whole seconds would give a sub-second age that meaning
+        // instead of the aggressive prune it asks for.
+        if age.is_zero() { None } else { Some(age) }
     }
 
     pub(crate) fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration> {
@@ -2165,6 +2168,22 @@ mod tests {
         cli.yes = Some(true);
         assert!(Settings::cli_yes_from(Some(&cli)));
         assert!(!Settings::cli_yes_from(None));
+    }
+
+    /// Only `0s` keeps cache files indefinitely. A sub-second age is an
+    /// aggressive prune, not a disabled one.
+    #[test]
+    fn only_a_zero_cache_prune_age_disables_pruning() {
+        let age = |age: &str| {
+            Settings {
+                cache_prune_age: age.into(),
+                ..Default::default()
+            }
+            .cache_prune_age_duration()
+        };
+        assert_eq!(age("0s"), None);
+        assert_eq!(age("500ms"), Some(Duration::from_millis(500)));
+        assert_eq!(age("30d"), Some(Duration::from_secs(30 * 24 * 60 * 60)));
     }
 
     #[test]

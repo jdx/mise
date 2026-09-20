@@ -6,7 +6,6 @@ use crate::toolset::env_cache::CachedEnv;
 use bytesize::ByteSize;
 use eyre::Result;
 use heck::ToKebabCase;
-use std::time::Duration;
 
 /// Remove stale cache files
 ///
@@ -31,36 +30,48 @@ pub(super) struct CachePrune {
 impl CachePrune {
     pub(super) fn run(self) -> Result<()> {
         let settings = Settings::get();
-        let opts = PruneOptions {
-            dry_run: self.dry_run,
-            verbose: self.verbose > 0,
-            age: settings
-                .cache_prune_age_duration()
-                .unwrap_or(Duration::from_secs(30 * 24 * 60 * 60)),
-        };
         let mut results = PruneResults { size: 0, count: 0 };
 
-        let cache_dirs = match &self.tool {
-            Some(tools) => tools
-                .iter()
-                .filter_map(|tool| {
-                    let kebab = tool.to_kebab_case();
-                    if kebab.is_empty() {
-                        warn!("invalid tool name: {tool}");
-                        None
-                    } else {
-                        Some(CACHE.join(kebab))
-                    }
-                })
-                .collect(),
-            None => cache::cache_dirs()?,
-        };
+        // `cache_prune_age = "0s"` is documented as keeping cache files
+        // indefinitely, and the automatic prune stops for it. Falling back to
+        // the default age instead would make the documented way to turn pruning
+        // off hold for the background pass but not for this command. It governs
+        // the age sweep of the cache roots only — the env cache lives in the
+        // state directory under its own TTL and is pruned below either way.
+        match settings.cache_prune_age_duration() {
+            None => info!(
+                "cache_prune_age is 0s, so cache files are kept indefinitely. Set MISE_CACHE_PRUNE_AGE to prune by age."
+            ),
+            Some(age) => {
+                let opts = PruneOptions {
+                    dry_run: self.dry_run,
+                    verbose: self.verbose > 0,
+                    age,
+                };
 
-        for p in cache_dirs {
-            if p.exists() {
-                let r = cache::prune(&p, &opts)?;
-                results.size += r.size;
-                results.count += r.count;
+                let cache_dirs = match &self.tool {
+                    Some(tools) => tools
+                        .iter()
+                        .filter_map(|tool| {
+                            let kebab = tool.to_kebab_case();
+                            if kebab.is_empty() {
+                                warn!("invalid tool name: {tool}");
+                                None
+                            } else {
+                                Some(CACHE.join(kebab))
+                            }
+                        })
+                        .collect(),
+                    None => cache::cache_dirs()?,
+                };
+
+                for p in cache_dirs {
+                    if p.exists() {
+                        let r = cache::prune(&p, &opts)?;
+                        results.size += r.size;
+                        results.count += r.count;
+                    }
+                }
             }
         }
 

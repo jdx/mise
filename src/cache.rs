@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
@@ -439,44 +439,242 @@ fn prepare_auto_prune_root(cache_dir: &Path, age: Duration) -> Result<bool> {
     Ok(!empty)
 }
 
-pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
-    let mut results = PruneResults { size: 0, count: 0 };
-    let remove = |file: &Path| {
-        if opts.dry_run || opts.verbose {
-            info!("pruning {}", display_path(file));
-        } else {
-            debug!("pruning {}", display_path(file));
+/// A cache entry as it sits on disk, described by `symlink_metadata`.
+///
+/// Pruning is the one cache walk that deletes, so every decision it makes has to
+/// come from the entry itself rather than from whatever the entry points at. A
+/// cache root legitimately holds symlinks — the npm backend snapshots a built
+/// package tree verbatim, links and their original absolute targets included —
+/// and following one leads straight out of the cache and into a live install.
+struct CacheEntry {
+    path: PathBuf,
+    metadata: std::fs::Metadata,
+}
+
+impl CacheEntry {
+    /// A directory prune may descend into: a real one, never a link to one.
+    fn is_dir(&self) -> bool {
+        self.metadata.is_dir()
+    }
+
+    /// Whether the entry itself has gone untouched for `age`.
+    ///
+    /// The times come from the entry, so a symlink ages by its own record and
+    /// not by the file it names.
+    fn is_stale(&self, age: Duration) -> Result<bool> {
+        Ok(self.metadata.accessed()?.elapsed().unwrap_or_default() > age)
+    }
+}
+
+/// Lists `dir` without resolving any of its entries.
+///
+/// Entries that disappear mid-walk are dropped: another mise process pruning the
+/// same root is not a reason to abandon this pass.
+fn cache_entries(dir: &Path) -> Result<Vec<CacheEntry>> {
+    let read_dir = match dir.read_dir() {
+        Ok(read_dir) => read_dir,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(err) => return Err(err).wrap_err_with(|| format!("failed to read {}", dir.display())),
+    };
+    let mut entries = vec![];
+    for entry in read_dir {
+        let entry = entry?;
+        let path = entry.path();
+        // `DirEntry::metadata` does not follow links, unlike `Path::metadata`.
+        match entry.metadata() {
+            Ok(metadata) => entries.push(CacheEntry { path, metadata }),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => {
+                return Err(err).wrap_err_with(|| format!("failed to stat {}", path.display()));
+            }
         }
+    }
+    Ok(entries)
+}
+
+/// Deletes one classified entry, without resolving it.
+///
+/// A symlink goes through the repository's link remover, which unlinks a unix
+/// symlink and deletes a Windows symlink or junction by handle after checking
+/// its reparse tag — `remove_file` refuses the latter outright. Whatever the
+/// link names is left alone either way.
+fn remove_entry(entry: &CacheEntry) -> Result<()> {
+    let result = if entry.is_dir() {
+        file::remove_dir(&entry.path)
+    } else if entry.metadata.is_symlink() {
+        file::remove_symlink_or_junction(&entry.path)
+    } else {
+        file::remove_file(&entry.path)
+    };
+    forgive_if_gone(&entry.path, result)
+}
+
+/// Excuses a removal that failed because the entry is no longer there.
+///
+/// Another mise process pruning the same root may have taken it — before the
+/// call, or from under a removal already walking it. Only an entry that is
+/// genuinely gone is excused: a dangling link still stats here, and a stat that
+/// fails for any other reason — an unreadable parent, say — leaves the removal
+/// failure to be reported.
+fn forgive_if_gone(path: &Path, result: Result<()>) -> Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) => match path.symlink_metadata() {
+            Err(stat) if stat.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            _ => Err(err),
+        },
+    }
+}
+
+/// Whether the path is a directory in its own right, as opposed to a link to
+/// one. `read_dir` and `remove_dir_all` both resolve the path they are handed.
+fn is_real_dir(path: &Path) -> bool {
+    path.symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_dir())
+}
+
+pub(crate) fn prune(dir: &Path, opts: &PruneOptions) -> Result<PruneResults> {
+    Ok(prune_dir(dir, false, opts)?.removed)
+}
+
+/// What one directory's pass did, and what it holds.
+struct DirPrune {
+    /// What this pass actually deleted below the directory.
+    removed: PruneResults,
+    /// Everything under the directory, deleted or not. A caller that evicts the
+    /// whole directory counts this instead.
+    held: PruneResults,
+    /// Whether every entry under the directory is old enough to prune, which
+    /// makes the directory evictable as a unit.
+    all_stale: bool,
+}
+
+/// `descended` marks a directory prune classified itself, as opposed to a root
+/// it was handed. A root is taken as given — `MISE_CACHE_DIR` may legitimately
+/// be a symlink to the real cache — while a descent is confirmed below.
+fn prune_dir(dir: &Path, descended: bool, opts: &PruneOptions) -> Result<DirPrune> {
+    let mut removed = PruneResults { size: 0, count: 0 };
+    let mut held = PruneResults { size: 0, count: 0 };
+    let mut all_stale = true;
+    let announce = |path: &Path| {
+        if opts.dry_run || opts.verbose {
+            info!("pruning {}", display_path(path));
+        } else {
+            debug!("pruning {}", display_path(path));
+        }
+    };
+    let remove = |entry: &CacheEntry| {
+        announce(&entry.path);
         if !opts.dry_run {
-            file::remove_file_or_dir(file)?;
+            remove_entry(entry)?;
         }
         Ok::<(), color_eyre::Report>(())
     };
-    for subdir in file::dir_subdirs(dir)? {
-        let subdir = dir.join(&subdir);
-        let r = prune(&subdir, opts)?;
-        results.size += r.size;
-        results.count += r.count;
-        let metadata = subdir.metadata()?;
-        // only delete empty directories if they're old
-        if file::ls(&subdir)?.is_empty()
-            && metadata.modified()?.elapsed().unwrap_or_default() > opts.age
-        {
-            remove(&subdir)?;
-            results.count += 1;
+    // Checked before the listing as well as after it: `read_dir` resolves the
+    // path it is handed, so a link left in place of a directory would otherwise
+    // have its target listed before the check below turned the pass away.
+    if descended && !is_real_dir(dir) {
+        return Ok(DirPrune {
+            removed,
+            held,
+            all_stale: false,
+        });
+    }
+    let entries = cache_entries(dir)?;
+    // The classification that led here was made an instant earlier. If this path
+    // is no longer a directory in its own right, that listing may describe
+    // somewhere else entirely, so nothing under it is removed.
+    if descended && !is_real_dir(dir) {
+        return Ok(DirPrune {
+            removed,
+            held,
+            all_stale: false,
+        });
+    }
+    // Each evictable entry carries what it holds, so a directory taken whole is
+    // counted from the pass that classified it rather than walked twice.
+    let mut evictable: Vec<(CacheEntry, PruneResults)> = vec![];
+    for entry in entries {
+        if !entry.is_dir() {
+            held.size += entry.metadata.len();
+            held.count += 1;
+            if !entry.is_stale(opts.age)? {
+                all_stale = false;
+                continue;
+            }
+            // Held back: if everything here turns out to be stale, the caller
+            // takes the directory whole rather than hollowing it out.
+            let size = entry.metadata.len();
+            evictable.push((entry, PruneResults { size, count: 1 }));
+            continue;
+        }
+        let below = prune_dir(&entry.path, true, opts)?;
+        removed.size += below.removed.size;
+        removed.count += below.removed.count;
+        held.size += below.held.size;
+        held.count += below.held.count;
+        if below.all_stale {
+            evictable.push((entry, below.held));
+        } else {
+            all_stale = false;
         }
     }
-    for f in file::ls(dir)? {
-        let path = dir.join(&f);
-        let metadata = path.metadata()?;
-        let elapsed = metadata.accessed()?.elapsed().unwrap_or_default();
-        if elapsed > opts.age {
-            remove(&path)?;
-            results.size += metadata.len();
-            results.count += 1;
+    // An empty directory holds nothing to age, so it goes by its own timestamps.
+    if evictable.is_empty()
+        && all_stale
+        && let Ok(metadata) = dir.symlink_metadata()
+    {
+        all_stale = metadata.modified()?.elapsed().unwrap_or_default() > opts.age
+            || metadata.accessed()?.elapsed().unwrap_or_default() > opts.age;
+    }
+    if all_stale && descended {
+        // Everything under this directory is prunable, so the caller evicts it
+        // in one piece. Removing the files one by one is what leaves a cache
+        // entry standing but hollow — a directory tree with nothing in it —
+        // which whatever wrote that entry may then read back as intact.
+        return Ok(DirPrune {
+            removed,
+            held,
+            all_stale: true,
+        });
+    }
+    for (entry, holds) in evictable {
+        if entry.is_dir() {
+            // Classified once already, and classified again here: a cache
+            // writer may have published into the subtree since, and what is
+            // about to be deleted is the whole of it rather than the entries
+            // that were read. A subtree that now holds something fresh prunes
+            // by file on this pass and is evicted by a later one.
+            let recheck = prune_dir(&entry.path, true, opts)?;
+            if !recheck.all_stale {
+                removed.size += recheck.removed.size;
+                removed.count += recheck.removed.count;
+                all_stale = false;
+                continue;
+            }
+            announce(&entry.path);
+            if !opts.dry_run {
+                // The repository's removal: it decides by `symlink_metadata`, so
+                // a link goes as a link, and it retries when a writer recreates
+                // entries under the walk, which a bare `remove_dir_all` reports
+                // as a failed prune. It forgives a path that is already gone
+                // when it looks, but not one that goes while it is walking, so
+                // that case is forgiven here.
+                forgive_if_gone(&entry.path, file::remove_all_with_retry(&entry.path))?;
+            }
+            removed.size += recheck.held.size;
+            removed.count += recheck.held.count + 1;
+        } else {
+            remove(&entry)?;
+            removed.size += holds.size;
+            removed.count += holds.count;
         }
     }
-    Ok(results)
+    Ok(DirPrune {
+        removed,
+        held,
+        all_stale,
+    })
 }
 
 #[cfg(test)]
@@ -637,5 +835,180 @@ mod tests {
         assert!(!prepare_auto_prune_root(first.path(), age).unwrap());
         assert!(first.path().join(".auto_prune").exists());
         assert!(second.path().join(".auto_prune").exists());
+    }
+
+    fn stale_prune_options() -> PruneOptions {
+        PruneOptions {
+            dry_run: false,
+            verbose: false,
+            age: Duration::from_secs(1),
+        }
+    }
+
+    /// Backdates a path's own timestamps, leaving anything it links to alone.
+    /// `set_symlink_file_times` opens a Windows reparse point without following
+    /// it, so this describes the entry itself on every platform.
+    fn backdate(path: &Path) {
+        let stale = filetime::FileTime::from_unix_time(0, 0);
+        filetime::set_symlink_file_times(path, stale, stale).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prune_does_not_reach_through_a_symlink_out_of_the_cache() {
+        let cache = tempfile::tempdir().unwrap();
+        let install = tempfile::tempdir().unwrap();
+        let package = install.path().join("packages").join("inner");
+        fs::create_dir_all(&package).unwrap();
+        let file = package.join("index.js");
+        fs::write(&file, "module.exports = {}").unwrap();
+        backdate(&file);
+        backdate(&package);
+
+        let entry = cache.path().join("side-effects").join("node_modules");
+        fs::create_dir_all(&entry).unwrap();
+        let link = entry.join("inner");
+        std::os::unix::fs::symlink(&package, &link).unwrap();
+
+        prune(cache.path(), &stale_prune_options()).unwrap();
+
+        assert!(file.exists(), "prune deleted a file outside the cache");
+        assert!(package.exists());
+    }
+
+    /// Stands in for a directory swapped for a symlink after prune classified it:
+    /// the descent finds a link where it recorded a directory.
+    #[cfg(unix)]
+    #[test]
+    fn a_descent_that_lands_on_a_link_removes_nothing() {
+        let cache = tempfile::tempdir().unwrap();
+        let install = tempfile::tempdir().unwrap();
+        let file = install.path().join("index.js");
+        fs::write(&file, "module.exports = {}").unwrap();
+        backdate(&file);
+
+        let swapped = cache.path().join("node_modules");
+        std::os::unix::fs::symlink(install.path(), &swapped).unwrap();
+
+        prune_dir(&swapped, true, &stale_prune_options()).unwrap();
+
+        assert!(file.exists(), "a replaced directory was walked anyway");
+    }
+
+    /// A structured cache entry — a package manager's build output, say — is
+    /// only usable whole. Taking its files one by one leaves the directory tree
+    /// standing and empty, which whatever wrote it may read back as intact.
+    #[test]
+    fn a_wholly_stale_directory_goes_as_one() {
+        let cache = tempfile::tempdir().unwrap();
+        let entry = cache.path().join("side-effects/pkg@1.0.0/linux/abc");
+        fs::create_dir_all(entry.join("build")).unwrap();
+        for path in ["build/built.node", "package.json"] {
+            let path = entry.join(path);
+            fs::write(&path, "x").unwrap();
+            backdate(&path);
+        }
+
+        prune(cache.path(), &stale_prune_options()).unwrap();
+
+        assert!(
+            !cache.path().join("side-effects").exists(),
+            "a hollow directory tree was left behind"
+        );
+    }
+
+    /// A removal that fails is reported, unless the reason it failed is that the
+    /// entry is no longer there to remove.
+    #[test]
+    fn a_removal_is_excused_only_when_the_entry_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("present");
+        fs::write(&present, "x").unwrap();
+        let gone = dir.path().join("gone");
+
+        let failure = || Err(eyre::eyre!(std::io::Error::other("removal failed")));
+
+        assert!(forgive_if_gone(&gone, failure()).is_ok());
+        assert!(forgive_if_gone(&present, failure()).is_err());
+        assert!(forgive_if_gone(&present, Ok(())).is_ok());
+    }
+
+    /// The mechanism behind it: a wholly stale directory hands itself to its
+    /// caller untouched instead of deleting its own contents. A tree emptied
+    /// file by file is readable as an intact entry in the meantime, by another
+    /// process or by whatever runs after a prune that stops halfway.
+    #[test]
+    fn a_wholly_stale_directory_defers_to_its_caller() {
+        let cache = tempfile::tempdir().unwrap();
+        let entry = cache.path().join("pkg@1.0.0");
+        fs::create_dir_all(entry.join("build")).unwrap();
+        let built = entry.join("build/built.node");
+        fs::write(&built, "x").unwrap();
+        backdate(&built);
+
+        let below = prune_dir(&entry, true, &stale_prune_options()).unwrap();
+
+        assert!(below.all_stale, "the entry was not seen as evictable");
+        assert_eq!(below.removed.count, 0, "the entry hollowed itself out");
+        assert_eq!(below.held.count, 1);
+        assert!(built.exists());
+    }
+
+    /// Where ages are mixed, the stale files still go individually: a content
+    /// addressed store keeps hot and cold entries side by side in one
+    /// directory, and it has to stay reclaimable.
+    #[test]
+    fn a_directory_in_use_keeps_its_shape_and_loses_its_stale_files() {
+        let cache = tempfile::tempdir().unwrap();
+        let shard = cache.path().join("store/files/ab");
+        fs::create_dir_all(&shard).unwrap();
+        let cold = shard.join("cold-blob");
+        fs::write(&cold, "cold").unwrap();
+        backdate(&cold);
+        let hot = shard.join("hot-blob");
+        fs::write(&hot, "hot").unwrap();
+
+        let results = prune(cache.path(), &stale_prune_options()).unwrap();
+
+        assert!(!cold.exists(), "a stale blob survived beside a fresh one");
+        assert!(hot.exists());
+        assert!(shard.exists(), "a directory still in use was removed");
+        assert_eq!(results.count, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prune_removes_a_stale_link_without_touching_its_target() {
+        let cache = tempfile::tempdir().unwrap();
+        let install = tempfile::tempdir().unwrap();
+        let target = install.path().join("packages");
+        fs::create_dir_all(&target).unwrap();
+
+        let entry = cache.path().join("side-effects");
+        fs::create_dir_all(&entry).unwrap();
+        let link = entry.join("inner");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        backdate(&link);
+
+        prune(cache.path(), &stale_prune_options()).unwrap();
+
+        assert!(link.symlink_metadata().is_err(), "stale link was kept");
+        assert!(target.exists(), "prune removed the link's target");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prune_finishes_when_a_link_dangles() {
+        let cache = tempfile::tempdir().unwrap();
+        let entry = cache.path().join("side-effects");
+        fs::create_dir_all(&entry).unwrap();
+        std::os::unix::fs::symlink(cache.path().join("gone"), entry.join("inner")).unwrap();
+        let stale = entry.join("meta.json");
+        fs::write(&stale, "{}").unwrap();
+        backdate(&stale);
+
+        prune(cache.path(), &stale_prune_options()).unwrap();
+
+        assert!(!stale.exists(), "a dangling link stopped the prune pass");
     }
 }

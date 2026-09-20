@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# cache_prune_age = "0s" is documented as keeping cache files indefinitely. The
+# automatic prune honors it; so must the command. It governs the cache roots
+# only — the env cache keeps its own TTL.
+
+mkdir -p "$MISE_CACHE_DIR/node" "$MISE_STATE_DIR/env-cache"
+printf node >"$MISE_CACHE_DIR/node/old"
+printf env >"$MISE_STATE_DIR/env-cache/old"
+touch -t 202001010000 "$MISE_CACHE_DIR/node/old" "$MISE_STATE_DIR/env-cache/old"
+
+MISE_CACHE_PRUNE_AGE=0s MISE_ENV_CACHE_TTL=1s mise cache prune
+
+if [[ ! -e $MISE_CACHE_DIR/node/old ]]; then
+  fail "cache prune ignored cache_prune_age=0s"
+fi
+
+ok "cache prune keeps cache files when the age is disabled"
+
+if [[ -e $MISE_STATE_DIR/env-cache/old ]]; then
+  fail "cache prune skipped the env cache, which has its own TTL"
+fi
+
+ok "cache prune still expires the env cache by env_cache_ttl"
+
+MISE_CACHE_PRUNE_AGE=1s mise cache prune
+
+if [[ -e $MISE_CACHE_DIR/node/old ]]; then
+  fail "cache prune did not prune with an age set"
+fi
+
+ok "cache prune still prunes when an age is set"

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# A cache entry may contain symlinks — the npm backend snapshots a built package
+# tree verbatim, and a package's postinstall can link to an absolute path inside
+# its own install. Pruning must never reach through one.
+
+install_dir="$MISE_DATA_DIR/installs/demo/1.0.0/packages/inner"
+mkdir -p "$install_dir"
+printf 'module.exports = {}' >"$install_dir/index.js"
+touch -t 202001010000 "$install_dir/index.js" "$install_dir"
+
+entry="$MISE_CACHE_DIR/npm/aube/cache/side-effects-v1/demo@1.0.0/node_modules"
+mkdir -p "$entry"
+ln -s "$install_dir" "$entry/inner"
+
+MISE_CACHE_PRUNE_AGE=1s mise cache prune
+
+if [[ ! -e $install_dir/index.js ]]; then
+  fail "cache prune deleted a file inside an install"
+fi
+
+ok "cache prune did not follow a symlink out of the cache"
+
+# A link left dangling by an uninstall must not abort the pass.
+rm -rf "$MISE_DATA_DIR/installs/demo"
+printf stale >"$MISE_CACHE_DIR/npm/stale"
+touch -t 202001010000 "$MISE_CACHE_DIR/npm/stale"
+
+MISE_CACHE_PRUNE_AGE=1s mise cache prune
+
+if [[ -e $MISE_CACHE_DIR/npm/stale ]]; then
+  fail "a dangling symlink stopped cache prune"
+fi
+
+ok "cache prune completes with a dangling symlink in the cache"
