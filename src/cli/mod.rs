@@ -1582,6 +1582,46 @@ mod tests {
         Cli::parse_from_argv(&argv)
     }
 
+    /// Only a watcher that is really about to start gives up its console: it
+    /// happens before the command runs, and what it gives up cannot be handed
+    /// back to print an error with. See jdx/mise#13426.
+    #[test]
+    fn only_a_starting_watcher_runs_unattended() {
+        fn unattended(args: &[&str]) -> bool {
+            parse_cli(args)
+                .unwrap()
+                .command
+                .as_ref()
+                .is_some_and(Commands::runs_unattended)
+        }
+
+        assert!(unattended(&["mise", "dot", "watch"]));
+        assert!(unattended(&["mise", "dotfiles", "watch"]));
+        assert!(unattended(&["mise", "bootstrap", "dotfiles", "watch"]));
+
+        // every other dotfiles command has a terminal reading it
+        assert!(!unattended(&["mise", "dot", "status"]));
+        assert!(!unattended(&["mise", "bootstrap", "dotfiles", "status"]));
+        assert!(!unattended(&["mise", "bootstrap"]));
+        assert!(!unattended(&["mise", "run", "build"]));
+
+        // `run` rejects a setup source alongside a subcommand, so these never
+        // reach the watcher and must keep a console to say so
+        for source in ["--from", "--adopt", "--from-git"] {
+            assert!(
+                !unattended(&[
+                    "mise",
+                    "bootstrap",
+                    source,
+                    "https://example.com/setup.git",
+                    "dotfiles",
+                    "watch",
+                ]),
+                "{source} names a setup repository, not a watcher"
+            );
+        }
+    }
+
     fn parse_truncate(args: &[&str]) -> Option<bool> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         let (_, layer) = Cli::parse_from_argv_with_settings(&argv).unwrap();

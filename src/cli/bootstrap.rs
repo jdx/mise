@@ -262,8 +262,16 @@ fn bootstrap_prediction_has_skipped_change(
 
 impl Bootstrap {
     /// `mise bootstrap dotfiles watch`, the watcher under its other name.
+    ///
+    /// A setup source alongside a subcommand is rejected by `run`, so an
+    /// invocation carrying one is not a watcher starting, whatever it names.
+    /// `--from-git` is still its own field here: `run` folds it into `adopt`,
+    /// and this is asked before that.
     pub(crate) fn is_dotfiles_watch(&self) -> bool {
-        matches!(&self.command, Some(Commands::Dotfiles(cmd)) if cmd.is_watch())
+        self.from.is_none()
+            && self.adopt.is_none()
+            && self.from_git.is_none()
+            && matches!(&self.command, Some(Commands::Dotfiles(cmd)) if cmd.is_watch())
     }
 }
 
