@@ -3568,8 +3568,10 @@ fn remove_existing(path: &Path) -> Result<bool> {
 /// Overwrite the existing regular file at `target` with `source` in place,
 /// as `file::copy` would (content and permission bits), recording the target
 /// in `written` once it has been opened for truncation — the first mutation.
-/// An open that fails (a read-only file or filesystem) changes nothing and
-/// records nothing.
+/// The source is opened and checked first, as `fs::copy` does, so a source
+/// that is not a regular file (a directory behind a link, say) fails before
+/// the target is touched. An open that fails (a read-only target file or
+/// filesystem) changes nothing and records nothing.
 fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
     let failed = || {
         format!(
@@ -3579,6 +3581,13 @@ fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) 
         )
     };
     let mut from = std::fs::File::open(source).wrap_err_with(failed)?;
+    let source_metadata = from.metadata().wrap_err_with(failed)?;
+    if !source_metadata.is_file() {
+        bail!(
+            "{}: the source path is neither a regular file nor a symlink to a regular file",
+            failed()
+        );
+    }
     let mut to = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -3586,7 +3595,7 @@ fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) 
         .wrap_err_with(failed)?;
     written.push(target.to_path_buf());
     std::io::copy(&mut from, &mut to).wrap_err_with(failed)?;
-    to.set_permissions(from.metadata()?.permissions())
+    to.set_permissions(source_metadata.permissions())
         .wrap_err_with(failed)?;
     Ok(())
 }
@@ -4098,6 +4107,32 @@ variants = [{{ {field} = "linux" }}]"#
             )
             .is_err()
         );
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_copy_leaves_an_existing_file_alone_when_the_source_is_not_a_file() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("real"))?;
+        // a link to a directory walks as a file-like entry but is not one
+        std::os::unix::fs::symlink(source.join("real"), source.join("entry"))?;
+        let target = dir.path().join("target");
+        file::create_dir_all(&target)?;
+        file::write(target.join("entry"), "keep me")?;
+
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert_eq!(file::read_to_string(target.join("entry"))?, "keep me");
         assert!(written.is_empty());
         Ok(())
     }
