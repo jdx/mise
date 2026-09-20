@@ -180,11 +180,10 @@ impl DotfilesTrack {
                 warn!("dotfiles: {target_key} will be omitted from every save ({reason}){advice}");
             }
             let set = &preview_set;
-            let preview = preview_walk.preview_of(
-                set,
-                set.entry_index_for(&normalize_target(&target))
-                    .expect("every target is an entry of the preview set"),
-            );
+            let entry_index = set
+                .entry_index_for(&normalize_target(&target))
+                .expect("every target is an entry of the preview set");
+            let preview = preview_walk.preview_of(set, entry_index);
             let summary = preview.summary();
             if self.dry_run {
                 miseprintln!("{target_key}: {summary}");
@@ -193,7 +192,7 @@ impl DotfilesTrack {
                 for glob in &set.exclude {
                     miseprintln!("  exclude: {glob}");
                 }
-                for glob in &set.entries[0].exclude {
+                for glob in &set.entries[entry_index].exclude {
                     miseprintln!("  exclude ({target_key}): {glob}");
                 }
                 // nothing is enrolled yet, so `mise dot paths` cannot list
