@@ -255,6 +255,10 @@ impl Store {
             warn!("history: {warning}");
         }
         report_omissions(&walk, &draft);
+        // which nested repositories this machine's own walk found, before
+        // this walk's answer replaces the record
+        let own_nested_before = read_own_nested(&self.state_dir);
+        write_own_nested(&self.state_dir, &walk.nested)?;
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
         let promoted: BTreeSet<String> = previous_tree
@@ -442,7 +446,13 @@ impl Store {
             && let Some((previous_checkpoint, tree)) = &previous_tree
             && let Some(snapshot) = snapshot.as_deref()
             && (snapshot == tree
-                || self.same_but_pointers(snapshot, previous_checkpoint, tree, &walk)?)
+                || self.same_but_pointers(
+                    snapshot,
+                    previous_checkpoint,
+                    tree,
+                    &walk,
+                    &own_nested_before,
+                )?)
             && (!cfg!(unix) || previous_checkpoint.tree.modes == modes)
         {
             debug!(
@@ -608,15 +618,26 @@ impl Store {
     /// by nested repository pointers. A pointer is this machine's own view
     /// of a repository history does not hold, so a change of it alone (or
     /// another machine's pointer arriving through sync) records nothing: the
-    /// current pointer is saved with the next change of anything else.
+    /// current pointer is saved with the next change of anything else. A
+    /// pointer this machine's own walk found before and that is gone from
+    /// its disk now is a real change, not one to bridge: the repository was
+    /// removed here.
     fn same_but_pointers(
         &self,
         snapshot: &str,
         previous: &Checkpoint,
         tree: &str,
         walk: &super::tracked::Walk,
+        own_nested_before: &BTreeSet<String>,
     ) -> Result<bool> {
         if walk.nested.is_empty() && previous.tree.coverage.nested.is_empty() {
+            return Ok(false);
+        }
+        let removed_here = previous.tree.coverage.nested.iter().any(|previous| {
+            own_nested_before.contains(&previous.path)
+                && !walk.nested.iter().any(|now| now.path == previous.path)
+        });
+        if removed_here {
             return Ok(false);
         }
         let Some(repo) = &self.repo else {
@@ -895,6 +916,31 @@ struct ManualContext<'a> {
 struct ManualPlan {
     carry: Vec<usize>,
     promote: Vec<usize>,
+}
+
+/// The nested repositories this machine's own walk found at its last
+/// capture, by display path. Local and never shared: it tells a pointer
+/// this machine had on disk from one it inherited through sync.
+fn own_nested_path(state_dir: &Path) -> PathBuf {
+    store::store_dir_in(state_dir).join("own-nested.json")
+}
+
+fn read_own_nested(state_dir: &Path) -> BTreeSet<String> {
+    std::fs::read_to_string(own_nested_path(state_dir))
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn write_own_nested(state_dir: &Path, nested: &[store::PathReason]) -> Result<()> {
+    let paths: BTreeSet<&str> = nested.iter().map(|reason| reason.path.as_str()).collect();
+    let text = serde_json::to_string(&paths)?;
+    let path = own_nested_path(state_dir);
+    if std::fs::read_to_string(&path).ok().as_deref() == Some(text.as_str()) {
+        return Ok(());
+    }
+    crate::file::write(&path, text)?;
+    Ok(())
 }
 
 /// Tells the user what the walk left out, so a credential store or a

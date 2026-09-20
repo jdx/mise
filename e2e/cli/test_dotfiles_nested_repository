@@ -118,6 +118,18 @@ assert_succeed 'mise dot sync'
 assert_succeed 'mise dot pull --yes'
 assert_succeed 'mise dot sync'
 
+# Removing a nested repository this machine had on disk is a real change,
+# not a pointer to bridge: the save records the removal.
+rm -rf "$second/.hammerspoon/Spoons/Sky.spoon"
+assert_succeed "$b dot save"
+assert_fail "git --git-dir=$second/.local/state/mise/history/repo.git cat-file -e HEAD:home/.hammerspoon/Spoons/Sky.spoon"
+mkdir -p "$second/.hammerspoon/Spoons/Sky.spoon"
+echo 'return { second = 2 }' >"$second/.hammerspoon/Spoons/Sky.spoon/init.lua"
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" init -q -b main
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com add -A
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com commit -q -m second-2-again
+assert_succeed "$b dot save"
+
 # A machine that only inherits the pointer (no checkout on disk) adopts
 # while another machine's pointer is upstream, then diverges.
 fifth="$(dirname "$HOME")/nested-fifth"
