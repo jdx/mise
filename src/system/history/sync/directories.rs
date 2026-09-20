@@ -92,13 +92,39 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         let Some(claim) = claim(&roots, tracked, portable) else {
             continue;
         };
-        if repo
-            .object_at(tree, portable)?
-            .is_none_or(|(mode, _)| mode != "040000")
-        {
+        let path = roots.locate(portable).path().unwrap().to_path_buf();
+        // the directory must exist in the tree: at its own path, or, for a
+        // containing record, in any stream selected here for a path inside
+        // it (a Linux-only file lives under `home@linux/`)
+        let mut candidates = vec![portable.clone()];
+        if claim == Claim::Containing {
+            for entry in tracked
+                .entries
+                .iter()
+                .filter(|entry| entry.variant.is_some())
+            {
+                if entry.path.starts_with(&path)
+                    && entry.path != path
+                    && let Ok(stream) = entry.tree_path(&path)
+                    && !candidates.contains(&stream)
+                {
+                    candidates.push(stream);
+                }
+            }
+        }
+        let mut present = false;
+        for candidate in &candidates {
+            if repo
+                .object_at(tree, candidate)?
+                .is_some_and(|(mode, _)| mode == "040000")
+            {
+                present = true;
+                break;
+            }
+        }
+        if !present {
             continue;
         }
-        let path = roots.locate(portable).path().unwrap().to_path_buf();
         let best = claimed.entry(path).or_insert((claim, portable));
         if claim < best.0 {
             *best = (claim, portable);
@@ -340,12 +366,94 @@ mod tests {
         manifest.permissions.remove(&own);
         let tree = manifest.write(&repo, &files)?;
         let tracked = TrackedSet {
-            manifest,
+            manifest: manifest.clone(),
             ..tracked
         };
         let steps = plan(&repo, &tracked, &tree)?;
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].desired, 0o750);
+
+        // the own stream stays authoritative when only the local head still
+        // records it: the incoming manifest dropped it (a machine with this
+        // stream saved the directory at the default), so that default wins
+        // over another platform's containing record
+        use crate::system::history::checkpoint::test_checkpoint;
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir(&private)?;
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700))?;
+        let mut local = manifest.clone();
+        local.permissions.insert(own.clone(), 0o700);
+        let head = local.write(&repo, &files)?;
+        repo.write_checkpoint(Some(&head), &test_checkpoint("local", Some(&head)))?;
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].path, private);
+        assert_eq!(steps[0].desired, 0o755);
+        Ok(())
+    }
+
+    /// A containing record names the variant-less path, but the directory
+    /// may exist in the tree only under a variant stream (every file inside
+    /// it is a Linux-only file): the planner still applies it on a fresh
+    /// machine.
+    #[test]
+    fn a_parent_present_only_in_a_variant_stream_is_planned() -> Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::manifest::Enrollment;
+        use crate::system::history::shadow::Overlay;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-variant-parent-")
+            .tempdir_in(&roots.home)?;
+        let private = normalize(scratch.path()).join("private");
+        let mut file = TrackedEntry::new(
+            private.join("settings.json"),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        );
+        file.variant = Some("linux".into());
+        let stream_path = file.tree_path(&file.path)?;
+        assert!(stream_path.starts_with("home@linux/"));
+        let containing = roots.branch_path(&private, None).unwrap();
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[Overlay {
+                path: stream_path,
+                object: Some(("100644".into(), repo.hash_blob(b"{}")?)),
+            }],
+        )?;
+        // the directory exists only under the variant stream
+        assert!(repo.object_at(&files, &containing)?.is_none());
+        let manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: roots.branch_path(&file.path, None).unwrap(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![crate::system::history::select::Variant {
+                    os: vec!["linux".into()],
+                    ..Default::default()
+                }],
+            }],
+            permissions: std::collections::BTreeMap::from([(containing.clone(), 0o700)]),
+            ..Default::default()
+        };
+        let tree = manifest.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            entries: vec![file],
+            manifest,
+            ..Default::default()
+        };
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].path, private);
+        assert_eq!(steps[0].desired, 0o700);
+        assert!(steps[0].before.is_none());
         Ok(())
     }
 

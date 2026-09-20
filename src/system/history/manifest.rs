@@ -119,7 +119,7 @@ impl Manifest {
             !active.iter().any(|prefix| {
                 path == prefix
                     || strictly_below(path, prefix)
-                    || (!path.contains('@') && strictly_below(&plain(prefix), path))
+                    || (plain(path) == *path && strictly_below(&plain(prefix), path))
             })
         });
         for (display, bits) in modes {
@@ -647,6 +647,38 @@ mod tests {
             manifest.permissions,
             BTreeMap::from([("home/.claude/settings.json".into(), 0o600)])
         );
+    }
+
+    /// A stream marker lives only in the first component: a directory whose
+    /// own name contains `@` is an ordinary containing directory, and its
+    /// record is replaced on save like any other.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_named_with_an_at_sign_returns_to_default() {
+        use super::super::tracked::TrackedEntry;
+        use crate::system::files::{FileMode, FilePolicy};
+        let mut manifest = Manifest {
+            enrollment: vec![enrollment("home/.private@work/settings.json")],
+            ..Default::default()
+        };
+        let home = &*crate::dirs::HOME;
+        let entries = vec![TrackedEntry::new(
+            home.join(".private@work/settings.json"),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        )];
+        let modes =
+            BTreeMap::from([(crate::file::display_path(home.join(".private@work")), 0o700)]);
+        manifest.capture_permissions(&entries, &modes).unwrap();
+        assert_eq!(
+            manifest.permissions,
+            BTreeMap::from([("home/.private@work".into(), 0o700)])
+        );
+        manifest.validate().unwrap();
+        manifest
+            .capture_permissions(&entries, &BTreeMap::new())
+            .unwrap();
+        assert!(manifest.permissions.is_empty());
     }
 
     /// A directory containing files of several streams is one filesystem

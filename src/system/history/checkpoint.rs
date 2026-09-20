@@ -359,7 +359,14 @@ impl Store {
                                 children.iter().map(crate::file::display_path).collect();
                             let is_named =
                                 |path: &str| named.iter().any(|child| under_entry(path, child));
-                            modes.retain(|path, _| !under_entry(path, &entry) || is_named(path));
+                            // an unnamed sibling file keeps its saved mode; a
+                            // directory the walk observed (the entry itself, a
+                            // subdirectory, a parent) has its live mode
+                            modes.retain(|path, _| {
+                                !under_entry(path, &entry)
+                                    || is_named(path)
+                                    || observed.contains(path)
+                            });
                             for (path, bits) in
                                 self.saved_modes(&index, std::slice::from_ref(&entry))
                             {
@@ -1528,6 +1535,7 @@ mod tests {
         std::fs::write(&first, "saved")?;
         std::fs::write(&second, "saved")?;
         std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o700))?;
+        std::fs::set_permissions(&manual, std::fs::Permissions::from_mode(0o700))?;
         let mut policy = FilePolicy::for_mode(FileMode::Track);
         policy.autosave = false;
         let entry = TrackedEntry::new(manual.clone(), "track", policy);
@@ -1545,6 +1553,7 @@ mod tests {
             ..Default::default()
         };
         let portable = roots.branch_path(&parent_path, None).unwrap();
+        let own = roots.branch_path(&manual, None).unwrap();
         let permissions = || -> Result<BTreeMap<String, u32>> {
             let head = repo.ref_oid(HistoryRepo::HISTORY_REF)?.unwrap();
             Ok(Manifest::read(repo, &head)?.unwrap().permissions)
@@ -1555,7 +1564,10 @@ mod tests {
         let Outcome::Created(_) = store.attempt(&tracked, draft)? else {
             panic!("no baseline")
         };
-        assert_eq!(permissions()?, BTreeMap::from([(portable.clone(), 0o700)]));
+        assert_eq!(
+            permissions()?,
+            BTreeMap::from([(portable.clone(), 0o700), (own.clone(), 0o700)])
+        );
 
         std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o755))?;
         std::fs::write(&first, "edited")?;
@@ -1575,7 +1587,9 @@ mod tests {
         };
         assert_eq!(content(&first)?, b"edited");
         assert_eq!(content(&second)?, b"saved");
-        assert_eq!(permissions()?, BTreeMap::new());
+        // the parent went back to the default and is dropped; the manual
+        // directory's own unchanged mode is kept, not stripped as unnamed
+        assert_eq!(permissions()?, BTreeMap::from([(own.clone(), 0o700)]));
         let latest = store.list()?.pop().unwrap();
         assert!(
             !latest

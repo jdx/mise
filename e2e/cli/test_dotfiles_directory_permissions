@@ -18,6 +18,20 @@ assert_succeed 'mise bootstrap dotfiles track ~/.claude/settings.json'
 repo="$MISE_STATE_DIR/history/repo.git"
 assert "git --git-dir='$repo' show HEAD:.mise-history/manifest.json | jq -r '.permissions[\"home/.claude\"]'" 448
 assert "git --git-dir='$repo' show HEAD:.mise-history/manifest.json | jq -r '.permissions[\"home\"]'" null
+# A file that lives only in a variant stream still records its private
+# parent once, without a variant, and the tree holds it under the stream.
+if [[ "$(uname)" == Darwin ]]; then
+  stream=macos
+else
+  stream=linux
+fi
+mkdir -p ~/.variant-private
+echo '{}' >~/.variant-private/settings.json
+chmod 700 ~/.variant-private
+assert_succeed "mise bootstrap dotfiles track ~/.variant-private/settings.json --os $stream"
+assert "git --git-dir='$repo' show HEAD:.mise-history/manifest.json | jq -r '.permissions[\"home/.variant-private\"]'" 448
+assert "git --git-dir='$repo' show HEAD:.mise-history/manifest.json | jq -r '.permissions[\"home@$stream/.variant-private\"]'" null
+assert_succeed "git --git-dir='$repo' cat-file -e HEAD:home@$stream/.variant-private/settings.json"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
 second="$(dirname "$HOME")/directory-permissions-b"
 mkdir -p "$second"
@@ -43,6 +57,8 @@ assert "$mode_of $second/private/nested" 750
 # The fresh machine recreates the file's parent private; its home is its own.
 assert "$mode_of $second/.claude" 700
 assert "cat $second/.claude/settings.json" '{}'
+assert "$mode_of $second/.variant-private" 700
+assert "cat $second/.variant-private/settings.json" '{}'
 assert "$mode_of $second" 755
 chmod 750 ~/private
 chmod 755 ~/.claude
