@@ -17,7 +17,9 @@ printf cold >"$shard/cold-blob"
 touch -t 202001010000 "$shard/cold-blob"
 printf hot >"$shard/hot-blob"
 
-MISE_CACHE_PRUNE_AGE=1s mise cache prune
+# An hour, not a second: the fresh blob is written moments before this runs,
+# and a slow worker would age it past a one second threshold.
+MISE_CACHE_PRUNE_AGE=1h mise cache prune
 
 if [[ -e $MISE_CACHE_DIR/npm/aube/cache/side-effects-v1/demo@1.0.0 ]]; then
   fail "a stale cache entry was left standing"

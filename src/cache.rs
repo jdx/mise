@@ -820,7 +820,6 @@ mod tests {
         assert!(second.path().join(".auto_prune").exists());
     }
 
-    #[cfg(unix)]
     fn stale_prune_options() -> PruneOptions {
         PruneOptions {
             dry_run: false,
@@ -830,7 +829,8 @@ mod tests {
     }
 
     /// Backdates a path's own timestamps, leaving anything it links to alone.
-    #[cfg(unix)]
+    /// `set_symlink_file_times` opens a Windows reparse point without following
+    /// it, so this describes the entry itself on every platform.
     fn backdate(path: &Path) {
         let stale = filetime::FileTime::from_unix_time(0, 0);
         filetime::set_symlink_file_times(path, stale, stale).unwrap();
