@@ -414,6 +414,11 @@ Synchronization uses Git ancestry, fast-forwards, and merge commits. Pushes
 retain the saved commits and their Git author identities. A rejected push
 triggers another fetch and reconciliation. mise leaves divergent or
 unrelated histories intact for you to resolve; it does not force-push.
+When a sync refuses unrelated histories, either discard the local
+checkpoints with `mise bootstrap --adopt <url> --replace-history --yes`
+(see [removing plaintext from history](#remove-plaintext-from-history)),
+or keep them by connecting an empty repository, or a branch you pushed the
+local history to, with `mise dot origin set <url> --branch <name>`.
 Before writing incoming changes, it checks the complete batch, including
 configuration, required sources, committed files, and unsaved local edits.
 

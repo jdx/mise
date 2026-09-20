@@ -29,7 +29,7 @@ impl Heads {
                 let bases = repo.merge_bases(local, remote)?;
                 if bases.is_empty() {
                     bail!(
-                        "local and origin histories are unrelated; use a fresh setup store to adopt origin, or reconcile the repositories explicitly with Git. Neither history was replaced"
+                        "local and origin histories are unrelated. To discard the local checkpoints and take the origin's history, run `mise bootstrap --adopt <url> --replace-history --yes`; to keep the local history, connect an empty repository instead, or push the local branch to a new branch of the origin with Git and connect it with `mise dot origin set <url> --branch <name>`. Neither history was replaced"
                     );
                 }
                 // A criss-cross merge has shared ancestry but no unique base.
