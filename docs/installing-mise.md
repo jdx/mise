@@ -648,18 +648,12 @@ mise completion bash > ~/.local/share/bash-completion/completions/mise
 # Generate into a directory owned by your user:
 mkdir -p ~/.zfunc
 mise completion zsh > ~/.zfunc/_mise
-```
 
-Add the `fpath` update to `.zshrc` before its existing `compinit` call (including
-one made by a shell framework):
-
-```sh
+# Then add the fpath update to ~/.zshrc, before its existing compinit call
+# (including one made by a shell framework):
 fpath=(~/.zfunc $fpath)
-```
 
-If `.zshrc` does not already initialize completions, also add:
-
-```sh
+# If ~/.zshrc does not already initialize completions, also add:
 autoload -Uz compinit
 compinit
 ```
