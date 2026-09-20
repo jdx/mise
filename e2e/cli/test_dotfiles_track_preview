@@ -13,6 +13,11 @@ printf 'synthetic\n' >~/.codex/auth-token
 assert_contains 'mise dot track --dry-run ~/.codex' '~/.codex: 3 files, 30 B'
 assert_contains 'mise dot track --dry-run ~/.codex' 'omitted: ~/.codex/auth-token (credential store'
 assert_contains 'mise dot track --dry-run ~/.codex 2>&1' 'dry run; nothing was tracked'
+# Every omission is listed, however many: nothing is tracked yet for
+# `mise dot paths` to list later.
+mkdir -p ~/.many
+for i in $(seq 1 12); do echo x >~/.many/token-"$i"; done
+assert "mise dot track --dry-run ~/.many | grep -c 'omitted: ~/.many/token-'" 12
 assert_fail "test -e $MISE_CONFIG_DIR/config.toml"
 assert "mise dot paths --json | jq '.entries | length'" 0
 
