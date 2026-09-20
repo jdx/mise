@@ -159,23 +159,31 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         if before.map(|(_, _, bits)| bits) == Some(desired) {
             continue;
         }
-        let mut was_directory = false;
+        // the local record is read under the best key whose stream the local
+        // head already has; its absence there means the default (a pull that
+        // dropped the enrolled stream's record applied 0755), and only a
+        // stream that is new locally defers to the next key's record
+        let mut saved_bits = None;
         if let Some(head) = local.as_deref() {
-            for candidate in keys.iter().flat_map(|key| &key.candidates) {
-                if repo
-                    .object_at(head, candidate)?
-                    .is_some_and(|(mode, _)| mode == "040000")
-                {
-                    was_directory = true;
-                    break;
+            'keys: for key in &keys {
+                for candidate in &key.candidates {
+                    if repo
+                        .object_at(head, candidate)?
+                        .is_some_and(|(mode, _)| mode == "040000")
+                    {
+                        saved_bits = Some(
+                            saved
+                                .permissions
+                                .get(key.portable)
+                                .copied()
+                                .unwrap_or(0o755),
+                        );
+                        break 'keys;
+                    }
                 }
             }
         }
-        let saved_bits = keys
-            .iter()
-            .find_map(|key| saved.permissions.get(key.portable).copied())
-            .unwrap_or(0o755);
-        if was_directory && before.map(|(_, _, bits)| bits) != Some(saved_bits) {
+        if saved_bits.is_some() && before.map(|(_, _, bits)| bits) != saved_bits {
             bail!(
                 "{} has unsaved directory permission changes; save them before pulling. Sharing is paused",
                 crate::file::display_path(&path)
@@ -411,6 +419,96 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].path, private);
         assert_eq!(steps[0].desired, 0o755);
+        Ok(())
+    }
+
+    /// After a pull dropped the enrolled stream's record and applied the
+    /// default, another platform's containing record must not be mistaken
+    /// for the local saved mode: the next incoming mode for the enrolled
+    /// stream is planned, not rejected as an unsaved chmod.
+    #[test]
+    fn a_dropped_enrolled_record_means_the_default_locally() -> Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::checkpoint::test_checkpoint;
+        use crate::system::history::manifest::Enrollment;
+        use crate::system::history::shadow::Overlay;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-dropped-")
+            .tempdir_in(&roots.home)?;
+        let private = normalize(scratch.path()).join("private");
+        std::fs::create_dir(&private)?;
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o755))?;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let file = TrackedEntry::new(private.join("settings.json"), "track", policy);
+        let mut directory = TrackedEntry::new(private.clone(), "track", policy);
+        directory.variant = Some("linux".into());
+        let containing = roots.branch_path(&private, None).unwrap();
+        let own = directory.tree_path(&private)?;
+        let blob = repo.hash_blob(b"{}")?;
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[
+                Overlay {
+                    path: file.tree_path(&file.path)?,
+                    object: Some(("100644".into(), blob.clone())),
+                },
+                Overlay {
+                    path: directory.tree_path(&private.join("notes"))?,
+                    object: Some(("100644".into(), blob)),
+                },
+            ],
+        )?;
+        let mut manifest = Manifest {
+            enrollment: vec![
+                Enrollment {
+                    path: file.tree_path(&file.path)?,
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![],
+                },
+                Enrollment {
+                    path: containing.clone(),
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![crate::system::history::select::Variant {
+                        os: vec!["linux".into()],
+                        ..Default::default()
+                    }],
+                },
+            ],
+            // the local head: the enrolled stream's record was dropped (the
+            // last pull applied 0755), another platform's containing 0700 stays
+            permissions: std::collections::BTreeMap::from([(containing.clone(), 0o700)]),
+            ..Default::default()
+        };
+        let head = manifest.write(&repo, &files)?;
+        repo.write_checkpoint(Some(&head), &test_checkpoint("local", Some(&head)))?;
+        manifest.permissions.insert(own.clone(), 0o750);
+        let tree = manifest.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            entries: vec![file, directory],
+            manifest,
+            ..Default::default()
+        };
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].path, private);
+        assert_eq!(steps[0].desired, 0o750);
+        // a real unsaved chmod on the enrolled stream is still reported
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o711))?;
+        let err = plan(&repo, &tracked, &tree).unwrap_err();
+        assert!(
+            err.to_string().contains("unsaved directory permission"),
+            "{err}"
+        );
         Ok(())
     }
 
