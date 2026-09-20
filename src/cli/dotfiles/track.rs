@@ -225,14 +225,17 @@ impl DotfilesTrack {
         let mut table = InlineTable::new();
         table.insert("mode", string("track"));
         let policy = self.policy(existing);
+        // a policy is written when this command sets it or this file wrote
+        // it before; one inherited from another layer stays unwritten so
+        // that layer keeps deciding it
         let written = |key: &str| previous.iter().any(|written| written == key);
-        if policy.encrypt || written("encrypt") {
+        if self.encrypt || written("encrypt") {
             table.insert(
                 "encrypt",
                 Value::Boolean(toml_edit::Formatted::new(policy.encrypt)),
             );
         }
-        if !policy.autosave || written("autosave") {
+        if self.no_autosave || written("autosave") {
             table.insert(
                 "autosave",
                 Value::Boolean(toml_edit::Formatted::new(policy.autosave)),
@@ -645,6 +648,21 @@ mod declaration_tests {
         assert!(table.get("encrypt").is_none());
         let table = command.entry(None, &[]);
         assert!(table.get("autosave").is_none());
+        assert!(table.get("encrypt").is_none());
+        // an inherited non-default value is not pinned either; this
+        // command's own flag is
+        let mut inherited = existing.clone();
+        inherited.policy.autosave = false;
+        inherited.policy.encrypt = true;
+        let table = command.entry(Some(&inherited), &["mode".to_string()]);
+        assert!(table.get("autosave").is_none());
+        assert!(table.get("encrypt").is_none());
+        let flagged = DotfilesTrack {
+            no_autosave: true,
+            ..command
+        };
+        let table = flagged.entry(Some(&inherited), &["mode".to_string()]);
+        assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(false));
         assert!(table.get("encrypt").is_none());
         // the keys are read from either table form
         for text in [
