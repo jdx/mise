@@ -540,8 +540,9 @@ Credential files and `*.local.toml` are omitted by default. A file is
 treated as a credential store when its name is `.netrc` or matches `*.age`,
 `*.key`, `*.pem`, `*.gpg`, `*.kdbx`, `id_*`, `*token*`, `*secret*`,
 `credentials*`, or `oauth*` (under the mise configuration directory also
-`github_tokens.toml`, `hosts.yml`, and `age.txt`). Names ending in `.pub`
-are exempt: a public key or an age recipient list is not key material.
+`github_tokens.toml`, `hosts.yml`, and `age.txt`). The guard matches by
+name alone and is deliberately conservative: `id_ed25519.pub` is treated
+like `id_ed25519`.
 `mise dot save`, `mise dot track`, and `mise dot status` report what a
 save leaves out, and `mise dot paths` lists every omission with its
 reason. Use [encrypted tracking](#encrypted-shared-files) for credentials
