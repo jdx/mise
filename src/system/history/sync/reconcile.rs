@@ -358,6 +358,23 @@ pub(crate) fn reconcile(
             plans.push(plan);
         }
     }
+    // an application that would write a pointer (content here became a
+    // repository elsewhere) is never performed: it is recorded as skipped
+    // and acknowledged, so it neither waits nor blocks publication
+    for plan in &mut plans {
+        if plan.conflict.is_none()
+            && plan
+                .apply
+                .as_ref()
+                .is_some_and(|object| is_gitlink(object.as_ref()))
+        {
+            let version = plan.apply.take().flatten();
+            plan.skipped = Some(NESTED_NOT_SHARED.into());
+            plan.next.acknowledged = version.clone();
+            plan.next.reconciled = version.clone();
+            plan.next.applied = version;
+        }
+    }
     Ok(plans)
 }
 
@@ -567,6 +584,20 @@ mod tests {
         let plans = reconcile(&repo, &shared, &upstream, &state, &BTreeSet::new()).unwrap();
         assert!(plans[0].apply.is_none());
         assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
+        // content acknowledged here that became a repository upstream: the
+        // pointer is never written, the plan is skipped and acknowledged so
+        // publication is not held up by an application that cannot happen
+        let plain = [(path(), obj("plain"))].into();
+        let upstream = Upstream {
+            files: [(path(), pointer("aaaa"))].into(),
+            commit: Some("upstream".into()),
+        };
+        let state = [(path(), rec(Some("plain"), Some("plain"), Some("plain")))].into();
+        let plans = reconcile(&repo, &plain, &upstream, &state, &BTreeSet::new()).unwrap();
+        assert!(plans[0].apply.is_none());
+        assert!(plans[0].conflict.is_none());
+        assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
+        assert_eq!(plans[0].next.applied, Some(pointer("aaaa")));
         // a file against a pointer is a type change, never a silent skip
         let plain = [(path(), obj("plain"))].into();
         let upstream = Upstream {
