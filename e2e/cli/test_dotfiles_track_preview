@@ -18,6 +18,12 @@ assert_contains 'mise dot track --dry-run ~/.codex 2>&1' 'dry run; nothing was t
 mkdir -p ~/.many
 for i in $(seq 1 12); do echo x >~/.many/token-"$i"; done
 assert "mise dot track --dry-run ~/.many | grep -c 'omitted: ~/.many/token-'" 12
+for i in $(seq 13 25); do echo x >~/.many/token-"$i"; done
+assert "mise dot track --dry-run ~/.many | grep -c 'omitted: ~/.many/token-'" 20
+assert_contains 'mise dot track --dry-run ~/.many' '... 5 more'
+# Symlinks and nested repositories add no bytes to the count.
+ln -s token-1 ~/.many/link
+assert_contains 'mise dot track --dry-run ~/.many' '~/.many: 1 file, 0 B'
 assert_fail "test -e $MISE_CONFIG_DIR/config.toml"
 assert "mise dot paths --json | jq '.entries | length'" 0
 

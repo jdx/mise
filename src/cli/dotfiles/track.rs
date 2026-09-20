@@ -12,7 +12,7 @@ use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{
-    CREDENTIAL_REASON, TrackedSet, capture_exclusion, normalize_target, preview_set,
+    CREDENTIAL_REASON, TrackedSet, capture_exclusion, normalize_target, preview_set_with,
 };
 
 /// Track a file or directory in place
@@ -57,6 +57,10 @@ pub(crate) struct DotfilesTrack {
     dry_run: bool,
 }
 
+/// How many omitted or nested paths a dry run lists before it counts the
+/// rest, so a tree full of them cannot flood the terminal.
+const DRY_RUN_LINES: usize = 20;
+
 impl DotfilesTrack {
     /// Write the requested declarations and capture their initial history baseline.
     pub(crate) async fn run(self) -> Result<()> {
@@ -82,7 +86,9 @@ impl DotfilesTrack {
         let mut locations = BTreeMap::new();
         let mut declared: Vec<(String, PathBuf)> = vec![];
         let mut manual = vec![];
-        // what each path expands to, sized up before anything is written
+        // what each path expands to, sized up before anything is written;
+        // the exclusion globs are read once for every path of this run
+        let exclude = crate::system::history::config::exclude_globs()?;
         let mut previews: Vec<String> = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
@@ -164,7 +170,7 @@ impl DotfilesTrack {
                     );
                 }
             }
-            let set = preview_set(&target, policy)?;
+            let set = preview_set_with(&target, policy, exclude.clone());
             let preview = set.walk()?;
             let summary = preview.summary();
             if self.dry_run {
@@ -174,13 +180,27 @@ impl DotfilesTrack {
                 for glob in &set.exclude {
                     miseprintln!("  exclude: {glob}");
                 }
-                // nothing is enrolled yet, so `mise dot paths` could not
-                // list these later: every one is printed here
-                for omitted in &preview.omitted {
-                    miseprintln!("  omitted: {} ({})", omitted.path, omitted.reason);
+                // nothing is enrolled yet, so `mise dot paths` cannot list
+                // these until the path is tracked: a bounded list here
+                let lines: Vec<String> = preview
+                    .omitted
+                    .iter()
+                    .map(|omitted| format!("omitted: {} ({})", omitted.path, omitted.reason))
+                    .chain(
+                        preview
+                            .nested
+                            .iter()
+                            .map(|nested| format!("nested: {} ({})", nested.path, nested.reason)),
+                    )
+                    .collect();
+                for line in lines.iter().take(DRY_RUN_LINES) {
+                    miseprintln!("  {line}");
                 }
-                for nested in &preview.nested {
-                    miseprintln!("  nested: {} ({})", nested.path, nested.reason);
+                if lines.len() > DRY_RUN_LINES {
+                    miseprintln!(
+                        "  ... {} more; `mise dot paths` lists them all once the path is tracked",
+                        lines.len() - DRY_RUN_LINES
+                    );
                 }
                 for incomplete in &preview.incomplete {
                     miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);

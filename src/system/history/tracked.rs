@@ -401,9 +401,12 @@ impl TrackedSet {
                 bytes: 0,
             });
             root.files.push(relative);
+            // a symlink's length is its target string and a nested
+            // repository's its directory entry: neither is captured content
             root.bytes += std::fs::symlink_metadata(path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+                .ok()
+                .filter(|m| m.is_file())
+                .map_or(0, |m| m.len());
         }
         walk.roots = roots.into_values().collect();
         Ok(walk)
@@ -712,12 +715,22 @@ fn with_separators(n: usize) -> String {
 /// exclusions: what `mise dot paths --preview` lists and what `mise dot
 /// track` sizes up before it writes a declaration.
 pub(crate) fn preview_set(path: &Path, policy: Policy) -> Result<TrackedSet> {
+    Ok(preview_set_with(
+        path,
+        policy,
+        super::config::exclude_globs()?,
+    ))
+}
+
+/// [`preview_set`] with the `[history] exclude` globs already read, so a
+/// command previewing several paths reads the configuration once.
+pub(crate) fn preview_set_with(path: &Path, policy: Policy, exclude: Vec<String>) -> TrackedSet {
     let mut set = TrackedSet {
-        exclude: super::config::exclude_globs()?,
+        exclude,
         ..Default::default()
     };
     set.push(TrackedEntry::new(normalize_target(path), "track", policy));
-    Ok(set)
+    set
 }
 
 /// The lines a capture reports about what it left out: every omission and
@@ -1410,10 +1423,20 @@ mod tests {
         let set = preview_set(&root, Policy::for_mode(FileMode::Track)).unwrap();
         assert_eq!(set.entries.len(), 1);
         assert_eq!(set.entries[0].path, normalize_target(&root));
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("a", root.join("link")).unwrap();
         let walk = set.walk().unwrap();
-        assert_eq!(walk.file_count(), 2);
+        // a symlink counts as a file but adds no bytes
+        assert_eq!(walk.file_count(), if cfg!(unix) { 3 } else { 2 });
         assert_eq!(walk.bytes(), 8);
-        assert_eq!(walk.summary(), "2 files, 8 B");
+        assert_eq!(
+            walk.summary(),
+            if cfg!(unix) {
+                "3 files, 8 B"
+            } else {
+                "2 files, 8 B"
+            }
+        );
         assert_eq!(walk.omitted.len(), 1);
         assert!(!walk.is_large());
         assert_eq!(count_and_size(1, 0), "1 file, 0 B");
