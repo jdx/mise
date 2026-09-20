@@ -88,7 +88,15 @@ jobs:
           # check above enforces, so a numeric sort is exact here.
           releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')"
-          versions="$( { grep -E '^v20[0-9]{2}\.[0-9]{1,2}\.[0-9]+$' <<< "$releases" || true; echo "$TAG"; } \
+          # A manual run may name any tag; drafts and prereleases must not be
+          # published as release images, let alone win the floating tags.
+          if ! grep -qxF "$TAG" <<< "$releases"; then
+            echo "::error::$TAG is not a published stable release" >&2
+            exit 1
+          fi
+          # $TAG passed the format check and is in this list, so grep always
+          # matches; any failure here is a real error.
+          versions="$(grep -E '^v20[0-9]{2}\.[0-9]{1,2}\.[0-9]+$' <<< "$releases" \
             | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n)"
           newest="$(tail -n1 <<< "$versions")"
           newest_in_minor="$(grep -x "${minor//./\\.}\.[0-9]*" <<< "$versions" | tail -n1)"
