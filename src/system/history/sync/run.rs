@@ -1251,6 +1251,7 @@ mod capture_tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: vec![],
+                include: vec![],
             }],
             ..Default::default()
         }

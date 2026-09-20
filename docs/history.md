@@ -609,6 +609,69 @@ anchored to the directory):
 Both lists apply: a file must pass the global globs and the entry's own,
 and a global `!glob` does not re-include what the entry excludes.
 
+### Choosing what a tracked directory saves
+
+Some directories are mostly noise. `~/.codex` holds a handful of files
+worth keeping and tens of thousands of session transcripts, and listing
+every kind of noise as an exclusion is a losing game — the next version
+of the tool adds another. An `include` list turns the choice around:
+name what to keep, and everything else stays out, including whatever
+appears later.
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+```
+
+The rules, in order:
+
+1. Without `include`, the whole tracked tree is considered.
+2. With `include`, only matching paths are.
+3. An explicit `exclude` still wins over `include`.
+4. An **exact** include — a pattern with no `*`, `?`, `[` or `{`, naming
+   a single path — also captures a file the builtin credential guard
+   would otherwise omit, and says so, because it is saved in plaintext. A
+   glob include does not.
+
+`include` patterns are relative to the tracked path and matched like the
+entry's own `exclude` list: a pattern without `/` matches any single path
+component, one with `/` is anchored to the tracked path, and either kind
+matching a directory takes everything under it. The global
+`[history] exclude` list is a different thing and matches absolute paths,
+which is why the two anchor differently.
+
+Rule 4 is how to save a file the credential guard misreads. A shell
+function file whose name merely contains "secrets" is the case from
+[discussion #13410](https://github.com/jdx/mise/discussions/13410):
+
+```toml
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/secrets.fish"] }
+```
+
+Naming the file as its own entry does the same thing, and so does
+`mise dot track ~/.config/fish/functions/secrets.fish`.
+
+::: warning
+A file captured this way is stored in plaintext in history and pushed to
+any connected origin, and older commits keep it. mise warns on every
+save. Use [encrypted tracking](#encrypted-shared-files) —
+`encrypt = true`, or `mise dot track <path> --encrypt` — for anything
+that really is a credential.
+:::
+
+The override is deliberately narrow: only an exact path, never a glob,
+and never extended to the contents of a directory an exact include
+names. The user has to have named the file mise would otherwise refuse
+to save, so a broad pattern cannot sweep a credential into history by
+accident.
+
+`mise dot paths` and `mise dot track --dry-run` show the list and how
+much it selects, for example `~/.codex: 2 of 22,972 files (include
+list)`, and list a file captured under rule 4 as `plaintext:`. Narrowing
+an include list drops paths earlier checkpoints held from every
+checkpoint after it; `mise dot save` says how many when it happens.
+
 Credential files and `*.local.toml` are omitted by default. A
 `*.local.toml` file is this machine's own configuration and is never
 captured, not even with `--encrypt`. A file is

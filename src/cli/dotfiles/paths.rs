@@ -43,6 +43,13 @@ struct PathRow {
     /// The entry's own `exclude` patterns, relative to its path.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     exclude: Vec<String>,
+    /// The entry's own `include` patterns, relative to its path.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    include: Vec<String>,
+    /// How many files the entry's tree holds in all, when an `include`
+    /// list means that is more than the number captured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    considered: Option<u64>,
 }
 
 impl DotfilesPaths {
@@ -73,6 +80,8 @@ impl DotfilesPaths {
                 files: counts[index],
                 declared_in: entry.declared_in.as_deref().map(display_path),
                 exclude: entry.exclude.clone(),
+                include: entry.include.clone(),
+                considered: walk.considered.get(&index).copied(),
             })
             .collect();
         if self.json {
@@ -81,6 +90,7 @@ impl DotfilesPaths {
                 "exclude": tracked.exclude,
                 "invalid": tracked.invalid,
                 "omitted": walk.omitted,
+                "plaintext": walk.plaintext,
                 "nested": walk.nested,
                 "incomplete": walk.incomplete,
             });
@@ -123,6 +133,17 @@ impl DotfilesPaths {
                 for glob in &row.exclude {
                     miseprintln!("  exclude ({}): {glob}", row.path);
                 }
+                for glob in &row.include {
+                    miseprintln!("  include ({}): {glob}", row.path);
+                }
+                if let Some(considered) = row.considered {
+                    miseprintln!(
+                        "  {}: {} of {} files (include list)",
+                        row.path,
+                        crate::system::history::tracked::with_separators(row.files as usize),
+                        crate::system::history::tracked::with_separators(considered as usize)
+                    );
+                }
             }
         }
         for invalid in &tracked.invalid {
@@ -133,6 +154,9 @@ impl DotfilesPaths {
         }
         for nested in &walk.nested {
             miseprintln!("  nested: {} ({})", nested.path, nested.reason);
+        }
+        for plaintext in &walk.plaintext {
+            miseprintln!("  plaintext: {} ({})", plaintext.path, plaintext.reason);
         }
         for incomplete in &walk.incomplete {
             miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);

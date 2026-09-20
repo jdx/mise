@@ -409,6 +409,11 @@ For `symlink-each`, excluding a previously managed file removes its recorded lin
 next apply, just as deleting the source would. Directory `copy` is additive: exclusions
 prevent future copying but leave existing target files in place.
 
+A tracked directory can also carry an `include` list, which turns the
+choice around: instead of naming what to leave out, name what to keep.
+See [choosing what a tracked directory
+saves](/history.html#choosing-what-a-tracked-directory-saves).
+
 ## Git-tracked directories
 
 Set `manifest = "git"` on a directory-walking entry to manage only files in

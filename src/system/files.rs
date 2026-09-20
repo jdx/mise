@@ -117,6 +117,7 @@ pub(crate) struct ExplicitFields {
     pub variants: bool,
     pub enabled: bool,
     pub exclude: bool,
+    pub include: bool,
 }
 
 impl FilePolicy {
@@ -300,6 +301,9 @@ pub(crate) enum FileTomlEntry {
         mode: Option<String>,
         #[serde(default)]
         exclude: Option<Vec<String>>,
+        /// history: capture only these paths of a tracked directory
+        #[serde(default)]
+        include: Option<Vec<String>>,
         #[serde(default)]
         manifest: Option<String>,
         /// history: save edits automatically (default true)
@@ -337,6 +341,9 @@ impl FileRequest {
         if explicit.exclude {
             self.exclude = later.exclude;
         }
+        if explicit.include {
+            self.include = later.include;
+        }
         // the later file is the effective declaration
         self.origin = later.origin;
         let mine = self.policy.explicit;
@@ -346,6 +353,7 @@ impl FileRequest {
             variants: mine.variants || explicit.variants,
             enabled: mine.enabled || explicit.enabled,
             exclude: mine.exclude || explicit.exclude,
+            include: mine.include || explicit.include,
         };
     }
 }
@@ -366,6 +374,10 @@ pub(crate) struct FileRequest {
     /// glob patterns, matched against source-relative paths, for files a
     /// directory-walking mode should skip (see [`is_excluded`])
     pub exclude: Vec<glob::Pattern>,
+    /// history: the only paths of a tracked directory that are captured,
+    /// relative to it and matched like `exclude` (see [`is_excluded`]).
+    /// Empty means the whole tree.
+    pub include: Vec<glob::Pattern>,
     /// optional source manifest limiting which directory entries are managed
     pub manifest: Option<FileManifest>,
     /// directory of the declaring config file — base dir for template
@@ -676,6 +688,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "content"
                             | "mode"
                             | "exclude"
+                            | "include"
                             | "manifest"
                             | "autosave"
                             | "encrypt"
@@ -911,23 +924,34 @@ fn merge_file_entry(
     origin: &ResourceOrigin,
     merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
 ) {
-    let (source, content, mode, exclude, manifest, autosave, encrypt, variants, enabled) =
+    let (source, content, mode, exclude, include, manifest, autosave, encrypt, variants, enabled) =
         match entry {
-            FileTomlEntry::Source(source) => {
-                (Some(source), None, None, None, None, None, None, None, None)
-            }
+            FileTomlEntry::Source(source) => (
+                Some(source),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
             FileTomlEntry::Table {
                 source,
                 content,
                 mode,
                 exclude,
+                include,
                 manifest,
                 autosave,
                 encrypt,
                 variants,
                 enabled,
             } => (
-                source, content, mode, exclude, manifest, autosave, encrypt, variants, enabled,
+                source, content, mode, exclude, include, manifest, autosave, encrypt, variants,
+                enabled,
             ),
         };
     if encrypt == Some(true) && content.is_some() {
@@ -944,6 +968,7 @@ fn merge_file_entry(
         variants: variants.is_some(),
         enabled: enabled.is_some(),
         exclude: exclude.is_some(),
+        include: include.is_some(),
     };
     let enabled = enabled.unwrap_or(true);
     let variants = variants.unwrap_or_default();
@@ -970,6 +995,14 @@ fn merge_file_entry(
             explicit,
         }
     };
+    if mode.as_deref() != Some("track") && include.is_some() {
+        record_invalid(
+            &target_raw,
+            &origin.config,
+            "include selects what a tracked directory saves and applies only to mode = \"track\"",
+        );
+        return;
+    }
     if mode.as_deref() == Some("track") {
         if source.is_some() || content.is_some() || manifest.is_some() {
             record_invalid(
@@ -988,7 +1021,8 @@ fn merge_file_entry(
             );
             return;
         }
-        let exclude = compile_exclude(&target_raw, exclude);
+        let exclude = compile_exclude(&target_raw, "exclude", exclude);
+        let include = compile_exclude(&target_raw, "include", include);
         let request = FileRequest {
             target_raw,
             target: target.clone(),
@@ -996,6 +1030,7 @@ fn merge_file_entry(
             content: None,
             mode: FileMode::Track,
             exclude,
+            include,
             manifest: None,
             base: base.to_path_buf(),
             origin: origin.clone(),
@@ -1040,7 +1075,7 @@ fn merge_file_entry(
         );
         return;
     }
-    let exclude = compile_exclude(&target_raw, exclude);
+    let exclude = compile_exclude(&target_raw, "exclude", exclude);
     let mode = match mode.as_deref() {
         None => default_mode(),
         Some(m) => match FileMode::parse(m) {
@@ -1084,6 +1119,7 @@ fn merge_file_entry(
                 content: Some(content),
                 mode: FileMode::Content,
                 exclude: vec![],
+                include: vec![],
                 manifest: None,
                 base: base.to_path_buf(),
                 origin: origin.clone(),
@@ -1123,6 +1159,8 @@ fn merge_file_entry(
         content: None,
         mode,
         exclude,
+        // `include` applies only to `mode = "track"`, which returned above
+        include: vec![],
         manifest,
         base: base.to_path_buf(),
         origin,
@@ -1232,6 +1270,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         source,
         mode,
         exclude,
+        include,
         manifest,
         base,
         origin,
@@ -1247,6 +1286,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             content: None,
             mode,
             exclude,
+            include,
             manifest,
             base,
             origin,
@@ -1295,6 +1335,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             content: None,
             mode,
             exclude,
+            include,
             manifest,
             base,
             origin: ResourceOrigin {
@@ -1331,6 +1372,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 content: None,
                 mode,
                 exclude: exclude.clone(),
+                include: vec![],
                 manifest,
                 base: base.clone(),
                 origin: ResourceOrigin {
@@ -2045,14 +2087,18 @@ fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
 
 /// Compiled once here so a typo is reported against the entry that wrote
 /// it, not on every walk of the source (or of a tracked directory).
-fn compile_exclude(target_raw: &str, exclude: Option<Vec<String>>) -> Vec<glob::Pattern> {
+fn compile_exclude(
+    target_raw: &str,
+    key: &str,
+    exclude: Option<Vec<String>>,
+) -> Vec<glob::Pattern> {
     exclude
         .unwrap_or_default()
         .into_iter()
         .filter_map(|pattern| match glob::Pattern::new(&pattern) {
             Ok(pattern) => Some(pattern),
             Err(err) => {
-                warn!("[dotfiles].\"{target_raw}\": invalid exclude pattern '{pattern}': {err}");
+                warn!("[dotfiles].\"{target_raw}\": invalid {key} pattern '{pattern}': {err}");
                 None
             }
         })
@@ -3984,6 +4030,7 @@ variants = [{{ {field} = "linux" }}]"#
                 .into_iter()
                 .map(|p| glob::Pattern::new(p).unwrap())
                 .collect(),
+            include: vec![],
             manifest: None,
             base: PathBuf::from("/home/test"),
             origin: crate::system::resources::ResourceOrigin {
@@ -4104,6 +4151,7 @@ variants = [{{ {field} = "linux" }}]"#
             content: None,
             mode,
             exclude: vec![],
+            include: vec![],
             manifest: None,
             base: source.parent().expect("source parent").to_path_buf(),
             origin: ResourceOrigin {

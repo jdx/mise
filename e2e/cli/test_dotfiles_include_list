@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# A tracked directory's `include` list: name what to keep instead of
+# every kind of noise to leave out. An exact include also captures a file
+# the credential guard would otherwise omit, in plaintext; a glob does
+# not.
+require_cmd git
+repo="$MISE_STATE_DIR/history/repo.git"
+
+# a ~/.codex-shaped tree: a little configuration, a lot of transcripts
+mkdir -p ~/.codex/rules/deep ~/.codex/sessions/2026
+echo 'model = "x"' >~/.codex/config.toml
+echo 'noise' >~/.codex/telemetry.json
+echo 'always test' >~/.codex/rules/one.md
+echo 'never guess' >~/.codex/rules/deep/two.md
+for i in 1 2 3 4 5; do echo "turn $i" >~/.codex/sessions/2026/"$i".jsonl; done
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+TOML
+assert_succeed 'mise dot track ~/.codex'
+
+# only what the list names is captured
+assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'model = "x"'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/one.md" 'always test'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/deep/two.md" 'never guess'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/telemetry.json"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/2026/1.jsonl"
+
+# the selection is visible, not silent
+assert_contains 'mise dot paths' 'include (~/.codex): config.toml'
+assert_contains 'mise dot paths' '~/.codex: 3 of 9 files (include list)'
+assert "mise dot paths --json | jq -r '.entries[0].include | join(\",\")'" 'config.toml,rules/**'
+assert "mise dot paths --json | jq -r '.entries[0].considered'" '9'
+
+# a directory nobody named appears later and stays out on its own
+mkdir -p ~/.codex/cache
+echo 'more noise' >~/.codex/cache/index
+assert_succeed 'mise dot save'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/cache/index"
+
+# an explicit exclude still wins over an include
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"], exclude = ["deep"] }
+TOML
+echo 'edited' >~/.codex/rules/one.md
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/one.md" 'edited'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/rules/deep/two.md"
+
+# narrowing the list is reported, not silent
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml"] }
+TOML
+echo 'model = "y"' >~/.codex/config.toml
+assert_contains 'mise dot save 2>&1' 'leaves out'
+
+# A glob include does not lift the credential guard; an exact one does.
+mkdir -p ~/.config/fish/functions
+echo 'function hello; end' >~/.config/fish/functions/hello.fish
+echo 'set -x API_TOKEN synthetic' >~/.config/fish/functions/secrets.fish
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/*.fish"] }
+TOML
+assert_succeed 'mise dot track ~/.config/fish'
+assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/hello.fish" 'function hello; end'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.config/fish/functions/secrets.fish"
+assert_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/hello.fish", "functions/secrets.fish"] }
+TOML
+echo 'set -x API_TOKEN synthetic2' >~/.config/fish/functions/secrets.fish
+assert_contains 'mise dot save 2>&1' 'saved in plaintext'
+assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 'set -x API_TOKEN synthetic2'
+assert_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
+assert_not_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
+assert "mise dot paths --json | jq -r '.plaintext[0].path'" '~/.config/fish/functions/secrets.fish'
+
+# an exact include naming a directory does not extend to what is in it
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions"] }
+TOML
+echo 'set -x API_TOKEN synthetic3' >~/.config/fish/functions/secrets.fish
+assert_succeed 'mise dot save'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.config/fish/functions/secrets.fish"
+assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/hello.fish" 'function hello; end'
+assert_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
+assert_not_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
+
+# `include` belongs to tracked directories only
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/other" = { source = "src", mode = "copy", include = ["a"] }
+TOML
+assert_contains 'mise dot paths 2>&1' 'applies only to mode'

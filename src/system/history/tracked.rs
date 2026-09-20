@@ -59,6 +59,10 @@ pub(crate) struct TrackedEntry {
     /// [`crate::system::files::is_excluded`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    /// The entry's own `include` globs, relative to its path and matched
+    /// like `exclude`. Empty means the whole tree.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<String>,
 }
 
 impl TrackedEntry {
@@ -76,6 +80,60 @@ impl TrackedEntry {
     /// entry. The entry path itself is never excluded by its own list.
     pub(crate) fn is_excluded(&self, path: &Path) -> bool {
         excluded_by_entry(&self.path, &self.exclude, path)
+    }
+
+    /// The compiled `include` patterns.
+    pub(crate) fn include_patterns(&self) -> Vec<glob::Pattern> {
+        self.include
+            .iter()
+            .filter_map(|pattern| glob::Pattern::new(pattern).ok())
+            .collect()
+    }
+
+    /// Whether the entry's `include` list selects `path`.
+    ///
+    /// **Rule 1: without an `include` list the whole tracked tree is
+    /// considered. Rule 2: with one, only matching paths are. Rule 3: an
+    /// explicit `exclude` still wins over `include`.** Rules 1 and 2 live
+    /// here; rule 3 is the order the two lists are applied in, at every
+    /// call site.
+    ///
+    /// The entry path itself is always included, as it is never excluded
+    /// by the entry's own list: the list selects within the entry, it
+    /// does not un-declare it.
+    pub(crate) fn is_included(&self, path: &Path) -> bool {
+        if self.include.is_empty() {
+            return true;
+        }
+        match path.strip_prefix(&self.path) {
+            Ok(rel) if !rel.as_os_str().is_empty() => {
+                crate::system::files::is_excluded(rel, &self.include_patterns())
+            }
+            _ => true,
+        }
+    }
+
+    /// Whether the entry names `path` exactly: an `include` pattern with
+    /// no glob metacharacter that spells this one path, or the entry
+    /// itself being that file.
+    ///
+    /// **Rule 4: an exact include overrides the builtin credential
+    /// heuristic for that one path.** A glob does not, and an exact
+    /// pattern naming a directory does not extend the override to what is
+    /// inside it — the user has to have named the file mise would
+    /// otherwise refuse to save, so a broad pattern can never sweep a
+    /// credential into history by accident.
+    pub(crate) fn names_exactly(&self, path: &Path) -> bool {
+        if path == self.path {
+            return true;
+        }
+        let Ok(rel) = path.strip_prefix(&self.path) else {
+            return false;
+        };
+        self.include
+            .iter()
+            .filter(|pattern| is_exact_pattern(pattern))
+            .any(|pattern| Path::new(pattern) == rel)
     }
 
     pub(crate) fn tree_path(&self, path: &Path) -> Result<String> {
@@ -101,6 +159,7 @@ impl TrackedEntry {
             variant: None,
             declared_in: None,
             exclude: vec![],
+            include: vec![],
         }
     }
 }
@@ -135,6 +194,12 @@ pub(crate) struct Walk {
     pub omitted: Vec<PathReason>,
     /// The `[history] exclude` rules as they expanded for this walk.
     pub exclude_expanded: Vec<super::store::ExpandedRule>,
+    /// Credential-named files captured in plaintext because an entry
+    /// named them exactly.
+    pub plaintext: Vec<PathReason>,
+    /// For each entry with an `include` list, how many files its tree
+    /// holds in all, so a report can say how much the list selects.
+    pub considered: BTreeMap<usize, u64>,
     /// Nested repositories, captured as a commit pointer without their files.
     pub nested: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
@@ -254,6 +319,11 @@ impl TrackedSet {
                     .iter()
                     .map(|pattern| pattern.as_str().to_owned())
                     .collect(),
+                include: request
+                    .include
+                    .iter()
+                    .map(|pattern| pattern.as_str().to_owned())
+                    .collect(),
             });
             set.manifest.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
             let declared_in = Some(request.origin.config.clone());
@@ -267,6 +337,11 @@ impl TrackedSet {
                     entry.declared_in = declared_in;
                     entry.exclude = request
                         .exclude
+                        .iter()
+                        .map(|pattern| pattern.as_str().to_owned())
+                        .collect();
+                    entry.include = request
+                        .include
                         .iter()
                         .map(|pattern| pattern.as_str().to_owned())
                         .collect();
@@ -372,9 +447,11 @@ impl TrackedSet {
         Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
     }
 
-    /// Whether the exclusion lists drop `path`: the global globs read
-    /// against its owning entry's path, then that entry's own list, which
-    /// a global `!glob` does not re-include.
+    /// Whether the selection lists drop `path`: the global globs read
+    /// against its owning entry's path, then that entry's own `exclude`,
+    /// which a global `!glob` does not re-include, and last its
+    /// `include` list — so **rule 3 holds, an explicit `exclude` wins
+    /// over `include`**.
     ///
     /// The one composition. `would_retain` adds the filesystem checks a
     /// capture also makes; the watcher asks this alone, because it is
@@ -382,7 +459,11 @@ impl TrackedSet {
     /// the owner with [`owning_entry`], so they cannot disagree.
     pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
         match self.entry_for(path) {
-            Some(owner) => exclude.is_match(path, &owner.path) || owner.is_excluded(path),
+            Some(owner) => {
+                exclude.is_match(path, &owner.path)
+                    || owner.is_excluded(path)
+                    || !owner.is_included(path)
+            }
             None => true,
         }
     }
@@ -409,17 +490,41 @@ impl TrackedSet {
         // Protected files are excluded from capture itself, never kept in
         // a hidden local-only history. Explicit encryption permits key files
         // to be tracked without storing their plaintext.
-        walk.files.retain(|path, (_, policy)| {
-            if let Some(reason) = capture_exclusion(path, policy) {
-                walk.omitted.push(PathReason {
+        walk.files.retain(|path, (index, policy)| {
+            let Some(reason) = capture_exclusion(path, policy) else {
+                return true;
+            };
+            // rule 4: an exact include — or a `mode = "track"` entry that
+            // is this file — is the user naming the file mise would
+            // otherwise refuse to save, so mise saves it, and says so:
+            // it goes into history in plaintext and to any connected origin
+            if reason == CREDENTIAL_REASON
+                && set
+                    .entries
+                    .get(*index)
+                    .is_some_and(|entry| entry.names_exactly(path))
+            {
+                walk.plaintext.push(PathReason {
                     path: display_path(path),
-                    reason: reason.into(),
+                    reason: "named exactly; saved in plaintext".into(),
                 });
-                false
-            } else {
-                true
+                return true;
             }
+            walk.omitted.push(PathReason {
+                path: display_path(path),
+                reason: reason.into(),
+            });
+            false
         });
+        // a credential-named file saved because an entry named it exactly
+        // is worth saying out loud on every capture, not only in
+        // `mise dot paths`: it goes to any connected origin as plaintext
+        for plaintext in &walk.plaintext {
+            walk.warnings.push(format!(
+                "{}: named exactly, so it is saved in plaintext although it looks like a credential store; `encrypt = true` saves it encrypted instead",
+                plaintext.path
+            ));
+        }
         walk.entries = set.entries.clone();
         let config = normalize(&global_config_dir());
         let mut roots: BTreeMap<String, CaptureRoot> = BTreeMap::new();
@@ -564,6 +669,7 @@ fn walk_entry(
                     || hard.iter().any(|dir| dir == candidate.path())))
         });
     let entry_exclude = entry.exclude_patterns();
+    let entry_include = entry.include_patterns();
     let mut files = 0u64;
     let mut bytes = 0u64;
     let mut walker = walker;
@@ -612,6 +718,20 @@ fn walk_entry(
                 walker.skip_current_dir();
             }
             continue;
+        }
+        // rule 2: with an `include` list, only matching paths are
+        // considered. Applied after the exclude lists, so rule 3 holds: an
+        // explicit exclusion wins. A non-matching directory is still
+        // descended into, because a pattern may select something inside it.
+        if !entry_include.is_empty() {
+            if !file_type.is_dir() {
+                *walk.considered.entry(index).or_default() += 1;
+            }
+            if let Ok(rel) = path.strip_prefix(&entry.path)
+                && !crate::system::files::is_excluded(rel, &entry_include)
+            {
+                continue;
+            }
         }
         if file_type.is_dir() {
             if path.join(".git").exists() {
@@ -718,6 +838,13 @@ pub(crate) fn is_builtin_credential(path: &Path, name: &str) -> bool {
 /// How many omissions a capture report lists one by one before it
 /// summarizes them and points at `mise dot paths`.
 pub(crate) const OMISSION_LINES: usize = 10;
+
+/// Whether a pattern names one path rather than a set of them: no glob
+/// metacharacter anywhere in it. `functions/secrets.fish` qualifies;
+/// `functions/*.fish` and `**` do not.
+pub(crate) fn is_exact_pattern(pattern: &str) -> bool {
+    !pattern.is_empty() && !pattern.contains(['*', '?', '[', '{'])
+}
 
 /// Whether `patterns` (an entry's own `exclude` list, relative to
 /// `entry_path`) drop `path`; the entry path itself never is.
@@ -831,7 +958,7 @@ pub(crate) fn count_and_size(files: usize, bytes: u64) -> String {
     )
 }
 
-fn with_separators(n: usize) -> String {
+pub(crate) fn with_separators(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, ch) in digits.chars().enumerate() {
@@ -1685,6 +1812,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: vec![],
+                include: vec![],
             }],
             ..Default::default()
         };
@@ -1794,6 +1922,7 @@ mod tests {
                 content: None,
                 mode,
                 exclude: vec![],
+                include: vec![],
                 manifest: None,
                 base: tmp.path().to_path_buf(),
                 origin: ResourceOrigin {
@@ -2351,6 +2480,143 @@ mod tests {
         ));
     }
 
+    /// The four rules of a tracked entry's `include` list, each pinned
+    /// on the same tree.
+    #[test]
+    fn an_include_list_selects_what_a_tracked_directory_saves() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules/deep")).unwrap();
+        std::fs::create_dir_all(root.join("sessions")).unwrap();
+        std::fs::write(root.join("config.toml"), "keep").unwrap();
+        std::fs::write(root.join("notes.md"), "noise").unwrap();
+        std::fs::write(root.join("rules/one.md"), "keep").unwrap();
+        std::fs::write(root.join("rules/deep/two.md"), "keep").unwrap();
+        std::fs::write(root.join("sessions/one.jsonl"), "noise").unwrap();
+
+        let captured = |include: &[&str], exclude: &[&str]| -> Vec<String> {
+            let mut entry = entry(&root);
+            entry.include = include.iter().map(|p| (*p).to_string()).collect();
+            entry.exclude = exclude.iter().map(|p| (*p).to_string()).collect();
+            let mut set = TrackedSet::default();
+            set.push(entry);
+            let walk = set.walk().unwrap();
+            let mut names: Vec<String> = walk
+                .files
+                .keys()
+                .map(|path| {
+                    path.strip_prefix(&root)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                })
+                .collect();
+            names.sort();
+            // the walk and every other reader have to agree
+            for path in walk.files.keys() {
+                assert!(set.would_retain(path).unwrap(), "{}", path.display());
+            }
+            names
+        };
+
+        // rule 1: no list means the whole tree
+        assert_eq!(
+            captured(&[], &[]),
+            [
+                "config.toml",
+                "notes.md",
+                "rules/deep/two.md",
+                "rules/one.md",
+                "sessions/one.jsonl"
+            ]
+        );
+        // rule 2: with a list, only what it names — and a directory
+        // pattern takes everything under it
+        assert_eq!(
+            captured(&["config.toml", "rules/**"], &[]),
+            ["config.toml", "rules/deep/two.md", "rules/one.md"]
+        );
+        // a new sibling appears without being named, and stays out
+        std::fs::write(root.join("telemetry.json"), "noise").unwrap();
+        assert_eq!(
+            captured(&["config.toml", "rules/**"], &[]),
+            ["config.toml", "rules/deep/two.md", "rules/one.md"]
+        );
+        // rule 3: an explicit exclude wins over an include
+        assert_eq!(
+            captured(&["config.toml", "rules/**"], &["rules/deep"]),
+            ["config.toml", "rules/one.md"]
+        );
+    }
+
+    /// Rule 4: an exact include captures a file the credential guard
+    /// would omit, a glob does not, and an exact include naming a
+    /// directory does not extend the override to what is inside it.
+    #[test]
+    fn only_an_exact_include_overrides_the_credential_guard() {
+        assert!(is_exact_pattern("functions/secrets.fish"));
+        assert!(!is_exact_pattern("functions/*.fish"));
+        assert!(!is_exact_pattern("**"));
+        assert!(!is_exact_pattern("secrets?.fish"));
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("fish");
+        std::fs::create_dir_all(root.join("functions")).unwrap();
+        std::fs::write(root.join("functions/hello.fish"), "function hello; end").unwrap();
+        std::fs::write(root.join("functions/secrets.fish"), "set -x TOKEN x").unwrap();
+
+        let walk_with = |include: &[&str]| {
+            let mut entry = entry(&root);
+            entry.include = include.iter().map(|p| (*p).to_string()).collect();
+            let mut set = TrackedSet::default();
+            set.push(entry);
+            set.walk().unwrap()
+        };
+        let holds = |walk: &Walk, name: &str| walk.files.keys().any(|p| p.ends_with(name));
+
+        // a glob include selects it, but the guard still omits it
+        let walk = walk_with(&["functions/*.fish"]);
+        assert!(!holds(&walk, "secrets.fish"));
+        assert!(holds(&walk, "hello.fish"));
+        assert!(walk.plaintext.is_empty());
+        assert!(
+            walk.omitted
+                .iter()
+                .any(|o| o.path.ends_with("secrets.fish"))
+        );
+
+        // an exact include is the user naming the file, so it is saved —
+        // and reported as plaintext
+        let walk = walk_with(&["functions/secrets.fish"]);
+        assert!(holds(&walk, "secrets.fish"));
+        assert!(walk.omitted.is_empty());
+        assert_eq!(walk.plaintext.len(), 1);
+        assert!(walk.plaintext[0].path.ends_with("secrets.fish"));
+
+        // an exact include naming the directory does not extend to it
+        let walk = walk_with(&["functions"]);
+        assert!(!holds(&walk, "secrets.fish"));
+        assert!(holds(&walk, "hello.fish"));
+
+        // naming the file as its own entry counts as the same kind of
+        // exact specification
+        let mut set = TrackedSet::default();
+        set.push(entry(&root.join("functions/secrets.fish")));
+        let walk = set.walk().unwrap();
+        assert!(holds(&walk, "secrets.fish"));
+        assert_eq!(walk.plaintext.len(), 1);
+
+        // an encrypted entry never reaches rule 4: the guard lets it
+        // through already, and nothing is stored in plaintext
+        let mut entry = entry(&root);
+        entry.policy.encrypt = true;
+        let mut set = TrackedSet::default();
+        set.push(entry);
+        let walk = set.walk().unwrap();
+        assert!(holds(&walk, "secrets.fish"));
+        assert!(walk.plaintext.is_empty());
+    }
+
     #[test]
     fn display_under_accepts_either_separator() {
         assert!(display_under("~/.ssh", "~/.ssh"));
@@ -2577,6 +2843,7 @@ mod tests {
             content: None,
             mode: FileMode::Track,
             exclude: vec![glob::Pattern::new("sessions").unwrap()],
+            include: vec![],
             manifest: None,
             base: home.clone(),
             origin: ResourceOrigin {

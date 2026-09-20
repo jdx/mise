@@ -399,6 +399,12 @@ impl Store {
                             &mut modes,
                             &walk,
                         )?;
+                        report_narrowed(
+                            repo,
+                            previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
+                            tracked,
+                            &draft,
+                        )?;
                         let mut manifest = super::manifest::Manifest::read(repo, &composed)?
                             .ok_or_else(|| {
                                 eyre::eyre!("captured tree is missing enrollment metadata")
@@ -939,6 +945,51 @@ fn under_entry(path: &str, entry: &str) -> bool {
         || path
             .strip_prefix(entry)
             .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Says how much an entry's `include` list now leaves out of what an
+/// earlier checkpoint held.
+///
+/// Narrowing a list drops paths already in history from every checkpoint
+/// after it. That is what the user asked for, but it happens silently —
+/// nothing about the tree changed — so it is said at the point of
+/// change. Only a save the user asked for reports it; the watcher saves
+/// on its own schedule and would repeat it endlessly.
+fn report_narrowed(
+    repo: &HistoryRepo,
+    parent: Option<&str>,
+    tracked: &TrackedSet,
+    draft: &Draft,
+) -> Result<()> {
+    let announced = matches!(
+        draft.trigger,
+        Some(store::Trigger::Save | store::Trigger::Agent | store::Trigger::Update)
+    );
+    let Some(parent) = parent.filter(|_| announced) else {
+        return Ok(());
+    };
+    if tracked.entries.iter().all(|entry| entry.include.is_empty()) {
+        return Ok(());
+    }
+    let roots = super::sync::layout::Roots::current();
+    let mut dropped: BTreeMap<String, u64> = BTreeMap::new();
+    for file in repo.ls_tree(parent)? {
+        let located = roots.locate(&file.path);
+        let Some(path) = located.path() else { continue };
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if entry.include.is_empty() || entry.is_included(path) {
+            continue;
+        }
+        *dropped.entry(entry.display()).or_default() += 1;
+    }
+    for (entry, count) in dropped {
+        warn!(
+            "history: {entry}: its include list leaves out {count} path(s) an earlier checkpoint held; they are not saved from this checkpoint on"
+        );
+    }
+    Ok(())
 }
 
 /// A failed observation is not evidence of deletion. Carry only saved objects
@@ -1518,6 +1569,7 @@ mod tests {
                     encrypt: false,
                     variants: vec![],
                     exclude: vec![],
+                    include: vec![],
                 }],
                 ..Default::default()
             },
@@ -1584,6 +1636,7 @@ mod tests {
                     encrypt: false,
                     variants: vec![],
                     exclude: vec![],
+                    include: vec![],
                 }],
                 ..Default::default()
             },
