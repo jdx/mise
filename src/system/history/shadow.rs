@@ -848,14 +848,14 @@ impl HistoryRepo {
             let tracked = manifest.tracking()?;
             record.tree.modes.clear();
             let layout = super::sync::layout::Roots::current();
+            // only the record under the key that governs the path on this
+            // machine counts, the same key the pull planner applies: another
+            // stream's record for a directory whose governing stream has
+            // none (the default) is not this checkpoint's mode
             for (portable, bits) in &manifest.permissions {
                 if let Some(path) = layout.locate(portable).path()
-                    && tracked.entries.iter().any(|entry| {
-                        path.starts_with(&entry.path)
-                            && entry
-                                .tree_path(path)
-                                .is_ok_and(|mapped| mapped == *portable)
-                    })
+                    && super::tracked::governing_key(&layout, &tracked.entries, path).as_deref()
+                        == Some(portable)
                 {
                     record
                         .tree
@@ -1986,6 +1986,93 @@ mod tests {
                 path: "home/large".into(),
             }]
         );
+    }
+
+    /// A checkpoint records a directory's mode only under the key that
+    /// governs it on this machine: another platform's containing record for
+    /// a directory whose own stream has no record (the default) is not this
+    /// checkpoint's mode, so a rollback does not recreate it private.
+    #[cfg(unix)]
+    #[test]
+    fn read_meta_takes_a_directory_mode_from_its_governing_stream_only() -> eyre::Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::checkpoint::test_checkpoint;
+        use crate::system::history::manifest::{Enrollment, Manifest};
+        use crate::system::history::sync::layout::Roots;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-read-meta-")
+            .tempdir_in(&roots.home)?;
+        let configs = normalize(scratch.path()).join("configs");
+        let private = configs.join("private");
+        std::fs::create_dir_all(&private)?;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let outer = TrackedEntry::new(configs.clone(), "track", policy);
+        let mut inner = TrackedEntry::new(private.clone(), "track", policy);
+        inner.variant = Some("linux".into());
+        let blob = repo.hash_blob(b"{}")?;
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[
+                Overlay {
+                    path: outer.tree_path(&private.join("settings.json"))?,
+                    object: Some(("100644".into(), blob.clone())),
+                },
+                Overlay {
+                    path: inner.tree_path(&private.join("notes"))?,
+                    object: Some(("100644".into(), blob)),
+                },
+            ],
+        )?;
+        let variant = |os: &str| crate::system::history::select::Variant {
+            os: vec![os.into()],
+            ..Default::default()
+        };
+        let enrollment = |path: String, variants| Enrollment {
+            path,
+            autosave: true,
+            encrypt: false,
+            variants,
+        };
+        let containing = outer.tree_path(&private)?;
+        let permissions = std::collections::BTreeMap::from([(containing.clone(), 0o700)]);
+        // the directory is enrolled per platform with no record of its own;
+        // the retained record is another platform's, captured through the
+        // outer enrollment where the nested one is not selected
+        let nested = Manifest {
+            enrollment: vec![
+                enrollment(outer.tree_path(&configs)?, vec![]),
+                enrollment(containing.clone(), vec![variant("linux"), variant("macos")]),
+            ],
+            permissions: permissions.clone(),
+            ..Default::default()
+        };
+        let tree = nested.write(&repo, &files)?;
+        let commit = repo.write_checkpoint(Some(&tree), &test_checkpoint("nested", Some(&tree)))?;
+        let record = repo.read_meta(&commit)?;
+        assert!(
+            !record.tree.modes.contains_key(&display_path(&private)),
+            "{:?}",
+            record.tree.modes
+        );
+        // without the nested enrollment the outer stream governs the
+        // directory, and its record is this checkpoint's mode
+        let outer_only = Manifest {
+            enrollment: vec![enrollment(outer.tree_path(&configs)?, vec![])],
+            permissions,
+            ..Default::default()
+        };
+        let tree = outer_only.write(&repo, &files)?;
+        let commit = repo.write_checkpoint(Some(&tree), &test_checkpoint("outer", Some(&tree)))?;
+        let record = repo.read_meta(&commit)?;
+        assert_eq!(record.tree.modes.get(&display_path(&private)), Some(&0o700));
+        Ok(())
     }
 
     #[test]
