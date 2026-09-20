@@ -289,21 +289,19 @@ impl Store {
         // Protective commits use the same history, not a separate saved state.
         let roots = super::sync::layout::Roots::current();
         let mut modes = file_modes(&walk, &roots);
+        // a directory the live walk observed has its live mode (or the
+        // default), never a saved one carried forward
+        let observed: BTreeSet<String> = walk
+            .files
+            .iter()
+            .flat_map(|(path, (owner, _))| mode_ancestors(path, &walk.entries[*owner].path, &roots))
+            .map(display_path)
+            .collect();
         if !manual.carry.is_empty() {
             let carried: Vec<String> = manual
                 .carry
                 .iter()
                 .map(|index| walk.entries[*index].display())
-                .collect();
-            // a directory the live walk observed has its live mode (or the
-            // default), never a carried one
-            let observed: BTreeSet<String> = walk
-                .files
-                .iter()
-                .flat_map(|(path, (owner, _))| {
-                    mode_ancestors(path, &walk.entries[*owner].path, &roots)
-                })
-                .map(display_path)
                 .collect();
             for (path, bits) in self.saved_modes(&index, &carried) {
                 if !observed.contains(&path) {
@@ -365,7 +363,7 @@ impl Store {
                             for (path, bits) in
                                 self.saved_modes(&index, std::slice::from_ref(&entry))
                             {
-                                if !is_named(&path) {
+                                if !is_named(&path) && !observed.contains(&path) {
                                     modes.entry(path).or_insert(bits);
                                 }
                             }
@@ -1438,6 +1436,155 @@ mod tests {
         walk.entries = vec![TrackedEntry::new(config.clone(), "track", policy)];
         walk.files = BTreeMap::from([(config.clone(), (0, policy))]);
         assert_eq!(file_modes(&walk, &roots), BTreeMap::new());
+    }
+
+    /// A checkpoint record carries the modes of containing directories, so a
+    /// rollback can recreate them and an unchanged tree is not recorded
+    /// again on every automatic capture.
+    #[cfg(unix)]
+    #[test]
+    fn parent_modes_reach_the_record_and_deduplicate() -> Result<()> {
+        use super::super::manifest::{Enrollment, Manifest};
+        use super::super::sync::layout::Roots;
+        use super::super::tracked::normalize;
+        use crate::system::files::{FileMode, FilePolicy};
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = tempfile::tempdir()?;
+        let store = Store::open_in(state.path())?;
+        if store.repo().is_none() {
+            return Ok(());
+        }
+        let parent = tempfile::Builder::new()
+            .prefix(".history-record-")
+            .tempdir_in(Roots::current().home)?;
+        let parent_path = normalize(parent.path());
+        let settings = parent_path.join("settings.json");
+        std::fs::write(&settings, "{}")?;
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o700))?;
+        let entry = TrackedEntry::new(
+            settings.clone(),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        );
+        let tracked = TrackedSet {
+            manifest: Manifest {
+                enrollment: vec![Enrollment {
+                    path: entry.tree_path(&settings)?,
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![],
+                }],
+                ..Default::default()
+            },
+            entries: vec![entry],
+            ..Default::default()
+        };
+        let Outcome::Created(created) = store.attempt(&tracked, Draft::new(Trigger::Edit))? else {
+            panic!("no checkpoint")
+        };
+        assert_eq!(
+            created.checkpoint.tree.modes,
+            BTreeMap::from([(display_path(&parent_path), 0o700)])
+        );
+        assert_eq!(
+            store.list()?.pop().unwrap().checkpoint.tree.modes,
+            created.checkpoint.tree.modes
+        );
+        assert!(matches!(
+            store.attempt(&tracked, Draft::new(Trigger::Edit))?,
+            Outcome::Unchanged
+        ));
+        Ok(())
+    }
+
+    /// A selective save of one child of a manual directory keeps the saved
+    /// modes of its unnamed siblings, but a containing directory the live
+    /// walk observed takes its live mode: a parent back at the default is
+    /// not recorded again at its old private bits.
+    #[cfg(unix)]
+    #[test]
+    fn selective_save_does_not_restore_a_stale_parent_mode() -> Result<()> {
+        use super::super::manifest::{Enrollment, Manifest};
+        use super::super::sync::layout::Roots;
+        use super::super::tracked::normalize;
+        use crate::system::files::{FileMode, FilePolicy};
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = tempfile::tempdir()?;
+        let store = Store::open_in(state.path())?;
+        let Some(repo) = store.repo() else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let parent = tempfile::Builder::new()
+            .prefix(".history-selective-")
+            .tempdir_in(&roots.home)?;
+        let parent_path = normalize(parent.path());
+        let manual = parent_path.join("manual");
+        std::fs::create_dir(&manual)?;
+        let first = manual.join("first");
+        let second = manual.join("second");
+        std::fs::write(&first, "saved")?;
+        std::fs::write(&second, "saved")?;
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o700))?;
+        let mut policy = FilePolicy::for_mode(FileMode::Track);
+        policy.autosave = false;
+        let entry = TrackedEntry::new(manual.clone(), "track", policy);
+        let tracked = TrackedSet {
+            manifest: Manifest {
+                enrollment: vec![Enrollment {
+                    path: entry.tree_path(&manual)?,
+                    autosave: false,
+                    encrypt: false,
+                    variants: vec![],
+                }],
+                ..Default::default()
+            },
+            entries: vec![entry],
+            ..Default::default()
+        };
+        let portable = roots.branch_path(&parent_path, None).unwrap();
+        let permissions = || -> Result<BTreeMap<String, u32>> {
+            let head = repo.ref_oid(HistoryRepo::HISTORY_REF)?.unwrap();
+            Ok(Manifest::read(repo, &head)?.unwrap().permissions)
+        };
+
+        let mut draft = Draft::new(Trigger::Save);
+        draft.explicit_paths.push(manual.clone());
+        let Outcome::Created(_) = store.attempt(&tracked, draft)? else {
+            panic!("no baseline")
+        };
+        assert_eq!(permissions()?, BTreeMap::from([(portable.clone(), 0o700)]));
+
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::write(&first, "edited")?;
+        std::fs::write(&second, "edited")?;
+        let mut draft = Draft::new(Trigger::Save);
+        draft.explicit_paths.push(first.clone());
+        let Outcome::Created(_) = store.attempt(&tracked, draft)? else {
+            panic!("no selective save")
+        };
+        // the save was selective: the unnamed sibling keeps its saved version
+        let head = repo.ref_oid(HistoryRepo::HISTORY_REF)?.unwrap();
+        let content = |path: &Path| -> Result<Vec<u8>> {
+            let (_, oid) = repo
+                .object_at(&head, &tracked.entries[0].tree_path(path)?)?
+                .unwrap();
+            repo.cat_object(&oid)
+        };
+        assert_eq!(content(&first)?, b"edited");
+        assert_eq!(content(&second)?, b"saved");
+        assert_eq!(permissions()?, BTreeMap::new());
+        let latest = store.list()?.pop().unwrap();
+        assert!(
+            !latest
+                .checkpoint
+                .tree
+                .modes
+                .contains_key(&display_path(&parent_path))
+        );
+        Ok(())
     }
 
     fn changes(modified: &[&str], added: &[&str], removed: &[&str]) -> Changes {

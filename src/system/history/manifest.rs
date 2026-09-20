@@ -3,7 +3,7 @@
 
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::select::Variant;
 use super::shadow::{HistoryRepo, Overlay};
@@ -61,8 +61,10 @@ impl Manifest {
         Some(self.permissions.get(path).copied().unwrap_or(default))
     }
     /// Whether a permission path belongs to an enrolled stream: the enrolled
-    /// path or one below it, or a directory strictly between the root and an
-    /// enrolled path (the root itself is never owned).
+    /// path or one below it, or (without a variant) a directory strictly
+    /// between the root and an enrolled path of any stream. A containing
+    /// directory is one filesystem object, so it is recorded once, whatever
+    /// streams the paths inside it belong to. The root itself is never owned.
     fn owns_stream(&self, path: &str) -> bool {
         let (stem, relative) = path.split_once('/').unwrap_or((path, ""));
         let (root, variant) = stem
@@ -73,21 +75,17 @@ impl Manifest {
         } else {
             format!("{root}/{relative}")
         };
-        let in_stream = |entry: &Enrollment| match variant {
+        let owned = self.owner(&portable).is_some_and(|entry| match variant {
             Some(name) => entry.variants.iter().any(|variant| variant.name() == name),
             None => entry.variants.is_empty(),
-        };
-        match self.owner(&portable) {
-            Some(entry) => in_stream(entry),
-            None => {
-                !relative.is_empty()
-                    && self
-                        .enrollment
-                        .iter()
-                        .filter(|entry| strictly_below(&entry.path, &portable))
-                        .any(in_stream)
-            }
-        }
+        });
+        owned
+            || (variant.is_none()
+                && !relative.is_empty()
+                && self
+                    .enrollment
+                    .iter()
+                    .any(|entry| strictly_below(&entry.path, &portable)))
     }
 
     pub(crate) fn remove_unenrolled_permissions(&mut self) {
@@ -116,10 +114,12 @@ impl Manifest {
             .map(|entry| entry.tree_path(&entry.path))
             .collect::<Result<_>>()?;
         // an active entry replaces its own path, everything below it, and
-        // the directories between it and the root
+        // (in the variant-less stream) the directories between it and the root
         self.permissions.retain(|path, _| {
             !active.iter().any(|prefix| {
-                path == prefix || strictly_below(path, prefix) || strictly_below(prefix, path)
+                path == prefix
+                    || strictly_below(path, prefix)
+                    || (!path.contains('@') && strictly_below(&plain(prefix), path))
             })
         });
         for (display, bits) in modes {
@@ -128,27 +128,24 @@ impl Manifest {
                 .iter()
                 .filter(|entry| path.starts_with(&entry.path))
                 .max_by_key(|entry| entry.path.components().count());
-            // a directory that contains entries is recorded in each of their
-            // streams; the root itself is never recorded
-            let variants: Vec<Option<&str>> = match owner {
-                Some(entry) => vec![entry.variant.as_deref()],
-                None => entries
-                    .iter()
-                    .filter(|entry| entry.path.starts_with(&path) && entry.path != path)
-                    .map(|entry| entry.variant.as_deref())
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .collect(),
+            let contains_entries = entries
+                .iter()
+                .any(|entry| entry.path.starts_with(&path) && entry.path != path);
+            let variant = match owner {
+                Some(entry) => entry.variant.as_deref(),
+                // a directory containing entries is one filesystem object:
+                // recorded once, without a variant
+                None if contains_entries => None,
+                None => continue,
             };
-            for variant in variants {
-                let portable = roots
-                    .branch_path(&path, variant)
-                    .ok_or_else(|| eyre::eyre!("cannot map permission path {display}"))?;
-                if owner.is_none() && !portable.contains('/') {
-                    continue;
-                }
-                self.permissions.insert(portable, *bits);
+            let portable = roots
+                .branch_path(&path, variant)
+                .ok_or_else(|| eyre::eyre!("cannot map permission path {display}"))?;
+            // the root itself is never recorded
+            if owner.is_none() && !portable.contains('/') {
+                continue;
             }
+            self.permissions.insert(portable, *bits);
         }
         self.remove_unenrolled_permissions();
         Ok(())
@@ -479,6 +476,17 @@ fn strictly_below(path: &str, prefix: &str) -> bool {
         .is_some_and(|rest| rest.starts_with('/'))
 }
 
+/// A portable path without its variant: `home@linux/.zshrc` is `home/.zshrc`.
+fn plain(path: &str) -> String {
+    let (stem, relative) = path.split_once('/').unwrap_or((path, ""));
+    let root = stem.split('@').next().unwrap_or(stem);
+    if relative.is_empty() {
+        root.to_string()
+    } else {
+        format!("{root}/{relative}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,6 +647,109 @@ mod tests {
             manifest.permissions,
             BTreeMap::from([("home/.claude/settings.json".into(), 0o600)])
         );
+    }
+
+    /// A directory containing files of several streams is one filesystem
+    /// object: it is recorded once, without a variant, and every stream
+    /// replaces that record on save.
+    #[cfg(unix)]
+    #[test]
+    fn a_containing_directory_is_recorded_once_across_streams() {
+        use super::super::tracked::TrackedEntry;
+        use crate::system::files::{FileMode, FilePolicy};
+        let linux = Variant {
+            os: vec!["linux".into()],
+            ..Default::default()
+        };
+        let mut manifest = Manifest {
+            enrollment: vec![
+                enrollment("home/.claude/settings.json"),
+                Enrollment {
+                    variants: vec![linux],
+                    ..enrollment("home/.claude/notes")
+                },
+            ],
+            permissions: BTreeMap::from([("home@linux/.claude".into(), 0o700)]),
+            ..Default::default()
+        };
+        // a per-stream record for a containing directory is not owned
+        assert!(manifest.validate().is_err());
+        manifest.remove_unenrolled_permissions();
+        assert!(manifest.permissions.is_empty());
+        let home = &*crate::dirs::HOME;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut notes = TrackedEntry::new(home.join(".claude/notes"), "track", policy);
+        notes.variant = Some("linux".into());
+        let entries = vec![
+            TrackedEntry::new(home.join(".claude/settings.json"), "track", policy),
+            notes,
+        ];
+        let modes = BTreeMap::from([(crate::file::display_path(home.join(".claude")), 0o700)]);
+        manifest.capture_permissions(&entries, &modes).unwrap();
+        assert_eq!(
+            manifest.permissions,
+            BTreeMap::from([("home/.claude".into(), 0o700)])
+        );
+        manifest.validate().unwrap();
+        // saving only the variant stream still replaces the shared record
+        manifest
+            .capture_permissions(&entries[1..], &BTreeMap::new())
+            .unwrap();
+        assert!(manifest.permissions.is_empty());
+    }
+
+    /// An inactive directory enrollment for another platform does not hide
+    /// the record of that directory as the parent of an active file.
+    #[cfg(unix)]
+    #[test]
+    fn an_inactive_directory_enrollment_keeps_the_parent_record() {
+        use super::super::tracked::TrackedEntry;
+        use crate::system::files::{FileMode, FilePolicy};
+        let variant = |os: &str| Variant {
+            os: vec![os.into()],
+            ..Default::default()
+        };
+        let mut manifest = Manifest {
+            enrollment: vec![
+                Enrollment {
+                    variants: vec![variant("macos")],
+                    ..enrollment("home/.claude")
+                },
+                Enrollment {
+                    variants: vec![variant("linux")],
+                    ..enrollment("home/.claude/settings.json")
+                },
+            ],
+            permissions: BTreeMap::from([
+                ("home@macos/.claude".into(), 0o750),
+                ("home/.claude".into(), 0o700),
+            ]),
+            ..Default::default()
+        };
+        manifest.validate().unwrap();
+        manifest.remove_unenrolled_permissions();
+        assert_eq!(manifest.permissions.len(), 2);
+        // on Linux only the file is active: its parent is recorded in the
+        // shared record and the macOS directory stream is left alone
+        let home = &*crate::dirs::HOME;
+        let mut entry = TrackedEntry::new(
+            home.join(".claude/settings.json"),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        );
+        entry.variant = Some("linux".into());
+        let modes = BTreeMap::from([(crate::file::display_path(home.join(".claude")), 0o700)]);
+        manifest
+            .capture_permissions(std::slice::from_ref(&entry), &modes)
+            .unwrap();
+        assert_eq!(
+            manifest.permissions,
+            BTreeMap::from([
+                ("home@macos/.claude".into(), 0o750),
+                ("home/.claude".into(), 0o700),
+            ])
+        );
+        manifest.validate().unwrap();
     }
 
     #[cfg(unix)]

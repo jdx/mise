@@ -848,13 +848,18 @@ impl HistoryRepo {
             let tracked = manifest.tracking()?;
             record.tree.modes.clear();
             let layout = super::sync::layout::Roots::current();
+            // an enrolled path's own stream, or a directory containing
+            // enrolled paths (recorded once, without a variant)
             for (portable, bits) in &manifest.permissions {
                 if let Some(path) = layout.locate(portable).path()
                     && tracked.entries.iter().any(|entry| {
-                        path.starts_with(&entry.path)
+                        (path.starts_with(&entry.path)
                             && entry
                                 .tree_path(path)
-                                .is_ok_and(|mapped| mapped == *portable)
+                                .is_ok_and(|mapped| mapped == *portable))
+                            || (entry.path.starts_with(path)
+                                && entry.path != path
+                                && layout.branch_path(path, None).as_deref() == Some(portable))
                     })
                 {
                     record

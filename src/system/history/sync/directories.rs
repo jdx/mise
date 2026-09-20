@@ -35,23 +35,35 @@ fn observe(_path: &std::path::Path) -> Result<Option<(u64, u64, u32)>> {
     Ok(None)
 }
 
-/// Whether a directory's recorded permissions apply here: it is enrolled (or
-/// below an enrolled path), or it lies strictly between the root and an
-/// enrolled path of the same stream. The root itself is never eligible.
-pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
+/// Why a directory's recorded permissions apply here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Claim {
+    /// An enrolled path's own stream, or one below an enrolled path.
+    Enrolled,
+    /// The variant-less record of a directory strictly between the root and
+    /// an enrolled path of any stream. The root itself is never claimed.
+    Containing,
+}
+
+fn claim(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> Option<Claim> {
     if super::run::eligible(roots, tracked, branch_path) {
-        return true;
+        return Some(Claim::Enrolled);
     }
-    let (path, variant) = match roots.locate(branch_path) {
-        Located::Tracked { path, variant } => (path, variant),
-        Located::Config(path) => (path, None),
-        Located::Marker | Located::Unmapped => return false,
+    let path = match roots.locate(branch_path) {
+        Located::Tracked {
+            path,
+            variant: None,
+        }
+        | Located::Config(path) => path,
+        Located::Tracked { .. } | Located::Marker | Located::Unmapped => return None,
     };
-    path != roots.home
+    (path != roots.home
         && path != roots.config_dir
-        && tracked.entries.iter().any(|entry| {
-            entry.path.starts_with(&path) && entry.path != path && entry.variant == variant
-        })
+        && tracked
+            .entries
+            .iter()
+            .any(|entry| entry.path.starts_with(&path) && entry.path != path))
+    .then_some(Claim::Containing)
 }
 
 pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Result<Vec<Step>> {
@@ -73,15 +85,26 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         .keys()
         .chain(saved.permissions.keys())
         .collect();
+    // one step per directory: an enrolled directory's own stream outranks
+    // the record it gets as the parent of other enrolled paths
+    let mut claimed: std::collections::BTreeMap<PathBuf, (Claim, &String)> = Default::default();
     for portable in paths {
-        if !eligible(&roots, tracked, portable)
-            || repo
-                .object_at(tree, portable)?
-                .is_none_or(|(mode, _)| mode != "040000")
+        let Some(claim) = claim(&roots, tracked, portable) else {
+            continue;
+        };
+        if repo
+            .object_at(tree, portable)?
+            .is_none_or(|(mode, _)| mode != "040000")
         {
             continue;
         }
         let path = roots.locate(portable).path().unwrap().to_path_buf();
+        let best = claimed.entry(path).or_insert((claim, portable));
+        if claim < best.0 {
+            *best = (claim, portable);
+        }
+    }
+    for (path, (_, portable)) in claimed {
         let before = observe(&path)?;
         let desired = tracked
             .manifest
@@ -89,6 +112,12 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
             .get(portable)
             .copied()
             .unwrap_or(0o755);
+        // a directory that already has the incoming mode needs nothing,
+        // whether its local record agrees, predates the capture of
+        // containing directories, or is an unsaved chmod to the same bits
+        if before.map(|(_, _, bits)| bits) == Some(desired) {
+            continue;
+        }
         let was_directory = local
             .as_deref()
             .map(|head| repo.object_at(head, portable))
@@ -104,14 +133,12 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
                 crate::file::display_path(&path)
             );
         }
-        if before.map(|(_, _, bits)| bits) != Some(desired) {
-            steps.push(Step {
-                path,
-                before,
-                desired,
-                written: None,
-            });
-        }
+        steps.push(Step {
+            path,
+            before,
+            desired,
+            written: None,
+        });
     }
     steps.sort_by_key(|step| step.path.components().count());
     Ok(steps)
@@ -205,22 +232,196 @@ mod tests {
             "home/.claude/settings.json",
             "config/tasks",
             "config/tasks/private",
-            "home@linux/.ssh",
+            "home/.ssh",
         ] {
-            assert!(eligible(&roots, &tracked, path), "{path}");
+            assert!(claim(&roots, &tracked, path).is_some(), "{path}");
         }
+        assert_eq!(
+            claim(&roots, &tracked, "home/.claude/settings.json"),
+            Some(Claim::Enrolled)
+        );
+        assert_eq!(
+            claim(&roots, &tracked, "home/.ssh"),
+            Some(Claim::Containing)
+        );
+        // a containing directory has no per-stream record
         for path in [
             "home",
             "config",
             "home/.claudia",
             "home/.claude/other",
             "home@linux/.claude",
-            "home/.ssh",
+            "home@linux/.ssh",
             "config@linux/tasks",
             "fs/etc",
         ] {
-            assert!(!eligible(&roots, &tracked, path), "{path}");
+            assert!(claim(&roots, &tracked, path).is_none(), "{path}");
         }
+    }
+
+    /// A directory that is both an enrolled stream and the parent of other
+    /// enrolled paths gets one step, from its own stream: two steps for one
+    /// missing directory would create it twice and abort a fresh bootstrap.
+    #[test]
+    fn one_step_per_directory_across_claims() -> Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::manifest::Enrollment;
+        use crate::system::history::shadow::Overlay;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-claims-")
+            .tempdir_in(&roots.home)?;
+        let private = normalize(scratch.path()).join("private");
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut directory = TrackedEntry::new(private.clone(), "track", policy);
+        directory.variant = Some("linux".into());
+        let file = TrackedEntry::new(private.join("settings.json"), "track", policy);
+        let own = directory.tree_path(&private)?;
+        let containing = roots.branch_path(&private, None).unwrap();
+        let blob = repo.hash_blob(b"{}")?;
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[
+                Overlay {
+                    path: directory.tree_path(&private.join("notes"))?,
+                    object: Some(("100644".into(), blob.clone())),
+                },
+                Overlay {
+                    path: file.tree_path(&file.path)?,
+                    object: Some(("100644".into(), blob)),
+                },
+            ],
+        )?;
+        let variant = crate::system::history::select::Variant {
+            os: vec!["linux".into()],
+            ..Default::default()
+        };
+        let mut manifest = Manifest {
+            enrollment: vec![
+                Enrollment {
+                    path: containing.clone(),
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![variant],
+                },
+                Enrollment {
+                    path: file.tree_path(&file.path)?,
+                    autosave: true,
+                    encrypt: false,
+                    variants: vec![],
+                },
+            ],
+            permissions: std::collections::BTreeMap::from([
+                (own.clone(), 0o700),
+                (containing.clone(), 0o750),
+            ]),
+            ..Default::default()
+        };
+        // a fresh machine: no local history, the directory does not exist
+        let tree = manifest.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            entries: vec![directory, file],
+            manifest: manifest.clone(),
+            ..Default::default()
+        };
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].path, private);
+        assert_eq!(steps[0].desired, 0o700);
+        assert!(steps[0].before.is_none());
+
+        // without its own stream, the containing record applies
+        manifest.permissions.remove(&own);
+        let tree = manifest.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            manifest,
+            ..tracked
+        };
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].desired, 0o750);
+        Ok(())
+    }
+
+    /// A machine that already holds the parent at the incoming mode pulls
+    /// without saving first, even though its own manifest (written before
+    /// containing directories were captured) records nothing for it.
+    #[test]
+    fn matching_parent_without_a_local_record_is_not_unsaved() -> Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::checkpoint::test_checkpoint;
+        use crate::system::history::manifest::Enrollment;
+        use crate::system::history::shadow::Overlay;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let parent = tempfile::Builder::new()
+            .prefix(".history-parent-")
+            .tempdir_in(&roots.home)?;
+        let parent_path = normalize(parent.path());
+        let settings = parent_path.join("settings.json");
+        std::fs::write(&settings, "{}")?;
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o700))?;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let entry = TrackedEntry::new(settings.clone(), "track", policy);
+        let file = entry.tree_path(&settings)?;
+        let portable = roots.branch_path(&parent_path, None).unwrap();
+        let blob = repo.hash_blob(b"{}")?;
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[Overlay {
+                path: file.clone(),
+                object: Some(("100644".into(), blob)),
+            }],
+        )?;
+        let mut manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: file,
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+            }],
+            ..Default::default()
+        };
+        // the local head predates the capture of containing directories
+        let local = manifest.write(&repo, &files)?;
+        repo.write_checkpoint(Some(&local), &test_checkpoint("local", Some(&local)))?;
+        manifest.permissions.insert(portable.clone(), 0o700);
+        let incoming = manifest.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            entries: vec![entry],
+            manifest,
+            ..Default::default()
+        };
+        assert!(plan(&repo, &tracked, &incoming)?.is_empty());
+
+        // a different unsaved mode still pauses sharing
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o710))?;
+        let err = plan(&repo, &tracked, &incoming).unwrap_err();
+        assert!(
+            err.to_string().contains("unsaved directory permission"),
+            "{err}"
+        );
+
+        // the default matches the missing local record: the incoming mode
+        // is applied
+        std::fs::set_permissions(&parent_path, std::fs::Permissions::from_mode(0o755))?;
+        let steps = plan(&repo, &tracked, &incoming)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].path, parent_path);
+        assert_eq!(steps[0].desired, 0o700);
+        Ok(())
     }
 
     #[test]
