@@ -357,6 +357,20 @@ impl Commands {
         }
     }
 
+    /// Commands that run as a service, with no terminal reading their output.
+    ///
+    /// Windows gives a Scheduled Task's console program a console of its own,
+    /// and the watcher would run behind that window until it was hidden. This
+    /// is asked for right after parsing, ahead of the auto-update that could
+    /// otherwise leave the window on screen for a download's worth of time.
+    fn runs_unattended(&self) -> bool {
+        match self {
+            Self::Dotfiles(cmd) => cmd.is_watch(),
+            Self::Bootstrap(cmd) => cmd.is_dotfiles_watch(),
+            _ => false,
+        }
+    }
+
     /// Whether this parsed command may trigger a pre-command automatic update.
     ///
     /// This operates on clap's canonical command variant so aliases such as
@@ -1026,6 +1040,13 @@ impl Cli {
         if let Some(Commands::PublishSystemInstall(cmd)) = &cli.command {
             return cmd.run();
         }
+        // After everything that can still refuse this invocation — a bad
+        // `--cd`, unbuildable settings, an untrusted config — so their errors
+        // land in a console somebody can still read, and before the
+        // auto-update that could otherwise leave the window up for a download.
+        if cli.command.as_ref().is_some_and(Commands::runs_unattended) {
+            crate::windows_console::hide_if_unattended();
+        }
         let auto_update_command_eligible = !print_version
             && cli
                 .command
@@ -1563,6 +1584,46 @@ mod tests {
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
+    }
+
+    /// Only a watcher that is really about to start gives up its console: it
+    /// happens before the command runs, and what it gives up cannot be handed
+    /// back to print an error with. See jdx/mise#13426.
+    #[test]
+    fn only_a_starting_watcher_runs_unattended() {
+        fn unattended(args: &[&str]) -> bool {
+            parse_cli(args)
+                .unwrap()
+                .command
+                .as_ref()
+                .is_some_and(Commands::runs_unattended)
+        }
+
+        assert!(unattended(&["mise", "dot", "watch"]));
+        assert!(unattended(&["mise", "dotfiles", "watch"]));
+        assert!(unattended(&["mise", "bootstrap", "dotfiles", "watch"]));
+
+        // every other dotfiles command has a terminal reading it
+        assert!(!unattended(&["mise", "dot", "status"]));
+        assert!(!unattended(&["mise", "bootstrap", "dotfiles", "status"]));
+        assert!(!unattended(&["mise", "bootstrap"]));
+        assert!(!unattended(&["mise", "run", "build"]));
+
+        // `run` rejects a setup source alongside a subcommand, so these never
+        // reach the watcher and must keep a console to say so
+        for source in ["--from", "--adopt", "--from-git"] {
+            assert!(
+                !unattended(&[
+                    "mise",
+                    "bootstrap",
+                    source,
+                    "https://example.com/setup.git",
+                    "dotfiles",
+                    "watch",
+                ]),
+                "{source} names a setup repository, not a watcher"
+            );
+        }
     }
 
     fn parse_truncate(args: &[&str]) -> Option<bool> {

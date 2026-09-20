@@ -117,6 +117,7 @@ mod uv;
 mod versions_host;
 mod watch_files;
 mod wildcard;
+mod windows_console;
 mod windows_posix;
 
 pub(crate) use crate::exit::request as request_exit;

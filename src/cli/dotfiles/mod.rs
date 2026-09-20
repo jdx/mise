@@ -94,6 +94,11 @@ enum Commands {
 }
 
 impl Dotfiles {
+    /// The watcher, which runs as a service and has no terminal reading it.
+    pub(crate) fn is_watch(&self) -> bool {
+        matches!(self.command, Commands::Watch(_))
+    }
+
     pub(crate) async fn run(self) -> Result<()> {
         match self.command {
             Commands::Add(cmd) => cmd.run().await,
