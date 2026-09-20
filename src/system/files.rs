@@ -117,6 +117,7 @@ pub(crate) struct ExplicitFields {
     pub variants: bool,
     pub enabled: bool,
     pub exclude: bool,
+    pub include: bool,
 }
 
 impl FilePolicy {
@@ -300,6 +301,9 @@ pub(crate) enum FileTomlEntry {
         mode: Option<String>,
         #[serde(default)]
         exclude: Option<Vec<String>>,
+        /// history: capture only these paths of a tracked directory
+        #[serde(default)]
+        include: Option<Vec<String>>,
         #[serde(default)]
         manifest: Option<String>,
         /// history: save edits automatically (default true)
@@ -337,6 +341,9 @@ impl FileRequest {
         if explicit.exclude {
             self.exclude = later.exclude;
         }
+        if explicit.include {
+            self.include = later.include;
+        }
         // the later file is the effective declaration
         self.origin = later.origin;
         let mine = self.policy.explicit;
@@ -346,6 +353,7 @@ impl FileRequest {
             variants: mine.variants || explicit.variants,
             enabled: mine.enabled || explicit.enabled,
             exclude: mine.exclude || explicit.exclude,
+            include: mine.include || explicit.include,
         };
     }
 }
@@ -366,6 +374,14 @@ pub(crate) struct FileRequest {
     /// glob patterns, matched against source-relative paths, for files a
     /// directory-walking mode should skip (see [`is_excluded`])
     pub exclude: Vec<glob::Pattern>,
+    /// history: the only paths of a tracked directory that are captured,
+    /// relative to it and matched like `exclude` (see [`is_excluded`]).
+    ///
+    /// `None` means no list was declared and the whole tree is captured.
+    /// `Some` means one was, and only what it names is — including
+    /// `Some([])`, which selects nothing. A declared list that happens to
+    /// be empty must not be read as no list at all.
+    pub include: Option<Vec<glob::Pattern>>,
     /// optional source manifest limiting which directory entries are managed
     pub manifest: Option<FileManifest>,
     /// directory of the declaring config file — base dir for template
@@ -676,6 +692,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "content"
                             | "mode"
                             | "exclude"
+                            | "include"
                             | "manifest"
                             | "autosave"
                             | "encrypt"
@@ -911,23 +928,34 @@ fn merge_file_entry(
     origin: &ResourceOrigin,
     merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
 ) {
-    let (source, content, mode, exclude, manifest, autosave, encrypt, variants, enabled) =
+    let (source, content, mode, exclude, include, manifest, autosave, encrypt, variants, enabled) =
         match entry {
-            FileTomlEntry::Source(source) => {
-                (Some(source), None, None, None, None, None, None, None, None)
-            }
+            FileTomlEntry::Source(source) => (
+                Some(source),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
             FileTomlEntry::Table {
                 source,
                 content,
                 mode,
                 exclude,
+                include,
                 manifest,
                 autosave,
                 encrypt,
                 variants,
                 enabled,
             } => (
-                source, content, mode, exclude, manifest, autosave, encrypt, variants, enabled,
+                source, content, mode, exclude, include, manifest, autosave, encrypt, variants,
+                enabled,
             ),
         };
     if encrypt == Some(true) && content.is_some() {
@@ -944,6 +972,7 @@ fn merge_file_entry(
         variants: variants.is_some(),
         enabled: enabled.is_some(),
         exclude: exclude.is_some(),
+        include: include.is_some(),
     };
     let enabled = enabled.unwrap_or(true);
     let variants = variants.unwrap_or_default();
@@ -970,6 +999,14 @@ fn merge_file_entry(
             explicit,
         }
     };
+    if mode.as_deref() != Some("track") && include.is_some() {
+        record_invalid(
+            &target_raw,
+            &origin.config,
+            "include selects what a tracked directory saves and applies only to mode = \"track\"",
+        );
+        return;
+    }
     if mode.as_deref() == Some("track") {
         if source.is_some() || content.is_some() || manifest.is_some() {
             record_invalid(
@@ -988,7 +1025,16 @@ fn merge_file_entry(
             );
             return;
         }
-        let exclude = compile_exclude(&target_raw, exclude);
+        let (exclude, include) = match (
+            compile_patterns("exclude", exclude),
+            compile_patterns("include", include),
+        ) {
+            (Ok(exclude), Ok(include)) => (exclude.unwrap_or_default(), include),
+            (Err(reason), _) | (_, Err(reason)) => {
+                record_invalid(&target_raw, &origin.config, &reason);
+                return;
+            }
+        };
         let request = FileRequest {
             target_raw,
             target: target.clone(),
@@ -996,6 +1042,7 @@ fn merge_file_entry(
             content: None,
             mode: FileMode::Track,
             exclude,
+            include,
             manifest: None,
             base: base.to_path_buf(),
             origin: origin.clone(),
@@ -1040,7 +1087,13 @@ fn merge_file_entry(
         );
         return;
     }
-    let exclude = compile_exclude(&target_raw, exclude);
+    let exclude = match compile_patterns("exclude", exclude) {
+        Ok(exclude) => exclude.unwrap_or_default(),
+        Err(reason) => {
+            record_invalid(&target_raw, &origin.config, &reason);
+            return;
+        }
+    };
     let mode = match mode.as_deref() {
         None => default_mode(),
         Some(m) => match FileMode::parse(m) {
@@ -1084,6 +1137,7 @@ fn merge_file_entry(
                 content: Some(content),
                 mode: FileMode::Content,
                 exclude: vec![],
+                include: None,
                 manifest: None,
                 base: base.to_path_buf(),
                 origin: origin.clone(),
@@ -1123,6 +1177,8 @@ fn merge_file_entry(
         content: None,
         mode,
         exclude,
+        // `include` applies only to `mode = "track"`, which returned above
+        include: None,
         manifest,
         base: base.to_path_buf(),
         origin,
@@ -1232,6 +1288,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         source,
         mode,
         exclude,
+        include,
         manifest,
         base,
         origin,
@@ -1247,6 +1304,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             content: None,
             mode,
             exclude,
+            include,
             manifest,
             base,
             origin,
@@ -1295,6 +1353,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             content: None,
             mode,
             exclude,
+            include,
             manifest,
             base,
             origin: ResourceOrigin {
@@ -1331,6 +1390,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 content: None,
                 mode,
                 exclude: exclude.clone(),
+                include: None,
                 manifest,
                 base: base.clone(),
                 origin: ResourceOrigin {
@@ -2045,18 +2105,29 @@ fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
 
 /// Compiled once here so a typo is reported against the entry that wrote
 /// it, not on every walk of the source (or of a tracked directory).
-fn compile_exclude(target_raw: &str, exclude: Option<Vec<String>>) -> Vec<glob::Pattern> {
-    exclude
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|pattern| match glob::Pattern::new(&pattern) {
-            Ok(pattern) => Some(pattern),
-            Err(err) => {
-                warn!("[dotfiles].\"{target_raw}\": invalid exclude pattern '{pattern}': {err}");
-                None
-            }
-        })
-        .collect()
+/// Compiles a per-entry `exclude` or `include` list, or names the first
+/// pattern that will not parse.
+///
+/// **A list that does not compile is an error, never a shorter list.**
+/// Dropping a bad pattern fails open in both directions: a shorter
+/// `exclude` captures files the user asked to leave out, and a shorter
+/// `include` — or an empty one — captures the whole tree the user asked
+/// to narrow. Neither is something to warn about and carry on from.
+fn compile_patterns(
+    key: &str,
+    patterns: Option<Vec<String>>,
+) -> std::result::Result<Option<Vec<glob::Pattern>>, String> {
+    let Some(patterns) = patterns else {
+        return Ok(None);
+    };
+    let mut compiled = vec![];
+    for pattern in patterns {
+        match glob::Pattern::new(&pattern) {
+            Ok(pattern) => compiled.push(pattern),
+            Err(err) => return Err(format!("invalid {key} pattern '{pattern}': {err}")),
+        }
+    }
+    Ok(Some(compiled))
 }
 
 /// Whether a source-relative (or entry-relative) path is dropped by the
@@ -3931,6 +4002,29 @@ variants = [{{ {field} = "linux" }}]"#
             .collect()
     }
 
+    /// A list mise cannot read in full is an error naming the entry and
+    /// the pattern, never a shorter list. A shorter `exclude` captures
+    /// files the user asked to leave out; a shorter — or empty —
+    /// `include` captures the whole tree they asked to narrow.
+    #[test]
+    fn an_unparsable_pattern_list_is_an_error_naming_the_pattern() {
+        for key in ["exclude", "include"] {
+            let error = compile_patterns(key, Some(vec!["fine/**".into(), "[".into()]))
+                .expect_err("an unparsable pattern is an error");
+            assert!(error.contains(key), "{error}");
+            assert!(error.contains('['), "{error}");
+        }
+        // a list that reads in full is kept exactly, empty or not
+        assert_eq!(
+            compile_patterns("include", Some(vec![]))
+                .unwrap()
+                .map(|patterns| patterns.len()),
+            Some(0),
+            "a declared empty list stays a declared empty list"
+        );
+        assert!(compile_patterns("include", None).unwrap().is_none());
+    }
+
     #[test]
     fn test_exclude_bare_pattern_matches_any_component() {
         let pats = patterns(&["mise.toml"]);
@@ -3984,6 +4078,7 @@ variants = [{{ {field} = "linux" }}]"#
                 .into_iter()
                 .map(|p| glob::Pattern::new(p).unwrap())
                 .collect(),
+            include: None,
             manifest: None,
             base: PathBuf::from("/home/test"),
             origin: crate::system::resources::ResourceOrigin {
@@ -4104,6 +4199,7 @@ variants = [{{ {field} = "linux" }}]"#
             content: None,
             mode,
             exclude: vec![],
+            include: None,
             manifest: None,
             base: source.parent().expect("source parent").to_path_buf(),
             origin: ResourceOrigin {

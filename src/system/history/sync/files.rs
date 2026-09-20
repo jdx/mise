@@ -409,6 +409,7 @@ mod tests {
                 encrypt: true,
                 variants: vec![],
                 exclude: vec![],
+                include: None,
             }],
             ..Default::default()
         };

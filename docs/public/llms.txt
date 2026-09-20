@@ -198,7 +198,7 @@
 - [mise bootstrap dotfiles history diff](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/diff.html): Compare checkpoints, or the working tree against one
 - [mise bootstrap dotfiles history ls](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise bootstrap dotfiles history show](https://mise.jdx.dev/cli/bootstrap/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
-- [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Capture paths matching a glob again
+- [mise bootstrap dotfiles include](https://mise.jdx.dev/cli/bootstrap/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise bootstrap dotfiles origin](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise bootstrap dotfiles origin set](https://mise.jdx.dev/cli/bootstrap/dotfiles/origin/set.html): Connect a setup repository
 - [mise bootstrap dotfiles paths](https://mise.jdx.dev/cli/bootstrap/dotfiles/paths.html): Show what history tracks and under which policies
@@ -307,7 +307,7 @@
 - [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or the working tree against one
 - [mise dotfiles history ls](https://mise.jdx.dev/cli/dotfiles/history/ls.html): List checkpoints, newest first
 - [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show one checkpoint: what triggered it, what changed, and its journal
-- [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Capture paths matching a glob again
+- [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise dotfiles origin](https://mise.jdx.dev/cli/dotfiles/origin.html): Connect or disconnect the setup repository
 - [mise dotfiles origin set](https://mise.jdx.dev/cli/dotfiles/origin/set.html): Connect a setup repository
 - [mise dotfiles paths](https://mise.jdx.dev/cli/dotfiles/paths.html): Show what history tracks and under which policies

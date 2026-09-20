@@ -11,7 +11,10 @@ description: "Never capture paths matching a glob"
 
 Never capture paths matching a glob
 
-Adds the glob to `[history] exclude` in the global config. Use it for
+Adds the glob to `[history] exclude` in the global config, which
+applies to every tracked path. To choose what one tracked directory
+saves, give that `[dotfiles]` entry its own `exclude` or `include`
+list instead. Use it for
 logs, caches, databases, and constantly rewritten application state; a
 file that genuinely holds configuration but changes constantly is
 better tracked with `--no-autosave` and saved explicitly.

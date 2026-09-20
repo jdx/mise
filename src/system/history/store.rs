@@ -601,6 +601,12 @@ pub(crate) struct CoverageEntry {
     /// The entry's own `exclude` patterns, relative to its path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    /// The entry's own `include` patterns, when it declared a list.
+    /// Recorded so a replay knows which paths the checkpoint never set
+    /// out to hold: without it an unselected file looks known-absent, and
+    /// a rollback deletes something the checkpoint never managed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

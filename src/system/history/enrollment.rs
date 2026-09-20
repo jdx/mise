@@ -161,6 +161,9 @@ fn reconcile(
                 if entry.exclude != old.exclude {
                     existing.exclude = entry.exclude.clone();
                 }
+                if entry.include != old.include {
+                    existing.include = entry.include.clone();
+                }
             } else {
                 *existing = entry.clone();
             }
@@ -235,6 +238,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: vec![],
+                include: None,
             }],
             ..Default::default()
         }
