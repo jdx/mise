@@ -360,7 +360,7 @@ impl Commands {
     /// Commands that run as a service, with no terminal reading their output.
     ///
     /// Windows gives a Scheduled Task's console program a console of its own,
-    /// and the watcher would run behind that window until it gave it up. This
+    /// and the watcher would run behind that window until it was hidden. This
     /// is asked for right after parsing, ahead of the auto-update that could
     /// otherwise leave the window on screen for a download's worth of time.
     fn runs_unattended(&self) -> bool {
@@ -995,7 +995,7 @@ impl Cli {
             install.inherit_root_yes(cli.yes);
         }
         if cli.command.as_ref().is_some_and(Commands::runs_unattended) {
-            crate::windows_console::detach_if_unattended();
+            crate::windows_console::hide_if_unattended();
         }
         config_file::set_implicitly_trust_active_config(
             cli.command

@@ -16,19 +16,27 @@ Describe 'history watch' {
         New-Item -ItemType Directory -Force -Path $script:Tracked | Out-Null
         'one' | Out-File -FilePath (Join-Path $script:Tracked 'file.txt') -Encoding utf8NoBOM
 
-        # AttachConsole succeeds only while the target process owns a console,
-        # and only from a caller that owns none. The probe therefore runs in a
-        # process of its own, where giving up a console cannot reach Pester.
-        # Exit 3: the target has a console. Exit 4: it has none.
+        # The watcher keeps its console and hides the window, so owning one
+        # no longer tells the two apart — whether the window is visible does.
+        # AttachConsole joins the target's console, and only a caller owning
+        # none may, so the probe runs in a process of its own where giving up
+        # a console cannot reach Pester. Exit 3: the window is visible. Exit 6:
+        # hidden. Exit 4: no console. Exit 5: a console with no window, which
+        # no case here expects.
         $script:Probe = Join-Path $TestDrive 'console-probe.ps1'
         @'
 param([int]$TargetPid)
 Add-Type -Namespace W -Name C -MemberDefinition @"
 [DllImport("kernel32.dll", SetLastError = true)] public static extern bool AttachConsole(uint dwProcessId);
 [DllImport("kernel32.dll", SetLastError = true)] public static extern bool FreeConsole();
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
 "@
 [W.C]::FreeConsole() | Out-Null
-if ([W.C]::AttachConsole($TargetPid)) { exit 3 } else { exit 4 }
+if (-not [W.C]::AttachConsole($TargetPid)) { exit 4 }
+$window = [W.C]::GetConsoleWindow()
+if ($window -eq [IntPtr]::Zero) { exit 5 }
+if ([W.C]::IsWindowVisible($window)) { exit 3 } else { exit 6 }
 '@ | Out-File -FilePath $script:Probe -Encoding utf8NoBOM
         $script:PsHost = (Get-Process -Id $PID).Path
 
@@ -104,26 +112,26 @@ builtin = "history-watch"
     # Task Scheduler starts a console program in a console of its own, so
     # without this the watcher runs behind a terminal window that closing
     # would kill. See jdx/mise#13426.
-    It 'gives up a console of its own but not a shell it shares' {
+    It 'hides a console of its own but not a shell it shares' {
         $tracked = $script:Tracked -replace '\\', '/'
         mise bootstrap dotfiles track $tracked 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
         $watch = @('bootstrap', 'dotfiles', 'watch')
 
         # A console of its own, which is what Task Scheduler gives it and what
-        # says nobody is reading: the watcher gives it up.
+        # says nobody is reading: the watcher hides that window.
         $alone = Start-Process -FilePath 'mise' -PassThru -ArgumentList $watch
         try {
             Wait-Watcher $true | Should -BeTrue
-            Get-ConsoleProbe $alone.Id | Should -Be 4
+            Get-ConsoleProbe $alone.Id | Should -Be 6
         } finally {
             Stop-Process -Id $alone.Id -Force -ErrorAction Ignore
         }
         Wait-Watcher $false | Should -BeTrue
 
         # Sharing this test host's console instead, the way a shell waiting on
-        # `mise dot watch` does. Somebody is reading, so the console stays —
-        # and a probe that cannot see one either way would fail here.
+        # `mise dot watch` does. Somebody is reading, so the window stays up —
+        # and a probe that called every console hidden would fail here.
         $shared = Start-Process -FilePath 'mise' -PassThru -NoNewWindow `
             -RedirectStandardOutput (Join-Path $TestDrive 'watch.out') `
             -RedirectStandardError (Join-Path $TestDrive 'watch.err') `
