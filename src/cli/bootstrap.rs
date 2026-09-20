@@ -260,6 +260,13 @@ fn bootstrap_prediction_has_skipped_change(
     })
 }
 
+impl Bootstrap {
+    /// `mise bootstrap dotfiles watch`, the watcher under its other name.
+    pub(crate) fn is_dotfiles_watch(&self) -> bool {
+        matches!(&self.command, Some(Commands::Dotfiles(cmd)) if cmd.is_watch())
+    }
+}
+
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     #[usage(name = "__apply-account-plan", hide = true)]

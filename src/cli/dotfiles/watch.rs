@@ -44,10 +44,6 @@ pub(crate) struct DotfilesWatch {
 
 impl DotfilesWatch {
     pub(crate) async fn run(self) -> Result<()> {
-        // Windows gives a Scheduled Task's console program a console of its
-        // own, which the watcher would then run behind. Nothing happens when
-        // a shell is in that console waiting to read this.
-        crate::windows_console::detach_if_unattended();
         let code = runtime::run(WatchOptions {
             once: self.once,
             json: self.json,

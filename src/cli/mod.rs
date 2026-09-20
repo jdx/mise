@@ -361,6 +361,20 @@ impl Commands {
     ///
     /// This operates on clap's canonical command variant so aliases such as
     /// `dr` inherit the same policy as `doctor`.
+    /// Commands that run as a service, with no terminal reading their output.
+    ///
+    /// Windows gives a Scheduled Task's console program a console of its own,
+    /// and the watcher would run behind that window until it gave it up. This
+    /// is asked for right after parsing, ahead of the auto-update that could
+    /// otherwise leave the window on screen for a download's worth of time.
+    fn runs_unattended(&self) -> bool {
+        match self {
+            Self::Dotfiles(cmd) => cmd.is_watch(),
+            Self::Bootstrap(cmd) => cmd.is_dotfiles_watch(),
+            _ => false,
+        }
+    }
+
     fn allows_auto_update(&self) -> bool {
         !matches!(
             self,
@@ -979,6 +993,9 @@ impl Cli {
         }
         if let Some(Commands::Install(install)) = &mut cli.command {
             install.inherit_root_yes(cli.yes);
+        }
+        if cli.command.as_ref().is_some_and(Commands::runs_unattended) {
+            crate::windows_console::detach_if_unattended();
         }
         config_file::set_implicitly_trust_active_config(
             cli.command
