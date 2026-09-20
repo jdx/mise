@@ -426,9 +426,11 @@ impl SidecarWrites {
                 self.files.push((target, contents));
             }
         }
+        // Digest what was just published, not what the entry used to claim: a
+        // legacy CRLF digest must not survive onto freshly written bytes.
         Ok(GraphRef::Sidecar {
             dir,
-            digest: graph.identity(),
+            digest: digest_text(&body.graph_text()?),
             cell: OnceLock::new(),
         })
     }
@@ -1054,6 +1056,26 @@ uv = { project = {}, graph = { version = 1 } }
         std::fs::write(&path, text.replace(&normalized, &legacy)).unwrap();
         Lockfile::read(&path).unwrap().save(&path).unwrap();
         assert!(std::fs::read_to_string(&path).unwrap().contains(&legacy));
+
+        // Republishing the sidecar elsewhere writes normalized bytes, so the
+        // new entry must pin those and not the digest it came in with.
+        let moved = temp.path().join("moved/mise.lock");
+        std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
+        Lockfile::read(&path).unwrap().save(&moved).unwrap();
+        let saved = std::fs::read_to_string(&moved).unwrap();
+        assert!(saved.contains(&normalized), "{saved}");
+        assert!(!saved.contains(&legacy), "{saved}");
+        let moved_graph = sidecar_root(&moved).join("pypi-fixture/1.0.0/uv.lock");
+        assert!(!std::fs::read_to_string(moved_graph).unwrap().contains('\r'));
+        assert_eq!(
+            Lockfile::read(&moved).unwrap().tools["pypi:fixture"][0]
+                .uv
+                .as_ref()
+                .unwrap()
+                .load()
+                .unwrap(),
+            &uv()
+        );
     }
 
     #[test]
