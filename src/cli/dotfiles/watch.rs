@@ -53,9 +53,11 @@ pub(crate) struct DotfilesWatch {
 impl DotfilesWatch {
     pub(crate) async fn run(self) -> Result<()> {
         if self.hide_console {
-            // `main` gives up the console before the parser runs, so the
-            // window is gone by now and this is a no-op. It stands for the
-            // flag doing what it says however the command was reached.
+            // Usually already done: `main` recognizes the shape the service
+            // registers and gives the console up before the parser runs, and
+            // a second call finds none to give up. This is what makes the
+            // flag mean the same thing when it did not, rather than leaving
+            // the window up because the command was spelled unusually.
             crate::windows_console::detach();
         }
         let code = runtime::run(WatchOptions {
