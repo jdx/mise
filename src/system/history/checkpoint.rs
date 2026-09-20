@@ -851,16 +851,14 @@ struct ManualPlan {
 
 /// Tells the user what the walk left out, so a credential store under a
 /// tracked directory never looks saved. A command the user ran (a save, a
-/// baseline, an agent or update save) lists each omission; the watcher and
-/// the protective captures around an operation get one summary line, since
-/// they run on every edit. A baseline reports only the paths it enrolls,
-/// not omissions under entries tracked earlier.
+/// baseline, a bootstrap, rollback, or undo outcome) lists each omission;
+/// the watcher's captures and the protective captures before an operation
+/// get one summary line, since they run on every edit or are followed by
+/// the outcome's full report. A baseline reports only the paths it
+/// enrolls, not omissions under entries tracked earlier.
 fn report_omissions(walk: &super::tracked::Walk, draft: &Draft) {
     let trigger = draft.trigger();
-    let explicit = matches!(
-        trigger,
-        Trigger::Save | Trigger::Agent | Trigger::Update | Trigger::Baseline | Trigger::Capture
-    );
+    let explicit = trigger != Trigger::Edit && !draft.protective;
     let omitted: Vec<store::PathReason> =
         if trigger == Trigger::Baseline && !draft.explicit_paths.is_empty() {
             let roots: Vec<String> = draft.explicit_paths.iter().map(display_path).collect();

@@ -133,7 +133,12 @@ impl DotfilesTrack {
                 };
                 warn!("dotfiles: {target_key} will be omitted from every save ({reason}){advice}");
             }
-            let entry = self.entry(existing);
+            let previous = doc
+                .get("dotfiles")
+                .and_then(|dotfiles| dotfiles.get(declaration_key))
+                .and_then(Item::as_inline_table)
+                .cloned();
+            let entry = self.entry(existing, previous.as_ref());
             let dotfiles = doc
                 .entry("dotfiles")
                 .or_insert(Item::Table(toml_edit::Table::new()));
@@ -209,22 +214,22 @@ impl DotfilesTrack {
 
     /// The inline table for a target: an existing track entry's fields with
     /// this command's changes on top, so a local override keeps variants and
-    /// the other policies.
-    fn entry(&self, existing: Option<&FileRequest>) -> InlineTable {
+    /// the other policies. `previous` is the declaration this file held
+    /// before: a policy it wrote explicitly stays written, even at its
+    /// default value, while one it inherited from another layer stays
+    /// unwritten so that layer keeps deciding it.
+    fn entry(&self, existing: Option<&FileRequest>, previous: Option<&InlineTable>) -> InlineTable {
         let mut table = InlineTable::new();
         table.insert("mode", string("track"));
         let policy = self.policy(existing);
-        // a field the existing declaration set explicitly stays explicit,
-        // even at its default value, so a lower layer cannot change it
-        // once the declaration is rewritten
-        let explicit = existing.map(|req| req.policy.explicit).unwrap_or_default();
-        if policy.encrypt || explicit.encrypt {
+        let written = |key: &str| previous.is_some_and(|table| table.contains_key(key));
+        if policy.encrypt || written("encrypt") {
             table.insert(
                 "encrypt",
                 Value::Boolean(toml_edit::Formatted::new(policy.encrypt)),
             );
         }
-        if !policy.autosave || explicit.autosave {
+        if !policy.autosave || written("autosave") {
             table.insert(
                 "autosave",
                 Value::Boolean(toml_edit::Formatted::new(policy.autosave)),
@@ -589,7 +594,7 @@ mod declaration_tests {
     use super::*;
 
     #[test]
-    fn rewritten_declarations_keep_explicit_default_policies() {
+    fn rewritten_declarations_keep_their_own_explicit_policies_only() {
         use crate::system::files::{ExplicitFields, FilePolicy};
         use crate::system::resources::ResourceOrigin;
         let command = DotfilesTrack {
@@ -625,10 +630,25 @@ mod declaration_tests {
             variants: vec![],
             enabled: true,
         };
-        let table = command.entry(Some(&existing));
+        let inline = |text: &str| -> InlineTable {
+            text.parse::<Value>()
+                .unwrap()
+                .as_inline_table()
+                .cloned()
+                .unwrap()
+        };
+        // this file wrote both fields: they stay written at their values
+        let previous = inline("{ mode = \"track\", autosave = true, encrypt = false }");
+        let table = command.entry(Some(&existing), Some(&previous));
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(true));
         assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
-        let table = command.entry(None);
+        // another layer wrote them (the composed flags say explicit): this
+        // file must not pin the inherited values
+        let previous = inline("{ mode = \"track\" }");
+        let table = command.entry(Some(&existing), Some(&previous));
+        assert!(table.get("autosave").is_none());
+        assert!(table.get("encrypt").is_none());
+        let table = command.entry(None, None);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
     }
