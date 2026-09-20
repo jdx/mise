@@ -224,9 +224,8 @@ fn omitted_under(
     target: &std::path::Path,
 ) -> usize {
     let display = crate::file::display_path(target);
-    let prefix = format!("{}/", display.trim_end_matches('/'));
     omitted
         .iter()
-        .filter(|omitted| omitted.path == display || omitted.path.starts_with(&prefix))
+        .filter(|omitted| crate::system::history::tracked::display_under(&omitted.path, &display))
         .count()
 }

@@ -629,6 +629,16 @@ pub(crate) fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static
 /// summarizes them and points at `mise dot paths`.
 pub(crate) const OMISSION_LINES: usize = 10;
 
+/// Whether the display path `path` is `root` itself or lies below it.
+/// Display paths use the platform separator (`\` on Windows), so the
+/// boundary is checked on either.
+pub(crate) fn display_under(path: &str, root: &str) -> bool {
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|rest| rest.starts_with(['/', '\\']))
+}
+
 /// The lines a capture reports about what it left out: every omission
 /// with its reason when there are few, otherwise one summary.
 pub(crate) fn omission_report(omitted: &[PathReason]) -> Vec<String> {
@@ -1163,6 +1173,15 @@ mod tests {
         let mut encrypted = policy;
         encrypted.encrypt = true;
         assert_eq!(capture_exclusion(&dir.join("id_ed25519"), &encrypted), None);
+    }
+
+    #[test]
+    fn display_under_accepts_either_separator() {
+        assert!(display_under("~/.ssh", "~/.ssh"));
+        assert!(display_under("~/.ssh/id_test", "~/.ssh"));
+        assert!(display_under("~\\.ssh\\id_test", "~\\.ssh"));
+        assert!(!display_under("~/.sshd/x", "~/.ssh"));
+        assert!(!display_under("~/.ssh", "~/.ssh/id_test"));
     }
 
     #[test]

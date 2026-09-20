@@ -890,13 +890,9 @@ fn report_omissions(walk: &super::tracked::Walk, draft: &Draft) {
             walk.omitted
                 .iter()
                 .filter(|omitted| {
-                    roots.iter().any(|root| {
-                        omitted.path == *root
-                            || omitted
-                                .path
-                                .strip_prefix(root.as_str())
-                                .is_some_and(|rest| rest.starts_with('/'))
-                    })
+                    roots
+                        .iter()
+                        .any(|root| super::tracked::display_under(&omitted.path, root))
                 })
                 .cloned()
                 .collect()

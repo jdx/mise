@@ -214,11 +214,21 @@ impl DotfilesTrack {
         let mut table = InlineTable::new();
         table.insert("mode", string("track"));
         let policy = self.policy(existing);
-        if policy.encrypt {
-            table.insert("encrypt", Value::Boolean(toml_edit::Formatted::new(true)));
+        // a field the existing declaration set explicitly stays explicit,
+        // even at its default value, so a lower layer cannot change it
+        // once the declaration is rewritten
+        let explicit = existing.map(|req| req.policy.explicit).unwrap_or_default();
+        if policy.encrypt || explicit.encrypt {
+            table.insert(
+                "encrypt",
+                Value::Boolean(toml_edit::Formatted::new(policy.encrypt)),
+            );
         }
-        if !policy.autosave {
-            table.insert("autosave", Value::Boolean(toml_edit::Formatted::new(false)));
+        if !policy.autosave || explicit.autosave {
+            table.insert(
+                "autosave",
+                Value::Boolean(toml_edit::Formatted::new(policy.autosave)),
+            );
         }
         let mut variants: Vec<Variant> =
             existing.map(|req| req.variants.clone()).unwrap_or_default();
@@ -577,6 +587,51 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
 #[cfg(test)]
 mod declaration_tests {
     use super::*;
+
+    #[test]
+    fn rewritten_declarations_keep_explicit_default_policies() {
+        use crate::system::files::{ExplicitFields, FilePolicy};
+        use crate::system::resources::ResourceOrigin;
+        let command = DotfilesTrack {
+            targets: vec![],
+            os: None,
+            profile: None,
+            no_autosave: false,
+            encrypt: false,
+            yes: true,
+        };
+        let mut policy = FilePolicy::for_mode(FileMode::Track);
+        policy.explicit = ExplicitFields {
+            autosave: true,
+            encrypt: true,
+            ..Default::default()
+        };
+        let existing = FileRequest {
+            target_raw: "~/.zshrc".into(),
+            target: PathBuf::from("/home/test/.zshrc"),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Track,
+            exclude: vec![],
+            manifest: None,
+            base: PathBuf::from("/home/test"),
+            origin: ResourceOrigin {
+                config: PathBuf::from("/home/test/.config/mise/config.toml"),
+                config_root: PathBuf::from("/home/test/.config/mise"),
+                environment: vec![],
+                source: None,
+            },
+            policy,
+            variants: vec![],
+            enabled: true,
+        };
+        let table = command.entry(Some(&existing));
+        assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(true));
+        assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
+        let table = command.entry(None);
+        assert!(table.get("autosave").is_none());
+        assert!(table.get("encrypt").is_none());
+    }
 
     #[test]
     fn resolved_sources_use_tracking_path_representation() {
