@@ -35,6 +35,21 @@ configuration (`~/.config/mise/config.toml` by default):
 "~/.zshrc" = { mode = "track" }
 ```
 
+Tracking a directory saves everything under it, so preview a large one
+first. `mise dot track --dry-run <dir>` (or `mise dot paths --preview <dir>`)
+prints how many files and bytes it expands to and what is left out, and
+writes nothing:
+
+```sh
+$ mise dot track --dry-run ~/.codex
+~/.codex: 22,972 files, 1.2 GiB
+```
+
+The confirmation prompt shows the same count and size, and mise warns when
+a tree is larger than 5,000 files or 256 MiB. Trim a directory with a
+scoped exclusion before tracking it, for example
+`mise dot exclude '~/.codex/sessions/**'`.
+
 ### Save edits automatically
 
 Add the watcher service to the same global configuration file:
@@ -616,6 +631,18 @@ mise dot save ~/.config/app/state.json
 The first command saves the initial version. Later edits wait for an
 explicit save. See [saving](/history.html#saving) for how commands that
 modify tracked files save their before and after versions.
+
+To see what a directory expands to before tracking it, and what a save
+would leave out of it:
+
+```sh
+mise dot track --dry-run ~/.config/nvim
+mise dot paths --preview ~/.config/nvim
+```
+
+Both print the file count and size (`--preview` also lists every file) and
+change nothing. Exclude the parts that do not belong in history first, with
+`mise dot exclude '~/.config/nvim/plugged/**'`.
 
 To encrypt a file from its first checkpoint:
 
