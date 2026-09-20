@@ -61,8 +61,9 @@ assert_succeed "mise dot apply --yes"
 assert "cat ~/reloads" "app"
 
 # a later entry that fails still leaves the earlier ones written, so their
-# commands run before the error is reported (root can write anywhere, so the
-# failure cannot be provoked there)
+# commands run before the error is reported; the target that was never
+# written reloads nothing (root can write anywhere, so the failure cannot be
+# provoked there)
 if [ "$(id -u)" != 0 ]; then
   rm ~/reloads
   mkdir -p ~/locked
@@ -80,6 +81,27 @@ EOF
   assert_fail "mise dot apply --yes"
   assert "cat ~/.config/app/settings.toml" "theme = light"
   assert_fail "test -e ~/locked/sub/settings.toml"
-  assert "cat ~/reloads" $'app\nlocked'
+  assert "cat ~/reloads" "app"
   chmod 755 ~/locked
+
+  # a directory copy that fails part-way reloads for the files it did write
+  # and not for the ones it never reached
+  rm ~/reloads
+  mkdir -p "$MISE_CONFIG_DIR/dotfiles/multi/sub" ~/multi/sub
+  echo 'a' >"$MISE_CONFIG_DIR/dotfiles/multi/a.conf"
+  echo 'b' >"$MISE_CONFIG_DIR/dotfiles/multi/sub/b.conf"
+  chmod 555 ~/multi/sub
+  cat <<EOF >"$config"
+[dotfiles]
+"~/multi" = { source = "dotfiles/multi", mode = "copy" }
+
+[history.reload]
+"~/multi/a.conf" = "echo a >> $HOME/reloads"
+"~/multi/sub/**" = "echo b >> $HOME/reloads"
+EOF
+  assert_fail "mise dot apply --yes"
+  assert "cat ~/multi/a.conf" "a"
+  assert_fail "test -e ~/multi/sub/b.conf"
+  assert "cat ~/reloads" "a"
+  chmod 755 ~/multi/sub
 fi

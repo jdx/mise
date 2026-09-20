@@ -2361,19 +2361,15 @@ pub(crate) fn execute_apply(
                 );
             }
             let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
-            written.push(link.target.clone());
             file::remove_file(&link.target)?;
+            written.push(link.target.clone());
             journal::commit_changes(pending);
         }
     }
     for (req, rendered) in &plan.todo {
         let pending =
             journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
-        // listed before the write, so a write that fails part-way still
-        // reports its targets (and a symlink-each entry's stale links, which
-        // are gone once it converges)
-        written.extend(written_targets(req)?);
-        apply_one(req, rendered.as_deref())?;
+        apply_one(req, rendered.as_deref(), written)?;
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
         }
@@ -2406,40 +2402,6 @@ pub(crate) fn execute_apply(
         .collect::<Vec<_>>();
     info!("files: applied {}", applied.join(", "));
     Ok(true)
-}
-
-/// The paths an apply of `req` writes or removes, for matching against
-/// `[history.reload]` globs: the entry's target, or for a directory-walking
-/// mode each file it creates under the target and each stale link it prunes.
-/// A symlink to a directory lists the files it exposes too, so a glob under
-/// the target matches. Directories created on the way are not listed.
-fn written_targets(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    Ok(match req.mode {
-        FileMode::Track => vec![],
-        FileMode::Symlink if req.source.is_dir() => std::iter::once(req.target.clone())
-            .chain(
-                walk_source_files(req)?
-                    .into_iter()
-                    .map(|(_, target)| target),
-            )
-            .collect(),
-        FileMode::Symlink | FileMode::Template | FileMode::Content => vec![req.target.clone()],
-        FileMode::Copy if req.source.is_dir() => walk_source_files(req)?
-            .into_iter()
-            .map(|(_, target)| target)
-            .collect(),
-        FileMode::Copy => vec![req.target.clone()],
-        FileMode::SymlinkEach => {
-            let mut targets = vec![];
-            for (source, target) in walk_source_files(req)? {
-                if check_symlink(&source, &target)? != FileState::Applied {
-                    targets.push(target);
-                }
-            }
-            targets.extend(stale_links(req)?);
-            targets
-        }
-    })
 }
 
 /// Plan and validate an apply without changing targets. Templates are rendered
@@ -3446,7 +3408,14 @@ pub(crate) fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
     missing
 }
 
-fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+/// Write one entry. Each path is appended to `written` right after its own
+/// write lands, so a caller sees exactly the files that changed when a later
+/// write fails: the target of a whole-file entry, each file a directory copy
+/// or symlink-each places, and each stale link the latter prunes. A symlink
+/// to a directory also lists the files it exposes, so a `[history.reload]`
+/// glob under the target matches. Directories created on the way are not
+/// listed.
+fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBuf>) -> Result<()> {
     debug!("files: {}", describe(req)?);
     if let Some(parent) = req.target.parent() {
         file::create_dir_all(parent)?;
@@ -3455,6 +3424,14 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
         FileMode::Symlink => {
             remove_existing(&req.target)?;
             link_path(&req.source, &req.target, true)?;
+            written.push(req.target.clone());
+            if req.source.is_dir() {
+                written.extend(
+                    walk_source_files(req)?
+                        .into_iter()
+                        .map(|(_, target)| target),
+                );
+            }
         }
         FileMode::SymlinkEach => {
             // conflicts were vetted (or --force given): clear anything
@@ -3476,8 +3453,9 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 }
                 remove_existing(&target)?;
                 link_path(&source, &target, false)?;
+                written.push(target);
             }
-            prune_stale_links(req)?;
+            prune_stale_links(req, written)?;
         }
         FileMode::Copy => {
             if req.source.is_dir() {
@@ -3500,16 +3478,19 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                         file::remove_file(&target)?;
                     }
                     file::copy(&source, &target)?;
+                    written.push(target);
                 }
             } else {
                 remove_existing(&req.target)?;
                 file::copy(&req.source, &req.target)?;
+                written.push(req.target.clone());
             }
         }
         FileMode::Template => {
             let rendered = rendered.expect("rendered template content");
             remove_existing(&req.target)?;
             file::write(&req.target, rendered)?;
+            written.push(req.target.clone());
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
         }
@@ -3517,6 +3498,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
         FileMode::Content => {
             remove_existing(&req.target)?;
             file::write(&req.target, req.content.as_deref().expect("inline content"))?;
+            written.push(req.target.clone());
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -3531,7 +3513,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
 /// they emptied out. A directory only goes when the links we just removed were
 /// all that was in it and the entry has no source file left that needs it, so
 /// user content — and the target directory itself — always survives.
-fn prune_stale_links(req: &FileRequest) -> Result<()> {
+fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()> {
     let stale = stale_links(req)?;
     if stale.is_empty() {
         return Ok(());
@@ -3539,6 +3521,7 @@ fn prune_stale_links(req: &FileRequest) -> Result<()> {
     for path in &stale {
         debug!("files: removing stale link {}", path.display_user());
         file::remove_file(path)?;
+        written.push(path.clone());
     }
     let needed: std::collections::HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
     // deepest first, so emptying a nested directory can empty its parent too
@@ -3738,8 +3721,11 @@ variants = [{{ {field} = "linux" }}]"#
                 }
             })
             .collect::<Vec<_>>();
-        prune_stale_links(&req)?;
+        let mut written = vec![];
+        prune_stale_links(&req, &mut written)?;
         assert!(!nested.exists());
+        // the removed links are listed, the pruned directory is not
+        assert_eq!(written, vec![nested.join("a"), nested.join("b")]);
         let committed = journal
             .iter()
             .enumerate()
@@ -3954,52 +3940,69 @@ variants = [{{ {field} = "linux" }}]"#
     }
 
     #[test]
-    fn written_targets_lists_the_paths_an_apply_writes() -> Result<()> {
+    fn apply_one_lists_only_the_files_it_wrote() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let source = dir.path().join("source");
-        let target = dir.path().join("target");
-        file::create_dir_all(source.join("conf.d"))?;
+        file::create_dir_all(source.join("sub"))?;
         file::write(source.join("a.toml"), "a")?;
-        file::write(source.join("conf.d/b.toml"), "b")?;
+        file::write(source.join("sub/b.toml"), "b")?;
         let file_source = dir.path().join("file");
         file::write(&file_source, "file")?;
 
-        // whole-file modes write the target itself
+        // a single-file copy lists its target once it is written, not the
+        // directories created on the way
+        let target = dir.path().join("one/settings.toml");
+        let mut written = vec![];
+        apply_one(
+            &link_req(&file_source, &target, FileMode::Copy),
+            None,
+            &mut written,
+        )?;
+        assert_eq!(written, vec![target]);
+
+        // a directory copy lists each file as it lands
+        let target = dir.path().join("all");
+        let mut written = vec![];
+        apply_one(
+            &link_req(&source, &target, FileMode::Copy),
+            None,
+            &mut written,
+        )?;
+        written.sort();
         assert_eq!(
-            written_targets(&symlink_req(&file_source, &target))?,
-            vec![target.clone()]
+            written,
+            vec![target.join("a.toml"), target.join("sub/b.toml")]
         );
-        assert_eq!(
-            written_targets(&link_req(&file_source, &target, FileMode::Copy))?,
-            vec![target.clone()]
+
+        // a directory copy that fails part-way lists the files written
+        // before the failure and nothing after it: a file where `sub` must
+        // become a directory stops the walk after `a.toml`
+        let target = dir.path().join("partial");
+        file::create_dir_all(&target)?;
+        file::write(target.join("sub"), "in the way")?;
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
         );
-        // a directory symlink exposes the files beneath it as well
-        let mut exposed = written_targets(&symlink_req(&source, &target))?;
-        exposed.sort();
-        assert_eq!(
-            exposed,
-            vec![
-                target.clone(),
-                target.join("a.toml"),
-                target.join("conf.d/b.toml")
-            ]
+        assert_eq!(written, vec![target.join("a.toml")]);
+
+        // a write that fails before touching its target lists nothing
+        let target = dir.path().join("partial/sub/settings.toml");
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&file_source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
         );
-        // tracked files are never written
-        assert!(written_targets(&link_req(&file_source, &target, FileMode::Track))?.is_empty());
-        // directory-walking modes list each file under the target, not the
-        // directories on the way
-        let mut copied = written_targets(&link_req(&source, &target, FileMode::Copy))?;
-        copied.sort();
-        assert_eq!(
-            copied,
-            vec![target.join("a.toml"), target.join("conf.d/b.toml")]
-        );
-        let mut linked = written_targets(&link_req(&source, &target, FileMode::SymlinkEach))?;
-        linked.sort();
-        assert_eq!(
-            linked,
-            vec![target.join("a.toml"), target.join("conf.d/b.toml")]
-        );
+        assert!(written.is_empty());
         Ok(())
     }
 

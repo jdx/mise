@@ -734,11 +734,10 @@ pub(crate) fn apply(
     }
     for (req, desired) in &todo {
         let pending = journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
-        // listed before the write, so a write that fails part-way still
-        // reports its path
-        written.push(req.path.clone());
         apply_one(req, desired.as_deref())?;
         journal::commit_changes(pending);
+        // listed once the edit landed, so a failed one reloads nothing
+        written.push(req.path.clone());
     }
     let applied = todo
         .iter()
