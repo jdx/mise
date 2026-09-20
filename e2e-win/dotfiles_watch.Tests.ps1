@@ -167,10 +167,20 @@ builtin = "history-watch"
             # this waits on, and the wait below would say nothing
             Wait-Watcher $false | Should -BeTrue
 
+            # Task Scheduler starts the service with the user's logon
+            # environment, not this session's, so without carrying these the
+            # watcher would use the real config and state directories and
+            # take its lock where Wait-Watcher is not looking. Carrying them
+            # is what `environment` is for, and here it is also what makes
+            # the watcher reachable at all — so this asserts the environment
+            # arrived as much as it asserts the window is gone.
+            $cfgDir = $env:MISE_CONFIG_DIR -replace '\\', '\\'
+            $stateDir = $env:MISE_STATE_DIR -replace '\\', '\\'
+            $trusted = "$TestDrive" -replace '\\', '\\'
             @"
 [bootstrap.services.mise-history]
 builtin = "history-watch"
-environment = { E2E_WATCH_MARK = "1" }
+environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_TRUSTED_CONFIG_PATHS = "$trusted", E2E_WATCH_MARK = "1" }
 "@ | Out-File -FilePath (Join-Path $env:MISE_CONFIG_DIR 'config.toml') -Encoding utf8NoBOM
             # `track` declares into the same file, which was just rewritten
             mise bootstrap dotfiles track ($script:Tracked -replace '\\', '/') 2>&1 | Out-String | Out-Null
