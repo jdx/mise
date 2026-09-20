@@ -288,7 +288,7 @@ impl TrackedSet {
             .max_by_key(|entry| entry.path.components().count())
     }
 
-    fn entry_index_for(&self, path: &Path) -> Option<usize> {
+    pub(crate) fn entry_index_for(&self, path: &Path) -> Option<usize> {
         self.entries
             .iter()
             .enumerate()
@@ -682,10 +682,59 @@ impl Walk {
     pub(crate) fn summary(&self) -> String {
         count_and_size(self.file_count(), self.bytes())
     }
+}
 
-    /// Whether the tree is large enough to warn about before tracking it.
+/// What tracking one entry of a preview set captures: the files that entry
+/// owns (a more specific entry owns its own subtree), and what a save
+/// would leave out under it.
+#[derive(Debug, Default)]
+pub(crate) struct EntryPreview {
+    pub files: usize,
+    pub bytes: u64,
+    pub omitted: Vec<PathReason>,
+    pub nested: Vec<PathReason>,
+    pub incomplete: Vec<PathReason>,
+}
+
+impl EntryPreview {
+    pub(crate) fn summary(&self) -> String {
+        count_and_size(self.files, self.bytes)
+    }
+
     pub(crate) fn is_large(&self) -> bool {
-        self.file_count() > LARGE_TREE_FILES || self.bytes() > LARGE_TREE_BYTES
+        self.files > LARGE_TREE_FILES || self.bytes > LARGE_TREE_BYTES
+    }
+}
+
+impl Walk {
+    /// The preview of the entry at `index` of `set`, which this walk was
+    /// taken from: nested targets in one command partition instead of the
+    /// outer one counting the inner one's files too.
+    pub(crate) fn preview_of(&self, set: &TrackedSet, index: usize) -> EntryPreview {
+        let mut preview = EntryPreview::default();
+        for (path, (owner, _)) in &self.files {
+            if *owner != index {
+                continue;
+            }
+            preview.files += 1;
+            preview.bytes += std::fs::symlink_metadata(path)
+                .ok()
+                .filter(|m| m.is_file())
+                .map_or(0, |m| m.len());
+        }
+        let owned = |reported: &PathReason| {
+            set.entry_index_for(&file::replace_path(Path::new(&reported.path))) == Some(index)
+        };
+        preview.omitted = self.omitted.iter().filter(|r| owned(r)).cloned().collect();
+        preview.nested = self.nested.iter().filter(|r| owned(r)).cloned().collect();
+        let display = set.entries[index].display();
+        preview.incomplete = self
+            .incomplete
+            .iter()
+            .filter(|r| r.path == display)
+            .cloned()
+            .collect();
+        preview
     }
 }
 
@@ -1413,6 +1462,31 @@ mod tests {
     }
 
     #[test]
+    fn nested_targets_partition_a_preview() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("codex");
+        let inner = outer.join("sessions");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::fs::write(outer.join("config.toml"), "outer").unwrap();
+        std::fs::write(inner.join("one.jsonl"), "inner-1").unwrap();
+        std::fs::write(inner.join("two.jsonl"), "inner-2").unwrap();
+        std::fs::write(inner.join("auth-token"), "x").unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&outer));
+        set.push(entry(&inner));
+        let walk = set.walk().unwrap();
+        let outer_preview = walk.preview_of(&set, 0);
+        let inner_preview = walk.preview_of(&set, 1);
+        assert_eq!(outer_preview.files, 1);
+        assert_eq!(outer_preview.bytes, 5);
+        assert!(outer_preview.omitted.is_empty());
+        assert_eq!(inner_preview.files, 2);
+        assert_eq!(inner_preview.bytes, 14);
+        assert_eq!(inner_preview.omitted.len(), 1);
+        assert_eq!(outer_preview.summary(), "1 file, 5 B");
+    }
+
+    #[test]
     fn walk_summaries_count_files_and_bytes() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("tree");
@@ -1438,7 +1512,7 @@ mod tests {
             }
         );
         assert_eq!(walk.omitted.len(), 1);
-        assert!(!walk.is_large());
+        assert!(!walk.preview_of(&set, 0).is_large());
         assert_eq!(count_and_size(1, 0), "1 file, 0 B");
         assert_eq!(with_separators(0), "0");
         assert_eq!(with_separators(999), "999");
