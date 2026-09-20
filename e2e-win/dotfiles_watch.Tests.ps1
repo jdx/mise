@@ -15,6 +15,40 @@ Describe 'history watch' {
         $script:Tracked = Join-Path $env:MISE_CONFIG_DIR 'tracked'
         New-Item -ItemType Directory -Force -Path $script:Tracked | Out-Null
         'one' | Out-File -FilePath (Join-Path $script:Tracked 'file.txt') -Encoding utf8NoBOM
+
+        # AttachConsole succeeds only while the target process owns a console,
+        # and only from a caller that owns none. The probe therefore runs in a
+        # process of its own, where giving up a console cannot reach Pester.
+        # Exit 3: the target has a console. Exit 4: it has none.
+        $script:Probe = Join-Path $TestDrive 'console-probe.ps1'
+        @'
+param([int]$TargetPid)
+Add-Type -Namespace W -Name C -MemberDefinition @"
+[DllImport("kernel32.dll", SetLastError = true)] public static extern bool AttachConsole(uint dwProcessId);
+[DllImport("kernel32.dll", SetLastError = true)] public static extern bool FreeConsole();
+"@
+[W.C]::FreeConsole() | Out-Null
+if ([W.C]::AttachConsole($TargetPid)) { exit 3 } else { exit 4 }
+'@ | Out-File -FilePath $script:Probe -Encoding utf8NoBOM
+        $script:PsHost = (Get-Process -Id $PID).Path
+
+        function script:Get-ConsoleProbe([int]$TargetPid) {
+            $probe = Start-Process -FilePath $script:PsHost -PassThru -Wait -ArgumentList @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:Probe, $TargetPid)
+            return $probe.ExitCode
+        }
+
+        # The watch lock, not the service declaration, is what `status` reports
+        # as `running`, so this says a real watcher has taken over (or let go).
+        function script:Wait-Watcher([bool]$Running) {
+            $deadline = (Get-Date).AddSeconds(60)
+            do {
+                $status = mise bootstrap dotfiles status --json | Out-String | ConvertFrom-Json
+                if (($status.history.watcher -eq 'running') -eq $Running) { return $true }
+                Start-Sleep -Milliseconds 250
+            } while ((Get-Date) -lt $deadline)
+            return $false
+        }
     }
 
     AfterAll {
@@ -65,5 +99,38 @@ builtin = "history-watch"
 "@ | Out-File -FilePath (Join-Path $env:MISE_CONFIG_DIR 'config.toml') -Encoding utf8NoBOM -Append
         $status = mise bootstrap dotfiles status --json | Out-String | ConvertFrom-Json
         $status.history.watcher | Should -Be 'declared-not-running'
+    }
+
+    # Task Scheduler starts a console program in a console of its own, so
+    # without this the watcher runs behind a terminal window that closing
+    # would kill. See jdx/mise#13426.
+    It 'gives up the console it was started in' {
+        $tracked = $script:Tracked -replace '\\', '/'
+        mise bootstrap dotfiles track $tracked 2>&1 | Out-String | Out-Null
+        $LASTEXITCODE | Should -Be 0
+
+        # Start-Process gives a console program a console of its own, the way
+        # Task Scheduler does. With the flag the service passes, the watcher
+        # runs without one.
+        $hidden = Start-Process -FilePath 'mise' -PassThru -ArgumentList @(
+            'bootstrap', 'dotfiles', 'watch', '--hide-console')
+        try {
+            Wait-Watcher $true | Should -BeTrue
+            Get-ConsoleProbe $hidden.Id | Should -Be 4
+        } finally {
+            Stop-Process -Id $hidden.Id -Force -ErrorAction Ignore
+        }
+        Wait-Watcher $false | Should -BeTrue
+
+        # Without the flag the same watcher keeps its console, which is what
+        # makes the result above a measurement rather than a broken probe.
+        $shown = Start-Process -FilePath 'mise' -PassThru -ArgumentList @(
+            'bootstrap', 'dotfiles', 'watch')
+        try {
+            Wait-Watcher $true | Should -BeTrue
+            Get-ConsoleProbe $shown.Id | Should -Be 3
+        } finally {
+            Stop-Process -Id $shown.Id -Force -ErrorAction Ignore
+        }
     }
 }

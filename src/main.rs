@@ -117,6 +117,7 @@ mod uv;
 mod versions_host;
 mod watch_files;
 mod wildcard;
+mod windows_console;
 mod windows_posix;
 
 pub(crate) use crate::exit::request as request_exit;
@@ -132,10 +133,17 @@ fn main() -> ExitCode {
     if env::invoked_as_self_replace_helper() {
         return ExitCode::SUCCESS;
     }
+    let early_args = env::args_safe();
+    // Task Scheduler starts a console program in a console of its own, so the
+    // history watcher would run behind a terminal window the user can close.
+    // Before the runtime, the logger, and anything that prints: the window
+    // should be gone by the time there is something to show in it.
+    if windows_console::requested(&early_args) {
+        windows_console::detach();
+    }
     // Embedded aube lifecycle shims re-exec this binary with private commands
     // (notably `__node-gyp-bootstrap`). Hand those to aube before mise's
     // naked-run rewrite / clap parser can claim them.
-    let early_args = env::args_safe();
     if let Some(code) = backend::aube_host::try_run_embedded_cli(&early_args) {
         return exit::status(code);
     }

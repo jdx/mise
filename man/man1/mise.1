@@ -2385,6 +2385,11 @@ Reconcile and synchronize once and exit (for timers and cron)
 \fB\-J, \-\-json\fR
 One JSON object per line instead of log lines
 .TP
+\fB\-\-hide\-console\fR
+Give up the console Windows allocated for this process (Windows only)
+
+The `history\-watch` service passes this so the watcher does not run behind a terminal window that closing would kill. No effect on other platforms.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP FILES"
@@ -4892,6 +4897,11 @@ Reconcile and synchronize once and exit (for timers and cron)
 .TP
 \fB\-J, \-\-json\fR
 One JSON object per line instead of log lines
+.TP
+\fB\-\-hide\-console\fR
+Give up the console Windows allocated for this process (Windows only)
+
+The `history\-watch` service passes this so the watcher does not run behind a terminal window that closing would kill. No effect on other platforms.
 .TP
 \fB\-h, \-\-help\fR
 Print help

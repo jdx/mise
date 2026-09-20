@@ -44,7 +44,7 @@ builtin = "history-watch"
         $agent.definition | Should -BeLike '*RUST_LOG=info*'
         $agent.current | Should -Be 'not installed'
         $history = $status.user_services | Where-Object { $_.name -eq 'mise-history' }
-        $history.command | Should -BeLike '* dot watch'
+        $history.command | Should -BeLike '* dot watch --hide-console'
         $history.definition | Should -BeLike '*<LogonTrigger>*'
 
         @"

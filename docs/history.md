@@ -62,6 +62,9 @@ mise dot status
 mise uses a systemd user service on Linux, a LaunchAgent on macOS, or a
 Scheduled Task on Windows. On these platforms, the full `mise bootstrap`
 also installs the watcher as a user service, without requiring root.
+On Windows the watcher gives up the console Task Scheduler starts it in, so
+there is no terminal window to close by mistake. Its output goes nowhere;
+read [watcher health](#health) instead.
 See [user services](/bootstrap/services.html#user-services) if it fails to start.
 
 Ordinary edits are saved after the file has been quiet for two seconds by

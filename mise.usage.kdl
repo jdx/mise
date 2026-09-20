@@ -1182,6 +1182,13 @@ is deferred.
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot watch\u{1b}[22m\n    $ \u{1b}[1mmise dot watch --once\u{1b}[22m      # one reconcile, for a timer\n    $ \u{1b}[1mmise dot watch --json\u{1b}[22m\n"
             flag --once help="Reconcile and synchronize once and exit (for timers and cron)"
             flag "-J --json" help="One JSON object per line instead of log lines"
+            flag --hide-console help="Give up the console Windows allocated for this process (Windows only)" hide=#true {
+                long_help #"""
+Give up the console Windows allocated for this process (Windows only)
+
+The `history-watch` service passes this so the watcher does not run behind a terminal window that closing would kill. No effect on other platforms.
+"""#
+            }
             flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
@@ -2872,6 +2879,13 @@ is deferred.
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise dot watch\u{1b}[22m\n    $ \u{1b}[1mmise dot watch --once\u{1b}[22m      # one reconcile, for a timer\n    $ \u{1b}[1mmise dot watch --json\u{1b}[22m\n"
         flag --once help="Reconcile and synchronize once and exit (for timers and cron)"
         flag "-J --json" help="One JSON object per line instead of log lines"
+        flag --hide-console help="Give up the console Windows allocated for this process (Windows only)" hide=#true {
+            long_help #"""
+Give up the console Windows allocated for this process (Windows only)
+
+The `history-watch` service passes this so the watcher does not run behind a terminal window that closing would kill. No effect on other platforms.
+"""#
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
     }
 }

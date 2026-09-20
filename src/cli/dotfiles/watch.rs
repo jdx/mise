@@ -40,10 +40,24 @@ pub(crate) struct DotfilesWatch {
     /// One JSON object per line instead of log lines
     #[usage(long, short = 'J')]
     json: bool,
+
+    /// Give up the console Windows allocated for this process (Windows only)
+    ///
+    /// The `history-watch` service passes this so the watcher does not run
+    /// behind a terminal window that closing would kill. No effect on other
+    /// platforms.
+    #[usage(long, hide = true)]
+    hide_console: bool,
 }
 
 impl DotfilesWatch {
     pub(crate) async fn run(self) -> Result<()> {
+        if self.hide_console {
+            // `main` gives up the console before the parser runs, so the
+            // window is gone by now and this is a no-op. It stands for the
+            // flag doing what it says however the command was reached.
+            crate::windows_console::detach();
+        }
         let code = runtime::run(WatchOptions {
             once: self.once,
             json: self.json,
