@@ -440,7 +440,9 @@ impl Store {
         }
         if !draft.has_metadata()
             && let Some((previous_checkpoint, tree)) = &previous_tree
-            && snapshot.as_deref() == Some(tree.as_str())
+            && let Some(snapshot) = snapshot.as_deref()
+            && (snapshot == tree
+                || self.same_but_pointers(snapshot, previous_checkpoint, tree, &walk)?)
             && (!cfg!(unix) || previous_checkpoint.tree.modes == modes)
         {
             debug!(
@@ -600,6 +602,27 @@ impl Store {
             super::enrollment::confirm(&self.state_dir, repo, tracked)?;
         }
         Ok(Outcome::Created(entry))
+    }
+
+    /// Whether `snapshot` differs from the previous checkpoint's tree only
+    /// by nested repository pointers. A pointer is this machine's own view
+    /// of a repository history does not hold, so a change of it alone (or
+    /// another machine's pointer arriving through sync) records nothing: the
+    /// current pointer is saved with the next change of anything else.
+    fn same_but_pointers(
+        &self,
+        snapshot: &str,
+        previous: &Checkpoint,
+        tree: &str,
+        walk: &super::tracked::Walk,
+    ) -> Result<bool> {
+        if walk.nested.is_empty() && previous.tree.coverage.nested.is_empty() {
+            return Ok(false);
+        }
+        let Some(repo) = &self.repo else {
+            return Ok(false);
+        };
+        Ok(repo.with_pointers_of(snapshot, tree)? == tree)
     }
 
     /// Append one ordinary record while the store lock is held.

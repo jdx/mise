@@ -73,7 +73,8 @@ assert_contains "$b dot status" 'not shared: ~/.hammerspoon/Spoons/Sky.spoon (ne
 assert "$b dot status --json | jq -r '.history.sync.pending_applications | length'" 0
 assert_succeed "$b dot sync"
 
-# A machine without the directory is not asked to create it.
+# A machine without the directory is not asked to create it, and its
+# later syncs neither remove the pointer nor fail on it.
 third="$(dirname "$HOME")/nested-third"
 wrapper "$third" "$PWD/third"
 c="$PWD/third"
@@ -83,3 +84,83 @@ assert_fail "test -e $third/.hammerspoon/Spoons/Sky.spoon"
 assert_succeed "$c dot sync"
 assert_succeed "$b dot sync"
 assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"
+
+# Pointers at different commits (or absent) are each machine's own: once
+# every machine has pulled what the others published, nobody is pending
+# and further rounds publish nothing.
+round() {
+  for m in "$c" "$b" mise; do
+    assert_succeed "$m dot sync"
+    assert_succeed "$m dot pull --yes"
+    assert_succeed "$m dot sync"
+  done
+}
+round
+round
+commits=$(git --git-dir="$origin" rev-list --count main)
+round
+assert "git --git-dir=$origin rev-list --count main" "$commits"
+assert "mise dot status --json | jq -r '.history.sync.pending_applications | length'" 0
+assert "$b dot status --json | jq -r '.history.sync.pending_applications | length'" 0
+assert "$c dot status --json | jq -r '.history.sync.pending_applications | length'" 0
+assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { second = true }'
+assert_fail "test -e $third/.hammerspoon/Spoons/Sky.spoon"
+
+# Another machine's pointer at a different commit is upstream when this
+# one converts the repository to ordinary content: the files still publish.
+echo 'return { second = 2 }' >"$second/.hammerspoon/Spoons/Sky.spoon/init.lua"
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com commit -qam second-2
+echo 'hs.alert("b")' >"$second/.hammerspoon/init.lua"
+assert_succeed "$b dot save"
+assert_succeed "$b dot sync"
+assert "git --git-dir=$origin ls-tree main home/.hammerspoon/Spoons/Sky.spoon | awk '{print \$3}'" "$(git -C "$second/.hammerspoon/Spoons/Sky.spoon" rev-parse HEAD)"
+assert_succeed 'mise dot sync'
+assert_succeed 'mise dot pull --yes'
+assert_succeed 'mise dot sync'
+
+# Removing the nested .git turns the pointer into ordinary content: the
+# next save captures the files (not a pointer-only change), and the other
+# machines receive them.
+rm -rf "$plugin/.git"
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+assert_not_contains 'mise dot paths' 'nested:'
+assert_succeed 'mise dot sync'
+assert "git --git-dir=$origin show main:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+assert_succeed "$c dot sync"
+assert_succeed "$c dot pull --yes"
+assert "cat $third/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+
+# A machine that still has the repository checked out pauses at that path
+# instead of having the files written into its checkout or publishing its
+# pointer over them (its next save records the pointer again alongside a
+# real change).
+echo 'hs.alert("changed on b")' >"$second/.hammerspoon/init.lua"
+assert_succeed "$b dot save"
+assert_fail "$b dot sync 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
+assert_fail "$b dot pull --yes 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
+assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { second = 2 }'
+assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"
+assert "git -C $second/.hammerspoon/Spoons/Sky.spoon status --porcelain | wc -l | tr -d ' '" 0
+assert "git --git-dir=$origin show main:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+
+# Once the checkout is gone, the files arrive.
+rm -rf "$second/.hammerspoon/Spoons/Sky.spoon"
+assert_succeed "$b dot pull --yes"
+assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+assert_succeed "$b dot sync"
+
+# A fresh machine that already has the repository checked out where the
+# setup now carries ordinary files pauses its adoption instead of having
+# them written into the checkout.
+fourth="$(dirname "$HOME")/nested-fourth"
+wrapper "$fourth" "$PWD/fourth"
+d="$PWD/fourth"
+mkdir -p "$fourth/.hammerspoon/Spoons/Sky.spoon"
+echo 'return { fourth = true }' >"$fourth/.hammerspoon/Spoons/Sky.spoon/init.lua"
+git -C "$fourth/.hammerspoon/Spoons/Sky.spoon" init -q -b main
+git -C "$fourth/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com add -A
+git -C "$fourth/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com commit -q -m fourth
+assert_fail "$d bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
+assert "cat $fourth/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { fourth = true }'
+assert "git -C $fourth/.hammerspoon/Spoons/Sky.spoon status --porcelain | wc -l | tr -d ' '" 0

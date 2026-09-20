@@ -618,9 +618,12 @@ pub(crate) async fn apply_locked_with_scope(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            if repo.compose(&repo.output_tree_of(current)?, &restore_planned)?
-                != repo.output_tree_of(local)?
-            {
+            // the protective commit records nested repository pointers as
+            // the disk has them now, which is this machine's own detail,
+            // never a saved change (a checkout removed meanwhile, say)
+            let local_tree = repo.output_tree_of(local)?;
+            let composed = repo.compose(&repo.output_tree_of(current)?, &restore_planned)?;
+            if repo.with_pointers_of(&composed, &local_tree)? != local_tree {
                 bail!("local files were saved after enrollment planning; retry pull");
             }
             // Do not let a divergent text merge or a stale resolution differ

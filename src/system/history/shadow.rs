@@ -981,6 +981,81 @@ impl HistoryRepo {
     }
 
     /// Recursive listing of a tree (or a path inside it).
+    /// `tree` with the nested repository pointers of `source` instead of its
+    /// own, where the two differ only by a pointer: a gitlink `tree` holds
+    /// is replaced by `source`'s or dropped when `source` has nothing there,
+    /// and a gitlink `source` holds is put where `tree` has nothing. A
+    /// pointer names a commit in a repository only the machine that has it
+    /// can see, so two machines' trees are compared and merged as if each
+    /// carried its own. Content where the other side has a pointer (a
+    /// nested repository whose `.git` was removed) is a real difference and
+    /// is left alone.
+    pub(crate) fn with_pointers_of(&self, tree: &str, source: &str) -> Result<String> {
+        let mut overlays: Vec<Overlay> = vec![];
+        let mut seen = BTreeSet::new();
+        for entry in self.ls_tree(tree)? {
+            if entry.mode != "160000" {
+                continue;
+            }
+            seen.insert(entry.path.clone());
+            match self.object_at(source, &entry.path)? {
+                Some((mode, oid)) if mode == "160000" => {
+                    if oid != entry.oid {
+                        overlays.push(Overlay {
+                            path: entry.path,
+                            object: Some((mode, oid)),
+                        });
+                    }
+                }
+                Some(_) => {}
+                None => overlays.push(Overlay {
+                    path: entry.path,
+                    object: None,
+                }),
+            }
+        }
+        for entry in self.ls_tree(source)? {
+            if entry.mode != "160000"
+                || seen.contains(&entry.path)
+                || self.object_at(tree, &entry.path)?.is_some()
+            {
+                continue;
+            }
+            overlays.push(Overlay {
+                path: entry.path,
+                object: Some((entry.mode, entry.oid)),
+            });
+        }
+        if overlays.is_empty() {
+            return Ok(tree.to_string());
+        }
+        self.compose(tree, &overlays)
+    }
+
+    /// The paths where `local` holds a nested repository pointer and
+    /// `remote` ordinary content: the repository became files on another
+    /// machine. Whether that matters here depends on whether the
+    /// repository is still checked out at the path, which the caller
+    /// decides.
+    pub(crate) fn pointer_content_mismatches(
+        &self,
+        local: &str,
+        remote: &str,
+    ) -> Result<Vec<String>> {
+        let mut paths = vec![];
+        for entry in self.ls_tree(local)? {
+            if entry.mode != "160000" {
+                continue;
+            }
+            if let Some((mode, _)) = self.object_at(remote, &entry.path)?
+                && mode != "160000"
+            {
+                paths.push(entry.path);
+            }
+        }
+        Ok(paths)
+    }
+
     pub(crate) fn ls_tree(&self, spec: &str) -> Result<Vec<TreeEntry>> {
         let out = self
             .git
@@ -1964,6 +2039,86 @@ mod tests {
             )])
             .unwrap();
         assert_eq!(again.tree, result.tree);
+    }
+
+    #[test]
+    fn pointer_only_differences_are_substituted_but_content_is_kept() {
+        if crate::git::plumbing_binary().is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = repo(tmp.path());
+        let empty = repo.empty_object("tree").unwrap();
+        let blob = |bytes: &[u8]| Some(("100644".to_string(), repo.hash_blob(bytes).unwrap()));
+        let pointer = |sha: &str| Some(("160000".to_string(), sha.to_string()));
+        let sha_a = "a".repeat(40);
+        let sha_b = "b".repeat(40);
+        let compose = |overlays: Vec<(&str, Option<(String, String)>)>| {
+            repo.compose(
+                &empty,
+                &overlays
+                    .into_iter()
+                    .map(|(path, object)| Overlay {
+                        path: path.into(),
+                        object,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap()
+        };
+        let with_pointer = compose(vec![("home/x", blob(b"x")), ("home/p", pointer(&sha_a))]);
+        let other_pointer = compose(vec![("home/x", blob(b"x")), ("home/p", pointer(&sha_b))]);
+        let without = compose(vec![("home/x", blob(b"x"))]);
+        let content = compose(vec![("home/x", blob(b"x")), ("home/p/f", blob(b"f"))]);
+        // pointer against pointer, pointer against nothing: substituted
+        assert_eq!(
+            repo.with_pointers_of(&other_pointer, &with_pointer)
+                .unwrap(),
+            with_pointer
+        );
+        assert_eq!(
+            repo.with_pointers_of(&without, &with_pointer).unwrap(),
+            with_pointer
+        );
+        assert_eq!(
+            repo.with_pointers_of(&with_pointer, &without).unwrap(),
+            without
+        );
+        assert_eq!(
+            repo.with_pointers_of(&with_pointer, &with_pointer).unwrap(),
+            with_pointer
+        );
+        // pointer against content: a real difference, left alone
+        assert_eq!(
+            repo.with_pointers_of(&content, &with_pointer).unwrap(),
+            content
+        );
+        assert_eq!(
+            repo.with_pointers_of(&with_pointer, &content).unwrap(),
+            with_pointer
+        );
+        // only a local pointer against remote content is a mismatch: local
+        // content against a remote pointer is this machine's conversion
+        assert_eq!(
+            repo.pointer_content_mismatches(&with_pointer, &content)
+                .unwrap(),
+            vec!["home/p".to_string()]
+        );
+        assert!(
+            repo.pointer_content_mismatches(&content, &with_pointer)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            repo.pointer_content_mismatches(&with_pointer, &other_pointer)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            repo.pointer_content_mismatches(&with_pointer, &without)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

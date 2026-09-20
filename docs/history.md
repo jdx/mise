@@ -1025,15 +1025,19 @@ A checkpoint records only its commit id, as a Git pointer: its files are
 not saved, not shared with other machines, and not restored by a rollback.
 `mise dot save`, `mise dot track`, `mise dot status`, and `mise dot paths`
 report each nested repository, and `mise dot pull` lists the pointer as
-skipped rather than creating an empty directory, failing on it, or
-pausing the setup because another machine's pointer differs. The pointer
-itself still travels with the shared history, so two machines that have
-the same repository at different commits each publish their own and the
-shared branch alternates between them on every sync; that is noisy, but
-touches no file on disk. To save its files, track the directory as its
-own entry (`mise dot track ~/.hammerspoon/Spoons/Sky.spoon`) or remove
-its `.git` so it becomes ordinary content; otherwise leave it to the tool
-that installs it.
+skipped rather than creating an empty directory or failing on it. The
+pointer is each machine's own: a machine that has the repository at
+another commit, or does not have it at all, is neither asked to pull it
+nor blocked from publishing by it, and a change of the pointer alone does
+not create a checkpoint (the current pointer is saved with the next change
+of anything else). Removing the nested `.git` turns the pointer into
+ordinary files, which the next save captures and other machines receive;
+a machine that still has the repository checked out pauses its sync at
+that path until its own `.git` is removed too (or the files are restored
+to a repository), so neither side is written over the other. To save its files, track the directory as its own entry
+(`mise dot track ~/.hammerspoon/Spoons/Sky.spoon`) or remove its `.git` so
+it becomes ordinary content; otherwise leave it to the tool that installs
+it.
 
 Commands that modify or capture tracked files save checkpoints before and
 after their work. Their metadata includes operation labels and the link

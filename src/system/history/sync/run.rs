@@ -369,9 +369,21 @@ pub(crate) fn sync_locked(
             {
                 break;
             }
+            // a skipped pointer plan resolves nothing: a conflict at its
+            // path is content against a pointer and must stop publication
+            if let Some(path) = live_pointer_mismatch(
+                repo,
+                tracked,
+                shared.checkpoint.as_deref(),
+                upstream_commit.as_deref(),
+            )? {
+                bail!("sync paused: {}", pointer_mismatch_advice(&path));
+            }
             let accepted = plans
                 .iter()
-                .filter(|plan| plan.conflict.is_none() && plan.apply.is_none())
+                .filter(|plan| {
+                    plan.conflict.is_none() && plan.apply.is_none() && plan.skipped.is_none()
+                })
                 .map(|plan| plan.branch_path.clone())
                 .collect();
             let Some(commit) = publish::build(
@@ -702,6 +714,21 @@ fn prepare(
     // turn an ordinary incoming edit into an unrelated adoption conflict.
     let heads = super::graph::Heads::read(repo)?;
     status.upstream_commit = heads.remote.clone();
+    if let Some(path) = live_pointer_mismatch(
+        repo,
+        tracked,
+        heads.local.as_deref(),
+        heads.remote.as_deref(),
+    )
+    .inspect_err(|error| repository_conflict(status, error))?
+    {
+        let error = eyre::eyre!(
+            "repository application paused: {}",
+            pointer_mismatch_advice(&path)
+        );
+        repository_conflict(status, &error);
+        return Err(error);
+    }
     status.pending_repository = match &heads.local {
         Some(local) => {
             crate::system::history::manifest::Manifest::read(repo, local)?.as_ref()
@@ -984,6 +1011,68 @@ fn apply_resolutions(
     Ok(())
 }
 
+/// A nested repository still checked out here whose files another machine
+/// published: writing them would dirty the checkout and publishing the
+/// pointer would delete them, so sync pauses at the first such path this
+/// machine selects. A machine that converted the repository itself, or
+/// no longer has it on disk, is not held up. Without local history (a
+/// fresh adoption) nothing recorded the checkout, so the remote content
+/// is checked against the disk instead.
+fn live_pointer_mismatch(
+    repo: &crate::system::history::shadow::HistoryRepo,
+    tracked: &TrackedSet,
+    local: Option<&str>,
+    remote: Option<&str>,
+) -> Result<Option<String>> {
+    let Some(remote) = remote else {
+        return Ok(None);
+    };
+    let roots = Roots::current();
+    let Some(local) = local else {
+        for entry in repo.ls_tree(&repo.output_tree_of(remote)?)? {
+            if entry.mode == "160000" || !eligible(&roots, tracked, &entry.path) {
+                continue;
+            }
+            let located = roots.locate(&entry.path);
+            let Some(path) = located.path() else {
+                continue;
+            };
+            let Some(owner) = tracked.entry_for(path) else {
+                continue;
+            };
+            if let Some(checkout) = path
+                .ancestors()
+                .skip(1)
+                .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+                .find(|ancestor| ancestor.join(".git").exists())
+            {
+                return Ok(Some(owner.tree_path(checkout)?));
+            }
+        }
+        return Ok(None);
+    };
+    let mismatches = repo
+        .pointer_content_mismatches(&repo.output_tree_of(local)?, &repo.output_tree_of(remote)?)?;
+    for path in mismatches {
+        if eligible(&roots, tracked, &path)
+            && roots
+                .locate(&path)
+                .path()
+                .is_some_and(|local| local.join(".git").exists())
+        {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
+fn pointer_mismatch_advice(path: &str) -> String {
+    format!(
+        "{} is a nested repository here and ordinary files on another machine; remove its .git here to receive the files, or restore the repository on the other machine",
+        crate::system::history::tracked::tree_path_to_display(path)
+    )
+}
+
 /// Whether an upstream path belongs on this machine: configuration and
 /// sources always; a tracked entry's stream only when it is the one this
 /// machine selects (its variant, or the base stream when it has none), so
@@ -1048,9 +1137,18 @@ pub(super) fn incoming_repository_tree(
         return Ok(None);
     }
     let (merged, conflicts) = repo.merge_tree(local, remote)?;
-    let tree = tracked.manifest.write(repo, &merged)?;
+    // a nested repository's pointer is this machine's own: another
+    // machine's differing pointer is neither incoming nor a conflict
+    let local_tree = repo.output_tree_of(local)?;
+    let tree = repo.with_pointers_of(&tracked.manifest.write(repo, &merged)?, &local_tree)?;
+    let mut conflicts = conflicts;
+    for index in (0..conflicts.len()).rev() {
+        if reconcile::is_pointer_conflict(repo, local, remote, &conflicts[index])? {
+            conflicts.remove(index);
+        }
+    }
     let roots = Roots::current();
-    if repo.output_tree_of(local)? == tree && conflicts.is_empty() {
+    if local_tree == tree && conflicts.is_empty() {
         return Ok(None);
     }
     let unresolved: Vec<_> = conflicts

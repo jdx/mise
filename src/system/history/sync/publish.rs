@@ -34,6 +34,13 @@ pub(crate) fn build(
         && heads.base.as_ref() != Some(remote)
     {
         let (mut merged, mut conflicts) = repo.merge_tree(local, remote)?;
+        // another machine's nested repository pointer is its own, never a
+        // conflict here nor a reason to require a pull first
+        for index in (0..conflicts.len()).rev() {
+            if super::reconcile::is_pointer_conflict(repo, local, remote, &conflicts[index])? {
+                conflicts.remove(index);
+            }
+        }
         // Enrollment is a keyed inventory, not arbitrary JSON text. Git's
         // line merge can conflict on independent additions or combine policy
         // changes into invalid metadata. Validate its structured merge first.
@@ -48,10 +55,17 @@ pub(crate) fn build(
                 conflicts.retain(|path| path != crate::system::history::manifest::PATH);
             }
         }
-        let unresolved: Vec<_> = conflicts
-            .iter()
-            .filter(|path| !accepted.contains(*path))
-            .collect();
+        // ordinary files here against another machine's pointer: the
+        // repository was converted to content on this machine, whose files
+        // ship (a live checkout here was already paused before this)
+        let mut unresolved = vec![];
+        for path in &conflicts {
+            if !accepted.contains(path)
+                && !super::reconcile::is_gitlink(repo.object_at(remote, path)?.as_ref())
+            {
+                unresolved.push(path);
+            }
+        }
         if !unresolved.is_empty() {
             bail!(
                 "sync paused: resolve conflicts across the complete repository before publication: {}",
@@ -74,7 +88,7 @@ pub(crate) fn build(
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        let merged = repo.compose(&merged, &overlays)?;
+        let merged = repo.with_pointers_of(&repo.compose(&merged, &overlays)?, &tree)?;
         if merged != tree {
             bail!(
                 "incoming setup has not been completely applied; run `mise dot pull` before publishing"

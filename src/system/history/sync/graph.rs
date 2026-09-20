@@ -72,8 +72,11 @@ impl Heads {
                         bail!("saved files changed while preparing publication; plan again");
                     }
                     local.clone()
-                } else if self.base.as_ref() == Some(local) && repo.output_tree_of(remote)? == tree
+                } else if self.base.as_ref() == Some(local)
+                    && repo.with_pointers_of(&repo.output_tree_of(remote)?, tree)? == tree
                 {
+                    // the same files under another machine's nested
+                    // repository pointers: nothing of ours to publish
                     remote.clone()
                 } else {
                     repo.commit_tree(tree, vec![local, remote], "merge origin dotfiles")?

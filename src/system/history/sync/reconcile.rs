@@ -132,6 +132,11 @@ pub(crate) struct Conflict {
 /// travels with the published tree, but the objects it names live in
 /// another repository.
 pub(crate) const NESTED_NOT_SHARED: &str = "nested repository; its files are not shared";
+/// Why a pointer another machine still holds is not applied here: this
+/// machine turned the repository into ordinary files, which publish.
+pub(crate) const NESTED_CONVERTED: &str =
+    "nested repository elsewhere; ordinary files here, published with the next sync";
+
 /// What one path needs after reconciliation.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PathPlan {
@@ -175,6 +180,25 @@ fn pointer_or_absent(object: Option<&Object>) -> bool {
 /// A commit pointer to a nested repository rather than content.
 pub(crate) fn is_gitlink(object: Option<&Object>) -> bool {
     object.is_some_and(|(mode, _)| mode == "160000")
+}
+
+/// Whether a merge conflict at `path` is two machines' own nested
+/// repository pointers (or one machine's pointer against nothing), never
+/// something to resolve. Content on either side against a pointer is a
+/// real conflict: the nested repository became ordinary files somewhere.
+pub(crate) fn is_pointer_conflict(
+    repo: &HistoryRepo,
+    local: &str,
+    remote: &str,
+    path: &str,
+) -> Result<bool> {
+    let local = repo.object_at(local, path)?;
+    let remote = repo.object_at(remote, path)?;
+    let pointer_or_absent =
+        |object: &Option<Object>| object.is_none() || is_gitlink(object.as_ref());
+    Ok((is_gitlink(local.as_ref()) || is_gitlink(remote.as_ref()))
+        && pointer_or_absent(&local)
+        && pointer_or_absent(&remote))
 }
 
 /// Runs the table for every path of `shared` (S), `upstream` (T), and the
@@ -222,9 +246,19 @@ pub(crate) fn reconcile(
         // it would delete a repository. Against another pointer or nothing
         // it is never applied, never removed, and never a conflict; the
         // pointer is published with the tree. Against content it is a type
-        // change, decided like any other.
+        // change, decided like any other; ordinary files under the same
+        // path on this machine mean the repository was converted here.
         if (is_gitlink(s) || is_gitlink(t)) && pointer_or_absent(s) && pointer_or_absent(t) {
-            plan.skipped = Some(NESTED_NOT_SHARED.into());
+            let prefix = format!("{branch_path}/");
+            let converted_here = s.is_none() && shared.keys().any(|path| path.starts_with(&prefix));
+            plan.skipped = Some(
+                if converted_here {
+                    NESTED_CONVERTED
+                } else {
+                    NESTED_NOT_SHARED
+                }
+                .into(),
+            );
             plan.next.acknowledged = t_version.clone();
             plan.next.reconciled = t_version.clone();
             plan.next.applied = t_version;
@@ -571,6 +605,33 @@ mod tests {
         assert!(plans[0].conflict.is_none());
         assert!(plans[0].apply.is_none());
         assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
+        // ordinary files here under a path another machine still has as a
+        // pointer: the pointer is skipped for what it is, the files plan
+        // as usual
+        let converted = [(format!("{}/init.lua", path()), obj("content"))].into();
+        let upstream = Upstream {
+            files: [(path(), pointer("aaaa"))].into(),
+            commit: Some("upstream".into()),
+        };
+        let plans = reconcile(
+            &repo,
+            &converted,
+            &upstream,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        let pointer_plan = plans
+            .iter()
+            .find(|plan| plan.branch_path == path())
+            .unwrap();
+        assert!(pointer_plan.apply.is_none());
+        assert_eq!(pointer_plan.skipped.as_deref(), Some(NESTED_CONVERTED));
+        let file_plan = plans
+            .iter()
+            .find(|plan| plan.branch_path == format!("{}/init.lua", path()))
+            .unwrap();
+        assert!(file_plan.publish.is_some());
         // the pointer disappearing upstream never deletes the repository here
         let upstream = Upstream {
             files: BTreeMap::new(),
