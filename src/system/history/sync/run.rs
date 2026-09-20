@@ -1140,23 +1140,35 @@ pub(super) fn incoming_repository_tree(
     // machine's differing pointer is neither incoming nor a conflict, and
     // against this machine's content it resolves to the content, as it
     // does when publishing, so the merged tree carries our object there
+    let roots = Roots::current();
     let local_tree = repo.output_tree_of(local)?;
     let mut conflicts = conflicts;
-    let mut ours = vec![];
+    let mut overlays = vec![];
     for index in (0..conflicts.len()).rev() {
         let path = &conflicts[index];
         if reconcile::is_pointer_conflict(repo, local, remote, path)? {
             conflicts.remove(index);
         } else if reconcile::is_gitlink(repo.object_at(remote, path)?.as_ref()) {
-            ours.push(crate::system::history::shadow::Overlay {
+            overlays.push(crate::system::history::shadow::Overlay {
                 object: repo.object_at(local, path)?,
+                path: conflicts.remove(index),
+            });
+        } else if reconcile::is_gitlink(repo.object_at(local, path)?.as_ref())
+            && roots
+                .locate(path)
+                .path()
+                .is_some_and(|local| !local.join(".git").exists())
+        {
+            // a pointer this machine only inherited (no live checkout) is
+            // not a fact about its disk: the other machine's files win
+            overlays.push(crate::system::history::shadow::Overlay {
+                object: repo.object_at(remote, path)?,
                 path: conflicts.remove(index),
             });
         }
     }
-    let merged = repo.compose(&merged, &ours)?;
+    let merged = repo.compose(&merged, &overlays)?;
     let tree = repo.with_pointers_of(&tracked.manifest.write(repo, &merged)?, &local_tree)?;
-    let roots = Roots::current();
     if local_tree == tree && conflicts.is_empty() {
         return Ok(None);
     }
