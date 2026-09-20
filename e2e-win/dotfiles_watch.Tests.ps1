@@ -197,10 +197,13 @@ environment = { E2E_WATCH_MARK = "1" }
             $watcher | Should -Not -BeNullOrEmpty
             $watcher.CommandLine | Should -BeLike '*dot watch*'
 
-            # neither puts a window on the desktop. The probe is the same one
-            # the case above shows can see a console when there is one.
-            Get-ConsoleProbe ([int]$launcher.ProcessId) | Should -Be 4
-            Get-ConsoleProbe ([int]$watcher.ProcessId) | Should -Be 4
+            # Neither puts a window on the desktop: the launcher hides the
+            # console Task Scheduler gave it, and the service inherits that
+            # same hidden console rather than being handed one of its own.
+            # The probe is the one the case above shows reports 3 when a
+            # window is visible.
+            Get-ConsoleProbe ([int]$launcher.ProcessId) | Should -Be 6
+            Get-ConsoleProbe ([int]$watcher.ProcessId) | Should -Be 6
         } finally {
             mise bootstrap services remove mise-history 2>&1 | Out-String | Out-Null
             schtasks /delete /tn $task /f 2>&1 | Out-Null

@@ -30,16 +30,12 @@ use crate::system::scheduled_tasks::ServiceLaunch;
 #[cfg(windows)]
 pub(crate) fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
     let launch = read_launch(name, launch, digest)?;
-    // The console Task Scheduler allocated for this process alone, which
-    // the service is about to be started without. A `__service-exec` run by
-    // hand in a terminal shares that terminal's console and keeps it.
-    crate::windows_console::detach_if_unattended();
+    // The window of the console Task Scheduler allocated for this process
+    // alone. A `__service-exec` run by hand in a terminal shares that
+    // terminal's console, and its window is left alone.
+    crate::windows_console::hide_if_unattended();
 
     use std::os::windows::process::CommandExt;
-    // CREATE_NO_WINDOW: a console program with no console window, which is
-    // what a service wants. Without it Windows would give this child a
-    // console of its own, since the launcher just gave up the one it had.
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut cmd = std::process::Command::new(&launch.program);
     if !launch.args.is_empty() {
         // Verbatim, because this is already a command line: Task Scheduler
@@ -57,7 +53,14 @@ pub(crate) fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
     // descendant can slip out before the job takes it, and a failure to
     // confine is a failure to run: an unconfined service is exactly the one
     // this is meant to prevent.
-    let (mut child, job) = crate::windows_job::spawn(&mut cmd, CREATE_NO_WINDOW)?;
+    //
+    // No creation flags of its own: the service inherits the console hidden
+    // above, so it stays hidden and so does everything it starts. Asking for
+    // `CREATE_NO_WINDOW` would give the service a console of its own, and a
+    // program started by a process whose console it does not share is handed
+    // a fresh one — which is how each `git` the watcher runs would get a
+    // window, the very problem hiding rather than detaching avoids.
+    let (mut child, job) = crate::windows_job::spawn(&mut cmd, 0)?;
     let code = match child.wait() {
         // Windows always has an exit code; anything but zero is the failure
         // `RestartOnFailure` acts on.
