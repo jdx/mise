@@ -170,6 +170,11 @@ assert "git -C $fourth/.hammerspoon/Spoons/Sky.spoon status --porcelain | wc -l 
 git -C "$third/.hammerspoon/Spoons/Sky.spoon" init -q -b main
 git -C "$third/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com add -A
 git -C "$third/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com commit -q -m third
+# Before the next save records the repository as a pointer, nothing is
+# incoming under it and a pull holds nothing up; the save then makes it a
+# pointer against upstream content, which pauses until it is resolved.
+assert_succeed "$c dot pull --yes"
+assert_fail "$c dot sync 2>&1" 'Sky.spoon is a nested repository here and ordinary files on another machine'
 echo 'return { edited = true }' >"$plugin/init.lua"
 assert_succeed 'mise dot save'
 assert_succeed 'mise dot sync'

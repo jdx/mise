@@ -371,7 +371,12 @@ pub(crate) fn sync_locked(
             }
             // a skipped pointer plan resolves nothing: a conflict at its
             // path is content against a pointer and must stop publication
-            if let Some(path) = live_pointer_mismatch(repo, tracked, upstream_commit.as_deref())? {
+            if let Some(path) = live_pointer_mismatch(
+                repo,
+                tracked,
+                shared.checkpoint.as_deref(),
+                upstream_commit.as_deref(),
+            )? {
                 bail!("sync paused: {}", pointer_mismatch_advice(&path));
             }
             let accepted = plans
@@ -709,8 +714,13 @@ fn prepare(
     // turn an ordinary incoming edit into an unrelated adoption conflict.
     let heads = super::graph::Heads::read(repo)?;
     status.upstream_commit = heads.remote.clone();
-    if let Some(path) = live_pointer_mismatch(repo, tracked, heads.remote.as_deref())
-        .inspect_err(|error| repository_conflict(status, error))?
+    if let Some(path) = live_pointer_mismatch(
+        repo,
+        tracked,
+        heads.local.as_deref(),
+        heads.remote.as_deref(),
+    )
+    .inspect_err(|error| repository_conflict(status, error))?
     {
         let error = eyre::eyre!(
             "repository application paused: {}",
@@ -1004,22 +1014,32 @@ fn apply_resolutions(
 /// A nested repository checked out here whose files another machine
 /// published: writing them would dirty the checkout and publishing the
 /// pointer would delete them, so sync pauses at the first such path this
-/// machine selects. The checkout is looked for on disk, between the entry
-/// root and each incoming file, since a repository initialised after the
-/// last save is in no saved tree; a machine that converted the repository
-/// itself, or no longer has it on disk, is not held up.
+/// machine selects. Only remote content that differs from this machine's
+/// saved tree counts (all of it without local history), so a repository
+/// initialised around files that are already in sync holds nothing up
+/// until something arrives under it. The checkout is looked for on disk,
+/// between the entry root and the file, since a repository initialised
+/// after the last save is in no saved tree.
 fn live_pointer_mismatch(
     repo: &crate::system::history::shadow::HistoryRepo,
     tracked: &TrackedSet,
+    local: Option<&str>,
     remote: Option<&str>,
 ) -> Result<Option<String>> {
     let Some(remote) = remote else {
         return Ok(None);
     };
     let roots = Roots::current();
+    let local_tree = local.map(|local| repo.output_tree_of(local)).transpose()?;
     let mut checked: BTreeMap<PathBuf, bool> = BTreeMap::new();
     for entry in repo.ls_tree(&repo.output_tree_of(remote)?)? {
         if entry.mode == "160000" || !eligible(&roots, tracked, &entry.path) {
+            continue;
+        }
+        if let Some(local_tree) = &local_tree
+            && repo.object_at(local_tree, &entry.path)?
+                == Some((entry.mode.clone(), entry.oid.clone()))
+        {
             continue;
         }
         let located = roots.locate(&entry.path);
