@@ -261,6 +261,16 @@ pub(crate) async fn apply_locked_with_scope(
                 Some(head) => repo
                     .object_at(head, &conflict.branch_path)?
                     .map(|object| {
+                        // a nested repository pointer names objects this
+                        // repository does not hold: it cannot be taken
+                        if take_remote.contains(&local)
+                            && super::reconcile::is_gitlink(Some(&object))
+                        {
+                            bail!(
+                                "cannot take the repository's version of {path}: it is a nested repository pointer, whose files history does not hold. Keep this machine's files with `mise dot pull --keep-local {path}`, or replace them with a clone of that repository yourself",
+                                path = display_path(&local)
+                            );
+                        }
                         if !encrypted.contains(&conflict.branch_path) {
                             return Ok(object);
                         }
