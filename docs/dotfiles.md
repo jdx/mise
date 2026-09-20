@@ -649,8 +649,9 @@ Start with individual configuration files so you can choose what to save.
 Leave logs, caches, databases, and application session state out of history.
 Credential files (`.netrc`, `*.age`, `*.key`, `*.pem`, `*.gpg`, `*.kdbx`,
 `id_*`, `*token*`, `*secret*`, `credentials*`, `oauth*`, and under the mise
-configuration directory `hosts.yml` and `age.txt`; `.pub` files are
-exempt) and `*.local.toml` files are omitted by default. `mise dot save`,
+configuration directory `hosts.yml` and `age.txt`; matched by name alone,
+so `id_ed25519.pub` counts too) and `*.local.toml` files are omitted by
+default. `mise dot save`,
 `mise dot track`, and `mise dot status` report these omissions, and
 `mise dot paths` lists each one with its reason; see
 [encrypted tracking](/history.html#encrypted-shared-files) to save credentials.

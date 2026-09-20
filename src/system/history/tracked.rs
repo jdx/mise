@@ -28,13 +28,14 @@ use crate::system::files::{FileMode, FilePolicy};
 
 /// Credential names excluded from capture by default.
 const CREDENTIAL_NAMES: &[&str] = &["github_tokens.toml", "hosts.yml", "age.txt"];
-/// Key material by name: a `.pub` beside these is the public half and is
-/// not protected.
-const KEY_GLOBS: &[&str] = &["*.age", "*.key", "*.pem", "*.gpg", "id_*"];
-/// Other credential stores by name; a `.pub` suffix means nothing here.
-const SECRET_GLOBS: &[&str] = &[
+const CREDENTIAL_GLOBS: &[&str] = &[
     ".netrc",
+    "*.age",
+    "*.key",
+    "*.pem",
+    "*.gpg",
     "*.kdbx",
+    "id_*",
     "*token*",
     "*secret*",
     "credentials*",
@@ -605,10 +606,9 @@ pub(crate) const CREDENTIAL_REASON: &str = "credential store; encrypt the file b
 
 /// Why `path` is left out of every capture under `policy`, if it is: a
 /// machine-local configuration file, or a credential store that is not
-/// enrolled with encryption. A `.pub` file matching a key-material
-/// pattern (`id_ed25519.pub`, `signing.gpg.pub`) is the public half and
-/// is exempt; the exemption does not extend to the other patterns, so
-/// `client_secret.pub` stays protected.
+/// enrolled with encryption. The guard is deliberately conservative and
+/// matches by name alone (`id_ed25519.pub` is protected like its private
+/// half); a narrower rule is the user's to add.
 pub(crate) fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static str> {
     let name = path.file_name()?.to_str()?;
     if name.ends_with(".local.toml") {
@@ -623,11 +623,9 @@ pub(crate) fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static
 /// Whether the builtin rules protect a file of this name at this path.
 pub(crate) fn is_builtin_credential(path: &Path, name: &str) -> bool {
     static NAMES: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_names);
-    static KEYS: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(|| glob_set(KEY_GLOBS));
-    static SECRETS: std::sync::LazyLock<GlobSet> =
-        std::sync::LazyLock::new(|| glob_set(SECRET_GLOBS));
-    (KEYS.is_match(name) && !name.ends_with(".pub"))
-        || SECRETS.is_match(name)
+    static GLOBS: std::sync::LazyLock<GlobSet> =
+        std::sync::LazyLock::new(|| glob_set(CREDENTIAL_GLOBS));
+    GLOBS.is_match(name)
         || (path.starts_with(normalize(&global_config_dir())) && NAMES.is_match(name))
 }
 
@@ -1148,28 +1146,19 @@ mod tests {
     }
 
     #[test]
-    fn public_keys_are_not_credential_stores() {
+    fn the_credential_guard_matches_by_name_alone() {
         let policy = Policy::for_mode(FileMode::Track);
         let dir = Path::new("/nonexistent-mise-test/.ssh");
-        assert_eq!(
-            capture_exclusion(&dir.join("id_ed25519"), &policy),
-            Some(CREDENTIAL_REASON)
-        );
-        assert_eq!(
-            capture_exclusion(&dir.join("id_ed25519.pub"), &policy),
-            None
-        );
-        assert_eq!(
-            capture_exclusion(&dir.join("age-recipients.pub"), &policy),
-            None
-        );
-        assert_eq!(
-            capture_exclusion(&dir.join("secrets.fish"), &policy),
-            Some(CREDENTIAL_REASON)
-        );
-        // the exemption is for key pairs only: a secret store keeps its
-        // protection whatever its suffix
-        for name in ["client_secret.pub", "oauth_token.pub", "credentials.pub"] {
+        // conservative by name: a public half or a recipient list is
+        // protected like the private half; un-protecting is the user's call
+        for name in [
+            "id_ed25519",
+            "id_ed25519.pub",
+            "secrets.fish",
+            "client_secret.pub",
+            "oauth_token.pub",
+            "credentials.pub",
+        ] {
             assert_eq!(
                 capture_exclusion(&dir.join(name), &policy),
                 Some(CREDENTIAL_REASON),
@@ -1177,7 +1166,7 @@ mod tests {
             );
         }
         assert_eq!(
-            capture_exclusion(&dir.join("signing.gpg.pub"), &policy),
+            capture_exclusion(&dir.join("recipients.txt"), &policy),
             None
         );
         assert_eq!(
