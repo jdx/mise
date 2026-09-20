@@ -872,40 +872,42 @@ struct ManualPlan {
     promote: Vec<usize>,
 }
 
-/// Tells the user what the walk left out, so a credential store under a
-/// tracked directory never looks saved. A command the user ran (a save, a
-/// baseline, a bootstrap, rollback, or undo outcome) lists each omission;
-/// the watcher's captures and the protective captures before an operation
-/// get one summary line, since they run on every edit or are followed by
-/// the outcome's full report. A baseline reports only the paths it
-/// enrolls, not omissions under entries tracked earlier.
+/// Tells the user what the walk left out, so a credential store or a
+/// nested repository under a tracked directory never looks saved. A
+/// command the user ran (a save, a baseline, a bootstrap, rollback, or
+/// undo outcome) lists each path; the watcher's captures and the
+/// protective captures before an operation get one summary line, since
+/// they run on every edit or are followed by the outcome's full report. A
+/// baseline reports only the paths it enrolls, not those under entries
+/// tracked earlier.
 fn report_omissions(walk: &super::tracked::Walk, draft: &Draft) {
     let trigger = draft.trigger();
     let explicit = trigger != Trigger::Edit && !draft.protective;
-    let omitted: Vec<store::PathReason> =
-        if trigger == Trigger::Baseline && !draft.explicit_paths.is_empty() {
-            let roots: Vec<String> = draft.explicit_paths.iter().map(display_path).collect();
-            walk.omitted
+    let roots: Vec<String> = if trigger == Trigger::Baseline {
+        draft.explicit_paths.iter().map(display_path).collect()
+    } else {
+        vec![]
+    };
+    let enrolled = |reported: &&store::PathReason| {
+        roots.is_empty()
+            || roots
                 .iter()
-                .filter(|omitted| {
-                    roots
-                        .iter()
-                        .any(|root| super::tracked::display_under(&omitted.path, root))
-                })
-                .cloned()
-                .collect()
-        } else {
-            walk.omitted.clone()
-        };
-    if omitted.is_empty() {
+                .any(|root| super::tracked::display_under(&reported.path, root))
+    };
+    let omitted: Vec<store::PathReason> = walk.omitted.iter().filter(enrolled).cloned().collect();
+    let nested: Vec<store::PathReason> = walk.nested.iter().filter(enrolled).cloned().collect();
+    if omitted.is_empty() && nested.is_empty() {
         return;
     }
     if explicit {
-        for line in super::tracked::omission_report(&omitted) {
+        for line in super::tracked::omission_report(&omitted, &nested) {
             warn!("history: {line}");
         }
     } else {
-        info!("history: {}", super::tracked::omission_summary(&omitted));
+        info!(
+            "history: {}",
+            super::tracked::omission_summary(&omitted, &nested)
+        );
     }
 }
 

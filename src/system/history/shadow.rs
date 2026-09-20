@@ -884,8 +884,17 @@ impl HistoryRepo {
             let mut roots: BTreeMap<String, RootRecord> = BTreeMap::new();
             let layout = super::sync::layout::Roots::current();
             for file in Self::gix_tree_entries(&repo, &tree)? {
-                if layout.locate(&file.path).path().is_none() {
+                let located = layout.locate(&file.path);
+                let Some(path) = located.path() else {
                     continue;
+                };
+                // a gitlink is derivable from the tree, so the record needs
+                // no trailer field an older client would refuse to parse
+                if file.mode == "160000" {
+                    record.tree.coverage.nested.push(super::store::PathReason {
+                        path: crate::file::display_path(path),
+                        reason: super::tracked::NESTED_REPOSITORY_REASON.into(),
+                    });
                 }
                 let label = file.path.split('/').next().unwrap_or_default().to_string();
                 let root = roots.entry(label.clone()).or_insert_with(|| RootRecord {

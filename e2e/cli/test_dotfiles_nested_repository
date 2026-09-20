@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# A directory with its own .git under a tracked tree is saved as a commit
+# pointer only. Capture, status, and paths report it, and a machine adopting
+# the setup skips the pointer with a reason instead of failing on it or
+# emptying a nested repository it already has.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+repo="$MISE_STATE_DIR/history/repo.git"
+origin="$PWD/nested-origin.git"
+git init -q --bare -b main "$origin"
+plugin=~/.hammerspoon/Spoons/Sky.spoon
+mkdir -p "$plugin"
+echo 'hs.alert("hi")' >~/.hammerspoon/init.lua
+echo 'return {}' >"$plugin/init.lua"
+git -C "$plugin" init -q -b main
+git -C "$plugin" -c user.name=t -c user.email=t@example.com add -A
+git -C "$plugin" -c user.name=t -c user.email=t@example.com commit -q -m init
+sha=$(git -C "$plugin" rev-parse HEAD)
+
+# Enrollment and every save say what a nested repository leaves out.
+assert_contains 'mise dot track ~/.hammerspoon 2>&1' 'nested: ~/.hammerspoon/Spoons/Sky.spoon (nested repository'
+assert "git --git-dir=$repo ls-tree HEAD home/.hammerspoon/Spoons/Sky.spoon | cut -d' ' -f1,3 | cut -f1" "160000 $sha"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.hammerspoon/Spoons/Sky.spoon/init.lua"
+assert "git --git-dir=$repo show HEAD:home/.hammerspoon/init.lua" 'hs.alert("hi")'
+assert_contains 'mise dot save 2>&1' 'nested: ~/.hammerspoon/Spoons/Sky.spoon (nested repository'
+assert_contains 'mise dot paths' 'nested: ~/.hammerspoon/Spoons/Sky.spoon (nested repository; its files are not saved'
+assert "mise dot paths --json | jq -r '.nested[0].path'" '~/.hammerspoon/Spoons/Sky.spoon'
+assert_contains 'mise dot status' 'tracked (1 nested)'
+assert_contains 'mise dot status' '1 nested repository not saved'
+assert "mise dot status --json | jq -r '.history.nested | length'" 1
+assert_contains 'mise dot history show' 'nested: ~/.hammerspoon/Spoons/Sky.spoon'
+
+# Tracking the nested repository as its own entry saves its files.
+assert_succeed 'mise dot track ~/.hammerspoon/Spoons/Sky.spoon'
+assert "git --git-dir=$repo show HEAD:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+assert_not_contains 'mise dot paths' 'nested:'
+assert_succeed 'mise dot untrack ~/.hammerspoon/Spoons/Sky.spoon'
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo ls-tree HEAD home/.hammerspoon/Spoons/Sky.spoon | cut -d' ' -f1" 160000
+
+# Another machine adopts the setup: the pointer is skipped with a reason,
+# the ordinary files arrive, and a nested repository it already has is
+# left alone.
+assert_succeed "mise dot track $MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise dot origin set file://$origin --yes"
+assert "git --git-dir=$origin ls-tree main home/.hammerspoon/Spoons/Sky.spoon | cut -d' ' -f1" 160000
+wrapper() {
+  local home="$1" script="$2"
+  mkdir -p "$home"
+  cat <<EOF2 >"$script"
+#!/usr/bin/env bash
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \\
+  MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \\
+  MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home" MISE_HISTORY_NOTIFY=false
+cd "\$HOME" && exec mise "\$@"
+EOF2
+  chmod +x "$script"
+}
+second="$(dirname "$HOME")/nested-second"
+wrapper "$second" "$PWD/second"
+b="$PWD/second"
+mkdir -p "$second/.hammerspoon/Spoons/Sky.spoon"
+echo 'return { second = true }' >"$second/.hammerspoon/Spoons/Sky.spoon/init.lua"
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" init -q -b main
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com add -A
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com commit -q -m second
+assert_contains "$b bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'skipped: nested repository'
+assert "cat $second/.hammerspoon/init.lua" 'hs.alert("hi")'
+assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { second = true }'
+assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"
+assert_contains "$b dot status" 'not shared: ~/.hammerspoon/Spoons/Sky.spoon (nested repository'
+assert "$b dot status --json | jq -r '.history.sync.pending_applications | length'" 0
+assert_succeed "$b dot sync"
+
+# A machine without the directory is not asked to create it.
+third="$(dirname "$HOME")/nested-third"
+wrapper "$third" "$PWD/third"
+c="$PWD/third"
+assert_contains "$c bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'skipped: nested repository'
+assert "cat $third/.hammerspoon/init.lua" 'hs.alert("hi")'
+assert_fail "test -e $third/.hammerspoon/Spoons/Sky.spoon"
+assert_succeed "$c dot sync"
+assert_succeed "$b dot sync"
+assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"

@@ -90,6 +90,7 @@ impl DotfilesPaths {
                 "exclude": tracked.exclude,
                 "invalid": tracked.invalid,
                 "omitted": walk.omitted,
+                "nested": walk.nested,
                 "incomplete": walk.incomplete,
             });
             miseprintln!("{}", serde_json::to_string_pretty(&out)?);
@@ -129,6 +130,9 @@ impl DotfilesPaths {
         }
         for omitted in &walk.omitted {
             miseprintln!("  omitted: {} ({})", omitted.path, omitted.reason);
+        }
+        for nested in &walk.nested {
+            miseprintln!("  nested: {} ({})", nested.path, nested.reason);
         }
         for incomplete in &walk.incomplete {
             miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);

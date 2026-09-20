@@ -554,6 +554,9 @@ pub(crate) struct Coverage {
     pub incomplete: Vec<PathReason>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted: Vec<PathReason>,
+    /// Nested repositories saved as a commit pointer without their files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested: Vec<PathReason>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
