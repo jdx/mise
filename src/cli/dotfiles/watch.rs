@@ -40,26 +40,14 @@ pub(crate) struct DotfilesWatch {
     /// One JSON object per line instead of log lines
     #[usage(long, short = 'J')]
     json: bool,
-
-    /// Give up the console Windows allocated for this process (Windows only)
-    ///
-    /// The `history-watch` service passes this so the watcher does not run
-    /// behind a terminal window that closing would kill. No effect on other
-    /// platforms.
-    #[usage(long, hide = true)]
-    hide_console: bool,
 }
 
 impl DotfilesWatch {
     pub(crate) async fn run(self) -> Result<()> {
-        if self.hide_console {
-            // Usually already done: `main` recognizes the shape the service
-            // registers and gives the console up before the parser runs, and
-            // a second call finds none to give up. This is what makes the
-            // flag mean the same thing when it did not, rather than leaving
-            // the window up because the command was spelled unusually.
-            crate::windows_console::detach();
-        }
+        // Windows gives a Scheduled Task's console program a console of its
+        // own, which the watcher would then run behind. Nothing happens when
+        // a shell is in that console waiting to read this.
+        crate::windows_console::detach_if_unattended();
         let code = runtime::run(WatchOptions {
             once: self.once,
             json: self.json,

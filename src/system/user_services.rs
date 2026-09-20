@@ -34,20 +34,7 @@ const BUILTIN_NAMES: &[&str] = &["history-watch"];
 fn builtin(name: &str) -> Option<Builtin> {
     match name {
         "history-watch" => Some(Builtin {
-            // Windows starts a Scheduled Task's console program in a console
-            // of its own; the watcher gives that console up so it does not run
-            // behind a window closing would kill. A declaration that also sets
-            // `environment` is the exception: Task Scheduler has no
-            // environment block, so the action runs through `cmd.exe` (see
-            // `scheduled_tasks::exec_action`), and that `cmd.exe` stays
-            // attached for the watcher's lifetime and keeps the window. Giving
-            // it up too means carrying the environment without `cmd.exe`,
-            // which is every Windows user service's problem, not this one's.
-            args: if cfg!(windows) {
-                &["dot", "watch", crate::windows_console::FLAG]
-            } else {
-                &["dot", "watch"]
-            },
+            args: &["dot", "watch"],
             description: "mise dot history: save tracked files as they change",
             restart: ServiceRestart::OnFailure,
             nice: Some(10),
@@ -881,14 +868,7 @@ mod tests {
             builtin: Some("history-watch".into()),
             ..Default::default()
         });
-        // Windows adds the flag that gives up the Scheduled Task's console;
-        // no other platform allocates one to give up.
-        let expected = if cfg!(windows) {
-            "/usr/bin/mise dot watch --hide-console"
-        } else {
-            "/usr/bin/mise dot watch"
-        };
-        assert_eq!(request.command.as_deref(), Some(expected));
+        assert_eq!(request.command.as_deref(), Some("/usr/bin/mise dot watch"));
         assert_eq!(request.restart, ServiceRestart::OnFailure);
         assert_eq!(request.nice, Some(10));
         assert!(request.description.is_some());

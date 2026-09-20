@@ -104,33 +104,35 @@ builtin = "history-watch"
     # Task Scheduler starts a console program in a console of its own, so
     # without this the watcher runs behind a terminal window that closing
     # would kill. See jdx/mise#13426.
-    It 'gives up the console it was started in' {
+    It 'gives up a console of its own but not a shell it shares' {
         $tracked = $script:Tracked -replace '\\', '/'
         mise bootstrap dotfiles track $tracked 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
+        $watch = @('bootstrap', 'dotfiles', 'watch')
 
-        # Start-Process gives a console program a console of its own, the way
-        # Task Scheduler does. With the flag the service passes, the watcher
-        # runs without one.
-        $hidden = Start-Process -FilePath 'mise' -PassThru -ArgumentList @(
-            'bootstrap', 'dotfiles', 'watch', '--hide-console')
+        # A console of its own, which is what Task Scheduler gives it and what
+        # says nobody is reading: the watcher gives it up.
+        $alone = Start-Process -FilePath 'mise' -PassThru -ArgumentList $watch
         try {
             Wait-Watcher $true | Should -BeTrue
-            Get-ConsoleProbe $hidden.Id | Should -Be 4
+            Get-ConsoleProbe $alone.Id | Should -Be 4
         } finally {
-            Stop-Process -Id $hidden.Id -Force -ErrorAction Ignore
+            Stop-Process -Id $alone.Id -Force -ErrorAction Ignore
         }
         Wait-Watcher $false | Should -BeTrue
 
-        # Without the flag the same watcher keeps its console, which is what
-        # makes the result above a measurement rather than a broken probe.
-        $shown = Start-Process -FilePath 'mise' -PassThru -ArgumentList @(
-            'bootstrap', 'dotfiles', 'watch')
+        # Sharing this test host's console instead, the way a shell waiting on
+        # `mise dot watch` does. Somebody is reading, so the console stays —
+        # and a probe that cannot see one either way would fail here.
+        $shared = Start-Process -FilePath 'mise' -PassThru -NoNewWindow `
+            -RedirectStandardOutput (Join-Path $TestDrive 'watch.out') `
+            -RedirectStandardError (Join-Path $TestDrive 'watch.err') `
+            -ArgumentList $watch
         try {
             Wait-Watcher $true | Should -BeTrue
-            Get-ConsoleProbe $shown.Id | Should -Be 3
+            Get-ConsoleProbe $shared.Id | Should -Be 3
         } finally {
-            Stop-Process -Id $shown.Id -Force -ErrorAction Ignore
+            Stop-Process -Id $shared.Id -Force -ErrorAction Ignore
         }
     }
 }
