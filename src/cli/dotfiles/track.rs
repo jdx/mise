@@ -133,12 +133,15 @@ impl DotfilesTrack {
                 };
                 warn!("dotfiles: {target_key} will be omitted from every save ({reason}){advice}");
             }
-            let previous = doc
+            // the keys this file's declaration wrote, whether as an inline
+            // table or a `[dotfiles."path"]` table
+            let previous: Vec<String> = doc
                 .get("dotfiles")
                 .and_then(|dotfiles| dotfiles.get(declaration_key))
-                .and_then(Item::as_inline_table)
-                .cloned();
-            let entry = self.entry(existing, previous.as_ref());
+                .and_then(Item::as_table_like)
+                .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
+                .unwrap_or_default();
+            let entry = self.entry(existing, &previous);
             let dotfiles = doc
                 .entry("dotfiles")
                 .or_insert(Item::Table(toml_edit::Table::new()));
@@ -214,15 +217,15 @@ impl DotfilesTrack {
 
     /// The inline table for a target: an existing track entry's fields with
     /// this command's changes on top, so a local override keeps variants and
-    /// the other policies. `previous` is the declaration this file held
-    /// before: a policy it wrote explicitly stays written, even at its
-    /// default value, while one it inherited from another layer stays
-    /// unwritten so that layer keeps deciding it.
-    fn entry(&self, existing: Option<&FileRequest>, previous: Option<&InlineTable>) -> InlineTable {
+    /// the other policies. `previous` holds the keys the declaration this
+    /// file held before wrote: a policy it wrote explicitly stays written,
+    /// even at its default value, while one it inherited from another
+    /// layer stays unwritten so that layer keeps deciding it.
+    fn entry(&self, existing: Option<&FileRequest>, previous: &[String]) -> InlineTable {
         let mut table = InlineTable::new();
         table.insert("mode", string("track"));
         let policy = self.policy(existing);
-        let written = |key: &str| previous.is_some_and(|table| table.contains_key(key));
+        let written = |key: &str| previous.iter().any(|written| written == key);
         if policy.encrypt || written("encrypt") {
             table.insert(
                 "encrypt",
@@ -630,27 +633,33 @@ mod declaration_tests {
             variants: vec![],
             enabled: true,
         };
-        let inline = |text: &str| -> InlineTable {
-            text.parse::<Value>()
-                .unwrap()
-                .as_inline_table()
-                .cloned()
-                .unwrap()
-        };
         // this file wrote both fields: they stay written at their values
-        let previous = inline("{ mode = \"track\", autosave = true, encrypt = false }");
-        let table = command.entry(Some(&existing), Some(&previous));
+        let previous = ["mode", "autosave", "encrypt"].map(String::from);
+        let table = command.entry(Some(&existing), &previous);
         assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(true));
         assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
         // another layer wrote them (the composed flags say explicit): this
         // file must not pin the inherited values
-        let previous = inline("{ mode = \"track\" }");
-        let table = command.entry(Some(&existing), Some(&previous));
+        let table = command.entry(Some(&existing), &["mode".to_string()]);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
-        let table = command.entry(None, None);
+        let table = command.entry(None, &[]);
         assert!(table.get("autosave").is_none());
         assert!(table.get("encrypt").is_none());
+        // the keys are read from either table form
+        for text in [
+            "[dotfiles]\n\"~/.zshrc\" = { mode = \"track\", autosave = true }\n",
+            "[dotfiles.\"~/.zshrc\"]\nmode = \"track\"\nautosave = true\n",
+        ] {
+            let doc: DocumentMut = text.parse().unwrap();
+            let keys: Vec<String> = doc
+                .get("dotfiles")
+                .and_then(|dotfiles| dotfiles.get("~/.zshrc"))
+                .and_then(Item::as_table_like)
+                .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
+                .unwrap_or_default();
+            assert_eq!(keys, ["mode", "autosave"].map(String::from));
+        }
     }
 
     #[test]
