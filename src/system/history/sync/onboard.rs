@@ -634,6 +634,7 @@ mod preview_tests {
                 autosave: true,
                 encrypt: true,
                 variants: vec![],
+                exclude: vec![],
             }],
             ..Default::default()
         };
