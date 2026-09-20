@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::file::display_path;
 use crate::system::files::FileMode;
-use crate::system::history::tracked::{Policy, TrackedEntry, TrackedSet};
+use crate::system::history::tracked::{Policy, TrackedSet, preview_set};
 use crate::ui::table::MiseTable;
 
 /// Show what history tracks and under which policies
@@ -48,20 +48,7 @@ impl DotfilesPaths {
             return self.print_noisy();
         }
         let tracked = match &self.preview {
-            Some(path) => {
-                let mut set = TrackedSet {
-                    exclude: crate::system::history::config::exclude_globs()?,
-                    ..Default::default()
-                };
-                set.push(TrackedEntry {
-                    path: crate::system::history::tracked::normalize_target(path),
-                    mode: "track".into(),
-                    policy: Policy::for_mode(FileMode::Track),
-                    variant: None,
-                    declared_in: None,
-                });
-                set
-            }
+            Some(path) => preview_set(path, Policy::for_mode(FileMode::Track))?,
             None => TrackedSet::effective().await?,
         };
         let walk = tracked.walk()?;
@@ -97,7 +84,11 @@ impl DotfilesPaths {
             return Ok(());
         }
         if let Some(path) = &self.preview {
-            miseprintln!("Tracking {} would capture:", display_path(path));
+            miseprintln!(
+                "Tracking {} would capture {}:",
+                display_path(path),
+                walk.summary()
+            );
             for root in &walk.roots {
                 for rel in &root.files {
                     miseprintln!("  {}", display_path(root.path.join(rel)));
