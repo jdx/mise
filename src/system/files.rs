@@ -3479,12 +3479,16 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                     }
                     if target.is_symlink() {
                         // a link is replaced: recorded once it is gone. The
-                        // source is checked first, as `fs::copy` would, so
-                        // one that cannot be copied leaves the link alone
-                        ensure_copy_source(&source, &target)?;
+                        // source is opened and checked first and the copy
+                        // reads from that handle, so one that cannot be
+                        // copied leaves the link alone and one that changes
+                        // meanwhile cannot leave the target missing
+                        let mut from = CopySource::open(&source, &target)?;
                         file::remove_file(&target)?;
                         written.push(target.clone());
-                        file::copy(&source, &target)?;
+                        let to = std::fs::File::create(&target)
+                            .wrap_err_with(copy_failure(&source, &target))?;
+                        from.copy_into(to)?;
                     } else if target.is_file() {
                         overwrite_recorded(&source, &target, written)?;
                     } else {
@@ -3582,58 +3586,76 @@ fn remove_existing(path: &Path) -> Result<bool> {
     Ok(true)
 }
 
-/// The check `fs::copy` performs before it touches its destination: the
-/// source must be a regular file (or a link to one).
-fn ensure_copy_source(source: &Path, target: &Path) -> Result<()> {
-    let failed = || {
+/// A copy source held open, so the destination is touched only once the
+/// source has been opened and checked, and the copy reads from that same
+/// handle — a source replaced or removed meanwhile cannot leave the
+/// destination cleared with nothing to put in its place.
+struct CopySource<'a> {
+    file: std::fs::File,
+    metadata: std::fs::Metadata,
+    source: &'a Path,
+    target: &'a Path,
+}
+
+impl<'a> CopySource<'a> {
+    /// Open `source` for copying to `target`, with the check `fs::copy`
+    /// performs before it touches its destination: the source must be a
+    /// regular file (or a link to one).
+    fn open(source: &'a Path, target: &'a Path) -> Result<Self> {
+        let failed = copy_failure(source, target);
+        let file = std::fs::File::open(source).wrap_err_with(&failed)?;
+        let metadata = file.metadata().wrap_err_with(&failed)?;
+        if !metadata.is_file() {
+            bail!(
+                "{}: the source path is neither a regular file nor a symlink to a regular file",
+                failed()
+            );
+        }
+        Ok(Self {
+            file,
+            metadata,
+            source,
+            target,
+        })
+    }
+
+    /// Write the source's content and permission bits into the open `to`,
+    /// as `fs::copy` would.
+    fn copy_into(&mut self, mut to: std::fs::File) -> Result<()> {
+        let failed = copy_failure(self.source, self.target);
+        std::io::copy(&mut self.file, &mut to).wrap_err_with(&failed)?;
+        to.set_permissions(self.metadata.permissions())
+            .wrap_err_with(&failed)?;
+        Ok(())
+    }
+}
+
+fn copy_failure<'a>(source: &'a Path, target: &'a Path) -> impl Fn() -> String + 'a {
+    move || {
         format!(
             "failed copy: {} -> {}",
             source.display_user(),
             target.display_user()
         )
-    };
-    if !std::fs::metadata(source).wrap_err_with(failed)?.is_file() {
-        bail!(
-            "{}: the source path is neither a regular file nor a symlink to a regular file",
-            failed()
-        );
     }
-    Ok(())
 }
 
 /// Overwrite the existing regular file at `target` with `source` in place,
 /// as `file::copy` would (content and permission bits), recording the target
 /// in `written` once it has been opened for truncation — the first mutation.
-/// The source is opened and checked first, as `fs::copy` does, so a source
-/// that is not a regular file (a directory behind a link, say) fails before
-/// the target is touched. An open that fails (a read-only target file or
-/// filesystem) changes nothing and records nothing.
+/// The source is opened and checked first, so a source that is not a regular
+/// file (a directory behind a link, say) fails before the target is touched.
+/// An open that fails (a read-only target file or filesystem) changes
+/// nothing and records nothing.
 fn overwrite_recorded(source: &Path, target: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
-    let failed = || {
-        format!(
-            "failed copy: {} -> {}",
-            source.display_user(),
-            target.display_user()
-        )
-    };
-    let mut from = std::fs::File::open(source).wrap_err_with(failed)?;
-    let source_metadata = from.metadata().wrap_err_with(failed)?;
-    if !source_metadata.is_file() {
-        bail!(
-            "{}: the source path is neither a regular file nor a symlink to a regular file",
-            failed()
-        );
-    }
-    let mut to = std::fs::OpenOptions::new()
+    let mut from = CopySource::open(source, target)?;
+    let to = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
         .open(target)
-        .wrap_err_with(failed)?;
+        .wrap_err_with(copy_failure(source, target))?;
     written.push(target.to_path_buf());
-    std::io::copy(&mut from, &mut to).wrap_err_with(failed)?;
-    to.set_permissions(source_metadata.permissions())
-        .wrap_err_with(failed)?;
-    Ok(())
+    from.copy_into(to)
 }
 
 /// Run `write` against a `target` that does not exist yet, recording the
