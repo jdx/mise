@@ -254,6 +254,7 @@ impl Store {
         for warning in &walk.warnings {
             warn!("history: {warning}");
         }
+        report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
         let promoted: BTreeSet<String> = previous_tree
@@ -846,6 +847,49 @@ struct ManualContext<'a> {
 struct ManualPlan {
     carry: Vec<usize>,
     promote: Vec<usize>,
+}
+
+/// Tells the user what the walk left out, so a credential store under a
+/// tracked directory never looks saved. A command the user ran (a save, a
+/// baseline, an agent or update save) lists each omission; the watcher and
+/// the protective captures around an operation get one summary line, since
+/// they run on every edit. A baseline reports only the paths it enrolls,
+/// not omissions under entries tracked earlier.
+fn report_omissions(walk: &super::tracked::Walk, draft: &Draft) {
+    let trigger = draft.trigger();
+    let explicit = matches!(
+        trigger,
+        Trigger::Save | Trigger::Agent | Trigger::Update | Trigger::Baseline | Trigger::Capture
+    );
+    let omitted: Vec<store::PathReason> =
+        if trigger == Trigger::Baseline && !draft.explicit_paths.is_empty() {
+            let roots: Vec<String> = draft.explicit_paths.iter().map(display_path).collect();
+            walk.omitted
+                .iter()
+                .filter(|omitted| {
+                    roots.iter().any(|root| {
+                        omitted.path == *root
+                            || omitted
+                                .path
+                                .strip_prefix(root.as_str())
+                                .is_some_and(|rest| rest.starts_with('/'))
+                    })
+                })
+                .cloned()
+                .collect()
+        } else {
+            walk.omitted.clone()
+        };
+    if omitted.is_empty() {
+        return;
+    }
+    if explicit {
+        for line in super::tracked::omission_report(&omitted) {
+            warn!("history: {line}");
+        }
+    } else {
+        info!("history: {}", super::tracked::omission_summary(&omitted));
+    }
 }
 
 fn manual_plan(

@@ -11,7 +11,9 @@ use crate::system::files::{FileMode, FileRequest};
 use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
-use crate::system::history::tracked::{TrackedSet, normalize_target};
+use crate::system::history::tracked::{
+    CREDENTIAL_REASON, TrackedSet, capture_exclusion, normalize_target,
+};
 
 /// Track a file or directory in place
 ///
@@ -115,10 +117,23 @@ impl DotfilesTrack {
                 .filter(|req| req.origin.config == config_path)
                 .map_or(target_key.as_str(), |req| req.target_raw.as_str());
             locations.insert(target_key.clone(), config_path);
-            let entry = self.entry(existing);
-            if entry.get("autosave").and_then(Value::as_bool) == Some(false) {
+            let policy = self.policy(existing);
+            if !policy.autosave {
                 manual.push(target_key.clone());
             }
+            // a file the guard drops must not look protected once tracked:
+            // say so before the declaration is written
+            if !target.is_dir()
+                && let Some(reason) = capture_exclusion(&target, &policy)
+            {
+                let advice = if reason == CREDENTIAL_REASON {
+                    "; `mise dot track --encrypt` saves it encrypted"
+                } else {
+                    ""
+                };
+                warn!("dotfiles: {target_key} will be omitted from every save ({reason}){advice}");
+            }
+            let entry = self.entry(existing);
             let dotfiles = doc
                 .entry("dotfiles")
                 .or_insert(Item::Table(toml_edit::Table::new()));
@@ -177,12 +192,9 @@ impl DotfilesTrack {
         Ok(())
     }
 
-    /// The inline table for a target: an existing track entry's fields with
-    /// this command's changes on top, so a local override keeps variants and
-    /// the other policies.
-    fn entry(&self, existing: Option<&FileRequest>) -> InlineTable {
-        let mut table = InlineTable::new();
-        table.insert("mode", string("track"));
+    /// The policy a target is tracked under: the existing entry's, with
+    /// this command's flags on top.
+    fn policy(&self, existing: Option<&FileRequest>) -> crate::system::files::FilePolicy {
         let mut policy = existing
             .map(|req| req.policy)
             .unwrap_or_else(|| crate::system::files::FilePolicy::for_mode(FileMode::Track));
@@ -192,6 +204,16 @@ impl DotfilesTrack {
         if self.encrypt {
             policy.encrypt = true;
         }
+        policy
+    }
+
+    /// The inline table for a target: an existing track entry's fields with
+    /// this command's changes on top, so a local override keeps variants and
+    /// the other policies.
+    fn entry(&self, existing: Option<&FileRequest>) -> InlineTable {
+        let mut table = InlineTable::new();
+        table.insert("mode", string("track"));
+        let policy = self.policy(existing);
         if policy.encrypt {
             table.insert("encrypt", Value::Boolean(toml_edit::Formatted::new(true)));
         }

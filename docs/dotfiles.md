@@ -644,7 +644,11 @@ added beneath it later, subject to those exclusions.
 
 Start with individual configuration files so you can choose what to save.
 Leave logs, caches, databases, and application session state out of history.
-Credential files and `*.local.toml` files are excluded by default; see
+Credential files (`.netrc`, `*.age`, `*.key`, `*.pem`, `*.gpg`, `*.kdbx`,
+`id_*`, `*token*`, `*secret*`, `credentials*`, `oauth*`; `.pub` files are
+exempt) and `*.local.toml` files are omitted by default. `mise dot save`,
+`mise dot track`, and `mise dot status` report these omissions, and
+`mise dot paths` lists each one with its reason; see
 [encrypted tracking](/history.html#encrypted-shared-files) to save credentials.
 
 Tracking a symlink saves the link itself. Track its target separately to
