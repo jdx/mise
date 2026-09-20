@@ -287,25 +287,18 @@ pub(crate) fn launch_path(name: &str, digest: &str) -> PathBuf {
     launch_dir(name).join(format!("{digest}.json"))
 }
 
-/// Drop every launch for `name` except the one `keep` names, which is what
-/// the registration that just committed reads. Never called before it has:
-/// until then the launch a replaced task is still reading is one of these.
-fn sweep_launches(name: &str, keep: Option<&str>) {
-    let dir = launch_dir(name);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return;
-    };
-    let keep = keep.map(|digest| std::ffi::OsString::from(format!("{digest}.json")));
-    for entry in entries.flatten() {
-        if keep.as_deref() == Some(entry.file_name().as_os_str()) {
-            continue;
-        }
-        let _ = std::fs::remove_file(entry.path());
-    }
-    if keep.is_none() {
-        let _ = std::fs::remove_dir(&dir);
-    }
-}
+// Launches a registration no longer reads are left where they are, and go
+// only when the task itself does.
+//
+// Deleting them on apply looks tidier and is not safe: nothing serializes
+// two `bootstrap services apply` runs, so one can delete the launch the
+// other has just registered a task against, leaving a task that cannot start
+// at all. No ordering of write, register, and sweep closes that window
+// without a lock across the pair. A launch is a few hundred bytes and one
+// accumulates per distinct environment a service has ever had — re-applying
+// an unchanged one rewrites nothing, because the name is the content — which
+// is a much smaller problem than a service that will not start.
+// `remove_task` takes the whole directory.
 
 /// The executable and arguments the task's `<Exec>` action runs.
 ///
@@ -535,12 +528,6 @@ pub(crate) async fn apply(requests: &[ScheduledTaskRequest], dry_run: bool) -> R
         // definition on Windows
         std::fs::write(&path, &rendered)?;
         let _ = std::fs::remove_file(&staging);
-        // the replaced registration cannot run any more, so whatever it read
-        // is now unreachable
-        sweep_launches(
-            &req.name,
-            launch.as_ref().map(|(_, digest)| digest.as_str()),
-        );
         if end_first {
             // it may have exited between the query and now: the HRESULT
             // says so in every locale; the message is matched as a fallback
