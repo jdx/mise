@@ -121,6 +121,24 @@ assert_succeed 'mise dot sync'
 # Removing a nested repository this machine had on disk is a real change,
 # not a pointer to bridge: the save records the removal.
 rm -rf "$second/.hammerspoon/Spoons/Sky.spoon"
+# a save that fails after the removal (an encrypted entry with no usable
+# recipient) leaves the ownership record alone, so the retry still
+# records the removal instead of treating the old pointer as inherited
+echo 'secret' >"$second/.hammerspoon/private.lua"
+cat >>"$second/.config/mise/config.toml" <<'TOML'
+"~/.hammerspoon/private.lua" = { mode = "track", encrypt = true }
+[history.encryption]
+recipients = ["not-a-recipient"]
+TOML
+assert_fail "$b dot save"
+assert_contains "cat $second/.local/state/mise/history/own-nested.json" '~/.hammerspoon/Spoons/Sky.spoon'
+python3 - "$second/.config/mise/config.toml" <<'PY'
+import sys
+p=sys.argv[1]; s=open(p).read()
+s=s.replace('"~/.hammerspoon/private.lua" = { mode = "track", encrypt = true }\n','').replace('[history.encryption]\nrecipients = ["not-a-recipient"]\n','')
+open(p,'w').write(s)
+PY
+rm -f "$second/.hammerspoon/private.lua"
 assert_succeed "$b dot save"
 assert_fail "git --git-dir=$second/.local/state/mise/history/repo.git cat-file -e HEAD:home/.hammerspoon/Spoons/Sky.spoon"
 mkdir -p "$second/.hammerspoon/Spoons/Sky.spoon"

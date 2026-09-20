@@ -255,10 +255,11 @@ impl Store {
             warn!("history: {warning}");
         }
         report_omissions(&walk, &draft);
-        // which nested repositories this machine's own walk found, before
-        // this walk's answer replaces the record
+        // which nested repositories this machine's own walk found at the
+        // last capture that succeeded; this walk's answer replaces it only
+        // once this capture has succeeded too, so a failure in between
+        // never makes a removal look inherited on the retry
         let own_nested_before = read_own_nested(&self.state_dir);
-        write_own_nested(&self.state_dir, &walk.nested)?;
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
         let promoted: BTreeSet<String> = previous_tree
@@ -462,6 +463,7 @@ impl Store {
             if let Some(repo) = &self.repo {
                 super::enrollment::confirm(&self.state_dir, repo, tracked)?;
             }
+            write_own_nested(&self.state_dir, &walk.nested)?;
             return Ok(Outcome::Unchanged);
         }
         if !draft.has_metadata() && snapshot.is_none() {
@@ -610,6 +612,9 @@ impl Store {
             && let Some(repo) = &self.repo
         {
             super::enrollment::confirm(&self.state_dir, repo, tracked)?;
+        }
+        if available {
+            write_own_nested(&self.state_dir, &walk.nested)?;
         }
         Ok(Outcome::Created(entry))
     }
@@ -1837,5 +1842,36 @@ mod tests {
         let mut described = Draft::new(Trigger::Edit);
         described.description = Some("x".into());
         assert!(described.has_metadata());
+    }
+    #[test]
+    fn own_nested_record_round_trips_and_only_changes_when_written() {
+        let tmp = tempfile::tempdir().unwrap();
+        store::ensure_store_dir_in(tmp.path()).unwrap();
+        assert!(read_own_nested(tmp.path()).is_empty());
+        let nested = vec![store::PathReason {
+            path: "~/.hammerspoon/Spoons/Sky.spoon".into(),
+            reason: "nested".into(),
+        }];
+        write_own_nested(tmp.path(), &nested).unwrap();
+        assert_eq!(
+            read_own_nested(tmp.path()),
+            BTreeSet::from(["~/.hammerspoon/Spoons/Sky.spoon".to_string()])
+        );
+        // a record is replaced only by a write: a walk whose capture failed
+        // never reaches one, so the previous answer stands
+        let before = std::fs::metadata(own_nested_path(tmp.path()))
+            .unwrap()
+            .modified()
+            .unwrap();
+        write_own_nested(tmp.path(), &nested).unwrap();
+        assert_eq!(
+            std::fs::metadata(own_nested_path(tmp.path()))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            before
+        );
+        write_own_nested(tmp.path(), &[]).unwrap();
+        assert!(read_own_nested(tmp.path()).is_empty());
     }
 }
