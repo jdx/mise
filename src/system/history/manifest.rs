@@ -65,27 +65,31 @@ impl Manifest {
     /// between the root and an enrolled path of any stream. A containing
     /// directory is one filesystem object, so it is recorded once, whatever
     /// streams the paths inside it belong to. The root itself is never owned.
-    fn owns_stream(&self, path: &str) -> bool {
+    pub(crate) fn owns_stream(&self, path: &str) -> bool {
         let (stem, relative) = path.split_once('/').unwrap_or((path, ""));
-        let (root, variant) = stem
+        let (_, variant) = stem
             .split_once('@')
             .map_or((stem, None), |(root, variant)| (root, Some(variant)));
-        let portable = if relative.is_empty() {
-            root.to_string()
-        } else {
-            format!("{root}/{relative}")
-        };
-        let owned = self.owner(&portable).is_some_and(|entry| match variant {
-            Some(name) => entry.variants.iter().any(|variant| variant.name() == name),
-            None => entry.variants.is_empty(),
-        });
-        owned
+        self.enrolls_stream(path)
             || (variant.is_none()
                 && !relative.is_empty()
                 && self
                     .enrollment
                     .iter()
-                    .any(|entry| strictly_below(&entry.path, &portable)))
+                    .any(|entry| strictly_below(&entry.path, &plain(path))))
+    }
+
+    /// Whether a permission path is the enrolled path of its stream or below
+    /// one: the enrollment itself governs it, not only a path inside it.
+    pub(crate) fn enrolls_stream(&self, path: &str) -> bool {
+        let (stem, _) = path.split_once('/').unwrap_or((path, ""));
+        let (_, variant) = stem
+            .split_once('@')
+            .map_or((stem, None), |(root, variant)| (root, Some(variant)));
+        self.owner(&plain(path)).is_some_and(|entry| match variant {
+            Some(name) => entry.variants.iter().any(|variant| variant.name() == name),
+            None => entry.variants.is_empty(),
+        })
     }
 
     pub(crate) fn remove_unenrolled_permissions(&mut self) {

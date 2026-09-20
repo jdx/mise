@@ -45,12 +45,10 @@ enum Claim {
     Containing,
 }
 
-/// One permission key that claims a directory, with the tree paths under
-/// which that directory may exist.
+/// One permission key that claims a directory.
 struct Key<'a> {
     claim: Claim,
     portable: &'a String,
-    candidates: Vec<String>,
 }
 
 fn claim(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> Option<Claim> {
@@ -137,11 +135,7 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
             continue;
         }
         let keys = claimed.entry(path).or_default();
-        keys.push(Key {
-            claim,
-            portable,
-            candidates,
-        });
+        keys.push(Key { claim, portable });
         keys.sort_by_key(|key| key.claim);
     }
     for (path, keys) in claimed {
@@ -159,30 +153,37 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         if before.map(|(_, _, bits)| bits) == Some(desired) {
             continue;
         }
-        // the local record is read under the best key whose stream the local
-        // head already has; its absence there means the default (a pull that
-        // dropped the enrolled stream's record applied 0755), and only a
-        // stream that is new locally defers to the next key's record
-        let mut saved_bits = None;
-        if let Some(head) = local.as_deref() {
-            'keys: for key in &keys {
-                for candidate in &key.candidates {
-                    if repo
-                        .object_at(head, candidate)?
-                        .is_some_and(|(mode, _)| mode == "040000")
-                    {
-                        saved_bits = Some(
-                            saved
-                                .permissions
-                                .get(key.portable)
-                                .copied()
-                                .unwrap_or(0o755),
-                        );
-                        break 'keys;
-                    }
-                }
-            }
-        }
+        // The local baseline a live mode is compared with, decided by the
+        // saved local manifest's enrollment alone (a tree exists for any file
+        // under a stream, so tree presence is never evidence of enrollment):
+        //  (a) the record under the key whose stream that enrollment governs
+        //      for the directory itself, its absence meaning the default;
+        //  (b) else the local containing record, if the manifest has one;
+        //  (c) else the default, if the enrollment knows the directory at
+        //      all (a path inside it is enrolled).
+        // A directory the local enrollment does not know has no baseline.
+        let containing = roots.branch_path(&path, None);
+        let saved_bits = keys
+            .iter()
+            .find(|key| saved.enrolls_stream(key.portable))
+            .map(|key| {
+                saved
+                    .permissions
+                    .get(key.portable)
+                    .copied()
+                    .unwrap_or(0o755)
+            })
+            .or_else(|| {
+                containing
+                    .as_ref()
+                    .and_then(|containing| saved.permissions.get(containing).copied())
+            })
+            .or_else(|| {
+                containing
+                    .as_ref()
+                    .is_some_and(|containing| saved.owns_stream(containing))
+                    .then_some(0o755)
+            });
         if saved_bits.is_some() && before.map(|(_, _, bits)| bits) != saved_bits {
             bail!(
                 "{} has unsaved directory permission changes; save them before pulling. Sharing is paused",
@@ -419,6 +420,94 @@ mod tests {
         assert_eq!(steps.len(), 1);
         assert_eq!(steps[0].path, private);
         assert_eq!(steps[0].desired, 0o755);
+        Ok(())
+    }
+
+    /// Only a child was enrolled in the stream locally, so the tree already
+    /// holds the directory under it while the local baseline is the
+    /// containing record. An incoming change enrolling the directory itself
+    /// in that stream compares the live mode with that baseline, not with a
+    /// default read from a key the local enrollment never governed.
+    #[test]
+    fn a_newly_enrolled_parent_keeps_its_containing_baseline() -> Result<()> {
+        use crate::system::files::{FileMode, FilePolicy};
+        use crate::system::history::checkpoint::test_checkpoint;
+        use crate::system::history::manifest::Enrollment;
+        use crate::system::history::shadow::Overlay;
+        use crate::system::history::tracked::{TrackedEntry, normalize};
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-newly-enrolled-")
+            .tempdir_in(&roots.home)?;
+        let private = normalize(scratch.path()).join("private");
+        std::fs::create_dir(&private)?;
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700))?;
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut file = TrackedEntry::new(private.join("settings.json"), "track", policy);
+        file.variant = Some("linux".into());
+        let mut directory = TrackedEntry::new(private.clone(), "track", policy);
+        directory.variant = Some("linux".into());
+        let containing = roots.branch_path(&private, None).unwrap();
+        let own = directory.tree_path(&private)?;
+        let linux = || crate::system::history::select::Variant {
+            os: vec!["linux".into()],
+            ..Default::default()
+        };
+        let files = repo.compose(
+            &repo.empty_object("tree")?,
+            &[Overlay {
+                path: file.tree_path(&file.path)?,
+                object: Some(("100644".into(), repo.hash_blob(b"{}")?)),
+            }],
+        )?;
+        // the local head: only the child is enrolled in the Linux stream,
+        // the directory is a containing record
+        let local = Manifest {
+            enrollment: vec![Enrollment {
+                path: roots.branch_path(&file.path, None).unwrap(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![linux()],
+            }],
+            permissions: std::collections::BTreeMap::from([(containing.clone(), 0o700)]),
+            ..Default::default()
+        };
+        let head = local.write(&repo, &files)?;
+        repo.write_checkpoint(Some(&head), &test_checkpoint("local", Some(&head)))?;
+        // incoming: the directory itself is enrolled in that stream at 0750
+        let incoming = Manifest {
+            enrollment: vec![Enrollment {
+                path: containing.clone(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![linux()],
+            }],
+            permissions: std::collections::BTreeMap::from([(own.clone(), 0o750)]),
+            ..Default::default()
+        };
+        let tree = incoming.write(&repo, &files)?;
+        let tracked = TrackedSet {
+            entries: vec![directory],
+            manifest: incoming,
+            ..Default::default()
+        };
+        let steps = plan(&repo, &tracked, &tree)?;
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].path, private);
+        assert_eq!(steps[0].desired, 0o750);
+        // a chmod away from the containing baseline is still unsaved
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o711))?;
+        let err = plan(&repo, &tracked, &tree).unwrap_err();
+        assert!(
+            err.to_string().contains("unsaved directory permission"),
+            "{err}"
+        );
         Ok(())
     }
 
