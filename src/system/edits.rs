@@ -734,10 +734,8 @@ pub(crate) fn apply(
     }
     for (req, desired) in &todo {
         let pending = journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
-        apply_one(req, desired.as_deref())?;
+        apply_one(req, desired.as_deref(), written)?;
         journal::commit_changes(pending);
-        // listed once the edit landed, so a failed one reloads nothing
-        written.push(req.path.clone());
     }
     let applied = todo
         .iter()
@@ -1140,19 +1138,31 @@ fn edit_paths(path: &Path) -> Vec<(PathBuf, Capture)> {
     paths
 }
 
-fn apply_one(req: &EditRequest, desired: Option<&str>) -> Result<()> {
+/// Write one edit, appending its path to `written` at the point the file is
+/// first mutated: before the write when the file exists (the write truncates
+/// it in place, so a failure part-way still leaves it changed — the journal
+/// preimage is only restored by a later recovery run), otherwise once the
+/// write succeeds.
+fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf>) -> Result<()> {
     debug!("edits: {} ({})", req.path.display_user(), req.describe_op());
     if let Some(parent) = req.path.parent() {
         file::create_dir_all(parent)?;
     }
-    let text = if req.path.exists() {
+    let existed = req.path.exists();
+    let text = if existed {
         file::read_to_string(&req.path)?
     } else {
         String::new()
     };
     let out = apply_to_string(req, desired, &text)?;
+    if existed {
+        written.push(req.path.clone());
+    }
     // file::write truncates in place, preserving the file's permissions
     file::write(&req.path, &out)?;
+    if !existed {
+        written.push(req.path.clone());
+    }
     Ok(())
 }
 

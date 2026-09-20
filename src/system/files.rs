@@ -3408,13 +3408,14 @@ pub(crate) fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
     missing
 }
 
-/// Write one entry. Each path is appended to `written` right after its own
-/// write lands, so a caller sees exactly the files that changed when a later
-/// write fails: the target of a whole-file entry, each file a directory copy
-/// or symlink-each places, and each stale link the latter prunes. A symlink
-/// to a directory also lists the files it exposes, so a `[history.reload]`
-/// glob under the target matches. Directories created on the way are not
-/// listed.
+/// Write one entry. Each path is appended to `written` at the point it is
+/// first mutated — after the removal of what was there, or else after its
+/// own write lands — so a caller sees exactly the files that changed when a
+/// later write fails: the target of a whole-file entry, each file a
+/// directory copy or symlink-each places, anything cleared to make room, and
+/// each stale link symlink-each prunes. A symlink to a directory also lists
+/// the files it exposes, so a `[history.reload]` glob under the target
+/// matches. Directories created on the way are not listed.
 fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBuf>) -> Result<()> {
     debug!("files: {}", describe(req)?);
     if let Some(parent) = req.target.parent() {
@@ -3422,23 +3423,27 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     }
     match req.mode {
         FileMode::Symlink => {
-            remove_existing(&req.target)?;
-            link_path(&req.source, &req.target, true)?;
-            written.push(req.target.clone());
+            replace_recorded(&req.target, written, || {
+                link_path(&req.source, &req.target, true)
+            })?;
+            // the link is in place; listing what it exposes only feeds
+            // reload matching, so a walk that fails must not fail the apply
             if req.source.is_dir() {
-                written.extend(
-                    walk_source_files(req)?
-                        .into_iter()
-                        .map(|(_, target)| target),
-                );
+                match walk_source_files(req) {
+                    Ok(files) => written.extend(files.into_iter().map(|(_, target)| target)),
+                    Err(err) => warn!(
+                        "files: cannot list {} for reload matching: {err:#}",
+                        req.source.display_user()
+                    ),
+                }
             }
         }
         FileMode::SymlinkEach => {
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need
             for dir in needed_dirs(req)? {
-                if dir.exists() && !dir.is_dir() {
-                    remove_existing(&dir)?;
+                if dir.exists() && !dir.is_dir() && remove_existing(&dir)? {
+                    written.push(dir);
                 }
             }
             // even an empty source dir must produce the target dir, or the
@@ -3451,9 +3456,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 if let Some(parent) = target.parent() {
                     file::create_dir_all(parent)?;
                 }
-                remove_existing(&target)?;
-                link_path(&source, &target, false)?;
-                written.push(target);
+                replace_recorded(&target, written, || link_path(&source, &target, false))?;
             }
             prune_stale_links(req, written)?;
         }
@@ -3462,8 +3465,8 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 // additive: overwrite matching files, leave files mise
                 // doesn't manage in place — only a type mismatch (vetted
                 // as a conflict) removes the target
-                if req.target.exists() && !req.target.is_dir() {
-                    remove_existing(&req.target)?;
+                if req.target.exists() && !req.target.is_dir() && remove_existing(&req.target)? {
+                    written.push(req.target.clone());
                 }
                 // even an empty source dir must produce the target dir,
                 // or the entry would never converge
@@ -3474,31 +3477,38 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                     if let Some(parent) = target.parent() {
                         file::create_dir_all(parent)?;
                     }
+                    // an existing file is truncated in place by the copy,
+                    // so it counts as mutated from the moment the copy
+                    // starts; a link is replaced
+                    let existed = target.is_symlink() || target.exists();
                     if target.is_symlink() {
                         file::remove_file(&target)?;
                     }
+                    if existed {
+                        written.push(target.clone());
+                    }
                     file::copy(&source, &target)?;
-                    written.push(target);
+                    if !existed {
+                        written.push(target);
+                    }
                 }
             } else {
-                remove_existing(&req.target)?;
-                file::copy(&req.source, &req.target)?;
-                written.push(req.target.clone());
+                replace_recorded(&req.target, written, || {
+                    file::copy(&req.source, &req.target)
+                })?;
             }
         }
         FileMode::Template => {
             let rendered = rendered.expect("rendered template content");
-            remove_existing(&req.target)?;
-            file::write(&req.target, rendered)?;
-            written.push(req.target.clone());
+            replace_recorded(&req.target, written, || file::write(&req.target, rendered))?;
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
         }
         FileMode::Track => unreachable!("tracked files are never written"),
         FileMode::Content => {
-            remove_existing(&req.target)?;
-            file::write(&req.target, req.content.as_deref().expect("inline content"))?;
-            written.push(req.target.clone());
+            replace_recorded(&req.target, written, || {
+                file::write(&req.target, req.content.as_deref().expect("inline content"))
+            })?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -3548,11 +3558,33 @@ fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()
 
 /// remove whatever sits at `path` so it can be replaced — conflicts have
 /// already been vetted (or --force given) by the time this runs
-fn remove_existing(path: &Path) -> Result<()> {
+fn remove_existing(path: &Path) -> Result<bool> {
     if path.is_symlink() || path.is_file() {
         file::remove_file(path)?;
     } else if path.is_dir() {
         file::remove_all(path)?;
+    } else {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// Clear `target` and run `write` in its place, recording the target in
+/// `written` at its first mutation: right after the removal when something
+/// was there (a write that then fails still leaves the old content gone),
+/// otherwise once the write succeeds.
+fn replace_recorded(
+    target: &Path,
+    written: &mut Vec<PathBuf>,
+    write: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    let removed = remove_existing(target)?;
+    if removed {
+        written.push(target.to_path_buf());
+    }
+    write()?;
+    if !removed {
+        written.push(target.to_path_buf());
     }
     Ok(())
 }
@@ -4003,6 +4035,57 @@ variants = [{{ {field} = "linux" }}]"#
             .is_err()
         );
         assert!(written.is_empty());
+
+        // an existing target that was cleared before the write failed is
+        // mutated (its old content is gone), so it is listed
+        let target = dir.path().join("replaced");
+        file::write(&target, "old")?;
+        let missing_source = dir.path().join("missing");
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&missing_source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(!target.exists());
+        assert_eq!(written, vec![target]);
+        // the same failed write against an absent target lists nothing
+        let target = dir.path().join("never");
+        let mut written = vec![];
+        assert!(
+            apply_one(
+                &link_req(&missing_source, &target, FileMode::Copy),
+                None,
+                &mut written
+            )
+            .is_err()
+        );
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_symlink_listing_is_best_effort() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::create_dir_all(source.join("sub"))?;
+        file::write(source.join("sub/hidden.toml"), "x")?;
+        // an unreadable subdirectory makes the walk fail (unless running as
+        // root, where the walk simply succeeds); the link still lands and is
+        // recorded either way
+        std::fs::set_permissions(source.join("sub"), std::fs::Permissions::from_mode(0o000))?;
+        let target = dir.path().join("target");
+        let mut written = vec![];
+        let result = apply_one(&symlink_req(&source, &target), None, &mut written);
+        std::fs::set_permissions(source.join("sub"), std::fs::Permissions::from_mode(0o755))?;
+        result?;
+        assert!(target.is_symlink());
+        assert_eq!(written.first(), Some(&target));
         Ok(())
     }
 
