@@ -16,6 +16,7 @@ use crate::system::history::tracked::TrackedSet;
 
 pub(super) fn prospective(
     repo: &HistoryRepo,
+    state_dir: &Path,
     tracked: &TrackedSet,
     plans: &[PathPlan],
 ) -> Result<TrackedSet> {
@@ -121,53 +122,29 @@ pub(super) fn prospective(
         bail!("{}: {}", invalid.path, invalid.reason);
     }
     declarations.exclude_set()?;
-    // The repository inventory, not a source or output mentioned by incoming
-    // configuration, determines which files the batch may install.
-    let mut prospective = tracked.clone();
-    carry_exclusions(&mut prospective, &declarations);
-    prospective.required_sources = declarations.required_sources;
-    Ok(prospective)
-}
-
-/// Give the prospective set the exclusions the incoming configuration
-/// declares, global and per entry.
-///
-/// **The question is about the state after the batch, so it is asked with
-/// the rules the batch installs.** Validating with the manifest's current
-/// lists would decide what is still managed — and so whether a path
-/// missing upstream is a deletion — by exactly the rules that are being
-/// replaced. An entry the incoming configuration no longer declares keeps
-/// its own list: which entries exist is the repository inventory's answer,
-/// not this function's.
-fn carry_exclusions(prospective: &mut TrackedSet, declared: &TrackedSet) {
-    prospective.exclude = declared.exclude.clone();
-    prospective.manifest.exclude = declared.exclude.clone();
-    for entry in &mut prospective.entries {
-        if let Some(incoming) = declared
-            .entries
-            .iter()
-            .find(|incoming| incoming.path == entry.path)
-        {
-            entry.exclude = incoming.exclude.clone();
-        }
-    }
-    // **One fact, so both records of it move together.** A set holds each
-    // entry's list twice — on the entry, by live path, and on the
-    // manifest enrollment the checkpoint records, by portable path — and
-    // `add_requests` writes them as a pair. Updating only the one this
-    // validation happens to read would leave a set whose two answers to
-    // "what does this entry exclude" differ, which is the shape of nearly
-    // every bug this validation exists to catch.
-    for enrollment in &mut prospective.manifest.enrollment {
-        if let Some(incoming) = declared
-            .manifest
-            .enrollment
-            .iter()
-            .find(|incoming| incoming.path == enrollment.path)
-        {
-            enrollment.exclude = incoming.exclude.clone();
-        }
-    }
+    // finished the way `TrackedSet::from_config` finishes a set, so it can
+    // be resolved the way a live one is. Recipients are deliberately left
+    // unset: `reconcile` then keeps the saved ones, and a batch is not the
+    // place to decide who can decrypt.
+    declarations.manifest.exclude = declarations.exclude.clone();
+    declarations.declarations = Some(declarations.manifest.clone());
+    // **The prospective set is built the way the live set is built, so the
+    // two cannot disagree about what a path excludes.**
+    // `TrackedSet::effective` is `from_config` and then
+    // `enrollment::resolve`, and resolve is where an entry's exclusions
+    // come from when the local declaration does not carry them: the saved
+    // manifest another machine published. Copying the incoming
+    // declarations' lists onto the live entries read configuration alone,
+    // so a machine declaring `~/.ssh` with no `exclude` of its own, while
+    // the committed manifest excludes `id_*`, had that list replaced with
+    // an empty one here — `~/.ssh/id_rsa` then looked managed, its absence
+    // upstream read as a deletion, and the pull removed a private key.
+    // Reconcile decides per entry, and for the global list, where each one
+    // comes from, and it is now the only thing that decides it.
+    //
+    // Read-only: `resolve` reads the repository and the declarations
+    // cache, and writes neither.
+    crate::system::history::enrollment::resolve(state_dir, repo, &declarations, &[], &[])
 }
 
 /// Required source files must exist in the complete proposed write set or
@@ -212,87 +189,4 @@ fn has_incoming_child(roots: &Roots, path: &Path, plans: &[PathPlan]) -> bool {
                 .path()
                 .is_some_and(|p| p.starts_with(path))
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::system::files::{FileMode, FilePolicy};
-    use crate::system::history::tracked::TrackedEntry;
-
-    fn entry(path: &str, exclude: &[&str]) -> TrackedEntry {
-        let mut entry = TrackedEntry::new(
-            PathBuf::from(path),
-            "track",
-            FilePolicy::for_mode(FileMode::Track),
-        );
-        entry.exclude = exclude.iter().map(|glob| (*glob).to_string()).collect();
-        entry
-    }
-
-    /// The same entry, as the manifest records it: a portable path
-    /// rather than a live one.
-    fn enrollment(path: &str, exclude: &[&str]) -> crate::system::history::manifest::Enrollment {
-        crate::system::history::manifest::Enrollment {
-            path: path.to_string(),
-            autosave: true,
-            exclude: exclude.iter().map(|glob| (*glob).to_string()).collect(),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn test_prospective_validates_with_the_incoming_exclusions() {
-        let mut current = TrackedSet {
-            exclude: vec!["old/**".into()],
-            ..Default::default()
-        };
-        current.manifest.exclude = current.exclude.clone();
-        current.entries.push(entry("/home/u/.sample", &["was"]));
-        current.entries.push(entry("/home/u/.other", &["kept"]));
-        current
-            .manifest
-            .enrollment
-            .push(enrollment("home/.sample", &["was"]));
-        current
-            .manifest
-            .enrollment
-            .push(enrollment("home/.other", &["kept"]));
-
-        let mut declared = TrackedSet {
-            exclude: vec!["new/**".into()],
-            ..Default::default()
-        };
-        declared.entries.push(entry("/home/u/.sample", &["now"]));
-        declared
-            .manifest
-            .enrollment
-            .push(enrollment("home/.sample", &["now"]));
-
-        let mut prospective = current.clone();
-        carry_exclusions(&mut prospective, &declared);
-
-        // the global list the batch installs, in both the set and the
-        // manifest the walk copies it into
-        assert_eq!(prospective.exclude, vec!["new/**".to_string()]);
-        assert_eq!(prospective.manifest.exclude, vec!["new/**".to_string()]);
-        // the entry's own list, by path
-        assert_eq!(prospective.entries[0].exclude, vec!["now".to_string()]);
-        // an entry the incoming configuration does not declare keeps its
-        // own: which entries exist is the inventory's answer
-        assert_eq!(prospective.entries[1].exclude, vec!["kept".to_string()]);
-
-        // **and the set's two records of that same list agree.** The
-        // manifest enrollment is what a checkpoint writes down, so a set
-        // whose entry says one thing and whose enrollment says another
-        // would validate one way and record the other.
-        assert_eq!(
-            prospective.manifest.enrollment[0].exclude, prospective.entries[0].exclude,
-            "the entry and the enrollment disagree about what it excludes"
-        );
-        assert_eq!(
-            prospective.manifest.enrollment[1].exclude,
-            prospective.entries[1].exclude
-        );
-    }
 }

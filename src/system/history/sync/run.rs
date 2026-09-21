@@ -340,6 +340,7 @@ pub(crate) fn sync_locked(
             let sync_state = state::load(repo)?;
             plans = prepare(
                 repo,
+                state_dir,
                 tracked,
                 &shared.objects(),
                 &upstream,
@@ -416,6 +417,7 @@ pub(crate) fn sync_locked(
                     )?;
                     plans = prepare(
                         repo,
+                        state_dir,
                         tracked,
                         &shared.objects(),
                         &upstream,
@@ -672,6 +674,7 @@ pub(crate) fn refresh_with_interaction(
     )?;
     let plans = prepare(
         repo,
+        store.state_dir(),
         tracked,
         &shared.objects(),
         &upstream,
@@ -687,6 +690,7 @@ pub(crate) fn refresh_with_interaction(
 /// set in memory. Publication never gets ahead of this second preflight.
 fn prepare(
     repo: &crate::system::history::shadow::HistoryRepo,
+    state_dir: &Path,
     tracked: &TrackedSet,
     shared: &BTreeMap<String, Object>,
     upstream: &reconcile::Upstream,
@@ -801,7 +805,7 @@ fn prepare(
     // configuration itself is unchanged or deliberately not tracked.
     if plans.iter().any(|plan| plan.apply.is_some()) {
         let validation = (|| -> Result<()> {
-            let prospective = super::preflight::prospective(repo, tracked, &plans)?;
+            let prospective = super::preflight::prospective(repo, state_dir, tracked, &plans)?;
             plans = reconcile_set(&prospective)?;
             apply_resolutions(repo, status, shared, upstream, &mut plans)?;
             reconcile::skip_pointer_applications(&mut plans, shared);
