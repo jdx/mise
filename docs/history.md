@@ -504,8 +504,7 @@ recovery keeps it untracked.
 
 ## Explicit tracking and exclusions
 
-Use `mode = "track"` for every file or directory you want to save in history.
-For example, in your global configuration:
+Declare each file or directory you want to save in your global configuration:
 
 ```toml
 [dotfiles]
@@ -514,53 +513,75 @@ For example, in your global configuration:
 "~/.gitconfig" = { mode = "template", source = "~/templates/gitconfig.tera" }
 ```
 
-Here, history saves `.zshrc` and the files in `~/templates`. The template
-creates `.gitconfig`; track that output separately if you want its history
-too. You can track files mise also copies, links, or edits.
+History saves `.zshrc` and the files in `~/templates`. The template creates
+`.gitconfig`; track that output separately if you want its history too.
+You can track files that mise also copies, links, or edits.
 
-Tracking takes exact file or directory paths. Directories include new
-files added beneath them. Symlinks record the link itself; track their
-targets separately to save those contents. To share tools, services, and
-template setup, track the relevant mise configuration and sources too.
-Bootstrap reports required files missing from history.
+Tracking entries name exact paths, not globs. A tracked directory includes
+new files added beneath it, subject to the selection rules below. Symlinks
+record the link itself; track their targets separately to save those
+contents. To share tools, services, and template setup, track the relevant
+mise configuration and sources too. Bootstrap reports required files
+missing from history.
 
-Use glob patterns to exclude files from history:
+### Exclude files across tracked entries
+
+Use `mise dot exclude` to add a glob to `[history] exclude` in your global
+configuration. Quote it so your shell does not expand it:
 
 ```sh
-mise dot exclude '~/.config/hypr/plugins/**'
-mise dot include '~/.config/hypr/plugins/**'
+mise dot exclude '~/.codex/sessions/**'
 mise dot paths
 ```
 
-Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
-earlier matching exclusion. `paths` lists tracked paths and files omitted
-from saves.
+An absolute pattern scopes the exclusion to that location. This example
+leaves `~/.config/kitty/sessions/` unaffected.
 
-Credential files and `*.local.toml` are omitted by default. A file is
-treated as a credential store when its name is `.netrc` or matches `*.age`,
+To remove that rule, pass the same glob to `mise dot include`:
+
+```sh
+mise dot include '~/.codex/sessions/**'
+```
+
+A later `!glob` in `[history] exclude` reverses an earlier matching
+exclusion. Removing one rule does not override other rules that still
+exclude the path.
+
+### Credential filtering and omissions
+
+Without encryption, built-in filename rules omit `.netrc`, `*.age`,
 `*.key`, `*.pem`, `*.gpg`, `*.kdbx`, `id_*`, `*token*`, `*secret*`,
-`credentials*`, or `oauth*` (under the mise configuration directory also
-`github_tokens.toml`, `hosts.yml`, and `age.txt`). The guard matches by
-name alone and is deliberately conservative: `id_ed25519.pub` is treated
-like `id_ed25519`.
-`mise dot save`, `mise dot track`, and `mise dot status` report what a
-save leaves out, and `mise dot paths` lists every omission with its
+`credentials*`, and `oauth*`. Under the mise configuration directory,
+`github_tokens.toml`, `hosts.yml`, and `age.txt` are also omitted.
+
+These rules examine the file's name, not its contents or the names of
+its parent directories. For example, both `id_ed25519` and
+`id_ed25519.pub` match `id_*`, and a shell function named `secrets.fish`
+matches `*secret*`.
+
+`mise dot save` and `mise dot track` report omissions. `mise dot status`
+shows omission counts, and `mise dot paths` lists each path and its
 reason. Use [encrypted tracking](#encrypted-shared-files) for credentials
 you want to save.
 
-Logs, caches, databases, and constantly rewritten session state usually
-belong outside history. Use `autosave = false` for configuration you want
-to save manually. An excluded file is left out of future saves entirely.
+Files ending in `.local.toml` are always omitted as machine-local
+configuration, even when encryption is enabled.
 
-To stop tracking a file:
+### Stop saving a path
+
+Logs, caches, databases, and frequently rewritten session state usually
+belong outside history. Exclude them to stop capturing them. Use
+`autosave = false` for configuration you still want to save manually.
+
+To remove a tracking entry:
 
 ```sh
 mise dot untrack ~/.zshrc
 ```
 
-The file stays in place, while future checkpoints leave it out. Earlier
-committed versions remain in Git and can still be shared. There is no
-per-file local-only history setting.
+The local file stays in place. Future checkpoints leave it out, but
+previously committed versions remain in Git and can still be shared.
+There is no per-file local-only history setting.
 
 ## Encrypted shared files
 
@@ -881,49 +902,6 @@ while saving other files, so check reported omissions before relying on a
 checkpoint. Explicit exclusions remove paths from future checkpoints.
 Encryption failures stop a save rather than storing plaintext.
 
-### Nested repositories
-
-A directory with its own `.git` inside a tracked tree (a plugin cloned
-into `~/.hammerspoon/Spoons`, a vendored theme) is a separate repository.
-**mise skips it and records nothing for it** — not its files, and not a
-commit pointer. `mise dot save`, `mise dot track`, `mise dot status` and
-`mise dot paths` each name it and say what to do:
-
-```console
-nested: ~/.hammerspoon/Spoons/SkyRocket.spoon (a separate Git repository;
-        track it directly to capture its working files)
-```
-
-That remedy is the supported one. **Tracking a repository's own directory
-captures its working files**, always without `.git`:
-
-```sh
-mise dot track ~/.hammerspoon/Spoons/SkyRocket.spoon
-```
-
-Reaching into it from a parent entry does not work and is not meant to:
-an `include` pattern on the parent that names paths inside the nested
-repository selects nothing, and mise says so rather than leaving you to
-wonder whether the pattern was wrong. The alternative is to leave the
-directory to the tool that installs it, or remove its `.git` so it
-becomes ordinary content.
-
-A history saved by an older mise may already contain commit pointers.
-Those are read and skipped: `mise dot pull` lists such a pointer as
-skipped rather than creating an empty directory, failing on it, or
-pausing the setup because another machine's pointer differs. No new
-pointer is ever written.
-
-Which repositories a checkpoint skipped is recorded on the machine that
-wrote it, not in the shared history, so a rollback there knows the
-checkpoint never held those files — including after you remove the
-`.git` and the directory becomes ordinary content, when looking at the
-filesystem would no longer tell. Other machines find their own nested
-repositories the same way, by looking. The record is best effort: it
-lives in this machine's checkpoint cache, so rebuilding that cache from
-Git loses it, and a rollback then falls back to what the filesystem
-says.
-
 Commands that modify or capture tracked files save checkpoints before and
 after their work. Their metadata includes operation labels and the link
 between the two checkpoints. Raw command arguments, environment contents,
@@ -932,6 +910,32 @@ and temporary recovery copies are left out of committed metadata.
 Checkpoints restore file contents. They do not restore installed packages
 or the running state of a service. Use your system's backup tools for that
 state, and run bootstrap explicitly to apply restored configuration.
+
+### Nested repositories
+
+A directory containing `.git` inside a tracked directory is treated as a
+separate repository. mise skips its contents and reports its path during
+tracking, saving, status, and path listing. It does not create a commit
+pointer for the repository.
+
+To save a nested repository's working files, track its root explicitly:
+
+```sh
+mise dot track ~/.hammerspoon/Spoons/SkyRocket.spoon
+```
+
+The repository's files then follow that entry's tracking policies; `.git`
+is always excluded. Alternatively, leave the repository to the tool that
+installs it, or remove its `.git` to treat the directory as ordinary files.
+
+Older history may contain commit pointers. Pull and adoption skip
+pointer-only changes rather than trying to restore unavailable Git objects
+or removing an existing checkout.
+
+A checkpoint records skipped repositories as omissions in shared history.
+Rollback preserves files under those paths even if `.git` has since been
+removed. The local checkpoint cache can provide a more specific nested-
+repository label; rebuilding the cache retains the omission in Git.
 
 ### Descriptions from an agent
 

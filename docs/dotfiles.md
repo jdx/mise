@@ -647,18 +647,20 @@ added beneath it later, subject to those exclusions.
 
 Start with individual configuration files so you can choose what to save.
 Leave logs, caches, databases, and application session state out of history.
-Credential files (`.netrc`, `*.age`, `*.key`, `*.pem`, `*.gpg`, `*.kdbx`,
-`id_*`, `*token*`, `*secret*`, `credentials*`, `oauth*`, and under the mise
-configuration directory `hosts.yml` and `age.txt`; matched by name alone,
-so `id_ed25519.pub` counts too) and `*.local.toml` files are omitted by
-default. `mise dot save`,
-`mise dot track`, and `mise dot status` report these omissions, and
-`mise dot paths` lists each one with its reason; see
-[encrypted tracking](/history.html#encrypted-shared-files) to save credentials.
+Built-in credential rules can omit files even when their parent directory
+is tracked. `mise dot save`, `mise dot track`, and `mise dot status` report
+these omissions; `mise dot paths` lists the affected files and reasons.
+See [credential filtering](/history.html#credential-filtering-and-omissions)
+for the filename rules and [encrypted tracking](/history.html#encrypted-shared-files)
+to save credentials. Files ending in `.local.toml` are never captured.
 
 Tracking a symlink saves the link itself. Track its target separately to
 save the target's contents. If a parent directory is a symlink, track that
 link and use the real directory path to track files beneath it.
+
+Repositories found inside a tracked directory are skipped and reported.
+To save a repository's working files, track its root as a separate entry;
+`.git` is always excluded. See [nested repositories](/history.html#nested-repositories).
 
 Your home directory and mise configuration directory can themselves be
 symlinks. mise maps these roots to the corresponding directories on each
