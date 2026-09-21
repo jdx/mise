@@ -103,11 +103,14 @@ impl TrackedEntry {
     /// wonder whether they wrote it wrong.
     pub(crate) fn include_reaching_into(&self, directory: &Path) -> Option<&str> {
         let rel = directory.strip_prefix(&self.path).ok()?;
-        let prefix = format!("{}/", rel.to_string_lossy().replace('\\', "/"));
+        let components: Vec<String> = rel
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect();
         self.include
             .iter()
             .flatten()
-            .find(|pattern| pattern.replace('\\', "/").starts_with(&prefix))
+            .find(|pattern| reaches_into(pattern, &components))
             .map(String::as_str)
     }
 
@@ -833,6 +836,22 @@ fn walk_entry(
             }
             continue;
         }
+        // **The limit counts files examined, not files kept.** An
+        // `include` list bounds what a tracked directory saves; something
+        // still has to bound the walk that finds them, or a list naming
+        // three files inside a directory of millions would traverse all
+        // of them on every save with nothing to stop it.
+        files += 1;
+        if files > MAX_FILES {
+            let reason = format!("scan stopped after {MAX_FILES} files");
+            walk.warnings
+                .push(format!("{display}: {reason}; the rest was not captured"));
+            walk.incomplete.push(PathReason {
+                path: display,
+                reason,
+            });
+            return;
+        }
         // rule 2: with an `include` list, only matching paths are
         // considered. Applied after the exclude lists, so rule 3 holds: an
         // explicit exclusion wins.
@@ -863,13 +882,9 @@ fn walk_entry(
         };
         match classify_file(&meta) {
             Ok(size) => {
-                files += 1;
                 bytes += size;
-                if files > MAX_FILES || bytes > MAX_BYTES {
-                    let reason = format!(
-                        "scan stopped after {MAX_FILES} files or {} MiB",
-                        MAX_BYTES / (1024 * 1024)
-                    );
+                if bytes > MAX_BYTES {
+                    let reason = format!("scan stopped after {} MiB", MAX_BYTES / (1024 * 1024));
                     walk.warnings
                         .push(format!("{display}: {reason}; the rest was not captured"));
                     walk.incomplete.push(PathReason {
@@ -1546,6 +1561,49 @@ impl PatternRule {
                 .iter()
                 .any(|matcher| matcher.is_match(Path::new(candidate)))
         })
+    }
+}
+
+/// Whether an `include` pattern could select something inside the
+/// directory at `components` (relative to the tracked entry).
+///
+/// **Asked with the same glob semantics selection uses, not with a
+/// literal prefix.** `Spoons/*` reaches into `Spoons`, and so do
+/// `**/Sky.spoon` and a bare `Sky.spoon`, because a pattern without a
+/// separator matches a name at any depth. A prefix comparison sees only
+/// the first of those, and the user is then told their pattern selects
+/// nothing without being told which pattern.
+fn reaches_into(pattern: &str, components: &[String]) -> bool {
+    let pattern = pattern.replace('\\', "/");
+    // a name matches a component at any depth, so it can name a file
+    // inside any directory
+    if !pattern.contains('/') {
+        return true;
+    }
+    let parts: Vec<&str> = pattern.split('/').filter(|part| !part.is_empty()).collect();
+    let mut parts = parts.as_slice();
+    let mut rest = components;
+    loop {
+        match (parts.first(), rest.first()) {
+            // `**` descends as far as it likes
+            (Some(&"**"), _) => return true,
+            // One side ran out with everything so far matching, and all
+            // three ways that happens reach in: the pattern names
+            // something inside the directory, or the directory itself,
+            // or an ancestor of it — and a pattern matching a directory
+            // takes everything under it.
+            (Some(_), None) | (None, _) => return true,
+            (Some(part), Some(component)) => {
+                let matches = glob::Pattern::new(part)
+                    .map(|glob| glob.matches(component))
+                    .unwrap_or(false);
+                if !matches {
+                    return false;
+                }
+                parts = &parts[1..];
+                rest = &rest[1..];
+            }
+        }
     }
 }
 
@@ -2378,6 +2436,86 @@ mod tests {
                     .any(|omitted| omitted.reason.contains("selects nothing")),
                 declared,
                 "reported with include = {include:?}"
+            );
+        }
+    }
+
+    /// The credential guard is lifted by a pattern that selected the
+    /// file, never by the presence of a list. An entry that is itself a
+    /// credential-named file has nothing inside it for a pattern to
+    /// name, so no list it declares can lift its guard.
+    #[test]
+    fn a_list_on_a_credential_file_entry_does_not_lift_its_guard() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key = tmp.path().join("id_rsa");
+        std::fs::write(&key, "key").unwrap();
+        for include in [
+            None,
+            Some(vec![]),
+            Some(vec!["id_rsa".to_string()]),
+            Some(vec!["**".to_string()]),
+        ] {
+            let mut tracked = entry(&key);
+            tracked.include = include.clone();
+            assert_eq!(
+                tracked.capture_exclusion(&key),
+                Some(CREDENTIAL_REASON),
+                "include = {include:?} lifted the guard on the entry itself"
+            );
+        }
+        // inside a directory entry a pattern can name it, and then the
+        // selection decides
+        let dir = tmp.path().join("ssh");
+        std::fs::create_dir(&dir).unwrap();
+        let inside = dir.join("id_rsa");
+        std::fs::write(&inside, "key").unwrap();
+        let mut tracked = entry(&dir);
+        assert_eq!(tracked.capture_exclusion(&inside), Some(CREDENTIAL_REASON));
+        tracked.include = Some(vec!["id_rsa".to_string()]);
+        assert_eq!(tracked.capture_exclusion(&inside), None);
+    }
+
+    /// A repository inside a tracked directory is skipped whatever the
+    /// include list says, and the explanation names the pattern that
+    /// reached into it — found with the same glob semantics selection
+    /// uses, not a literal prefix.
+    #[test]
+    fn a_nested_repository_is_skipped_and_the_pattern_that_reached_in_is_named() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("hammerspoon");
+        let plugin = root.join("Spoons/Sky.spoon");
+        std::fs::create_dir_all(plugin.join(".git")).unwrap();
+        std::fs::write(root.join("init.lua"), "keep").unwrap();
+        std::fs::write(plugin.join("init.lua"), "theirs").unwrap();
+
+        for (patterns, named) in [
+            (vec!["Spoons/*"], true),
+            (vec!["**/init.lua"], true),
+            (vec!["init.lua"], true),
+            (vec!["Spoons/Sky.spoon/**"], true),
+            (vec!["other/**"], false),
+            // the entry's own file, selected, and nothing reaching in
+            (vec!["init.lua", "other/**"], true),
+        ] {
+            let mut tracked = entry(&root);
+            tracked.include = Some(patterns.iter().map(|p| (*p).to_string()).collect());
+            let mut set = TrackedSet::default();
+            set.push(tracked);
+            let walk = set.walk().unwrap();
+            assert!(
+                !walk.files.contains_key(&plugin.join("init.lua")),
+                "{patterns:?} captured a file inside a nested repository"
+            );
+            let reported = walk
+                .nested
+                .iter()
+                .find(|nested| nested.path.ends_with("Sky.spoon"))
+                .unwrap_or_else(|| panic!("{patterns:?}: the repository was not reported"));
+            assert_eq!(
+                reported.reason.contains("selects nothing inside it"),
+                named,
+                "{patterns:?}: {}",
+                reported.reason
             );
         }
     }
@@ -3284,10 +3422,17 @@ mod tests {
         assert_eq!(walk.nested.len(), 1);
         assert!(walk.nested[0].reason.contains("selects nothing inside it"));
         assert!(walk.nested[0].reason.contains("Spoons/Sky.spoon/**"));
-        // and a list that does not select the directory at all still
-        // reports the repository rather than passing over it silently
+        // a bare name matches a component at any depth, so `init.lua`
+        // does reach into the repository, and is named as such while the
+        // entry's own `init.lua` is still captured
         let walk = walk_with(&["init.lua"]);
         assert!(walk.files.contains_key(&root.join("init.lua")));
+        assert!(!walk.files.contains_key(&plugin.join("init.lua")));
+        assert_eq!(walk.nested.len(), 1);
+        assert!(walk.nested[0].reason.contains("\"init.lua\""));
+        // and a list that cannot select anything inside it still reports
+        // the repository rather than passing over it silently
+        let walk = walk_with(&["other/**"]);
         assert_eq!(walk.nested.len(), 1);
         assert_eq!(walk.nested[0].reason, NESTED_REPOSITORY_REASON);
     }

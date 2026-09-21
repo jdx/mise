@@ -1025,6 +1025,24 @@ fn merge_file_entry(
             );
             return;
         }
+        // **An `include` list selects paths inside a tracked directory,
+        // so a list on an entry that is a file can never select
+        // anything.** `"~/.aws/credentials" = { include = ["credentials"]
+        // }` is the natural mistake next to the documented directory
+        // example, and it would otherwise be a declaration that captures
+        // nothing at all. Said at the point it is written, with the fix,
+        // rather than left to be worked out from an omission line. A
+        // target that does not exist yet is not judged: it is captured
+        // once it appears, and what it will be is not knowable here.
+        if include.is_some() && std::fs::symlink_metadata(&target).is_ok_and(|meta| !meta.is_dir())
+        {
+            record_invalid(
+                &target_raw,
+                &origin.config,
+                "include selects paths inside a tracked directory and does nothing on a file: remove it, or track the parent directory and name this file in its include list",
+            );
+            return;
+        }
         let (exclude, include) = match (
             compile_patterns("exclude", exclude),
             compile_patterns("include", include),

@@ -4504,6 +4504,23 @@
                     }
                   }
                 ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": ["include", "mode"],
+                    "properties": {
+                      "mode": {
+                        "const": "track"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "include": false
+                    }
+                  }
+                ]
               }
             ],
             "anyOf": [

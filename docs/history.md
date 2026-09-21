@@ -658,12 +658,28 @@ The rules, in order:
    decides what is saved, `encrypt` decides how.
 
 An `include` list that is present but empty selects nothing, which is not
-the same as having no list at all. A list selects paths _inside_ a
-tracked directory, so an entry that is itself a file is left out by any
-list it declares — empty or not — and `mise dot paths` says so. Declaring
-a list on such an entry does not lift the credential guard either:
-overriding it means a pattern that names the file, which only a directory
-entry can have. A pattern that is not a valid glob is
+the same as having no list at all.
+
+A list selects paths _inside_ a tracked directory, and no pattern can
+name the entry itself, so a list on an entry that is a file could never
+select anything. That is refused where it is written:
+
+```console
+mise WARN  ~/.aws/credentials: include selects paths inside a tracked
+directory and does nothing on a file: remove it, or track the parent
+directory and name this file in its include list
+```
+
+The remedy is the second half of that message, and it is also the only
+way to lift the credential guard for such a file — overriding it means a
+pattern that names the file, which only a directory entry can have:
+
+```toml
+[dotfiles]
+"~/.aws" = { mode = "track", include = ["credentials"], encrypt = true }
+```
+
+A pattern that is not a valid glob is
 an error naming the entry and the pattern, for either list: a list mise
 could not read in full would silently capture more than you asked for.
 
@@ -1088,13 +1104,14 @@ A repository is skipped whatever the parent entry's `include` list says,
 and a pattern naming paths inside it is told that it selects nothing,
 rather than leaving you to wonder whether the pattern was wrong:
 
-````console
+```console
 nested: ~/.config/nested/plugin (a separate Git repository; track it
         directly to capture its working files; the include pattern
         "plugin/**" selects nothing inside it)
-``` The alternative is to leave the
-directory to the tool that installs it, or remove its `.git` so it
-becomes ordinary content.
+```
+
+The alternative is to leave the directory to the tool that installs it,
+or remove its `.git` so it becomes ordinary content.
 
 A history saved by an older mise may already contain commit pointers.
 Those are read and skipped: `mise dot pull` lists such a pointer as
@@ -1131,7 +1148,7 @@ Claude Code installed:
 ```toml
 [settings]
 history.describe_command = "claude -p --output-format text --no-session-persistence 'Describe this change to my configuration files in one line of at most 120 characters, plain text, no quotes.'"
-````
+```
 
 This sends change details, including unencrypted file diffs, to the command
 you configure. Excluded private files are not named, and encrypted file
