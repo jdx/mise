@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# A setup can name a task that finishes setting a machine up:
+# `[history] post_adopt` runs once after `mise bootstrap --adopt` installs
+# the setup, a dry run names it before the machine commits to it, a later
+# sync does not repeat it, and a failure says the setup is installed but
+# unfinished.
+# shellcheck disable=SC2016
+
+require_cmd git
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+
+# ---- machine A publishes a setup whose configuration names the task
+cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
+[history]
+post_adopt = "setup"
+
+[tasks.setup]
+run = 'printf "ran\n" >>"$HOME/post-adopt-ran"; test -z "$FAIL_SETUP"'
+EOF2
+assert_succeed "mise bootstrap dotfiles track $MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
+
+wrapper() {
+  local home="$1" script="$2"
+  mkdir -p "$home"
+  cat <<EOF2 >"$script"
+#!/usr/bin/env bash
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \\
+  MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \\
+  MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home"
+cd "\$HOME" && exec mise "\$@"
+EOF2
+  chmod +x "$script"
+}
+
+# ---- machine C: the dry run names the task the setup brings, and runs
+# nothing. The name comes out of the incoming setup, which is not installed
+# yet, so reading it from this machine's own configuration would find
+# nothing at all.
+C="$(dirname "$HOME")/c-home"
+wrapper "$C" "$PWD/c"
+c="$PWD/c"
+assert_contains "$c bootstrap --adopt file://$origin --dry-run 2>&1" "would run the post-adopt task setup"
+assert_fail "test -e $C/post-adopt-ran"
+
+# adopting runs it once, after the files are installed
+assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles,task"
+assert "cat $C/post-adopt-ran" "ran"
+assert_contains "cat $C/.config/mise/config.toml" 'post_adopt = "setup"'
+
+# a second run adopts nothing, so there is nothing to finish: the task does
+# not run again
+assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles,task"
+assert "cat $C/post-adopt-ran" "ran"
+
+# ---- machine D excludes the task part: the setup is installed and the
+# task is left alone, exactly as `bootstrap` would be
+D="$(dirname "$HOME")/d-home"
+wrapper "$D" "$PWD/d"
+d="$PWD/d"
+assert_succeed "$d bootstrap --adopt file://$origin --yes --only dotfiles"
+assert_contains "cat $D/.config/mise/config.toml" 'post_adopt = "setup"'
+assert_fail "test -e $D/post-adopt-ran"
+
+# ---- machine E: the task fails. The setup is installed and unfinished,
+# not undone, and the message names the command to run again.
+E="$(dirname "$HOME")/e-home"
+wrapper "$E" "$PWD/e"
+e="$PWD/e"
+out="$(FAIL_SETUP=1 $e bootstrap --adopt "file://$origin" --yes --only dotfiles,task 2>&1)" && fail "a failing post-adopt task must fail the adoption"
+[[ $out == *"post-adopt task setup failed"* ]] || fail "the failure does not name the task: $out"
+[[ $out == *'mise run setup'* ]] || fail "the failure does not say how to run it again: $out"
+# installed, and the task did run: what is missing is what the task does
+assert_contains "cat $E/.config/mise/config.toml" 'post_adopt = "setup"'
+assert "cat $E/post-adopt-ran" "ran"
+
+# a task that failed is not recorded as finished: fixing what it reported
+# and adopting again runs it, and only then is it done with
+assert_succeed "$e bootstrap --adopt file://$origin --yes --only dotfiles,task"
+assert "cat $E/post-adopt-ran" $'ran\nran'
+assert_succeed "$e bootstrap --adopt file://$origin --yes --only dotfiles,task"
+assert "cat $E/post-adopt-ran" $'ran\nran'

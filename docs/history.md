@@ -430,6 +430,53 @@ required sources must have been tracked and shared for those steps to work.
 See [repository bootstrap](/bootstrap.html#starting-from-a-repository) for
 how this differs from cloning a global configuration repository.
 
+### Finish setting up a new machine
+
+Adopting a setup installs its files and runs bootstrap, but a machine is
+often not ready until something else has run: a login shell changed, a font
+cache rebuilt, a keyring imported, a service enabled. Name a task and the
+adoption finishes with it:
+
+```toml
+# config.toml, shared through the setup repository
+[history]
+post_adopt = "setup"
+
+[tasks.setup]
+run = "./bin/finish-setup"
+```
+
+`mise bootstrap --adopt <url>` then runs `mise run setup` once, after the
+files are installed and bootstrap has finished. Nothing else runs it: a
+later `mise bootstrap`, `mise dot pull`, or `mise dot sync` adopts nothing,
+so there is nothing to finish. Adopting the same setup again synchronizes
+it and leaves the task alone — mise records the task on the machine that
+finished it, so work that changes a login shell or imports a keyring does
+not happen twice.
+
+This is the difference from a task named `bootstrap`, which every
+`mise bootstrap` runs. Put work that must be safe to repeat in `bootstrap`,
+and work a machine needs exactly once — changing the login shell, importing
+a keyring, enabling a service the setup brought — in `post_adopt`.
+`--skip task`, or an `--only` that leaves the task part out, excludes both.
+
+The task is read from the trusted global or system configuration, under the
+same rule as [`[history.reload]`](#reload-an-application-after-restoring-files):
+a repository you have not trusted does not get to run commands on your
+machine merely by being fetched. `mise bootstrap --adopt <url> --dry-run`
+reads the task out of the incoming setup and names it, so you can see what
+it would run before you adopt it.
+
+If the task fails, the setup is installed and unfinished rather than undone,
+and mise says exactly that. A failed task is not recorded, so fixing what it
+reported and adopting again runs it:
+
+```text
+the setup was installed but its post-adopt task setup failed; the machine
+may not be fully set up. Fix what the task reported and run `mise run setup`
+again
+```
+
 Synchronization uses Git ancestry, fast-forwards, and merge commits. Pushes
 retain the saved commits and their Git author identities. A rejected push
 triggers another fetch and reconciliation. mise leaves divergent or

@@ -1869,6 +1869,14 @@ impl Bootstrap {
                 if let Some(preview) = outcome.preview_config.as_ref() {
                     self.run_child_bootstrap(preview.path().to_path_buf())
                         .await?;
+                    // read from the preview, not from what is installed:
+                    // the command that would run comes with the setup
+                    if let Some(task) = system::history::config::post_adopt_task_in(preview.path())?
+                        && !self.skip_parts().contains(&BootstrapPart::Task)
+                        && !system::history::config::post_adopt_already_ran(&task)
+                    {
+                        info!("dotfiles: would run the post-adopt task {task} after adopting");
+                    }
                 }
                 return Ok(());
             }
@@ -1885,6 +1893,7 @@ impl Bootstrap {
             if !outcome.durable_access {
                 warn!("ongoing synchronization still needs credentials on this host (see above)");
             }
+            self.run_post_adopt_task().await?;
             return Ok(());
         }
         let (url, checkout) = if let Some(url) = expanded.as_deref() {
@@ -1944,7 +1953,65 @@ impl Bootstrap {
             return Ok(());
         }
 
-        self.run_child_bootstrap(checkout).await
+        self.run_child_bootstrap(checkout).await?;
+        // a repository adopted the ordinary way finishes the same way; a
+        // `--from` bootstrap adopts nothing, so there is nothing to finish
+        if self.adopt.is_some() {
+            self.run_post_adopt_task().await?;
+        }
+        Ok(())
+    }
+
+    /// Runs `[history] post_adopt`, once the adopted files and
+    /// configuration are in place.
+    ///
+    /// **A setup finishes with the machine ready, not with the files
+    /// copied.** A `bootstrap` task already runs on every bootstrap, which
+    /// is the wrong place for the once-per-machine work an adoption
+    /// implies — changing the login shell, importing a keyring, enabling a
+    /// service the setup brought. This runs after a successful adoption
+    /// and nowhere else: a later `mise bootstrap`, pull, or sync adopts
+    /// nothing, so there is nothing to finish.
+    ///
+    /// It adds no trust surface. Adopting a repository already installs
+    /// its packages and services and runs its `bootstrap` task, so the
+    /// decision this command asks for is the decision that covers this
+    /// too — and `--skip task` (or an `--only` that leaves the task part
+    /// out) excludes it exactly as it excludes that one.
+    ///
+    /// The task runs as a child process rather than in this one: the
+    /// configuration that declares it only just arrived, and a fresh
+    /// process is what reads it.
+    ///
+    /// A failure leaves the setup installed and unfinished rather than
+    /// undone, so it says exactly that, and how to run it again.
+    async fn run_post_adopt_task(&self) -> Result<()> {
+        let Some(task) = system::history::config::post_adopt_task()? else {
+            return Ok(());
+        };
+        if self.skip_parts().contains(&BootstrapPart::Task) {
+            debug!("dotfiles: post-adopt task {task} skipped");
+            return Ok(());
+        }
+        if system::history::config::post_adopt_already_ran(&task) {
+            debug!("dotfiles: post-adopt task {task} already ran on this machine");
+            return Ok(());
+        }
+        if self.dry_run {
+            info!("dotfiles: would run the post-adopt task {task}");
+            return Ok(());
+        }
+        info!("dotfiles: running the post-adopt task {task}");
+        let status = Command::new(std::env::current_exe()?)
+            .args(["run", &task])
+            .status()
+            .map_err(|err| eyre::eyre!("running the post-adopt task {task}: {err}"))?;
+        if !status.success() {
+            bail!(
+                "the setup was installed but its post-adopt task {task} failed; the machine may not be fully set up. Fix what the task reported and run `mise run {task}` again"
+            );
+        }
+        system::history::config::record_post_adopt(&task)
     }
 
     /// Runs the bootstrap itself as a child process from `checkout` (the

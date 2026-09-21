@@ -5858,6 +5858,10 @@
             "type": "string"
           }
         },
+        "post_adopt": {
+          "type": "string",
+          "description": "a task run once after `mise bootstrap --adopt` installs this setup, to finish setting the machine up (trusted global or system config only)"
+        },
         "origin": {
           "type": "object",
           "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`",
