@@ -222,6 +222,7 @@ environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_
         } finally {
             mise bootstrap services remove mise-history 2>&1 | Out-String | Out-Null
             schtasks /delete /tn $task /f 2>&1 | Out-Null
+            Wait-Watcher $false | Should -BeTrue
             $env:MISE_EXPERIMENTAL = '0'
         }
     }
