@@ -851,6 +851,19 @@ pub(crate) fn excluded_by_entry(entry_path: &Path, patterns: &[String], path: &P
     }
 }
 
+/// Whether two display paths name the same path.
+///
+/// **The same path reaches this comparison in two spellings.** A walk
+/// writes display paths with [`crate::file::display_path`], which uses
+/// the platform separator, and a record read back out of a commit
+/// rebuilds them with [`tree_path_to_display`], which always writes `/`.
+/// On Windows one path is then `~\.codex\plugin` and the other
+/// `~/.codex/plugin`, and comparing the strings says they are two
+/// different paths.
+pub(crate) fn display_paths_equal(left: &str, right: &str) -> bool {
+    left.split(['/', '\\']).eq(right.split(['/', '\\']))
+}
+
 /// Whether the display path `path` is `root` itself or lies below it.
 ///
 /// **Two display paths are compared through one normalized form, never
