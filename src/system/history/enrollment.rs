@@ -244,6 +244,57 @@ mod tests {
         }
     }
 
+    /// **Where an entry's `exclude` list comes from is reconcile's
+    /// answer, and only reconcile's.** A machine whose own declaration
+    /// carries no list keeps the one the saved manifest holds — another
+    /// machine published it, and dropping it would make the paths it
+    /// protects look managed here, so a snapshot that omits them reads as
+    /// a deletion to replay. A declaration that genuinely drops the list
+    /// still drops it, or the list could never be undone.
+    #[test]
+    fn an_entry_keeps_the_saved_exclusions_until_its_declaration_changes_them() {
+        let declare = |exclude: &[&str]| Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.ssh".into(),
+                autosave: true,
+                exclude: exclude.iter().map(|glob| (*glob).to_string()).collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let saved = declare(&["id_*"]);
+
+        // this machine declares the target and says nothing about
+        // exclusions: the saved list stands
+        let current = declare(&[]);
+        let merged = reconcile(&saved, &current, Some(&current), &[]);
+        assert_eq!(
+            merged.enrollment[0].exclude,
+            vec!["id_*".to_string()],
+            "a declaration that says nothing dropped the saved exclusions"
+        );
+
+        // With no cache to compare against, a local declaration is taken
+        // as written, exclusions along with every other policy — the same
+        // rule the comment above `historical` states, not a special case
+        // for lists. Whether that is the right answer is a question about
+        // reconcile itself: it governs the live set and this one alike,
+        // which is the point of there being one derivation.
+        let merged = reconcile(&saved, &current, None, &[]);
+        assert!(merged.enrollment[0].exclude.is_empty());
+
+        // but a declaration that changes the list is the answer
+        let previous = declare(&["id_*"]);
+        let merged = reconcile(&saved, &current, Some(&previous), &[]);
+        assert!(
+            merged.enrollment[0].exclude.is_empty(),
+            "removing the exclusion from the declaration did not take effect"
+        );
+        let widened = declare(&["id_*", "*.pem"]);
+        let merged = reconcile(&saved, &widened, Some(&previous), &[]);
+        assert_eq!(merged.enrollment[0].exclude, vec!["id_*", "*.pem"]);
+    }
+
     #[test]
     fn exclusion_edits_preserve_order_repeats_and_remote_additions() {
         let mut previous = manifest("home/config");

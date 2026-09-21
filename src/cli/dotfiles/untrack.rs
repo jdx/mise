@@ -118,8 +118,11 @@ impl DotfilesUntrack {
                     }
                     let glob = super::track::exclude_rule_for_path(&key, path.is_dir());
                     super::track::edit_exclude(&glob, true)?;
+                    // name the command that undoes this, with the path
+                    // as the user would type it: the rule on disk is the
+                    // escaped form and is not what to type back
                     info!(
-                        "dotfiles: {key} is covered by {} ({}); excluded it in {}",
+                        "dotfiles: {key} is covered by {} ({}); excluded it in {} (`mise dot include '{key}'` captures it again)",
                         owner.display(),
                         owner.mode,
                         display_path(&global)
