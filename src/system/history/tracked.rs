@@ -380,7 +380,28 @@ impl TrackedSet {
     /// the owner with [`owning_entry`], so they cannot disagree.
     pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
         match self.entry_for(path) {
-            Some(owner) => exclude.is_match(path, &owner.path) || owner.is_excluded(path),
+            Some(owner) => {
+                // **A tracked directory's own root is not something the
+                // global list judges.** The walk never tests it: it
+                // steps past the root and filters what is inside. A bare
+                // pattern that happens to equal the directory's name
+                // would otherwise say "excluded" about an entry whose
+                // contents a capture takes in full, and a rollback would
+                // then stop recording that the directory existed.
+                //
+                // A root that cannot be read — it has just been removed
+                // — is not judged either. Nothing in the declaration
+                // says which kind an entry is (`mode = "track"` covers
+                // both), and of the two answers only this one is safe: a
+                // removed tracked tree is a change history has to
+                // notice, and a pattern equal to its name swallowing
+                // that event would leave its files in history after they
+                // are gone. A file that is there is judged, exactly as
+                // the walk judges it.
+                let judged = path != owner.path
+                    || std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir());
+                (judged && exclude.is_match(path, &owner.path)) || owner.is_excluded(path)
+            }
             None => true,
         }
     }
@@ -2053,6 +2074,56 @@ mod tests {
                 entries.iter().map(|entry| entry.0).collect::<Vec<_>>()
             );
         }
+    }
+
+    /// The walk steps past a tracked directory's own root and filters
+    /// what is inside, so a bare global pattern equal to that
+    /// directory's name must not make retention or the watcher call the
+    /// entry excluded — and removing the entry must still be noticed,
+    /// when there is no longer anything to say what kind it was.
+    #[test]
+    fn a_global_pattern_matching_an_entrys_own_name_does_not_exclude_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let directory = tmp.path().join("cache");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("kept.toml"), "keep").unwrap();
+        let file = tmp.path().join("notes.md");
+        std::fs::write(&file, "keep").unwrap();
+
+        let mut set = TrackedSet {
+            exclude: vec!["cache".to_string(), "notes.md".to_string()],
+            ..Default::default()
+        };
+        set.push(entry(&directory));
+        set.push(entry(&file));
+        let exclude = set.exclude_set().unwrap();
+
+        // the directory entry: walked, so its root is not judged
+        assert!(!set.excluded_by_lists(&exclude, &directory));
+        assert!(set.would_retain(&directory).unwrap());
+        assert!(
+            set.walk()
+                .unwrap()
+                .files
+                .contains_key(&directory.join("kept.toml"))
+        );
+        // and a file entry is judged, exactly as the walk judges it
+        assert!(set.excluded_by_lists(&exclude, &file));
+        assert!(!set.would_retain(&file).unwrap());
+        assert!(!set.walk().unwrap().files.contains_key(&file));
+
+        // removing a tracked entry is a change history has to notice,
+        // and once it is gone there is nothing to ask what kind it was
+        std::fs::remove_dir_all(&directory).unwrap();
+        std::fs::remove_file(&file).unwrap();
+        assert!(
+            !set.excluded_by_lists(&exclude, &directory),
+            "the removal of a tracked directory was ignored"
+        );
+        assert!(
+            !set.excluded_by_lists(&exclude, &file),
+            "the removal of a tracked file was ignored"
+        );
     }
 
     fn entry(path: &Path) -> TrackedEntry {
