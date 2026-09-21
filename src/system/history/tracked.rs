@@ -802,7 +802,20 @@ fn walk_entry(
         // the directory itself. There is a supported way to capture those
         // files, and the message names it.
         if file_type.is_dir() {
-            if path.join(".git").exists() {
+            let repository = path.join(".git").exists();
+            // **What the list cannot select is not walked.** The mirror
+            // of exclude pruning, conservative in the same direction:
+            // `include_reaching_into` says a pattern could name something
+            // here whenever it cannot rule it out, so a missed skip costs
+            // a walk while a wrong one would cost a file. The repository
+            // check comes first, so one is still reported before its
+            // parent is skipped for not being selected.
+            if !repository && entry.include.is_some() && entry.include_reaching_into(path).is_none()
+            {
+                walker.skip_current_dir();
+                continue;
+            }
+            if repository {
                 let reason = match entry.include_reaching_into(path) {
                     Some(pattern) => format!(
                         "{NESTED_REPOSITORY_REASON}; the include pattern {pattern:?} selects nothing inside it"
@@ -816,22 +829,6 @@ fn walk_entry(
                 walker.skip_current_dir();
             }
             continue;
-        }
-        // **The limit counts files examined, not files kept.** An
-        // `include` list bounds what a tracked directory saves; something
-        // still has to bound the walk that finds them, or a list naming
-        // three files inside a directory of millions would traverse all
-        // of them on every save with nothing to stop it.
-        files += 1;
-        if files > MAX_FILES {
-            let reason = format!("scan stopped after {MAX_FILES} files");
-            walk.warnings
-                .push(format!("{display}: {reason}; the rest was not captured"));
-            walk.incomplete.push(PathReason {
-                path: display,
-                reason,
-            });
-            return;
         }
         // rule 2: with an `include` list, only matching paths are
         // considered. Applied after the exclude lists, so rule 3 holds: an
@@ -863,9 +860,20 @@ fn walk_entry(
         };
         match classify_file(&meta) {
             Ok(size) => {
+                // **The limits bound what is captured, so they count what
+                // is captured.** A path an `include` list rejected is not
+                // in the snapshot and must not spend the budget: a
+                // growing `sessions/` directory would otherwise exhaust
+                // it and the one file the list names would never be
+                // saved — the feature defeated by exactly the files it
+                // exists to leave out.
+                files += 1;
                 bytes += size;
-                if bytes > MAX_BYTES {
-                    let reason = format!("scan stopped after {} MiB", MAX_BYTES / (1024 * 1024));
+                if files > MAX_FILES || bytes > MAX_BYTES {
+                    let reason = format!(
+                        "scan stopped after {MAX_FILES} files or {} MiB",
+                        MAX_BYTES / (1024 * 1024)
+                    );
                     walk.warnings
                         .push(format!("{display}: {reason}; the rest was not captured"));
                     walk.incomplete.push(PathReason {
@@ -2424,9 +2432,6 @@ mod tests {
             (vec!["**/init.lua"], true),
             (vec!["init.lua"], true),
             (vec!["Spoons/Sky.spoon/**"], true),
-            (vec!["other/**"], false),
-            // the entry's own file, selected, and nothing reaching in
-            (vec!["init.lua", "other/**"], true),
         ] {
             let mut tracked = entry(&root);
             tracked.include = Some(patterns.iter().map(|p| (*p).to_string()).collect());
@@ -3361,9 +3366,19 @@ mod tests {
         assert!(!walk.files.contains_key(&plugin.join("init.lua")));
         assert_eq!(walk.nested.len(), 1);
         assert!(walk.nested[0].reason.contains("\"init.lua\""));
-        // and a list that cannot select anything inside it still reports
-        // the repository rather than passing over it silently
+        // a list that cannot select anything under `Spoons` does not
+        // walk it at all, so there is no repository to report and
+        // nothing to explain: what the list leaves out stays out, rather
+        // than being visited and discarded
         let walk = walk_with(&["other/**"]);
+        assert!(walk.nested.is_empty(), "{:?}", walk.nested);
+        assert!(walk.files.is_empty(), "{:?}", walk.files);
+        // an entry with no list reports it as it always did
+        let mut plain = entry(&root);
+        plain.include = None;
+        let mut set = TrackedSet::default();
+        set.push(plain);
+        let walk = set.walk().unwrap();
         assert_eq!(walk.nested.len(), 1);
         assert_eq!(walk.nested[0].reason, NESTED_REPOSITORY_REASON);
     }

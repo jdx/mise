@@ -403,6 +403,7 @@ impl Store {
                             repo,
                             previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
                             tracked,
+                            &draft,
                         )?;
                         let mut manifest = super::manifest::Manifest::read(repo, &composed)?
                             .ok_or_else(|| {
@@ -982,7 +983,12 @@ fn under_entry(path: &str, entry: &str) -> bool {
 /// hand-edited list, and the watcher's own save all report it. It cannot
 /// repeat: the narrowing changes the tree, so the checkpoint is written,
 /// and the next parent is the narrowed one.
-fn report_narrowed(repo: &HistoryRepo, parent: Option<&str>, tracked: &TrackedSet) -> Result<()> {
+fn report_narrowed(
+    repo: &HistoryRepo,
+    parent: Option<&str>,
+    tracked: &TrackedSet,
+    draft: &Draft,
+) -> Result<()> {
     let Some(parent) = parent else {
         return Ok(());
     };
@@ -1020,10 +1026,31 @@ fn report_narrowed(repo: &HistoryRepo, parent: Option<&str>, tracked: &TrackedSe
         }
         *dropped.entry(entry.display()).or_default() += 1;
     }
+    // A save the user is watching says it; one the watcher made on its
+    // own schedule writes it down, because the log it would otherwise go
+    // to is not somewhere anyone is looking, and this is the only chance
+    // to say it at all.
+    let heard = matches!(
+        draft.trigger,
+        Some(
+            store::Trigger::Save
+                | store::Trigger::Agent
+                | store::Trigger::Update
+                | store::Trigger::Baseline
+        )
+    );
     for (entry, count) in dropped {
-        warn!(
+        let message = format!(
             "history: {entry}: its include list leaves out {count} path(s) an earlier checkpoint held; they are not saved from this checkpoint on"
         );
+        if heard {
+            warn!("{message}");
+        } else if let Err(err) = super::notices::record(&message) {
+            // saying it late is better than not at all, and failing the
+            // save over a notice would be worse than either
+            warn!("{message}");
+            debug!("history: could not keep the notice: {err}");
+        }
     }
     Ok(())
 }

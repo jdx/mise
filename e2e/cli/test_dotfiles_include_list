@@ -66,6 +66,20 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 TOML
 assert_contains 'mise dot track ~/.codex 2>&1' 'leaves out'
 
+# and when a background save gets there first, the notice waits for
+# someone to be there: the watcher's own log is not where the user is
+# looking, and there is no second chance to say it
+echo 'edited' >~/.codex/rules/one.md
+assert_succeed 'mise dot save'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml"] }
+TOML
+assert_succeed 'mise dot watch --once'
+assert_contains 'mise dot paths 2>&1' 'leaves out'
+# said once, then it is gone
+assert_not_contains 'mise dot paths 2>&1' 'leaves out'
+
 # An include list decides what is captured: a glob is as authoritative
 # as a literal, and either one selecting a credential-named file
 # captures it in plaintext, said out loud.
