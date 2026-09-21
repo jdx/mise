@@ -111,11 +111,13 @@ impl DotfilesTrack {
                 TrackedEntry::new(normalize_target(&target), "track", self.policy(existing));
             // re-tracking previews under the entry's own exclude list
             if let Some(existing) = existing {
-                entry.exclude = existing
-                    .exclude
-                    .iter()
-                    .map(|pattern| pattern.as_str().to_owned())
-                    .collect();
+                entry.exclude = existing.policy.explicit.exclude.then(|| {
+                    existing
+                        .exclude
+                        .iter()
+                        .map(|pattern| pattern.as_str().to_owned())
+                        .collect()
+                });
             }
             preview_set.push(entry);
             resolved.push(target);
@@ -221,7 +223,7 @@ impl DotfilesTrack {
                 for glob in &set.exclude {
                     miseprintln!("  exclude: {glob}");
                 }
-                for glob in &set.entries[entry_index].exclude {
+                for glob in set.entries[entry_index].exclude.iter().flatten() {
                     miseprintln!("  exclude ({target_key}): {glob}");
                 }
                 // nothing is enrolled yet, so `mise dot paths` cannot list
