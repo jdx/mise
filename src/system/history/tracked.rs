@@ -611,7 +611,7 @@ fn walk_entry(
         // the entry's own exclusions: a matching directory is not entered
         if !entry_exclude.is_empty()
             && let Ok(rel) = path.strip_prefix(&entry.path)
-            && crate::system::files::is_excluded(rel, &entry_exclude)
+            && crate::system::files::is_excluded(&pattern_relative(rel), &entry_exclude)
         {
             if file_type.is_dir() {
                 walker.skip_current_dir();
@@ -733,6 +733,28 @@ pub(crate) fn is_builtin_credential(path: &Path, name: &str) -> bool {
 /// summarizes them and points at `mise dot paths`.
 pub(crate) const OMISSION_LINES: usize = 10;
 
+/// An entry-relative path as its patterns see it.
+///
+/// **A pattern is written with `/`, and on Windows the path it is matched
+/// against arrives with `\`.** `cache/**` would never match
+/// `cache\index`, so a `~\.codex` entry's `exclude` list would quietly
+/// do nothing there. The separator is settled here, in the one helper the
+/// capture walk, a dry run and a replay all match through, so the three
+/// cannot disagree about what a list drops.
+///
+/// On unix a backslash is an ordinary character in a filename and is left
+/// alone: a file actually named `cache\index` is one component, not two.
+fn pattern_relative(rel: &Path) -> std::borrow::Cow<'_, Path> {
+    #[cfg(windows)]
+    {
+        std::borrow::Cow::Owned(PathBuf::from(rel.to_string_lossy().replace('\\', "/")))
+    }
+    #[cfg(not(windows))]
+    {
+        std::borrow::Cow::Borrowed(rel)
+    }
+}
+
 /// Whether `patterns` (an entry's own `exclude` list, relative to
 /// `entry_path`) drop `path`; the entry path itself never is.
 pub(crate) fn excluded_by_entry(entry_path: &Path, patterns: &[String], path: &Path) -> bool {
@@ -744,7 +766,9 @@ pub(crate) fn excluded_by_entry(entry_path: &Path, patterns: &[String], path: &P
         .filter_map(|pattern| glob::Pattern::new(pattern).ok())
         .collect();
     match path.strip_prefix(entry_path) {
-        Ok(rel) if !rel.as_os_str().is_empty() => crate::system::files::is_excluded(rel, &patterns),
+        Ok(rel) if !rel.as_os_str().is_empty() => {
+            crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+        }
         _ => false,
     }
 }
@@ -1346,6 +1370,38 @@ mod tests {
             selected.files.keys().collect::<Vec<_>>(),
             vec![&outer.join("outer.toml")]
         );
+    }
+
+    /// A pattern is written with `/` on every platform; the path it is
+    /// matched against is not. Capture, dry run and replay all match
+    /// through `excluded_by_entry`, so this is where the two meet.
+    #[test]
+    fn an_entry_list_matches_a_path_with_the_host_separator() {
+        let root = PathBuf::from(if cfg!(windows) {
+            "C:\\Users\\me\\.codex"
+        } else {
+            "/home/me/.codex"
+        });
+        let patterns = ["cache/**".to_string()];
+        assert!(excluded_by_entry(
+            &root,
+            &patterns,
+            &root.join("cache").join("index"),
+        ));
+        assert!(!excluded_by_entry(
+            &root,
+            &patterns,
+            &root.join("config.toml"),
+        ));
+        // on unix a backslash is a character in a filename, not a
+        // separator, so one file named `cache\index` is not a file
+        // `index` inside `cache`
+        #[cfg(unix)]
+        assert!(!excluded_by_entry(
+            &root,
+            &patterns,
+            &root.join("cache\\index"),
+        ));
     }
 
     fn entry(path: &Path) -> TrackedEntry {
