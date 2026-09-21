@@ -1102,9 +1102,15 @@ impl ExcludeSet {
     /// semantics, and the semantics win. A list with no negations — which
     /// is almost every list — keeps the whole saving.
     ///
-    /// Deliberately conservative: a negated pattern that names no
-    /// directory of its own, or one whose directory overlaps `dir` in
-    /// either direction, disables pruning for that subtree.
+    /// Deliberately conservative, and more so than it may look: only an
+    /// absolute negation has a directory of its own to compare against.
+    /// A name pattern (`!important.log`) or a relative one
+    /// (`!cache/keep.conf`) matches at any depth by design, so there is
+    /// no subtree it is confined to and no directory that can be proved
+    /// safe to skip — one such rule anywhere in `[history] exclude`
+    /// turns pruning off for every tracked entry. That costs a walk of
+    /// directories whose files are then filtered one by one; the
+    /// alternative costs files the user asked to keep.
     pub(crate) fn may_reinclude_below(&self, dir: &Path) -> bool {
         // the comparison is between a pattern prefix and a path, so it
         // gets the same normalization the matcher gives them: `/` on
@@ -1223,30 +1229,14 @@ impl PatternRule {
     /// Compiles one already-expanded pattern. `negated` is given, never
     /// read out of the text: the pattern is opaque from here on.
     fn compile(body: &str, negated: bool) -> Result<Self> {
-        let anchor = if !is_path_anchored(body) {
-            Anchor::Name
-        } else if file::replace_path(Path::new(body)).is_absolute() {
-            Anchor::Absolute
-        } else {
-            Anchor::Relative
-        };
+        let anchor = anchor_of(body);
         let globs = if anchor == Anchor::Name {
             vec![body.to_string()]
         } else {
             anchored_globs(body)
         };
-        // a path glob is gitignore-like: `*` stops at a separator, `**`
-        // crosses them. A name glob matches one component, so there is no
-        // separator in it to stop at.
         let compile = |glob: &str| -> Result<globset::GlobMatcher> {
-            let compiled = if anchor != Anchor::Name {
-                globset::GlobBuilder::new(glob)
-                    .literal_separator(true)
-                    .build()?
-            } else {
-                Glob::new(glob)?
-            };
-            Ok(compiled.compile_matcher())
+            Ok(build_glob(glob, anchor)?.compile_matcher())
         };
         let mut matchers = vec![];
         let mut directory_matchers = vec![];
@@ -1318,6 +1308,37 @@ impl PatternRule {
     }
 }
 
+/// The one way a pattern body becomes a glob.
+///
+/// **What validation asks and what compilation does are the same
+/// question, so they go through the same builder.** A path glob is
+/// gitignore-like: `*` stops at a separator, `**` crosses them. A name
+/// glob matches one component, so there is no separator in it to stop
+/// at. Building a candidate any other way would let `mise dot exclude`
+/// accept a pattern that [`PatternRule::compile`] then drops with a
+/// warning — the exclusion the user asked for silently doing nothing.
+fn build_glob(glob: &str, anchor: Anchor) -> std::result::Result<Glob, globset::Error> {
+    if anchor == Anchor::Name {
+        Glob::new(glob)
+    } else {
+        globset::GlobBuilder::new(glob)
+            .literal_separator(true)
+            .build()
+    }
+}
+
+/// The anchor a pattern body compiles under, which decides how its globs
+/// are built.
+fn anchor_of(body: &str) -> Anchor {
+    if !is_path_anchored(body) {
+        Anchor::Name
+    } else if file::replace_path(Path::new(body)).is_absolute() {
+        Anchor::Absolute
+    } else {
+        Anchor::Relative
+    }
+}
+
 /// Why this matcher cannot use a pattern, if it cannot.
 ///
 /// Shared with `mise dot exclude`, which refuses such a pattern rather
@@ -1337,14 +1358,15 @@ pub(crate) fn unusable_pattern(body: &str) -> Option<String> {
     // all. Checking one of them would accept a pattern that
     // `PatternRule::compile` then drops with a warning, which is the
     // opposite of what this exists to prevent.
-    let probes = if is_path_anchored(body) {
-        anchored_globs(body)
-    } else {
+    let anchor = anchor_of(body);
+    let probes = if anchor == Anchor::Name {
         vec![body.to_string()]
+    } else {
+        anchored_globs(body)
     };
     probes
         .iter()
-        .find_map(|probe| Glob::new(probe).err().map(|err| err.to_string()))
+        .find_map(|probe| build_glob(probe, anchor).err().map(|err| err.to_string()))
 }
 
 /// Whether a pattern names a path rather than a file name. `~` alone is
@@ -1904,6 +1926,37 @@ mod tests {
             &patterns,
             &root.join("cache\\index"),
         ));
+    }
+
+    /// What the CLI accepts is what the matcher compiles. The two asked
+    /// the same question through different builders once, which is how a
+    /// pattern gets accepted at the prompt and then dropped with a
+    /// warning at load — the exclusion silently doing nothing.
+    #[test]
+    fn every_pattern_the_cli_accepts_compiles() {
+        for body in [
+            "cache",
+            "*.log",
+            "!*.log",
+            "sessions/**",
+            "~/.codex/sessions/**",
+            "./rules/*.md",
+            "a[bc]d",
+            "**/node_modules",
+            "{a,b}/**",
+        ] {
+            let negated = body.starts_with('!');
+            let rule = body.strip_prefix('!').unwrap_or(body);
+            assert_eq!(
+                unusable_pattern(rule).is_none(),
+                PatternRule::compile(rule, negated).is_ok(),
+                "the CLI and the matcher disagree about {body:?}"
+            );
+        }
+        // and one the matcher cannot compile is refused rather than
+        // accepted and dropped
+        assert!(unusable_pattern("rules/[unclosed/**").is_some());
+        assert!(PatternRule::compile("rules/[unclosed/**", false).is_err());
     }
 
     /// A pattern is compiled from more than one glob when it is

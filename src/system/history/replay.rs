@@ -1396,22 +1396,10 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     };
     let local = file::replace_path(Path::new(display));
     let root = file::replace_path(Path::new(&owner.path));
-    // The checkpoint's exclusions are read from the expansion recorded
-    // with it, never re-expanded here: the same `$VAR` may be unset,
-    // empty, or simply different in the environment a rollback runs in,
-    // and nothing at this point can tell "still means what it meant" from
-    // "means something else now".
-    // a repository the checkpoint recorded as skipped is not something
-    // the checkpoint ever held, whatever the filesystem looks like now:
-    // it may since have lost its `.git` and stopped being recognisable
-    for nested in &coverage.nested {
-        if under(&nested.path) {
-            return PathState::Unevaluable(format!(
-                "{} was recorded as {}",
-                nested.path, nested.reason
-            ));
-        }
-    }
+    // The checkpoint's exclusions are read exactly as a capture reads
+    // them — the matcher expands `~` and nothing else, and a rule it
+    // cannot use is dropped on both sides alike — so the two cannot
+    // disagree about what this checkpoint covered.
     // A checkpoint written by another matcher read its exclusions
     // differently — an older one matched more for some patterns, and a
     // newer one is simply unknown here. Either way, where it has
