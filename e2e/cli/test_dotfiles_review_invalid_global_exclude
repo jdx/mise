@@ -32,6 +32,23 @@ assert_fail 'mise dot save' '"[" in ~/.config/mise/config.toml'
 assert "git --git-dir=$repo rev-parse HEAD" "$before"
 assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/session.json"
 
+# but only writing refuses. The command the refusal sends the user to has
+# to work, or the rule cannot be found and fixed: listing, previewing and
+# starting the watcher all succeed and report the same rule.
+assert_succeed 'mise dot paths'
+assert_contains 'mise dot paths 2>&1' 'cannot be applied'
+assert_contains 'mise dot paths 2>&1' '"[" in ~/.config/mise/config.toml'
+assert_contains 'mise dot paths' '~/.codex'
+assert_succeed 'mise dot status'
+assert_succeed 'mise dot track --dry-run ~/.codex'
+# the watcher gets all the way up — it builds its watch set from the same
+# walk — and then declines to capture, rather than failing before it can
+# watch or report anything
+assert_fail 'mise dot watch --once' 'nothing was saved'
+assert_fail 'mise dot watch --once' 'cannot be applied'
+assert_fail 'mise dot watch --once' '"[" in ~/.config/mise/config.toml'
+assert "git --git-dir=$repo rev-parse HEAD" "$before"
+
 # fixing the rule lets the capture through again
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]

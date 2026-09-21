@@ -317,10 +317,31 @@ impl TrackedSet {
     }
 
     pub(crate) fn entry_index_for(&self, path: &Path) -> Option<usize> {
-        let owner = owning_entry(&self.entries, path)?;
-        self.entries
-            .iter()
-            .position(|entry| std::ptr::eq(entry, owner))
+        owning_entry_index(&self.entries, path)
+    }
+
+    /// Refuse to write a checkpoint while an `[history] exclude` rule
+    /// cannot be used.
+    ///
+    /// **Walking always works; only storing refuses.** A capture that
+    /// cannot apply an exclusion does not go ahead without it: dropping
+    /// the rule broadens the snapshot to precisely the paths it was
+    /// written to leave out, and that snapshot can be published to a
+    /// connected origin. So the refusal sits where a checkpoint is about
+    /// to be written, and says which rule, in which file, is the problem.
+    /// Everything that only reads — `mise dot paths`, a dry-run preview,
+    /// `mise dot status`, the watch set the watcher builds at startup —
+    /// keeps working and reports the same rule, because the command the
+    /// diagnostic sends the user to must not fail for the reason it is
+    /// diagnosing. The watcher takes this refusal on its own save: it
+    /// stays running and declines to capture.
+    pub(crate) fn refuse_unusable_exclusions(&self) -> Result<()> {
+        match unusable_exclusions(&self.exclude_set()?) {
+            Some(report) => eyre::bail!(
+                "{report}, so nothing is captured; fix or remove the pattern, then try again"
+            ),
+            None => Ok(()),
+        }
     }
 
     /// Whether a capture of this set would include `path`: under an entry,
@@ -423,7 +444,6 @@ impl TrackedSet {
     fn walk_entries(&self, selected: Option<&[usize]>) -> Result<Walk> {
         let set = self;
         let exclude = set.exclude_set()?;
-        refuse_unusable_exclusions(&exclude)?;
         let hard = hard_exclusions();
         let home = normalize(&dirs::HOME);
         let mut walk = Walk {
@@ -431,6 +451,15 @@ impl TrackedSet {
             ..Default::default()
         };
         walk.manifest.exclude = set.exclude.clone();
+        // the rule cannot narrow this walk, so say what the listing now
+        // holds that it was written to leave out. Refusing here would
+        // break `mise dot paths`, the watch set, and the previews — the
+        // very commands that let someone see and fix the rule.
+        if let Some(report) = unusable_exclusions(&exclude) {
+            walk.warnings.push(format!(
+                "{report}; it is ignored here, so this lists paths it would leave out, and nothing is captured until it is fixed"
+            ));
+        }
         for (index, entry) in set.entries.iter().enumerate() {
             if selected.is_some_and(|selected| !selected.contains(&index)) {
                 continue;
@@ -877,6 +906,20 @@ impl Walk {
     /// `22,972 files, 1.2 GiB`.
     pub(crate) fn summary(&self) -> String {
         count_and_size(self.file_count(), self.bytes())
+    }
+
+    /// Say what this walk had to report: a truncated tree, an exclusion
+    /// it could not apply.
+    ///
+    /// **Every reader says it, not only the one that captures.** A walk
+    /// that only lists still walked under the same rules, and a rule it
+    /// could not use changes what the listing holds — so a command that
+    /// showed the listing silently would be the one place the problem is
+    /// invisible.
+    pub(crate) fn report_warnings(&self) {
+        for warning in &self.warnings {
+            warn!("history: {warning}");
+        }
     }
 }
 
@@ -1580,19 +1623,17 @@ fn inside_nested_repository(owner: &TrackedEntry, path: &Path) -> bool {
         .any(|ancestor| ancestor.join(".git").exists())
 }
 
-/// Refuse to walk while an `[history] exclude` rule cannot be used.
+/// Which `[history] exclude` rules cannot be used, each named with the
+/// file that declares it, or `None` when every rule compiles.
 ///
-/// **A capture that cannot apply an exclusion does not go ahead
-/// without it.** Dropping the rule broadens the snapshot to precisely
-/// the paths it was written to leave out, and that snapshot can be
-/// published to a connected origin — so the safe answer is to stop and
-/// say which rule, and in which file, is the problem. The watcher's
-/// save takes the same refusal and declines to capture, which leaves
-/// it running and reporting rather than quietly storing the files.
-fn refuse_unusable_exclusions(exclude: &ExcludeSet) -> Result<()> {
+/// One wording for both readers: the walk reports it and carries on, and
+/// [`TrackedSet::refuse_unusable_exclusions`] turns the same sentence into
+/// the refusal a checkpoint gets, so the diagnostic a user is asked to act
+/// on says the same thing wherever they meet it.
+fn unusable_exclusions(exclude: &ExcludeSet) -> Option<String> {
     let unusable = exclude.unusable();
     if unusable.is_empty() {
-        return Ok(());
+        return None;
     }
     let sources: Vec<String> = unusable
         .iter()
@@ -1611,10 +1652,10 @@ fn refuse_unusable_exclusions(exclude: &ExcludeSet) -> Result<()> {
             }
         })
         .collect();
-    eyre::bail!(
-        "[history] exclude cannot be applied, so nothing is captured: {}; fix or remove the pattern, then try again",
+    Some(format!(
+        "[history] exclude cannot be applied: {}",
         sources.join("; ")
-    )
+    ))
 }
 
 /// The matcher a checkpoint's `exclude` list was read with. Bumped only
@@ -1753,10 +1794,24 @@ pub(crate) fn owning_entry<'a>(
     entries: &'a [TrackedEntry],
     path: &Path,
 ) -> Option<&'a TrackedEntry> {
+    owning_entry_index(entries, path).map(|index| &entries[index])
+}
+
+/// Where [`owning_entry`]'s answer sits in `entries`.
+///
+/// **The search hands back the index; nothing looks the entry up again.**
+/// A second search — by identity or by value — can come back empty, and
+/// an empty answer here does not read as "something went wrong", it reads
+/// as "no entry covers this path". That turns a covered path into an
+/// uncovered one, and every selection and coverage decision downstream
+/// then goes the other way.
+pub(crate) fn owning_entry_index(entries: &[TrackedEntry], path: &Path) -> Option<usize> {
     entries
         .iter()
-        .filter(|entry| path.starts_with(&entry.path))
-        .max_by_key(|entry| entry.path.components().count())
+        .enumerate()
+        .filter(|(_, entry)| path.starts_with(&entry.path))
+        .max_by_key(|(_, entry)| entry.path.components().count())
+        .map(|(index, _)| index)
 }
 
 /// The most specific of `items` that `path` lies under, for the display
@@ -2247,6 +2302,19 @@ mod tests {
             Some(&root)
         );
         assert!(set.entry_for(&tmp.path().join("elsewhere")).is_none());
+        // the index and the entry are one answer, so a covered path is
+        // never read as uncovered because the entry could not be located
+        // a second time
+        for path in [child.join("file"), root.join("other")] {
+            let index = set
+                .entry_index_for(&path)
+                .expect("a covered path has an index");
+            assert_eq!(
+                Some(&set.entries[index].path),
+                set.entry_for(&path).map(|entry| &entry.path)
+            );
+        }
+        assert!(set.entry_index_for(&tmp.path().join("elsewhere")).is_none());
         // Repeating an enrollment does not create another owner.
         let mut set = TrackedSet::default();
         set.push(entry(&root));
