@@ -1,4 +1,4 @@
-min_usage_version "6.8"
+min_usage_version "6.11"
 name mise
 bin mise
 author "Jeff Dickey <@jdx>"

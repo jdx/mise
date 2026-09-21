@@ -123,7 +123,7 @@ pub(crate) enum LevelFilter {
     // The chef's toque and the wink, in block characters. In a file rather than in this
     // attribute because art is edited by looking at it, and a raw string indented to match
     // this list would not be what prints.
-    logo = include_str!("logo.txt"),
+    logo = include_str!("../assets/logo.txt"),
     logo_style = "green",
     example("mise install node@20.0.0", help = "Install a specific node version"),
     example("mise install node@20", help = "Install a version matching a prefix"),
@@ -250,7 +250,30 @@ Shorthand for `mise tasks run <TASK>`."#
     pub trace: bool,
 }
 
-/// A help page as this process should print it: coloured on a terminal, plain in a pipe.
+/// Whether a help page mise prints should carry colour.
+///
+/// mise's own policy, not the renderer's: `Settings` folds `color`, `MISE_COLOR`, `CLICOLOR`,
+/// `CLICOLOR_FORCE`, `NO_COLOR` and CI detection into `console`, so a user who turned colour
+/// off has said so in one place. `Style::auto()` would ask the terminal directly and miss all
+/// of it. This is the rule `render_task_help` already follows.
+fn help_style() -> usage_rs::help::Style {
+    if console::colors_enabled() {
+        usage_rs::help::Style::COLOURED
+    } else {
+        usage_rs::help::Style::PLAIN
+    }
+}
+
+/// The same question for a page going to stderr, which `console` tracks separately.
+fn help_style_stderr() -> usage_rs::help::Style {
+    if console::colors_enabled_stderr() {
+        usage_rs::help::Style::COLOURED
+    } else {
+        usage_rs::help::Style::PLAIN
+    }
+}
+
+/// A help page as this process should print it.
 ///
 /// `usage_rs::help::render` is the plain form, for a page going into a document. mise
 /// dispatches `Error::Help` itself rather than letting `parse()` exit, so the colour policy
@@ -260,7 +283,7 @@ fn render_page(
     cmd: &usage_rs::Command<'_>,
     long: bool,
 ) -> Option<String> {
-    usage_rs::help::render_styled(spec, cmd, long, usage_rs::help::Style::auto())
+    usage_rs::help::render_styled(spec, cmd, long, help_style())
 }
 
 fn render_subcommand_help(name: &str, long: bool) -> String {
@@ -271,7 +294,7 @@ fn render_subcommand_help(name: &str, long: bool) -> String {
         .iter()
         .find(|command| command.cmd.name == name)
         .unwrap_or_else(|| panic!("missing generated {name} command"));
-    usage_rs::help::render_styled(spec, command.cmd, long, usage_rs::help::Style::auto())
+    usage_rs::help::render_styled(spec, command.cmd, long, help_style())
         .unwrap_or_else(|| panic!("generated {name} command is outside the usage spec"))
 }
 
@@ -1242,16 +1265,15 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
         }
         usage_rs::Error::HelpAll { cmd } => {
             if let Some(page) =
-                usage_rs::help::render_all_styled(spec, cmd, usage_rs::help::Style::auto())
+                usage_rs::help::render_all_styled(spec, cmd, help_style())
             {
                 print!("{page}");
             }
             request_exit(0)
         }
         usage_rs::Error::MissingArgsHelp { cmd } => {
-            // stderr, so the page is coloured by what stderr is rather than what stdout is.
-            if let Some(page) =
-                usage_rs::help::render_styled(spec, cmd, false, usage_rs::help::Style::auto_stderr())
+            // stderr, which `console` tracks separately from stdout.
+            if let Some(page) = usage_rs::help::render_styled(spec, cmd, false, help_style_stderr())
             {
                 eprint!("{page}");
             }
