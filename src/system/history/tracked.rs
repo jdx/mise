@@ -139,6 +139,32 @@ impl TrackedEntry {
             .map(String::as_str)
     }
 
+    /// Whether the entry's `include` list makes `path` worth looking at.
+    ///
+    /// **"Is this path itself selected?" and "could anything beneath it
+    /// be selected?" are different questions, and which one applies
+    /// depends on the kind of path.** A capture stores files, so it asks
+    /// the first. A watcher deciding whether an event matters asks the
+    /// first of a file too — otherwise every one of the session
+    /// transcripts an `include` list exists to ignore would schedule a
+    /// save — and the second of a directory, so an event on the tracked
+    /// directory itself, or on one the patterns reach into, still wakes
+    /// it.
+    ///
+    /// A path with no kind — a deletion leaves nothing to stat — is read
+    /// as a file, which is the quiet answer and still the right one for
+    /// what matters most here: deleting a file the list selects is a
+    /// change that must be captured, and `is_included` says so from the
+    /// path alone.
+    pub(crate) fn include_relevant(&self, path: &Path) -> bool {
+        let directory = std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir());
+        if directory {
+            !self.include_prunes(path)
+        } else {
+            self.is_included(path)
+        }
+    }
+
     /// Whether the entry's `include` list selects `path`.
     ///
     /// **Rule 1: without an `include` list the whole tracked tree is
@@ -522,22 +548,7 @@ impl TrackedSet {
         if nested {
             return Ok(false);
         }
-        if self.excluded_by_lists(&self.exclude_set()?, path) {
-            return Ok(false);
-        }
-        // **This one can look, so it asks the exact question.** The
-        // watcher's filter has to answer without touching the disk, so
-        // it keeps anything that might contain a selected file. Here the
-        // filesystem is available: something that is not a directory is
-        // kept only if the list selects it, which is what a capture will
-        // decide about the same path.
-        if let Ok(meta) = std::fs::symlink_metadata(path)
-            && !meta.is_dir()
-            && !owner.is_included(path)
-        {
-            return Ok(false);
-        }
-        Ok(true)
+        Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
     }
 
     /// Whether the selection lists drop `path`: the global globs read
@@ -553,17 +564,9 @@ impl TrackedSet {
     pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
         match self.entry_for(path) {
             Some(owner) => {
-                // **"Is this path itself selected?" and "could anything
-                // beneath it be selected?" are different questions.** A
-                // capture asks the first, because it stores files. This
-                // asks the second: the watcher filters events with it,
-                // and an event on a tracked directory whose children the
-                // list selects must wake it, not be dropped because no
-                // pattern names the directory itself. For a file the two
-                // answers coincide.
                 exclude.is_match(path, &owner.path)
                     || owner.is_excluded(path)
-                    || owner.include_prunes(path)
+                    || !owner.include_relevant(path)
             }
             None => true,
         }
@@ -2427,15 +2430,11 @@ mod tests {
                 !declared,
                 "would_retain with include = {include:?}"
             );
-            // the watcher answers without touching the disk, so it
-            // cannot tell an entry that is a file from one that is a
-            // directory whose children the list selects — it keeps the
-            // path and lets the capture decide. An empty list selects
-            // nothing anywhere, so there it drops it.
-            let empty = include.as_ref().is_some_and(Vec::is_empty);
+            // the entry is a file, so the watcher asks the same question
+            // the capture does and gets the same answer
             assert_eq!(
                 !set.excluded_by_lists(&set.exclude_set().unwrap(), &file),
-                !empty,
+                !declared,
                 "watcher with include = {include:?}"
             );
             assert!(
@@ -2601,6 +2600,33 @@ mod tests {
         // a directory nothing could select is still dropped
         std::fs::create_dir(root.join("sessions")).unwrap();
         assert!(set.excluded_by_lists(&exclude, &root.join("sessions")));
+
+        // **and the files inside one the patterns can reach are still
+        // judged one by one.** A list of names reaches into every
+        // directory, which must not turn every file under the entry into
+        // something the watcher wakes for — that is the noise the list
+        // was written to stop.
+        let mut by_name = entry(&root);
+        by_name.include = Some(vec!["config.toml".to_string()]);
+        let mut named = TrackedSet::default();
+        named.push(by_name);
+        let exclude = named.exclude_set().unwrap();
+        std::fs::create_dir_all(root.join("sessions")).unwrap();
+        std::fs::write(root.join("sessions/one.jsonl"), "noise").unwrap();
+        std::fs::write(root.join("config.toml"), "keep").unwrap();
+        assert!(
+            named.excluded_by_lists(&exclude, &root.join("sessions/one.jsonl")),
+            "the watcher woke for a transcript the list does not select"
+        );
+        assert!(!named.excluded_by_lists(&exclude, &root.join("config.toml")));
+        // a deletion leaves nothing to stat, and a selected file that
+        // was deleted is still a change worth capturing
+        std::fs::remove_file(root.join("config.toml")).unwrap();
+        assert!(!named.excluded_by_lists(&exclude, &root.join("config.toml")));
+        std::fs::remove_file(root.join("sessions/one.jsonl")).unwrap();
+        assert!(named.excluded_by_lists(&exclude, &root.join("sessions/one.jsonl")));
+        // the directory a name pattern could match in is still watched
+        assert!(!named.excluded_by_lists(&exclude, &root.join("sessions")));
 
         // and the files are decided exactly, by both
         assert!(set.would_retain(&root.join("rules/one.md")).unwrap());
