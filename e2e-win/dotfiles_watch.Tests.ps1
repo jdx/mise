@@ -162,6 +162,7 @@ builtin = "history-watch"
     It 'runs windowless through a task that sets an environment' {
         $env:MISE_EXPERIMENTAL = '1'
         $task = 'mise\mise-history'
+        $watcherStopped = $false
         try {
             # a watcher left over from an earlier case would hold the lock
             # this waits on, and the wait below would say nothing
@@ -223,8 +224,9 @@ environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_
             schtasks /end /tn $task 2>&1 | Out-Null
             mise bootstrap services remove mise-history 2>&1 | Out-String | Out-Null
             schtasks /delete /tn $task /f 2>&1 | Out-Null
-            Wait-Watcher $false | Out-Null
+            $watcherStopped = Wait-Watcher $false
             $env:MISE_EXPERIMENTAL = '0'
         }
+        $watcherStopped | Should -BeTrue
     }
 }
