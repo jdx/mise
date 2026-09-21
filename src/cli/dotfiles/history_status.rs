@@ -136,6 +136,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
     }
     let (store, tracked, entries) = super::history::open().await?;
     let walk = tracked.walk()?;
+    walk.report_warnings();
     let tracked_files = walk.roots.iter().map(|root| root.files.len() as u64).sum();
     // an operation still running, or one that crashed: its record is in
     // the index only once it is closed

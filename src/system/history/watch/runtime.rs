@@ -1256,6 +1256,7 @@ impl State {
 /// links themselves so dangling links remain observable. Targets are not enrolled.
 fn watched_set(tracked: &TrackedSet) -> Result<(TrackedSet, Vec<PathBuf>)> {
     let walk = tracked.walk()?;
+    walk.report_warnings();
     // Rediscover dangling links on startup without enrolling their targets.
     let links = walk
         .files
