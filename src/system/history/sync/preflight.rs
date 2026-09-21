@@ -151,6 +151,23 @@ fn carry_exclusions(prospective: &mut TrackedSet, declared: &TrackedSet) {
             entry.exclude = incoming.exclude.clone();
         }
     }
+    // **One fact, so both records of it move together.** A set holds each
+    // entry's list twice — on the entry, by live path, and on the
+    // manifest enrollment the checkpoint records, by portable path — and
+    // `add_requests` writes them as a pair. Updating only the one this
+    // validation happens to read would leave a set whose two answers to
+    // "what does this entry exclude" differ, which is the shape of nearly
+    // every bug this validation exists to catch.
+    for enrollment in &mut prospective.manifest.enrollment {
+        if let Some(incoming) = declared
+            .manifest
+            .enrollment
+            .iter()
+            .find(|incoming| incoming.path == enrollment.path)
+        {
+            enrollment.exclude = incoming.exclude.clone();
+        }
+    }
 }
 
 /// Required source files must exist in the complete proposed write set or
@@ -213,6 +230,18 @@ mod tests {
         entry
     }
 
+    /// The same entry, as the manifest records it: a portable path
+    /// rather than a live one.
+    fn enrollment(path: &str, exclude: &[&str]) -> crate::system::history::manifest::Enrollment {
+        crate::system::history::manifest::Enrollment {
+            path: path.to_string(),
+            autosave: true,
+            encrypt: false,
+            variants: vec![],
+            exclude: exclude.iter().map(|glob| (*glob).to_string()).collect(),
+        }
+    }
+
     #[test]
     fn test_prospective_validates_with_the_incoming_exclusions() {
         let mut current = TrackedSet {
@@ -222,12 +251,24 @@ mod tests {
         current.manifest.exclude = current.exclude.clone();
         current.entries.push(entry("/home/u/.sample", &["was"]));
         current.entries.push(entry("/home/u/.other", &["kept"]));
+        current
+            .manifest
+            .enrollment
+            .push(enrollment("home/.sample", &["was"]));
+        current
+            .manifest
+            .enrollment
+            .push(enrollment("home/.other", &["kept"]));
 
         let mut declared = TrackedSet {
             exclude: vec!["new/**".into()],
             ..Default::default()
         };
         declared.entries.push(entry("/home/u/.sample", &["now"]));
+        declared
+            .manifest
+            .enrollment
+            .push(enrollment("home/.sample", &["now"]));
 
         let mut prospective = current.clone();
         carry_exclusions(&mut prospective, &declared);
@@ -241,5 +282,18 @@ mod tests {
         // an entry the incoming configuration does not declare keeps its
         // own: which entries exist is the inventory's answer
         assert_eq!(prospective.entries[1].exclude, vec!["kept".to_string()]);
+
+        // **and the set's two records of that same list agree.** The
+        // manifest enrollment is what a checkpoint writes down, so a set
+        // whose entry says one thing and whose enrollment says another
+        // would validate one way and record the other.
+        assert_eq!(
+            prospective.manifest.enrollment[0].exclude, prospective.entries[0].exclude,
+            "the entry and the enrollment disagree about what it excludes"
+        );
+        assert_eq!(
+            prospective.manifest.enrollment[1].exclude,
+            prospective.entries[1].exclude
+        );
     }
 }
