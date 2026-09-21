@@ -4935,6 +4935,15 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                 existing.merge_toml_overlay(t);
             }
         } else {
+            // Deliberately not `task_has_executable_content`: the two answer
+            // different questions and must not be merged. This one asks whether
+            // the block can overlay a command-bearing base, and `depends`,
+            // `depends_post` and `wait_for` are overlay content that
+            // `merge_toml_overlay` extends onto one -- the documented layering
+            // rule that `[tasks.x] depends` over a lower `[tasks.x] run` relies
+            // on, which folding the two predicates together would break. The
+            // other asks whether the block runs on its own, which decides
+            // whether it can be a base and whether a file task may absorb it.
             let metadata_only = t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none();
             // `mise run` and `mise tasks ls` both address `mise-tasks/hello.sh`
             // as `hello`, so `[tasks.hello]` is the block people write for it.
@@ -6890,6 +6899,55 @@ mod tests {
             assert_eq!(tasks.len(), 1, "{high} over {low}");
             assert_eq!(tasks[0].name, "hello.sh", "{high} over {low}");
             assert_eq!(tasks[0].description, "high", "{high} over {low}");
+        }
+    }
+
+    #[test]
+    fn test_every_dependency_field_stays_an_overlay_on_a_lower_command() {
+        // Guards the split between `metadata_only` and
+        // `task_has_executable_content`. Folding them together drops the
+        // command here, so each dependency field is checked, not just
+        // `depends`.
+        for field in ["depends", "depends_post", "wait_for"] {
+            let mut overlay = Task {
+                name: "x".to_string(),
+                ..Default::default()
+            };
+            let dep = vec!["a".to_string().into()];
+            match field {
+                "depends" => overlay.depends = dep,
+                "depends_post" => overlay.depends_post = dep,
+                _ => overlay.wait_for = dep,
+            }
+
+            let tasks = merge_file_and_config_tasks(
+                vec![],
+                vec![
+                    overlay,
+                    Task {
+                        name: "x".to_string(),
+                        run: vec![RunEntry::Script("echo x".to_string())],
+                        ..Default::default()
+                    },
+                ],
+            );
+
+            assert_eq!(tasks.len(), 1, "{field}");
+            assert_eq!(
+                tasks[0].run,
+                vec![RunEntry::Script("echo x".to_string())],
+                "{field} dropped the command"
+            );
+            let kept = match field {
+                "depends" => &tasks[0].depends,
+                "depends_post" => &tasks[0].depends_post,
+                _ => &tasks[0].wait_for,
+            };
+            assert_eq!(
+                kept.iter().map(|d| d.task.as_str()).collect_vec(),
+                vec!["a"],
+                "{field} dropped the dependency"
+            );
         }
     }
 
