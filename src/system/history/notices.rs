@@ -69,7 +69,14 @@ pub(crate) fn drain() {
 }
 
 /// The kept notices, read and cleared as one step under [`guard`].
+///
+/// Nothing is created by asking: with no notices file there is nothing
+/// to take, and a machine that keeps no history must not grow a history
+/// directory because a command looked.
 fn take(path: &std::path::Path) -> Vec<String> {
+    if !path.exists() {
+        return vec![];
+    }
     let Ok(_lock) = guard(path) else {
         return vec![];
     };
@@ -111,6 +118,17 @@ mod tests {
         // it: the take claimed a file, not the name
         record_in(&path, "third").unwrap();
         assert_eq!(take(&path), vec!["third".to_string()]);
+    }
+
+    /// Nothing is created by asking: a machine that keeps no history has
+    /// no history directory, and looking for notices must not make one.
+    #[test]
+    fn asking_for_notices_creates_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = temp.path().join("state");
+        let path = state.join("notices");
+        assert!(take(&path).is_empty());
+        assert!(!state.exists(), "the state directory was created by a read");
     }
 
     /// The writer is the watcher, and it does not stop while someone
