@@ -124,6 +124,28 @@ EOF
   assert_directory_exists "$PWD/locked.d"
 fi
 
+# A resource the rest of the configuration declares absent is not shared with
+# the module: only the module wanted it present, so unapply removes it.
+cat <<EOF >>mise.toml
+
+[bootstrap.files."$PWD/contested.conf"]
+state = "absent"
+EOF
+cat <<EOF >mise.contested.toml
+[bootstrap.files."$PWD/contested.conf"]
+content = "contested"
+EOF
+assert_succeed "mise -E contested bootstrap --only files --yes"
+assert "cat contested.conf" "contested"
+assert_contains "mise bootstrap unapply contested --yes" "file:$PWD/contested.conf"
+assert_fail "test -e $PWD/contested.conf"
+
+# Without --yes there is nobody to ask in a non-interactive run, and consent is
+# not assumed.
+assert_succeed "mise -E contested bootstrap --only files --yes"
+assert_fail_contains "mise bootstrap unapply contested" "pass --yes"
+assert "cat contested.conf" "contested"
+
 # A declaration of absence describes nothing the module applied, so unapplying
 # it is not a removal.
 cat <<EOF >mise.absent.toml

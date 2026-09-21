@@ -20,6 +20,7 @@ use crate::config::Config;
 use crate::path::PathExt;
 use crate::system::managed_files::{ManagedDirectoryRequest, ManagedFileRequest, ManagedState};
 use crate::system::resources::ResourceAction;
+use crate::system::services_common::ServiceState;
 use crate::system::{edits, files, managed_files, secrets, user_services};
 
 #[derive(Debug, Default)]
@@ -84,8 +85,21 @@ pub(crate) async fn plan(
     let (mut files, mut directories) = managed_files::requests_from_config(config, secrets)?;
     let (base_files, base_directories) =
         managed_files::prepare_requests_from_config(&base, secrets)?;
-    let base_file_paths = paths(base_files.iter().map(|file| &file.path));
-    let base_directory_paths = paths(base_directories.iter().map(|directory| &directory.path));
+    // Only a declaration of presence keeps a resource: one the rest of the
+    // configuration declares absent is not shared with the module, it is
+    // something the machine is meant to be rid of either way.
+    let base_file_paths = paths(
+        base_files
+            .iter()
+            .filter(|file| file.state == ManagedState::Present)
+            .map(|file| &file.path),
+    );
+    let base_directory_paths = paths(
+        base_directories
+            .iter()
+            .filter(|directory| directory.state == ManagedState::Present)
+            .map(|directory| &directory.path),
+    );
     files.retain(|file| !base_file_paths.contains(&file.path));
     directories.retain(|directory| !base_directory_paths.contains(&directory.path));
 
@@ -103,6 +117,7 @@ pub(crate) async fn plan(
     }
     let base_services = user_services::requests_from_config(&base)?
         .into_iter()
+        .filter(|request| request.state != ServiceState::Absent)
         .map(|request| request.name)
         .collect::<HashSet<_>>();
     // Without a service manager there is nothing installed to remove, and
@@ -113,7 +128,7 @@ pub(crate) async fn plan(
         if base_services.contains(&request.name) {
             continue;
         }
-        if request.state == crate::system::services_common::ServiceState::Absent {
+        if request.state == ServiceState::Absent {
             if opts.verbose {
                 unapply.skipped.push(Skip {
                     kind: "user-service",

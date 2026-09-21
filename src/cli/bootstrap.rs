@@ -31,6 +31,7 @@ use crate::system::repos::RepoState;
 use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
+use crate::ui::prompt::Confirmation;
 use crate::ui::table::MiseTable;
 
 /// Set up a machine from the current configuration
@@ -2658,23 +2659,24 @@ impl BootstrapUnapply {
             ]);
         }
         table.print()?;
-        if !self.dry_run
-            && !self.yes
-            && console::user_attended_stderr()
-            // Defaults to no: this removes resources, and a prompt that reaches
-            // EOF must not be read as consent.
-            && !crate::ui::prompt::confirm_with_default(
-                format!(
-                    "bootstrap: remove {} resource(s) contributed by {}?",
-                    unapply.removals.len(),
-                    self.environment.join(", ")
+        if !self.dry_run && !self.yes {
+            let message = format!(
+                "bootstrap: remove {} resource(s) contributed by {}?",
+                unapply.removals.len(),
+                self.environment.join(", ")
+            );
+            // Defaults to no: this removes resources, so neither an unanswered
+            // prompt nor one nobody saw may be read as consent.
+            match crate::ui::prompt::confirm_with_default(message, false)? {
+                Confirmation::Yes => {}
+                Confirmation::No | Confirmation::Unanswered => {
+                    info!("bootstrap unapply: skipped");
+                    return Ok(());
+                }
+                Confirmation::Unavailable => bail!(
+                    "mise bootstrap unapply requires confirmation but there was nobody to ask; pass --yes to remove non-interactively"
                 ),
-                false,
-            )?
-            .is_yes()
-        {
-            info!("bootstrap unapply: skipped");
-            return Ok(());
+            }
         }
         system::unapply::execute(&config, &unapply, &secrets, &opts).await
     }
