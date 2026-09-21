@@ -4875,6 +4875,14 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         .filter(|t| task_has_executable_content(t))
         .map(|t| t.name.clone())
         .collect();
+    // Names an inline block gives a `run`/`run_windows`/`file` command to.
+    // A block with only `depends` overlays such a command rather than being a
+    // base, so this is what decides which of the two roles it takes below.
+    let command_bearing_config_names: BTreeSet<String> = config_tasks
+        .iter()
+        .filter(|t| !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some())
+        .map(|t| t.name.clone())
+        .collect();
     // File tasks a config block has already overlaid. `[tasks.hello]` and
     // `[tasks."hello.sh"]` both reach `mise-tasks/hello.sh` but are separate
     // names, so without this a lower-precedence block of the other spelling
@@ -4886,13 +4894,18 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     for t in config_tasks {
         if !seen_config_task_names.insert(t.name.clone()) {
-            // Not `task_has_executable_content`: a block with only `depends`
-            // overlays a lower-precedence command-bearing block here rather
-            // than becoming the base itself, which is the documented inline
-            // layering rule and what `[tasks.x] depends` on top of a
-            // `[tasks.x] run` in a lower config relies on.
+            // A block with only `depends` takes whichever role is left for it.
+            // When a command-bearing block of the same name exists it is an
+            // overlay on that command, which is the documented inline layering
+            // rule and what `[tasks.x] depends` on top of a `[tasks.x] run` in
+            // a lower config relies on. When no such block exists it is the
+            // base instead: a dependency group runs, so dropping it here left
+            // the name a commandless task that `mise run` matched and exited 0.
             let has_command = !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some();
-            if pending_inline_overlays.contains_key(&t.name) && has_command {
+            let is_base = has_command
+                || (task_has_executable_content(&t)
+                    && !command_bearing_config_names.contains(&t.name));
+            if pending_inline_overlays.contains_key(&t.name) && is_base {
                 let overlays = pending_inline_overlays
                     .shift_remove(&t.name)
                     .expect("pending inline overlays should be present");
@@ -4970,8 +4983,8 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
 
 /// Whether a task carries anything that makes it run.
 ///
-/// This is the same rule `mise tasks validate` reports a task for lacking, so a
-/// task without it is the "no executable content" shape rather than a task a
+/// A superset of the rule `mise tasks validate` reports a task for lacking, so
+/// a task without it is the "no executable content" shape rather than a task a
 /// metadata overlay should defer to. `depends` counts: a dependency group runs.
 fn task_has_executable_content(task: &Task) -> bool {
     !task.run.is_empty()
@@ -6775,7 +6788,81 @@ mod tests {
 
         let script = tasks.iter().find(|t| t.name == "hello.sh").unwrap();
         assert_eq!(script.description, "");
-        assert!(tasks.iter().any(|t| t.name == "hello"));
+        // The group survives as its own task, keeps its dependency, and
+        // receives the metadata -- not a commandless task `mise run` would
+        // match and exit 0 on.
+        let group = tasks.iter().find(|t| t.name == "hello").unwrap();
+        assert_eq!(group.description, "from local");
+        assert_eq!(
+            group.depends.iter().map(|d| d.task.as_str()).collect_vec(),
+            vec!["lint"]
+        );
+    }
+
+    #[test]
+    fn test_dependency_group_is_the_base_when_no_command_shares_its_name() {
+        // Nothing below contributes a command, so the group is the base the
+        // metadata-only block above it overlays. It used to be dropped, leaving
+        // the name a task with no executable content.
+        let tasks = merge_file_and_config_tasks(
+            vec![],
+            vec![
+                Task {
+                    name: "hello".to_string(),
+                    description: "from local".to_string(),
+                    ..Default::default()
+                },
+                Task {
+                    name: "hello".to_string(),
+                    depends: vec!["lint".to_string().into()],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].description, "from local");
+        assert_eq!(
+            tasks[0]
+                .depends
+                .iter()
+                .map(|d| d.task.as_str())
+                .collect_vec(),
+            vec!["lint"]
+        );
+    }
+
+    #[test]
+    fn test_dependency_group_stays_an_overlay_on_a_lower_precedence_command() {
+        // The documented inline layering rule: a block with only `depends` on
+        // top of a command-bearing block of the same name contributes its
+        // dependency to that command rather than replacing it.
+        let tasks = merge_file_and_config_tasks(
+            vec![],
+            vec![
+                Task {
+                    name: "x".to_string(),
+                    depends: vec!["a".to_string().into()],
+                    ..Default::default()
+                },
+                Task {
+                    name: "x".to_string(),
+                    run: vec![RunEntry::Script("echo x".to_string())],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].run, vec![RunEntry::Script("echo x".to_string())]);
+        assert_eq!(
+            tasks[0]
+                .depends
+                .iter()
+                .map(|d| d.task.as_str())
+                .collect_vec(),
+            vec!["a"]
+        );
     }
 
     #[test]

@@ -1289,6 +1289,11 @@ definition with its own command still replaces the lower task. All metadata-only
 definitions above the selected command-bearing base contribute in precedence
 order, while definitions below it do not contribute metadata.
 
+When no definition of that name has a command, a definition with `depends` is
+the base instead, and metadata-only definitions above it overlay that dependency
+group. This means a task declared only as a group still runs its dependencies
+rather than becoming a task with nothing to run.
+
 Included task toml files have a different format than `mise.toml`: they are simply a list of tasks.
 The file uses the same format as the `[tasks]` section of `mise.toml` but without the `[tasks]` prefix:
 

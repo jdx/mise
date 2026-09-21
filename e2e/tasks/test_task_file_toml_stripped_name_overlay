@@ -108,4 +108,9 @@ TOML
 mise trust
 mise trust ./mise.local.toml
 
-assert_not_contains "mise run hello" "ran-hello-marker"
+out="$(mise run hello)"
+assert_not_contains_text "$out" "ran-hello-marker"
+# The group keeps its dependency rather than being dropped, which would leave
+# `hello` a commandless task that exits 0 without running anything.
+assert_contains_text "$out" "lint-ran"
+assert_contains "mise tasks validate" "validated successfully"
