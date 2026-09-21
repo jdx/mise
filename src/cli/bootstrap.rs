@@ -2239,7 +2239,9 @@ fn unapply_child_args(environments: &str, args: &[String]) -> Vec<OsString> {
 fn global_option_takes_value(arg: &str) -> bool {
     matches!(
         arg,
-        "--env"
+        "--cd"
+            | "-C"
+            | "--env"
             | "-E"
             | "--jobs"
             | "-j"
@@ -2626,7 +2628,7 @@ impl BootstrapUnapply {
             force: self.force,
             verbose: config::Settings::get().verbose,
         };
-        let unapply = system::unapply::plan(&config, &self.environment, &secrets, &opts)?;
+        let unapply = system::unapply::plan(&config, &self.environment, &secrets, &opts).await?;
         for skip in &unapply.skipped {
             warn!("{} {}: keeping it, {}", skip.kind, skip.name, skip.reason);
         }
@@ -5403,6 +5405,26 @@ mod tests {
                 "unapply",
                 "ssh",
                 "--yes"
+            ]
+            .map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn unapply_reexec_keeps_a_value_that_looks_like_a_selection_flag() {
+        // The value of a global option is not an option: forwarding has to
+        // consume it, or a directory spelled like `-E...` is dropped as one.
+        let args = ["mise", "--cd", "-Eweird", "bootstrap", "unapply", "ssh"].map(String::from);
+        assert_eq!(
+            unapply_child_args("ssh", &args),
+            [
+                "--env",
+                "ssh",
+                "--cd",
+                "-Eweird",
+                "bootstrap",
+                "unapply",
+                "ssh"
             ]
             .map(OsString::from)
         );

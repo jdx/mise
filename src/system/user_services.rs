@@ -391,6 +391,11 @@ pub(crate) fn manager_name() -> &'static str {
     }
 }
 
+/// Reported when no definition is installed for a declared service.
+const NOT_INSTALLED: &str = "not installed";
+/// Reported when the installed definition no longer matches the declaration.
+const DIFFERS: &str = "installed, differs";
+
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct UserServiceStatus {
     pub name: String,
@@ -414,6 +419,23 @@ pub(crate) struct UserServiceStatus {
 }
 
 impl UserServiceStatus {
+    /// Whether nothing is installed for this service.
+    pub(crate) fn not_installed(&self) -> bool {
+        self.current == NOT_INSTALLED
+    }
+
+    /// Whether the installed definition is known to match the declaration.
+    ///
+    /// Drift is reported as "installed, differs"; an unavailable manager or an
+    /// unresolved command means the comparison could not be made at all. An
+    /// apply rewrites the definition in every one of those cases, so only
+    /// removal has to tell them apart.
+    pub(crate) fn matches_declaration(&self) -> bool {
+        !(self.current == DIFFERS
+            || self.current.starts_with("unknown:")
+            || self.current.starts_with("unavailable:"))
+    }
+
     pub(crate) fn plan(&self) -> ResourcePlan {
         let plan = ResourcePlan::new(
             ResourceId::new("user-service", &self.name),
@@ -557,8 +579,8 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
                 .pop()
                 .expect("one status per request");
             let current = match status.state {
-                SystemdState::Missing => "not installed",
-                SystemdState::Differs => "installed, differs",
+                SystemdState::Missing => NOT_INSTALLED,
+                SystemdState::Differs => DIFFERS,
                 SystemdState::Active => "running",
                 SystemdState::Inactive => "stopped",
             };
@@ -576,8 +598,8 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
                 .expect("one status per request");
             let running = status.loaded && launchd::is_running(&agent.label).await?;
             let (current, desired) = match status.state {
-                LaunchdState::Missing => ("not installed", false),
-                LaunchdState::Differs => ("installed, differs", false),
+                LaunchdState::Missing => (NOT_INSTALLED, false),
+                LaunchdState::Differs => (DIFFERS, false),
                 LaunchdState::Unloaded => ("installed, not loaded", false),
                 LaunchdState::Loaded if running => ("running", request.start()),
                 LaunchdState::Loaded => ("stopped", !request.start()),
@@ -595,8 +617,8 @@ async fn status_one(request: &UserServiceRequest) -> Result<UserServiceStatus> {
                 .pop()
                 .expect("one status per request");
             let current = match status.state {
-                ScheduledTaskState::Missing => "not installed",
-                ScheduledTaskState::Differs => "installed, differs",
+                ScheduledTaskState::Missing => NOT_INSTALLED,
+                ScheduledTaskState::Differs => DIFFERS,
                 ScheduledTaskState::Disabled => "installed, disabled",
                 ScheduledTaskState::Running => "running",
                 ScheduledTaskState::Ready => "stopped",
@@ -794,6 +816,24 @@ mod tests {
             Some(PathBuf::from("/usr/bin/mise")),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn removal_only_trusts_a_definition_that_matches() {
+        let request = request(user_config("sleep 100"));
+        let status = |current: &str| {
+            UserServiceStatus::new(&request, current.to_string(), ResourceAction::Update)
+        };
+        assert!(status(NOT_INSTALLED).not_installed());
+        assert!(!status(DIFFERS).not_installed());
+
+        assert!(status("running").matches_declaration());
+        assert!(status("stopped").matches_declaration());
+        // Drift, an unavailable manager, and an unresolved command all mean the
+        // installed definition is not known to be the declared one.
+        assert!(!status(DIFFERS).matches_declaration());
+        assert!(!status("unavailable: systemd user manager not available").matches_declaration());
+        assert!(!status("unknown: no durable mise executable").matches_declaration());
     }
 
     #[test]

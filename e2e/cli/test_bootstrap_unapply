@@ -26,6 +26,7 @@ content = "shared"
 
 [dotfiles]
 "~/.sshconfig" = "$PWD/sources/sshconfig"
+"~/.sshcopy" = { source = "$PWD/sources/sshconfig", mode = "copy" }
 EOF
 
 cat <<EOF >mise.gpg.toml
@@ -48,12 +49,26 @@ assert_contains "mise -E gpg bootstrap unapply ssh --dry-run 2>&1" "[bootstrap.p
 assert_not_contains "mise -E gpg bootstrap unapply ssh --dry-run" "file:$PWD/shared.conf"
 assert "cat ssh.conf" "ssh"
 
-# A target that no longer matches its declaration is kept without --force.
+# A target that no longer matches its declaration is kept without --force, and
+# keeping it does not stop the rest of the module from being removed.
 echo "edited by hand" >ssh.conf
+echo "edited by hand" >"$HOME/.sshcopy"
 assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "changed since it was applied"
+assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "keeping it"
 assert "cat ssh.conf" "edited by hand"
+assert "cat $HOME/.sshcopy" "edited by hand"
+assert_fail "test -L $HOME/.sshconfig"
 assert_succeed "mise -E gpg bootstrap unapply ssh --force --yes"
 assert_fail "test -e $PWD/ssh.conf"
+assert_fail "test -e $HOME/.sshcopy"
+
+# A managed path whose type is not what the declaration describes is kept even
+# with --force: the apply refuses it, and failing there would remove a module
+# only partly.
+mkdir -p ssh.conf
+assert_contains "mise -E gpg bootstrap unapply ssh --force --yes 2>&1" "unexpected path type"
+assert_directory_exists "$PWD/ssh.conf"
+rmdir ssh.conf
 
 # The environment does not have to be selected: unapply selects it for this run,
 # on top of the selection the rest of the machine uses.
@@ -62,6 +77,7 @@ assert_succeed "mise -E gpg bootstrap unapply ssh --yes"
 assert_fail "test -e $PWD/ssh.conf"
 assert_directory_not_exists "$PWD/ssh.d"
 assert_fail "test -L $HOME/.sshconfig"
+assert_fail "test -e $HOME/.sshcopy"
 
 # The base configuration and the other environment are untouched, and the
 # dotfile source survives its target.

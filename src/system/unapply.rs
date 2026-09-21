@@ -71,7 +71,7 @@ impl Unapply {
 }
 
 /// Plan the removal of everything `environments` adds to the desired state.
-pub(crate) fn plan(
+pub(crate) async fn plan(
     config: &Config,
     environments: &[String],
     secrets: &secrets::SecretValues,
@@ -121,6 +121,7 @@ pub(crate) fn plan(
     // Without a service manager there is nothing installed to remove, and
     // failing here would block the rest of the module's removal.
     let services_available = user_services::is_available();
+    let mut service_candidates = vec![];
     for request in user_services::requests_from_config(config)? {
         if base_services.contains(&request.name) {
             continue;
@@ -133,11 +134,34 @@ pub(crate) fn plan(
             });
             continue;
         }
+        service_candidates.push(request);
+    }
+    // Removal deletes the installed unit, agent, or task by name, so the
+    // installed definition has to be compared with the declaration first.
+    for status in user_services::status(&service_candidates).await? {
+        if status.not_installed() {
+            if opts.verbose {
+                unapply.skipped.push(Skip {
+                    kind: "user-service",
+                    name: status.name,
+                    reason: "already absent".into(),
+                });
+            }
+            continue;
+        }
+        if !status.matches_declaration() && !opts.force {
+            unapply.skipped.push(Skip {
+                kind: "user-service",
+                name: status.name,
+                reason: format!("{}; use --force to remove it", status.current),
+            });
+            continue;
+        }
         unapply.removals.push(Removal {
             kind: "user-service",
-            name: request.name.clone(),
+            name: status.name.clone(),
         });
-        unapply.user_services.push(request.name);
+        unapply.user_services.push(status.name);
     }
 
     let base_dotfiles = paths(
@@ -146,22 +170,42 @@ pub(crate) fn plan(
             .map(|request| &request.target),
     );
     for request in files::files_from_config(config)? {
-        if base_dotfiles.contains(&request.target)
-            || missing(
-                &request.target,
-                "dotfile",
-                &request.target_raw,
-                opts,
-                &mut unapply,
-            )
-        {
+        if base_dotfiles.contains(&request.target) {
             continue;
         }
-        unapply.removals.push(Removal {
-            kind: "dotfile",
-            name: request.target_raw.clone(),
-        });
-        unapply.dotfiles.push(request);
+        let name = request.target_raw.clone();
+        // The dotfile planner owns the rules for identifying a managed target.
+        // Asking it about one entry at a time turns an entry it refuses into a
+        // reported skip here, instead of an error raised once the rest of the
+        // module has already been removed.
+        let planned = match files::plan_unapply(std::slice::from_ref(&request), &dotfile_opts(opts))
+        {
+            Ok(plans) => Ok(!plans.is_empty()),
+            Err(error) => Err(skip_reason(&error)),
+        };
+        match planned {
+            Ok(true) => {
+                unapply.removals.push(Removal {
+                    kind: "dotfile",
+                    name,
+                });
+                unapply.dotfiles.push(request);
+            }
+            Ok(false) => {
+                if opts.verbose {
+                    unapply.skipped.push(Skip {
+                        kind: "dotfile",
+                        name,
+                        reason: "already absent".into(),
+                    });
+                }
+            }
+            Err(reason) => unapply.skipped.push(Skip {
+                kind: "dotfile",
+                name,
+                reason,
+            }),
+        }
     }
 
     let base_edits = edits::edits_from_config(&base)?
@@ -169,14 +213,34 @@ pub(crate) fn plan(
         .map(edit_key)
         .collect::<HashSet<_>>();
     for request in edits::edits_from_config(config)? {
-        let name = format!("{}/{}", request.path_raw, request.id);
-        if base_edits.contains(&edit_key(&request))
-            || missing(&request.path, "edit", &name, opts, &mut unapply)
-        {
+        if base_edits.contains(&edit_key(&request)) {
             continue;
         }
-        unapply.removals.push(Removal { kind: "edit", name });
-        unapply.edits.push(request);
+        let name = format!("{}/{}", request.path_raw, request.id);
+        let planned = match edits::plan_unapply(std::slice::from_ref(&request), &edit_opts(opts)) {
+            Ok(plans) => Ok(!plans.is_empty()),
+            Err(error) => Err(skip_reason(&error)),
+        };
+        match planned {
+            Ok(true) => {
+                unapply.removals.push(Removal { kind: "edit", name });
+                unapply.edits.push(request);
+            }
+            Ok(false) => {
+                if opts.verbose {
+                    unapply.skipped.push(Skip {
+                        kind: "edit",
+                        name,
+                        reason: "already applied or absent".into(),
+                    });
+                }
+            }
+            Err(reason) => unapply.skipped.push(Skip {
+                kind: "edit",
+                name,
+                reason,
+            }),
+        }
     }
 
     unapply.uncovered = uncovered_sections(config, environments);
@@ -209,7 +273,9 @@ fn classify(
             }
             None
         }
-        _ if opts.force => Some(Removal { kind, name }),
+        // `--force` covers a target that drifted, never one whose type is not
+        // what the declaration describes: the apply refuses those, and failing
+        // there would leave the module partly removed.
         ResourceAction::Unknown => {
             unapply.skipped.push(Skip {
                 kind,
@@ -218,6 +284,7 @@ fn classify(
             });
             None
         }
+        _ if opts.force => Some(Removal { kind, name }),
         _ => {
             unapply.skipped.push(Skip {
                 kind,
@@ -229,26 +296,35 @@ fn classify(
     }
 }
 
-/// Whether a target is already gone, so promising to remove it would be a
-/// no-op. A broken symlink still counts as present: unapply removes those.
-fn missing(
-    target: &Path,
-    kind: &'static str,
-    name: &str,
-    opts: &UnapplyOpts,
-    unapply: &mut Unapply,
-) -> bool {
-    if target.symlink_metadata().is_ok() {
-        return false;
+fn dotfile_opts(opts: &UnapplyOpts) -> files::UnapplyOpts {
+    files::UnapplyOpts {
+        dry_run: opts.dry_run,
+        verbose: opts.verbose,
+        force: opts.force,
+        // Confirmation covers the whole plan once, before any domain runs.
+        yes: true,
     }
-    if opts.verbose {
-        unapply.skipped.push(Skip {
-            kind,
-            name: name.to_string(),
-            reason: "already absent".into(),
-        });
+}
+
+fn edit_opts(opts: &UnapplyOpts) -> edits::UnapplyOpts {
+    edits::UnapplyOpts {
+        dry_run: opts.dry_run,
+        verbose: opts.verbose,
+        force: opts.force,
+        yes: true,
     }
-    true
+}
+
+/// The reason one entry was refused, without the heading and entry prefix the
+/// domain planners add when they report a batch.
+fn skip_reason(error: &eyre::Report) -> String {
+    let text = format!("{error}");
+    let line = text.lines().next_back().unwrap_or_default().trim();
+    line.find("\": ")
+        .or_else(|| line.find("): "))
+        .map(|index| &line[index + 3..])
+        .unwrap_or(line)
+        .to_string()
 }
 
 fn paths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> HashSet<PathBuf> {
@@ -309,18 +385,8 @@ pub(crate) async fn execute(
     secrets: &secrets::SecretValues,
     opts: &UnapplyOpts,
 ) -> Result<()> {
-    let mut dotfile_opts = files::UnapplyOpts {
-        dry_run: opts.dry_run,
-        verbose: opts.verbose,
-        force: opts.force,
-        yes: true,
-    };
-    let edit_opts = edits::UnapplyOpts {
-        dry_run: opts.dry_run,
-        verbose: opts.verbose,
-        force: opts.force,
-        yes: true,
-    };
+    let dotfile_opts = dotfile_opts(opts);
+    let edit_opts = edit_opts(opts);
 
     // Validate every domain before any of them mutates the filesystem.
     let edit_plan = edits::plan_unapply(&unapply.edits, &edit_opts)?;
@@ -332,7 +398,6 @@ pub(crate) async fn execute(
         edits::execute_unapply(&edit_plan, &edit_opts)?;
     }
     if !unapply.dotfiles.is_empty() {
-        dotfile_opts.yes = true;
         files::execute_unapply(&dotfile_plan, &dotfile_opts)?;
     }
 
