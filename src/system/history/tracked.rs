@@ -372,9 +372,27 @@ impl TrackedSet {
         if nested {
             return Ok(false);
         }
-        // the entry's own list is applied after the global one and is not
-        // re-included by a global `!glob`
-        Ok(!self.exclude_set()?.is_match(path) && !owner.is_excluded(path))
+        Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
+    }
+
+    /// Whether the exclusion lists drop `path`: the global
+    /// `[history] exclude` globs, then the owning entry's own list,
+    /// which is applied after the global one and is not re-included by
+    /// a global `!glob`. A path no entry covers is dropped.
+    ///
+    /// **The one composition, because narrowing selection stops
+    /// management and does not delete.** A capture drops a newly
+    /// excluded file from the next snapshot while leaving it on disk —
+    /// which is the whole point of excluding it — so every other
+    /// consumer has to read that absence the same way. Asking ownership
+    /// alone made synchronization read it as a deletion to replay, and
+    /// `exclude = ["leave"]` on one machine became `rm` on every other
+    /// one.
+    pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
+        match self.entry_for(path) {
+            Some(owner) => exclude.is_match(path) || owner.is_excluded(path),
+            None => true,
+        }
     }
 
     pub(crate) fn exclude_set(&self) -> Result<ExcludeSet> {
