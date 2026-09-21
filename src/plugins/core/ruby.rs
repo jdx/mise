@@ -478,6 +478,21 @@ impl RubyPlugin {
         Ok(url)
     }
 
+    /// Compute the checksum of a GitLab release asset via an authenticated download.
+    ///
+    /// GitLab release links carry no checksum, and the generic lockfile checksum-completion
+    /// pass (`complete_artifact_checksums`) has no GitLab auth and 401s on private repos.
+    /// Callers must resolve and validate `api_url` (e.g. via `ruby_precompiled_api_url`)
+    /// before calling this — it sends whatever `api_url` it is given.
+    async fn gitlab_asset_checksum(url: &str, api_url: &str) -> Result<String> {
+        let headers = gitlab::get_headers(url, api_url);
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("artifact");
+        HTTP.download_file_with_headers(url, &path, &headers, None)
+            .await?;
+        Ok(format!("sha256:{}", hash::file_hash_sha256(&path, None)?))
+    }
+
     /// The effective GitLab API URL for cache/lockfile identity purposes, or `None` when the
     /// source isn't `gitlab:` and the setting is never consulted. Gating on the source keeps a
     /// stray `ruby.precompiled_api_url` from splitting cache keys or breaking lockfile matches
@@ -906,6 +921,23 @@ impl RubyPlugin {
         Ok(None)
     }
 
+    /// The locked URL for a platform, if it's usable as a reusable precompiled artifact.
+    ///
+    /// A `install == "source"` entry is a source-tarball fallback recorded by
+    /// `resolve_lock_info` when no precompiled binary matched (see its final branch) — not a
+    /// precompiled artifact — so it must never be handed to `resolve_precompiled_url`'s
+    /// GitLab "reuse locked_url verbatim" path. Doing so would download and extract the Ruby
+    /// source tarball as if it were a compiled binary, silently skipping `ruby-build`.
+    fn locked_precompiled_url(
+        lock_platforms: &BTreeMap<String, PlatformInfo>,
+        key: &str,
+    ) -> Option<String> {
+        lock_platforms
+            .get(key)
+            .filter(|pi| pi.install.as_deref() != Some("source"))
+            .and_then(|pi| pi.url.clone())
+    }
+
     /// Resolve precompiled binary URL and checksum for a given version and platform.
     ///
     /// `locked_url` is the exact URL from an existing lockfile entry for this platform, if
@@ -1019,10 +1051,7 @@ impl RubyPlugin {
         // GitLab release links have no tag-shaped URL to recover a build revision from, so
         // a locked GitLab install reuses this exact URL instead of re-resolving the latest
         // release (see resolve_precompiled_url's doc comment).
-        let locked_url = tv
-            .lock_platforms
-            .get(&platform_key)
-            .and_then(|pi| pi.url.clone());
+        let locked_url = Self::locked_precompiled_url(&tv.lock_platforms, &platform_key);
         let locked_build_revision =
             Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
         let Some((url, checksum)) = self
@@ -1473,10 +1502,7 @@ impl Backend for RubyPlugin {
             && let Some((url, mut checksum)) = {
                 let locked_build_revision =
                     Self::extract_build_revision_from_lock_platforms(tv, &tv.version);
-                let locked_url = tv
-                    .lock_platforms
-                    .get(&target.to_key())
-                    .and_then(|pi| pi.url.clone());
+                let locked_url = Self::locked_precompiled_url(&tv.lock_platforms, &target.to_key());
                 self.resolve_precompiled_url(
                     &tv.version,
                     &platform,
@@ -1486,6 +1512,20 @@ impl Backend for RubyPlugin {
                 .await?
             }
         {
+            let settings = Settings::get();
+            let source = PrecompiledSource::parse(&settings.ruby.precompiled_url);
+
+            // GitLab release links carry no checksum. Compute one now, authenticated, so
+            // the generic lockfile checksum-completion pass (which has no GitLab auth)
+            // never has to re-fetch this asset unauthenticated — that 401s for private
+            // GitLab repos.
+            if checksum.is_none()
+                && let PrecompiledSource::Gitlab(_) = source
+            {
+                let api_url = Self::ruby_precompiled_api_url(&settings)?;
+                checksum = Some(Self::gitlab_asset_checksum(&url, api_url).await?);
+            }
+
             // Detect provenance for precompiled binaries
             let mut provenance = self.detect_precompiled_provenance();
             if provenance.is_some() {
@@ -1521,6 +1561,10 @@ impl Backend for RubyPlugin {
         // Default: source tarball
         match self.get_ruby_download_info(&tv.version).await? {
             Some((url, checksum)) => Ok(PlatformInfo {
+                // Marks this entry as source-compiled rather than a precompiled artifact,
+                // so a locked GitLab install never mistakes it for a reusable asset URL
+                // (see install_precompiled/resolve_lock_info's locked_url filtering).
+                install: Some("source".to_string()),
                 url: Some(url),
                 checksum: Some(checksum),
                 size: None,
@@ -2016,6 +2060,89 @@ mod tests {
             err.to_string()
                 .contains("refusing to use non-HTTPS GitLab release asset URL"),
             "{err}"
+        );
+    }
+
+    #[test]
+    fn test_ruby_locked_precompiled_url_skips_source_fallback_entries() {
+        // Regression: a `install == "source"` entry is the source-tarball fallback
+        // `resolve_lock_info` records when no GitLab release asset matched (see its final
+        // branch). It must never be treated as a reusable precompiled artifact — otherwise
+        // a locked install would download and extract that source tarball as if it were a
+        // compiled binary, silently skipping ruby-build.
+        let mut lock_platforms = BTreeMap::new();
+        lock_platforms.insert(
+            "macos-arm64".to_string(),
+            PlatformInfo {
+                install: Some("source".to_string()),
+                url: Some("https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.0.tar.gz".to_string()),
+                checksum: Some("sha256:deadbeef".to_string()),
+                ..Default::default()
+            },
+        );
+        lock_platforms.insert(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some(
+                    "https://gitlab.com/acme/ruby/-/releases/v1/downloads/ruby-3.3.0.x86_64_linux.tar.gz"
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(
+            RubyPlugin::locked_precompiled_url(&lock_platforms, "macos-arm64"),
+            None
+        );
+        assert_eq!(
+            RubyPlugin::locked_precompiled_url(&lock_platforms, "linux-x64").as_deref(),
+            Some(
+                "https://gitlab.com/acme/ruby/-/releases/v1/downloads/ruby-3.3.0.x86_64_linux.tar.gz"
+            )
+        );
+        assert_eq!(
+            RubyPlugin::locked_precompiled_url(&lock_platforms, "windows-x64"),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn test_ruby_gitlab_asset_checksum_downloads_authenticated_and_hashes() {
+        // Regression: GitLab release links carry no checksum, and the generic lockfile
+        // checksum-completion pass has no GitLab auth (401s on private repos). This must
+        // compute the checksum itself, using the GitLab token, rather than leaving it None.
+        let mut server = mockito::Server::new_async().await;
+        let api_url = server.url();
+
+        const TEST_TOKEN: &str = "glpat_ruby_asset_checksum_test";
+        let asset_body: &[u8] = b"gitlab-asset-checksum-test-fixture";
+        let asset_mock = server
+            .mock("GET", "/asset.tar.gz")
+            .match_header("authorization", format!("Bearer {TEST_TOKEN}").as_str())
+            .with_status(200)
+            .with_body(asset_body)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let url = format!("{api_url}/asset.tar.gz");
+        let install_env = [(
+            "MISE_GITLAB_TOKEN".to_string(),
+            crate::config::env_directive::EnvValue::from(TEST_TOKEN),
+        )]
+        .into_iter()
+        .collect();
+        let checksum = crate::env::with_install_env(install_env, async {
+            RubyPlugin::gitlab_asset_checksum(&url, &api_url).await
+        })
+        .await
+        .unwrap();
+
+        asset_mock.assert_async().await;
+        assert_eq!(
+            checksum,
+            "sha256:84efdea4c553af31924f0eea4f079052a95cfc20081c99a7dcd60dfc76c7b9ae"
         );
     }
 
