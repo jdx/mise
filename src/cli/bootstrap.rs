@@ -2001,12 +2001,9 @@ impl Bootstrap {
             debug!("dotfiles: post-adopt task {task} skipped inside a post-adopt task");
             return Ok(());
         }
-        {
-            let _lock = system::history::config::lock_post_adopt()?;
-            if system::history::config::post_adopt_already_ran(&setup)? {
-                debug!("dotfiles: post-adopt task {task} already ran on this machine");
-                return Ok(());
-            }
+        if system::history::config::post_adopt_already_ran(&setup)? {
+            debug!("dotfiles: post-adopt task {task} already ran on this machine");
+            return Ok(());
         }
         if self.dry_run {
             info!("dotfiles: would run the post-adopt task {task}");
@@ -2022,12 +2019,9 @@ impl Bootstrap {
         };
         // re-checked under the claim: the process that held it before may
         // have finished the task while this one was waiting for it
-        {
-            let _lock = system::history::config::lock_post_adopt()?;
-            if system::history::config::post_adopt_already_ran(&setup)? {
-                debug!("dotfiles: post-adopt task {task} already ran on this machine");
-                return Ok(());
-            }
+        if system::history::config::post_adopt_already_ran(&setup)? {
+            debug!("dotfiles: post-adopt task {task} already ran on this machine");
+            return Ok(());
         }
         info!("dotfiles: running the post-adopt task {task}");
         crate::env::set_var(system::history::config::POST_ADOPT_ENV, "1");
@@ -2047,7 +2041,6 @@ impl Bootstrap {
             );
             return Err(err);
         }
-        let _lock = system::history::config::lock_post_adopt()?;
         system::history::config::record_post_adopt(&setup)
     }
 
@@ -2075,12 +2068,9 @@ impl Bootstrap {
         );
         let deadline = std::time::Instant::now() + LIMIT;
         loop {
-            {
-                let _lock = system::history::config::lock_post_adopt()?;
-                if system::history::config::post_adopt_already_ran(setup)? {
-                    info!("dotfiles: the post-adopt task {task} was finished by that process");
-                    return Ok(());
-                }
+            if system::history::config::post_adopt_already_ran(setup)? {
+                info!("dotfiles: the post-adopt task {task} was finished by that process");
+                return Ok(());
             }
             // The claim is free. Acquiring it is the serialization
             // point, so the record is read again *after* it: the owner
@@ -2089,7 +2079,6 @@ impl Bootstrap {
             // report a false failure — it would hold the claim and run
             // the one-time task again, moments after it succeeded.
             if let Some(_claim) = system::history::config::claim_post_adopt()? {
-                let _lock = system::history::config::lock_post_adopt()?;
                 if system::history::config::post_adopt_already_ran(setup)? {
                     info!("dotfiles: the post-adopt task {task} was finished by that process");
                     return Ok(());

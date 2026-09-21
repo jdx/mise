@@ -258,7 +258,26 @@ fn last_post_adopt(
             );
             continue;
         }
-        found = nonempty_command(task);
+        // **A name that cannot be written as one line is not a name.**
+        // The record is one key per line, so a task whose name carries a
+        // newline or a tab would split into two entries and match
+        // neither. Refused where it is written rather than stored as
+        // something that can never match.
+        // a later layer naming nothing turns an earlier one off, which
+        // is how a machine opts out of a shared setup's task
+        let Some(task) = nonempty_command(task) else {
+            found = None;
+            continue;
+        };
+        if task.contains(['\n', '\r', '\t']) {
+            warn!(
+                "history: ignoring [history] post_adopt in {}: a task name cannot contain a newline or a tab",
+                display_path(&path)
+            );
+            found = None;
+            continue;
+        }
+        found = Some(task);
     }
     Ok(found)
 }
@@ -327,8 +346,11 @@ pub(crate) fn claim_post_adopt() -> Result<Option<fslock::LockFile>> {
 }
 
 /// Holds the post-adopt record while it is read or written. Taken for
-/// the moment that takes, never across the task.
-pub(crate) fn lock_post_adopt() -> Result<fslock::LockFile> {
+/// the moment that takes, never across the task, and taken inside each
+/// operation so no caller can forget it — the claim is what keeps two
+/// processes from both running the task, and this is what keeps a
+/// read-modify-write from losing the other's line.
+fn lock_post_adopt() -> Result<fslock::LockFile> {
     let path = post_adopt_record();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -344,6 +366,7 @@ pub(crate) fn lock_post_adopt() -> Result<fslock::LockFile> {
 /// it as one reruns work that is meant to happen once and then
 /// overwrites every completion this machine had recorded.
 pub(crate) fn post_adopt_already_ran(key: &str) -> Result<bool> {
+    let _lock = lock_post_adopt()?;
     Ok(read_post_adopt()?
         .lines()
         .any(|line| line.trim() == key.trim()))
@@ -371,6 +394,9 @@ pub(crate) fn record_post_adopt(key: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    // read and write are one step: another process appending its own
+    // key between them would otherwise be overwritten
+    let _lock = lock_post_adopt()?;
     // never flattened: replacing an unreadable record would erase every
     // completion this machine had, and the next bootstrap would run them
     // all again
@@ -477,6 +503,17 @@ post_adopt = 'machine-setup'
             "[history]
 post_adopt = '  '
 ",
+        )
+        .unwrap();
+        assert_eq!(post_adopt_task_in(temp.path()).unwrap(), None);
+
+        // and so does a name that could never be recorded as one line:
+        // the record is one key per line, and a name carrying a newline
+        // would split into two entries and match neither
+        // a basic TOML string, so this really is a newline in the name
+        std::fs::write(
+            temp.path().join("config.local.toml"),
+            "[history]\npost_adopt = \"set\\nup\"\n",
         )
         .unwrap();
         assert_eq!(post_adopt_task_in(temp.path()).unwrap(), None);
