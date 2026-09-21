@@ -1868,7 +1868,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec![],
+                exclude: None,
             }],
             ..Default::default()
         };
@@ -2081,7 +2081,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants,
-            exclude: vec![],
+            exclude: None,
         };
         let containing = outer.tree_path(&private)?;
         let permissions = std::collections::BTreeMap::from([(containing.clone(), 0o700)]);

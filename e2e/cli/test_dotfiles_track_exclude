@@ -93,3 +93,37 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 "~/.codex" = { mode = "track", source = "x" }
 TOML
 assert_contains 'mise dot paths' 'invalid: ~/.codex'
+
+# Saying nothing and saying nothing-is-excluded are different answers.
+# A list the manifest carries stands while a declaration is silent about
+# it, and `exclude = []` is how that list is cleared — without the
+# distinction a machine could add to a published list but never take
+# anything away.
+mkdir -p ~/.twosided/sessions
+echo 'model = "x"' >~/.twosided/config.toml
+echo 'a transcript' >~/.twosided/sessions/one.jsonl
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.twosided" = { mode = "track", exclude = ["sessions/**"] }
+TOML
+assert_succeed 'mise dot save'
+assert "mise dot paths --json | jq -c '.entries[] | select(.path == \"~/.twosided\") | .exclude'" '["sessions/**"]'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.twosided/sessions/one.jsonl"
+
+# the key removed: silence, so the recorded list still stands
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.twosided" = { mode = "track" }
+TOML
+assert "mise dot paths --json | jq -c '.entries[] | select(.path == \"~/.twosided\") | .exclude'" '["sessions/**"]'
+assert_succeed 'mise dot save'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.twosided/sessions/one.jsonl"
+
+# an explicitly empty list: the one way to take it back
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.twosided" = { mode = "track", exclude = [] }
+TOML
+assert "mise dot paths --json | jq -c '.entries[] | select(.path == \"~/.twosided\") | .exclude'" '[]'
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.twosided/sessions/one.jsonl" 'a transcript'

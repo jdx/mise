@@ -41,8 +41,10 @@ struct PathRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     declared_in: Option<String>,
     /// The entry's own `exclude` patterns, relative to its path.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    exclude: Vec<String>,
+    /// Absent when the declaration states none, `[]` when it states an
+    /// empty one — which clears a list another machine published.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exclude: Option<Vec<String>>,
 }
 
 impl DotfilesPaths {
@@ -120,7 +122,7 @@ impl DotfilesPaths {
                 miseprintln!("  exclude: {glob}");
             }
             for row in &rows {
-                for glob in &row.exclude {
+                for glob in row.exclude.iter().flatten() {
                     miseprintln!("  exclude ({}): {glob}", row.path);
                 }
             }

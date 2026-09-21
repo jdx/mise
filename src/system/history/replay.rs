@@ -1366,7 +1366,7 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
     if let Some(entry) = owner
         && super::tracked::excluded_by_entry(
             &file::replace_path(Path::new(&entry.path)),
-            &entry.exclude,
+            entry.exclude.as_deref().unwrap_or(&[]),
             &local,
         )
     {
