@@ -133,6 +133,7 @@ impl DotfilesTrack {
             .filter_map(|target| preview_set.entry_index_for(&normalize_target(target)))
             .collect();
         let preview_walk = preview_set.walk_selected(&targets)?;
+        preview_walk.report_warnings();
         let mut previews: Vec<String> = vec![];
         for target in resolved {
             let target_key = normalized_target(&target);

@@ -55,6 +55,7 @@ impl DotfilesPaths {
             None => TrackedSet::effective().await?,
         };
         let walk = tracked.walk()?;
+        walk.report_warnings();
         let mut counts = vec![0u64; tracked.entries.len()];
         for (owner, _) in walk.files.values() {
             if let Some(count) = counts.get_mut(*owner) {
