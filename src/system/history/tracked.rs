@@ -522,7 +522,22 @@ impl TrackedSet {
         if nested {
             return Ok(false);
         }
-        Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
+        if self.excluded_by_lists(&self.exclude_set()?, path) {
+            return Ok(false);
+        }
+        // **This one can look, so it asks the exact question.** The
+        // watcher's filter has to answer without touching the disk, so
+        // it keeps anything that might contain a selected file. Here the
+        // filesystem is available: something that is not a directory is
+        // kept only if the list selects it, which is what a capture will
+        // decide about the same path.
+        if let Ok(meta) = std::fs::symlink_metadata(path)
+            && !meta.is_dir()
+            && !owner.is_included(path)
+        {
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     /// Whether the selection lists drop `path`: the global globs read
@@ -538,9 +553,17 @@ impl TrackedSet {
     pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
         match self.entry_for(path) {
             Some(owner) => {
+                // **"Is this path itself selected?" and "could anything
+                // beneath it be selected?" are different questions.** A
+                // capture asks the first, because it stores files. This
+                // asks the second: the watcher filters events with it,
+                // and an event on a tracked directory whose children the
+                // list selects must wake it, not be dropped because no
+                // pattern names the directory itself. For a file the two
+                // answers coincide.
                 exclude.is_match(path, &owner.path)
                     || owner.is_excluded(path)
-                    || !owner.is_included(path)
+                    || owner.include_prunes(path)
             }
             None => true,
         }
@@ -2404,9 +2427,15 @@ mod tests {
                 !declared,
                 "would_retain with include = {include:?}"
             );
+            // the watcher answers without touching the disk, so it
+            // cannot tell an entry that is a file from one that is a
+            // directory whose children the list selects — it keeps the
+            // path and lets the capture decide. An empty list selects
+            // nothing anywhere, so there it drops it.
+            let empty = include.as_ref().is_some_and(Vec::is_empty);
             assert_eq!(
                 !set.excluded_by_lists(&set.exclude_set().unwrap(), &file),
-                !declared,
+                !empty,
                 "watcher with include = {include:?}"
             );
             assert!(
@@ -2535,6 +2564,49 @@ mod tests {
             walk.considered
         );
         assert!(walk.incomplete.is_empty(), "{:?}", walk.incomplete);
+    }
+
+    /// The watcher must wake on the tracked directory itself when the
+    /// list selects something inside it, and retention must keep that
+    /// directory — while a capture still declines to store the directory
+    /// as a file.
+    #[test]
+    fn a_directory_whose_children_are_selected_is_watched_and_retained() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules")).unwrap();
+        std::fs::write(root.join("rules/one.md"), "keep").unwrap();
+        std::fs::write(root.join("notes.md"), "noise").unwrap();
+
+        let mut tracked = entry(&root);
+        tracked.include = Some(vec!["rules/**".to_string()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+        let exclude = set.exclude_set().unwrap();
+
+        // the entry directory and the directory the list reaches into:
+        // an event on either has to be looked at
+        for directory in [root.clone(), root.join("rules")] {
+            assert!(
+                !set.excluded_by_lists(&exclude, &directory),
+                "the watcher ignored {}",
+                directory.display()
+            );
+            assert!(
+                set.would_retain(&directory).unwrap(),
+                "retention dropped {}",
+                directory.display()
+            );
+        }
+        // a directory nothing could select is still dropped
+        std::fs::create_dir(root.join("sessions")).unwrap();
+        assert!(set.excluded_by_lists(&exclude, &root.join("sessions")));
+
+        // and the files are decided exactly, by both
+        assert!(set.would_retain(&root.join("rules/one.md")).unwrap());
+        assert!(!set.would_retain(&root.join("notes.md")).unwrap());
+        assert!(!set.excluded_by_lists(&exclude, &root.join("rules/one.md")));
+        assert!(set.excluded_by_lists(&exclude, &root.join("notes.md")));
     }
 
     fn entry(path: &Path) -> TrackedEntry {
