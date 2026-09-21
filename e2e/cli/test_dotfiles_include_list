@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+# A tracked directory's `include` list: name what to keep instead of
+# every kind of noise to leave out. An exact include also captures a file
+# the credential guard would otherwise omit, in plaintext; a glob does
+# not.
+require_cmd git
+repo="$MISE_STATE_DIR/history/repo.git"
+
+# a ~/.codex-shaped tree: a little configuration, a lot of transcripts
+mkdir -p ~/.codex/rules/deep ~/.codex/sessions/2026
+echo 'model = "x"' >~/.codex/config.toml
+echo 'noise' >~/.codex/telemetry.json
+echo 'always test' >~/.codex/rules/one.md
+echo 'never guess' >~/.codex/rules/deep/two.md
+for i in 1 2 3 4 5; do echo "turn $i" >~/.codex/sessions/2026/"$i".jsonl; done
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+TOML
+assert_succeed 'mise dot track ~/.codex'
+
+# only what the list names is captured
+assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'model = "x"'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/one.md" 'always test'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/deep/two.md" 'never guess'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/telemetry.json"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/2026/1.jsonl"
+
+# the selection is visible, not silent
+assert_contains 'mise dot paths' 'include (~/.codex): config.toml'
+assert_contains 'mise dot paths' '~/.codex: 3 of 9 files (include list)'
+assert "mise dot paths --json | jq -r '.entries[0].include | join(\",\")'" 'config.toml,rules/**'
+assert "mise dot paths --json | jq -r '.entries[0].considered'" '9'
+
+# a list of only anchored patterns skips what it cannot reach into,
+# unopened — so the report says what it selected and not "of N", because
+# N would mean walking the very directories the list exists to avoid
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["rules/**"] }
+TOML
+assert_contains 'mise dot paths' '~/.codex: 2 files (include list)'
+assert_not_contains 'mise dot paths' '~/.codex: 2 of'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+TOML
+
+# a directory nobody named appears later and stays out on its own
+mkdir -p ~/.codex/cache
+echo 'more noise' >~/.codex/cache/index
+assert_succeed 'mise dot save'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/cache/index"
+
+# an explicit exclude still wins over an include
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"], exclude = ["deep"] }
+TOML
+echo 'edited' >~/.codex/rules/one.md
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/rules/one.md" 'edited'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/rules/deep/two.md"
+
+# narrowing the list is reported, not silent
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml"] }
+TOML
+echo 'model = "y"' >~/.codex/config.toml
+assert_contains 'mise dot save 2>&1' 'leaves out'
+
+# `mise dot track` is how a hand-edited list is applied, and it gets the
+# one chance to say what the narrowing drops: from the next checkpoint on
+# the parent tree is already narrowed and nothing is left to report
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["rules/one.md"] }
+TOML
+assert_contains 'mise dot track ~/.codex 2>&1' 'leaves out'
+
+# and when a background save gets there first, the notice waits for
+# someone to be there: the watcher's own log is not where the user is
+# looking, and there is no second chance to say it
+echo 'edited' >~/.codex/rules/one.md
+assert_succeed 'mise dot save'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml"] }
+TOML
+assert_succeed 'mise dot watch --once'
+assert_contains 'mise dot paths 2>&1' 'leaves out'
+# said once, then it is gone
+assert_not_contains 'mise dot paths 2>&1' 'leaves out'
+
+# An include list decides what is captured: a glob is as authoritative
+# as a literal, and either one selecting a credential-named file
+# captures it in plaintext, said out loud.
+mkdir -p ~/.config/fish/functions
+echo 'function hello; end' >~/.config/fish/functions/hello.fish
+echo 'set -x API_TOKEN synthetic' >~/.config/fish/functions/secrets.fish
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/*.fish"] }
+TOML
+assert_contains 'mise dot track ~/.config/fish 2>&1' 'saved in plaintext'
+assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/hello.fish" 'function hello; end'
+assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 'set -x API_TOKEN synthetic'
+assert_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/hello.fish", "functions/secrets.fish"] }
+TOML
+echo 'set -x API_TOKEN synthetic2' >~/.config/fish/functions/secrets.fish
+assert_contains 'mise dot save 2>&1' 'saved in plaintext'
+assert_contains 'mise dot track --dry-run ~/.config/fish' 'plaintext: ~/.config/fish/functions/secrets.fish'
+assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 'set -x API_TOKEN synthetic2'
+assert_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
+assert_not_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
+assert "mise dot paths --json | jq -r '.plaintext[0].path'" '~/.config/fish/functions/secrets.fish'
+
+# a directory-shaped pattern carries the same authority as any other:
+# selection decides, and the credential-named file inside is captured.
+# (`encrypt = true` capturing it with nothing in the clear is covered by
+# the unit tests, which do not need age recipients to set up.)
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions"] }
+TOML
+echo 'set -x API_TOKEN synthetic3' >~/.config/fish/functions/secrets.fish
+assert_contains 'mise dot save 2>&1' 'saved in plaintext'
+assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 'set -x API_TOKEN synthetic3'
+
+# An entry with no include list gets the builtin filtering exactly as it
+# does today, so an existing declaration is unaffected by this feature.
+printf '[dotfiles]\n"~/.config/fish/functions/secrets.fish" = { mode = "track" }\n' >"$MISE_CONFIG_DIR/config.toml"
+assert_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
+assert_not_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
+assert_contains 'mise dot track ~/.config/fish/functions/secrets.fish 2>&1' 'omitted from every save'
+
+# A list selects paths *inside* a tracked directory, so no pattern can
+# name the entry itself. On an entry that is a file the list could never
+# select anything, which is said where it is written rather than left to
+# be worked out from a declaration that captures nothing.
+for list in '["hello.fish"]' '[]' '["**"]'; do
+  printf '[dotfiles]\n"~/.config/fish/functions/hello.fish" = { mode = "track", include = %s }\n' "$list" >"$MISE_CONFIG_DIR/config.toml"
+  assert_contains 'mise dot paths 2>&1' 'include selects paths inside a tracked directory'
+  assert_contains 'mise dot paths 2>&1' 'track the parent directory'
+done
+# and a credential-named file entry cannot lift its own guard that way
+printf '[dotfiles]\n"~/.config/fish/functions/secrets.fish" = { mode = "track", include = ["secrets.fish"] }\n' >"$MISE_CONFIG_DIR/config.toml"
+assert_contains 'mise dot paths 2>&1' 'include selects paths inside a tracked directory'
+assert_not_contains 'mise dot paths 2>&1' 'plaintext: ~/.config/fish/functions/secrets.fish'
+
+# A declared but empty include list selects nothing, which is not the
+# same as declaring none at all.
+mkdir -p ~/.config/empty
+echo 'something' >~/.config/empty/file.txt
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/empty" = { mode = "track", include = [] }
+TOML
+assert_succeed 'mise dot track ~/.config/empty'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.config/empty/file.txt"
+assert_contains 'mise dot paths' '~/.config/empty: 0 of 1 files (include list)'
+
+# and when both lists are unreadable, both are named: reporting one and
+# dropping the other sends the user back for a second round over a
+# mistake mise had already seen
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/empty" = { mode = "track", include = ["["], exclude = ["[worse"] }
+TOML
+assert_contains 'mise dot paths 2>&1' "invalid exclude pattern '[worse'"
+assert_contains 'mise dot paths 2>&1' "invalid include pattern '['"
+
+# and `mise dot track` never rewrites a declaration it could not read:
+# a typo in a list would otherwise be replaced by a bare entry, and the
+# next save would capture the whole tree the list existed to narrow
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/[bad"] }
+TOML
+cp "$MISE_CONFIG_DIR/config.toml" "$PWD/declared.toml"
+assert_fail 'mise dot track ~/.codex 2>&1' 'cannot be read'
+assert "diff -q $MISE_CONFIG_DIR/config.toml $PWD/declared.toml >/dev/null && echo same" 'same'
+# and once the typo is fixed, re-tracking keeps the list
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+TOML
+assert_succeed 'mise dot track ~/.codex'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'rules/**'
+
+# a project's own `mode = "track"` entry is ignored by policy, not
+# unreadable — it has nothing to lose, so it must not stop anyone
+# tracking or untracking that path themselves
+cat >"$PWD/mise.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+TOML
+assert_succeed 'mise dot track ~/.codex'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'rules/**'
+assert_succeed 'mise dot untrack ~/.codex'
+assert_succeed 'mise dot track ~/.codex'
+rm "$PWD/mise.toml"
+
+# A pattern mise cannot read is an error naming the entry and the
+# pattern, never a shorter list that would capture more.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/empty" = { mode = "track", include = ["["] }
+TOML
+assert_contains 'mise dot paths 2>&1' 'invalid include pattern'
+assert_contains 'mise dot paths 2>&1' '~/.config/empty'
+
+# `include` belongs to tracked directories only
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/other" = { source = "src", mode = "copy", include = ["a"] }
+TOML
+assert_contains 'mise dot paths 2>&1' 'applies only to mode'
+
+# An include list cannot reach into a repository inside a tracked tree:
+# the repository is skipped whatever the list says, and a pattern naming
+# paths inside it is told that it selects nothing.
+mkdir -p ~/.config/nested/plugin
+echo 'top' >~/.config/nested/top.lua
+echo 'inner' >~/.config/nested/plugin/inner.lua
+git -C ~/.config/nested/plugin init -q -b main
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/nested" = { mode = "track", include = ["plugin/**", "top.lua"] }
+TOML
+assert_succeed 'mise dot track ~/.config/nested'
+assert "git --git-dir=$repo show HEAD:home/.config/nested/top.lua" 'top'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.config/nested/plugin/inner.lua"
+assert_contains 'mise dot paths' 'selects nothing inside it'
+assert_contains 'mise dot paths' 'track it directly to capture its working files'

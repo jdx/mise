@@ -376,8 +376,10 @@ impl TrackedSet {
     ///
     /// The one composition. `would_retain` adds the filesystem checks a
     /// capture also makes; the watcher asks this alone, because it is
-    /// deciding what to watch rather than what a walk found. Both pick
-    /// the owner with [`owning_entry`], so they cannot disagree.
+    /// deciding what to watch rather than what a walk found; and
+    /// synchronization asks it to tell a path selection stopped
+    /// covering from one that was deleted. All of them pick the owner
+    /// with [`owning_entry`], so they cannot disagree.
     pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
         match self.entry_for(path) {
             Some(owner) => {
