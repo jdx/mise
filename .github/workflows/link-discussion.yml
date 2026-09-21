@@ -1,0 +1,17 @@
+name: link-discussion
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  link-discussion:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      discussions: write
+      pull-requests: read
+    steps:
+      - uses: jdx/link-discussion-action@38e7537b4b00d6b04a08de54c2f38b3001c9cd8d # v0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
