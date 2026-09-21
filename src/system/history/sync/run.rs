@@ -1039,7 +1039,6 @@ pub(super) fn eligible(
         Located::Tracked { path, variant } => match tracked.entry_for(&path) {
             Some(entry) => {
                 entry.variant == variant
-                    && !crate::system::history::tracked::inside_nested_repository(entry, &path)
                     && !tracked.excluded_by_lists(exclude, &path)
             }
             None => false,
