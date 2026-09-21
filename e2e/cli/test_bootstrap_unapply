@@ -65,14 +65,6 @@ assert_succeed "mise -E gpg bootstrap unapply ssh --force --yes"
 assert_fail "test -e $PWD/ssh.conf"
 assert_fail "test -e $HOME/.sshcopy"
 
-# A managed path whose type is not what the declaration describes is kept even
-# with --force: the apply refuses it, and failing there would remove a module
-# only partly.
-mkdir -p ssh.conf
-assert_contains "mise -E gpg bootstrap unapply ssh --force --yes 2>&1" "unexpected path type"
-assert_directory_exists "$PWD/ssh.conf"
-rmdir ssh.conf
-
 # The environment does not have to be selected: unapply selects it for this run,
 # on top of the selection the rest of the machine uses.
 assert_succeed "mise -E ssh,gpg bootstrap --only files,dotfiles --yes"
@@ -88,16 +80,32 @@ assert "cat base.conf" "base"
 assert "cat shared.conf" "shared"
 assert "cat sources/sshconfig" "ssh config"
 
-# A directory that still holds something this plan does not remove is kept: the
-# removal is not recursive, and failing during the apply would remove a module
-# only partly.
-assert_succeed "mise -E ssh,gpg bootstrap --only files,dotfiles --yes"
-touch ssh.d/unmanaged
-assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "not empty"
-assert_directory_exists "$PWD/ssh.d"
-assert_fail "test -e $PWD/ssh.d/inner.conf"
-assert_succeed "test -e $PWD/ssh.d/unmanaged"
-rm -r ssh.d
+# Each remaining case gets its own module and targets: a managed path whose type
+# is not what the declaration describes is kept even with --force, because the
+# apply refuses it and failing there would remove a module only partly.
+cat <<EOF >mise.mismatch.toml
+[bootstrap.files."$PWD/mismatch.conf"]
+content = "mismatch"
+EOF
+mkdir -p mismatch.conf
+assert_contains "mise -E mismatch bootstrap unapply mismatch --force --yes 2>&1" "unexpected path type"
+assert_directory_exists "$PWD/mismatch.conf"
+
+# A directory that still holds something this plan does not remove is kept:
+# removal is never recursive.
+cat <<EOF >mise.keepdir.toml
+[bootstrap.directories."$PWD/keep.d"]
+mode = "0755"
+
+[bootstrap.files."$PWD/keep.d/inner.conf"]
+content = "inner"
+EOF
+assert_succeed "mise -E keepdir bootstrap --only files --yes"
+touch keep.d/unmanaged
+assert_contains "mise -E keepdir bootstrap unapply keepdir --yes 2>&1" "not empty"
+assert_directory_exists "$PWD/keep.d"
+assert_fail "test -e $PWD/keep.d/inner.conf"
+assert_succeed "test -e $PWD/keep.d/unmanaged"
 
 # A directory mise cannot read is kept rather than scheduled for a removal the
 # apply would fail on. Root can read it regardless, so only check this as a
@@ -111,9 +119,9 @@ EOF
   touch locked.d/inside
   chmod 000 locked.d
   assert_contains "mise -E locked bootstrap unapply locked --yes 2>&1" "cannot read it"
+  # Not cleanup: the harness cannot remove a directory it cannot enter.
   chmod 755 locked.d
   assert_directory_exists "$PWD/locked.d"
-  rm -r locked.d mise.locked.toml
 fi
 
 # A declaration of absence describes nothing the module applied, so unapplying
