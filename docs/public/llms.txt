@@ -262,6 +262,7 @@
 - [mise bootstrap services remove](https://mise.jdx.dev/cli/bootstrap/services/remove.html): Remove an installed user-scope service, declared or not
 - [mise bootstrap services status](https://mise.jdx.dev/cli/bootstrap/services/status.html): Show configured service state (system and user scope)
 - [mise bootstrap status](https://mise.jdx.dev/cli/bootstrap/status.html): Show the aggregate bootstrap status
+- [mise bootstrap unapply](https://mise.jdx.dev/cli/bootstrap/unapply.html): Remove the resources a config environment contributes
 - [mise bootstrap user](https://mise.jdx.dev/cli/bootstrap/user.html): Manage current-user bootstrap settings from [bootstrap.user]
 - [mise bootstrap user apply](https://mise.jdx.dev/cli/bootstrap/user/apply.html): Apply current-user settings from [bootstrap.user]
 - [mise bootstrap user status](https://mise.jdx.dev/cli/bootstrap/user/status.html): Show whether current-user settings match [bootstrap.user]

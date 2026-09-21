@@ -1901,6 +1901,39 @@ separate from system services declared in `[bootstrap.services]`.
             flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
+    cmd unapply help="Remove the resources a config environment contributes" effect=destructive {
+        long_help #"""
+Remove the resources a config environment contributes
+
+Remove managed files, directories, user services, and dotfile entries and
+edits contributed by the named environments. Environments are selected for
+this command even if they are no longer in your normal selection.
+
+Removal uses the current configuration, not a history of bootstrap runs.
+Keep the environment files on disk until cleanup is complete. Resources
+still declared present elsewhere are kept, as are changed targets unless
+`--force` is given. Directories must be empty after the planned removals;
+source files and configuration entries are preserved.
+
+Use `--dry-run` to preview the plan. Removal requires confirmation unless
+`--yes` or mise's `yes` setting is enabled, including in CI.
+
+Packages, repositories, and Compose projects require separate cleanup;
+the output provides guidance for those declarations. Other bootstrap
+sections, including system services, are outside this command's scope.
+"""#
+        flag "-f --force" help="Remove targets that changed since they were applied"
+        flag "-n --dry-run" help="Print what would be removed without removing anything"
+        flag "-y --yes" help="Skip the confirmation prompt"
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <ENV>… help="Config environment(s) whose resources should be removed" var=#true
+        example #"""
+mise bootstrap unapply ssh --dry-run
+mise bootstrap unapply ssh
+mise bootstrap unapply ssh gpg --yes
+"""#
+    }
     cmd user subcommand_required=#true help="Manage current-user bootstrap settings from `[bootstrap.user]`" effect=read {
         long_help #"""
 Manage current-user bootstrap settings from `[bootstrap.user]`

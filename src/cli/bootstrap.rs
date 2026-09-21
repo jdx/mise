@@ -31,6 +31,7 @@ use crate::system::repos::RepoState;
 use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
+use crate::ui::prompt::Confirmation;
 use crate::ui::table::MiseTable;
 
 /// Set up a machine from the current configuration
@@ -325,6 +326,7 @@ enum Commands {
     Status(BootstrapStatus),
     #[usage(hide = true)]
     Systemd(BootstrapSystemd),
+    Unapply(BootstrapUnapply),
     User(BootstrapUser),
 }
 
@@ -364,6 +366,55 @@ struct BootstrapPlan {
     /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
     #[usage(long, verbatim_doc_comment)]
     detailed_exitcode: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
+}
+
+/// Remove the resources a config environment contributes
+///
+/// Remove managed files, directories, user services, and dotfile entries and
+/// edits contributed by the named environments. Environments are selected for
+/// this command even if they are no longer in your normal selection.
+///
+/// Removal uses the current configuration, not a history of bootstrap runs.
+/// Keep the environment files on disk until cleanup is complete. Resources
+/// still declared present elsewhere are kept, as are changed targets unless
+/// `--force` is given. Directories must be empty after the planned removals;
+/// source files and configuration entries are preserved.
+///
+/// Use `--dry-run` to preview the plan. Removal requires confirmation unless
+/// `--yes` or mise's `yes` setting is enabled, including in CI.
+///
+/// Packages, repositories, and Compose projects require separate cleanup;
+/// the output provides guidance for those declarations. Other bootstrap
+/// sections, including system services, are outside this command's scope.
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap unapply ssh --dry-run
+mise bootstrap unapply ssh
+mise bootstrap unapply ssh gpg --yes"###
+    )
+)]
+struct BootstrapUnapply {
+    /// Config environment(s) whose resources should be removed
+    #[usage(value_name = "ENV", required = true)]
+    environment: Vec<String>,
+
+    /// Remove targets that changed since they were applied
+    #[usage(long, short)]
+    force: bool,
+
+    /// Print what would be removed without removing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
 
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
@@ -2166,10 +2217,46 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
     forwarded
 }
 
+/// Re-run this invocation with `environments` selected, preserving every other
+/// argument so options such as `--cd` and `--log-level` still apply.
+fn unapply_child_args(environments: &str, args: &[String]) -> Vec<OsString> {
+    let mut forwarded = vec![OsString::from("--env"), OsString::from(environments)];
+    let mut args = args.iter().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            // The selection is replaced, and `--cd` already took effect in this
+            // process: the child inherits that directory, and a relative path
+            // would resolve a second time from it.
+            "--env" | "-E" | "--profile" | "-P" | "--cd" | "-C" => {
+                args.next();
+            }
+            _ if arg.starts_with("--env=")
+                || arg.starts_with("--profile=")
+                || arg.starts_with("--cd=")
+                || (arg.starts_with("-E") || arg.starts_with("-P") || arg.starts_with("-C"))
+                    && arg.len() > 2 => {}
+            _ => {
+                forwarded.push(arg.into());
+                if global_option_takes_value(arg)
+                    && let Some(value) = args.next()
+                {
+                    forwarded.push(value.into());
+                }
+            }
+        }
+    }
+    forwarded
+}
+
+/// Whether a global option consumes the argument after it. Both child-argument
+/// builders drop `--cd`/`-C` and the selection options before consulting this,
+/// so those are listed for correctness rather than for a current caller.
 fn global_option_takes_value(arg: &str) -> bool {
     matches!(
         arg,
-        "--env"
+        "--cd"
+            | "-C"
+            | "--env"
             | "-E"
             | "--jobs"
             | "-j"
@@ -2446,6 +2533,7 @@ impl Commands {
             Self::Services(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
+            Self::Unapply(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
         }
     }
@@ -2505,6 +2593,104 @@ impl BootstrapPlan {
             }
         }
         Ok(())
+    }
+}
+
+impl BootstrapUnapply {
+    async fn run(self) -> Result<()> {
+        if let Some(status) = self.run_with_environments_selected()? {
+            if !status.success() {
+                bail!("bootstrap unapply failed with {status}");
+            }
+            return Ok(());
+        }
+        OperationScope::wrap("bootstrap unapply", self.dry_run, self.run_inner()).await
+    }
+
+    /// Re-run this command with the requested environments selected.
+    ///
+    /// Their config files are only loaded when they are part of the selection,
+    /// and the rest of the selection has to stay in place so a resource another
+    /// module still declares is visible. Returns `None` once nothing is missing.
+    fn run_with_environments_selected(&self) -> Result<Option<std::process::ExitStatus>> {
+        let selected = &*crate::env::MISE_ENV;
+        if self
+            .environment
+            .iter()
+            .all(|environment| selected.contains(environment))
+        {
+            return Ok(None);
+        }
+        let mut environments = selected.clone();
+        for environment in &self.environment {
+            if !environments.contains(environment) {
+                environments.push(environment.clone());
+            }
+        }
+        let mut command = Command::new(std::env::current_exe()?);
+        command.args(unapply_child_args(
+            &environments.join(","),
+            &crate::env::ARGS.read().unwrap(),
+        ));
+        // The directory has already been entered, by `--cd` or by this variable.
+        // The child inherits it, and a relative value would be applied a second
+        // time, landing one level deeper or failing outright.
+        command.env_remove("MISE_CD");
+        Ok(Some(command.status()?))
+    }
+
+    async fn run_inner(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let opts = system::unapply::UnapplyOpts {
+            dry_run: self.dry_run,
+            force: self.force,
+            verbose: config::Settings::get().verbose,
+        };
+        let unapply = system::unapply::plan(&config, &self.environment, &secrets, &opts).await?;
+        for skip in &unapply.skipped {
+            warn!("{} {}: keeping it, {}", skip.kind, skip.name, skip.reason);
+        }
+        for uncovered in &unapply.uncovered {
+            info!(
+                "{} declaration(s) in [{}] are not removed by unapply: {}",
+                uncovered.count, uncovered.section, uncovered.command
+            );
+        }
+        if unapply.is_empty() {
+            info!("nothing to remove for {}", self.environment.join(", "));
+            return Ok(());
+        }
+        let mut table = MiseTable::new(false, &["Action", "Resource"]);
+        for removal in &unapply.removals {
+            table.add_row(vec![
+                "remove".to_string(),
+                format!("{}:{}", removal.kind, removal.name),
+            ]);
+        }
+        table.print()?;
+        // The global `--yes`, `MISE_YES`, and the `yes` setting answer this
+        // question as much as the subcommand flag does.
+        if !self.dry_run && !self.yes && !config::Settings::get().yes {
+            let message = format!(
+                "bootstrap: remove {} resource(s) contributed by {}?",
+                unapply.removals.len(),
+                self.environment.join(", ")
+            );
+            // Defaults to no: this removes resources, so neither an unanswered
+            // prompt nor one nobody saw may be read as consent.
+            match crate::ui::prompt::confirm_with_default(message, false)? {
+                Confirmation::Yes => {}
+                Confirmation::No | Confirmation::Unanswered => {
+                    info!("bootstrap unapply: skipped");
+                    return Ok(());
+                }
+                Confirmation::Unavailable => bail!(
+                    "mise bootstrap unapply requires confirmation but there was nobody to ask; pass --yes to remove non-interactively"
+                ),
+            }
+        }
+        system::unapply::execute(&config, &unapply, &secrets, &opts).await
     }
 }
 
@@ -5107,7 +5293,7 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
-    use super::{bootstrap_from_child_args, select_remote_inventory};
+    use super::{bootstrap_from_child_args, select_remote_inventory, unapply_child_args};
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
 
@@ -5218,6 +5404,78 @@ mod tests {
                     assert_eq!(adopt.as_deref(), Some("jdx/dotfiles"));
                 }
             }
+        }
+    }
+
+    #[test]
+    fn unapply_reexec_replaces_the_selection_and_keeps_other_arguments() {
+        let args = [
+            "mise",
+            "--log-level",
+            "debug",
+            "-E",
+            "gpg",
+            "bootstrap",
+            "unapply",
+            "ssh",
+            "--yes",
+        ]
+        .map(String::from);
+        assert_eq!(
+            unapply_child_args("gpg,ssh", &args),
+            [
+                "--env",
+                "gpg,ssh",
+                "--log-level",
+                "debug",
+                "bootstrap",
+                "unapply",
+                "ssh",
+                "--yes"
+            ]
+            .map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn unapply_reexec_drops_a_directory_this_process_already_entered() {
+        // `--cd` took effect before the re-invocation, so the child inherits
+        // that directory; forwarding a relative path would resolve it again.
+        for directory in [
+            vec!["--cd", "sub"],
+            vec!["--cd=sub"],
+            vec!["-C", "sub"],
+            vec!["-Csub"],
+        ] {
+            let mut args = vec!["mise".to_string()];
+            args.extend(directory.iter().map(|arg| arg.to_string()));
+            args.extend(["bootstrap", "unapply", "ssh"].map(String::from));
+            assert_eq!(
+                unapply_child_args("ssh", &args),
+                ["--env", "ssh", "bootstrap", "unapply", "ssh"].map(OsString::from)
+            );
+        }
+    }
+
+    #[test]
+    fn unapply_reexec_removes_every_selection_spelling() {
+        for selection in [
+            vec!["--env", "work"],
+            vec!["--env=work"],
+            vec!["-E", "work"],
+            vec!["-Ework"],
+            vec!["--profile", "work"],
+            vec!["--profile=work"],
+            vec!["-P", "work"],
+            vec!["-Pwork"],
+        ] {
+            let mut args = vec!["mise".to_string()];
+            args.extend(selection.iter().map(|arg| arg.to_string()));
+            args.extend(["bootstrap", "unapply", "ssh"].map(String::from));
+            assert_eq!(
+                unapply_child_args("work,ssh", &args),
+                ["--env", "work,ssh", "bootstrap", "unapply", "ssh"].map(OsString::from)
+            );
         }
     }
 

@@ -375,6 +375,9 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      unapply: {
+        hide: false,
+      },
       user: {
         hide: false,
         subcommands: {

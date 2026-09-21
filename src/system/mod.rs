@@ -77,6 +77,7 @@ pub(crate) mod shell_activation;
 pub(crate) mod sudo;
 pub(crate) mod systemd;
 pub(crate) mod templating;
+pub(crate) mod unapply;
 pub(crate) mod user_services;
 
 /// `[bootstrap]` as parsed from a single mise.toml

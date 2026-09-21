@@ -397,19 +397,65 @@ without an environment suffix, such as `conf.d/ssh.toml`.
 
 ### Remove a module's resources
 
-Removing a module from `env` stops loading its declarations; it does **not**
-undo an earlier bootstrap. Remove resources explicitly before dropping the
-module:
+Removing a module from `env` stops loading its declarations but leaves its
+resources on the machine. Use [`mise bootstrap unapply`](/cli/bootstrap/unapply.html)
+to remove its managed files, directories, user services, and dotfile entries
+and edits.
 
-- For resources that support it, set `state = "absent"` and apply the change.
-- For user services, use `mise bootstrap services remove <name>`.
-- For dotfiles, run `mise dot unapply <target>` while the module is still
-  selected. If you already deselected it, reselect it explicitly, for example
-  `mise -E ssh dot unapply ~/.ssh/config`. Specify targets to avoid unapplying
-  other loaded dotfiles.
-- For packages, follow the manager-specific
+First, remove the module from `env` in `miserc.toml` so the next bootstrap
+will not apply it again. Keep the module's configuration file on disk, then
+preview and confirm the removal:
+
+```sh
+mise bootstrap unapply ssh --dry-run
+mise bootstrap unapply ssh
+```
+
+The command temporarily selects `ssh` alongside your remaining environments
+to read its declarations. You can also remove several modules in one run:
+
+```sh
+mise bootstrap unapply ssh gpg --dry-run
+mise bootstrap unapply ssh gpg
+```
+
+Unapply asks for confirmation before removing resources. Use `--yes` to
+approve removal without a prompt. The global `--yes` flag, `MISE_YES`, and
+mise's `yes` setting also apply; mise enables that setting in CI.
+
+#### How removal is planned
+
+Mise compares the current configuration with and without the named environments.
+It uses the declarations still on disk, not a record of earlier bootstrap runs.
+Keep those declarations until cleanup is complete: deleting a module's file
+first leaves mise without the information it needs to remove its resources.
+
+- Resources still declared present by the base configuration or another selected
+  module are kept. A `state = "absent"` declaration does not protect a resource.
+- Targets that no longer match their declarations are skipped with a reason.
+  Review the output before using `--force` to remove changed targets.
+- Directories are removed only if they will be empty after the planned removals.
+  Unreadable directories and managed paths with an unexpected type are kept,
+  even with `--force`.
+
+Source files and configuration entries are preserved. Unapply does not restore
+resources previously removed by a `state = "absent"` declaration.
+
+#### Resources that need separate cleanup
+
+Unapply reports package, repository, and Compose declarations with guidance for
+removing them separately:
+
+- **Packages:** follow the manager-specific
   [pruning guidance](/bootstrap/packages/#import-and-prune). Preview the plan;
   pruning is not limited to packages from one module.
+- **Compose projects:** set `state = "absent"` and apply the change while the
+  module is selected, for example with `mise -E ssh bootstrap --only compose`.
+- **Repositories:** remove the checkout declared in
+  [`[bootstrap.repos]`](/bootstrap/repos.html) when you no longer need it.
+
+Other bootstrap sections, including system services, are outside unapply's scope.
+Use their resource-specific removal procedures.
 
 ## Templates
 
