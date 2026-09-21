@@ -10,7 +10,7 @@ use super::shadow::{HistoryRepo, Overlay};
 
 pub(crate) const PATH: &str = ".mise-history/manifest.json";
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Enrollment {
     /// A portable repository path, rooted at `home/` or `config/`.
