@@ -1837,7 +1837,7 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Task) {
             debug!("bootstrap: post-adopt task skipped");
         } else {
-            self.run_post_adopt_task(&skip).await?;
+            self.run_post_adopt_task(&config, &skip).await?;
         }
         follow_up.print()?;
         Ok(summary)
@@ -1988,7 +1988,11 @@ impl Bootstrap {
     ///
     /// A failure leaves the setup installed and unfinished rather than
     /// undone, so it says exactly that, and how to finish it.
-    async fn run_post_adopt_task(&self, skip: &HashSet<BootstrapPart>) -> Result<()> {
+    async fn run_post_adopt_task(
+        &self,
+        config: &Arc<Config>,
+        skip: &HashSet<BootstrapPart>,
+    ) -> Result<()> {
         let Some(task) = system::history::config::post_adopt_task()? else {
             return Ok(());
         };
@@ -2022,6 +2026,32 @@ impl Bootstrap {
         if system::history::config::post_adopt_already_ran(&setup)? {
             debug!("dotfiles: post-adopt task {task} already ran on this machine");
             return Ok(());
+        }
+        // **The task is resolved from the configuration that named
+        // it.** The name came from the trusted global or system
+        // configuration; resolving it against whatever the working
+        // directory yields would hand that trust to a project's
+        // same-named task — and recording the setup as finished
+        // afterwards, so the work this exists for would never happen.
+        let declared = config
+            .global_tasks()
+            .await?
+            .into_iter()
+            .find(|candidate| candidate.is_match(&task));
+        let Some(declared) = declared else {
+            bail!(
+                "the setup names a post-adopt task {task}, but the global configuration that names it defines no such task; add it there, or remove `[history] post_adopt`"
+            );
+        };
+        let resolved = config.tasks().await?.get(&task).cloned();
+        if let Some(resolved) = resolved
+            && resolved.config_source != declared.config_source
+        {
+            bail!(
+                "the post-adopt task {task} is also defined in {}, which is what would run here; the setup's own task is in {}. Run `mise bootstrap` from outside that project, or rename its task",
+                crate::file::display_path(&resolved.config_source),
+                crate::file::display_path(&declared.config_source)
+            );
         }
         info!("dotfiles: running the post-adopt task {task}");
         crate::env::set_var(system::history::config::POST_ADOPT_ENV, "1");

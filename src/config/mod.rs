@@ -1013,6 +1013,21 @@ impl Config {
         })
     }
 
+    /// The tasks the global and system configuration define, alone.
+    ///
+    /// **A task a trusted configuration names is resolved from that
+    /// configuration.** [`Self::tasks`] answers with what the
+    /// invocation's directory yields, where a project task of the same
+    /// name wins — right for `mise run`, and wrong for a name written in
+    /// the global configuration, which would then hand the trust given
+    /// to that declaration to whatever the user happened to be standing
+    /// next to.
+    pub(crate) async fn global_tasks(&self) -> Result<Vec<Task>> {
+        let config = Config::get().await?;
+        let definitions = collect_task_definitions(&config.config_files, None);
+        load_global_tasks(&config, &definitions).await
+    }
+
     pub(crate) async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
         self.tasks_with_context(None).await
     }

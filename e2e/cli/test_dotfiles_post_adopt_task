@@ -138,6 +138,27 @@ assert "cat $K/post-adopt-ran" "ran"
 assert_succeed "timeout 180 $k bootstrap --only dotfiles,task"
 assert "cat $K/post-adopt-ran" $'ran\nran'
 
+# ---- a project that happens to define a task of the same name does not
+# get to be the setup's task: the name came from the trusted global
+# configuration, and running the project's definition under that trust —
+# then recording the setup as finished — is how the real work would never
+# happen
+P="$(dirname "$HOME")/project-home"
+wrapper "$P" "$PWD/project"
+p="$PWD/project"
+assert_succeed "$p bootstrap --adopt file://$origin --yes --only dotfiles"
+mkdir -p "$P/work"
+cat >"$P/work/mise.toml" <<'TOML'
+[tasks.setup]
+run = 'echo wrong >>"$HOME/post-adopt-ran"'
+TOML
+out="$($p -C work bootstrap --only dotfiles,task 2>&1)" && fail "a shadowed post-adopt task must not run"
+[[ $out == *"is also defined in"* ]] || fail "the refusal does not name the shadowing config: $out"
+assert_fail "test -e $P/post-adopt-ran"
+# and from anywhere else the setup's own task runs and is recorded
+assert_succeed "$p bootstrap --only dotfiles,task"
+assert "cat $P/post-adopt-ran" "ran"
+
 # ---- machine D excludes the task part: the setup is installed and the
 # task is left alone, exactly as `bootstrap` would be
 D="$(dirname "$HOME")/d-home"
