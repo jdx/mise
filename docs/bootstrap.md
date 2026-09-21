@@ -325,6 +325,56 @@ Use declarative sections when mise can inspect and converge the state. Use
 such as checking authentication or seeding local data. The task runs again on
 every bootstrap, so guard operations that should happen only once.
 
+## Modules
+
+A machine configuration outgrows one file quickly.
+[Config environments](/configuration/environments.html) split it into units that
+load only when selected, so an optional piece of setup can carry everything it
+needs. An `ssh` module declares its package, its configuration file, and its
+agent together:
+
+```toml [~/.config/mise/config.ssh.toml]
+[bootstrap.packages]
+"apt:openssh-client" = "latest"
+
+[dotfiles]
+"~/.ssh/config" = "~/src/dotfiles/ssh/config"
+
+[bootstrap.services.ssh-agent]
+scope = "user"
+command = "ssh-agent -D"
+```
+
+Choose the modules a machine uses with `env` in
+[`miserc.toml`](/configuration/environments.html#setting-mise-env-in-miserc-toml),
+which is committed with the rest of the configuration:
+
+```toml [~/.config/mise/miserc.toml]
+env = ["ssh", "gpg"]
+```
+
+`mise -E ssh,gpg bootstrap` selects the same files for a single run, and each
+host in a [remote inventory](/bootstrap/remote.html) has its own `mise_env`
+list, so one repository can provision machines that differ in which modules
+they use.
+
+Every selected file contributes to the same run. Declarations with different
+keys all apply; when two of them declare the same key, the environment listed
+later wins. `mise bootstrap plan --json` reports the config file that declared
+each managed file and service, along with the environments that file belongs
+to. Use
+[`conf.d`](/configuration/environments.html#conf-d-environments) fragments
+instead when a split is organizational rather than optional: those load
+unconditionally.
+
+Removing a module from `env` stops mise from declaring its resources. It does
+not remove what an earlier run applied, because bootstrap converges what is
+declared and leaves the rest of the machine alone. Remove those resources
+deliberately — with `state = "absent"` where the section supports it, or with
+the removal command for that part, such as
+`mise bootstrap services remove <name>`,
+`mise bootstrap packages prune --manager <manager>`, or `mise dot unapply`.
+
 ## Templates
 
 Not every part of `mise.toml` is a [Tera template](/templates.html). Inside
