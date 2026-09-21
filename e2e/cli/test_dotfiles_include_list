@@ -57,6 +57,15 @@ TOML
 echo 'model = "y"' >~/.codex/config.toml
 assert_contains 'mise dot save 2>&1' 'leaves out'
 
+# `mise dot track` is how a hand-edited list is applied, and it gets the
+# one chance to say what the narrowing drops: from the next checkpoint on
+# the parent tree is already narrowed and nothing is left to report
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["rules/one.md"] }
+TOML
+assert_contains 'mise dot track ~/.codex 2>&1' 'leaves out'
+
 # An include list decides what is captured: a glob is as authoritative
 # as a literal, and either one selecting a credential-named file
 # captures it in plaintext, said out loud.
