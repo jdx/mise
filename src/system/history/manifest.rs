@@ -566,6 +566,65 @@ fn plain(path: &str) -> String {
 mod tests {
     use super::*;
 
+    /// **A reader that cannot see an entry's lists must refuse the
+    /// manifest, not ignore them.** An older mise that skipped an
+    /// unknown `include` would read the entry as covering its whole
+    /// tree, and a rollback would then delete the files the list never
+    /// selected — the checkpoint "did not hold" them because they were
+    /// never selected, which is not the same as their being absent.
+    /// `deny_unknown_fields` is what makes that impossible, so it is
+    /// asserted here rather than assumed.
+    #[test]
+    fn a_reader_without_the_lists_refuses_the_manifest() {
+        /// `Enrollment` exactly as a released mise declares it.
+        #[derive(Debug, serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct ReleasedEnrollment {
+            path: String,
+            autosave: bool,
+            encrypt: bool,
+            variants: Vec<crate::system::history::select::Variant>,
+        }
+
+        let plain = Enrollment {
+            path: "home/.codex".into(),
+            autosave: true,
+            encrypt: false,
+            variants: vec![],
+            exclude: vec![],
+            include: None,
+        };
+        let json = serde_json::to_string(&plain).unwrap();
+        let read: ReleasedEnrollment = serde_json::from_str(&json).unwrap();
+        assert_eq!(read.path, "home/.codex");
+        assert!(read.autosave);
+        assert!(!read.encrypt);
+        assert!(read.variants.is_empty());
+
+        for entry in [
+            Enrollment {
+                include: Some(vec!["config.toml".into()]),
+                ..plain.clone()
+            },
+            Enrollment {
+                include: Some(vec![]),
+                ..plain.clone()
+            },
+            Enrollment {
+                exclude: vec!["cache/**".into()],
+                ..plain.clone()
+            },
+        ] {
+            let json = serde_json::to_string(&entry).unwrap();
+            let error = serde_json::from_str::<ReleasedEnrollment>(&json)
+                .expect_err("a released mise must refuse an entry it cannot fully read");
+            assert!(
+                error.to_string().contains("unknown field"),
+                "unexpected refusal: {error}"
+            );
+        }
+    }
+
     #[test]
     fn future_format_is_reported_before_unknown_fields() -> Result<()> {
         let temp = tempfile::tempdir()?;
