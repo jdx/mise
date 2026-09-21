@@ -88,12 +88,39 @@ assert_not_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cache[1]'
 # the rule is stored as the path is displayed, so the message has to
 # name the spelling that undoes it
 assert_contains "mise dot untrack '$HOME/.codex/cacheX' 2>&1" "mise dot include '~/.codex/cacheX'"
+# a plain file, and a file whose name holds a glob metacharacter
 assert_succeed "mise dot include '~/.codex/cacheX'"
 assert_succeed "mise dot include '~/.codex/cache[1]'"
 echo 'back' >"$HOME/.codex/cache[1]"
 assert_succeed 'mise dot save'
 assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cache[1]'
+assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cacheX'
 assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'cache'
+
+# a directory, whose rule carries the `/**` the message does not
+mkdir -p "$HOME/.codex/logs[a]"
+echo 'noise' >"$HOME/.codex/logs[a]/today.log"
+assert_succeed 'mise dot save'
+assert_succeed "mise dot untrack '$HOME/.codex/logs[a]'"
+assert_contains "mise dot paths --json | jq -r '.exclude[]'" 'logs[[]a[]]/**'
+assert_succeed 'mise dot save'
+assert_not_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'today.log'
+assert_succeed "mise dot include '~/.codex/logs[a]'"
+assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'logs'
+echo 'kept after all' >"$HOME/.codex/logs[a]/today.log"
+assert_succeed 'mise dot save'
+assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'today.log'
+
+# `foo*` and `foo[*]` are two different rules that happen to be each
+# other's escaping. Including one must not take the other with it.
+count() { echo "mise dot paths --json | jq '[.exclude[] | select(. == \"$1\")] | length'"; }
+assert_succeed "mise dot exclude 'foo*'"
+assert_succeed "mise dot exclude 'foo[*]'"
+assert "$(count 'foo*')" 1
+assert "$(count 'foo[*]')" 1
+assert_succeed "mise dot include 'foo*'"
+assert "$(count 'foo*')" 0
+assert "$(count 'foo[*]')" 1
 
 # the $ is the point: it stays literal
 # shellcheck disable=SC2016
