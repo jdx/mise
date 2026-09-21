@@ -121,4 +121,7 @@ if [[ $status5 == 0 ]]; then
   exit 1
 fi
 installed_tools5=$(printf '%s\n' "$output5" | sed -n 's/^.*INSTALLED_TOOLS=//p' | tail -n 1)
-assert "printf '%s' '$installed_tools5' | jq -r 'map(select(.version == \"1.0.0\")) | length'" "1"
+assert "printf '%s' '$installed_tools5' | jq -r 'length'" "1"
+assert "printf '%s' '$installed_tools5' | jq -r '.[0].version'" "1.0.0"
+assert "printf '%s' '$installed_tools5' | jq -r '.[0].backend'" "asdf:dummy"
+assert "printf '%s' '$installed_tools5' | jq -r '.[0].install_path'" "$MISE_DATA_DIR/installs-partial/dummy/1.0.0"

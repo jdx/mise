@@ -886,6 +886,8 @@ fn task_hook_args(root: &Path, hook: Hooks, task_name: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::args::{BackendArg, BackendResolution};
+    use crate::toolset::{ToolRequest, ToolSource};
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -893,15 +895,26 @@ mod tests {
         hook: HookDef,
     }
 
+    fn opencodex_tool_version(version: &str, installs_path: &Path) -> ToolVersion {
+        let mut backend = BackendArg::new_raw(
+            "opencodex".into(),
+            Some("npm:@bitkyc08/opencodex".into()),
+            "@bitkyc08/opencodex".into(),
+            None,
+            BackendResolution::new(true),
+        );
+        backend.installs_path = installs_path.to_path_buf();
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
+        ToolVersion::new(request, version.into())
+    }
+
     #[test]
     fn installed_tool_info_serializes_opaque_versions_and_exact_paths() {
-        let info = InstalledToolInfo {
-            name: "opencodex".into(),
-            version: "preview/channel@build+7".into(),
-            requested_version: "latest".into(),
-            backend: "npm:@bitkyc08/opencodex".into(),
-            install_path: "/tmp/data with spaces/installs/opencodex/preview/channel@build+7".into(),
-        };
+        let tool_version = opencodex_tool_version(
+            "preview/channel@build+7",
+            Path::new("/tmp/data with spaces/installs/opencodex"),
+        );
+        let info = InstalledToolInfo::from(&tool_version);
 
         assert_eq!(
             serde_json::to_value(info).unwrap(),
@@ -937,13 +950,10 @@ mod tests {
 
     #[test]
     fn installed_tool_info_preserves_windows_path_spelling() {
-        let info = InstalledToolInfo {
-            name: "opencodex".into(),
-            version: "2.59.0".into(),
-            requested_version: "latest".into(),
-            backend: "npm:@bitkyc08/opencodex".into(),
-            install_path: r"C:\Data Root\mise\installs\opencodex\2.59.0".into(),
-        };
+        let install_path = PathBuf::from(r"C:\Data Root\mise\installs\opencodex\2.59.0");
+        let mut tool_version = opencodex_tool_version("2.59.0", Path::new("unused"));
+        tool_version.install_path = Some(install_path);
+        let info = InstalledToolInfo::from(&tool_version);
 
         assert_eq!(
             serde_json::to_value(info).unwrap()["install_path"],
