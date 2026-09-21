@@ -61,11 +61,15 @@ assert_succeed 'mise dot sync'
 # (As root, chmod does not restrict and the path is simply read as the
 # file it is; the assertions hold either way.)
 assert_succeed 'b dot sync --fetch-only'
+# planning is where the question is asked, so that is where the copy is
+# unreadable. (Restored before the pull writes: a tracked subtree this
+# machine cannot read makes the pull's own protective save disagree with
+# the plan it just made, which is a different refusal and not this one.)
 chmod 000 "$second/.sample/nested"
 assert_not_contains 'b dot pull --dry-run' 'home/.sample/leave'
 assert_not_contains 'b dot pull --dry-run' 'home/.sample/nested/leave'
-assert_succeed 'b dot pull --yes'
 chmod 755 "$second/.sample/nested"
+assert_succeed 'b dot pull --yes'
 assert "cat $second/.sample/leave" 'leave'
 assert "cat $second/.sample/nested/leave" 'nested'
 
