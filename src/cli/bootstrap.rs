@@ -2043,12 +2043,27 @@ impl Bootstrap {
                 "the setup names a post-adopt task {task}, but the global configuration that names it defines no such task; add it there, or remove `[history] post_adopt`"
             );
         };
-        let resolved = config.tasks().await?.get(&task).cloned();
-        if let Some(resolved) = resolved
-            && resolved.config_source != declared.config_source
-        {
+        // Asked through the resolver that will run it, not a second copy
+        // of the matching rules. A name can be backed by a file task and
+        // matched with its extension stripped, and a guard that looked
+        // names up in a map would miss exactly that — handing a
+        // project's `setup.sh` the trust given to the setup's own.
+        let resolved = crate::task::task_list::get_task_lists(
+            config,
+            std::slice::from_ref(&task),
+            false,
+            true,
+            false,
+        )
+        .await?;
+        let Some(resolved) = resolved.first() else {
             bail!(
-                "the post-adopt task {task} is also defined in {}, which is what would run here; the setup's own task is in {}. Run `mise bootstrap` from outside that project, or rename its task",
+                "the setup names a post-adopt task {task}, but nothing here resolves that name; add it to the configuration the setup brings, or remove `[history] post_adopt`"
+            );
+        };
+        if resolved.config_source != declared.config_source {
+            bail!(
+                "the post-adopt task {task} resolves to the definition in {}, not the one the setup named in {}; run `mise bootstrap` from outside that project, or rename that task",
                 crate::file::display_path(&resolved.config_source),
                 crate::file::display_path(&declared.config_source)
             );
