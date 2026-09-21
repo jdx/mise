@@ -624,6 +624,16 @@ impl Store {
             // record, which is where a rollback here consults it.
             let nested = std::mem::take(&mut checkpoint.tree.coverage.nested);
             checkpoint = repo.read_meta(&commit)?;
+            // The trailer carried each of them as an ordinary omission,
+            // which is how another machine learns about the skip at all.
+            // On this one the better answer has just come back, so the
+            // generic copy goes: one skip, said once, with the reason
+            // that can be acted on.
+            checkpoint
+                .tree
+                .coverage
+                .omitted
+                .retain(|omitted| !nested.iter().any(|skip| skip.path == omitted.path));
             checkpoint.tree.coverage.nested = nested;
         }
         store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
