@@ -147,26 +147,25 @@ P="$(dirname "$HOME")/project-home"
 wrapper "$P" "$PWD/project"
 p="$PWD/project"
 assert_succeed "$p bootstrap --adopt file://$origin --yes --only dotfiles"
-mkdir -p "$P/work"
-cat >"$P/work/mise.toml" <<'TOML'
+mkdir -p "$P/inline"
+cat >"$P/inline/mise.toml" <<'TOML'
 [tasks.setup]
 run = 'echo wrong >>"$HOME/post-adopt-ran"'
 TOML
-out="$($p -C work bootstrap --only dotfiles,task 2>&1)" && fail "a shadowed post-adopt task must not run"
+out="$($p -C inline bootstrap --only dotfiles,task 2>&1)" && fail "a shadowed post-adopt task must not run"
 [[ $out == *"resolves to the definition in"* ]] || fail "the refusal does not name the shadowing config: $out"
 assert_fail "test -e $P/post-adopt-ran"
 
 # and a file task shadows the same way — a script in `mise-tasks/` is a
 # task by its file name, which a guard that only read `[tasks.*]` blocks
-# out of a map would miss entirely
-rm "$P/work/mise.toml"
-mkdir -p "$P/work/mise-tasks"
-printf '#!/usr/bin/env bash\necho wrong >>"$HOME/post-adopt-ran"\n' >"$P/work/mise-tasks/setup"
-chmod +x "$P/work/mise-tasks/setup"
-out="$($p -C work bootstrap --only dotfiles,task 2>&1)" && fail "a file task must not shadow the setup's task either"
+# out of a map would miss entirely. Its own directory, so neither case
+# depends on undoing the other.
+mkdir -p "$P/script/mise-tasks"
+printf '#!/usr/bin/env bash\necho wrong >>"$HOME/post-adopt-ran"\n' >"$P/script/mise-tasks/setup"
+chmod +x "$P/script/mise-tasks/setup"
+out="$($p -C script bootstrap --only dotfiles,task 2>&1)" && fail "a file task must not shadow the setup's task either"
 [[ $out == *"resolves to the definition in"* ]] || fail "the file-task refusal does not name it: $out"
 assert_fail "test -e $P/post-adopt-ran"
-rm -rf "$P/work"
 # and from anywhere else the setup's own task runs and is recorded
 assert_succeed "$p bootstrap --only dotfiles,task"
 assert "cat $P/post-adopt-ran" "ran"
