@@ -99,6 +99,23 @@ assert_fail "test -e $PWD/ssh.d/inner.conf"
 assert_succeed "test -e $PWD/ssh.d/unmanaged"
 rm -r ssh.d
 
+# A directory mise cannot read is kept rather than scheduled for a removal the
+# apply would fail on. Root can read it regardless, so only check this as a
+# normal user.
+if [[ "$(id -u)" != "0" ]]; then
+  cat <<EOF >mise.locked.toml
+[bootstrap.directories."$PWD/locked.d"]
+mode = "0000"
+EOF
+  mkdir -p locked.d
+  touch locked.d/inside
+  chmod 000 locked.d
+  assert_contains "mise -E locked bootstrap unapply locked --yes 2>&1" "cannot read it"
+  chmod 755 locked.d
+  assert_directory_exists "$PWD/locked.d"
+  rm -r locked.d mise.locked.toml
+fi
+
 # A declaration of absence describes nothing the module applied, so unapplying
 # it is not a removal.
 cat <<EOF >mise.absent.toml

@@ -287,11 +287,18 @@ pub(crate) async fn plan(
         ) else {
             continue;
         };
-        if let Some(remaining) = unscheduled_entry(&directory.path, &scheduled) {
+        let reason = match directory_contents(&directory.path, &scheduled) {
+            DirectoryContents::Removable => None,
+            DirectoryContents::Retains(remaining) => {
+                Some(format!("not empty, {} remains", remaining.display_user()))
+            }
+            DirectoryContents::Uninspectable(error) => Some(format!("cannot read it, {error}")),
+        };
+        if let Some(reason) = reason {
             unapply.skipped.push(Skip {
                 kind: "directory",
                 name: directory.path.to_string_lossy().into_owned(),
-                reason: format!("not empty, {} remains", remaining.display_user()),
+                reason,
             });
             continue;
         }
@@ -305,15 +312,34 @@ pub(crate) async fn plan(
     Ok(unapply)
 }
 
-/// The first entry in `path` that this plan does not remove, if any. A
-/// directory holding one is not this command's to delete: the declaration
-/// describes the directory, not whatever else ended up inside it.
-fn unscheduled_entry(path: &Path, scheduled: &HashSet<PathBuf>) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(path).ok()?;
-    entries
-        .flatten()
-        .map(|entry| entry.path())
-        .find(|entry| !scheduled.contains(entry))
+/// What a directory holds that this plan does not remove.
+enum DirectoryContents {
+    /// Nothing, once the rest of this plan has run.
+    Removable,
+    /// An entry this plan leaves behind. The declaration describes the
+    /// directory, not whatever else ended up inside it.
+    Retains(PathBuf),
+    /// The directory could not be read, so what it holds is unknown. Removal is
+    /// not recursive and would fail on a non-empty directory, after the other
+    /// domains have already changed the machine.
+    Uninspectable(String),
+}
+
+fn directory_contents(path: &Path, scheduled: &HashSet<PathBuf>) -> DirectoryContents {
+    let entries = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) => return DirectoryContents::Uninspectable(error.to_string()),
+    };
+    for entry in entries {
+        match entry {
+            Ok(entry) if !scheduled.contains(&entry.path()) => {
+                return DirectoryContents::Retains(entry.path());
+            }
+            Ok(_) => {}
+            Err(error) => return DirectoryContents::Uninspectable(error.to_string()),
+        }
+    }
+    DirectoryContents::Removable
 }
 
 /// Whether this declaration describes an absence rather than something the
