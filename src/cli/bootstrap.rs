@@ -374,16 +374,22 @@ struct BootstrapPlan {
 
 /// Remove the resources a config environment contributes
 ///
-/// Bootstrap converges what is declared and leaves the rest of the machine alone,
-/// so dropping a module from `env` does not remove what an earlier run applied.
-/// This removes those resources in one step, using the module's own configuration
-/// to describe them: nothing about earlier runs is recorded, and the environment
-/// is selected for this command whether or not it is selected normally.
+/// Remove managed files, directories, user services, and dotfile entries and
+/// edits contributed by the named environments. Environments are selected for
+/// this command even if they are no longer in your normal selection.
 ///
-/// Kept deliberately: resources the base configuration or another selected
-/// environment still declares, and targets that changed since they were applied
-/// unless `--force` is given. Packages, repositories, and Compose projects keep
-/// their own removal commands, which the output names.
+/// Removal uses the current configuration, not a history of bootstrap runs.
+/// Keep the environment files on disk until cleanup is complete. Resources
+/// still declared present elsewhere are kept, as are changed targets unless
+/// `--force` is given. Directories must be empty after the planned removals;
+/// source files and configuration entries are preserved.
+///
+/// Use `--dry-run` to preview the plan. Removal requires confirmation unless
+/// `--yes` or mise's `yes` setting is enabled, including in CI.
+///
+/// Packages, repositories, and Compose projects require separate cleanup;
+/// the output provides guidance for those declarations. Other bootstrap
+/// sections, including system services, are outside this command's scope.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
