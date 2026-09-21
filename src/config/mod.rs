@@ -4866,19 +4866,31 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     for t in prefer_windows_file_task_siblings(file_tasks) {
         by_name.insert(t.name.clone(), t);
     }
-    // Names an inline block defines with a command of its own. Such a block is
-    // the base every metadata-only block with that name overlays, so it keeps
-    // the extension-stripped file-task fallback below from consuming a block
-    // that has an exact base waiting further down the precedence order.
-    let command_bearing_config_names: BTreeSet<String> = config_tasks
+    // Names an inline block defines with executable content of its own. Such a
+    // block is the base every metadata-only block with that name overlays, so
+    // it keeps the extension-stripped file-task fallback below from consuming a
+    // block that has an exact base waiting further down the precedence order.
+    let executable_config_names: BTreeSet<String> = config_tasks
         .iter()
-        .filter(|t| !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some())
+        .filter(|t| task_has_executable_content(t))
         .map(|t| t.name.clone())
         .collect();
+    // File tasks a config block has already overlaid. `[tasks.hello]` and
+    // `[tasks."hello.sh"]` both reach `mise-tasks/hello.sh` but are separate
+    // names, so without this a lower-precedence block of the other spelling
+    // would merge second and overwrite the higher-precedence block's metadata.
+    // Highest precedence wins, which is what the exact-name path already does
+    // with repeats of one spelling.
+    let mut overlaid_file_tasks: BTreeSet<String> = BTreeSet::new();
     let mut seen_config_task_names = BTreeSet::new();
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     for t in config_tasks {
         if !seen_config_task_names.insert(t.name.clone()) {
+            // Not `task_has_executable_content`: a block with only `depends`
+            // overlays a lower-precedence command-bearing block here rather
+            // than becoming the base itself, which is the documented inline
+            // layering rule and what `[tasks.x] depends` on top of a
+            // `[tasks.x] run` in a lower config relies on.
             let has_command = !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some();
             if pending_inline_overlays.contains_key(&t.name) && has_command {
                 let overlays = pending_inline_overlays
@@ -4906,7 +4918,7 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                 }
             }
         } else if let Some(existing) = by_name.get_mut(&t.name) {
-            if existing.file.is_some() {
+            if existing.file.is_some() && overlaid_file_tasks.insert(t.name.clone()) {
                 existing.merge_toml_overlay(t);
             }
         } else {
@@ -4923,16 +4935,21 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             // A block with dependencies of its own stays a separate task:
             // `depends` is executable content, so it is a group that already
             // runs, and folding it into the script would change what it does.
-            if metadata_only
-                && t.depends.is_empty()
-                && t.depends_post.is_empty()
-                && t.wait_for.is_empty()
-                && !command_bearing_config_names.contains(&t.name)
-            {
+            // `executable_config_names` applies the same rule to a block
+            // further down the precedence order, so a metadata-only block above
+            // a dependency group of the same name overlays that group rather
+            // than being consumed by the script and dropping it.
+            if !task_has_executable_content(&t) && !executable_config_names.contains(&t.name) {
                 let targets = stripped_name_overlay_targets(&by_name, &t.name);
                 if !targets.is_empty() {
+                    // The block belongs to these file tasks either way, so it is
+                    // consumed even when every target is already spoken for --
+                    // reinserting it would put the shadowing task this fixes
+                    // back in front of the script.
                     for name in targets {
-                        if let Some(existing) = by_name.get_mut(&name) {
+                        if overlaid_file_tasks.insert(name.clone())
+                            && let Some(existing) = by_name.get_mut(&name)
+                        {
                             existing.merge_toml_overlay(t.clone());
                         }
                     }
@@ -4949,6 +4966,20 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         }
     }
     by_name.into_values().collect()
+}
+
+/// Whether a task carries anything that makes it run.
+///
+/// This is the same rule `mise tasks validate` reports a task for lacking, so a
+/// task without it is the "no executable content" shape rather than a task a
+/// metadata overlay should defer to. `depends` counts: a dependency group runs.
+fn task_has_executable_content(task: &Task) -> bool {
+    !task.run.is_empty()
+        || !task.run_windows.is_empty()
+        || task.file.is_some()
+        || !task.depends.is_empty()
+        || !task.depends_post.is_empty()
+        || !task.wait_for.is_empty()
 }
 
 /// Executable file tasks whose extension-stripped name is exactly `name`.
@@ -6718,6 +6749,61 @@ mod tests {
 
         let names = tasks.iter().map(|t| t.name.as_str()).sorted().collect_vec();
         assert_eq!(names, vec!["my.app", "my.sh"]);
+    }
+
+    #[test]
+    fn test_stripped_name_overlay_defers_to_a_lower_precedence_dependency_group() {
+        // `mise.local.toml` contributes metadata and `mise.toml` declares a
+        // dependency group of the same name. The group is executable content,
+        // so the metadata block must not be consumed by `hello.sh` -- doing so
+        // drops the group and runs the script in its place.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![
+                Task {
+                    name: "hello".to_string(),
+                    description: "from local".to_string(),
+                    ..Default::default()
+                },
+                Task {
+                    name: "hello".to_string(),
+                    depends: vec!["lint".to_string().into()],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        let script = tasks.iter().find(|t| t.name == "hello.sh").unwrap();
+        assert_eq!(script.description, "");
+        assert!(tasks.iter().any(|t| t.name == "hello"));
+    }
+
+    #[test]
+    fn test_mixed_overlay_spellings_keep_the_higher_precedence_block() {
+        // `[tasks.hello]` and `[tasks."hello.sh"]` reach the same file task
+        // under different names, so the lower-precedence spelling must neither
+        // overwrite the higher one nor survive as a task shadowing the script.
+        for (high, low) in [("hello.sh", "hello"), ("hello", "hello.sh")] {
+            let tasks = merge_file_and_config_tasks(
+                vec![file_task("hello.sh")],
+                vec![
+                    Task {
+                        name: high.to_string(),
+                        description: "high".to_string(),
+                        ..Default::default()
+                    },
+                    Task {
+                        name: low.to_string(),
+                        description: "low".to_string(),
+                        ..Default::default()
+                    },
+                ],
+            );
+
+            assert_eq!(tasks.len(), 1, "{high} over {low}");
+            assert_eq!(tasks[0].name, "hello.sh", "{high} over {low}");
+            assert_eq!(tasks[0].description, "high", "{high} over {low}");
+        }
     }
 
     #[test]

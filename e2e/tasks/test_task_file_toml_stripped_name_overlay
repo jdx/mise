@@ -72,3 +72,40 @@ assert_contains "mise tasks ls --no-header" "from local"
 out="$(mise run hello)"
 assert_contains_text "$out" "inline-ran"
 assert_not_contains_text "$out" "ran-hello-marker"
+
+# A lower-precedence block of the other spelling must neither overwrite the
+# higher-precedence one nor survive as a task shadowing the script.
+rm -f mise.local.toml
+cat >mise.toml <<'TOML'
+[tasks.hello]
+description = "low precedence"
+TOML
+cat >mise.local.toml <<'TOML'
+[tasks."hello.sh"]
+description = "high precedence"
+TOML
+
+mise trust
+mise trust ./mise.local.toml
+
+assert "mise tasks ls --no-header" "hello  high precedence"
+assert_contains "mise run hello" "ran-hello-marker"
+
+# A dependency group in a lower-precedence config is executable content, so the
+# metadata block above it must not be absorbed by the script in its place.
+cat >mise.toml <<'TOML'
+[tasks.lint]
+run = "echo lint-ran"
+
+[tasks.hello]
+depends = ["lint"]
+TOML
+cat >mise.local.toml <<'TOML'
+[tasks.hello]
+description = "from local"
+TOML
+
+mise trust
+mise trust ./mise.local.toml
+
+assert_not_contains "mise run hello" "ran-hello-marker"
