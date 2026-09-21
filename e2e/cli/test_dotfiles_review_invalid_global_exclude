@@ -81,6 +81,8 @@ assert_not_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cache[1]'
 
 # `$` has no escape in this pattern language, so such a path is reported
 # rather than written: the configuration stays loadable either way.
+# the $ is the point: it stays literal
+# shellcheck disable=SC2016
 dollar='~/.codex/price$x'
 echo 'dear' >"$HOME/.codex/price\$x"
 assert_fail "mise dot untrack '$dollar'" 'environment variables are not supported'
