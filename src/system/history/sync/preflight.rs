@@ -236,9 +236,8 @@ mod tests {
         crate::system::history::manifest::Enrollment {
             path: path.to_string(),
             autosave: true,
-            encrypt: false,
-            variants: vec![],
             exclude: exclude.iter().map(|glob| (*glob).to_string()).collect(),
+            ..Default::default()
         }
     }
 
