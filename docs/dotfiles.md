@@ -409,14 +409,6 @@ For `symlink-each`, excluding a previously managed file removes its recorded lin
 next apply, just as deleting the source would. Directory `copy` is additive: exclusions
 prevent future copying but leave existing target files in place.
 
-A tracked directory can also carry an `include` list, which turns the
-choice around: instead of naming what to leave out, name what to keep.
-See [choosing what a tracked directory
-saves](/history.html#choosing-what-a-tracked-directory-saves). Do not
-confuse it with `mise dot include`, which is the inverse of `mise dot
-exclude` and edits the global `[history] exclude` list rather than one
-entry's allowlist.
-
 ## Git-tracked directories
 
 Set `manifest = "git"` on a directory-walking entry to manage only files in
@@ -623,6 +615,24 @@ existing source from the live target.
 
 ## Tracking options
 
+### Preview before tracking
+
+Preview a directory before tracking it:
+
+```sh
+mise dot track --dry-run ~/.config/nvim
+mise dot paths --preview ~/.config/nvim
+```
+
+Both commands report the file count and size without changing configuration
+or saving a checkpoint. `paths --preview` also lists the files. Check the
+omissions and nested repositories, then exclude unwanted subtrees, for
+example with `mise dot exclude '~/.config/nvim/plugged/**'`.
+
+Tracking shows the count and size before confirmation and warns above
+5,000 files or 256 MiB. These warnings do not prevent tracking. A scan
+that reaches its limit is reported as incomplete.
+
 ### Saving and encryption {#policies}
 
 | Field      | Default | Meaning                                                                                                                   |
@@ -640,18 +650,6 @@ mise dot save ~/.config/app/state.json
 The first command saves the initial version. Later edits wait for an
 explicit save. See [saving](/history.html#saving) for how commands that
 modify tracked files save their before and after versions.
-
-To see what a directory expands to before tracking it, and what a save
-would leave out of it:
-
-```sh
-mise dot track --dry-run ~/.config/nvim
-mise dot paths --preview ~/.config/nvim
-```
-
-Both print the file count and size (`--preview` also lists every file) and
-change nothing. Exclude the parts that do not belong in history first, with
-`mise dot exclude '~/.config/nvim/plugged/**'`.
 
 To encrypt a file from its first checkpoint:
 
@@ -683,18 +681,20 @@ added beneath it later, subject to those exclusions.
 
 Start with individual configuration files so you can choose what to save.
 Leave logs, caches, databases, and application session state out of history.
-Credential files (`.netrc`, `*.age`, `*.key`, `*.pem`, `*.gpg`, `*.kdbx`,
-`id_*`, `*token*`, `*secret*`, `credentials*`, `oauth*`, and under the mise
-configuration directory `hosts.yml` and `age.txt`; matched by name alone,
-so `id_ed25519.pub` counts too) and `*.local.toml` files are omitted by
-default. `mise dot save`,
-`mise dot track`, and `mise dot status` report these omissions, and
-`mise dot paths` lists each one with its reason; see
-[encrypted tracking](/history.html#encrypted-shared-files) to save credentials.
+Built-in credential rules can omit files even when their parent directory
+is tracked. `mise dot save`, `mise dot track`, and `mise dot status` report
+these omissions; `mise dot paths` lists the affected files and reasons.
+See [credential filtering](/history.html#credential-filtering-and-omissions)
+for the filename rules and [encrypted tracking](/history.html#encrypted-shared-files)
+to save credentials. Files ending in `.local.toml` are never captured.
 
 Tracking a symlink saves the link itself. Track its target separately to
 save the target's contents. If a parent directory is a symlink, track that
 link and use the real directory path to track files beneath it.
+
+Repositories found inside a tracked directory are skipped and reported.
+To save a repository's working files, track its root as a separate entry;
+`.git` is always excluded. See [nested repositories](/history.html#nested-repositories).
 
 Your home directory and mise configuration directory can themselves be
 symlinks. mise maps these roots to the corresponding directories on each
@@ -707,23 +707,39 @@ Track entries cannot contain `source`, `content`, or `manifest`.
 leaves them out of history. The `track` command exits non-zero if the
 entry it writes is not active.
 
-A tracked directory can carry its own `exclude` list. The patterns are
-relative to the tracked path and follow the rules of
-[excluding files](#excluding-files): a pattern without `/` matches a path
-component anywhere below the directory, one with `/` is anchored to it,
-and a matching directory takes everything under it.
+### Select files within a tracked directory
+
+Use per-entry exclusions to omit files beneath one directory:
 
 ```toml
 [dotfiles]
 "~/.codex" = { mode = "track", exclude = ["sessions", "*.log"] }
 ```
 
-The entry's list applies on top of the global `[history] exclude` globs;
-both must let a file through, and a global `!glob` does not re-include a
-file the entry excludes. `mise dot paths` lists each entry's patterns, and
-each checkpoint records them, so a rollback leaves a file the list kept
-out alone. The list is part of the shared enrollment, like `autosave`;
-every machine of a setup that uses it needs a mise that knows the field.
+The patterns are relative to `~/.codex`. `sessions` excludes directories
+with that name and their contents; `*.log` excludes matching files at any
+depth. Patterns containing `/` are anchored to the tracked directory.
+Global `[history] exclude` rules also apply and cannot override the entry's
+exclusions with `!glob`.
+
+If you only want a few files, use an include list instead:
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+```
+
+No `include` field considers the whole directory; `include = []` selects
+nothing. Explicit exclusions always win. Includes also select credential-
+named files, so use `encrypt = true` for private contents. See
+[choosing files](/history.html#choose-which-files-a-directory-saves) for
+matching rules, previews, and compatibility requirements.
+
+These lists travel with the shared setup and are recorded in checkpoints,
+so rollback knows which files were outside their coverage. Upgrade every
+machine sharing the setup before using this field. See
+[history selection rules](/history.html#explicit-tracking-and-exclusions)
+for details.
 
 ### Stop tracking a file
 

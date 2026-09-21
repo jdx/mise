@@ -11,20 +11,17 @@ description: "Stop excluding paths matching a glob"
 
 Stop excluding paths matching a glob
 
-Removes the glob from `[history] exclude` in the global config, the
-list `mise dot exclude` writes: this is the inverse of that command.
-
-It is not the per-entry `include` allowlist. That one lives on a
-`[dotfiles]` entry, names what a tracked directory saves rather than
-what it skips, and is edited in the configuration file:
+Removes the specified glob from `[history] exclude` in the global
+configuration. Pass the same pattern used with `mise dot exclude`:
 
 ```
-mise dot exclude '~/.codex/sessions/**'   # global skip list
-mise dot include '~/.codex/sessions/**'   # take that back
-
-[dotfiles]                                             # per-entry
-"~/.codex" = { mode = "track", include = ["config.toml"] }
+mise dot exclude '~/.codex/sessions/**'
+mise dot include '~/.codex/sessions/**'
 ```
+
+Other matching exclusion rules still apply. This command does not edit
+a tracked directory's `include` list; change that field in `[dotfiles]`
+to select which files the directory saves.
 
 ## Arguments
 - **`<GLOB>`** — The glob as written by `mise dot exclude`

@@ -87,17 +87,6 @@ mise dot save ~/.config/app/state.json
 Tracking saves the first version immediately. Later edits wait for an
 explicit save. Check [watcher health](#health) if expected saves are missing.
 
-Before tracking a directory, see what it expands to:
-
-```sh
-mise dot track --dry-run ~/.codex
-mise dot paths --preview ~/.codex
-```
-
-Both print the file count and total size (and what a save would leave out)
-without tracking anything. Trim a large tree with a scoped exclusion such as
-`mise dot exclude '~/.codex/sessions/**'` before tracking it.
-
 ## Comparing
 
 List the checkpoints where a file changed, newest first:
@@ -515,8 +504,7 @@ recovery keeps it untracked.
 
 ## Explicit tracking and exclusions
 
-Use `mode = "track"` for every file or directory you want to save in history.
-For example, in your global configuration:
+Declare each file or directory you want to save in your global configuration:
 
 ```toml
 [dotfiles]
@@ -525,248 +513,226 @@ For example, in your global configuration:
 "~/.gitconfig" = { mode = "template", source = "~/templates/gitconfig.tera" }
 ```
 
-Here, history saves `.zshrc` and the files in `~/templates`. The template
-creates `.gitconfig`; track that output separately if you want its history
-too. You can track files mise also copies, links, or edits.
+History saves `.zshrc` and the files in `~/templates`. The template creates
+`.gitconfig`; track that output separately if you want its history too.
+You can track files that mise also copies, links, or edits.
 
-Tracking takes exact file or directory paths. Directories include new
-files added beneath them. Symlinks record the link itself; track their
-targets separately to save those contents. To share tools, services, and
-template setup, track the relevant mise configuration and sources too.
-Bootstrap reports required files missing from history.
+Tracking entries name exact paths, not globs. A tracked directory includes
+new files added beneath it, subject to the selection rules below. Symlinks
+record the link itself; track their targets separately to save those
+contents. To share tools, services, and template setup, track the relevant
+mise configuration and sources too. Bootstrap reports required files
+missing from history.
 
-Use glob patterns to exclude files from history:
-
-```sh
-mise dot exclude '~/.config/hypr/plugins/**'
-mise dot include '~/.config/hypr/plugins/**'
-mise dot paths
-```
-
-Exclusions are stored in `[history] exclude`, which applies to every
-tracked path. A later `!glob` reverses an earlier matching exclusion.
-`paths` lists tracked paths and files omitted from saves.
-
-::: tip Two different lists
-`mise dot include <glob>` is the inverse of `mise dot exclude`: it takes
-a glob back out of the global `[history] exclude` list. The per-entry
-`include` list below is a different thing — it belongs to one
-`[dotfiles]` entry and names what that directory saves rather than what
-it skips.
+### Preview before tracking
 
 ```sh
-mise dot exclude '~/.codex/sessions/**'   # add to the global skip list
-mise dot include '~/.codex/sessions/**'   # take it back out again
+mise dot track --dry-run ~/.codex
+mise dot paths --preview ~/.codex
 ```
 
-```toml
-[dotfiles]                                                  # per-entry
-"~/.codex" = { mode = "track", include = ["config.toml"] }
-```
+Both commands show the file count, size, and omissions without enrolling
+anything. `paths --preview` also lists the files. Review the selection,
+then use exclusions to remove unwanted subtrees before tracking.
 
-:::
+The tracking prompt includes the count and size. Trees over 5,000 files
+or 256 MiB trigger a warning; they are still allowed. Incomplete scans
+are reported before confirmation. Previews inspect metadata without
+reading file contents, and the initial save scans again.
 
-A path is excluded when the last rule matching it, or any of its
-ancestors below the tracked path, is an exclusion. So an excluded
-directory takes its contents with it, and a later `!glob` naming a file
-inside it still brings that file back. mise skips an excluded directory
-rather than enumerating it — whether it is written as `sessions`,
-`sessions/**` or an absolute path — which is only a speed-up: the files
-under it would each have been excluded anyway. A `!glob` that could
-re-include something inside makes mise walk it after all.
+### Choose which files a directory saves
 
-A pattern with no path separator matches any single path component, so
-`cache` excludes a file called `cache` and everything inside a directory
-called `cache`, wherever it sits — the same reading a tracked entry's own
-`exclude` list has. A pattern that is absolute after `~`
-expansion matches the file's absolute path, both as written and
-normalized the way tracked paths are, so it still matches when an
-ancestor directory is a symlink. Any other pattern is relative to the
-tracked path: it matches at any depth below it, as if written with a
-leading `**/`, and is never resolved against the working directory, so
-`**/*.log` and `sessions/**` mean the same thing wherever the command
-runs and a `sessions` directory somewhere above the tracked path does
-not match. A leading `./` is
-ignored, so `./keys/**` means what `keys/**` means. In a pattern that
-names a path, `*` stops at a separator and `**` crosses them, as in a
-`.gitignore`: `keys/*.pem` is one directory deep, `keys/**/*.pem` is any
-depth. On Windows both `/` and `\` count as separators.
-
-Patterns support `~`, which expands to your home directory. Environment
-variables are not supported: `mise dot exclude` refuses a pattern
-containing `$` and tells you to write `~/…` or an absolute path, because
-a literal `$VAR` would never match anything and an exclusion that
-silently matches nothing keeps capturing the files you meant to leave
-out. A pattern already in your configuration that mise cannot use — one
-with a `$`, or a glob it cannot parse — is reported by name and skipped;
-the rest of the list keeps working, and a rollback reads the list the
-same way a capture did.
-
-A rollback only removes a file when the checkpoint positively records
-that it covered and captured it. A checkpoint written by a different
-version of the matcher, or a repository the checkpoint recorded as
-skipped, mean the record cannot answer the question — and the answer to a question that cannot be
-answered is never to delete the file. mise reports those paths as
-skipped instead.
-
-The credential guard reads patterns differently on purpose: it tests the
-file's own name, never a directory above it. Exclusion asks whether a
-path should be saved, which a directory can answer for everything below
-it; the guard asks whether a file is a credential store, which a
-directory called `oauth` or `token-cache` says nothing about.
-
-A tracked directory can also carry its own `exclude` list, relative to the
-tracked path, with the rules of a deployment entry's list (a pattern
-without `/` matches a path component anywhere below it; one with `/` is
-anchored to the directory):
-
-```toml
-[dotfiles]
-"~/.codex" = { mode = "track", exclude = ["sessions", "*.log"] }
-```
-
-Both lists apply: a file must pass the global globs and the entry's own,
-and a global `!glob` does not re-include what the entry excludes.
-
-### Choosing what a tracked directory saves
-
-Some directories are mostly noise. `~/.codex` holds a handful of files
-worth keeping and tens of thousands of session transcripts, and listing
-every kind of noise as an exclusion is a losing game — the next version
-of the tool adds another. An `include` list turns the choice around:
-name what to keep, and everything else stays out, including whatever
-appears later.
+Use `include` when a directory contains a few configuration files among
+many caches, logs, or session files:
 
 ```toml
 [dotfiles]
 "~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
 ```
 
-The rules, in order:
+This saves `config.toml` and files under `rules/`. New files elsewhere in
+`~/.codex` stay out of history without needing another exclusion.
 
-1. Without `include`, the whole tracked tree is considered.
-2. With `include`, only matching paths are.
-3. An explicit `exclude` still wins over `include`.
-4. An `include` list is a selection, and selection decides what is
-   captured: a file it names is captured even when the builtin credential
-   filtering would otherwise leave it out. A literal and a glob carry the
-   same authority — `include = ["**"]` selects credential-named files
-   too. Anything selected that looks like a credential store is reported
-   as saved in plaintext, wherever selection is shown — unless the entry
-   sets `encrypt = true`, which stores it encrypted and reports it as
-   encrypted. Selection and encryption are separate choices: the list
-   decides what is saved, `encrypt` decides how.
+| Configuration              | Selection                                                    |
+| -------------------------- | ------------------------------------------------------------ |
+| No `include` field         | The directory's files, with built-in credential filtering    |
+| `include = []`             | No files                                                     |
+| A populated `include` list | Files matching any pattern, including credential-named files |
+| An explicit exclusion      | Removes matching files from any of the above selections      |
 
-An `include` list that is present but empty selects nothing, which is not
-the same as having no list at all.
+Includes use the same relative pattern rules as per-entry exclusions.
+Literal names and globs have the same authority: `include = ["**"]`
+also selects credential-named files. Encryption is a separate setting;
+`encrypt = true` encrypts the selected files.
 
-A list selects paths _inside_ a tracked directory, and no pattern can
-name the entry itself, so a list on an entry that is a file could never
-select anything. That is refused where it is written:
+::: warning Plaintext selection
+Without `encrypt = true`, credential-named files selected by an include
+list are saved in plaintext and may be shared with your origin. mise
+warns during capture and labels these files `plaintext:` in previews
+and path listings. Adding encryption later does not remove plaintext
+from earlier commits.
+:::
 
-```console
-mise WARN  ~/.aws/credentials: include selects paths inside a tracked
-directory and does nothing on a file: remove it, or track the parent
-directory and name this file in its include list
-```
-
-The remedy is the second half of that message, and it is also the only
-way to lift the credential guard for such a file — overriding it means a
-pattern that names the file, which only a directory entry can have:
-
-```toml
-[dotfiles]
-"~/.aws" = { mode = "track", include = ["credentials"], encrypt = true }
-```
-
-A pattern that is not a valid glob is
-an error naming the entry and the pattern, for either list: a list mise
-could not read in full would silently capture more than you asked for.
-
-`include` patterns are relative to the tracked path and matched like the
-entry's own `exclude` list: a pattern without `/` matches any single path
-component, one with `/` is anchored to the tracked path, and either kind
-matching a directory takes everything under it. The global
-`[history] exclude` list is a different thing and matches absolute paths,
-which is why the two anchor differently.
-
-Rule 4 is how to save a file the credential guard misreads. A shell
-function file whose name merely contains "secrets" is the case from
-[discussion #13410](https://github.com/jdx/mise/discussions/13410):
+For example, to save a shell function whose name triggers the credential
+filter:
 
 ```toml
 [dotfiles]
 "~/.config/fish" = { mode = "track", include = ["functions/secrets.fish"] }
 ```
 
-Nothing about existing declarations changes. Without an `include` list a
-tracked entry gets the builtin credential filtering exactly as it does
-today, so upgrading mise never starts capturing something a declaration
-written before this feature kept out. Selecting a credential file always
-means adding an `include`, which no configuration has until you write
-one.
-
-Selection and encryption are separate questions. `include` decides _what_
-is captured; `encrypt` decides _how_.
-
-::: warning
-A credential file selected on an entry **without** `encrypt` is stored in
-plaintext in history and pushed to any connected origin, and older
-commits keep it. mise warns on every save and marks the file
-`plaintext:`.
-:::
-
-A credential file you genuinely want in history belongs in an encrypted
-entry, which stores it encrypted and reports it as encrypted rather than
-as plaintext — see [encrypted tracking](#encrypted-shared-files), or
-`mise dot track <path> --encrypt`:
+That entry selects only this file. To save real credentials, use an
+encrypted entry instead:
 
 ```toml
 [dotfiles]
-"~/.config/fish" = { mode = "track", include = ["functions/secrets.fish"], encrypt = true }
+"~/.aws" = { mode = "track", include = ["credentials"], encrypt = true }
 ```
 
-If the watcher saves before you run anything, the notice waits: the next
-`mise dot` command says it, because a warning in the watcher's own log is
-one nobody reads.
+Configure [encryption recipients](#choose-recipients) first. Changing
+`include` does not disable encryption or rewrite existing history. If you
+remove encryption and save plaintext at a previously encrypted path,
+the [publication check](#allow-plaintext-history) still checks that path
+throughout the history.
 
-`mise dot paths` and `mise dot track --dry-run` show the list and how
-much it selects, for example `~/.codex: 2 of 22,972 files (include
-list)`, and list a file captured under rule 4 as `plaintext:`. A
-directory no pattern could reach into is skipped unopened — that is what
-makes a narrow list cheap — so when a list skips one, the report says
-`~/.codex: 2 files (include list)` without a total: counting the rest
-would mean walking exactly what the list was written to avoid. Narrowing
-an include list drops paths earlier checkpoints held from every
-checkpoint after it; `mise dot save` says how many when it happens.
+Include lists apply only to tracked directories. For a single file,
+track it directly, or track its parent and select the file by relative
+path. Use `--encrypt` when directly tracking a credential file. Invalid
+include or exclude globs make a tracked entry invalid; fix the declaration
+before tracking it again.
 
-Credential files and `*.local.toml` are omitted by default. A
-`*.local.toml` file is this machine's own configuration and is never
-captured, not even with `--encrypt`. A file is
-treated as a credential store when its name is `.netrc` or matches `*.age`,
+`mise dot paths` and `mise dot track --dry-run` show the selection and any
+plaintext notices. Unreachable subdirectories are skipped without being
+scanned, so a preview may show a selected-file count without a total for
+the whole directory. Background saves queue plaintext and selection-
+narrowing notices for the next `mise dot` command.
+
+::: tip The include command edits a different list
+`mise dot include <glob>` removes a rule from the global `[history] exclude`
+list. It does not edit a directory's `include` field. Edit the `[dotfiles]`
+entry to change that selection.
+:::
+
+Include lists are shared in the enrollment manifest and recorded in
+checkpoint coverage. Upgrade the machines sharing the setup before using
+them: older clients reject manifests containing this field. New checkpoints
+also use schema version 2, which older clients cannot roll back, even when
+no include list is configured.
+
+### Exclude files from one directory
+
+Put an `exclude` list on a tracked entry to leave out files beneath that
+path without affecting other entries:
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions", "*.log"] }
+```
+
+Patterns are relative to the tracked directory:
+
+- Without `/`, a pattern matches any path component. `sessions` excludes
+  directories with that name at any depth and everything inside them.
+- With `/`, a pattern is anchored to the tracked directory. `sessions/**`
+  excludes its top-level sessions directory's contents.
+- A matching directory excludes its entire subtree.
+
+Both the entry's list and the global `[history] exclude` list apply. A
+global `!glob` cannot override an entry's exclusion. `mise dot paths`
+and `mise dot track --dry-run` show the lists in effect.
+
+Entry exclusions are shared with the setup and recorded in checkpoints.
+Every machine using them needs a mise version that supports this field.
+
+### Exclude files across tracked entries
+
+Use `mise dot exclude` to add a glob to `[history] exclude` in your global
+configuration. Quote it so your shell does not expand it:
+
+```sh
+mise dot exclude '~/.codex/sessions/**'
+mise dot paths
+```
+
+An absolute pattern scopes the exclusion to that location. This example
+leaves `~/.config/kitty/sessions/` unaffected.
+
+To remove that rule, pass the same glob to `mise dot include`:
+
+```sh
+mise dot include '~/.codex/sessions/**'
+```
+
+A later `!glob` in `[history] exclude` reverses an earlier matching
+exclusion. Removing one rule does not override other rules that still
+exclude the path.
+
+Global patterns match as follows:
+
+| Pattern                | Matches                                                                   |
+| ---------------------- | ------------------------------------------------------------------------- |
+| `cache`                | Any file or directory named `cache` beneath a tracked entry               |
+| `sessions/**`          | Contents of a `sessions` directory at any depth beneath a tracked entry   |
+| `~/.codex/sessions/**` | Contents of this specific directory                                       |
+| `keys/*.pem`           | PEM files immediately inside any `keys` directory beneath a tracked entry |
+| `keys/**/*.pem`        | PEM files at any depth inside those `keys` directories                    |
+
+The last rule matching a path or one of its ancestors below the tracked
+root decides whether it is excluded. A later `!glob` can select a file
+inside an excluded directory. mise skips excluded subtrees unless a
+later rule could select something inside them.
+
+Relative global patterns match at any depth beneath the tracked entry;
+they are never relative to the shell's working directory. A leading `./`
+is ignored. Absolute patterns support `~` and continue to match through
+symlinked ancestors. In path patterns, `*` stops at a separator and `**`
+crosses separators. Windows accepts both `/` and `\` as separators.
+
+Environment variables are not supported in these patterns. Use `~/…` or
+an absolute path instead. `mise dot exclude` rejects patterns containing
+`$` and invalid globs. If such a pattern is already in configuration,
+mise warns and ignores that rule; the remaining rules still apply.
+Check `mise dot paths` after correcting a warning.
+
+Checkpoints record the version of the exclusion matcher. If rollback
+cannot interpret an older checkpoint's coverage reliably, it reports the
+affected paths as skipped rather than deleting live files.
+
+### Credential filtering and omissions
+
+Without encryption, built-in filename rules omit `.netrc`, `*.age`,
 `*.key`, `*.pem`, `*.gpg`, `*.kdbx`, `id_*`, `*token*`, `*secret*`,
-`credentials*`, or `oauth*` (under the mise configuration directory also
-`github_tokens.toml`, `hosts.yml`, and `age.txt`). The guard matches by
-name alone and is deliberately conservative: `id_ed25519.pub` is treated
-like `id_ed25519`.
-`mise dot save`, `mise dot track`, and `mise dot status` report what a
-save leaves out, and `mise dot paths` lists every omission with its
+`credentials*`, and `oauth*`. Under the mise configuration directory,
+`github_tokens.toml`, `hosts.yml`, and `age.txt` are also omitted.
+
+These rules examine the file's name, not its contents or the names of
+its parent directories. For example, both `id_ed25519` and
+`id_ed25519.pub` match `id_*`, and a shell function named `secrets.fish`
+matches `*secret*`.
+
+`mise dot save` and `mise dot track` report omissions. `mise dot status`
+shows omission counts, and `mise dot paths` lists each path and its
 reason. Use [encrypted tracking](#encrypted-shared-files) for credentials
 you want to save.
 
-Logs, caches, databases, and constantly rewritten session state usually
-belong outside history. Use `autosave = false` for configuration you want
-to save manually. An excluded file is left out of future saves entirely.
+Files ending in `.local.toml` are always omitted as machine-local
+configuration, even when encryption is enabled.
 
-To stop tracking a file:
+### Stop saving a path
+
+Logs, caches, databases, and frequently rewritten session state usually
+belong outside history. Exclude them to stop capturing them. Use
+`autosave = false` for configuration you still want to save manually.
+
+To remove a tracking entry:
 
 ```sh
 mise dot untrack ~/.zshrc
 ```
 
-The file stays in place, while future checkpoints leave it out. Earlier
-committed versions remain in Git and can still be shared. There is no
-per-file local-only history setting.
+The local file stays in place. Future checkpoints leave it out, but
+previously committed versions remain in Git and can still be shared.
+There is no per-file local-only history setting.
 
 ## Encrypted shared files
 
@@ -1087,56 +1053,6 @@ while saving other files, so check reported omissions before relying on a
 checkpoint. Explicit exclusions remove paths from future checkpoints.
 Encryption failures stop a save rather than storing plaintext.
 
-### Nested repositories
-
-A directory with its own `.git` inside a tracked tree (a plugin cloned
-into `~/.hammerspoon/Spoons`, a vendored theme) is a separate repository.
-**mise skips it and records nothing for it** — not its files, and not a
-commit pointer. `mise dot save`, `mise dot track`, `mise dot status` and
-`mise dot paths` each name it and say what to do:
-
-```console
-nested: ~/.hammerspoon/Spoons/SkyRocket.spoon (a separate Git repository;
-        track it directly to capture its working files)
-```
-
-That remedy is the supported one. **Tracking a repository's own directory
-captures its working files**, always without `.git`:
-
-```sh
-mise dot track ~/.hammerspoon/Spoons/SkyRocket.spoon
-```
-
-Reaching into it from a parent entry does not work and is not meant to.
-A repository is skipped whatever the parent entry's `include` list says,
-and a pattern naming paths inside it is told that it selects nothing,
-rather than leaving you to wonder whether the pattern was wrong:
-
-```console
-nested: ~/.config/nested/plugin (a separate Git repository; track it
-        directly to capture its working files; the include pattern
-        "plugin/**" selects nothing inside it)
-```
-
-The alternative is to leave the directory to the tool that installs it,
-or remove its `.git` so it becomes ordinary content.
-
-A history saved by an older mise may already contain commit pointers.
-Those are read and skipped: `mise dot pull` lists such a pointer as
-skipped rather than creating an empty directory, failing on it, or
-pausing the setup because another machine's pointer differs. No new
-pointer is ever written.
-
-Which repositories a checkpoint skipped is recorded on the machine that
-wrote it, not in the shared history, so a rollback there knows the
-checkpoint never held those files — including after you remove the
-`.git` and the directory becomes ordinary content, when looking at the
-filesystem would no longer tell. Other machines find their own nested
-repositories the same way, by looking. The record is best effort: it
-lives in this machine's checkpoint cache, so rebuilding that cache from
-Git loses it, and a rollback then falls back to what the filesystem
-says.
-
 Commands that modify or capture tracked files save checkpoints before and
 after their work. Their metadata includes operation labels and the link
 between the two checkpoints. Raw command arguments, environment contents,
@@ -1145,6 +1061,33 @@ and temporary recovery copies are left out of committed metadata.
 Checkpoints restore file contents. They do not restore installed packages
 or the running state of a service. Use your system's backup tools for that
 state, and run bootstrap explicitly to apply restored configuration.
+
+### Nested repositories
+
+A directory containing `.git` inside a tracked directory is treated as a
+separate repository. mise skips its contents and reports its path during
+tracking, saving, status, and path listing. It does not create a commit
+pointer for the repository.
+
+To save a nested repository's working files, track its root explicitly:
+
+```sh
+mise dot track ~/.hammerspoon/Spoons/SkyRocket.spoon
+```
+
+The repository's files then follow that entry's tracking policies; `.git`
+is always excluded. An include pattern on the parent entry does not
+enter a nested repository; add the separate tracking entry instead. Alternatively, leave the repository to the tool that
+installs it, or remove its `.git` to treat the directory as ordinary files.
+
+Older history may contain commit pointers. Pull and adoption skip
+pointer-only changes rather than trying to restore unavailable Git objects
+or removing an existing checkout.
+
+A checkpoint records skipped repositories as omissions in shared history.
+Rollback preserves files under those paths even if `.git` has since been
+removed. The local checkpoint cache can provide a more specific nested-
+repository label; rebuilding the cache retains the omission in Git.
 
 ### Descriptions from an agent
 
