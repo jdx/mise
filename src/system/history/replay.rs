@@ -1404,8 +1404,17 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     // differently — an older one matched more for some patterns, and a
     // newer one is simply unknown here. Either way, where it has
     // exclusions, what it covered cannot be reconstructed.
-    let legacy =
-        coverage.matcher != Some(super::tracked::MATCHER_VERSION) && !coverage.exclude.is_empty();
+    // **Every pattern the checkpoint recorded counts, not only the
+    // global ones.** A checkpoint whose entries carry their own
+    // `exclude` or `include` lists is read by the same version-sensitive
+    // matcher, so if those are all it has, it is exactly as unreadable
+    // to a different matcher as one with a global list.
+    let has_patterns = !coverage.exclude.is_empty()
+        || coverage
+            .entries
+            .iter()
+            .any(|entry| !entry.exclude.is_empty() || entry.include.is_some());
+    let legacy = coverage.matcher != Some(super::tracked::MATCHER_VERSION) && has_patterns;
     let exclude = super::tracked::ExcludeSet::new(&coverage.exclude).ok();
     if let Some(exclude) = &exclude
         && !legacy
@@ -1418,7 +1427,11 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     if super::tracked::excluded_by_entry(&root, &owner.exclude, &local) {
         return PathState::Uncovered;
     }
+    // the entry's own root is not a file the list selects or leaves
+    // out — it is the thing the list is *about* — so an include list
+    // does not make the tracked directory itself uncovered
     if let Some(include) = &owner.include
+        && local != root
         && !super::tracked::included_by_entry(&root, include, &local)
     {
         return PathState::Uncovered;

@@ -251,8 +251,19 @@ impl Store {
             }
             Err(err) => return Err(err),
         };
+        // **A warning nobody is there to read is a warning that did not
+        // happen.** A save the user asked for says these; the watcher's
+        // own saves write them down, and the next `mise dot` command
+        // says them — the same rule the narrowing report follows, and
+        // the same reason: its log is not somewhere anyone is looking.
         for warning in &walk.warnings {
-            warn!("history: {warning}");
+            let message = format!("history: {warning}");
+            if heard(&draft) {
+                warn!("{message}");
+            } else if let Err(err) = super::notices::record(&message) {
+                warn!("{message}");
+                debug!("history: could not keep the notice: {err}");
+            }
         }
         report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
@@ -974,6 +985,21 @@ fn under_entry(path: &str, entry: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
+/// Whether someone is there to hear what this save has to say: a save
+/// the user asked for, rather than one the watcher made on its own
+/// schedule.
+fn heard(draft: &Draft) -> bool {
+    matches!(
+        draft.trigger,
+        Some(
+            store::Trigger::Save
+                | store::Trigger::Agent
+                | store::Trigger::Update
+                | store::Trigger::Baseline
+        )
+    )
+}
+
 /// Says how much an entry's `include` list now leaves out of what an
 /// earlier checkpoint held.
 ///
@@ -1038,15 +1064,7 @@ fn report_narrowed(
     // own schedule writes it down, because the log it would otherwise go
     // to is not somewhere anyone is looking, and this is the only chance
     // to say it at all.
-    let heard = matches!(
-        draft.trigger,
-        Some(
-            store::Trigger::Save
-                | store::Trigger::Agent
-                | store::Trigger::Update
-                | store::Trigger::Baseline
-        )
-    );
+    let heard = heard(draft);
     for (entry, count) in dropped {
         let message = format!(
             "history: {entry}: its include list leaves out {count} path(s) an earlier checkpoint held; they are not saved from this checkpoint on"
