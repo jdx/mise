@@ -453,6 +453,12 @@ alone, while a machine that connects to a _different_ setup still gets
 that setup's task. `mise dot pull` and `mise dot sync` never run it; they
 apply files and do not bootstrap.
 
+The task belongs to a setup, so a machine with no setup has nothing to
+finish: `mise bootstrap --from <repo>` checks out configuration without
+adopting or connecting anything and never runs it, and neither does a
+bootstrap on a machine that has not adopted a setup or run
+`mise dot origin set`.
+
 This is the difference from a task named `bootstrap`, which every
 `mise bootstrap` runs. Put work that must be safe to repeat in `bootstrap`,
 and work a machine needs exactly once — changing the login shell, importing

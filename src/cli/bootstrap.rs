@@ -1837,7 +1837,7 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Task) {
             debug!("bootstrap: post-adopt task skipped");
         } else {
-            self.run_post_adopt_task().await?;
+            self.run_post_adopt_task(&skip).await?;
         }
         follow_up.print()?;
         Ok(summary)
@@ -1874,6 +1874,16 @@ impl Bootstrap {
                 if let Some(preview) = outcome.preview_config.as_ref() {
                     self.run_child_bootstrap(preview.path().to_path_buf())
                         .await?;
+                    // Read from the incoming setup, not from what is
+                    // installed: on a machine that has not adopted
+                    // anything yet there is no connected setup, and the
+                    // command this repository would run is exactly what a
+                    // preview is being asked for.
+                    if let Some(task) = system::history::config::post_adopt_task_in(preview.path())?
+                        && !self.skip_parts().contains(&BootstrapPart::Task)
+                    {
+                        info!("dotfiles: would run the post-adopt task {task} after adopting");
+                    }
                 }
                 return Ok(());
             }
@@ -1978,11 +1988,17 @@ impl Bootstrap {
     ///
     /// A failure leaves the setup installed and unfinished rather than
     /// undone, so it says exactly that, and how to finish it.
-    async fn run_post_adopt_task(&self) -> Result<()> {
+    async fn run_post_adopt_task(&self, skip: &HashSet<BootstrapPart>) -> Result<()> {
         let Some(task) = system::history::config::post_adopt_task()? else {
             return Ok(());
         };
-        let setup = system::history::config::post_adopt_key(&task)?;
+        let Some(setup) = system::history::config::post_adopt_key(&task)? else {
+            debug!("dotfiles: post-adopt task {task} skipped: no setup is connected");
+            return Ok(());
+        };
+        // held across the check, the run and the record, so two
+        // bootstraps started at once cannot both decide it has not run
+        let _lock = system::history::config::lock_post_adopt()?;
         if system::history::config::post_adopt_already_ran(&setup) {
             debug!("dotfiles: post-adopt task {task} already ran on this machine");
             return Ok(());
@@ -1992,7 +2008,12 @@ impl Bootstrap {
             return Ok(());
         }
         info!("dotfiles: running the post-adopt task {task}");
-        if let Err(err) = self.run_task(&task, false).await {
+        // the same tool handling the `bootstrap` task gets: `--skip
+        // tools` means the task runner does not install anything
+        if let Err(err) = self
+            .run_task(&task, skip.contains(&BootstrapPart::Tools))
+            .await
+        {
             // A failing task asks for the process to exit with its own
             // status, and that request is not a message anything prints.
             // What it means for the machine is said here, before the

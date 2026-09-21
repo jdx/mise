@@ -179,30 +179,79 @@ fn read_layer(path: &Path) -> Result<Option<HistoryTomlConfig>> {
 /// adopting a repository already installs its packages and services and
 /// runs its `bootstrap` task, so the same decision covers this.
 pub(crate) fn post_adopt_task() -> Result<Option<String>> {
-    // The configuration this reads was installed moments ago, by this same
-    // process: the cached global discovery predates it and would find
-    // nothing, so the global layers are rediscovered from the directory.
-    let global = crate::config::config_files_with_incoming(
-        &super::tracked::global_config_dir(),
-        &Default::default(),
-    );
-    let paths = crate::config::system_config_files()
+    last_post_adopt(fresh_layers(), true)
+}
+
+/// The same declaration read out of a setup that is not installed yet,
+/// so an adoption's dry run can name the command before the machine
+/// commits to it.
+///
+/// No trust check applies: nothing is run from a preview, and telling
+/// the user what an incoming setup would run on their machine is the
+/// whole point of asking for one.
+pub(crate) fn post_adopt_task_in(dir: &Path) -> Result<Option<String>> {
+    // read the way mise reads a configuration directory, so the preview
+    // names the layer the bootstrap would use
+    let layers = crate::config::config_files_with_incoming(dir, &Default::default())
         .into_iter()
-        .chain(global);
-    last_post_adopt(paths)
+        .filter(|path| path.is_file())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml"));
+    last_post_adopt(layers, false)
+}
+
+/// The system and global layers, rediscovered from the configuration
+/// directory rather than taken from the cached global list.
+///
+/// **Two derivations of "which layers are there" must not disagree.**
+/// The cached list predates a configuration this same process installed
+/// moments ago, and `global_config_files()` answers with
+/// `MISE_GLOBAL_CONFIG_FILE` alone when that variable is set — which the
+/// `--adopt` child sets — so `config.local.toml`, where the origin is
+/// recorded, would be invisible to one reader and visible to another.
+/// That is how the same machine and the same setup produce two different
+/// keys, and the one-time task runs twice.
+fn fresh_layers() -> impl Iterator<Item = PathBuf> {
+    crate::config::system_config_files()
+        .into_iter()
+        .chain(crate::config::config_files_with_incoming(
+            &super::tracked::global_config_dir(),
+            &Default::default(),
+        ))
+        .filter(|path| path.is_file())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+}
+
+/// The setup this machine is connected to, read through the layers a
+/// freshly installed configuration is actually in.
+fn fresh_origin() -> Result<Option<OriginTomlConfig>> {
+    let mut found = None;
+    for path in fresh_layers() {
+        if let Some(origin) = read_layer(&path)?.and_then(|layer| layer.origin) {
+            found = Some(origin);
+        }
+    }
+    Ok(found)
 }
 
 /// The last layer that names a post-adopt task, in discovery order.
-fn last_post_adopt(paths: impl IntoIterator<Item = PathBuf>) -> Result<Option<String>> {
+fn last_post_adopt(
+    paths: impl IntoIterator<Item = PathBuf>,
+    check_trust: bool,
+) -> Result<Option<String>> {
     let mut found = None;
     for path in paths {
-        if !path.is_file() || path.extension().is_none_or(|ext| ext != "toml") {
-            continue;
-        }
         let Some(task) = read_layer(&path)?.and_then(|layer| layer.post_adopt) else {
             continue;
         };
-        if !crate::config::config_file::is_trusted(&path) {
+        // **A layer inside the machine's own configuration directory is
+        // global configuration, whatever the cached list says.**
+        // `is_trusted` answers through `is_global_config`, which compares
+        // against the list discovered at startup — and a `conf.d` file
+        // the adoption wrote moments ago is not in it. Without this, a
+        // setup that declares its task there is ignored as untrusted on
+        // the one run that was supposed to apply it.
+        let global = path.starts_with(super::tracked::global_config_dir());
+        if check_trust && !global && !crate::config::config_file::is_trusted(&path) {
             warn!(
                 "history: ignoring [history] post_adopt in untrusted {}",
                 display_path(&path)
@@ -233,11 +282,34 @@ fn post_adopt_record() -> PathBuf {
 /// setup this machine is connected to is part of the key, so changing
 /// setups changes the answer; a machine with no recorded origin keys on
 /// the name alone, because there is nothing else to tell two apart.
-pub(crate) fn post_adopt_key(task: &str) -> Result<String> {
-    let setup = origin()?
-        .map(|(_, origin)| format!("{}#{}", origin.url, origin.branch))
-        .unwrap_or_default();
-    Ok(format!("{setup}\t{task}"))
+pub(crate) fn post_adopt_key(task: &str) -> Result<Option<String>> {
+    // **The task belongs to a setup, so without one there is nothing to
+    // finish.** A `mise bootstrap --from <repo>` checks out configuration
+    // without adopting anything and records no origin; a machine that
+    // adopted a setup, or was connected to one with `mise dot origin
+    // set`, has exactly the state this asks about — which is also why an
+    // adoption that paused on a conflict is finished by the ordinary
+    // `mise bootstrap` that follows, rather than needing to be an adopt
+    // itself.
+    let Some(origin) = fresh_origin()? else {
+        return Ok(None);
+    };
+    Ok(Some(format!("{}#{}\t{task}", origin.url, origin.branch)))
+}
+
+/// Holds the post-adopt record while it is checked and written.
+///
+/// **Checking and recording are one decision.** Two bootstraps started at
+/// once would otherwise both read "not finished" and both run the
+/// once-per-machine work; the history scope that serializes the rest of
+/// this subsystem is not active when `history.enabled` is false, so this
+/// sequence brings its own lock.
+pub(crate) fn lock_post_adopt() -> Result<fslock::LockFile> {
+    let path = post_adopt_record();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    crate::lock_file::LockFile::at(&path.with_extension("lock")).lock()
 }
 
 /// Whether this machine has already finished the task `key` names.
@@ -321,14 +393,7 @@ mod tests {
     #[test]
     fn the_last_layer_that_names_a_post_adopt_task_wins() {
         let temp = tempfile::tempdir().unwrap();
-        assert_eq!(
-            last_post_adopt(crate::config::config_files_with_incoming(
-                temp.path(),
-                &Default::default()
-            ))
-            .unwrap(),
-            None
-        );
+        assert_eq!(post_adopt_task_in(temp.path()).unwrap(), None);
 
         std::fs::write(
             temp.path().join("config.toml"),
@@ -338,12 +403,7 @@ post_adopt = 'setup'
         )
         .unwrap();
         assert_eq!(
-            last_post_adopt(crate::config::config_files_with_incoming(
-                temp.path(),
-                &Default::default()
-            ))
-            .unwrap()
-            .as_deref(),
+            post_adopt_task_in(temp.path()).unwrap().as_deref(),
             Some("setup")
         );
 
@@ -357,12 +417,7 @@ post_adopt = 'machine-setup'
         )
         .unwrap();
         assert_eq!(
-            last_post_adopt(crate::config::config_files_with_incoming(
-                temp.path(),
-                &Default::default()
-            ))
-            .unwrap()
-            .as_deref(),
+            post_adopt_task_in(temp.path()).unwrap().as_deref(),
             Some("machine-setup")
         );
 
@@ -375,23 +430,12 @@ post_adopt = '  '
 ",
         )
         .unwrap();
-        assert_eq!(
-            last_post_adopt(crate::config::config_files_with_incoming(
-                temp.path(),
-                &Default::default()
-            ))
-            .unwrap(),
-            None
-        );
+        assert_eq!(post_adopt_task_in(temp.path()).unwrap(), None);
 
         // a directory that is not there at all is not an error: a setup
         // without configuration simply brings no task
         assert_eq!(
-            last_post_adopt(crate::config::config_files_with_incoming(
-                &temp.path().join("missing"),
-                &Default::default(),
-            ))
-            .unwrap(),
+            post_adopt_task_in(&temp.path().join("missing")).unwrap(),
             None
         );
     }

@@ -55,6 +55,13 @@ assert_contains "cat $C/.config/mise/config.toml" 'post_adopt = "setup"'
 assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles,task"
 assert "cat $C/post-adopt-ran" "ran"
 
+# and an ordinary bootstrap agrees about what already ran. The adoption's
+# child sets MISE_GLOBAL_CONFIG_FILE and this one does not, so the two
+# read the machine's layers by different routes: if they derived the
+# setup identity differently, the one-time task would run a second time
+assert_succeed "$c bootstrap --only dotfiles,task"
+assert "cat $C/post-adopt-ran" "ran"
+
 # the record is keyed by the setup, not by the task name: `setup` is what
 # half of these tasks are called, and a machine that connects to a
 # different setup must still get that setup's task run. The origin lives
@@ -77,6 +84,20 @@ d="$PWD/d"
 assert_succeed "$d bootstrap --adopt file://$origin --yes --only dotfiles"
 assert_contains "cat $D/.config/mise/config.toml" 'post_adopt = "setup"'
 assert_fail "test -e $D/post-adopt-ran"
+
+# ---- a `--from` checkout adopts nothing and connects nothing, so there
+# is no setup to finish and the task never runs, even though the
+# configuration it checks out declares one
+FROM="$(dirname "$HOME")/from-home"
+wrapper "$FROM" "$PWD/from"
+from="$PWD/from"
+plain="$PWD/plain-seed"
+git init -q -b main "$plain"
+cp "$MISE_CONFIG_DIR/config.toml" "$plain/config.toml"
+git -C "$plain" add config.toml
+git -C "$plain" -c user.name=t -c user.email=t@t commit -q -m init
+assert_succeed "$from bootstrap --from file://$plain --yes --only dotfiles,task"
+assert_fail "test -e $FROM/post-adopt-ran"
 
 # ---- machine E: the task fails. The setup is installed and unfinished,
 # not undone, and the message names the command to run again.
