@@ -34,6 +34,10 @@ assert_contains 'mise dot status' 'tracked (1 nested)'
 assert_contains 'mise dot status' '1 nested repository skipped'
 assert "mise dot status --json | jq -r '.history.nested | length'" 1
 assert_contains 'mise dot history show' 'nested: ~/.hammerspoon/Spoons/Sky.spoon'
+# one skip, said once: the checkpoint carries it to other machines as an
+# omission, and this machine's own record keeps the reason that can be
+# acted on — it is not both
+assert "mise dot history show 2>&1 | grep -c 'Spoons/Sky.spoon'" '1'
 
 # Removing the `.git` makes the directory ordinary content — and a
 # rollback to a checkpoint that skipped it does not delete those files,
