@@ -839,9 +839,23 @@ fn append_rule(array: &mut toml_edit::Array, glob: &str) -> bool {
 /// it removes that entry rather than appending `!glob` beside it, and it
 /// leaves a hand-written `!glob` alone — that entry already re-includes,
 /// which is what the caller wants.
+/// Takes a rule out of the list, in either spelling it may have been
+/// written in.
+///
+/// **What the user names is a path or a glob; what the list holds may be
+/// the escaped form of it.** `mise dot exclude` writes a glob as typed,
+/// while `mise dot untrack` writes a literal path with its glob
+/// metacharacters escaped, so the rule for `~/.codex/cache[1]` is on disk
+/// as `~/.codex/cache[[]1[]]`. Matching only the exact string left
+/// `mise dot include '~/.codex/cache[1]'` reporting that the path was not
+/// excluded while the escaped rule went on matching it — the undo for
+/// `untrack` simply did not work. Escaping a real glob produces something
+/// no list holds, so trying both spellings cannot remove a rule the user
+/// did not name.
 fn drop_glob(array: &mut toml_edit::Array, glob: &str) -> bool {
+    let escaped = globset::escape(glob);
     let before = list_entries(array);
-    array.retain(|value| value.as_str() != Some(glob));
+    array.retain(|value| !matches!(value.as_str(), Some(rule) if rule == glob || rule == escaped));
     list_entries(array) != before
 }
 
