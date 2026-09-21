@@ -1105,13 +1105,26 @@ fn merge_file_entry(
         );
         return;
     }
-    let exclude = match compile_patterns("exclude", exclude) {
-        Ok(exclude) => exclude.unwrap_or_default(),
-        Err(reason) => {
-            record_invalid(&target_raw, &origin.config, &reason);
-            return;
-        }
-    };
+    // compile once here so a typo is reported against the entry that wrote
+    // it, not on every walk of the source.
+    //
+    // **A deployment entry keeps working with the rest of its list**, as
+    // it always has: what an unreadable pattern costs here is a file
+    // copied or linked that the user meant to leave behind, which they
+    // can see. A tracked entry is refused instead (see the `track`
+    // branch above), because what it costs there is a file captured into
+    // history and pushed to a remote, which they cannot take back.
+    let exclude = exclude
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|pattern| match glob::Pattern::new(&pattern) {
+            Ok(pattern) => Some(pattern),
+            Err(err) => {
+                warn!("[dotfiles].\"{target_raw}\": invalid exclude pattern '{pattern}': {err}");
+                None
+            }
+        })
+        .collect::<Vec<_>>();
     let mode = match mode.as_deref() {
         None => default_mode(),
         Some(m) => match FileMode::parse(m) {
