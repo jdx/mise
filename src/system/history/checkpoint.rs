@@ -271,7 +271,7 @@ impl Store {
             let message = format!("history: {warning}");
             if heard(&draft) {
                 warn!("{message}");
-            } else if let Err(err) = super::notices::record(&message) {
+            } else if let Err(err) = super::notices::record_in(&self.state_dir, &message) {
                 warn!("{message}");
                 debug!("history: could not keep the notice: {err}");
             }
@@ -429,6 +429,7 @@ impl Store {
                         // save goes on.
                         if let Err(err) = report_narrowed(
                             repo,
+                            &self.state_dir,
                             previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
                             tracked,
                             &draft,
@@ -1030,6 +1031,7 @@ fn heard(draft: &Draft) -> bool {
 /// and the next parent is the narrowed one.
 fn report_narrowed(
     repo: &HistoryRepo,
+    state_dir: &Path,
     parent: Option<&str>,
     tracked: &TrackedSet,
     draft: &Draft,
@@ -1082,7 +1084,7 @@ fn report_narrowed(
         );
         if heard {
             warn!("{message}");
-        } else if let Err(err) = super::notices::record(&message) {
+        } else if let Err(err) = super::notices::record_in(state_dir, &message) {
             // saying it late is better than not at all, and failing the
             // save over a notice would be worse than either
             warn!("{message}");

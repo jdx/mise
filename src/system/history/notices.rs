@@ -11,18 +11,27 @@
 //! command says it before doing what it was asked.
 
 use eyre::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn path() -> PathBuf {
-    super::store::store_dir_in(&super::store::state_dir()).join("notices")
+/// The notices file of the store kept under `state_dir`.
+///
+/// **Every operation here names the store it is for**, like the rest of
+/// `store`'s `*_in` functions. A [`Store`](super::checkpoint::Store) is
+/// opened on a state directory, and its notices belong to that one — so
+/// a test that sandboxes a store with `Store::open_in(&tempdir)` does
+/// not write to the machine's real history, and a command reading its
+/// own store's notices cannot be handed another's.
+fn file_in(state_dir: &Path) -> PathBuf {
+    super::store::store_dir_in(state_dir).join("notices")
 }
 
-/// Keeps `message` for the next command a person runs.
-pub(crate) fn record(message: &str) -> Result<()> {
-    record_in(&path(), message)
+/// Keeps `message` for the next command a person runs, in the store
+/// under `state_dir`.
+pub(crate) fn record_in(state_dir: &Path, message: &str) -> Result<()> {
+    record_to(&file_in(state_dir), message)
 }
 
-fn record_in(path: &std::path::Path, message: &str) -> Result<()> {
+fn record_to(path: &Path, message: &str) -> Result<()> {
     use std::io::Write;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -62,7 +71,7 @@ fn record_in(path: &std::path::Path, message: &str) -> Result<()> {
 /// The lock is held around two file operations and nothing else. It
 /// never spans anything that runs user code, which is what makes it
 /// safe to hold across processes.
-fn guard(path: &std::path::Path) -> Result<fslock::LockFile> {
+fn guard(path: &Path) -> Result<fslock::LockFile> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -75,7 +84,13 @@ fn guard(path: &std::path::Path) -> Result<fslock::LockFile> {
 /// failing the command the user actually asked for, and one said twice
 /// is better than one never said.
 pub(crate) fn drain() {
-    for line in take(&path()) {
+    drain_in(&super::store::state_dir());
+}
+
+/// Says everything the store under `state_dir` kept, and keeps it no
+/// longer.
+pub(crate) fn drain_in(state_dir: &Path) {
+    for line in take(&file_in(state_dir)) {
         warn!("{line}");
     }
 }
@@ -85,7 +100,7 @@ pub(crate) fn drain() {
 /// Nothing is created by asking: with no notices file there is nothing
 /// to take, and a machine that keeps no history must not grow a history
 /// directory because a command looked.
-fn take(path: &std::path::Path) -> Vec<String> {
+fn take(path: &Path) -> Vec<String> {
     if !path.exists() {
         return vec![];
     }
@@ -114,8 +129,8 @@ mod tests {
         let path = temp.path().join("state/notices");
         assert!(take(&path).is_empty(), "nothing recorded, nothing to say");
 
-        record_in(&path, "first").unwrap();
-        record_in(&path, "second\nwith a newline in it").unwrap();
+        record_to(&path, "first").unwrap();
+        record_to(&path, "second\nwith a newline in it").unwrap();
         assert_eq!(
             take(&path),
             vec![
@@ -128,8 +143,29 @@ mod tests {
 
         // and one recorded immediately after a take is not swallowed by
         // it: the take claimed a file, not the name
-        record_in(&path, "third").unwrap();
+        record_to(&path, "third").unwrap();
         assert_eq!(take(&path), vec!["third".to_string()]);
+    }
+
+    /// A notice belongs to the store it was recorded in.
+    ///
+    /// The path was resolved from the machine's real state directory
+    /// however the store was opened, so a store opened elsewhere — a
+    /// test sandbox, another machine's directory — wrote its notices
+    /// into the real history and read back ones that were never its own.
+    #[test]
+    fn a_notice_belongs_to_the_store_it_was_recorded_in() {
+        let temp = tempfile::tempdir().unwrap();
+        let one = temp.path().join("one");
+        let two = temp.path().join("two");
+        record_in(&one, "from one").unwrap();
+        // under that store's own history directory, nowhere else
+        assert!(file_in(&one).starts_with(&one));
+        assert!(
+            take(&file_in(&two)).is_empty(),
+            "another store was told a notice that was not its own"
+        );
+        assert_eq!(take(&file_in(&one)), vec!["from one".to_string()]);
     }
 
     /// Nothing is created by asking: a machine that keeps no history has
@@ -150,9 +186,9 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("state/notices");
         for _ in 0..5 {
-            record_in(&path, "a credential is saved in plaintext").unwrap();
+            record_to(&path, "a credential is saved in plaintext").unwrap();
         }
-        record_in(&path, "something else").unwrap();
+        record_to(&path, "something else").unwrap();
         assert_eq!(
             take(&path),
             vec![
@@ -161,7 +197,7 @@ mod tests {
             ]
         );
         // said, and gone — so a condition that returns is news again
-        record_in(&path, "a credential is saved in plaintext").unwrap();
+        record_to(&path, "a credential is saved in plaintext").unwrap();
         assert_eq!(
             take(&path),
             vec!["a credential is saved in plaintext".to_string()]
@@ -180,7 +216,7 @@ mod tests {
             let path = path.clone();
             std::thread::spawn(move || {
                 for i in 0..COUNT {
-                    record_in(&path, &format!("notice {i}")).unwrap();
+                    record_to(&path, &format!("notice {i}")).unwrap();
                 }
             })
         };
