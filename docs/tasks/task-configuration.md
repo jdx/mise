@@ -1292,8 +1292,10 @@ its description. The script's full name includes its extension; `mise run`
 also accepts the name without the extension.
 
 The name without the extension matches the script only when the block has no
-`run`, `run_windows`, `file`, `depends`, `depends_post`, or `wait_for`. To add
-dependencies to the script, use its full name:
+`run`, `run_windows`, `file`, `depends`, or `depends_post`. A block with only
+`wait_for` still matches, because `wait_for` orders tasks that are already
+running rather than adding any. To add dependencies to the script, use its full
+name:
 
 ```toml [mise.toml]
 [tasks."hello.sh"]

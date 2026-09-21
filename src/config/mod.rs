@@ -4883,13 +4883,18 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         .filter(|t| !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some())
         .map(|t| t.name.clone())
         .collect();
-    // File tasks a config block has already overlaid. `[tasks.hello]` and
-    // `[tasks."hello.sh"]` both reach `mise-tasks/hello.sh` but are separate
-    // names, so without this a lower-precedence block of the other spelling
-    // would merge second and overwrite the higher-precedence block's metadata.
-    // Highest precedence wins, which is what the exact-name path already does
-    // with repeats of one spelling.
-    let mut overlaid_file_tasks: BTreeSet<String> = BTreeSet::new();
+    // Overlays bound for a file task, keyed by its name and held in config
+    // precedence order (highest first) until after the loop.
+    //
+    // `[tasks.hello]` and `[tasks."hello.sh"]` name one script under two
+    // spellings, so both land in the same list. Merging them where they are
+    // found would let whichever is processed second -- the lower-precedence one
+    // -- overwrite a scalar like `description`. They are applied in reverse
+    // instead, so the highest-precedence block merges last and wins those,
+    // while every block still contributes what `merge_toml_overlay` extends,
+    // such as `depends`. This is the order `pending_inline_overlays` uses for
+    // the same reason.
+    let mut file_task_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     for t in config_tasks {
@@ -4930,9 +4935,12 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                     *existing = t;
                 }
             }
-        } else if let Some(existing) = by_name.get_mut(&t.name) {
-            if existing.file.is_some() && overlaid_file_tasks.insert(t.name.clone()) {
-                existing.merge_toml_overlay(t);
+        } else if let Some(existing) = by_name.get(&t.name) {
+            if existing.file.is_some() {
+                file_task_overlays
+                    .entry(t.name.clone())
+                    .or_default()
+                    .push(t);
             }
         } else {
             // Deliberately not `task_has_executable_content`: the two answer
@@ -4964,16 +4972,8 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             if !task_has_executable_content(&t) && !executable_config_names.contains(&t.name) {
                 let targets = stripped_name_overlay_targets(&by_name, &t.name);
                 if !targets.is_empty() {
-                    // The block belongs to these file tasks either way, so it is
-                    // consumed even when every target is already spoken for --
-                    // reinserting it would put the shadowing task this fixes
-                    // back in front of the script.
                     for name in targets {
-                        if overlaid_file_tasks.insert(name.clone())
-                            && let Some(existing) = by_name.get_mut(&name)
-                        {
-                            existing.merge_toml_overlay(t.clone());
-                        }
+                        file_task_overlays.entry(name).or_default().push(t.clone());
                     }
                     continue;
                 }
@@ -4987,21 +4987,32 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             by_name.insert(t.name.clone(), t);
         }
     }
+    for (name, overlays) in file_task_overlays {
+        if let Some(base) = by_name.get_mut(&name) {
+            for overlay in overlays.into_iter().rev() {
+                base.merge_toml_overlay(overlay);
+            }
+        }
+    }
     by_name.into_values().collect()
 }
 
 /// Whether a task carries anything that makes it run.
 ///
-/// A superset of the rule `mise tasks validate` reports a task for lacking, so
-/// a task without it is the "no executable content" shape rather than a task a
-/// metadata overlay should defer to. `depends` counts: a dependency group runs.
+/// The same rule `mise tasks validate` reports a task for lacking, so a task
+/// without it is the "no executable content" shape rather than one a metadata
+/// overlay should defer to. `depends` and `depends_post` count because they put
+/// their targets in the run; `wait_for` does not, since it only orders tasks
+/// something else already scheduled (see `deps.rs`, which gives it no
+/// `add_idx`). A block carrying nothing but `wait_for` is therefore metadata
+/// and overlays a file task rather than shadowing it with a task that runs
+/// nothing.
 fn task_has_executable_content(task: &Task) -> bool {
     !task.run.is_empty()
         || !task.run_windows.is_empty()
         || task.file.is_some()
         || !task.depends.is_empty()
         || !task.depends_post.is_empty()
-        || !task.wait_for.is_empty()
 }
 
 /// Executable file tasks whose extension-stripped name is exactly `name`.
@@ -6949,6 +6960,88 @@ mod tests {
                 "{field} dropped the dependency"
             );
         }
+    }
+
+    #[test]
+    fn test_lower_precedence_full_name_block_still_contributes_its_depends() {
+        // A stripped metadata block above a full-name block must not suppress
+        // it: the higher block wins `description`, the lower still contributes
+        // `depends`. Suppressing the lower block wholesale drops the
+        // dependency; merging it where it is found overwrites the description.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![
+                Task {
+                    name: "hello".to_string(),
+                    description: "high".to_string(),
+                    ..Default::default()
+                },
+                Task {
+                    name: "hello.sh".to_string(),
+                    description: "low".to_string(),
+                    depends: vec!["lint".to_string().into()],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(tasks[0].description, "high");
+        assert_eq!(
+            tasks[0]
+                .depends
+                .iter()
+                .map(|d| d.task.as_str())
+                .collect_vec(),
+            vec!["lint"]
+        );
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+    }
+
+    #[test]
+    fn test_wait_for_alone_overlays_the_file_task() {
+        // `wait_for` orders tasks something else already scheduled and adds
+        // none of its own, so a block carrying only `wait_for` is metadata.
+        // Treating it as executable content left it shadowing the script as a
+        // task that runs nothing -- the failure this branch exists to remove.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![Task {
+                name: "hello".to_string(),
+                wait_for: vec!["other".to_string().into()],
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(
+            tasks[0]
+                .wait_for
+                .iter()
+                .map(|d| d.task.as_str())
+                .collect_vec(),
+            vec!["other"]
+        );
+    }
+
+    #[test]
+    fn test_depends_post_alone_stays_a_separate_task() {
+        // `depends_post` does put its target in the run, so unlike `wait_for`
+        // it keeps the block a task of its own.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![Task {
+                name: "hello".to_string(),
+                depends_post: vec!["post".to_string().into()],
+                ..Default::default()
+            }],
+        );
+
+        let names = tasks.iter().map(|t| t.name.as_str()).sorted().collect_vec();
+        assert_eq!(names, vec!["hello", "hello.sh"]);
     }
 
     #[test]
