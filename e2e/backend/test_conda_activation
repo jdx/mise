@@ -79,6 +79,11 @@ packages = dict([
     }),
     tool_package("fixture-one", "one"),
     tool_package("fixture-two", "two"),
+    # No dependencies, no activate.d, and a command that is a real binary rather than a
+    # script: nothing a launcher could do for it. A copy of the system shell stands in for
+    # a single-binary tool such as conda:ripgrep, and lets the test read back the PATH the
+    # command was started with.
+    package("fixture-solo", {"bin/fixture-solo": Path("/bin/sh").read_bytes()}),
 ])
 (subdir / "repodata.json").write_text(json.dumps({
     "info": {"subdir": "noarch"},
@@ -118,6 +123,7 @@ lockfile = true
 [tools]
 "conda:fixture-one" = { version = "1.0.0", channel = "http://127.0.0.1:$SERVER_PORT" }
 "conda:fixture-two" = { version = "1.0.0", channel = "http://127.0.0.1:$SERVER_PORT" }
+"conda:fixture-solo" = { version = "1.0.0", channel = "http://127.0.0.1:$SERVER_PORT" }
 EOF
 
 mise install
@@ -134,3 +140,26 @@ assert_succeed "test ! -e '$two_prefix/.mise-bins/dependency-command'"
 mise uninstall -a conda:fixture-one
 mise install
 assert "mise exec -- fixture-one" "one|$one_prefix|activated|dependency-output"
+
+# A package with nothing to activate gets plain symlinks instead of launchers, so the
+# command starts without an extra shell and without the prefix's bin directory ahead of
+# the user's PATH — which it would otherwise pass on to everything it spawns.
+solo_prefix="$MISE_DATA_DIR/installs/conda-fixture-solo/1.0.0"
+assert_succeed "test -L '$solo_prefix/.mise-bins/fixture-solo'"
+assert_succeed "mise exec -- fixture-solo -c 'echo \$PATH' | tr : '\n' | grep -qx '$solo_prefix/.mise-bins'"
+assert_fail "mise exec -- fixture-solo -c 'echo \$PATH' | tr : '\n' | grep -qx '$solo_prefix/bin'"
+
+# Packages that do need activation keep their launcher.
+assert_fail "test -L '$one_prefix/.mise-bins/fixture-one'"
+
+# MISE_DATA_DIR is only tilde-expanded, never absolutized, so it can be relative. Both
+# entry kinds embed the install path and neither survives a relative one: a symlink target
+# resolves against the link's own directory, and a launcher's path against the caller's cwd.
+mkdir -p relative-root
+(cd relative-root && MISE_DATA_DIR=reldata MISE_LOCKFILE=0 \
+  MISE_CONDA_CHANNEL="http://127.0.0.1:$SERVER_PORT" \
+  mise install conda:fixture-solo@1.0.0 conda:fixture-one@1.0.0)
+rel_installs="$PWD/relative-root/reldata/installs"
+assert_succeed "test -e '$rel_installs/conda-fixture-solo/1.0.0/.mise-bins/fixture-solo'"
+assert_succeed "cd / && '$rel_installs/conda-fixture-solo/1.0.0/.mise-bins/fixture-solo' -c 'exit 0'"
+assert_contains "cd / && '$rel_installs/conda-fixture-one/1.0.0/.mise-bins/fixture-one'" "|activated|dependency-output"

@@ -164,3 +164,34 @@ version = "latest"
 EOF
 mise install
 assert_contains "mise ls --installed jq" "1.6"
+
+# Test: when the cutoff hides every candidate, the failure names the setting,
+# how many releases it hid and the newest one, rather than the bare "matching
+# date filter" that sent users hunting for a filter they never configured.
+# https://github.com/jdx/mise/discussions/13303
+mise uninstall jq --all 2>/dev/null || true
+rm -f mise.toml
+assert_fail "mise install jq@latest --minimum-release-age 1990-01-01" "matching minimum_release_age"
+assert_fail "mise install jq@latest --minimum-release-age 1990-01-01" "cutoff, the newest being"
+assert_fail "mise install jq@latest --minimum-release-age 1990-01-01" "or lower minimum_release_age"
+
+# A cutoff that came from configuration is named, along with when the newest
+# hidden release becomes eligible.
+export MISE_MINIMUM_RELEASE_AGE="30y"
+assert_fail "mise install jq@latest" "matching minimum_release_age (30y)"
+assert_fail "mise install jq@latest" "eligible"
+unset MISE_MINIMUM_RELEASE_AGE
+
+# A query that simply matches nothing is not blamed on the cutoff.
+assert_fail "mise install jq@prefix:99" "no versions found for jq"
+assert_not_contains_text "$(mise install jq@prefix:99 2>&1 || true)" "minimum_release_age"
+
+# Only versions the query would have selected are counted: prefix:1.8 reports
+# the hidden 1.8.x releases, not every hidden version.
+assert_fail "mise install jq@prefix:1.8 --minimum-release-age 1990-01-01" "the newest being 1.8"
+
+# A sub-N: request is not offered the exact-pin escape: pinning the base
+# installs something other than what was asked for, since sub-1:1.8.2 subtracts
+# from 1.8.2 rather than selecting the release below it.
+assert_fail "mise install jq@sub-1:latest --minimum-release-age 1990-01-01" "Lower minimum_release_age to make them eligible"
+assert_not_contains_text "$(mise install jq@sub-1:latest --minimum-release-age 1990-01-01 2>&1 || true)" "Install that one now"

@@ -484,6 +484,56 @@ fi
 '''
 ```
 
+## Sharing Flags Between Tasks {#shared-flags}
+
+When several tasks accept the same flags — especially flags with `choices` that must
+stay in sync — declare them once as a _flagset_ in a `.usage.kdl` file, then `use`
+the set from each task that takes them:
+
+```kdl [shared.usage.kdl]
+flagset "common" {
+  flag "--env <env>" help="Target environment" {
+    arg "<env>" {
+      choices "dev" "staging" "prod"
+    }
+  }
+  flag "--dry-run" help="Print what would happen"
+}
+```
+
+```toml [mise.toml]
+[tasks.deploy]
+usage = """
+include file="{{ config_root }}/shared.usage.kdl"
+use "common"
+flag "--replicas <n>" help="How many to run"
+"""
+run = 'echo "env=$usage_env replicas=$usage_replicas"'
+```
+
+A file task pulls in the same set from its `#USAGE` header:
+
+```bash [mise-tasks/deploy]
+#!/usr/bin/env bash
+#USAGE include file="/srv/app/shared.usage.kdl"
+#USAGE use "common"
+#USAGE flag "--replicas <n>" help="How many to run"
+echo "env=$usage_env replicas=$usage_replicas"
+```
+
+Both tasks now accept `--env`, `--dry-run`, and `--replicas`, and both reject
+`--env nope`. A `use` expands where it is written, so shared flags appear in
+`--help` in the position the `use` node occupies.
+
+::: warning
+`include` needs an absolute path. A `mise.toml` task can build one with
+<span v-pre>`{{ config_root }}`</span>, but a file task's `#USAGE` comments are not
+rendered as templates, so it can only spell the path out.
+:::
+
+To share configuration other than arguments — tools, env, dependencies — between
+tasks in the same project, see [task templates](/tasks/templates).
+
 ## Bash Variable Expansion for Usage Variables {#bash-variable-expansion}
 
 When accessing usage-defined variables in bash scripts, use parameter expansion syntax to help [shellcheck](https://www.shellcheck.net/) understand these variables and to provide default values for boolean flags.

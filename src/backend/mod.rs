@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
@@ -2001,6 +2001,112 @@ mod tests {
         assert!(res);
     }
 
+    /// A backend with a fixed remote-version list. Overrides the listing hook
+    /// rather than `_list_remote_versions` so the shared version cache stays
+    /// out of the test.
+    #[derive(Debug)]
+    struct VersionListBackend {
+        ba: Arc<BackendArg>,
+        versions: Vec<VersionInfo>,
+    }
+
+    impl VersionListBackend {
+        fn new(versions: &[(&str, &str)]) -> Self {
+            Self {
+                ba: Arc::new("test-hidden".into()),
+                versions: versions
+                    .iter()
+                    .map(|(version, created_at)| VersionInfo {
+                        version: (*version).to_string(),
+                        created_at: Some((*created_at).to_string()),
+                        ..Default::default()
+                    })
+                    .collect(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Backend for VersionListBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            Ok(self.versions.clone())
+        }
+
+        async fn list_remote_versions_with_info_and_options(
+            &self,
+            _config: &Arc<Config>,
+            _listing_opts: &ToolVersionOptions,
+            _selection_opts: &ToolVersionOptions,
+            _refresh: bool,
+            _has_local_version_listing_override: bool,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            Ok(self.versions.clone())
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            Ok(tv)
+        }
+    }
+
+    async fn hidden_versions(backend: &VersionListBackend, query: &str) -> Vec<String> {
+        let config = Config::get().await.unwrap();
+        let before: Timestamp = "2026-01-01T00:00:00Z".parse().unwrap();
+        backend
+            .versions_hidden_by_before_date(&config, query, before)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|v| v.version)
+            .collect()
+    }
+
+    /// `latest` resolution falls back to the unfiltered date-filtered list when
+    /// its numeric pattern matches nothing, so the hidden set must too — a tool
+    /// tagged only `nightly`/`edge` would otherwise lose the explanation of why
+    /// the cutoff left it with nothing.
+    #[tokio::test]
+    async fn test_hidden_versions_fall_back_for_non_numeric_latest() {
+        let backend = VersionListBackend::new(&[
+            ("nightly", "2026-06-01T00:00:00Z"),
+            ("edge", "2026-06-02T00:00:00Z"),
+        ]);
+        assert_eq!(
+            hidden_versions(&backend, "latest").await,
+            ["nightly", "edge"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_hidden_versions_exclude_releases_older_than_the_cutoff() {
+        let backend = VersionListBackend::new(&[
+            ("1.0.0", "2025-06-01T00:00:00Z"),
+            ("2.0.0", "2026-06-01T00:00:00Z"),
+        ]);
+        assert_eq!(hidden_versions(&backend, "latest").await, ["2.0.0"]);
+    }
+
+    /// Only versions the failed request could have selected are reported.
+    #[tokio::test]
+    async fn test_hidden_versions_are_narrowed_by_the_query() {
+        let backend = VersionListBackend::new(&[
+            ("1.8.0", "2026-06-01T00:00:00Z"),
+            ("1.9.0", "2026-06-02T00:00:00Z"),
+        ]);
+        assert_eq!(hidden_versions(&backend, "1.8").await, ["1.8.0"]);
+        assert!(hidden_versions(&backend, "99").await.is_empty());
+    }
+
     #[derive(Debug)]
     struct TestBackend {
         ba: Arc<BackendArg>,
@@ -2147,6 +2253,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// Whether this backend's version source lacks an upstream prerelease flag
     /// and should mark regex-shaped versions as prereleases before caching.
     fn mark_prereleases_from_version_pattern(&self) -> bool {
+        false
+    }
+
+    /// Pre-releases this backend recognises beyond the shared `VERSION_REGEX`,
+    /// which only knows channel tags (`-rc1`, `-beta`): a backend with strict
+    /// semver versions also treats a bare numeric suffix (`1.3.1-3`) as one.
+    fn is_backend_prerelease(&self, _version: &str) -> bool {
         false
     }
 
@@ -2881,6 +2994,55 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(self.version_order(selection_opts)?.order(versions))
     }
 
+    /// Remote versions the release-age cutoff excluded, in listing order.
+    ///
+    /// Resolution calls this only after a filtered listing already failed to
+    /// produce a match, so the remote-version cache is warm and this adds no
+    /// fetch. `query` narrows the result exactly as the failed resolution did,
+    /// so a prefix request never reports versions it would not have selected
+    /// anyway.
+    async fn versions_hidden_by_before_date(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+        before: Timestamp,
+    ) -> eyre::Result<Vec<VersionInfo>> {
+        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
+        let hidden: Vec<VersionInfo> = self
+            .list_remote_versions_with_info_with_selection_options(config, &opts, false)
+            .await?
+            .into_iter()
+            .filter(|v| {
+                v.created_at_timestamp()
+                    .is_some_and(|created| created >= before)
+            })
+            .collect();
+        let matched: HashSet<String> = self
+            .fuzzy_match_filter(
+                hidden.iter().map(|v| v.version.clone()).collect(),
+                query,
+                !self.include_prereleases(&opts),
+            )
+            .into_iter()
+            .collect();
+        // `latest` resolution falls back to the whole date-filtered list when
+        // its numeric pattern matches nothing, so the hidden set has to as
+        // well. Otherwise tools tagged `nightly`, `edge` and the like — the
+        // ones least likely to make the cutoff obvious — drop back to the bare
+        // message this exists to replace.
+        let hidden = if matched.is_empty() && query == "latest" {
+            hidden
+        } else {
+            hidden
+                .into_iter()
+                .filter(|v| matched.contains(&v.version))
+                .collect()
+        };
+        Ok(self
+            .version_order(&opts)?
+            .order_by(hidden, |v: &VersionInfo| v.version.as_str()))
+    }
+
     /// Select the latest query match using the active request's options.
     async fn latest_version_for_query_with_selection_options(
         &self,
@@ -3098,6 +3260,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 let installs_path = install_state::get_tool(&self.ba().short)
                     .and_then(|tool| tool.installs_path)
                     .unwrap_or_else(|| self.ba().installs_path.clone());
+                let filter = !self.include_prereleases(&self.ba().opts());
                 let installed_symlink = installs_path.join("latest");
                 if installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
@@ -3107,7 +3270,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .ok_or_else(|| eyre!("Invalid symlink target"))?
                         .to_string_lossy()
                         .to_string();
-                    return Ok(Some(version));
+                    // A `latest` link written before the backend could tell this
+                    // version is a pre-release must not keep winning.
+                    if !filter || !self.is_backend_prerelease(&version) {
+                        return Ok(Some(version));
+                    }
                 }
                 Ok(file::dir_subdirs(&installs_path)
                     .unwrap_or_default()
@@ -3116,6 +3283,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
                     .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
+                    .filter(|v| !filter || !self.is_backend_prerelease(v))
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
             }
@@ -4178,6 +4346,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
         query: &str,
         filter_prereleases: bool,
     ) -> Vec<String> {
+        // Same exact-match bypass as `fuzzy_match_versions`, applied with the
+        // backend's own notion of a pre-release rather than the channel-tag regex.
+        let versions = versions
+            .into_iter()
+            .filter(|v| !filter_prereleases || v == query || !self.is_backend_prerelease(v))
+            .collect();
         fuzzy_match_versions(versions, query, filter_prereleases)
     }
 

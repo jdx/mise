@@ -2,7 +2,7 @@ use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::request_exit;
 use crate::shell::ShellType;
-use crate::task::Task;
+use crate::task::{Task, parse_task_usage_field};
 use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 use eyre::{Context, Result};
 use heck::ToSnakeCase;
@@ -682,7 +682,7 @@ impl TaskScriptParser {
         if !usage_has_template
             && (!scripts_have_template || Settings::get().task.disable_spec_from_run_scripts)
         {
-            return task.usage.trim().parse().map_err(Into::into);
+            return parse_task_usage_field(&task.name, task.usage.trim());
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
@@ -697,7 +697,7 @@ impl TaskScriptParser {
         } else {
             task.usage.trim().to_string()
         };
-        let spec_from_field: usage::Spec = rendered_usage.parse()?;
+        let spec_from_field: usage::Spec = parse_task_usage_field(&task.name, &rendered_usage)?;
 
         if Settings::get().task.disable_spec_from_run_scripts {
             return Ok(spec_from_field);
@@ -758,7 +758,10 @@ impl TaskScriptParser {
             .any(|script| contains_template_syntax(script));
         if !usage_has_template && !scripts_have_template {
             let scripts = scripts.iter().map(|s| s.trim().to_string()).collect();
-            return Ok((scripts, task.usage.trim().parse()?));
+            return Ok((
+                scripts,
+                parse_task_usage_field(&task.name, task.usage.trim())?,
+            ));
         }
 
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
@@ -773,7 +776,7 @@ impl TaskScriptParser {
         } else {
             task.usage.trim().to_string()
         };
-        let spec_from_field: usage::Spec = rendered_usage.parse()?;
+        let spec_from_field: usage::Spec = parse_task_usage_field(&task.name, &rendered_usage)?;
         let usage_ctx = Self::make_usage_ctx_from_spec_defaults(&spec_from_field);
         tera_ctx.insert("usage", &usage_ctx);
 

@@ -12,7 +12,10 @@ use crate::config::{Config, Settings};
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
-use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
+use crate::install_before::{
+    BeforeDateSource, format_hidden_release_details, minimum_release_age_label,
+    resolve_before_date_for_tool_with_source,
+};
 use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
@@ -64,7 +67,21 @@ pub(crate) struct ToolVersion {
 }
 
 impl ToolVersion {
-    fn no_versions_found(backend: &ABackend, before_date: Option<Timestamp>) -> eyre::Report {
+    /// The error raised when resolution found no usable version.
+    ///
+    /// `minimum_release_age` applies by default, so "no versions found" is
+    /// routinely the cutoff hiding a brand-new release rather than anything
+    /// being wrong. Naming the setting, the versions it hid and the exact-pin
+    /// escape hatch keeps users from hunting for a filter they never set
+    /// (https://github.com/jdx/mise/discussions/13303).
+    async fn no_versions_found(
+        config: &Arc<Config>,
+        backend: &ABackend,
+        query: &str,
+        before_date: Option<Timestamp>,
+        minimum_release_age: Option<&str>,
+        suggest_exact_pin: bool,
+    ) -> eyre::Report {
         let id = backend.id();
         // The version list is also empty when fetching it failed, in which case
         // no filter was ever applied — blaming the date filter sends users
@@ -72,12 +89,57 @@ impl ToolVersion {
         if let Some(cause) = crate::backend::version_listing_failure(backend.ba()) {
             return eyre::eyre!("unable to fetch versions for {id}: {cause}");
         }
-        let msg = if before_date.is_some() {
-            format!("no versions found for {id} matching date filter")
-        } else {
-            format!("no versions found for {id}")
+        let Some(before) = before_date else {
+            return eyre::eyre!("no versions found for {id}");
         };
-        eyre::eyre!(msg)
+        let hidden = backend
+            .versions_hidden_by_before_date(config, query, before)
+            .await
+            .unwrap_or_default();
+        // The cutoff is only to blame when it actually removed a candidate.
+        let Some(newest) = hidden.last() else {
+            return eyre::eyre!("no versions found for {id}");
+        };
+        let tz = jiff::tz::TimeZone::system();
+        let age = minimum_release_age_label(backend.ba(), minimum_release_age, before);
+        let (released, age_fragment) = format_hidden_release_details(
+            newest.created_at_timestamp(),
+            age.as_deref(),
+            tz.clone(),
+        );
+        // Without a configured age to name, the cutoff itself is the only thing
+        // that tells the user how far back the filter reaches.
+        let cutoff = if age.is_some() {
+            String::new()
+        } else {
+            format!(
+                " newer than the {} cutoff",
+                before.to_zoned(tz).strftime("%Y-%m-%d %H:%M %Z")
+            )
+        };
+        let count = hidden.len();
+        let plural = if count == 1 { "" } else { "s" };
+        // Pinning the newest hidden version reproduces what was asked for only
+        // when the request selects a version directly. A `sub-N:` request
+        // subtracts from the base, so pinning the base would install something
+        // other than what was requested — `sub-1:1.8.2` resolves to `0`, not to
+        // the release below 1.8.2.
+        let remedy = if suggest_exact_pin {
+            format!(
+                " Install that one now with `{id}@{}`, or lower minimum_release_age.",
+                newest.version
+            )
+        } else {
+            format!(
+                " Lower minimum_release_age to make {} eligible.",
+                if count == 1 { "it" } else { "them" }
+            )
+        };
+        eyre::eyre!(
+            "no versions found for {id} matching minimum_release_age{age_fragment}: \
+             it hid {count} release{plural}{cutoff}, the newest being {}{released}.{remedy}",
+            newest.version,
+        )
     }
 
     pub(crate) fn new(request: ToolRequest, version: String) -> Self {
@@ -710,7 +772,15 @@ impl ToolVersion {
             if opts.offline {
                 return build(v);
             }
-            return Err(Self::no_versions_found(&backend, opts.before_date));
+            return Err(Self::no_versions_found(
+                config,
+                &backend,
+                &v,
+                opts.before_date,
+                request.options().minimum_release_age(),
+                true,
+            )
+            .await);
         }
         let installed_matches =
             (!opts.latest_versions).then(|| backend.list_installed_versions_matching(&v));
@@ -914,9 +984,17 @@ impl ToolVersion {
                 opts.refresh_remote_versions,
             )
             .await?;
-        let v = matches
-            .last()
-            .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?;
+        let Some(v) = matches.last() else {
+            return Err(Self::no_versions_found(
+                config,
+                &backend,
+                prefix,
+                opts.before_date,
+                request.options().minimum_release_age(),
+                true,
+            )
+            .await);
+        };
         Ok(Self::new(request, v.to_string()))
     }
 
@@ -957,10 +1035,27 @@ pub(crate) async fn resolve_sub_base(
         config.resolve_alias(backend, base).await?
     };
     let v = if base == "latest" {
-        backend
+        match backend
             .latest_version_with_refresh(config, None, before_date, refresh_remote_versions)
             .await?
-            .ok_or_else(|| ToolVersion::no_versions_found(backend, before_date))?
+        {
+            Some(v) => v,
+            None => {
+                // No per-tool option to pass here: `minimum_release_age_label`
+                // only names a value that resolves to the actual cutoff, so a
+                // tool that overrides it simply goes unnamed instead of being
+                // labelled with the global one.
+                return Err(ToolVersion::no_versions_found(
+                    config,
+                    backend,
+                    "latest",
+                    before_date,
+                    None,
+                    false,
+                )
+                .await);
+            }
+        }
     } else {
         base
     };

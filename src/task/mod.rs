@@ -1103,6 +1103,54 @@ fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     parse_task_usage_raw(file, &hoist_root_usage_mounts(&raw).unwrap_or(raw))
 }
 
+/// Render a usage spec failure with the detail its `Display` leaves behind.
+///
+/// `UsageErr::InvalidInput` displays as the bare "Invalid usage config" whatever went wrong:
+/// the message naming it, the offending span and the spec text itself all live in the
+/// diagnostic, which neither eyre nor a derived `Debug` asks for. Going through the reporter
+/// is what turns a spec error back into something that names a line.
+pub(crate) fn render_usage_err(err: usage::error::UsageErr) -> String {
+    format!("{:?}", usage::miette::Error::from(err))
+}
+
+/// Parse a task's `usage` field, naming the task and what was wrong with its spec.
+pub(crate) fn parse_task_usage_field(task_name: &str, spec: &str) -> Result<usage::Spec> {
+    spec.parse::<usage::Spec>().map_err(|err| {
+        eyre!(
+            "invalid usage spec for task '{task_name}'\n{}",
+            render_usage_err(err)
+        )
+    })
+}
+
+/// Parse a task script's usage spec, warning with the detail and falling back to an empty spec.
+///
+/// A file task's spec failing must not take the whole task load down, the same way one
+/// unrecognised `#MISE` key does not: every task in the project is parsed in one loop.
+fn parse_task_script_usage_or_warn(file: &Path) -> usage::Spec {
+    match parse_task_script_usage(file) {
+        Ok(spec) => spec,
+        // Reading the script is the first thing this does, and a script that was discovered
+        // and has since been deleted or made unreadable fails there. Calling that an invalid
+        // spec sends the reader to look at lines that are fine.
+        Err(usage::error::UsageErr::IO(err)) => {
+            warn!(
+                "could not read task file {}: {err}",
+                file::display_path(file)
+            );
+            usage::Spec::default()
+        }
+        Err(err) => {
+            warn!(
+                "invalid usage spec in task file {}\n{}",
+                file::display_path(file),
+                render_usage_err(err)
+            );
+            usage::Spec::default()
+        }
+    }
+}
+
 fn parse_task_usage_raw(file: &Path, raw: &str) -> usage::Result<usage::Spec> {
     let mut spec: usage::Spec = raw.parse()?;
     if spec.bin.is_empty()
@@ -2021,15 +2069,7 @@ impl Task {
             clear_usage_env(&mut env);
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
-            let spec = parse_task_script_usage(&file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(&file)
-                    )
-                })
-                .unwrap_or_default();
-            (spec, vec![])
+            (parse_task_script_usage_or_warn(&file), vec![])
         } else {
             let scripts_only = self.run_script_strings();
             let parser_dir = match cwd {
@@ -2094,14 +2134,7 @@ impl Task {
     ) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
-            parse_task_script_usage(&file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(&file)
-                    )
-                })
-                .unwrap_or_default()
+            parse_task_script_usage_or_warn(&file)
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(dir)
@@ -2121,14 +2154,7 @@ impl Task {
         config: &Arc<Config>,
     ) -> Result<usage::Spec> {
         let mut spec = if let Some(file) = self.file_path_raw() {
-            parse_task_script_usage(&file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(&file)
-                    )
-                })
-                .unwrap_or_default()
+            parse_task_script_usage_or_warn(&file)
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(self.config_root.clone())

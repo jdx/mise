@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# npm versions are strict semver, so `13.0.0-0` is a pre-release even though it
+# carries no channel tag (`-rc`, `-beta`). It must not take `latest` or a
+# version-prefix link from the newest stable install.
+
+INSTALLS="$MISE_DATA_DIR/installs/npm-commander"
+
+mise install npm:commander@13.0.0-0
+assert_fail "test -L $INSTALLS/latest"
+assert_fail "test -L $INSTALLS/13"
+
+# links an older mise wrote before it could tell the target is a pre-release
+ln -s ./13.0.0-0 "$INSTALLS/latest"
+ln -s ./13.0.0-0 "$INSTALLS/13"
+
+mise install npm:commander@12.1.0
+
+assert "readlink $INSTALLS/latest" "./12.1.0"
+assert "readlink $INSTALLS/12" "./12.1.0"
+assert_fail "test -L $INSTALLS/13"
+assert "test -d $INSTALLS/13.0.0-0"
+
+assert "mise where npm:commander@12" "$INSTALLS/12.1.0"
+assert "MISE_OFFLINE=1 mise where npm:commander@latest" "$INSTALLS/12.1.0"
+assert "mise where npm:commander@13.0.0-0" "$INSTALLS/13.0.0-0"
+assert_fail "MISE_OFFLINE=1 mise where npm:commander@13"

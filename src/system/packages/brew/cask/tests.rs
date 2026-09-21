@@ -838,7 +838,17 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
     };
 
     assert_eq!(
-        install_app(&stage, &caskroom, &app, true, true, true, false)?,
+        install_app(
+            &stage,
+            &caskroom,
+            &app,
+            AppInstallOptions {
+                keep_caskroom_copy: true,
+                adopt: true,
+                verify_adopt: true,
+                defer_if_running: false
+            }
+        )?,
         AppInstall::Installed {
             metadata_only: true
         }
@@ -846,7 +856,18 @@ fn adopts_only_an_identical_existing_app() -> Result<()> {
     assert!(!caskroom.join("Example.app").exists());
 
     crate::file::write(target.join("app"), "different")?;
-    let error = install_app(&stage, &caskroom, &app, true, true, true, false).unwrap_err();
+    let error = install_app(
+        &stage,
+        &caskroom,
+        &app,
+        AppInstallOptions {
+            keep_caskroom_copy: true,
+            adopt: true,
+            verify_adopt: true,
+            defer_if_running: false,
+        },
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("is not identical"));
     Ok(())
 }
@@ -871,7 +892,17 @@ fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
     };
 
     assert_eq!(
-        install_app(&stage, &caskroom, &app, false, true, false, false)?,
+        install_app(
+            &stage,
+            &caskroom,
+            &app,
+            AppInstallOptions {
+                keep_caskroom_copy: false,
+                adopt: true,
+                verify_adopt: false,
+                defer_if_running: false
+            }
+        )?,
         AppInstall::Installed {
             metadata_only: true
         }
@@ -6852,7 +6883,17 @@ fn nested_app_source_installs_under_bundle_basename() -> Result<()> {
     };
 
     assert_eq!(
-        install_app(&stage, &caskroom, &app, true, false, false, false)?,
+        install_app(
+            &stage,
+            &caskroom,
+            &app,
+            AppInstallOptions {
+                keep_caskroom_copy: true,
+                adopt: false,
+                verify_adopt: false,
+                defer_if_running: false
+            }
+        )?,
         AppInstall::Installed {
             metadata_only: false
         }
@@ -8121,7 +8162,17 @@ fn defers_a_running_self_updating_app_at_the_swap() -> Result<()> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()?;
-    let result = install_app(&stage, &caskroom, &app, false, false, false, true);
+    let result = install_app(
+        &stage,
+        &caskroom,
+        &app,
+        AppInstallOptions {
+            keep_caskroom_copy: false,
+            adopt: false,
+            verify_adopt: false,
+            defer_if_running: true,
+        },
+    );
     child.kill()?;
     child.wait()?;
     assert_eq!(result?, AppInstall::Running);
@@ -8136,7 +8187,17 @@ fn defers_a_running_self_updating_app_at_the_swap() -> Result<()> {
     assert_eq!(leftovers, vec![std::ffi::OsString::from("Example.app")]);
 
     assert_eq!(
-        install_app(&stage, &caskroom, &app, false, false, false, true)?,
+        install_app(
+            &stage,
+            &caskroom,
+            &app,
+            AppInstallOptions {
+                keep_caskroom_copy: false,
+                adopt: false,
+                verify_adopt: false,
+                defer_if_running: true
+            }
+        )?,
         AppInstall::Installed {
             metadata_only: true
         }
