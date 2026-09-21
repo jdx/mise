@@ -95,6 +95,7 @@ mise bootstrap user apply --dry-run
 - [`mise bootstrap secrets <SUBCOMMAND>`](/cli/bootstrap/secrets.html)
 - [`mise bootstrap services <SUBCOMMAND>`](/cli/bootstrap/services.html)
 - [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.html)
+- [`mise bootstrap unapply [FLAGS] <ENV>…`](/cli/bootstrap/unapply.html)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.html)
 
 <!-- generated reference navigation -->

@@ -146,6 +146,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap secrets", Read),
     ("bootstrap secrets status", Read),
     ("bootstrap status", Read),
+    ("bootstrap unapply", Destructive),
     // Changes the current user's login shell.
     ("bootstrap user", Read),
     ("bootstrap user apply", Write),

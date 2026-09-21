@@ -462,6 +462,29 @@ impl Config {
         Ok(config)
     }
 
+    /// Build the config view that remains when `environments` are deselected.
+    ///
+    /// Comparing the desired state with and without an environment is what lets
+    /// `mise bootstrap unapply` remove a module's resources without recording
+    /// what an earlier run applied, and keeps a resource the base configuration
+    /// or another selected environment still declares.
+    pub(crate) fn without_environments(&self, environments: &[String]) -> Arc<Self> {
+        let declared_by_environment = |path: &Path| {
+            environments_for_config_path(path)
+                .iter()
+                .any(|environment| environments.iter().any(|name| name == environment))
+        };
+        let mut config_files = self.config_files.clone();
+        config_files.retain(|path, _| !declared_by_environment(path));
+        let mut config = self.with_config_files(config_files);
+        let config_mut = Arc::get_mut(&mut config).expect("new config Arc is uniquely owned");
+        for map in &mut config_mut.bootstrap_config_maps {
+            map.config_files
+                .retain(|path, _| !declared_by_environment(path));
+        }
+        config
+    }
+
     /// Build the config view used to preview hooks introduced by dotfiles.
     ///
     /// This deliberately avoids the normal config loader: resolving vars or env can execute

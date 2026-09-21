@@ -325,6 +325,7 @@ enum Commands {
     Status(BootstrapStatus),
     #[usage(hide = true)]
     Systemd(BootstrapSystemd),
+    Unapply(BootstrapUnapply),
     User(BootstrapUser),
 }
 
@@ -364,6 +365,49 @@ struct BootstrapPlan {
     /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
     #[usage(long, verbatim_doc_comment)]
     detailed_exitcode: bool,
+
+    /// Prompt securely for missing bootstrap secret inputs
+    #[usage(long)]
+    prompt_secrets: bool,
+}
+
+/// Remove the resources a config environment contributes
+///
+/// Bootstrap converges what is declared and leaves the rest of the machine alone,
+/// so dropping a module from `env` does not remove what an earlier run applied.
+/// This removes those resources in one step, using the module's own configuration
+/// to describe them: nothing about earlier runs is recorded, and the environment
+/// is selected for this command whether or not it is selected normally.
+///
+/// Kept deliberately: resources the base configuration or another selected
+/// environment still declares, and targets that changed since they were applied
+/// unless `--force` is given. Packages, repositories, and Compose projects keep
+/// their own removal commands, which the output names.
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    example(
+        r###"mise bootstrap unapply ssh --dry-run
+mise bootstrap unapply ssh
+mise bootstrap unapply ssh gpg --yes"###
+    )
+)]
+struct BootstrapUnapply {
+    /// Config environment(s) whose resources should be removed
+    #[usage(value_name = "ENV", required = true)]
+    environment: Vec<String>,
+
+    /// Remove targets that changed since they were applied
+    #[usage(long, short)]
+    force: bool,
+
+    /// Print what would be removed without removing anything
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+
+    /// Skip the confirmation prompt
+    #[usage(long, short)]
+    yes: bool,
 
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
@@ -2166,6 +2210,32 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
     forwarded
 }
 
+/// Re-run this invocation with `environments` selected, preserving every other
+/// argument so options such as `--cd` and `--log-level` still apply.
+fn unapply_child_args(environments: &str, args: &[String]) -> Vec<OsString> {
+    let mut forwarded = vec![OsString::from("--env"), OsString::from(environments)];
+    let mut args = args.iter().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--env" | "-E" | "--profile" | "-P" => {
+                args.next();
+            }
+            _ if arg.starts_with("--env=")
+                || arg.starts_with("--profile=")
+                || (arg.starts_with("-E") || arg.starts_with("-P")) && arg.len() > 2 => {}
+            _ => {
+                forwarded.push(arg.into());
+                if global_option_takes_value(arg)
+                    && let Some(value) = args.next()
+                {
+                    forwarded.push(value.into());
+                }
+            }
+        }
+    }
+    forwarded
+}
+
 fn global_option_takes_value(arg: &str) -> bool {
     matches!(
         arg,
@@ -2446,6 +2516,7 @@ impl Commands {
             Self::Services(cmd) => cmd.run().await,
             Self::Status(cmd) => cmd.run().await,
             Self::Systemd(cmd) => cmd.run().await,
+            Self::Unapply(cmd) => cmd.run().await,
             Self::User(cmd) => cmd.run().await,
         }
     }
@@ -2505,6 +2576,92 @@ impl BootstrapPlan {
             }
         }
         Ok(())
+    }
+}
+
+impl BootstrapUnapply {
+    async fn run(self) -> Result<()> {
+        if let Some(status) = self.run_with_environments_selected()? {
+            if !status.success() {
+                bail!("bootstrap unapply failed with {status}");
+            }
+            return Ok(());
+        }
+        OperationScope::wrap("bootstrap unapply", self.dry_run, self.run_inner()).await
+    }
+
+    /// Re-run this command with the requested environments selected.
+    ///
+    /// Their config files are only loaded when they are part of the selection,
+    /// and the rest of the selection has to stay in place so a resource another
+    /// module still declares is visible. Returns `None` once nothing is missing.
+    fn run_with_environments_selected(&self) -> Result<Option<std::process::ExitStatus>> {
+        let selected = &*crate::env::MISE_ENV;
+        if self
+            .environment
+            .iter()
+            .all(|environment| selected.contains(environment))
+        {
+            return Ok(None);
+        }
+        let mut environments = selected.clone();
+        for environment in &self.environment {
+            if !environments.contains(environment) {
+                environments.push(environment.clone());
+            }
+        }
+        let mut command = Command::new(std::env::current_exe()?);
+        command.args(unapply_child_args(
+            &environments.join(","),
+            &crate::env::ARGS.read().unwrap(),
+        ));
+        Ok(Some(command.status()?))
+    }
+
+    async fn run_inner(self) -> Result<()> {
+        let config = Config::get().await?;
+        let secrets = system::secrets::resolve(&config, self.prompt_secrets)?;
+        let opts = system::unapply::UnapplyOpts {
+            dry_run: self.dry_run,
+            force: self.force,
+            verbose: config::Settings::get().verbose,
+        };
+        let unapply = system::unapply::plan(&config, &self.environment, &secrets, &opts)?;
+        for skip in &unapply.skipped {
+            warn!("{} {}: keeping it, {}", skip.kind, skip.name, skip.reason);
+        }
+        for uncovered in &unapply.uncovered {
+            info!(
+                "{} declaration(s) in [{}] are not removed by unapply: {}",
+                uncovered.count, uncovered.section, uncovered.command
+            );
+        }
+        if unapply.is_empty() {
+            info!("nothing to remove for {}", self.environment.join(", "));
+            return Ok(());
+        }
+        let mut table = MiseTable::new(false, &["Action", "Resource"]);
+        for removal in &unapply.removals {
+            table.add_row(vec![
+                "remove".to_string(),
+                format!("{}:{}", removal.kind, removal.name),
+            ]);
+        }
+        table.print()?;
+        if !self.dry_run
+            && !self.yes
+            && console::user_attended_stderr()
+            && !crate::ui::prompt::confirm(format!(
+                "bootstrap: remove {} resource(s) contributed by {}?",
+                unapply.removals.len(),
+                self.environment.join(", ")
+            ))?
+            .is_yes()
+        {
+            info!("bootstrap unapply: skipped");
+            return Ok(());
+        }
+        system::unapply::execute(&config, &unapply, &secrets, &opts).await
     }
 }
 
@@ -5107,7 +5264,7 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
-    use super::{bootstrap_from_child_args, select_remote_inventory};
+    use super::{bootstrap_from_child_args, select_remote_inventory, unapply_child_args};
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
 
@@ -5218,6 +5375,58 @@ mod tests {
                     assert_eq!(adopt.as_deref(), Some("jdx/dotfiles"));
                 }
             }
+        }
+    }
+
+    #[test]
+    fn unapply_reexec_replaces_the_selection_and_keeps_other_arguments() {
+        let args = [
+            "mise",
+            "--cd",
+            "/repo",
+            "-E",
+            "gpg",
+            "bootstrap",
+            "unapply",
+            "ssh",
+            "--yes",
+        ]
+        .map(String::from);
+        assert_eq!(
+            unapply_child_args("gpg,ssh", &args),
+            [
+                "--env",
+                "gpg,ssh",
+                "--cd",
+                "/repo",
+                "bootstrap",
+                "unapply",
+                "ssh",
+                "--yes"
+            ]
+            .map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn unapply_reexec_removes_every_selection_spelling() {
+        for selection in [
+            vec!["--env", "work"],
+            vec!["--env=work"],
+            vec!["-E", "work"],
+            vec!["-Ework"],
+            vec!["--profile", "work"],
+            vec!["--profile=work"],
+            vec!["-P", "work"],
+            vec!["-Pwork"],
+        ] {
+            let mut args = vec!["mise".to_string()];
+            args.extend(selection.iter().map(|arg| arg.to_string()));
+            args.extend(["bootstrap", "unapply", "ssh"].map(String::from));
+            assert_eq!(
+                unapply_child_args("work,ssh", &args),
+                ["--env", "work,ssh", "bootstrap", "unapply", "ssh"].map(OsString::from)
+            );
         }
     }
 

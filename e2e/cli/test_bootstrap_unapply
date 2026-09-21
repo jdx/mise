@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# `mise bootstrap unapply <env>` removes what one config environment contributes
+# and keeps everything the rest of the configuration still declares.
+
+mkdir -p sources
+echo "ssh config" >sources/sshconfig
+
+cat <<EOF >mise.toml
+[bootstrap.files."$PWD/base.conf"]
+content = "base"
+EOF
+
+cat <<EOF >mise.ssh.toml
+[bootstrap.files."$PWD/ssh.conf"]
+content = "ssh"
+
+[bootstrap.directories."$PWD/ssh.d"]
+mode = "0755"
+
+[bootstrap.files."$PWD/shared.conf"]
+content = "shared"
+
+[bootstrap.packages]
+"apt:openssh-client" = "latest"
+
+[dotfiles]
+"~/.sshconfig" = "$PWD/sources/sshconfig"
+EOF
+
+cat <<EOF >mise.gpg.toml
+[bootstrap.files."$PWD/shared.conf"]
+content = "shared"
+EOF
+
+assert_succeed "mise -E ssh,gpg bootstrap --only files,dotfiles --yes"
+assert "cat ssh.conf" "ssh"
+assert "cat shared.conf" "shared"
+assert_directory_exists "$PWD/ssh.d"
+assert_succeed "test -L $HOME/.sshconfig"
+
+# A dry run reports the module's resources without touching them. Packages keep
+# their own removal command and are reported instead of removed.
+assert_contains "mise -E gpg bootstrap unapply ssh --dry-run" "file:$PWD/ssh.conf"
+assert_contains "mise -E gpg bootstrap unapply ssh --dry-run" "directory:$PWD/ssh.d"
+assert_contains "mise -E gpg bootstrap unapply ssh --dry-run" "dotfile:~/.sshconfig"
+assert_contains "mise -E gpg bootstrap unapply ssh --dry-run 2>&1" "[bootstrap.packages]"
+assert_not_contains "mise -E gpg bootstrap unapply ssh --dry-run" "file:$PWD/shared.conf"
+assert "cat ssh.conf" "ssh"
+
+# A target that no longer matches its declaration is kept without --force.
+echo "edited by hand" >ssh.conf
+assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "changed since it was applied"
+assert "cat ssh.conf" "edited by hand"
+assert_succeed "mise -E gpg bootstrap unapply ssh --force --yes"
+assert_fail "test -e $PWD/ssh.conf"
+
+# The environment does not have to be selected: unapply selects it for this run,
+# on top of the selection the rest of the machine uses.
+assert_succeed "mise -E ssh,gpg bootstrap --only files,dotfiles --yes"
+assert_succeed "mise -E gpg bootstrap unapply ssh --yes"
+assert_fail "test -e $PWD/ssh.conf"
+assert_directory_not_exists "$PWD/ssh.d"
+assert_fail "test -L $HOME/.sshconfig"
+
+# The base configuration and the other environment are untouched, and the
+# dotfile source survives its target.
+assert "cat base.conf" "base"
+assert "cat shared.conf" "shared"
+assert "cat sources/sshconfig" "ssh config"
+
+# Nothing is left to remove on a second run.
+assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "nothing to remove for ssh"

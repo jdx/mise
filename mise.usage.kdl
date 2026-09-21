@@ -1901,6 +1901,33 @@ separate from system services declared in `[bootstrap.services]`.
             flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
+    cmd unapply help="Remove the resources a config environment contributes" effect=destructive {
+        long_help #"""
+Remove the resources a config environment contributes
+
+Bootstrap converges what is declared and leaves the rest of the machine alone,
+so dropping a module from `env` does not remove what an earlier run applied.
+This removes those resources in one step, using the module's own configuration
+to describe them: nothing about earlier runs is recorded, and the environment
+is selected for this command whether or not it is selected normally.
+
+Kept deliberately: resources the base configuration or another selected
+environment still declares, and targets that changed since they were applied
+unless `--force` is given. Packages, repositories, and Compose projects keep
+their own removal commands, which the output names.
+"""#
+        flag "-f --force" help="Remove targets that changed since they were applied"
+        flag "-n --dry-run" help="Print what would be removed without removing anything"
+        flag "-y --yes" help="Skip the confirmation prompt"
+        flag --prompt-secrets help="Prompt securely for missing bootstrap secret inputs"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <ENV>… help="Config environment(s) whose resources should be removed" var=#true
+        example #"""
+mise bootstrap unapply ssh --dry-run
+mise bootstrap unapply ssh
+mise bootstrap unapply ssh gpg --yes
+"""#
+    }
     cmd user subcommand_required=#true help="Manage current-user bootstrap settings from `[bootstrap.user]`" effect=read {
         long_help #"""
 Manage current-user bootstrap settings from `[bootstrap.user]`

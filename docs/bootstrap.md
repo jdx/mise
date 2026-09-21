@@ -398,18 +398,36 @@ without an environment suffix, such as `conf.d/ssh.toml`.
 ### Remove a module's resources
 
 Removing a module from `env` stops loading its declarations; it does **not**
-undo an earlier bootstrap. Remove resources explicitly before dropping the
-module:
+undo an earlier bootstrap. `mise bootstrap unapply` removes what one module
+applied:
 
-- For resources that support it, set `state = "absent"` and apply the change.
-- For user services, use `mise bootstrap services remove <name>`.
-- For dotfiles, run `mise dot unapply <target>` while the module is still
-  selected. If you already deselected it, reselect it explicitly, for example
-  `mise -E ssh dot unapply ~/.ssh/config`. Specify targets to avoid unapplying
-  other loaded dotfiles.
+```sh
+mise bootstrap unapply ssh --dry-run
+mise bootstrap unapply ssh
+```
+
+The module does not have to be selected. Unapply selects it for that run, on
+top of the selection the machine normally uses, so the usual order works: drop
+`ssh` from `env`, then run `mise bootstrap unapply ssh`.
+
+What to remove comes from the module's own configuration rather than a record
+of earlier runs, which is what keeps two cases safe. A resource the base
+configuration or another selected module still declares is left alone, and so
+is a target that changed since it was applied. The output names what it kept
+and why; `--force` removes a changed target anyway.
+
+Unapply covers `[bootstrap.files]`, `[bootstrap.directories]`, user services,
+and `[dotfiles]` entries and edits. Source files and configuration entries are
+kept. These sections keep their own removal, and the output names the command
+for each one the module declares:
+
 - For packages, follow the manager-specific
   [pruning guidance](/bootstrap/packages/#import-and-prune). Preview the plan;
   pruning is not limited to packages from one module.
+- For Compose projects and other resources that support it, set
+  `state = "absent"` and apply the change.
+- For a repository from [`[bootstrap.repos]`](/bootstrap/repos.html), remove
+  the checkout.
 
 ## Templates
 
