@@ -1996,24 +1996,50 @@ impl Bootstrap {
             debug!("dotfiles: post-adopt task {task} skipped: no setup is connected");
             return Ok(());
         };
-        // held across the check, the run and the record, so two
-        // bootstraps started at once cannot both decide it has not run
-        let _lock = system::history::config::lock_post_adopt()?;
-        if system::history::config::post_adopt_already_ran(&setup) {
-            debug!("dotfiles: post-adopt task {task} already ran on this machine");
+        // a bootstrap the task itself invokes is not a second adoption
+        if system::history::config::inside_post_adopt() {
+            debug!("dotfiles: post-adopt task {task} skipped inside a post-adopt task");
             return Ok(());
+        }
+        {
+            let _lock = system::history::config::lock_post_adopt()?;
+            if system::history::config::post_adopt_already_ran(&setup) {
+                debug!("dotfiles: post-adopt task {task} already ran on this machine");
+                return Ok(());
+            }
         }
         if self.dry_run {
             info!("dotfiles: would run the post-adopt task {task}");
             return Ok(());
         }
+        // The claim is held for as long as the task runs, and released by
+        // the operating system if this process dies. A second bootstrap
+        // is told what is happening rather than waiting behind arbitrary
+        // user code or running it twice.
+        let Some(_claim) = system::history::config::claim_post_adopt()? else {
+            info!(
+                "dotfiles: the post-adopt task {task} is already being run by another mise process on this machine; leaving it to that one"
+            );
+            return Ok(());
+        };
+        // re-checked under the claim: the process that held it before may
+        // have finished the task while this one was waiting for it
+        {
+            let _lock = system::history::config::lock_post_adopt()?;
+            if system::history::config::post_adopt_already_ran(&setup) {
+                debug!("dotfiles: post-adopt task {task} already ran on this machine");
+                return Ok(());
+            }
+        }
         info!("dotfiles: running the post-adopt task {task}");
+        crate::env::set_var(system::history::config::POST_ADOPT_ENV, "1");
         // the same tool handling the `bootstrap` task gets: `--skip
         // tools` means the task runner does not install anything
-        if let Err(err) = self
+        let outcome = self
             .run_task(&task, skip.contains(&BootstrapPart::Tools))
-            .await
-        {
+            .await;
+        crate::env::remove_var(system::history::config::POST_ADOPT_ENV);
+        if let Err(err) = outcome {
             // A failing task asks for the process to exit with its own
             // status, and that request is not a message anything prints.
             // What it means for the machine is said here, before the
@@ -2023,6 +2049,7 @@ impl Bootstrap {
             );
             return Err(err);
         }
+        let _lock = system::history::config::lock_post_adopt()?;
         system::history::config::record_post_adopt(&setup)
     }
 

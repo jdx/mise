@@ -11,13 +11,16 @@ require_cmd git
 origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"
 
-# ---- machine A publishes a setup whose configuration names the task
+# ---- machine A publishes a setup whose configuration names the task.
+# The task runs `mise bootstrap` itself, which every machine below then
+# exercises: a bootstrap a post-adopt task invokes must not wait for the
+# claim its parent holds, and must not run the one-time work again.
 cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
 [history]
 post_adopt = "setup"
 
 [tasks.setup]
-run = 'printf "ran\n" >>"$HOME/post-adopt-ran"; test -z "$FAIL_SETUP"'
+run = 'printf "ran\n" >>"$HOME/post-adopt-ran"; mise bootstrap --only dotfiles,task >/dev/null 2>&1; test -z "$FAIL_SETUP"'
 EOF2
 assert_succeed "mise bootstrap dotfiles track $MISE_CONFIG_DIR/config.toml"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
@@ -46,13 +49,13 @@ assert_contains "$c bootstrap --adopt file://$origin --dry-run 2>&1" "would run 
 assert_fail "test -e $C/post-adopt-ran"
 
 # adopting runs it once, after the files are installed
-assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles,task"
+assert_succeed "timeout 180 $c bootstrap --adopt file://$origin --yes --only dotfiles,task"
 assert "cat $C/post-adopt-ran" "ran"
 assert_contains "cat $C/.config/mise/config.toml" 'post_adopt = "setup"'
 
 # a second run adopts nothing, so there is nothing to finish: the task does
 # not run again
-assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles,task"
+assert_succeed "timeout 180 $c bootstrap --adopt file://$origin --yes --only dotfiles,task"
 assert "cat $C/post-adopt-ran" "ran"
 
 # and an ordinary bootstrap agrees about what already ran. The adoption's

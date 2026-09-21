@@ -297,13 +297,37 @@ pub(crate) fn post_adopt_key(task: &str) -> Result<Option<String>> {
     Ok(Some(format!("{}#{}\t{task}", origin.url, origin.branch)))
 }
 
-/// Holds the post-adopt record while it is checked and written.
+/// Set for the duration of a post-adopt task, so a `mise bootstrap` the
+/// task invokes — directly, or through anything it calls — does not try
+/// to finish the setup again. Setup work is once per adoption, not once
+/// per nested invocation.
+pub(crate) const POST_ADOPT_ENV: &str = "MISE_POST_ADOPT";
+
+/// Whether this process is running inside a post-adopt task.
+pub(crate) fn inside_post_adopt() -> bool {
+    std::env::var_os(POST_ADOPT_ENV).is_some_and(|value| !value.is_empty())
+}
+
+/// Claims the right to run the post-adopt task on this machine, or
+/// `None` when another process holds the claim.
 ///
-/// **Checking and recording are one decision.** Two bootstraps started at
-/// once would otherwise both read "not finished" and both run the
-/// once-per-machine work; the history scope that serializes the rest of
-/// this subsystem is not active when `history.enabled` is false, so this
-/// sequence brings its own lock.
+/// **The claim is held while the task runs; the record's lock is not.**
+/// The task is arbitrary user code that may take minutes and may itself
+/// invoke mise, so a lock held across it would let one machine's setup
+/// block every other bootstrap — or deadlock against itself. A lock file
+/// the operating system releases when the process ends is also what
+/// makes a claim recoverable: a killed bootstrap leaves nothing to clean
+/// up, and the next one simply takes it.
+pub(crate) fn claim_post_adopt() -> Result<Option<fslock::LockFile>> {
+    let path = post_adopt_record();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    crate::lock_file::LockFile::at(&path.with_extension("running")).try_lock()
+}
+
+/// Holds the post-adopt record while it is read or written. Taken for
+/// the moment that takes, never across the task.
 pub(crate) fn lock_post_adopt() -> Result<fslock::LockFile> {
     let path = post_adopt_record();
     if let Some(parent) = path.parent() {
