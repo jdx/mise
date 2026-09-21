@@ -20,7 +20,7 @@ use super::store::{
     self, Annotation, Changes, Checkpoint, DescriptionSource, Entry, Index, IndexEntry, Machine,
     Operation, TreeInfo, Trigger,
 };
-use super::tracked::{TrackedEntry, TrackedSet, tree_path_to_display};
+use super::tracked::{TrackedEntry, TrackedSet, display_paths_equal, tree_path_to_display};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 
@@ -629,11 +629,7 @@ impl Store {
             // On this one the better answer has just come back, so the
             // generic copy goes: one skip, said once, with the reason
             // that can be acted on.
-            checkpoint
-                .tree
-                .coverage
-                .omitted
-                .retain(|omitted| !nested.iter().any(|skip| skip.path == omitted.path));
+            drop_nested_from_omitted(&mut checkpoint.tree.coverage.omitted, &nested);
             checkpoint.tree.coverage.nested = nested;
         }
         store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
@@ -894,6 +890,27 @@ struct ManualPlan {
 /// Tells the user what the walk left out, so a credential store or a
 /// nested repository under a tracked directory never looks saved. A
 /// command the user ran (a save, a baseline, a bootstrap, rollback, or
+/// Drops from `omitted` every skip that `nested` already describes
+/// better: one skip, said once, with the reason that can be acted on.
+///
+/// **The two lists are written by different hands.** `nested` comes
+/// straight from the walk, in display paths with the platform separator;
+/// `omitted` has just been read back out of the commit trailer, where it
+/// travelled as a tree path and was rebuilt with `tree_path_to_display`,
+/// which always writes `/`. Comparing the strings exactly left every
+/// Windows skip in both lists, so each history report named it twice —
+/// the duplicate this is here to remove.
+fn drop_nested_from_omitted(
+    omitted: &mut Vec<super::store::PathReason>,
+    nested: &[super::store::PathReason],
+) {
+    omitted.retain(|omitted| {
+        !nested
+            .iter()
+            .any(|skip| display_paths_equal(&skip.path, &omitted.path))
+    });
+}
+
 /// undo outcome) lists each path; the watcher's captures and the
 /// protective captures before an operation get one summary line, since
 /// they run on every edit or are followed by the outcome's full report. A
@@ -1243,6 +1260,41 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A skipped repository is named once, however each list spells its
+    /// path. The walk writes the platform separator and the trailer
+    /// round trip always writes `/`, so on Windows the same skip reached
+    /// the comparison in two spellings and stayed in both lists.
+    #[test]
+    fn a_skipped_repository_is_dropped_from_the_omissions_on_either_separator() {
+        let reason = |path: &str, reason: &str| super::super::store::PathReason {
+            path: path.into(),
+            reason: reason.into(),
+        };
+        let nested = vec![reason(
+            r"~\.native\plugin",
+            super::super::tracked::NESTED_REPOSITORY_REASON,
+        )];
+        let mut omitted = vec![
+            reason("~/.native/plugin", "not captured in this commit"),
+            reason("~/.native/large", "size limit"),
+        ];
+        drop_nested_from_omitted(&mut omitted, &nested);
+        assert_eq!(
+            omitted.iter().map(|o| o.path.as_str()).collect::<Vec<_>>(),
+            vec!["~/.native/large"],
+            "the skip was reported twice"
+        );
+
+        // and the same spelling on both sides still works
+        let nested = vec![reason(
+            "~/.native/plugin",
+            super::super::tracked::NESTED_REPOSITORY_REASON,
+        )];
+        let mut omitted = vec![reason("~/.native/plugin", "not captured in this commit")];
+        drop_nested_from_omitted(&mut omitted, &nested);
+        assert!(omitted.is_empty());
+    }
 
     #[test]
     fn rebuild_reuses_commit_metadata_without_retaining_removed_annotations() -> Result<()> {
