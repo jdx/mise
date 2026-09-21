@@ -230,11 +230,14 @@ fn fresh_layers() -> impl Iterator<Item = PathBuf> {
 /// directory, because a global file task is a script there rather than a
 /// layer of its own.
 pub(crate) fn declares_post_adopt(source: &Path) -> bool {
-    if fresh_layers().any(|layer| layer == source) {
-        return true;
-    }
-    source.starts_with(super::tracked::global_config_dir())
-        || crate::config::is_system_config(source)
+    // A task is not always a TOML layer: a file task is a script beside
+    // one, in `tasks/` next to the configuration that includes it, and
+    // `/etc/mise/tasks/setup` is trusted for exactly the reason
+    // `/etc/mise/config.toml` is. So the question is asked of the layers
+    // the name itself was read through, and of anything beside them.
+    fresh_layers()
+        .any(|layer| layer == source || layer.parent().is_some_and(|dir| source.starts_with(dir)))
+        || source.starts_with(super::tracked::global_config_dir())
 }
 
 /// The setup this machine is connected to, read through the layers a
@@ -309,7 +312,8 @@ fn post_adopt_record() -> PathBuf {
     super::store::store_dir_in(&super::store::state_dir()).join("post-adopt")
 }
 
-/// What "this task, from this setup" is recorded as.
+/// What "this task, from this setup" is recorded as: one line, encoded,
+/// compared exactly.
 ///
 /// **A task name alone is not an identity.** `setup` is what half of
 /// these tasks will be called, and a machine that later adopts a
@@ -318,10 +322,6 @@ fn post_adopt_record() -> PathBuf {
 /// setups changes the answer; a machine with no recorded origin keys on
 /// the name alone, because there is nothing else to tell two apart.
 pub(crate) fn post_adopt_key(task: &str) -> Result<Option<String>> {
-    // the key is one line, and its parts are compared exactly: a setup
-    // whose recorded origin carries a newline or a tab could not be told
-    // from a different one, and this machine would record having
-    // finished something it never ran
     // **The task belongs to a setup, so without one there is nothing to
     // finish.** A `mise bootstrap --from <repo>` checks out configuration
     // without adopting anything and records no origin; a machine that
@@ -333,13 +333,17 @@ pub(crate) fn post_adopt_key(task: &str) -> Result<Option<String>> {
     let Some(origin) = fresh_origin()? else {
         return Ok(None);
     };
-    if origin.url.contains(['\n', '\r', '\t']) || origin.branch.contains(['\n', '\r', '\t']) {
-        eyre::bail!(
-            "the recorded setup origin contains a newline or a tab, so mise cannot record which setup finished its post-adopt task; fix [history.origin] in {}",
-            display_path(super::tracked::global_config_dir().join("config.local.toml"))
-        );
-    }
-    Ok(Some(format!("{}#{}\t{task}", origin.url, origin.branch)))
+    // **Encoded, not joined.** Any character picked as a separator can
+    // appear in a URL or a branch name: `file:///x#y` on `main` and
+    // `file:///x` on `y#main` join to the same string, and one setup
+    // finishing would then mark the other finished and skip its
+    // once-per-machine work. JSON says where each part ends, and escapes
+    // anything that would otherwise break the one-key-per-line record.
+    Ok(Some(serde_json::to_string(&[
+        origin.url.as_str(),
+        origin.branch.as_str(),
+        task,
+    ])?))
 }
 
 /// Set for the duration of a post-adopt task, so a `mise bootstrap` the
@@ -497,6 +501,37 @@ mod tests {
         std::fs::write(&path, "[history.encryption]\nrecipents = ['typo']\n").unwrap();
         let error = read_layer(&path).unwrap_err();
         assert!(format!("{error:#}").contains("config.toml"));
+    }
+
+    /// **A composite value is encoded, not joined.** Any character
+    /// picked as a separator can appear in a URL or a branch name, so
+    /// two different setups must not be able to produce one key — the
+    /// first to finish would mark the second finished and skip its
+    /// once-per-machine work.
+    #[test]
+    fn two_setups_never_share_a_post_adopt_key() {
+        let key = |url: &str, branch: &str, task: &str| {
+            serde_json::to_string(&[url, branch, task]).unwrap()
+        };
+        // the pair that collides under any single-character join
+        assert_ne!(
+            key("file:///x#y", "main", "setup"),
+            key("file:///x", "y#main", "setup")
+        );
+        // a branch with a slash, which is ordinary
+        assert_ne!(
+            key("file:///x", "feature/setup", "setup"),
+            key("file:///x", "feature", "setup/setup")
+        );
+        // and a value that could break the one-key-per-line record is
+        // escaped rather than splitting it
+        let awkward = key("file:///x\nmore", "main", "setup");
+        assert_eq!(awkward.lines().count(), 1, "{awkward}");
+        // the same setup is still the same key
+        assert_eq!(
+            key("file:///x", "main", "setup"),
+            key("file:///x", "main", "setup")
+        );
     }
 
     /// The layers are read in mise's own precedence order, so what is
