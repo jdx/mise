@@ -194,6 +194,19 @@ TOML
 assert_succeed 'mise dot track ~/.codex'
 assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'rules/**'
 
+# a project's own `mode = "track"` entry is ignored by policy, not
+# unreadable — it has nothing to lose, so it must not stop anyone
+# tracking or untracking that path themselves
+cat >"$PWD/mise.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+TOML
+assert_succeed 'mise dot track ~/.codex'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'rules/**'
+assert_succeed 'mise dot untrack ~/.codex'
+assert_succeed 'mise dot track ~/.codex'
+rm "$PWD/mise.toml"
+
 # A pattern mise cannot read is an error naming the entry and the
 # pattern, never a shorter list that would capture more.
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'

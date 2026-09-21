@@ -140,12 +140,35 @@ pub(crate) struct InvalidDeclaration {
     pub target: String,
     pub config: PathBuf,
     pub reason: String,
+    /// Why the declaration is not in force.
+    pub cause: Ignored,
+}
+
+/// **Two reasons to ignore a declaration, and only one of them is a
+/// problem with the declaration.**
+///
+/// A rewrite has to tell them apart: replacing something mise could not
+/// read would discard configuration nobody can see, while replacing
+/// nothing — a `mode = "track"` entry in project configuration, which is
+/// ignored by policy and always was — loses nothing at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Ignored {
+    /// mise could not read it: a pattern that is not a glob, a mode it
+    /// does not know, an encryption declaration that cannot hold.
+    Unreadable,
+    /// It reads fine and does not apply here.
+    ByPolicy,
 }
 
 static INVALID_DECLARATIONS: std::sync::Mutex<Vec<InvalidDeclaration>> =
     std::sync::Mutex::new(Vec::new());
 
 fn record_invalid(target: &str, config: &Path, reason: impl Into<String>) {
+    record_ignored(target, config, reason, Ignored::Unreadable);
+}
+
+fn record_ignored(target: &str, config: &Path, reason: impl Into<String>, cause: Ignored) {
     let reason = reason.into();
     warn!("[dotfiles].\"{target}\": {reason}, ignoring entry");
     let mut invalid = INVALID_DECLARATIONS
@@ -159,6 +182,7 @@ fn record_invalid(target: &str, config: &Path, reason: impl Into<String>) {
             target: target.to_string(),
             config: config.to_path_buf(),
             reason,
+            cause,
         });
     }
 }
@@ -842,10 +866,11 @@ fn files_from_config_files_with_tracking_roots(
             if tracking_roots.is_some_and(|roots| !track_layer_allowed(&origin, roots))
                 && value.get("mode").and_then(toml::Value::as_str) == Some("track")
             {
-                record_invalid(
+                record_ignored(
                     &target_raw,
                     &origin.config,
                     "tracking is enrolled from the global configuration only (ignored: project config)",
+                    Ignored::ByPolicy,
                 );
                 continue;
             }

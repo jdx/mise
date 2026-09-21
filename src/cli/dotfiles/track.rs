@@ -114,10 +114,17 @@ impl DotfilesTrack {
             if let Some(invalid) = crate::system::files::invalid_declarations()
                 .into_iter()
                 .find(|invalid| {
-                    crate::system::files::resolve_target_arg(&invalid.target)
-                        .components()
-                        .collect::<PathBuf>()
-                        == target
+                    // **Only a declaration mise could not read blocks a
+                    // rewrite.** One that reads fine and does not apply
+                    // here — a `mode = "track"` entry in project
+                    // configuration, ignored by policy and always was —
+                    // has nothing to lose, and a cloned repository must
+                    // not stop someone tracking that path themselves.
+                    invalid.cause == crate::system::files::Ignored::Unreadable
+                        && crate::system::files::resolve_target_arg(&invalid.target)
+                            .components()
+                            .collect::<PathBuf>()
+                            == target
                 })
             {
                 bail!(

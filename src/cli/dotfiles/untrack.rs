@@ -81,10 +81,14 @@ impl DotfilesUntrack {
                     if let Some(invalid) = crate::system::files::invalid_declarations()
                         .into_iter()
                         .find(|invalid| {
-                            crate::system::files::resolve_target_arg(&invalid.target)
-                                .components()
-                                .collect::<PathBuf>()
-                                == target
+                            // only a declaration mise could not read: one
+                            // ignored by policy is not this path's
+                            // declaration at all
+                            invalid.cause == crate::system::files::Ignored::Unreadable
+                                && crate::system::files::resolve_target_arg(&invalid.target)
+                                    .components()
+                                    .collect::<PathBuf>()
+                                    == target
                         })
                     {
                         bail!(
