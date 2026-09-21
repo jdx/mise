@@ -1068,12 +1068,20 @@ impl ExcludeSet {
         // written that way whatever platform it is read on, a path is not,
         // and normalizing once here is the only place the two forms can
         // fail to line up.
+        // **A path outside the tracked root has no path relative to
+        // it.** Falling back to the absolute path here let a relative
+        // rule — compiled as `**/sessions/**` — match
+        // `/somewhere/else/sessions/file`, so a capture would have
+        // considered paths no entry covers, the watcher would have
+        // followed them, and a replay would have skipped restoring files
+        // the checkpoint never held. An absolute rule still applies:
+        // those are matched against the path itself, which is a question
+        // that does not need a root.
         let relative_path = if path == root {
             path.file_name().map(PathBuf::from)
         } else {
             path.strip_prefix(root).map(Path::to_path_buf).ok()
-        }
-        .unwrap_or_else(|| path.to_path_buf());
+        };
         let mut candidates = vec![];
         for ancestor in path.ancestors() {
             candidates.push(separators(ancestor));
@@ -1082,7 +1090,8 @@ impl ExcludeSet {
             }
         }
         let relative: Vec<String> = relative_path
-            .ancestors()
+            .iter()
+            .flat_map(|relative| relative.ancestors().collect::<Vec<_>>())
             .filter(|ancestor| !ancestor.as_os_str().is_empty())
             .map(separators)
             .collect();
@@ -2375,7 +2384,10 @@ mod tests {
             Path::new("/nonexistent-mise-test/a/b/c.log"),
             Path::new(ROOT)
         ));
-        assert!(log.is_match(&cwd.join("a/b/c.log"), Path::new(ROOT)));
+        // the same rule under a different tracked root: a relative
+        // pattern matches at any depth *inside the entry*, which is the
+        // only place it is ever asked about
+        assert!(log.is_match(&cwd.join("a/b/c.log"), &cwd));
         assert!(!log.is_match(
             Path::new("/nonexistent-mise-test/a/b/c.txt"),
             Path::new(ROOT)
@@ -2388,14 +2400,20 @@ mod tests {
             let sessions = ExcludeSet::new(&[pattern.to_string()]).unwrap();
             for root in [Path::new("/nonexistent-mise-test/.codex"), cwd.as_path()] {
                 assert!(
-                    sessions.is_match(&root.join("sessions/one.jsonl"), Path::new(ROOT)),
+                    sessions.is_match(&root.join("sessions/one.jsonl"), root),
                     "{pattern} under {}",
                     root.display()
                 );
             }
+            // and a path outside the tracked entry is not this entry's
+            // business, whatever the pattern would say about its name
+            assert!(!sessions.is_match(
+                Path::new("/somewhere/else/sessions/one.jsonl"),
+                Path::new("/nonexistent-mise-test/.codex")
+            ));
             assert!(!sessions.is_match(
                 Path::new("/nonexistent-mise-test/.codex/config.toml"),
-                Path::new(ROOT)
+                Path::new("/nonexistent-mise-test/.codex")
             ));
         }
         // `~` is expanded, so a pattern written with it is absolute and
