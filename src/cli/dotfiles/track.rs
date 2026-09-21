@@ -762,9 +762,16 @@ fn list_entries(array: &toml_edit::Array) -> Vec<Option<String>> {
 /// change any other path's outcome either, because a pattern bears only
 /// on the paths it matches and the appended copy already decides those.
 fn append_rule(array: &mut toml_edit::Array, glob: &str) -> bool {
+    // compared without its polarity on both sides: `mise dot exclude
+    // '!foo'` and `mise dot exclude foo` are the same rule written two
+    // ways, and either one appended must take the other's earlier copy
+    // with it — otherwise the list keeps a stale entry the doc above
+    // says it removes
+    let bare = |pattern: &str| pattern.strip_prefix('!').unwrap_or(pattern).to_string();
+    let subject = bare(glob);
     let before = list_entries(array);
     array.retain(|value| match value.as_str() {
-        Some(entry) => entry != glob && entry.strip_prefix('!') != Some(glob),
+        Some(entry) => bare(entry) != subject,
         None => true,
     });
     array.push(string(glob));
@@ -786,6 +793,24 @@ fn drop_glob(array: &mut toml_edit::Array, glob: &str) -> bool {
 #[cfg(test)]
 mod exclude_list_tests {
     use super::*;
+
+    /// The same rule written with either polarity is one rule: appending
+    /// it takes the other spelling's earlier copy with it, whichever way
+    /// round they were written.
+    #[test]
+    fn a_rule_replaces_its_own_negation_either_way_round() {
+        for (existing, appended, expected) in [
+            (vec!["foo"], "!foo", vec!["!foo"]),
+            (vec!["!foo"], "foo", vec!["foo"]),
+            (vec!["foo", "bar"], "!foo", vec!["bar", "!foo"]),
+            (vec!["!foo", "bar"], "!foo", vec!["bar", "!foo"]),
+            (vec!["bar"], "!foo", vec!["bar", "!foo"]),
+        ] {
+            let mut list = array(&existing);
+            append_rule(&mut list, appended);
+            assert_eq!(entries(&list), expected, "{existing:?} + {appended:?}");
+        }
+    }
 
     fn array(entries: &[&str]) -> toml_edit::Array {
         let mut array = toml_edit::Array::new();
