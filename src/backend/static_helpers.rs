@@ -633,9 +633,85 @@ pub(crate) fn get_filename_from_url(url_str: &str) -> String {
             .unwrap_or(url_str)
             .to_string()
     };
+    // The result is joined under a download directory, so a decoded name that
+    // would add separators or truncate at a nul has to stay encoded: the raw
+    // segment is inert as a single path component. Mirrors the cask
+    // artifact-name guard. The raw segment only stands in when it passes the
+    // same check, because it can carry the problem verbatim: a literal `C:`
+    // prefix loses the join base on windows, and a device name fails to
+    // create, so the fully encoded segment takes over then.
     urlencoding::decode(&filename)
-        .map(|s| s.to_string())
-        .unwrap_or(filename)
+        .ok()
+        .filter(|decoded| !is_unusable_file_name(decoded))
+        .map(|s| s.into_owned())
+        .unwrap_or_else(|| fallback_file_name(&filename))
+}
+
+/// The raw url segment an unusable decoded name falls back to. It carries the
+/// same problems verbatim when they were never encoded (a windows `C:`
+/// prefix, a device name), so it passes the same check first; the fully
+/// encoded segment is inert where the raw one is not, and a name that stays
+/// unusable even encoded (device names are plain letters) takes an
+/// ordinary-file prefix. A trailing dot survives the encoding
+/// (`tool.` -> `tool.`), so the encoded stand-in gets its trailing dots
+/// encoded too before the name is judged: windows then sees ordinary hex
+/// text at the end.
+fn fallback_file_name(segment: &str) -> String {
+    if !is_unusable_file_name(segment) {
+        return segment.to_string();
+    }
+    let encoded = urlencoding::encode(segment).into_owned();
+    let encoded = encode_trailing_dots(&encoded);
+    if is_unusable_file_name(&encoded) {
+        format!("_{encoded}")
+    } else {
+        encoded
+    }
+}
+
+/// Windows normalizes or rejects a destination that ends in a dot, and
+/// percent-encoding keeps one (`tool.` stays `tool.`), so the trailing
+/// dot run is encoded like the rest of the segment: `tool.` ->
+/// `tool%2E`.
+fn encode_trailing_dots(name: &str) -> String {
+    let head = name.trim_end_matches('.');
+    let mut out = String::from(head);
+    for _ in head.len()..name.len() {
+        out.push_str("%2E");
+    }
+    out
+}
+
+fn is_unusable_file_name(name: &str) -> bool {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\0']) {
+        return true;
+    }
+    cfg!(windows)
+        && (name.ends_with([' ', '.'])
+            || name.chars().any(|c| {
+                c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '\\' | '|' | '?' | '*')
+            })
+            || is_reserved_device_name(name))
+}
+
+/// Windows reserves device names with or without an extension, `CON.exe`
+/// fails to create just like `CON`, so the stem decides. Windows reads the
+/// ISO/IEC 8859-1 superscript digits ¹, ², and ³ as digits in COM#/LPT#
+/// device names too, so `COM¹` fails to create just like `COM1`.
+fn is_reserved_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && matches!(
+                stem.as_bytes(),
+                [b'C', b'O', b'M', b'1'..=b'9'] | [b'L', b'P', b'T', b'1'..=b'9']
+            ))
+        || (stem.len() == 5
+            && matches!(
+                stem.as_bytes(),
+                [b'C', b'O', b'M', 0xC2, 0xB2 | 0xB3 | 0xB9]
+                    | [b'L', b'P', b'T', 0xC2, 0xB2 | 0xB3 | 0xB9]
+            ))
 }
 
 /// Whether anything describes what is inside the archive.
@@ -1602,10 +1678,103 @@ mod tests {
             ("https://example.com", "download"),
             ("https://example.com/muse.tar.gz?token=value", "muse.tar.gz"),
             ("https://example.com/my%20tool.zip", "my tool.zip"),
+            (
+                "https://example.com/We%2DAre%2DThe%2DChampions.zip",
+                "We-Are-The-Champions.zip",
+            ),
+            // a decoded name that would escape the download directory must
+            // not be used, the raw segment stays a single path component
+            (
+                "https://example.com/tool%2F..%2Fpwned.tar.gz",
+                "tool%2F..%2Fpwned.tar.gz",
+            ),
+            ("https://example.com/pkg%00x.tar.gz", "pkg%00x.tar.gz"),
+            // a raw segment can carry the problem verbatim (an unencoded nul
+            // in a malformed url): the encoded stand-in is what stays inert
+            ("not-a-url/x\0y.tar.gz", "x%00y.tar.gz"),
             ("tool.tar.gz", "tool.tar.gz"),
         ] {
             assert_eq!(get_filename_from_url(url), expected, "{url}");
         }
+    }
+
+    /// `?`, `|` etc. are ordinary characters in a macos or linux file name,
+    /// so names windows would reject still decode there — the cask guard
+    /// makes the same split.
+    #[test]
+    #[cfg(not(windows))]
+    fn test_get_filename_from_url_decodes_names_windows_would_reject() {
+        assert_eq!(
+            get_filename_from_url("https://example.com/C%3Apayload.tar.gz"),
+            "C:payload.tar.gz"
+        );
+    }
+
+    /// A trailing dot is a legal end on macos and linux, so the raw segment
+    /// stands in there; windows gets the encoded form from the `windows`
+    /// test below.
+    #[test]
+    #[cfg(not(windows))]
+    fn test_get_filename_from_url_keeps_trailing_dot_where_legal() {
+        assert_eq!(get_filename_from_url("https://example.com/tool."), "tool.");
+    }
+
+    /// The fallback lane has to hold on windows too, where a raw segment can
+    /// be unusable verbatim: a literal `C:` prefix has a drive but no root,
+    /// so joining it discards the download directory, and device names are
+    /// reserved with an extension while a plain name encodes to itself.
+    #[test]
+    #[cfg(windows)]
+    fn test_get_filename_from_url_encodes_windows_only_unusable_raws() {
+        for (url, expected) in [
+            ("https://example.com/C:payload.tar.gz", "C%3Apayload.tar.gz"),
+            ("https://example.com/CON.exe", "_CON.exe"),
+            ("https://example.com/NUL.zip", "_NUL.zip"),
+            // the encoded segment of an encoded device name is already inert
+            ("https://example.com/%43%4F%4E.exe", "%43%4F%4E.exe"),
+            ("https://example.com/COM%C2%B9.exe", "COM%C2%B9.exe"),
+            ("https://example.com/LPT%C2%B3.tar.gz", "LPT%C2%B3.tar.gz"),
+            // a trailing dot survives both the percent-encoding and the
+            // ordinary-file prefix, so the encoded stand-in encodes it too
+            ("https://example.com/tool.", "tool%2E"),
+            ("https://example.com/CON.", "CON%2E"),
+        ] {
+            assert_eq!(get_filename_from_url(url), expected, "{url}");
+        }
+    }
+
+    /// The ISO/IEC 8859-1 superscript digits ¹, ², and ³ count as digits in
+    /// COM#/LPT# device names on windows, so they are reserved with and
+    /// without an extension, just like the ASCII numbered variants.
+    #[test]
+    fn test_reserved_device_name_superscript_digits() {
+        for name in [
+            "COM¹",
+            "COM²",
+            "COM³",
+            "LPT¹",
+            "LPT²",
+            "LPT³",
+            "COM¹.exe",
+            "LPT³.tar.gz",
+        ] {
+            assert!(is_reserved_device_name(name), "{name}");
+        }
+        for name in ["COM", "LPT", "COMPUTER", "COM1X", "LPT12"] {
+            assert!(!is_reserved_device_name(name), "{name}");
+        }
+    }
+
+    /// Percent-encoding keeps a trailing dot, and windows normalizes or
+    /// rejects a destination that ends in one, so the fallback encodes the
+    /// trailing dot run like the rest of the segment.
+    #[test]
+    fn test_encode_trailing_dots() {
+        assert_eq!(encode_trailing_dots("tool."), "tool%2E");
+        assert_eq!(encode_trailing_dots("tool"), "tool");
+        assert_eq!(encode_trailing_dots("a..b."), "a..b%2E");
+        assert_eq!(encode_trailing_dots(".."), "%2E%2E");
+        assert_eq!(encode_trailing_dots("."), "%2E");
     }
 
     const SHA256_LOWER: &str = "7fdd1f42e6b0855421ecf27bb406e2492ade1087c85e30ebf0deab6280ea743c";
