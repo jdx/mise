@@ -366,6 +366,13 @@ fn lock_post_adopt() -> Result<fslock::LockFile> {
 /// it as one reruns work that is meant to happen once and then
 /// overwrites every completion this machine had recorded.
 pub(crate) fn post_adopt_already_ran(key: &str) -> Result<bool> {
+    // nothing recorded, nothing to read — and nothing created: a machine
+    // that keeps no history must not grow a history directory because a
+    // bootstrap asked what it had finished. The claim is what keeps two
+    // processes from racing here, so this look costs nothing.
+    if !post_adopt_record().exists() {
+        return Ok(false);
+    }
     let _lock = lock_post_adopt()?;
     Ok(read_post_adopt()?
         .lines()
