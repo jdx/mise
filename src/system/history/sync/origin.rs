@@ -158,6 +158,7 @@ async fn set_inner(
         let mut differing = vec![];
         let mut incoming = 0;
         let roots = Roots::current();
+        let exclude = tracked.exclude_set()?;
         for (branch_path, file) in &shared.files {
             match upstream_files.files.get(branch_path) {
                 Some((_, oid)) if *oid == file.oid => present += 1,
@@ -168,7 +169,7 @@ async fn set_inner(
         for branch_path in upstream_files.files.keys() {
             if !shared.files.contains_key(branch_path)
                 && roots.locate(branch_path).path().is_some()
-                && run::eligible(&roots, tracked, branch_path)
+                && run::eligible(&roots, tracked, &exclude, branch_path)
             {
                 incoming += 1;
             }
