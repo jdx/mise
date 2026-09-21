@@ -413,7 +413,11 @@ pub(crate) fn record_post_adopt(key: &str) -> Result<()> {
     }
     ran.push_str(key);
     ran.push('\n');
-    std::fs::write(&path, ran)
+    // **Replaced in one step.** A crash partway through a plain write
+    // would leave a torn record — and since an unreadable record is now
+    // an error rather than an absence, that would fail every later
+    // bootstrap instead of quietly running the task again.
+    crate::file::write_atomic(&path, ran)
         .wrap_err_with(|| format!("recording the post-adopt task in {}", display_path(&path)))?;
     Ok(())
 }
