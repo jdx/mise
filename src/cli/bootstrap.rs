@@ -2626,6 +2626,10 @@ impl BootstrapUnapply {
             &environments.join(","),
             &crate::env::ARGS.read().unwrap(),
         ));
+        // The directory has already been entered, by `--cd` or by this variable.
+        // The child inherits it, and a relative value would be applied a second
+        // time, landing one level deeper or failing outright.
+        command.env_remove("MISE_CD");
         Ok(Some(command.status()?))
     }
 
