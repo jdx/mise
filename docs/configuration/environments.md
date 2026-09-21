@@ -46,8 +46,9 @@ Multiple environments can be specified, for example `mise -E ci,test run build`.
 Within the same directory, the last environment takes precedence. Use
 `mise -E ci,test config` to inspect the combined selection.
 
-Machine setup can use the same mechanism to group optional units of
-configuration; see [bootstrap modules](/bootstrap.html#modules).
+For machine setup, group an application's packages, dotfiles, and services in
+one environment file, then select the modules each machine needs. See
+[bootstrap modules](/bootstrap.html#modules) for an example and cleanup guidance.
 
 ## Setting MISE_ENV in .miserc.toml
 
