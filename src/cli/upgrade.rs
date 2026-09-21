@@ -275,6 +275,12 @@ impl Upgrade {
                     request,
                 });
             }
+            explicit_config_bumps.retain(|bump| {
+                !self
+                    .exclude
+                    .iter()
+                    .any(|tool| backend_args_match(tool.ba.as_ref(), bump.request.ba()))
+            });
         }
         if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
@@ -452,7 +458,7 @@ impl Upgrade {
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
                 info!("All tools are up to date");
-            } else {
+            } else if !bump_outdated.is_empty() {
                 let hidden = bump_outdated.len().saturating_sub(MAX_OUT_OF_RANGE_UPDATES);
                 let mut updates = bump_outdated
                     .iter()
