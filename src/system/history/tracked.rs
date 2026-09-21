@@ -11,7 +11,7 @@
 //! Only explicit `mode = "track"` declarations enroll paths. Deployment
 //! declarations and symlink targets never enroll files implicitly.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 
 use eyre::Result;
@@ -263,9 +263,19 @@ pub(crate) struct Walk {
     /// Credential-named files an `include` list selected for plaintext
     /// capture, so every report can say so.
     pub plaintext: Vec<PathReason>,
-    /// For each entry with an `include` list, how many files its tree
-    /// holds in all, so a report can say how much the list selects.
+    /// For each entry with an `include` list, how many of its files the
+    /// walk looked at, so a report can say how much the list selects.
+    ///
+    /// **This counts what was searched, which is not the whole tree.** A
+    /// directory no pattern could reach into is skipped unopened — the
+    /// point of the list — so what is inside it is never counted. An
+    /// entry whose walk skipped anything is in [`Self::skipped`], and a
+    /// report says "2 files" there rather than claiming "2 of 4".
     pub considered: BTreeMap<usize, u64>,
+    /// Entries whose walk skipped a directory the `include` list could
+    /// not reach into, so their `considered` count is a floor and not a
+    /// total.
+    pub skipped: BTreeSet<usize>,
     /// Repositories found inside a tracked directory, skipped whole.
     pub nested: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
@@ -836,6 +846,7 @@ fn walk_entry(
             // check comes first, so one is still reported before its
             // parent is skipped for not being selected.
             if !repository && entry.include_prunes(path) {
+                walk.skipped.insert(index);
                 walker.skip_current_dir();
                 continue;
             }

@@ -732,7 +732,11 @@ one nobody reads.
 
 `mise dot paths` and `mise dot track --dry-run` show the list and how
 much it selects, for example `~/.codex: 2 of 22,972 files (include
-list)`, and list a file captured under rule 4 as `plaintext:`. Narrowing
+list)`, and list a file captured under rule 4 as `plaintext:`. A
+directory no pattern could reach into is skipped unopened — that is what
+makes a narrow list cheap — so when a list skips one, the report says
+`~/.codex: 2 files (include list)` without a total: counting the rest
+would mean walking exactly what the list was written to avoid. Narrowing
 an include list drops paths earlier checkpoints held from every
 checkpoint after it; `mise dot save` says how many when it happens.
 
