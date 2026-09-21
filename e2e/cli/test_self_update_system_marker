@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# A packager's marker sits next to the binary it installed, which is the only mise it can speak
+# for. A distribution that manages mise for its users has a second problem: a standalone mise
+# installed alongside the packaged one -- /usr/local/bin/mise from the install script, or
+# ~/.local/bin/mise -- finds no marker of its own, updates itself in place, and then shadows the
+# copy the distribution keeps current. A marker in the system config directory is not relative to
+# any binary, so it covers those too.
+
+version="$(mise version | tail -n1 | awk '{print $1}' | sed 's/-DEBUG$//')"
+
+# Control: with nothing installed this mise updates itself. Asking for the version it already has
+# takes the up-to-date path, so nothing is downloaded here or below.
+assert_contains "mise self-update $version --no-plugins 2>&1" "mise is already up to date"
+
+# Instructions in the system config directory: self-update stops, and says what to run instead.
+cat >"$MISE_SYSTEM_DIR/mise-self-update-instructions.toml" <<'TOML'
+message = "mise is managed by the package manager on this machine. Run: distro-update mise"
+TOML
+
+assert_fail "mise self-update $version --no-plugins" "cannot update"
+assert_fail "mise self-update $version --no-plugins" "distro-update mise"
+
+# And the same message follows the "newer version available" warning, which is where most users
+# meet it. show_latest() returns early in CI, so clear the CI markers and prime the daily check.
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+echo "9999.0.0" >"$MISE_CACHE_DIR/latest-version"
+assert_contains "mise version 2>&1" "9999.0.0 available"
+assert_contains "mise version 2>&1" "distro-update mise"
+# The packager's message replaces the generic hint rather than joining it.
+assert_not_contains "mise version 2>&1" "self-update is disabled for this install"
+
+# A user who deliberately runs a standalone mise alongside can still opt out.
+assert_contains "MISE_SELF_UPDATE_AVAILABLE=true mise self-update $version --no-plugins 2>&1" "mise is already up to date"
+
+# The bare marker works the same way, without a message of its own.
+rm "$MISE_SYSTEM_DIR/mise-self-update-instructions.toml"
+touch "$MISE_SYSTEM_DIR/.disable-self-update"
+assert_fail "mise self-update $version --no-plugins" "installed via a package manager"
+assert_contains "mise version 2>&1" "self-update is disabled for this install"
+assert_contains "MISE_SELF_UPDATE_AVAILABLE=true mise self-update $version --no-plugins 2>&1" "mise is already up to date"

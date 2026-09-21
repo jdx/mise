@@ -871,7 +871,7 @@ For detailed architecture information, see
 
 When mise is installed via a package manager, `mise self-update` should not replace the binary the package manager owns; users should update through the package manager instead. This is opt-in: a package that does none of the following keeps self-update fully enabled. Packagers have three ways to turn it off, and any of them makes `mise doctor` report `self_update_available: no`.
 
-The paths below are relative to the install prefix, which mise derives from its own binary: the path is canonicalized (symlinks resolved) and then taken two levels up, so `/usr/bin/mise` gives `/usr`.
+Unless noted as machine-wide, the paths below are relative to the install prefix, which mise derives from its own binary: the path is canonicalized (symlinks resolved) and then taken two levels up, so `/usr/bin/mise` gives `/usr`.
 
 ### Disable at build time
 
@@ -891,6 +891,7 @@ Install an empty `.disable-self-update` file at any one of:
 - `lib/.disable-self-update` (used by Homebrew)
 - `lib/mise/.disable-self-update` (used by the AUR `mise-bin` package)
 - `lib64/mise/.disable-self-update`
+- `/etc/mise/.disable-self-update` ([machine-wide](#machine-wide-markers))
 
 ### Ship update instructions
 
@@ -899,6 +900,7 @@ Installing a TOML file with platform-specific instructions also disables self-up
 - `lib/mise-self-update-instructions.toml`
 - `lib/mise/mise-self-update-instructions.toml`
 - `lib64/mise/mise-self-update-instructions.toml`
+- `/etc/mise/mise-self-update-instructions.toml` ([machine-wide](#machine-wide-markers))
 
 Example contents:
 
@@ -913,6 +915,21 @@ message = "To update mise from COPR, run:\n\n  sudo dnf upgrade mise\n"
 ```
 
 Setting `MISE_SELF_UPDATE_INSTRUCTIONS` to a file path overrides the search.
+
+### Machine-wide markers
+
+Both files are also read from the system config directory (`/etc/mise`, or `MISE_SYSTEM_CONFIG_DIR`). The prefix-relative paths above only reach the install a packager laid down; the system config directory is not relative to any binary, so a marker there applies to **every** mise on the machine — including ones the package manager did not install, such as a `/usr/local/bin/mise` or `~/.local/bin/mise` from the install script.
+
+That is the one to use when the distribution, rather than the package, is what owns mise: a second mise installed alongside the packaged one otherwise finds no marker, updates itself in place, and shadows the copy the distribution keeps current. A per-binary marker is the better fit for a package that is installed on systems it does not own, such as Homebrew or a `.deb`.
+
+The instructions file is the more useful of the two here, because a machine-wide marker is read by binaries the packager never installed and their users need to be told what to run instead:
+
+```toml
+# Omarchy
+message = "mise is managed by pacman on Omarchy. To update it, run:\n\n  omarchy update\n"
+```
+
+A user who deliberately runs a standalone mise alongside can still opt out with `MISE_SELF_UPDATE_AVAILABLE=true`.
 
 ### Overriding the outcome
 

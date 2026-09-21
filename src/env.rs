@@ -496,6 +496,20 @@ fn find_in_tree(base: &Path, rels: &[&[&str]]) -> Option<PathBuf> {
     None
 }
 
+/// A self-update marker in the system config directory (`/etc/mise` by default).
+///
+/// The markers next to the binary only cover the install a packager laid down. A second mise on
+/// the same machine -- `/usr/local/bin/mise` from the install script, `~/.local/bin/mise` -- finds
+/// nothing there and happily replaces itself on a system whose distribution already manages mise,
+/// which is how a machine ends up with an unmanaged mise shadowing the packaged one. This is the
+/// machine-wide form of the same statement: a distribution says once that mise is updated by the
+/// package manager here, and it holds for every mise on the box. `MISE_SELF_UPDATE_AVAILABLE=true`
+/// still overrides it, for the user who deliberately runs a standalone mise alongside.
+fn system_self_update_marker(name: &str) -> Option<PathBuf> {
+    let path = MISE_SYSTEM_CONFIG_DIR.join(name);
+    path.exists().then_some(path)
+}
+
 fn mise_install_base() -> Option<PathBuf> {
     std::fs::canonicalize(&*MISE_BIN)
         .ok()
@@ -507,16 +521,19 @@ pub(crate) static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::n
     if let Some(p) = var_path("MISE_SELF_UPDATE_INSTRUCTIONS") {
         return Some(p);
     }
-    let base = mise_install_base()?;
-    // search lib/, lib/mise/, lib64/mise/
-    find_in_tree(
-        &base,
-        &[
-            &["lib", "mise-self-update-instructions.toml"],
-            &["lib", "mise", "mise-self-update-instructions.toml"],
-            &["lib64", "mise", "mise-self-update-instructions.toml"],
-        ],
-    )
+    // search lib/, lib/mise/, lib64/mise/ next to the binary, then the system config dir
+    mise_install_base()
+        .and_then(|base| {
+            find_in_tree(
+                &base,
+                &[
+                    &["lib", "mise-self-update-instructions.toml"],
+                    &["lib", "mise", "mise-self-update-instructions.toml"],
+                    &["lib64", "mise", "mise-self-update-instructions.toml"],
+                ],
+            )
+        })
+        .or_else(|| system_self_update_marker("mise-self-update-instructions.toml"))
 });
 #[cfg(feature = "self_update")]
 pub(crate) static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
@@ -530,15 +547,18 @@ pub(crate) static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| 
 });
 #[cfg(feature = "self_update")]
 pub(crate) static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
-    let base = mise_install_base()?;
-    find_in_tree(
-        &base,
-        &[
-            &["lib", ".disable-self-update"],
-            &["lib", "mise", ".disable-self-update"],
-            &["lib64", "mise", ".disable-self-update"],
-        ],
-    )
+    mise_install_base()
+        .and_then(|base| {
+            find_in_tree(
+                &base,
+                &[
+                    &["lib", ".disable-self-update"],
+                    &["lib", "mise", ".disable-self-update"],
+                    &["lib64", "mise", ".disable-self-update"],
+                ],
+            )
+        })
+        .or_else(|| system_self_update_marker(".disable-self-update"))
 });
 pub(crate) static MISE_LOG_HTTP: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_HTTP"));
 pub(crate) static MISE_LOG_VERBOSE_DEPS: Lazy<bool> =
