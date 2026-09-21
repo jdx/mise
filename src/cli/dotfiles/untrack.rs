@@ -75,6 +75,24 @@ impl DotfilesUntrack {
                     }
                 }
                 None => {
+                    // A declaration mise could not read is not absent,
+                    // and saying "not tracked" about one would send the
+                    // user looking for something that is right there.
+                    if let Some(invalid) = crate::system::files::invalid_declarations()
+                        .into_iter()
+                        .find(|invalid| {
+                            crate::system::files::resolve_target_arg(&invalid.target)
+                                .components()
+                                .collect::<PathBuf>()
+                                == target
+                        })
+                    {
+                        bail!(
+                            "{target_raw} is declared in {}, but that declaration cannot be read: {}. Fix or remove it there",
+                            display_path(&invalid.config),
+                            invalid.reason
+                        );
+                    }
                     // A child of an explicitly tracked directory: exclude it.
                     let Some(owner) = tracked.entry_for(&path) else {
                         bail!("{target_raw} is not tracked");

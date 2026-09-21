@@ -2828,6 +2828,43 @@ mod tests {
         assert!(!set.excluded_by_lists(&exclude, &selected));
     }
 
+    /// **Unselected is not absent.** A file that appears at a tracked
+    /// entry's own path is not something a checkpoint with an include
+    /// list ever held, so a rollback must not remove it.
+    #[test]
+    fn a_file_at_the_entry_path_is_not_read_as_absent() {
+        use crate::system::history::replay::{PathState, classify_coverage};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules")).unwrap();
+        std::fs::write(root.join("rules/one.md"), "keep").unwrap();
+
+        let mut tracked = entry(&root);
+        tracked.include = Some(vec!["rules/**".to_string()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+        let coverage = set.coverage(&set.walk().unwrap());
+
+        for (path, expected_absent) in [
+            // the entry's own path: no pattern selects it, so a file
+            // that appears there was never covered
+            (root.clone(), false),
+            // unselected, so never covered either
+            (root.join("notes.md"), false),
+            // selected and not in the tree: this one the checkpoint
+            // positively says was absent
+            (root.join("rules/gone.md"), true),
+        ] {
+            let state = classify_coverage(&coverage, &display_path(&path));
+            assert_eq!(
+                matches!(state, PathState::Absent),
+                expected_absent,
+                "{}",
+                path.display()
+            );
+        }
+    }
+
     fn entry(path: &Path) -> TrackedEntry {
         TrackedEntry::new(
             path.to_path_buf(),

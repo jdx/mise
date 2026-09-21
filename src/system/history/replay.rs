@@ -1427,14 +1427,21 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     if super::tracked::excluded_by_entry(&root, &owner.exclude, &local) {
         return PathState::Uncovered;
     }
-    // the entry's own root is not a file the list selects or leaves
-    // out — it is the thing the list is *about* — so an include list
-    // does not make the tracked directory itself uncovered
-    if let Some(include) = &owner.include
-        && local != root
-        && !super::tracked::included_by_entry(&root, include, &local)
-    {
-        return PathState::Uncovered;
+    // **Unselected is not absent.** `Absent` is the one answer that
+    // permits removing a live file, and it means the record positively
+    // covered this path and did not hold it. A path an `include` list
+    // does not select was never covered — including the entry's own
+    // path, which no pattern can name — so a file that appears there
+    // later is not something this checkpoint is entitled to delete.
+    if let Some(include) = &owner.include {
+        if local == root {
+            return PathState::Omitted(
+                "an include list selects paths inside this entry, not the entry itself".into(),
+            );
+        }
+        if !super::tracked::included_by_entry(&root, include, &local) {
+            return PathState::Uncovered;
+        }
     }
     // everything readable says the checkpoint covered this path — but a
     // rule that could not be read, or one this checkpoint never recorded

@@ -104,6 +104,28 @@ impl DotfilesTrack {
                 bail!("{target_raw}: target must be absolute or start with ~/");
             }
             crate::system::history::tracked::ensure_portable_ancestors(&target)?;
+            // **A declaration mise could not read is never rewritten.**
+            // An entry whose `include` or `exclude` list has a typo in
+            // it does not load, so it is not among the managed requests
+            // — and writing a fresh `{ mode = "track" }` over it would
+            // drop the lists the user wrote and capture the whole tree
+            // they existed to narrow. The typo is what needs fixing, and
+            // saying so is the only safe thing to do about it.
+            if let Some(invalid) = crate::system::files::invalid_declarations()
+                .into_iter()
+                .find(|invalid| {
+                    crate::system::files::resolve_target_arg(&invalid.target)
+                        .components()
+                        .collect::<PathBuf>()
+                        == target
+                })
+            {
+                bail!(
+                    "{target_raw} is already declared in {}, and that declaration cannot be read: {}. Fix it there, or remove it, before tracking this path again — re-tracking would replace it and lose what it says",
+                    display_path(&invalid.config),
+                    invalid.reason
+                );
+            }
             let existing = managed
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);

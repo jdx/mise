@@ -176,6 +176,24 @@ TOML
 assert_contains 'mise dot paths 2>&1' "invalid exclude pattern '[worse'"
 assert_contains 'mise dot paths 2>&1' "invalid include pattern '['"
 
+# and `mise dot track` never rewrites a declaration it could not read:
+# a typo in a list would otherwise be replaced by a bare entry, and the
+# next save would capture the whole tree the list existed to narrow
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/[bad"] }
+TOML
+cp "$MISE_CONFIG_DIR/config.toml" "$PWD/declared.toml"
+assert_fail 'mise dot track ~/.codex 2>&1' 'cannot be read'
+assert "diff -q $MISE_CONFIG_DIR/config.toml $PWD/declared.toml >/dev/null && echo same" 'same'
+# and once the typo is fixed, re-tracking keeps the list
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+TOML
+assert_succeed 'mise dot track ~/.codex'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'rules/**'
+
 # A pattern mise cannot read is an error naming the entry and the
 # pattern, never a shorter list that would capture more.
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'

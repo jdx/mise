@@ -28,12 +28,24 @@ fn record_in(path: &std::path::Path, message: &str) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let _lock = guard(path)?;
+    let line = message.replace('\n', " ");
+    // **A standing condition is one notice, not one per walk.** The
+    // watcher walks on its own schedule and would otherwise write the
+    // same line every time — a file growing without bound, and a burst
+    // of identical warnings when someone finally reads it. Saying it
+    // once is saying it; a condition that goes away and comes back is
+    // recorded again, because the file was emptied when it was said.
+    if let Ok(kept) = std::fs::read_to_string(path)
+        && kept.lines().any(|existing| existing == line)
+    {
+        return Ok(());
+    }
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
     // one line each, so a partial write loses at most the last notice
-    writeln!(file, "{}", message.replace('\n', " "))?;
+    writeln!(file, "{line}")?;
     Ok(())
 }
 
@@ -129,6 +141,31 @@ mod tests {
         let path = state.join("notices");
         assert!(take(&path).is_empty());
         assert!(!state.exists(), "the state directory was created by a read");
+    }
+
+    /// A condition that is still true on the next walk is not news
+    /// twice, and the file it would otherwise grow is on disk.
+    #[test]
+    fn a_standing_condition_is_recorded_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state/notices");
+        for _ in 0..5 {
+            record_in(&path, "a credential is saved in plaintext").unwrap();
+        }
+        record_in(&path, "something else").unwrap();
+        assert_eq!(
+            take(&path),
+            vec![
+                "a credential is saved in plaintext".to_string(),
+                "something else".to_string()
+            ]
+        );
+        // said, and gone — so a condition that returns is news again
+        record_in(&path, "a credential is saved in plaintext").unwrap();
+        assert_eq!(
+            take(&path),
+            vec!["a credential is saved in plaintext".to_string()]
+        );
     }
 
     /// The writer is the watcher, and it does not stop while someone
