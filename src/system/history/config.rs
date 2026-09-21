@@ -221,6 +221,22 @@ fn fresh_layers() -> impl Iterator<Item = PathBuf> {
         .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
 }
 
+/// Whether `source` is part of the configuration that may name a
+/// post-adopt task: a global or system layer, or a file task beside one.
+///
+/// **The definition that runs must come from where the name came
+/// from.** The name is read through [`fresh_layers`], so the answer here
+/// is asked of the same set — plus anything inside the configuration
+/// directory, because a global file task is a script there rather than a
+/// layer of its own.
+pub(crate) fn declares_post_adopt(source: &Path) -> bool {
+    if fresh_layers().any(|layer| layer == source) {
+        return true;
+    }
+    source.starts_with(super::tracked::global_config_dir())
+        || crate::config::is_system_config(source)
+}
+
 /// The setup this machine is connected to, read through the layers a
 /// freshly installed configuration is actually in.
 fn fresh_origin() -> Result<Option<OriginTomlConfig>> {
@@ -302,6 +318,10 @@ fn post_adopt_record() -> PathBuf {
 /// setups changes the answer; a machine with no recorded origin keys on
 /// the name alone, because there is nothing else to tell two apart.
 pub(crate) fn post_adopt_key(task: &str) -> Result<Option<String>> {
+    // the key is one line, and its parts are compared exactly: a setup
+    // whose recorded origin carries a newline or a tab could not be told
+    // from a different one, and this machine would record having
+    // finished something it never ran
     // **The task belongs to a setup, so without one there is nothing to
     // finish.** A `mise bootstrap --from <repo>` checks out configuration
     // without adopting anything and records no origin; a machine that
@@ -313,6 +333,12 @@ pub(crate) fn post_adopt_key(task: &str) -> Result<Option<String>> {
     let Some(origin) = fresh_origin()? else {
         return Ok(None);
     };
+    if origin.url.contains(['\n', '\r', '\t']) || origin.branch.contains(['\n', '\r', '\t']) {
+        eyre::bail!(
+            "the recorded setup origin contains a newline or a tab, so mise cannot record which setup finished its post-adopt task; fix [history.origin] in {}",
+            display_path(super::tracked::global_config_dir().join("config.local.toml"))
+        );
+    }
     Ok(Some(format!("{}#{}\t{task}", origin.url, origin.branch)))
 }
 

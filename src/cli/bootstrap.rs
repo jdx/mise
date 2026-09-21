@@ -2033,16 +2033,7 @@ impl Bootstrap {
         // directory yields would hand that trust to a project's
         // same-named task — and recording the setup as finished
         // afterwards, so the work this exists for would never happen.
-        let declared = config
-            .global_tasks()
-            .await?
-            .into_iter()
-            .find(|candidate| candidate.is_match(&task));
-        let Some(declared) = declared else {
-            bail!(
-                "the setup names a post-adopt task {task}, but the global configuration that names it defines no such task; add it there, or remove `[history] post_adopt`"
-            );
-        };
+
         // Asked through the resolver that will run it, not a second copy
         // of the matching rules. A name can be backed by a file task and
         // matched with its extension stripped, and a guard that looked
@@ -2061,11 +2052,10 @@ impl Bootstrap {
                 "the setup names a post-adopt task {task}, but nothing here resolves that name; add it to the configuration the setup brings, or remove `[history] post_adopt`"
             );
         };
-        if resolved.config_source != declared.config_source {
+        if !system::history::config::declares_post_adopt(&resolved.config_source) {
             bail!(
-                "the post-adopt task {task} resolves to the definition in {}, not the one the setup named in {}; run `mise bootstrap` from outside that project, or rename that task",
-                crate::file::display_path(&resolved.config_source),
-                crate::file::display_path(&declared.config_source)
+                "the post-adopt task {task} resolves to the definition in {}, which is not part of the configuration that named it; run `mise bootstrap` from outside that project, or rename that task",
+                crate::file::display_path(&resolved.config_source)
             );
         }
         info!("dotfiles: running the post-adopt task {task}");
