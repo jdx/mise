@@ -1261,6 +1261,27 @@ or a higher-precedence config. An inline block without `run`, `run_windows`, or
 dependencies. For executable file tasks, the script also remains the task's
 command and the inline definition overlays its metadata.
 
+An executable file task can be named either way. Its full name includes the
+script's extension, and `mise run` and `mise tasks ls` both also address it by
+the name with the extension stripped, so for `mise-tasks/hello.sh` a
+metadata-only `[tasks."hello.sh"]` and `[tasks.hello]` overlay the same task:
+
+```toml
+[tasks.hello] # or [tasks."hello.sh"] — both overlay mise-tasks/hello.sh
+description = "say hello"
+env = { GREETING = "hi" }
+```
+
+A block that adds `depends` is a task group rather than an overlay, so it stays
+a separate task and does not run the script. Write `[tasks."hello.sh"]` when you
+want the script's own metadata to gain dependencies, and reserve the
+extension-stripped name for a group that should not run it:
+
+```toml
+[tasks.check] # a group; mise-tasks/check.sh is a separate task
+depends = ["lint", "test"]
+```
+
 The same overlay rule applies across layered inline task definitions. For
 example, a metadata-only task in `mise.local.toml` overlays the nearest
 lower-precedence command-bearing definition in `mise.toml`. A higher-precedence

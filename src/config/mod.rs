@@ -4855,11 +4855,26 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// one wins. Callers load `file_tasks` in declared `task_config.includes`
 /// order, so the later include in the list takes precedence — see
 /// `load_tasks_in_dir`.
+///
+/// An executable file task's name keeps the script's extension (`hello.sh`), so
+/// a block naming the extension-stripped form (`[tasks.hello]` for
+/// `mise-tasks/hello.sh`) has no exact match. When such a block carries no
+/// command and no dependencies of its own, it overlays the file task it names
+/// rather than becoming a separate task — see `stripped_name_overlay_targets`.
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
     let mut by_name: IndexMap<String, Task> = IndexMap::new();
     for t in prefer_windows_file_task_siblings(file_tasks) {
         by_name.insert(t.name.clone(), t);
     }
+    // Names an inline block defines with a command of its own. Such a block is
+    // the base every metadata-only block with that name overlays, so it keeps
+    // the extension-stripped file-task fallback below from consuming a block
+    // that has an exact base waiting further down the precedence order.
+    let command_bearing_config_names: BTreeSet<String> = config_tasks
+        .iter()
+        .filter(|t| !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some())
+        .map(|t| t.name.clone())
+        .collect();
     let mut seen_config_task_names = BTreeSet::new();
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     for t in config_tasks {
@@ -4895,7 +4910,36 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                 existing.merge_toml_overlay(t);
             }
         } else {
-            if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+            let metadata_only = t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none();
+            // `mise run` and `mise tasks ls` both address `mise-tasks/hello.sh`
+            // as `hello`, so `[tasks.hello]` is the block people write for it.
+            // Keyed on the exact name it instead becomes a task with no
+            // executable content -- the shape `mise tasks validate` already
+            // reports as an error -- and, since an exact name beats an
+            // extension-stripped one (#10393), it shadows the script: `mise run
+            // hello` then exits 0 having run nothing. Overlay the file task the
+            // block names instead.
+            //
+            // A block with dependencies of its own stays a separate task:
+            // `depends` is executable content, so it is a group that already
+            // runs, and folding it into the script would change what it does.
+            if metadata_only
+                && t.depends.is_empty()
+                && t.depends_post.is_empty()
+                && t.wait_for.is_empty()
+                && !command_bearing_config_names.contains(&t.name)
+            {
+                let targets = stripped_name_overlay_targets(&by_name, &t.name);
+                if !targets.is_empty() {
+                    for name in targets {
+                        if let Some(existing) = by_name.get_mut(&name) {
+                            existing.merge_toml_overlay(t.clone());
+                        }
+                    }
+                    continue;
+                }
+            }
+            if metadata_only {
                 pending_inline_overlays
                     .entry(t.name.clone())
                     .or_default()
@@ -4905,6 +4949,28 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         }
     }
     by_name.into_values().collect()
+}
+
+/// Executable file tasks whose extension-stripped name is exactly `name`.
+///
+/// `mise run hello` already resolves `mise-tasks/hello.sh` this way, and more
+/// than one script can share a stem (`hello.sh` and `hello.js` both run), so a
+/// block naming the stem overlays every file task behind it.
+///
+/// The comparison is one-sided on purpose: the block's name is matched against
+/// each file task's stripped name, never stripped itself. `[tasks."my.app"]`
+/// therefore leaves `my.sh` alone, and `[tasks."hello.sh"]` does not reach
+/// `hello.js`.
+fn stripped_name_overlay_targets(by_name: &IndexMap<String, Task>, name: &str) -> Vec<String> {
+    by_name
+        .iter()
+        .filter(|(key, task)| {
+            task.file.is_some()
+                && !task.is_toml_include
+                && crate::task::strip_task_name_extension(key) == name
+        })
+        .map(|(key, _)| key.clone())
+        .collect()
 }
 
 fn prefer_windows_file_task_siblings(file_tasks: Vec<Task>) -> Vec<Task> {
@@ -6545,6 +6611,129 @@ mod tests {
             PathBuf::from("mise-tasks/hello.ps1")
         );
         assert_eq!(tasks[0].description, "windows task metadata");
+    }
+
+    /// A file task built the way discovery builds one: the name carries the
+    /// script's extension and `file` points at the script.
+    fn file_task(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            config_source: PathBuf::from(format!("mise-tasks/{name}")),
+            file: Some(PathBuf::from(format!("mise-tasks/{name}"))),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_stripped_name_block_overlays_file_task() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![Task {
+                name: "hello".to_string(),
+                description: "overlaid".to_string(),
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(tasks[0].description, "overlaid");
+    }
+
+    #[test]
+    fn test_stripped_name_block_overlays_every_file_task_sharing_the_stem() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh"), file_task("hello.js")],
+            vec![Task {
+                name: "hello".to_string(),
+                description: "overlaid".to_string(),
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(tasks.len(), 2);
+        for task in &tasks {
+            assert_eq!(task.description, "overlaid");
+        }
+    }
+
+    #[test]
+    fn test_stripped_name_block_with_depends_stays_a_separate_task() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("build.sh")],
+            vec![Task {
+                name: "build".to_string(),
+                depends: vec!["lint".to_string().into()],
+                ..Default::default()
+            }],
+        );
+
+        let names = tasks.iter().map(|t| t.name.as_str()).sorted().collect_vec();
+        assert_eq!(names, vec!["build", "build.sh"]);
+    }
+
+    #[test]
+    fn test_stripped_name_block_defers_to_an_inline_command_with_the_same_name() {
+        // `mise.local.toml` contributes metadata, `mise.toml` the command. The
+        // metadata block must overlay that inline base, not the file task, or
+        // the base below it is dropped.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![
+                Task {
+                    name: "hello".to_string(),
+                    description: "from local".to_string(),
+                    ..Default::default()
+                },
+                Task {
+                    name: "hello".to_string(),
+                    run: vec![RunEntry::Script("echo inline".to_string())],
+                    ..Default::default()
+                },
+            ],
+        );
+
+        let inline = tasks.iter().find(|t| t.name == "hello").unwrap();
+        assert_eq!(inline.description, "from local");
+        assert_eq!(
+            inline.run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+        assert!(tasks.iter().any(|t| t.name == "hello.sh"));
+    }
+
+    #[test]
+    fn test_stripped_name_overlay_matches_the_block_name_against_the_stem_only() {
+        // "my.app" is a task name that happens to contain a dot, not `my` with
+        // an extension, so it must not reach `my.sh`.
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("my.sh")],
+            vec![Task {
+                name: "my.app".to_string(),
+                description: "unrelated".to_string(),
+                ..Default::default()
+            }],
+        );
+
+        let names = tasks.iter().map(|t| t.name.as_str()).sorted().collect_vec();
+        assert_eq!(names, vec!["my.app", "my.sh"]);
+    }
+
+    #[test]
+    fn test_stripped_name_overlay_keeps_the_monorepo_path_prefix() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("//projects/my.app:build.sh")],
+            vec![Task {
+                name: "//projects/my.app:build".to_string(),
+                description: "overlaid".to_string(),
+                ..Default::default()
+            }],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "//projects/my.app:build.sh");
+        assert_eq!(tasks[0].description, "overlaid");
     }
 
     #[test]
