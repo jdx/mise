@@ -1897,9 +1897,37 @@ mod tests {
                 path: crate::file::display_path(crate::dirs::HOME.join(".native/unreadable")),
                 reason: "scan limit".into(),
             });
+        // a repository the capture skipped: the trailer is frozen for
+        // released clients, so it cannot have a field of its own, and it
+        // travels as the omission it is. A machine that rebuilds from Git
+        // has to know about the skip — otherwise, once that directory
+        // loses its `.git`, its files look like ones this checkpoint held
+        // and did not have, and a rollback deletes them.
+        checkpoint
+            .tree
+            .coverage
+            .nested
+            .push(super::super::store::PathReason {
+                path: crate::file::display_path(crate::dirs::HOME.join(".native/plugin")),
+                reason: super::super::tracked::NESTED_REPOSITORY_REASON.into(),
+            });
         let commit = repo.write_checkpoint(Some(&tree), &checkpoint).unwrap();
         let rebuilt = repo.read_meta(&commit).unwrap();
-        assert_eq!(rebuilt.tree.coverage.omitted[0].path, "~/.native/large");
+        let omitted: Vec<_> = rebuilt
+            .tree
+            .coverage
+            .omitted
+            .iter()
+            .map(|item| item.path.as_str())
+            .collect();
+        assert!(
+            omitted.contains(&"~/.native/large"),
+            "omissions lost: {omitted:?}"
+        );
+        assert!(
+            omitted.contains(&"~/.native/plugin"),
+            "the skipped repository did not survive the round trip: {omitted:?}"
+        );
         assert_eq!(
             rebuilt.tree.coverage.incomplete[0].path,
             "~/.native/unreadable"

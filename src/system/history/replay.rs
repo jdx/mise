@@ -140,12 +140,22 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
         // every capture, so a rollback has nothing to put back there and
         // says so rather than quietly doing nothing
         if let Some(repository) = nested_repository_at_or_above(&tracked, path) {
-            warn!(
-                "history: {} is inside {}, {}",
-                display_path(path),
-                display_path(&repository),
-                super::tracked::NESTED_REPOSITORY_REASON
-            );
+            // the target may be the repository itself, and "X is inside
+            // X" is not a sentence that helps anyone
+            if repository == *path {
+                warn!(
+                    "history: {} is {}",
+                    display_path(path),
+                    super::tracked::NESTED_REPOSITORY_REASON
+                );
+            } else {
+                warn!(
+                    "history: {} is inside {}, {}",
+                    display_path(path),
+                    display_path(&repository),
+                    super::tracked::NESTED_REPOSITORY_REASON
+                );
+            }
         }
     }
     let targets = match &req.to {

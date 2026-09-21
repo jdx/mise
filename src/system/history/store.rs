@@ -374,11 +374,23 @@ impl Checkpoint {
             description_source: self.description_source,
             task: self.task.clone(),
             labels: self.labels.clone(),
+            // **A repository the capture skipped is recorded here, not
+            // only in `coverage.nested`.** The trailer is format-frozen
+            // for released clients, so `nested` cannot become a field of
+            // its own; without this, a machine that rebuilt its index
+            // from Git would know nothing about the skip, and if the
+            // directory has since lost its `.git` it would look like an
+            // ordinary part of the tracked tree whose files the
+            // checkpoint "did not hold" — which is how a rollback
+            // deletes them. As an omission it reads, on this mise and on
+            // an older one, as what it is: a path this commit did not
+            // capture.
             omitted: self
                 .tree
                 .coverage
                 .omitted
                 .iter()
+                .chain(self.tree.coverage.nested.iter())
                 .filter_map(|item| portable(&item.path))
                 .collect(),
             incomplete: self
