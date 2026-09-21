@@ -1272,10 +1272,11 @@ description = "say hello"
 env = { GREETING = "hi" }
 ```
 
-A block that adds `depends` is a task group rather than an overlay, so it stays
-a separate task and does not run the script. Write `[tasks."hello.sh"]` when you
-want the script's own metadata to gain dependencies, and reserve the
-extension-stripped name for a group that should not run it:
+Under the extension-stripped name, a block that adds `depends` is a task group
+rather than an overlay, so it stays a separate task and does not run the script.
+The full name has no such exception: write `[tasks."hello.sh"]` when you want
+the script itself to gain dependencies, and reserve the extension-stripped name
+for a group that should not run it:
 
 ```toml
 [tasks.check] # a group; mise-tasks/check.sh is a separate task
