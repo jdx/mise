@@ -81,6 +81,20 @@ assert_not_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cache[1]'
 
 # `$` has no escape in this pattern language, so such a path is reported
 # rather than written: the configuration stays loadable either way.
+# and the escape does not break the undo: `mise dot include` takes the
+# rule out whichever spelling it was written in, and the path is captured
+# again. Asserted on the capture, since the message was the thing that
+# was wrong.
+# the rule is stored as the path is displayed, so the message has to
+# name the spelling that undoes it
+assert_contains "mise dot untrack '$HOME/.codex/cacheX' 2>&1" "mise dot include '~/.codex/cacheX'"
+assert_succeed "mise dot include '~/.codex/cacheX'"
+assert_succeed "mise dot include '~/.codex/cache[1]'"
+echo 'back' >"$HOME/.codex/cache[1]"
+assert_succeed 'mise dot save'
+assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cache[1]'
+assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'cache'
+
 # the $ is the point: it stays literal
 # shellcheck disable=SC2016
 dollar='~/.codex/price$x'
@@ -88,3 +102,24 @@ echo 'dear' >"$HOME/.codex/price\$x"
 assert_fail "mise dot untrack '$dollar'" 'environment variables are not supported'
 assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'price'
 assert_succeed 'mise dot save'
+
+# Nothing acts on a rule set it could not fully build. A pull would
+# delete, so it refuses with the same diagnostic rather than proceeding
+# with the rules it managed to compile — while the command the refusal
+# names keeps working.
+origin="$PWD/refusal-origin.git"
+git init -q --bare -b main "$origin"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+
+[history]
+exclude = ["["]
+TOML
+assert_fail 'mise dot pull --yes' 'cannot be applied'
+assert_fail 'mise dot sync' 'cannot be applied'
+assert_fail 'mise dot rollback ~/.codex/config.toml --yes' 'cannot be applied'
+assert "cat ~/.codex/config.toml" 'changed'
+assert_succeed 'mise dot paths'
+assert_contains 'mise dot paths 2>&1' '"[" in ~/.config/mise/config.toml'
