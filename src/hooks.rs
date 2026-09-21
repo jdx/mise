@@ -910,11 +910,13 @@ mod tests {
 
     #[test]
     fn installed_tool_info_serializes_opaque_versions_and_exact_paths() {
-        let tool_version = opencodex_tool_version(
-            "preview/channel@build+7",
-            Path::new("/tmp/data with spaces/installs/opencodex"),
-        );
+        let installs_path = Path::new("/tmp/data with spaces/installs/opencodex");
+        let tool_version = opencodex_tool_version("preview/channel@build+7", installs_path);
         let info = InstalledToolInfo::from(&tool_version);
+        let expected_install_path = installs_path
+            .join("preview-channel@build+7")
+            .to_string_lossy()
+            .into_owned();
 
         assert_eq!(
             serde_json::to_value(info).unwrap(),
@@ -923,7 +925,7 @@ mod tests {
                 "version": "preview/channel@build+7",
                 "requested_version": "latest",
                 "backend": "npm:@bitkyc08/opencodex",
-                "install_path": "/tmp/data with spaces/installs/opencodex/preview/channel@build+7",
+                "install_path": expected_install_path,
             })
         );
     }
