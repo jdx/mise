@@ -545,11 +545,20 @@ fn walk_entry(
         if path == entry.path {
             continue;
         }
-        // a more specific entry owns this subtree and walks it itself
+        // A more specific entry owns this subtree and walks it itself.
+        // **Skipped whole, not file by file**: ownership is by the most
+        // specific entry, so nothing below a directory another entry
+        // owns can belong to this one, and stat'ing all of it to decide
+        // that again is the cost this avoids — a tracked directory
+        // inside another tracked directory would otherwise be walked
+        // twice on every save.
         if set
             .entry_index_for(path)
             .is_some_and(|owner| owner != index)
         {
+            if candidate.file_type().is_dir() {
+                walker.skip_current_dir();
+            }
             continue;
         }
         if exclude.is_match(path) {
@@ -1242,6 +1251,41 @@ mod tests {
         assert_eq!(
             selected.preview_of(&set, index).files,
             all.preview_of(&set, index).files
+        );
+    }
+
+    /// A tracked directory inside another tracked directory is walked
+    /// by its own entry, once — not descended into twice and then
+    /// discarded file by file.
+    #[test]
+    fn an_entry_inside_another_is_not_walked_twice() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("config");
+        let inner = outer.join("nvim");
+        std::fs::create_dir_all(inner.join("lua")).unwrap();
+        std::fs::write(outer.join("outer.toml"), "outer").unwrap();
+        for i in 0..20 {
+            std::fs::write(inner.join(format!("lua/{i}.lua")), "inner").unwrap();
+        }
+
+        let mut set = TrackedSet::default();
+        set.push(entry(&outer));
+        set.push(entry(&inner));
+        let outer_index = set.entry_index_for(&outer).unwrap();
+        let inner_index = set.entry_index_for(&inner).unwrap();
+
+        // the files land under the entry that owns them, exactly as
+        // before: what changed is only how the other entry got there
+        let walk = set.walk().unwrap();
+        assert_eq!(walk.files[&outer.join("outer.toml")].0, outer_index);
+        assert_eq!(walk.files[&inner.join("lua/3.lua")].0, inner_index);
+        assert_eq!(walk.files.len(), 21);
+
+        // and walking the outer entry alone reaches only its own file
+        let selected = set.walk_selected(&[outer_index]).unwrap();
+        assert_eq!(
+            selected.files.keys().collect::<Vec<_>>(),
+            vec![&outer.join("outer.toml")]
         );
     }
 
