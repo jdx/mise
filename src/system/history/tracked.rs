@@ -550,7 +550,10 @@ impl TrackedSet {
         if nested {
             return Ok(false);
         }
-        Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
+        // retention asks the patterns, not the filesystem: a path the
+        // list no longer selects is not carried forward because it
+        // happened to be unreadable
+        Ok(!self.dropped(&self.exclude_set()?, owner, path, Asked::Exactly))
     }
 
     /// Whether the selection lists drop `path`: the global globs read
@@ -565,39 +568,59 @@ impl TrackedSet {
     /// the owner with [`owning_entry`], so they cannot disagree.
     pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
         match self.entry_for(path) {
-            Some(owner) => {
-                // **"Is this path itself selected?" and "could anything
-                // beneath it be selected?" are different questions.** A
-                // capture asks the first, because it stores files. This
-                // asks the second: the watcher filters events with it,
-                // and an event on a tracked directory whose children the
-                // list selects must wake it, not be dropped because no
-                // pattern names the directory itself. For a file the two
-                // answers coincide.
-                // **A tracked directory's own root is not something the
-                // global list judges.** The walk never tests it: it
-                // steps past the root and filters what is inside. A bare
-                // pattern that happens to equal the directory's name
-                // would otherwise say "excluded" about an entry whose
-                // contents a capture takes in full, and a rollback would
-                // then stop recording that the directory existed.
-                //
-                // A root that cannot be read — it has just been removed
-                // — is not judged either. Nothing in the declaration
-                // says which kind an entry is (`mode = "track"` covers
-                // both), and of the two answers only this one is safe: a
-                // removed tracked tree is a change history has to
-                // notice, and a pattern equal to its name swallowing
-                // that event would leave its files in history after they
-                // are gone. A file that is there is judged, exactly as
-                // the walk judges it.
-                let judged = path != owner.path
-                    || std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir());
-                (judged && exclude.is_match(path, &owner.path))
-                    || owner.is_excluded(path)
-                    || !owner.include_relevant(path)
-            }
+            Some(owner) => self.dropped(exclude, owner, path, Asked::Possibly),
             None => true,
+        }
+    }
+
+    /// **Three readers ask three different questions of one
+    /// configuration, and they are not the same question.**
+    ///
+    /// - A **capture** asks "should I store this path now", and answers
+    ///   from the patterns: [`Asked::Exactly`].
+    /// - The **watcher** asks "might this event matter", and is
+    ///   deliberately permissive — a directory is relevant when anything
+    ///   beneath it could be selected, and a path that has just vanished
+    ///   counts as whatever it could have been: [`Asked::Possibly`].
+    /// - **Retention** asks "is this still selected", to decide whether
+    ///   a previously saved version is carried forward when the file
+    ///   cannot be read now. That is a question about the patterns and
+    ///   nothing else: [`Asked::Exactly`]. Answering it permissively
+    ///   would keep files the user has taken out of their `include` list
+    ///   in history indefinitely, for no better reason than that they
+    ///   happened to be unreadable at save time.
+    fn dropped(
+        &self,
+        exclude: &ExcludeSet,
+        owner: &TrackedEntry,
+        path: &Path,
+        asked: Asked,
+    ) -> bool {
+        // **A tracked directory's own root is not something the global
+        // list judges.** The walk never tests it: it steps past the root
+        // and filters what is inside. A bare pattern that happens to
+        // equal the directory's name would otherwise say "excluded"
+        // about an entry whose contents a capture takes in full — and a
+        // rollback would then stop recording that the directory existed.
+        // A file entry is tested, exactly as the walk tests it.
+        // A root that cannot be read — it has just been removed — is
+        // not judged either. Nothing in the declaration says which kind
+        // an entry is (`mode = "track"` covers both), and of the two
+        // answers only this one is safe: a removed tracked tree is a
+        // change history has to notice, and a pattern equal to its name
+        // swallowing that event would leave its files in history after
+        // they are gone.
+        let judged = path != owner.path
+            || std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir());
+        if judged && exclude.is_match(path, &owner.path) {
+            return true;
+        }
+        if owner.is_excluded(path) {
+            return true;
+        }
+        match asked {
+            Asked::Exactly => !owner.is_included(path),
+            Asked::Possibly => !owner.include_relevant(path),
         }
     }
 
@@ -1482,6 +1505,16 @@ impl ExcludeSet {
                     .any(|root| under_or_above(root, &dir))
             })
     }
+}
+
+/// Which question a reader of the selection lists is asking.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Asked {
+    /// Is this path itself selected? What a capture stores and what
+    /// retention keeps.
+    Exactly,
+    /// Could this path matter? What the watcher wakes for.
+    Possibly,
 }
 
 /// How a `[history]` pattern list is matched.
@@ -2645,11 +2678,11 @@ mod tests {
     }
 
     /// The watcher must wake on the tracked directory itself when the
-    /// list selects something inside it, and retention must keep that
-    /// directory — while a capture still declines to store the directory
-    /// as a file.
+    /// list selects something inside it, while a capture still declines
+    /// to store the directory as a file — and retention, which asks the
+    /// patterns alone, answers about the files.
     #[test]
-    fn a_directory_whose_children_are_selected_is_watched_and_retained() {
+    fn a_directory_whose_children_are_selected_is_watched() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("codex");
         std::fs::create_dir_all(root.join("rules")).unwrap();
@@ -2669,11 +2702,6 @@ mod tests {
             assert!(
                 !set.excluded_by_lists(&exclude, &directory),
                 "the watcher ignored {}",
-                directory.display()
-            );
-            assert!(
-                set.would_retain(&directory).unwrap(),
-                "retention dropped {}",
                 directory.display()
             );
         }
@@ -2766,6 +2794,75 @@ mod tests {
                 "{pattern} pruning rules/deep"
             );
         }
+    }
+
+    /// The walk and every reader must agree about a tracked entry's own
+    /// root: the walk steps past a directory root and filters what is
+    /// inside, so a bare global pattern equal to that directory's name
+    /// must not make retention call the entry excluded while a capture
+    /// takes all of it.
+    #[test]
+    fn a_global_pattern_matching_an_entrys_own_name_does_not_exclude_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let directory = tmp.path().join("cache");
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("kept.toml"), "keep").unwrap();
+        let file = tmp.path().join("notes.md");
+        std::fs::write(&file, "keep").unwrap();
+
+        let mut set = TrackedSet {
+            exclude: vec!["cache".to_string(), "notes.md".to_string()],
+            ..Default::default()
+        };
+        set.push(entry(&directory));
+        set.push(entry(&file));
+        let exclude = set.exclude_set().unwrap();
+
+        // the directory entry: walked, so its root is not judged
+        assert!(!set.excluded_by_lists(&exclude, &directory));
+        assert!(set.would_retain(&directory).unwrap());
+        assert!(
+            set.walk()
+                .unwrap()
+                .files
+                .contains_key(&directory.join("kept.toml"))
+        );
+        // and a file entry is judged, exactly as the walk judges it
+        assert!(set.excluded_by_lists(&exclude, &file));
+        assert!(!set.would_retain(&file).unwrap());
+        assert!(!set.walk().unwrap().files.contains_key(&file));
+    }
+
+    /// **Retention asks the patterns, not the filesystem.** A file the
+    /// include list no longer selects is not carried forward because it
+    /// happened to be unreadable when the save ran; one the list still
+    /// selects is.
+    #[test]
+    fn retention_keeps_what_the_list_still_selects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules")).unwrap();
+
+        let mut tracked = entry(&root);
+        tracked.include = Some(vec!["rules/**".to_string()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+
+        // neither file exists — this is the save that cannot read them
+        let selected = root.join("rules/one.md");
+        let dropped = root.join("sessions/one.jsonl");
+        assert!(
+            set.would_retain(&selected).unwrap(),
+            "a selected file was not carried forward"
+        );
+        assert!(
+            !set.would_retain(&dropped).unwrap(),
+            "a file the list no longer selects was kept because it could not be read"
+        );
+        // and the watcher, which asks a different question, wakes for
+        // both because either might have just been deleted
+        let exclude = set.exclude_set().unwrap();
+        assert!(!set.excluded_by_lists(&exclude, &selected));
     }
 
     fn entry(path: &Path) -> TrackedEntry {
