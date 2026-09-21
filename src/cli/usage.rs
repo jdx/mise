@@ -84,10 +84,11 @@ impl Usage {
     pub(crate) fn run(self) -> Result<()> {
         // 3.6 added `effect=` (jdx/usage#739), 4.0 added it on flags and args
         // (jdx/usage#742), and 6.6 added flags scoped to implicit clauses
-        // (jdx/usage#1343). 6.8 adds mount synopsis metadata (jdx/usage#1393).
+        // (jdx/usage#1343). 6.8 added mount synopsis metadata (jdx/usage#1393).
+        // 6.11 adds the `logo` node this spec now carries (jdx/usage#1455).
         // Older `usage` CLIs reject the spec outright, so this
         // moves in lockstep with the fields and layouts the spec actually carries.
-        let min_version = r#"min_usage_version "6.8""#;
+        let min_version = r#"min_usage_version "6.11""#;
         println!("{min_version}\n{}", completion_spec().to_string().trim());
         Ok(())
     }

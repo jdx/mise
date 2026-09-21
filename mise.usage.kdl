@@ -1,4 +1,4 @@
-min_usage_version "6.8"
+min_usage_version "6.11"
 name mise
 bin mise
 author "Jeff Dickey <@jdx>"
@@ -88,6 +88,16 @@ mise installs the dev tools your projects need, sets their environment variables
 
 Tools, env vars, and tasks are declared in mise.toml. `mise use <TOOL>` adds a tool to the project in the current directory, `mise install` installs everything the config asks for, and `mise run <TASK>` runs a task. Docs: https://mise.jdx.dev
 """#
+logo #"""
+  ▄▄  ▄▄▄  ▄▄
+ ▟  ▙▟   ▙▟  ▙
+ ▜▄▄▄▄▄▄▄▄▄▄▄▛
+  ▀▀▀▀▀▀▀▀▀▀▀
+   ▗▄▄▄▄▄▄▄▖
+   ▌ ▀   ▔ ▐
+   ▝▄ ▀▄▀ ▄▘
+
+"""# style=green
 unknown_flags error
 default_subcommand run
 flag "-c --continue-on-error" help="Continue running tasks even if one fails" hide=#true
