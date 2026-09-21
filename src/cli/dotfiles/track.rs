@@ -130,7 +130,8 @@ impl DotfilesTrack {
         let mut previews: Vec<String> = vec![];
         for target in resolved {
             let target_key = normalized_target(&target);
-            if !target.exists() && !target.is_symlink() {
+            let present = target.exists() || target.is_symlink();
+            if !present {
                 warn!(
                     "dotfiles: {} does not exist yet; it is captured once it does",
                     target.display_user()
@@ -171,7 +172,17 @@ impl DotfilesTrack {
                 manual.push(target_key.clone());
             }
             // a file the guard drops must not look protected once tracked:
-            // say so before the declaration is written
+            // say so before the declaration is written.
+            //
+            // **The kind is the declaration's, never `is_dir()` on a path
+            // that is not there.** The guard reads a file's own name and
+            // never a directory's, so a tracked directory is walked and
+            // its files are decided one by one — but `is_dir()` is also
+            // false for a path this command has just said is captured once
+            // it exists. A directory named `credentials` or `oauth-apps`
+            // would otherwise be promised a protection it never gets, and
+            // the user would put a real secret inside it. A path with no
+            // kind yet is told what happens to it as a file instead.
             if !target.is_dir()
                 && let Some(reason) = capture_exclusion(&target, &policy)
             {
@@ -180,7 +191,15 @@ impl DotfilesTrack {
                 } else {
                     ""
                 };
-                warn!("dotfiles: {target_key} will be omitted from every save ({reason}){advice}");
+                if present {
+                    warn!(
+                        "dotfiles: {target_key} will be omitted from every save ({reason}){advice}"
+                    );
+                } else {
+                    warn!(
+                        "dotfiles: {target_key} is omitted from every save if it is created as a file, never as a directory ({reason}){advice}"
+                    );
+                }
             }
             let set = &preview_set;
             let preview = preview_walk.preview_of(
