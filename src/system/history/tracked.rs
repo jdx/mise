@@ -357,16 +357,6 @@ impl TrackedSet {
         {
             return Ok(false);
         }
-        // a nested repository below the entry is a gitlink: nothing under
-        // it is captured
-        let nested = path
-            .ancestors()
-            .skip(1)
-            .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
-            .any(|ancestor| ancestor.join(".git").exists());
-        if nested {
-            return Ok(false);
-        }
         Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
     }
 
@@ -382,6 +372,7 @@ impl TrackedSet {
     /// with [`owning_entry`], so they cannot disagree.
     pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
         match self.entry_for(path) {
+            Some(owner) if inside_nested_repository(owner, path) => true,
             Some(owner) => {
                 // **A tracked directory's own root is not something the
                 // global list judges.** The walk never tests it: it
@@ -640,6 +631,34 @@ fn walk_entry(
             continue;
         }
         let file_type = candidate.file_type();
+        // **A repository inside a tracked directory is structure, not
+        // selection.** Asked of every directory before any exclude,
+        // include or re-include rule, because no rule in a selection
+        // list may send the walk into another working tree. A directory
+        // an exclusion drops is not always pruned — a later `!` rule can
+        // re-include something below it — so the walk descends, and with
+        // this check further down it descended into repositories, and a
+        // re-include then captured their files. `would_retain` refuses
+        // those same paths, so capture and retention disagreed about
+        // files that a connected origin would have received.
+        //
+        // A repository found under an excluded directory is reported
+        // too: it costs one `.git` probe per directory the walk was
+        // about to skip anyway, and saying "this is a repository" about
+        // a path the user will look for is better than saying nothing.
+        if file_type.is_dir() && path.join(".git").exists() {
+            // A repository found inside a tracked directory is skipped
+            // whole, and nothing is written for it — not its files, not
+            // a commit pointer. A pointer would name objects this
+            // history does not have, and there is a supported way to
+            // get the files: track the repository itself.
+            walk.nested.push(PathReason {
+                path: display_path(path),
+                reason: NESTED_REPOSITORY_REASON.into(),
+            });
+            walker.skip_current_dir();
+            continue;
+        }
         // an excluded directory is not entered at all: `~/.codex/sessions`
         // can hold tens of thousands of files, and none of them can come
         // back into the capture
@@ -661,18 +680,6 @@ fn walk_entry(
             continue;
         }
         if file_type.is_dir() {
-            if path.join(".git").exists() {
-                // A repository found inside a tracked directory is skipped
-                // whole, and nothing is written for it — not its files, not
-                // a commit pointer. A pointer would name objects this
-                // history does not have, and there is a supported way to
-                // get the files: track the repository itself.
-                walk.nested.push(PathReason {
-                    path: display_path(path),
-                    reason: NESTED_REPOSITORY_REASON.into(),
-                });
-                walker.skip_current_dir();
-            }
             continue;
         }
         let meta = match candidate.metadata() {
@@ -1542,6 +1549,23 @@ impl PatternList {
     }
 }
 
+/// Whether `path` lies inside a repository nested below `owner`'s root.
+///
+/// **Structure, not selection.** A working tree inside a tracked
+/// directory is never captured — its files belong to that repository,
+/// and history has none of its objects — so no pattern, in any list, can
+/// bring one back. Every reader asks this before it asks what the lists
+/// say: the walk when it decides whether to descend, `would_retain`
+/// when it decides whether a saved version is still covered, and the
+/// watcher, which would otherwise wake for every write inside a
+/// checked-out repository it can never save.
+fn inside_nested_repository(owner: &TrackedEntry, path: &Path) -> bool {
+    path.ancestors()
+        .skip(1)
+        .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+        .any(|ancestor| ancestor.join(".git").exists())
+}
+
 /// Refuse to walk while an `[history] exclude` rule cannot be used.
 ///
 /// **A capture that cannot apply an exclusion does not go ahead
@@ -1566,7 +1590,7 @@ fn refuse_unusable_exclusions(exclude: &ExcludeSet) -> Result<()> {
                     "{pattern:?} in {}: {reason}",
                     files
                         .iter()
-                        .map(|path| display_path(path))
+                        .map(display_path)
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
@@ -2708,12 +2732,21 @@ mod tests {
         std::fs::write(inner.join("inner.toml"), "keep").unwrap();
         std::fs::write(inner.join("cache/index"), "drop").unwrap();
         std::fs::write(inner.join("cache/keep.conf"), "keep").unwrap();
+        // a working tree of its own, under a directory the global list
+        // excludes and a later `!` rule reaches back into. The `!` rule
+        // keeps `cache` from being pruned, so the walk descends — and
+        // nothing in a selection list may carry it into another
+        // repository.
+        let repository = inner.join("cache/repo");
+        std::fs::create_dir_all(repository.join(".git")).unwrap();
+        std::fs::write(repository.join("secret"), "not ours").unwrap();
 
         let mut set = TrackedSet {
             exclude: vec![
                 "b".to_string(),
                 "cache".to_string(),
                 format!("!{}/cache/keep.conf", inner.display()),
+                format!("!{}/cache/repo/secret", inner.display()),
             ],
             ..Default::default()
         };
@@ -2751,18 +2784,46 @@ mod tests {
             assert_eq!(covered, expected, "replay {display}");
         }
 
-        // `Absent` only when the record positively says so. Each other
-        // input gets the answer that fits it — a repository the record
-        // says was skipped reads as `Omitted` carrying the record's own
-        // explanation, a record this mise cannot interpret reads as
-        // `Unevaluable` — and none of them deletes.
-        let display = display_path(outer.join("outer.toml"));
+        // The repository is reported as one, not silently skipped, and
+        // every reader refuses what is inside it — the walk because it
+        // never descended, `would_retain` and the watcher because no
+        // list may reach into another working tree, and a replay with
+        // the reason rather than by calling it uncovered.
+        assert_eq!(
+            walk.nested
+                .iter()
+                .map(|nested| nested.path.as_str())
+                .collect::<Vec<_>>(),
+            vec![display_path(&repository).as_str()],
+        );
         let describe = |state: &PathState| match state {
             PathState::Absent => "absent".to_string(),
             PathState::Uncovered => "uncovered".to_string(),
             PathState::Omitted(reason) => format!("omitted: {reason}"),
             PathState::Unevaluable(reason) => format!("unevaluable: {reason}"),
         };
+        let secret = repository.join("secret");
+        assert!(!walk.files.contains_key(&secret), "capture");
+        assert!(!set.would_retain(&secret).unwrap(), "would_retain");
+        assert!(
+            set.excluded_by_lists(&set.exclude_set().unwrap(), &secret),
+            "watcher"
+        );
+        assert!(
+            matches!(
+                classify_coverage(&coverage, &display_path(&secret)),
+                PathState::Omitted(reason) if reason.contains("repository")
+            ),
+            "replay: {}",
+            describe(&classify_coverage(&coverage, &display_path(&secret)))
+        );
+
+        // `Absent` only when the record positively says so. Each other
+        // input gets the answer that fits it — a repository the record
+        // says was skipped reads as `Omitted` carrying the record's own
+        // explanation, a record this mise cannot interpret reads as
+        // `Unevaluable` — and none of them deletes.
+        let display = display_path(outer.join("outer.toml"));
         for (name, broken, omitted_as) in [
             (
                 "written before this matcher",
