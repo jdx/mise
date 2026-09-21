@@ -2454,44 +2454,97 @@ mod tests {
             assert_eq!(covered, expected, "replay {display}");
         }
 
-        // `Absent` only when the record positively says so: every input
-        // that makes the coverage unreadable answers "cannot tell", and
-        // never deletes
+        // `Absent` only when the record positively says so. Each other
+        // input gets the answer that fits it — a repository the record
+        // says was skipped reads as `Omitted` carrying the record's own
+        // explanation, a record this mise cannot interpret reads as
+        // `Unevaluable` — and none of them deletes.
         let display = display_path(outer.join("outer.toml"));
-        for (name, broken) in [
-            ("written before this matcher", {
-                let mut c = coverage.clone();
-                c.matcher = None;
-                c
-            }),
-            ("written by a newer matcher", {
-                let mut c = coverage.clone();
-                c.matcher = Some(super::MATCHER_VERSION + 1);
-                c
-            }),
-            ("a repository recorded as skipped", {
-                let mut c = coverage.clone();
-                c.nested.push(crate::system::history::store::PathReason {
-                    path: display_path(&outer),
-                    reason: NESTED_REPOSITORY_REASON.into(),
-                });
-                c
-            }),
-            ("a repository recorded with the host's separators", {
-                let mut c = coverage.clone();
-                c.nested.push(crate::system::history::store::PathReason {
-                    path: display_path(&outer).replace('/', "\\"),
-                    reason: NESTED_REPOSITORY_REASON.into(),
-                });
-                c
-            }),
+        let describe = |state: &PathState| match state {
+            PathState::Absent => "absent".to_string(),
+            PathState::Uncovered => "uncovered".to_string(),
+            PathState::Omitted(reason) => format!("omitted: {reason}"),
+            PathState::Unevaluable(reason) => format!("unevaluable: {reason}"),
+        };
+        for (name, broken, omitted_as) in [
+            (
+                "written before this matcher",
+                {
+                    let mut c = coverage.clone();
+                    c.matcher = None;
+                    c
+                },
+                None,
+            ),
+            (
+                "written by a newer matcher",
+                {
+                    let mut c = coverage.clone();
+                    c.matcher = Some(super::MATCHER_VERSION + 1);
+                    c
+                },
+                None,
+            ),
+            (
+                "a repository recorded as skipped",
+                {
+                    let mut c = coverage.clone();
+                    c.nested.push(crate::system::history::store::PathReason {
+                        path: display_path(&outer),
+                        reason: NESTED_REPOSITORY_REASON.into(),
+                    });
+                    c
+                },
+                Some(NESTED_REPOSITORY_REASON),
+            ),
+            (
+                "a repository recorded with the host's separators",
+                {
+                    let mut c = coverage.clone();
+                    c.nested.push(crate::system::history::store::PathReason {
+                        path: display_path(&outer).replace('/', "\\"),
+                        reason: NESTED_REPOSITORY_REASON.into(),
+                    });
+                    c
+                },
+                Some(NESTED_REPOSITORY_REASON),
+            ),
         ] {
             let state = classify_coverage(&broken, &display);
+            let got = describe(&state);
+            match omitted_as {
+                // the record explains itself, so a rollback tells the
+                // user what was skipped rather than that the checkpoint
+                // cannot be interpreted
+                Some(reason) => assert!(
+                    matches!(&state, PathState::Omitted(found) if found == reason),
+                    "{name}: expected the record's own explanation, got {got}"
+                ),
+                None => assert!(
+                    matches!(&state, PathState::Unevaluable(_)),
+                    "{name}: expected an uninterpretable record, got {got}"
+                ),
+            }
+            // asserted, not assumed: `skip_reason` is the single place a
+            // rollback decides to delete, and every state here refuses
             assert!(
-                matches!(state, PathState::Unevaluable(_)),
-                "{name}: must not be read as absent"
+                state.skip_reason("0123456789").is_some(),
+                "{name}: {got} must never delete a live file"
             );
         }
+
+        // the third non-deleting answer, from a path no entry covers
+        let outside = display_path(tmp.path().join("outside.toml"));
+        let state = classify_coverage(&coverage, &outside);
+        assert!(
+            matches!(state, PathState::Uncovered),
+            "a path under no entry is uncovered, got {}",
+            describe(&state)
+        );
+        assert!(
+            state.skip_reason("0123456789").is_some(),
+            "an uncovered path must never delete a live file"
+        );
         // a rule neither side can use is dropped by both, so the record
         // stays readable — that agreement is what makes dropping safe
         let mut unusable = coverage.clone();

@@ -1288,18 +1288,11 @@ fn decide(
                 );
             }
             let from = format!("{} {}", kind_of(&cmode), &coid[..7]);
-            match classify(checkpoint, &display) {
-                PathState::Absent => (Action::Delete, from, "missing".into()),
-                PathState::Uncovered => (
-                    Action::Skip(format!(
-                        "not covered by checkpoint {}",
-                        &checkpoint.uuid[..8]
-                    )),
-                    from,
-                    "?".into(),
-                ),
-                PathState::Omitted(reason) => (Action::Skip(reason), from, "?".into()),
-                PathState::Unevaluable(reason) => (Action::Skip(reason), from, "?".into()),
+            // one decision point: the state decides whether the file is
+            // removed, and every answer but `Absent` keeps it
+            match classify(checkpoint, &display).skip_reason(&checkpoint.uuid) {
+                None => (Action::Delete, from, "missing".into()),
+                Some(reason) => (Action::Skip(reason), from, "?".into()),
             }
         }
         (None, None) => (Action::Unchanged, "missing".into(), "missing".into()),
@@ -1324,6 +1317,22 @@ pub(crate) enum PathState {
     Unevaluable(String),
 }
 
+impl PathState {
+    /// Why the live file is left alone, or `None` when the checkpoint
+    /// positively covered the path and did not hold it.
+    ///
+    /// **`None` is the only answer that permits removing a live file.**
+    /// Every reader of a `PathState` decides through this one method, so
+    /// a new state cannot become a deleting one by omission.
+    pub(crate) fn skip_reason(self, checkpoint: &str) -> Option<String> {
+        match self {
+            PathState::Absent => None,
+            PathState::Uncovered => Some(format!("not covered by checkpoint {}", &checkpoint[..8])),
+            PathState::Omitted(reason) | PathState::Unevaluable(reason) => Some(reason),
+        }
+    }
+}
+
 /// The repository a path lies in, when that repository is itself inside a
 /// tracked directory rather than tracked in its own right.
 fn nested_repository_at_or_above(tracked: &TrackedSet, path: &Path) -> Option<PathBuf> {
@@ -1343,12 +1352,15 @@ fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
 /// answer can be compared with what a capture decided from the same set.
 ///
 /// **`Absent` is returned only when the recorded coverage positively says
-/// the path was covered and captured. Every other case is unevaluable and
-/// never deletes.** A checkpoint written by a matcher this mise does not
-/// have, a rule it cannot read, a repository the checkpoint recorded as
-/// skipped — each of them means the record cannot answer the question,
-/// and the answer to a question that cannot be answered is never "delete
-/// this file".
+/// the path was covered and captured. Every other answer keeps the live
+/// file.** The two that are not `Absent` say different things, and the
+/// user sees the difference: `Omitted` carries the record's own
+/// explanation for a path the checkpoint deliberately left out — most
+/// often a repository it skipped, which is an explanation a user can act
+/// on — while `Unevaluable` means this mise cannot interpret the record
+/// at all, because a newer matcher wrote it or a rule in it cannot be
+/// read. Either way the answer to a question that cannot be answered is
+/// never "delete this file".
 pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str) -> PathState {
     let under = |prefix: &str| super::tracked::display_under(display, prefix);
     // **A repository the checkpoint recorded as skipped is not something
