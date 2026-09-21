@@ -349,6 +349,25 @@ impl TrackedSet {
 
     /// Walks every entry and decides, file by file, what the capture holds.
     pub(crate) fn walk(&self) -> Result<Walk> {
+        self.walk_entries(None)
+    }
+
+    /// Walks only the entries at `selected`, while the set keeps all of
+    /// them.
+    ///
+    /// **Which entry owns a path is a question about the whole set;
+    /// walking is what costs.** A preview needs every declaration
+    /// present, so a target nested under an existing entry — or an
+    /// existing entry nested under the target — is attributed the way a
+    /// capture would attribute it. It does not need the other entries
+    /// walked: `mise dot track --dry-run` on one directory would
+    /// otherwise re-walk and re-stat every directory already tracked on
+    /// the machine, which is the opposite of cheap.
+    pub(crate) fn walk_selected(&self, selected: &[usize]) -> Result<Walk> {
+        self.walk_entries(Some(selected))
+    }
+
+    fn walk_entries(&self, selected: Option<&[usize]>) -> Result<Walk> {
         let set = self;
         let exclude = set.exclude_set()?;
         let hard = hard_exclusions();
@@ -359,6 +378,9 @@ impl TrackedSet {
         };
         walk.manifest.exclude = set.exclude.clone();
         for (index, entry) in set.entries.iter().enumerate() {
+            if selected.is_some_and(|selected| !selected.contains(&index)) {
+                continue;
+            }
             walk_entry(set, index, entry, &exclude, &hard, &mut walk);
         }
         // Protected files are excluded from capture itself, never kept in
@@ -1180,6 +1202,42 @@ mod tests {
         assert_eq!(
             normalize_target(&alias),
             normalize(temp.path()).join("alias")
+        );
+    }
+
+    /// A preview walks the target and nothing else, while the set still
+    /// holds every declaration so ownership is decided the way a capture
+    /// decides it.
+    #[test]
+    fn a_selected_walk_visits_only_what_was_asked_for() {
+        let tmp = tempfile::tempdir().unwrap();
+        let other = tmp.path().join("other");
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(other.join("deep")).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(other.join("deep/one.toml"), "other").unwrap();
+        std::fs::write(target.join("two.toml"), "target").unwrap();
+
+        let mut set = TrackedSet::default();
+        set.push(entry(&other));
+        set.push(entry(&target));
+        let index = set.entry_index_for(&target).unwrap();
+
+        let all = set.walk().unwrap();
+        assert!(all.files.contains_key(&other.join("deep/one.toml")));
+        assert!(all.files.contains_key(&target.join("two.toml")));
+
+        let selected = set.walk_selected(&[index]).unwrap();
+        assert!(
+            !selected.files.contains_key(&other.join("deep/one.toml")),
+            "an entry nobody asked about was walked"
+        );
+        assert!(selected.files.contains_key(&target.join("two.toml")));
+        // and the answer about the target is the same one a full walk
+        // gives, because ownership was decided from the whole set
+        assert_eq!(
+            selected.preview_of(&set, index).files,
+            all.preview_of(&set, index).files
         );
     }
 

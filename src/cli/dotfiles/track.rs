@@ -114,10 +114,19 @@ impl DotfilesTrack {
             ));
             resolved.push(target);
         }
+        // every declaration is in the set, so a target nested under one
+        // of them is attributed the way a capture would attribute it
         for entry in TrackedSet::from_config(&config)?.entries {
             preview_set.push(entry);
         }
-        let preview_walk = preview_set.walk()?;
+        // but only the targets are walked: the preview reports on them,
+        // and walking the rest would re-stat every tracked directory on
+        // the machine to print nothing about them
+        let targets: Vec<usize> = resolved
+            .iter()
+            .filter_map(|target| preview_set.entry_index_for(&normalize_target(target)))
+            .collect();
+        let preview_walk = preview_set.walk_selected(&targets)?;
         let mut previews: Vec<String> = vec![];
         for target in resolved {
             let target_key = normalized_target(&target);
