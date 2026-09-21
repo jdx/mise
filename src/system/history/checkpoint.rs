@@ -1284,14 +1284,17 @@ mod tests {
         let home = crate::dirs::HOME.join(".native");
         let plugin = home.join("plugin");
         let mut checkpoint = test_checkpoint("nested", None);
-        checkpoint.tree.coverage.entries.push(store::CoverageEntry {
-            path: crate::file::display_path(&home),
-            mode: "track".into(),
-            variant: None,
-            autosave: true,
-            encrypt: false,
-            state: "live".into(),
-            declared_in: None,
+        // built the way a capture builds it, so a coverage field added
+        // later cannot leave this test describing something else
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(
+            home.clone(),
+            "track",
+            crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track),
+        ));
+        checkpoint.tree.coverage = tracked.coverage(&crate::system::history::tracked::Walk {
+            entries: tracked.entries.clone(),
+            ..Default::default()
         });
         let skip = store::PathReason {
             path: crate::file::display_path(&plugin),
