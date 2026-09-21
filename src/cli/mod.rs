@@ -1267,9 +1267,7 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
             request_exit(0)
         }
         usage_rs::Error::HelpAll { cmd } => {
-            if let Some(page) =
-                usage_rs::help::render_all_styled(spec, cmd, help_style())
-            {
+            if let Some(page) = usage_rs::help::render_all_styled(spec, cmd, help_style()) {
                 print!("{page}");
             }
             request_exit(0)
