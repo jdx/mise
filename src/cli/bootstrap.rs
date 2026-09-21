@@ -2659,7 +2659,9 @@ impl BootstrapUnapply {
             ]);
         }
         table.print()?;
-        if !self.dry_run && !self.yes {
+        // The global `--yes`, `MISE_YES`, and the `yes` setting answer this
+        // question as much as the subcommand flag does.
+        if !self.dry_run && !self.yes && !config::Settings::get().yes {
             let message = format!(
                 "bootstrap: remove {} resource(s) contributed by {}?",
                 unapply.removals.len(),
