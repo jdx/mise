@@ -120,6 +120,9 @@ pub(crate) async fn apply_locked_with_scope(
     if !req.paths.is_empty() {
         bail!("partial pulls are not supported: apply the complete setup without PATH arguments");
     }
+    // A pull deletes, and a rule it could not compile is a path it would
+    // wrongly believe is selected here.
+    tracked.refuse_unusable_exclusions()?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("applying requires git"))?;
