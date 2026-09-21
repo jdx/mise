@@ -1,4 +1,4 @@
-//! Early initialization settings from .miserc.toml
+//! Early initialization settings from .miserc.toml and .miserc.local.toml
 //!
 //! This module handles loading settings that need to be known before the main
 //! config files are parsed. The primary use case is setting MISE_ENV, which
@@ -41,7 +41,7 @@ pub(crate) fn init_global_only() {
     let _ = take_tera_accessed_files();
 }
 
-/// Initialize miserc settings by loading .miserc.toml files.
+/// Initialize miserc settings by loading shared and local miserc files.
 /// This must be called early in the initialization process, before
 /// MISE_ENV or other early settings are accessed.
 pub(crate) fn init() -> Result<()> {
@@ -159,7 +159,7 @@ fn render_miserc_template(
 
 /// Load and merge all miserc settings files.
 /// Precedence (highest to lowest):
-/// 1. Local .miserc.toml and .config/miserc.toml (closest to cwd wins)
+/// 1. Closest directory first: .miserc.local.toml, .miserc.toml, .config/miserc.toml
 /// 2. Global ~/.config/mise/miserc.toml
 /// 3. System /etc/mise/miserc.toml
 fn load_miserc_settings() -> Result<MisercSettings> {
@@ -235,7 +235,7 @@ fn find_miserc_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
     let ceiling_paths = env_ceiling_paths();
 
-    // Local hierarchy: .miserc.toml and .config/miserc.toml in cwd and ancestors
+    // Local overrides precede shared settings at each directory level.
     // Use raw std::env to avoid depending on our lazy statics
     if let Ok(cwd) = std::env::current_dir() {
         // Walk up the directory tree, but stop at home or root
@@ -244,9 +244,11 @@ fn find_miserc_files() -> Vec<PathBuf> {
             if ceiling_paths.contains(dir) {
                 break;
             }
-            let path = dir.join(".miserc.toml");
-            if path.is_file() {
-                files.push(path);
+            for name in [".miserc.local.toml", ".miserc.toml"] {
+                let path = dir.join(name);
+                if path.is_file() {
+                    files.push(path);
+                }
             }
             // Stop at home directory to avoid searching too far
             if dir == home || dir.parent().is_none() {
