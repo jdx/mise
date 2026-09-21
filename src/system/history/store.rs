@@ -353,26 +353,40 @@ pub(crate) struct Checkpoint {
 }
 
 impl Checkpoint {
+    /// The snapshot-tree path a display path travels as, under whichever
+    /// coverage entry owns it, or `None` when no entry does.
+    ///
+    /// **The one conversion between how a path is shown and how it
+    /// travels.** A display path is for a person: it keeps the host's
+    /// separator, and only on unix is `$HOME` shown as `~`. A tree path is
+    /// portable, and a reader rebuilds a display path from it with
+    /// [`super::tracked::tree_path_to_display`] — which always writes `~/`
+    /// with `/`. The two display spellings of one path are therefore not
+    /// the same string on Windows, so anything matching a written record
+    /// against a walked one compares tree paths, or display paths both
+    /// derived from a tree path, and never one of each.
+    pub(crate) fn portable_path(&self, path: &String) -> Option<String> {
+        let path = super::tracked::normalize_target(Path::new(path));
+        let entry = self
+            .tree
+            .coverage
+            .entries
+            .iter()
+            // the most specific entry owns the path, as it does for a
+            // capture; ranking by byte length picked a different one
+            // whenever a shallower path had a longer name, and the
+            // record then named the wrong variant's stream
+            .filter(|entry| {
+                path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
+            })
+            .max_by_key(|entry| Path::new(&entry.path).components().count())?;
+        super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
+    }
+
     /// Only tracked-file metadata may travel with the ordinary history.
     /// Recovery material and command invocation details remain local.
     pub(crate) fn for_commit(&self) -> CommitRecord {
-        let portable = |path: &String| {
-            let path = super::tracked::normalize_target(Path::new(path));
-            let entry = self
-                .tree
-                .coverage
-                .entries
-                .iter()
-                // the most specific entry owns the path, as it does for a
-                // capture; ranking by byte length picked a different one
-                // whenever a shallower path had a longer name, and the
-                // record then named the wrong variant's stream
-                .filter(|entry| {
-                    path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
-                })
-                .max_by_key(|entry| Path::new(&entry.path).components().count())?;
-            super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
-        };
+        let portable = |path: &String| self.portable_path(path);
         CommitRecord {
             trigger: self.trigger,
             description_source: self.description_source,
