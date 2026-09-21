@@ -763,8 +763,43 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 /// Adds (or removes) a glob in `[history] exclude` of the global config.
 /// Returns whether the file changed.
+/// The `[history] exclude` rule that names exactly `key` and nothing
+/// else.
+///
+/// **A path is a literal; the list holds globs.** `mise dot untrack`
+/// writes the path it can no longer track, and written as-is a name
+/// holding `[` is an unclosed character class the matcher refuses, while
+/// one holding `*` or `?` silently matches the neighbours too. The glob
+/// metacharacters are escaped with the escape of the matcher that
+/// compiles the rule, so it means that one path. `$` has no escape in
+/// this pattern language — it is refused outright rather than read as an
+/// environment variable — so such a path is reported by
+/// [`edit_exclude`] instead of being written.
+pub(crate) fn exclude_rule_for_path(key: &str, directory: bool) -> String {
+    let escaped = globset::escape(key);
+    match directory {
+        true => format!("{escaped}/**"),
+        false => escaped,
+    }
+}
+
 pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
     use toml_edit::{Item, Value};
+    // **mise never writes a rule mise would refuse to load.** Every
+    // writer of this list arrives here — `mise dot exclude`, and
+    // `mise dot untrack` covering a path it can no longer track — and a
+    // rule the matcher cannot compile stops every later capture until
+    // someone edits the file by hand. So the check belongs at the write,
+    // not at one caller: `untrack` had no check, and untracking a file
+    // whose name held a `[` or a `$` wrote configuration that disabled
+    // `mise dot save`.
+    if add
+        && let Some(reason) = crate::system::history::tracked::unusable_pattern(
+            glob.strip_prefix('!').unwrap_or(glob),
+        )
+    {
+        bail!("{glob}: {reason}");
+    }
     let global = crate::config::global_shared_config_path();
     let mut doc = read_document(&global)?;
     let history = doc

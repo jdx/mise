@@ -60,3 +60,29 @@ TOML
 assert_succeed 'mise dot save'
 assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'changed'
 assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/session.json"
+
+# And mise never writes a rule mise would then refuse. `mise dot untrack`
+# of a covered path writes that path into the same list, and a path is a
+# literal, not a glob: written as-is, a name holding `[` is an unclosed
+# character class that would disable every later capture.
+echo 'one' >"$HOME/.codex/cache[1]"
+echo 'other' >~/.codex/cacheX
+assert_succeed 'mise dot save'
+assert_succeed "mise dot untrack '$HOME/.codex/cache[1]'"
+# the rule that was written is the escaped one
+assert_contains "mise dot paths --json | jq -r '.exclude[]'" 'cache[[]1[]]'
+# and it is usable: a later capture still runs, and the rule names that
+# one path — the sibling the unescaped form would have swallowed is
+# still captured
+echo 'edited' >~/.codex/cacheX
+assert_succeed 'mise dot save'
+assert_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'home/.codex/cacheX'
+assert_not_contains "git --git-dir=$repo ls-tree -r --name-only HEAD" 'cache[1]'
+
+# `$` has no escape in this pattern language, so such a path is reported
+# rather than written: the configuration stays loadable either way.
+dollar='~/.codex/price$x'
+echo 'dear' >"$HOME/.codex/price\$x"
+assert_fail "mise dot untrack '$dollar'" 'environment variables are not supported'
+assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'price'
+assert_succeed 'mise dot save'

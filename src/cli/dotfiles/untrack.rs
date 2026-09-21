@@ -94,11 +94,7 @@ impl DotfilesUntrack {
                         touched.push(local.clone());
                         continue;
                     }
-                    let glob = if path.is_dir() {
-                        format!("{key}/**")
-                    } else {
-                        key.clone()
-                    };
+                    let glob = super::track::exclude_rule_for_path(&key, path.is_dir());
                     super::track::edit_exclude(&glob, true)?;
                     info!(
                         "dotfiles: {key} is covered by {} ({}); excluded it in {}",
