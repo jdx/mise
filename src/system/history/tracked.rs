@@ -151,17 +151,19 @@ impl TrackedEntry {
     /// directory itself, or on one the patterns reach into, still wakes
     /// it.
     ///
-    /// A path with no kind — a deletion leaves nothing to stat — is read
-    /// as a file, which is the quiet answer and still the right one for
-    /// what matters most here: deleting a file the list selects is a
-    /// change that must be captured, and `is_included` says so from the
-    /// path alone.
+    /// **A path with no kind counts as either.** A removal or a rename
+    /// leaves nothing to ask, and the two answers disagree there: an
+    /// anchored list like `rules/**` never selects the directory
+    /// `rules` itself, so reading a vanished path as a file would let a
+    /// deleted tree go unnoticed and leave history claiming files that
+    /// are gone. Such a path is relevant if it is selected as a file or
+    /// if anything beneath it could have been. The extra wakeups are
+    /// bounded to paths that have just disappeared.
     pub(crate) fn include_relevant(&self, path: &Path) -> bool {
-        let directory = std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir());
-        if directory {
-            !self.include_prunes(path)
-        } else {
-            self.is_included(path)
+        match std::fs::symlink_metadata(path) {
+            Ok(meta) if meta.is_dir() => !self.include_prunes(path),
+            Ok(_) => self.is_included(path),
+            Err(_) => self.is_included(path) || !self.include_prunes(path),
         }
     }
 
@@ -2582,6 +2584,7 @@ mod tests {
         let mut set = TrackedSet::default();
         set.push(tracked);
         let exclude = set.exclude_set().unwrap();
+        let exclude_anchored = set.exclude_set().unwrap();
 
         // the entry directory and the directory the list reaches into:
         // an event on either has to be looked at
@@ -2623,10 +2626,24 @@ mod tests {
         // was deleted is still a change worth capturing
         std::fs::remove_file(root.join("config.toml")).unwrap();
         assert!(!named.excluded_by_lists(&exclude, &root.join("config.toml")));
-        std::fs::remove_file(root.join("sessions/one.jsonl")).unwrap();
-        assert!(named.excluded_by_lists(&exclude, &root.join("sessions/one.jsonl")));
         // the directory a name pattern could match in is still watched
         assert!(!named.excluded_by_lists(&exclude, &root.join("sessions")));
+
+        // **a directory that is gone counts as what it could have
+        // been.** An anchored list never selects the directory itself,
+        // so reading a vanished path as a file would let a removed tree
+        // pass unnoticed and leave history claiming files that no longer
+        // exist.
+        std::fs::remove_dir_all(root.join("rules")).unwrap();
+        assert!(
+            !set.excluded_by_lists(&exclude_anchored, &root.join("rules")),
+            "a removed directory of selected files was ignored"
+        );
+        std::fs::remove_dir_all(root.join("sessions")).unwrap();
+        assert!(
+            set.excluded_by_lists(&exclude_anchored, &root.join("sessions")),
+            "a removed directory nothing could select woke the watcher"
+        );
 
         // and the files are decided exactly, by both
         assert!(set.would_retain(&root.join("rules/one.md")).unwrap());
