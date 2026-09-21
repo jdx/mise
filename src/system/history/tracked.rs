@@ -2652,6 +2652,45 @@ mod tests {
         assert!(set.excluded_by_lists(&exclude, &root.join("notes.md")));
     }
 
+    /// What a pattern selects decides what may be skipped, so the two
+    /// have to say the same thing about a directory.
+    #[test]
+    fn a_pattern_that_selects_below_a_directory_reaches_into_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules/deep")).unwrap();
+        std::fs::write(root.join("rules/one.md"), "keep").unwrap();
+        std::fs::write(root.join("rules/deep/two.md"), "keep").unwrap();
+
+        // every one of these matches the directory `rules/deep` or an
+        // ancestor of it, and **a pattern matching a directory takes
+        // everything under it** — so all three select the file, and none
+        // of them may prune the directory
+        for (pattern, selects_deep) in [
+            ("rules", true),
+            ("rules/**", true),
+            ("rules/*", true),
+            ("sessions/**", false),
+        ] {
+            let mut tracked = entry(&root);
+            tracked.include = Some(vec![pattern.to_string()]);
+            let deep = root.join("rules/deep/two.md");
+            assert_eq!(
+                tracked.is_included(&deep),
+                selects_deep,
+                "{pattern} selecting {}",
+                deep.display()
+            );
+            // and the walk must not skip a directory whose contents the
+            // same pattern selects
+            assert_eq!(
+                tracked.include_prunes(&root.join("rules/deep")),
+                !selects_deep,
+                "{pattern} pruning rules/deep"
+            );
+        }
+    }
+
     fn entry(path: &Path) -> TrackedEntry {
         TrackedEntry::new(
             path.to_path_buf(),
