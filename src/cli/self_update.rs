@@ -15,9 +15,7 @@ use crate::file::MAX_PATH;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-#[cfg(target_os = "macos")]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -414,6 +412,49 @@ fn update_plugins(bin: &std::path::Path) {
     }
 }
 
+/// Whether a failed write probe of the install directory means the update cannot proceed.
+///
+/// Only the errors that say "this user cannot write here" stop the update. Anything else -- a
+/// directory that has gone missing, an exotic filesystem error -- is left to the update itself,
+/// which is where the real operation and the error that describes it are.
+fn write_probe_is_fatal(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem
+    )
+}
+
+/// Create and remove a file in `dir`, the way replacing the binary is about to.
+fn probe_install_dir(dir: &Path) -> std::io::Result<()> {
+    tempfile::Builder::new()
+        .prefix(".mise-self-update-probe")
+        .tempfile_in(dir)
+        .map(|_| ())
+}
+
+/// What to print when the install directory cannot be written to.
+///
+/// Names the binary as well as the directory: the install that is stuck is frequently not the one
+/// the user thinks they are running -- a root-owned `/usr/local/bin/mise` shadowing a packaged
+/// `/usr/bin/mise` produces exactly this failure, and the path is what gives that away.
+fn install_dir_not_writable_message(exe: &Path, dir: &Path) -> String {
+    let elevate = if cfg!(windows) {
+        "run mise self-update again from an elevated (Administrator) prompt"
+    } else {
+        "run `sudo mise self-update` to update this install"
+    };
+    let mut msg = format!(
+        "cannot replace {exe}: {dir} is not writable by the current user\n\nEither {elevate}, or update mise the same way you installed it.",
+        exe = exe.display(),
+        dir = dir.display(),
+    );
+    if let Some(instructions) = upgrade_instructions_text() {
+        msg.push_str("\n\n");
+        msg.push_str(&instructions);
+    }
+    msg
+}
+
 impl SelfUpdate {
     pub(crate) async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
@@ -495,6 +536,36 @@ impl SelfUpdate {
         bail!("{msg}");
     }
 
+    /// Stop before anything is downloaded when the running binary cannot be replaced.
+    ///
+    /// `self-replace` renames the running mise out of its directory and writes the new binary in
+    /// its place, so an update needs write permission on the *directory*, not on the file. A
+    /// root-owned install being updated by a normal user -- `/usr/local/bin/mise`, an install
+    /// under `/opt` -- therefore fails, but only after the release has been downloaded, and with
+    /// a message that names a temp file nobody asked for and no directory at all:
+    /// `Permission denied (os error 13) at path "/usr/local/bin/.mise.__temp__XKV5Oz"`. Probing
+    /// first turns that into the two things the user needs: which install is stuck, and what to
+    /// do about it.
+    ///
+    /// Deliberately after the up-to-date comparison, so a mise that has nothing to update still
+    /// reports that rather than a permission problem it was never going to hit.
+    fn ensure_install_dir_writable() -> Result<()> {
+        let exe = std::env::current_exe().unwrap_or_else(|_| env::MISE_BIN.clone());
+        let Some(dir) = exe.parent() else {
+            return Ok(());
+        };
+        match probe_install_dir(dir) {
+            Ok(()) => Ok(()),
+            Err(err) if write_probe_is_fatal(&err) => {
+                bail!("{}", install_dir_not_writable_message(&exe, dir))
+            }
+            Err(err) => {
+                debug!("could not probe {} for writability: {err}", dir.display());
+                Ok(())
+            }
+        }
+    }
+
     fn do_update(&self) -> Result<VersionStatus> {
         // Use block_in_place to allow self_update's blocking HTTP calls
         // to work within mise's async runtime
@@ -550,6 +621,8 @@ impl SelfUpdate {
         if !self.force && v == current_version {
             return Ok(VersionStatus::UpToDate(current_version));
         }
+
+        Self::ensure_install_dir_writable()?;
 
         let target = release_archive_name(&v, &OS, &ARCH, crate::build_time::TARGET);
         // Always set release_tag to ensure we download the correct release
@@ -1005,6 +1078,70 @@ mod post_update_tests {
         // And the step swallows it. There is no error here to propagate — which is exactly what
         // the `?` this replaces used to do.
         update_plugins(&missing);
+    }
+}
+
+#[cfg(test)]
+mod install_dir_tests {
+    use super::*;
+
+    #[test]
+    fn a_writable_directory_probes_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        probe_install_dir(dir.path()).unwrap();
+        // The probe cleans up after itself; an update that then fails must not leave a 40MB
+        // artifact of its own behind either, so the directory has to come back empty.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn only_a_permission_failure_stops_the_update() {
+        use std::io::{Error, ErrorKind};
+
+        assert!(write_probe_is_fatal(&Error::from(
+            ErrorKind::PermissionDenied
+        )));
+        assert!(write_probe_is_fatal(&Error::from(
+            ErrorKind::ReadOnlyFilesystem
+        )));
+        // Everything else belongs to the update itself, which reports the operation that really
+        // failed rather than a probe standing in for it.
+        assert!(!write_probe_is_fatal(&Error::from(ErrorKind::NotFound)));
+        assert!(!write_probe_is_fatal(&Error::other("something else")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unwritable_directory_is_a_permission_failure() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("bin");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        match probe_install_dir(&dir) {
+            // Root ignores the mode bits, so under a root test runner there is nothing to assert.
+            Ok(()) => assert_eq!(nix::unistd::geteuid().as_raw(), 0),
+            Err(err) => assert!(write_probe_is_fatal(&err), "{err:?}"),
+        }
+    }
+
+    #[test]
+    fn the_message_names_the_binary_and_its_directory() {
+        let msg = install_dir_not_writable_message(
+            Path::new("/usr/local/bin/mise"),
+            Path::new("/usr/local/bin"),
+        );
+        // The binary is the part that identifies which of several mise installs is stuck.
+        assert!(msg.contains("/usr/local/bin/mise"), "{msg}");
+        assert!(msg.contains("/usr/local/bin is not writable"), "{msg}");
+        if cfg!(windows) {
+            assert!(msg.contains("Administrator"), "{msg}");
+        } else {
+            assert!(msg.contains("sudo mise self-update"), "{msg}");
+        }
+        assert!(msg.contains("the same way you installed it"), "{msg}");
     }
 }
 
