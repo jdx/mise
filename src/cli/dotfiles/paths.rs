@@ -51,6 +51,9 @@ struct PathRow {
     /// list means that is more than the number captured.
     #[serde(skip_serializing_if = "Option::is_none")]
     considered: Option<u64>,
+    /// Whether the walk skipped a directory the include list could not
+    /// reach into, which makes `considered` a floor rather than a total.
+    searched_partially: bool,
 }
 
 impl DotfilesPaths {
@@ -83,6 +86,7 @@ impl DotfilesPaths {
                 exclude: entry.exclude.clone(),
                 include: entry.include.clone(),
                 considered: walk.considered.get(&index).copied(),
+                searched_partially: walk.skipped.contains(&index),
             })
             .collect();
         if self.json {
@@ -138,12 +142,24 @@ impl DotfilesPaths {
                     miseprintln!("  include ({}): {glob}", row.path);
                 }
                 if let Some(considered) = row.considered {
-                    miseprintln!(
-                        "  {}: {} of {} files (include list)",
-                        row.path,
-                        crate::system::history::tracked::with_separators(row.files as usize),
-                        crate::system::history::tracked::with_separators(considered as usize)
-                    );
+                    // "of N" is only said when N is the whole tree: a
+                    // directory the list could not reach into is skipped
+                    // unopened, and counting it would mean doing the
+                    // work the list exists to avoid
+                    if row.searched_partially {
+                        miseprintln!(
+                            "  {}: {} files (include list)",
+                            row.path,
+                            crate::system::history::tracked::with_separators(row.files as usize),
+                        );
+                    } else {
+                        miseprintln!(
+                            "  {}: {} of {} files (include list)",
+                            row.path,
+                            crate::system::history::tracked::with_separators(row.files as usize),
+                            crate::system::history::tracked::with_separators(considered as usize)
+                        );
+                    }
                 }
             }
         }

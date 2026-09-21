@@ -226,11 +226,21 @@ impl DotfilesTrack {
                     miseprintln!("  include ({target_key}): {glob}");
                 }
                 if let Some(considered) = preview_walk.considered.get(&entry_index) {
-                    miseprintln!(
-                        "  {target_key}: {} of {} files (include list)",
-                        crate::system::history::tracked::with_separators(preview.files),
-                        crate::system::history::tracked::with_separators(*considered as usize)
-                    );
+                    // a total only when the walk saw the whole tree; a
+                    // directory the list could not reach into was skipped
+                    // unopened and nothing in it was counted
+                    if preview_walk.skipped.contains(&entry_index) {
+                        miseprintln!(
+                            "  {target_key}: {} files (include list)",
+                            crate::system::history::tracked::with_separators(preview.files),
+                        );
+                    } else {
+                        miseprintln!(
+                            "  {target_key}: {} of {} files (include list)",
+                            crate::system::history::tracked::with_separators(preview.files),
+                            crate::system::history::tracked::with_separators(*considered as usize)
+                        );
+                    }
                 }
                 // nothing is enrolled yet, so `mise dot paths` cannot list
                 // these until the path is tracked: a bounded list here

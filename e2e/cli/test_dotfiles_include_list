@@ -33,6 +33,20 @@ assert_contains 'mise dot paths' '~/.codex: 3 of 9 files (include list)'
 assert "mise dot paths --json | jq -r '.entries[0].include | join(\",\")'" 'config.toml,rules/**'
 assert "mise dot paths --json | jq -r '.entries[0].considered'" '9'
 
+# a list of only anchored patterns skips what it cannot reach into,
+# unopened — so the report says what it selected and not "of N", because
+# N would mean walking the very directories the list exists to avoid
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["rules/**"] }
+TOML
+assert_contains 'mise dot paths' '~/.codex: 2 files (include list)'
+assert_not_contains 'mise dot paths' '~/.codex: 2 of'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+TOML
+
 # a directory nobody named appears later and stays out on its own
 mkdir -p ~/.codex/cache
 echo 'more noise' >~/.codex/cache/index
