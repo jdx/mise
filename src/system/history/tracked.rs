@@ -321,25 +321,30 @@ impl TrackedSet {
         owning_entry_index(&self.entries, path)
     }
 
-    /// Refuse to write a checkpoint while an `[history] exclude` rule
-    /// cannot be used.
+    /// Refuse to act while an `[history] exclude` rule cannot be used.
     ///
-    /// **Walking always works; only storing refuses.** A capture that
-    /// cannot apply an exclusion does not go ahead without it: dropping
-    /// the rule broadens the snapshot to precisely the paths it was
-    /// written to leave out, and that snapshot can be published to a
-    /// connected origin. So the refusal sits where a checkpoint is about
-    /// to be written, and says which rule, in which file, is the problem.
-    /// Everything that only reads — `mise dot paths`, a dry-run preview,
-    /// `mise dot status`, the watch set the watcher builds at startup —
-    /// keeps working and reports the same rule, because the command the
-    /// diagnostic sends the user to must not fail for the reason it is
-    /// diagnosing. The watcher takes this refusal on its own save: it
-    /// stays running and declines to capture.
+    /// **Reading works; acting does not. Nothing acts on a rule set it
+    /// could not fully build.** `ExcludeSet` keeps the rules it could
+    /// compile and remembers the ones it could not, so every reader
+    /// carries on with a list that is missing exactly the paths a rule
+    /// was written to leave out. Reading that way is fine and is the
+    /// point: `mise dot paths`, `mise dot status`, a dry-run preview and
+    /// the watch set the watcher builds at startup all keep working and
+    /// report the rule, because the command the diagnostic sends the user
+    /// to must not fail for the reason it is diagnosing.
+    ///
+    /// Acting that way is not. A capture would store — and publish — the
+    /// files the rule excluded; worse, synchronization would read the
+    /// incomplete list as "these paths are selected here", take their
+    /// absence from an incoming snapshot for a deletion, and remove the
+    /// live files. So every operation that writes or deletes asks this
+    /// first: capture, sync, pull, rollback. The watcher takes the
+    /// refusal on its own save, which leaves it running and reporting
+    /// rather than storing.
     pub(crate) fn refuse_unusable_exclusions(&self) -> Result<()> {
         match unusable_exclusions(&self.exclude_set()?) {
             Some(report) => eyre::bail!(
-                "{report}, so nothing is captured; fix or remove the pattern, then try again"
+                "{report}, so nothing is saved, applied, or published; fix or remove the pattern, then try again"
             ),
             None => Ok(()),
         }
@@ -460,7 +465,7 @@ impl TrackedSet {
         // very commands that let someone see and fix the rule.
         if let Some(report) = unusable_exclusions(&exclude) {
             walk.warnings.push(format!(
-                "{report}; it is ignored here, so this lists paths it would leave out, and nothing is captured until it is fixed"
+                "{report}; it is ignored here, so this lists paths it would leave out, and nothing is saved, applied, or published until it is fixed"
             ));
         }
         for (index, entry) in set.entries.iter().enumerate() {

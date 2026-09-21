@@ -120,6 +120,9 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
         bail!("`--all` needs `--to <ref>`");
     }
     let (store, tracked, entries) = crate::cli::dotfiles::history::open().await?;
+    // A rollback writes and removes live files, so it does not run on a
+    // rule set that could not be fully built.
+    tracked.refuse_unusable_exclusions()?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("rolling back requires git"))?;

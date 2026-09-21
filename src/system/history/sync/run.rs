@@ -253,6 +253,10 @@ pub(crate) fn sync_locked(
     tracked: &TrackedSet,
     request: &SyncRequest,
 ) -> Result<SyncOutcome> {
+    // Synchronizing publishes and applies, so it does not run on a rule
+    // set that could not be fully built: the missing rules are exactly
+    // the paths that would then look selected here.
+    tracked.refuse_unusable_exclusions()?;
     let origin = match &request.origin {
         Some(origin) => origin.clone(),
         None => origin()?,
