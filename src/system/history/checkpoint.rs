@@ -972,8 +972,15 @@ fn under_entry(path: &str, entry: &str) -> bool {
 /// Narrowing a list drops paths already in history from every checkpoint
 /// after it. That is what the user asked for, but it happens silently —
 /// nothing about the tree changed — so it is said at the point of
-/// change. Only a save the user asked for reports it; the watcher saves
-/// on its own schedule and would repeat it endlessly.
+/// change.
+///
+/// **There is exactly one opportunity to say it.** The next checkpoint's
+/// parent is the narrowed tree, so a drop that goes unreported here can
+/// never be reported afterwards. Every save the user asked for therefore
+/// reports it, `mise dot track` included: re-tracking an entry is how a
+/// hand-edited `include` list is applied, and it saves as a baseline. The
+/// watcher's own saves stay quiet, because they arrive on their own
+/// schedule and would repeat the warning endlessly.
 fn report_narrowed(
     repo: &HistoryRepo,
     parent: Option<&str>,
@@ -982,7 +989,12 @@ fn report_narrowed(
 ) -> Result<()> {
     let announced = matches!(
         draft.trigger,
-        Some(store::Trigger::Save | store::Trigger::Agent | store::Trigger::Update)
+        Some(
+            store::Trigger::Save
+                | store::Trigger::Agent
+                | store::Trigger::Update
+                | store::Trigger::Baseline
+        )
     );
     let Some(parent) = parent.filter(|_| announced) else {
         return Ok(());
