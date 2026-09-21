@@ -435,7 +435,7 @@ how this differs from cloning a global configuration repository.
 Adopting a setup installs its files and runs bootstrap, but a machine is
 often not ready until something else has run: a login shell changed, a font
 cache rebuilt, a keyring imported, a service enabled. Name a task and the
-adoption finishes with it:
+setup finishes with it:
 
 ```toml
 # config.toml, shared through the setup repository
@@ -446,19 +446,24 @@ post_adopt = "setup"
 run = "./bin/finish-setup"
 ```
 
-`mise bootstrap --adopt <url>` then runs `mise run setup` once, after the
-files are installed and bootstrap has finished. Nothing else runs it: a
-later `mise bootstrap`, `mise dot pull`, or `mise dot sync` adopts nothing,
-so there is nothing to finish. Adopting the same setup again synchronizes
-it and leaves the task alone — mise records the task on the machine that
-finished it, so work that changes a login shell or imports a keyring does
-not happen twice.
+`mise bootstrap --adopt <url>` then runs `mise run setup` as the last step
+of the bootstrap it runs — once. mise records the task against the setup
+this machine is connected to, so every later `mise bootstrap` leaves it
+alone, while a machine that connects to a _different_ setup still gets
+that setup's task. `mise dot pull` and `mise dot sync` never run it; they
+apply files and do not bootstrap.
 
 This is the difference from a task named `bootstrap`, which every
 `mise bootstrap` runs. Put work that must be safe to repeat in `bootstrap`,
 and work a machine needs exactly once — changing the login shell, importing
 a keyring, enabling a service the setup brought — in `post_adopt`.
 `--skip task`, or an `--only` that leaves the task part out, excludes both.
+
+Because it belongs to the bootstrap rather than to the adoption, it still
+runs when the adoption could not finish: a setup [paused on a
+conflict](#resolve-unrelated-histories) bootstraps nothing, and the
+`mise bootstrap` you run after resolving the conflict is what completes
+the machine.
 
 The task is read from the trusted global or system configuration, under the
 same rule as [`[history.reload]`](#reload-an-application-after-restoring-files):
@@ -469,11 +474,11 @@ it would run before you adopt it.
 
 If the task fails, the setup is installed and unfinished rather than undone,
 and mise says exactly that. A failed task is not recorded, so fixing what it
-reported and adopting again runs it:
+reported and running `mise bootstrap` again finishes the machine:
 
 ```text
 the setup was installed but its post-adopt task setup failed; the machine
-may not be fully set up. Fix what the task reported and run `mise run setup`
+may not be fully set up. Fix what the task reported and run `mise bootstrap`
 again
 ```
 

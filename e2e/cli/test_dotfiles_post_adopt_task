@@ -55,6 +55,20 @@ assert_contains "cat $C/.config/mise/config.toml" 'post_adopt = "setup"'
 assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles,task"
 assert "cat $C/post-adopt-ran" "ran"
 
+# the record is keyed by the setup, not by the task name: `setup` is what
+# half of these tasks are called, and a machine that connects to a
+# different setup must still get that setup's task run. The origin lives
+# in config.local.toml, so pointing this machine at another one is the
+# smallest way to ask that question.
+sed -i.bak "s|url = \"file://$origin\"|url = \"file://$origin-other\"|" "$C/.config/mise/config.local.toml"
+assert_contains "cat $C/.config/mise/config.local.toml" "origin.git-other"
+assert_succeed "$c bootstrap --only dotfiles,task"
+assert "cat $C/post-adopt-ran" $'ran\nran'
+sed -i.bak "s|url = \"file://$origin-other\"|url = \"file://$origin\"|" "$C/.config/mise/config.local.toml"
+# and back on the original setup it is still finished
+assert_succeed "$c bootstrap --only dotfiles,task"
+assert "cat $C/post-adopt-ran" $'ran\nran'
+
 # ---- machine D excludes the task part: the setup is installed and the
 # task is left alone, exactly as `bootstrap` would be
 D="$(dirname "$HOME")/d-home"
@@ -71,14 +85,16 @@ wrapper "$E" "$PWD/e"
 e="$PWD/e"
 out="$(FAIL_SETUP=1 $e bootstrap --adopt "file://$origin" --yes --only dotfiles,task 2>&1)" && fail "a failing post-adopt task must fail the adoption"
 [[ $out == *"post-adopt task setup failed"* ]] || fail "the failure does not name the task: $out"
-[[ $out == *'mise run setup'* ]] || fail "the failure does not say how to run it again: $out"
+[[ $out == *'run `mise bootstrap` again'* ]] || fail "the failure does not say how to finish: $out"
 # installed, and the task did run: what is missing is what the task does
 assert_contains "cat $E/.config/mise/config.toml" 'post_adopt = "setup"'
 assert "cat $E/post-adopt-ran" "ran"
 
-# a task that failed is not recorded as finished: fixing what it reported
-# and adopting again runs it, and only then is it done with
-assert_succeed "$e bootstrap --adopt file://$origin --yes --only dotfiles,task"
+# a task that failed is not recorded as finished. It is the bootstrap
+# that finishes the machine, so an ordinary `mise bootstrap` — the one
+# the failure names, and the one a user reaches for after a setup paused
+# on a conflict — runs it, and only then is it done with
+assert_succeed "$e bootstrap --only dotfiles,task"
 assert "cat $E/post-adopt-ran" $'ran\nran'
-assert_succeed "$e bootstrap --adopt file://$origin --yes --only dotfiles,task"
+assert_succeed "$e bootstrap --only dotfiles,task"
 assert "cat $E/post-adopt-ran" $'ran\nran'

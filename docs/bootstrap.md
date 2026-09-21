@@ -111,9 +111,9 @@ mise recognizes the repository's `.mise-history/format.toml` marker and:
 2. Restores the tracked files to their paths on this machine.
 3. Remembers the origin for future synchronization.
 4. Runs bootstrap using the restored mise configuration.
-5. Runs the setup's own [`[history] post_adopt`
-   task](/history.html#finish-setting-up-a-new-machine), when it names one,
-   to finish anything bootstrap does not cover.
+5. Finishes with the setup's own [`[history] post_adopt`
+   task](/history.html#finish-setting-up-a-new-machine), when it names one
+   and this machine has not run it yet.
 
 Track the mise configuration and any template sources on the first machine
 before sharing them. They let bootstrap recreate tools and services and

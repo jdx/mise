@@ -189,68 +189,11 @@ pub(crate) fn post_adopt_task() -> Result<Option<String>> {
     let paths = crate::config::system_config_files()
         .into_iter()
         .chain(global);
-    last_post_adopt(paths, true)
-}
-
-/// The same declaration read from a setup that is not installed yet, so a
-/// dry run can name the command before the user commits to it.
-///
-/// The trust check is deliberately not applied here: nothing is run from a
-/// preview, and telling the user what an incoming setup would run on their
-/// machine is the whole point of asking for one.
-pub(crate) fn post_adopt_task_in(dir: &Path) -> Result<Option<String>> {
-    // The preview mirrors the configuration directory, so its layers are
-    // discovered the way mise discovers that directory's — same
-    // precedence, same `conf.d`, same environment selection. Listing the
-    // directory and sorting would read `config.local.toml` before the
-    // `config.toml` it overrides, and the preview would then name a task
-    // the bootstrap does not run.
-    last_post_adopt(
-        crate::config::config_files_with_incoming(dir, &Default::default()),
-        false,
-    )
-}
-
-/// The post-adopt tasks this machine has already finished, one per line.
-///
-/// **Once means once.** `mise bootstrap --adopt <url>` against a setup
-/// this machine already has is a synchronization, and re-running a task
-/// that changed the login shell or imported a keyring is not what "finish
-/// setting this machine up" means. Only a task that succeeded is recorded,
-/// so a failure the user fixes still runs on the next attempt.
-fn post_adopt_record() -> PathBuf {
-    super::store::store_dir_in(&super::store::state_dir()).join("post-adopt")
-}
-
-/// Whether this machine has already finished `task`.
-pub(crate) fn post_adopt_already_ran(task: &str) -> bool {
-    std::fs::read_to_string(post_adopt_record())
-        .map(|ran| ran.lines().any(|line| line == task))
-        .unwrap_or(false)
-}
-
-/// Records `task` as finished on this machine.
-pub(crate) fn record_post_adopt(task: &str) -> Result<()> {
-    let path = post_adopt_record();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut ran = std::fs::read_to_string(&path).unwrap_or_default();
-    if !ran.is_empty() && !ran.ends_with('\n') {
-        ran.push('\n');
-    }
-    ran.push_str(task);
-    ran.push('\n');
-    std::fs::write(&path, ran)
-        .wrap_err_with(|| format!("recording the post-adopt task in {}", display_path(&path)))?;
-    Ok(())
+    last_post_adopt(paths)
 }
 
 /// The last layer that names a post-adopt task, in discovery order.
-fn last_post_adopt(
-    paths: impl IntoIterator<Item = PathBuf>,
-    check_trust: bool,
-) -> Result<Option<String>> {
+fn last_post_adopt(paths: impl IntoIterator<Item = PathBuf>) -> Result<Option<String>> {
     let mut found = None;
     for path in paths {
         if !path.is_file() || path.extension().is_none_or(|ext| ext != "toml") {
@@ -259,7 +202,7 @@ fn last_post_adopt(
         let Some(task) = read_layer(&path)?.and_then(|layer| layer.post_adopt) else {
             continue;
         };
-        if check_trust && !crate::config::config_file::is_trusted(&path) {
+        if !crate::config::config_file::is_trusted(&path) {
             warn!(
                 "history: ignoring [history] post_adopt in untrusted {}",
                 display_path(&path)
@@ -269,6 +212,56 @@ fn last_post_adopt(
         found = nonempty_command(task);
     }
     Ok(found)
+}
+
+/// The post-adopt tasks this machine has already finished, one per line.
+///
+/// **Once means once.** A `mise bootstrap` on a machine that is already
+/// set up must not change the login shell again or re-import a keyring,
+/// so what ran is remembered rather than inferred from whether an
+/// adoption happened to run just now. Only a task that succeeded is
+/// recorded, so a failure the user fixes still runs on the next attempt.
+fn post_adopt_record() -> PathBuf {
+    super::store::store_dir_in(&super::store::state_dir()).join("post-adopt")
+}
+
+/// What "this task, from this setup" is recorded as.
+///
+/// **A task name alone is not an identity.** `setup` is what half of
+/// these tasks will be called, and a machine that later adopts a
+/// different repository must still get that repository's task run. The
+/// setup this machine is connected to is part of the key, so changing
+/// setups changes the answer; a machine with no recorded origin keys on
+/// the name alone, because there is nothing else to tell two apart.
+pub(crate) fn post_adopt_key(task: &str) -> Result<String> {
+    let setup = origin()?
+        .map(|(_, origin)| format!("{}#{}", origin.url, origin.branch))
+        .unwrap_or_default();
+    Ok(format!("{setup}\t{task}"))
+}
+
+/// Whether this machine has already finished the task `key` names.
+pub(crate) fn post_adopt_already_ran(key: &str) -> bool {
+    std::fs::read_to_string(post_adopt_record())
+        .map(|ran| ran.lines().any(|line| line == key))
+        .unwrap_or(false)
+}
+
+/// Records the task `key` names as finished on this machine.
+pub(crate) fn record_post_adopt(key: &str) -> Result<()> {
+    let path = post_adopt_record();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut ran = std::fs::read_to_string(&path).unwrap_or_default();
+    if !ran.is_empty() && !ran.ends_with('\n') {
+        ran.push('\n');
+    }
+    ran.push_str(key);
+    ran.push('\n');
+    std::fs::write(&path, ran)
+        .wrap_err_with(|| format!("recording the post-adopt task in {}", display_path(&path)))?;
+    Ok(())
 }
 
 /// The effective reload map: glob -> command, a later layer overriding an
@@ -322,13 +315,20 @@ mod tests {
         assert!(format!("{error:#}").contains("config.toml"));
     }
 
-    /// What a dry run reports is what the bootstrap would run: the last
-    /// layer that names a task, and nothing when none does or the name is
-    /// blank.
+    /// The layers are read in mise's own precedence order, so what is
+    /// reported is what the bootstrap runs: the last layer that names a
+    /// task, and nothing when none does or the name is blank.
     #[test]
-    fn a_preview_reports_the_post_adopt_task_the_setup_brings() {
+    fn the_last_layer_that_names_a_post_adopt_task_wins() {
         let temp = tempfile::tempdir().unwrap();
-        assert_eq!(post_adopt_task_in(temp.path()).unwrap(), None);
+        assert_eq!(
+            last_post_adopt(crate::config::config_files_with_incoming(
+                temp.path(),
+                &Default::default()
+            ))
+            .unwrap(),
+            None
+        );
 
         std::fs::write(
             temp.path().join("config.toml"),
@@ -338,7 +338,12 @@ post_adopt = 'setup'
         )
         .unwrap();
         assert_eq!(
-            post_adopt_task_in(temp.path()).unwrap().as_deref(),
+            last_post_adopt(crate::config::config_files_with_incoming(
+                temp.path(),
+                &Default::default()
+            ))
+            .unwrap()
+            .as_deref(),
             Some("setup")
         );
 
@@ -352,7 +357,12 @@ post_adopt = 'machine-setup'
         )
         .unwrap();
         assert_eq!(
-            post_adopt_task_in(temp.path()).unwrap().as_deref(),
+            last_post_adopt(crate::config::config_files_with_incoming(
+                temp.path(),
+                &Default::default()
+            ))
+            .unwrap()
+            .as_deref(),
             Some("machine-setup")
         );
 
@@ -365,12 +375,23 @@ post_adopt = '  '
 ",
         )
         .unwrap();
-        assert_eq!(post_adopt_task_in(temp.path()).unwrap(), None);
+        assert_eq!(
+            last_post_adopt(crate::config::config_files_with_incoming(
+                temp.path(),
+                &Default::default()
+            ))
+            .unwrap(),
+            None
+        );
 
         // a directory that is not there at all is not an error: a setup
         // without configuration simply brings no task
         assert_eq!(
-            post_adopt_task_in(&temp.path().join("missing")).unwrap(),
+            last_post_adopt(crate::config::config_files_with_incoming(
+                &temp.path().join("missing"),
+                &Default::default(),
+            ))
+            .unwrap(),
             None
         );
     }
