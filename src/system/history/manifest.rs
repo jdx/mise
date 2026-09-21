@@ -18,10 +18,13 @@ pub(crate) struct Enrollment {
     pub autosave: bool,
     pub encrypt: bool,
     pub variants: Vec<Variant>,
-    /// The entry's own `exclude` globs, relative to its path. Written only
-    /// when set, so a setup without them stays readable by older clients.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub exclude: Vec<String>,
+    /// The entry's own `exclude` globs, relative to its path. Written
+    /// only when the declaration states one, so a setup without them
+    /// stays readable by older clients — and a declared but empty list,
+    /// which clears what another machine published, is not mistaken for
+    /// no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -440,7 +443,7 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
-            for pattern in &entry.exclude {
+            for pattern in entry.exclude.iter().flatten() {
                 if let Err(err) = glob::Pattern::new(pattern) {
                     bail!(
                         "invalid exclude pattern {pattern:?} for {}: {err}",
@@ -895,7 +898,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
-            exclude: vec![],
+            exclude: None,
         }
     }
 
@@ -968,7 +971,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec![],
+                exclude: None,
             }],
             ..Default::default()
         };
@@ -1022,7 +1025,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![active, inactive],
-                exclude: vec![],
+                exclude: None,
             }],
             ..Default::default()
         };
@@ -1093,7 +1096,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
-            exclude: vec![],
+            exclude: None,
         };
         let mut manifest = Manifest {
             enrollment: vec![enrollment.clone()],
@@ -1121,12 +1124,12 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec!["sessions".into()],
+                exclude: Some(vec!["sessions".into()]),
             }],
             ..Default::default()
         };
         assert!(manifest.validate().is_ok());
-        manifest.enrollment[0].exclude.push("[".into());
+        manifest.enrollment[0].exclude = Some(vec!["[".into()]);
         let error = manifest.validate().unwrap_err().to_string();
         assert!(error.contains("invalid exclude pattern"), "{error}");
         assert!(error.contains("home/.codex"), "{error}");
