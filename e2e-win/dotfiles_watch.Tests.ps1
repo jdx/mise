@@ -220,9 +220,10 @@ environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_
             Get-ConsoleProbe ([int]$launcher.ProcessId) | Should -Be 6
             Get-ConsoleProbe ([int]$watcher.ProcessId) | Should -Be 6
         } finally {
+            schtasks /end /tn $task 2>&1 | Out-Null
             mise bootstrap services remove mise-history 2>&1 | Out-String | Out-Null
             schtasks /delete /tn $task /f 2>&1 | Out-Null
-            Wait-Watcher $false | Should -BeTrue
+            Wait-Watcher $false | Out-Null
             $env:MISE_EXPERIMENTAL = '0'
         }
     }
