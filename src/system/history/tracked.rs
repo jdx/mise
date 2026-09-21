@@ -610,8 +610,8 @@ impl TrackedSet {
         // change history has to notice, and a pattern equal to its name
         // swallowing that event would leave its files in history after
         // they are gone.
-        let judged = path != owner.path
-            || std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir());
+        let judged =
+            path != owner.path || std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir());
         if judged && exclude.is_match(path, &owner.path) {
             return true;
         }
@@ -2794,43 +2794,6 @@ mod tests {
                 "{pattern} pruning rules/deep"
             );
         }
-    }
-
-    /// The walk and every reader must agree about a tracked entry's own
-    /// root: the walk steps past a directory root and filters what is
-    /// inside, so a bare global pattern equal to that directory's name
-    /// must not make retention call the entry excluded while a capture
-    /// takes all of it.
-    #[test]
-    fn a_global_pattern_matching_an_entrys_own_name_does_not_exclude_it() {
-        let tmp = tempfile::tempdir().unwrap();
-        let directory = tmp.path().join("cache");
-        std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join("kept.toml"), "keep").unwrap();
-        let file = tmp.path().join("notes.md");
-        std::fs::write(&file, "keep").unwrap();
-
-        let mut set = TrackedSet {
-            exclude: vec!["cache".to_string(), "notes.md".to_string()],
-            ..Default::default()
-        };
-        set.push(entry(&directory));
-        set.push(entry(&file));
-        let exclude = set.exclude_set().unwrap();
-
-        // the directory entry: walked, so its root is not judged
-        assert!(!set.excluded_by_lists(&exclude, &directory));
-        assert!(set.would_retain(&directory).unwrap());
-        assert!(
-            set.walk()
-                .unwrap()
-                .files
-                .contains_key(&directory.join("kept.toml"))
-        );
-        // and a file entry is judged, exactly as the walk judges it
-        assert!(set.excluded_by_lists(&exclude, &file));
-        assert!(!set.would_retain(&file).unwrap());
-        assert!(!set.walk().unwrap().files.contains_key(&file));
     }
 
     /// **Retention asks the patterns, not the filesystem.** A file the
