@@ -195,13 +195,27 @@ mod tests {
         root
     }
 
-    /// The slot `root` must land on. `slot` hashes the canonical root itself,
-    /// so a root's slot is pinned by its own path. That two roots differ is not
-    /// a property the code provides: 511 slots make a collision between two
-    /// unrelated paths likely enough to fail a run, and a random tempdir
-    /// decides when. Assert the hashed input rather than comparing two slots.
+    /// The slot a canonical root must land on, worked out here rather than by
+    /// calling [`hashed_slot`], so that a changed formula -- a wider modulus, a
+    /// dropped `1 +` handing a worktree the primary checkout's port -- fails
+    /// instead of moving both sides of the assertion together. The hash itself
+    /// is still read through [`crate::hash::hash_to_str`]: a golden hex digest
+    /// would pin `Path`'s `Hash` implementation, which std does not promise to
+    /// keep stable across releases, and which `PortClaim` persistence is
+    /// designed to tolerate changing.
+    fn expected_slot_of(canonical: &Path) -> u16 {
+        let hash = u64::from_str_radix(&crate::hash::hash_to_str(&canonical), 16).unwrap();
+        1 + u16::try_from(hash % u64::from(SLOTS - 1)).unwrap()
+    }
+
+    /// [`expected_slot_of`] for a root that still has to be canonicalized, the
+    /// way `slot` does. A root's slot is pinned by its own path; that two roots
+    /// differ is not a property the code provides, since 511 slots make a
+    /// collision between two unrelated paths likely enough to fail a run and a
+    /// random tempdir decides when. So the tests pin the derivation instead of
+    /// comparing two slots.
     fn expected_slot(root: &Path) -> u16 {
-        hashed_slot(&root.canonicalize().unwrap())
+        expected_slot_of(&root.canonicalize().unwrap())
     }
 
     #[test]
@@ -359,11 +373,9 @@ mod tests {
             .collect();
         let slots: Vec<u16> = roots.iter().map(|r| hashed_slot(r)).collect();
         assert!(slots.iter().all(|s| (1..SLOTS).contains(s)));
-        assert_eq!(
-            slots,
-            roots.iter().map(|r| hashed_slot(r)).collect::<Vec<_>>(),
-            "a root keeps its slot"
-        );
+        for (root, slot) in roots.iter().zip(&slots) {
+            assert_eq!(*slot, expected_slot_of(root), "{}", root.display());
+        }
         let distinct: std::collections::HashSet<u16> = slots.iter().copied().collect();
         assert!(
             distinct.len() > roots.len() / 2,
