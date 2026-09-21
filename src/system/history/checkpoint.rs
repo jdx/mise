@@ -20,7 +20,7 @@ use super::store::{
     self, Annotation, Changes, Checkpoint, DescriptionSource, Entry, Index, IndexEntry, Machine,
     Operation, TreeInfo, Trigger,
 };
-use super::tracked::{TrackedEntry, TrackedSet, display_paths_equal, tree_path_to_display};
+use super::tracked::{TrackedEntry, TrackedSet, tree_path_to_display};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 
@@ -623,13 +623,20 @@ impl Store {
             // this history at all. The list stays in this machine's own
             // record, which is where a rollback here consults it.
             let nested = std::mem::take(&mut checkpoint.tree.coverage.nested);
+            // derived before the record is replaced, while the coverage
+            // entries that decide a path's stream are still here
+            let skipped = skipped_as_rebuilt(&checkpoint, &nested);
             checkpoint = repo.read_meta(&commit)?;
             // The trailer carried each of them as an ordinary omission,
             // which is how another machine learns about the skip at all.
             // On this one the better answer has just come back, so the
             // generic copy goes: one skip, said once, with the reason
             // that can be acted on.
-            drop_nested_from_omitted(&mut checkpoint.tree.coverage.omitted, &nested);
+            checkpoint
+                .tree
+                .coverage
+                .omitted
+                .retain(|omitted| !skipped.contains(&omitted.path));
             checkpoint.tree.coverage.nested = nested;
         }
         store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
@@ -890,25 +897,28 @@ struct ManualPlan {
 /// Tells the user what the walk left out, so a credential store or a
 /// nested repository under a tracked directory never looks saved. A
 /// command the user ran (a save, a baseline, a bootstrap, rollback, or
-/// Drops from `omitted` every skip that `nested` already describes
-/// better: one skip, said once, with the reason that can be acted on.
+/// Each skipped repository as the rebuilt record will spell it.
 ///
-/// **The two lists are written by different hands.** `nested` comes
-/// straight from the walk, in display paths with the platform separator;
-/// `omitted` has just been read back out of the commit trailer, where it
-/// travelled as a tree path and was rebuilt with `tree_path_to_display`,
-/// which always writes `/`. Comparing the strings exactly left every
-/// Windows skip in both lists, so each history report named it twice —
-/// the duplicate this is here to remove.
-fn drop_nested_from_omitted(
-    omitted: &mut Vec<super::store::PathReason>,
+/// **One writer, so the comparison can be exact.** The skips reach the
+/// trailer as tree paths, through `Checkpoint::portable_path`, and come
+/// back as display paths through `tree_path_to_display`. The walk's own
+/// display paths are written by `display_path`, which keeps the host's
+/// separator and, off unix, does not shorten `$HOME` to `~` — so on
+/// Windows the same skip is `C:\Users\me\.native\plugin` on one side
+/// and `~/.native/plugin` on the other. Matching those two spellings is
+/// not something a comparison can be taught: folding separators would
+/// still leave the home prefix, and on unix it would call
+/// `~/a/b` and a file genuinely named `a\b` the same path. So both sides
+/// are put through the same pair of conversions and compared with `==`.
+fn skipped_as_rebuilt(
+    checkpoint: &Checkpoint,
     nested: &[super::store::PathReason],
-) {
-    omitted.retain(|omitted| {
-        !nested
-            .iter()
-            .any(|skip| display_paths_equal(&skip.path, &omitted.path))
-    });
+) -> BTreeSet<String> {
+    nested
+        .iter()
+        .filter_map(|skip| checkpoint.portable_path(&skip.path))
+        .map(|tree_path| tree_path_to_display(&tree_path))
+        .collect()
 }
 
 /// undo outcome) lists each path; the watcher's captures and the
@@ -1261,39 +1271,84 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 mod tests {
     use super::*;
 
-    /// A skipped repository is named once, however each list spells its
-    /// path. The walk writes the platform separator and the trailer
-    /// round trip always writes `/`, so on Windows the same skip reached
-    /// the comparison in two spellings and stayed in both lists.
+    /// The key the drop matches on is the string the rebuilt record will
+    /// hold, because both come from the tree path by the same route.
+    ///
+    /// This is the whole of the Windows case, checked from any host: the
+    /// trailer is written with `portable_path`, read back with
+    /// `tree_path_to_display`, and the skip is matched on the result of
+    /// exactly those two — never against `display_path`'s spelling, which
+    /// keeps the host separator and leaves `$HOME` expanded off unix.
     #[test]
-    fn a_skipped_repository_is_dropped_from_the_omissions_on_either_separator() {
-        let reason = |path: &str, reason: &str| super::super::store::PathReason {
-            path: path.into(),
-            reason: reason.into(),
+    fn a_skip_is_matched_on_the_spelling_the_rebuilt_record_holds() {
+        let home = crate::dirs::HOME.join(".native");
+        let plugin = home.join("plugin");
+        let mut checkpoint = test_checkpoint("nested", None);
+        checkpoint.tree.coverage.entries.push(store::CoverageEntry {
+            path: crate::file::display_path(&home),
+            mode: "track".into(),
+            variant: None,
+            autosave: true,
+            encrypt: false,
+            state: "live".into(),
+            declared_in: None,
+        });
+        let skip = store::PathReason {
+            path: crate::file::display_path(&plugin),
+            reason: crate::system::history::tracked::NESTED_REPOSITORY_REASON.into(),
         };
-        let nested = vec![reason(
-            r"~\.native\plugin",
-            super::super::tracked::NESTED_REPOSITORY_REASON,
-        )];
-        let mut omitted = vec![
-            reason("~/.native/plugin", "not captured in this commit"),
-            reason("~/.native/large", "size limit"),
-        ];
-        drop_nested_from_omitted(&mut omitted, &nested);
+        checkpoint.tree.coverage.nested.push(skip.clone());
+
+        // what the trailer carries, and what a reader rebuilds from it
+        let record = checkpoint.for_commit();
+        let rebuilt: Vec<String> = record
+            .omitted
+            .iter()
+            .map(|path| tree_path_to_display(path))
+            .collect();
+        assert_eq!(rebuilt, vec!["~/.native/plugin".to_string()]);
+
+        // the drop matches those exact strings and nothing else, so the
+        // skip is named once wherever the two display spellings differ
+        let skipped = skipped_as_rebuilt(&checkpoint, std::slice::from_ref(&skip));
         assert_eq!(
-            omitted.iter().map(|o| o.path.as_str()).collect::<Vec<_>>(),
-            vec!["~/.native/large"],
-            "the skip was reported twice"
+            skipped,
+            rebuilt.iter().cloned().collect::<BTreeSet<String>>(),
+            "the drop is not matching on what the rebuilt record holds"
         );
 
-        // and the same spelling on both sides still works
-        let nested = vec![reason(
-            "~/.native/plugin",
-            super::super::tracked::NESTED_REPOSITORY_REASON,
-        )];
-        let mut omitted = vec![reason("~/.native/plugin", "not captured in this commit")];
-        drop_nested_from_omitted(&mut omitted, &nested);
-        assert!(omitted.is_empty());
+        // On Windows this is the whole bug: `display_path` keeps the host
+        // separator and leaves `$HOME` expanded, so the walked spelling is
+        // not the rebuilt one and matching against it left the skip in
+        // both lists. The key is derived from the tree path for that
+        // reason, and this asserts the reason rather than assuming it.
+        #[cfg(windows)]
+        {
+            assert_ne!(
+                skip.path, rebuilt[0],
+                "the two writers agree here, so the derivation is untested"
+            );
+            assert!(!skipped.contains(&skip.path));
+        }
+
+        // and nothing is folded, so a file genuinely named with a
+        // backslash is a different path from the one with a separator
+        let mut omitted = vec![
+            store::PathReason {
+                path: "~/.native/plugin".into(),
+                reason: "not captured in this commit".into(),
+            },
+            store::PathReason {
+                path: r"~/.native\plugin".into(),
+                reason: "not captured in this commit".into(),
+            },
+        ];
+        omitted.retain(|omitted| !skipped.contains(&omitted.path));
+        assert_eq!(
+            omitted.iter().map(|o| o.path.as_str()).collect::<Vec<_>>(),
+            vec![r"~/.native\plugin"],
+            "a name containing a backslash was taken for a separated path"
+        );
     }
 
     #[test]
