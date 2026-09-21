@@ -116,6 +116,17 @@ wait "$failing" || true
 assert_succeed "timeout 180 $f bootstrap --only dotfiles,task"
 assert "cat $F/post-adopt-ran" $'ran\nran'
 
+# an unreadable record is not an empty one: the task is not rerun, and
+# what this machine had already finished is not overwritten
+assert_succeed "cp $C/.local/state/mise/history/post-adopt $PWD/post-adopt.bak"
+printf '\xff\xfe not text\n' >"$C/.local/state/mise/history/post-adopt"
+out="$($c bootstrap --only dotfiles,task 2>&1)" && fail "an unreadable post-adopt record must not be read as no record"
+[[ $out == *"post-adopt record"* ]] || fail "the failure does not name the record: $out"
+assert "cat $C/post-adopt-ran" $'ran\nran'
+assert_succeed "cp $PWD/post-adopt.bak $C/.local/state/mise/history/post-adopt"
+assert_succeed "$c bootstrap --only dotfiles,task"
+assert "cat $C/post-adopt-ran" $'ran\nran'
+
 # a claim whose holder is killed is not a machine wedged forever: the
 # next bootstrap takes the claim and finishes the job
 K="$(dirname "$HOME")/killed-home"

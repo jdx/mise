@@ -2003,7 +2003,7 @@ impl Bootstrap {
         }
         {
             let _lock = system::history::config::lock_post_adopt()?;
-            if system::history::config::post_adopt_already_ran(&setup) {
+            if system::history::config::post_adopt_already_ran(&setup)? {
                 debug!("dotfiles: post-adopt task {task} already ran on this machine");
                 return Ok(());
             }
@@ -2024,7 +2024,7 @@ impl Bootstrap {
         // have finished the task while this one was waiting for it
         {
             let _lock = system::history::config::lock_post_adopt()?;
-            if system::history::config::post_adopt_already_ran(&setup) {
+            if system::history::config::post_adopt_already_ran(&setup)? {
                 debug!("dotfiles: post-adopt task {task} already ran on this machine");
                 return Ok(());
             }
@@ -2077,14 +2077,23 @@ impl Bootstrap {
         loop {
             {
                 let _lock = system::history::config::lock_post_adopt()?;
-                if system::history::config::post_adopt_already_ran(setup) {
+                if system::history::config::post_adopt_already_ran(setup)? {
                     info!("dotfiles: the post-adopt task {task} was finished by that process");
                     return Ok(());
                 }
             }
-            // the claim is free and nothing was recorded: the process
-            // that held it failed or was killed, and said so itself
-            if system::history::config::claim_post_adopt()?.is_some() {
+            // The claim is free. Acquiring it is the serialization
+            // point, so the record is read again *after* it: the owner
+            // may have finished between the read above and this one, and
+            // without the second look this process would not merely
+            // report a false failure — it would hold the claim and run
+            // the one-time task again, moments after it succeeded.
+            if let Some(_claim) = system::history::config::claim_post_adopt()? {
+                let _lock = system::history::config::lock_post_adopt()?;
+                if system::history::config::post_adopt_already_ran(setup)? {
+                    info!("dotfiles: the post-adopt task {task} was finished by that process");
+                    return Ok(());
+                }
                 bail!(
                     "another mise process was running the post-adopt task {task} and did not finish it; the machine may not be fully set up. Fix what that run reported and run `mise bootstrap` again"
                 );

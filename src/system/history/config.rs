@@ -337,10 +337,32 @@ pub(crate) fn lock_post_adopt() -> Result<fslock::LockFile> {
 }
 
 /// Whether this machine has already finished the task `key` names.
-pub(crate) fn post_adopt_already_ran(key: &str) -> bool {
-    std::fs::read_to_string(post_adopt_record())
-        .map(|ran| ran.lines().any(|line| line == key))
-        .unwrap_or(false)
+///
+/// **Only "there is no record" means the task has not run.** A record
+/// that cannot be read — a permissions problem, a truncated file,
+/// invalid UTF-8 — is not the same thing as an empty one, and treating
+/// it as one reruns work that is meant to happen once and then
+/// overwrites every completion this machine had recorded.
+pub(crate) fn post_adopt_already_ran(key: &str) -> Result<bool> {
+    Ok(read_post_adopt()?
+        .lines()
+        .any(|line| line.trim() == key.trim()))
+}
+
+/// The record's contents, or empty when there is no record. Any other
+/// failure is reported rather than flattened into "nothing recorded".
+fn read_post_adopt() -> Result<String> {
+    let path = post_adopt_record();
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Ok(text),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(err) => Err(err).wrap_err_with(|| {
+            format!(
+                "reading the post-adopt record {}; it says which one-time setup tasks this machine has finished",
+                display_path(&path)
+            )
+        }),
+    }
 }
 
 /// Records the task `key` names as finished on this machine.
@@ -349,7 +371,10 @@ pub(crate) fn record_post_adopt(key: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut ran = std::fs::read_to_string(&path).unwrap_or_default();
+    // never flattened: replacing an unreadable record would erase every
+    // completion this machine had, and the next bootstrap would run them
+    // all again
+    let mut ran = read_post_adopt()?;
     if !ran.is_empty() && !ran.ends_with('\n') {
         ran.push('\n');
     }
