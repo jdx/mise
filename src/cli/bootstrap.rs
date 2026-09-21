@@ -2053,9 +2053,14 @@ impl Bootstrap {
             );
         };
         if !system::history::config::declares_post_adopt(&resolved.config_source) {
+            let source = crate::file::display_path(&resolved.config_source);
+            if resolved.file.is_some() {
+                bail!(
+                    "the post-adopt task {task} is a file task ({source}); a post-adopt task has to be declared in the global or system configuration itself, because that is the only definition mise can be sure is the one the setup named"
+                );
+            }
             bail!(
-                "the post-adopt task {task} resolves to the definition in {}, which is not part of the configuration that named it; run `mise bootstrap` from outside that project, or rename that task",
-                crate::file::display_path(&resolved.config_source)
+                "the post-adopt task {task} resolves to the definition in {source}, not to one the setup's configuration declares; run `mise bootstrap` from outside that project, or rename that task"
             );
         }
         info!("dotfiles: running the post-adopt task {task}");

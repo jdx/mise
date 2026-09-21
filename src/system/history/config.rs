@@ -221,23 +221,25 @@ fn fresh_layers() -> impl Iterator<Item = PathBuf> {
         .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
 }
 
-/// Whether `source` is part of the configuration that may name a
-/// post-adopt task: a global or system layer, or a file task beside one.
+/// Whether `source` is one of the configuration files that may name a
+/// post-adopt task.
 ///
-/// **The definition that runs must come from where the name came
-/// from.** The name is read through [`fresh_layers`], so the answer here
-/// is asked of the same set — plus anything inside the configuration
-/// directory, because a global file task is a script there rather than a
-/// layer of its own.
+/// **The definition that runs must be the one the setup named, and this
+/// is an exact comparison against the layers the name was read
+/// through** — no directory prefixes, because every prefix rule tried
+/// here was either wide enough to trust a project that happened to sit
+/// under a configuration file's directory, or narrow enough to refuse a
+/// setup's own task.
+///
+/// The cost is a real limitation, stated rather than hidden: a
+/// post-adopt task must be declared in a global or system TOML layer. A
+/// *file* task — a script beside one of those layers — is refused, and
+/// supporting it needs the task to be resolved from the declaring
+/// configuration rather than from the invocation's, which is not
+/// something this code can do today: `Config::tasks` loads through the
+/// process-wide configuration whatever instance it is asked.
 pub(crate) fn declares_post_adopt(source: &Path) -> bool {
-    // A task is not always a TOML layer: a file task is a script beside
-    // one, in `tasks/` next to the configuration that includes it, and
-    // `/etc/mise/tasks/setup` is trusted for exactly the reason
-    // `/etc/mise/config.toml` is. So the question is asked of the layers
-    // the name itself was read through, and of anything beside them.
-    fresh_layers()
-        .any(|layer| layer == source || layer.parent().is_some_and(|dir| source.starts_with(dir)))
-        || source.starts_with(super::tracked::global_config_dir())
+    fresh_layers().any(|layer| layer == source)
 }
 
 /// The setup this machine is connected to, read through the layers a

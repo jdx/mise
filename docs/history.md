@@ -471,6 +471,14 @@ conflict](#resolve-unrelated-histories) bootstraps nothing, and the
 `mise bootstrap` you run after resolving the conflict is what completes
 the machine.
 
+The task has to be declared in the global or system configuration
+itself — a `[tasks.*]` block in one of those files. A _file_ task (a
+script in `mise-tasks/`) cannot be a post-adopt task: mise runs the
+definition that name resolves to where the bootstrap runs, and the only
+definition it can be sure is the one the setup named is one written in
+the configuration that named it. A file task is refused with that
+explanation rather than run.
+
 The task is read from the trusted global or system configuration, under the
 same rule as [`[history.reload]`](#reload-an-application-after-restoring-files):
 a repository you have not trusted does not get to run commands on your

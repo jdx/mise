@@ -92,7 +92,7 @@ w="$PWD/wait"
 assert_succeed "$w bootstrap --adopt file://$origin --yes --only dotfiles"
 assert_fail "test -e $W/post-adopt-ran"
 
-MISE_HISTORY_ENABLED=false SETUP_SLEEP=6 timeout 180 "$w" bootstrap --only dotfiles,task >"$PWD/slow.log" 2>&1 &
+MISE_HISTORY_ENABLED=false SETUP_SLEEP=3 timeout 180 "$w" bootstrap --only dotfiles,task >"$PWD/slow.log" 2>&1 &
 slow=$!
 sleep 2
 assert_contains "MISE_HISTORY_ENABLED=false timeout 300 $w bootstrap --only dotfiles,task 2>&1" 'waiting for it'
@@ -105,7 +105,7 @@ F="$(dirname "$HOME")/wait-fail-home"
 wrapper "$F" "$PWD/waitfail"
 f="$PWD/waitfail"
 assert_succeed "$f bootstrap --adopt file://$origin --yes --only dotfiles"
-MISE_HISTORY_ENABLED=false FAIL_SETUP=1 SETUP_SLEEP=6 timeout 180 "$f" bootstrap --only dotfiles,task >"$PWD/fail.log" 2>&1 &
+MISE_HISTORY_ENABLED=false FAIL_SETUP=1 SETUP_SLEEP=3 timeout 180 "$f" bootstrap --only dotfiles,task >"$PWD/fail.log" 2>&1 &
 failing=$!
 sleep 2
 out="$(MISE_HISTORY_ENABLED=false timeout 300 "$f" bootstrap --only dotfiles,task 2>&1)" && fail "a waiting bootstrap must not report success for a task that failed"
@@ -133,7 +133,7 @@ K="$(dirname "$HOME")/killed-home"
 wrapper "$K" "$PWD/killed"
 k="$PWD/killed"
 assert_succeed "$k bootstrap --adopt file://$origin --yes --only dotfiles"
-SETUP_SLEEP=60 timeout -s KILL 4 "$k" bootstrap --only dotfiles,task >/dev/null 2>&1 || true
+SETUP_SLEEP=30 timeout -s KILL 4 "$k" bootstrap --only dotfiles,task >/dev/null 2>&1 || true
 assert "cat $K/post-adopt-ran" "ran"
 assert_succeed "timeout 180 $k bootstrap --only dotfiles,task"
 assert "cat $K/post-adopt-ran" $'ran\nran'
@@ -156,17 +156,16 @@ out="$($p -C inline bootstrap --only dotfiles,task 2>&1)" && fail "a shadowed po
 [[ $out == *"resolves to the definition in"* ]] || fail "the refusal does not name the shadowing config: $out"
 assert_fail "test -e $P/post-adopt-ran"
 
-# and a file task shadows the same way — a script in `mise-tasks/` is a
-# task by its file name, which a guard that only read `[tasks.*]` blocks
-# out of a map would miss entirely. Its own directory, so neither case
-# depends on undoing the other.
+# a file task shadows the same way — a script in `mise-tasks/` is a task
+# by its file name — and is refused for the same reason. Its own
+# directory, so neither case depends on undoing the other.
 mkdir -p "$P/script/mise-tasks"
 printf '#!/usr/bin/env bash\necho wrong >>"$HOME/post-adopt-ran"\n' >"$P/script/mise-tasks/setup"
 chmod +x "$P/script/mise-tasks/setup"
 out="$($p -C script bootstrap --only dotfiles,task 2>&1)" && fail "a file task must not shadow the setup's task either"
-[[ $out == *"resolves to the definition in"* ]] || fail "the file-task refusal does not name it: $out"
+[[ $out == *"file task"* ]] || fail "the file-task refusal does not say so: $out"
 assert_fail "test -e $P/post-adopt-ran"
-# and from anywhere else the setup's own task runs and is recorded
+
 assert_succeed "$p bootstrap --only dotfiles,task"
 assert "cat $P/post-adopt-ran" "ran"
 
