@@ -784,16 +784,24 @@ pub(crate) fn excluded_by_entry(entry_path: &Path, patterns: &[String], path: &P
 }
 
 /// Whether the display path `path` is `root` itself or lies below it.
-/// Display paths use the platform separator (`\` on Windows), so the
-/// boundary is checked on either.
+///
+/// **Two display paths are compared through one normalized form, never
+/// byte for byte.** Within a host both spellings occur: one path may
+/// have been written by `display_path`, with the host's separator, while
+/// the other was rebuilt from a tree path with `/`. They name the same
+/// file, and every caller that compares them — coverage, replay, status
+/// — goes through here so there is one place this can be wrong.
+///
+/// **The convention is the reading host's, and that is the only one
+/// these strings are ever in.** A checkpoint records portable `home/…`
+/// tree paths; every display string is rebuilt from those locally, so
+/// none of them carries another host's separator. That is what makes it
+/// safe — and necessary — to read a backslash as an ordinary character
+/// in a file name on unix, where it is one: treating `~/x\y` as a file
+/// inside `~/x` would let one entry appear to own another's paths, and a
+/// replay would then judge a live file by the wrong root and the wrong
+/// exclusions.
 pub(crate) fn display_under(path: &str, root: &str) -> bool {
-    // **Two display paths are compared through one normalized form, never
-    // byte for byte.** A recorded path may have been written by
-    // `display_path`, with the host's separator, while the one asked
-    // about was rebuilt from a tree path with `/`. The two name the same
-    // file, and every caller that compares them — coverage, replay,
-    // status — goes through here so there is one place this can be
-    // wrong.
     let path = display_separators(&file::replace_path(path).to_string_lossy());
     let root = display_separators(&file::replace_path(root).to_string_lossy());
     path == root
@@ -804,7 +812,14 @@ pub(crate) fn display_under(path: &str, root: &str) -> bool {
 
 /// A display path in the one form comparisons use: `/`-separated.
 fn display_separators(path: &str) -> String {
-    path.replace('\\', "/")
+    // on Windows both characters separate; on unix a backslash is part of
+    // a file's name, and rewriting it would invent a directory boundary
+    // that does not exist
+    if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    }
 }
 
 /// A tree this large is worth a second look before it is tracked: more
@@ -2014,18 +2029,29 @@ mod tests {
                 "~/.config/mise/config.toml",
                 "~/.config/mise",
             ),
-            // the same set as a Windows checkpoint records it, read here
+            // the same set spelled the way `display_path` writes it on
+            // Windows, where both characters separate and the two
+            // spellings mix within one host
+            #[cfg(windows)]
             (
                 vec![Recorded("~\\.config"), Recorded("~\\.config\\mise")],
                 "~\\.config\\mise\\config.toml",
                 "~\\.config\\mise",
             ),
-            // and mixed, which is what a machine reading another's
-            // checkpoint actually sees
+            #[cfg(windows)]
             (
                 vec![Recorded("~/.config"), Recorded("~\\.config\\mise")],
                 "~/.config/mise/config.toml",
                 "~\\.config\\mise",
+            ),
+            // on unix a backslash is part of a name, so this entry is one
+            // directory called `.config\mise` and owns nothing under
+            // `~/.config`
+            #[cfg(unix)]
+            (
+                vec![Recorded("~/.config"), Recorded("~/.config\\mise")],
+                "~/.config/mise/config.toml",
+                "~/.config",
             ),
         ] {
             let owner = owning_display(&entries, path, |entry| entry.0);
@@ -2639,6 +2665,13 @@ mod tests {
                 },
                 Some(NESTED_REPOSITORY_REASON),
             ),
+            // On Windows the record may spell the path with either
+            // separator and they mean the same directory. On unix a
+            // backslash is part of a name, so a path spelled that way is
+            // a different path — and one the record says nothing about,
+            // which is why this case is Windows-only rather than
+            // expecting the same answer everywhere.
+            #[cfg(windows)]
             (
                 "a repository recorded with the host's separators",
                 {
@@ -2712,15 +2745,32 @@ mod tests {
     fn display_under_accepts_either_separator() {
         assert!(display_under("~/.ssh", "~/.ssh"));
         assert!(display_under("~/.ssh/id_test", "~/.ssh"));
-        assert!(display_under("~\\.ssh\\id_test", "~\\.ssh"));
         assert!(!display_under("~/.sshd/x", "~/.ssh"));
         assert!(!display_under("~/.ssh", "~/.ssh/id_test"));
-        // and the two spellings mix: a path recorded with the host's
-        // separator is asked about with the tree's, and the other way
-        assert!(display_under("~\\.ssh\\id_test", "~/.ssh"));
-        assert!(display_under("~/.ssh/id_test", "~\\.ssh"));
-        assert!(display_under("~\\.ssh", "~/.ssh"));
-        assert!(!display_under("~\\.sshd\\x", "~/.ssh"));
+
+        // **On Windows both spellings mix, and both separate.** A path
+        // recorded by `display_path` carries `\` while one rebuilt from a
+        // tree path carries `/`, and they name the same file.
+        #[cfg(windows)]
+        {
+            assert!(display_under("~\\.ssh\\id_test", "~\\.ssh"));
+            assert!(display_under("~\\.ssh\\id_test", "~/.ssh"));
+            assert!(display_under("~/.ssh/id_test", "~\\.ssh"));
+            assert!(display_under("~\\.ssh", "~/.ssh"));
+            assert!(!display_under("~\\.sshd\\x", "~/.ssh"));
+        }
+
+        // **On unix a backslash is part of a name.** `~/.ssh\id_test` is
+        // one file called `.ssh\id_test`, not a file inside `~/.ssh` —
+        // reading it as a separator would let one entry appear to own
+        // another's paths, and a replay would judge a live file by the
+        // wrong root and the wrong exclusions.
+        #[cfg(unix)]
+        {
+            assert!(!display_under("~/.ssh\\id_test", "~/.ssh"));
+            assert!(display_under("~/.ssh\\id_test", "~/.ssh\\id_test"));
+            assert!(!display_under("~\\.ssh\\id_test", "~/.ssh"));
+        }
     }
 
     #[test]
