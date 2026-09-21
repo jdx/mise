@@ -554,9 +554,22 @@ impl TrackedSet {
     /// synchronization asks it to tell a path selection stopped
     /// covering from one that was deleted. All of them pick the owner
     /// with [`owning_entry`], so they cannot disagree.
-    pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
+    ///
+    /// **Every caller says which question it is asking.** There is no
+    /// default, deliberately: this predicate answered the watcher's
+    /// permissive question for everyone, and synchronization — which is
+    /// asking retention's strict question — inherited it and deleted a
+    /// file on one machine because another machine stopped selecting it.
+    /// A default is what let that happen, so the next reader has to
+    /// choose rather than be handed the watcher's answer.
+    pub(crate) fn excluded_by_lists(
+        &self,
+        exclude: &ExcludeSet,
+        path: &Path,
+        asked: Asked,
+    ) -> bool {
         match self.entry_for(path) {
-            Some(owner) => self.dropped(exclude, owner, path, Asked::Possibly, kind_of(path)),
+            Some(owner) => self.dropped(exclude, owner, path, asked, kind_of(path)),
             None => true,
         }
     }
@@ -590,6 +603,13 @@ impl TrackedSet {
     ///   the user has taken out of their `include` list in history
     ///   indefinitely, for no better reason than that they happened to
     ///   be unreadable at save time.
+    /// - **Synchronization** asks "is this path still managed here, so
+    ///   that its absence from the incoming snapshot is a deletion to
+    ///   replay". That is retention's question in other words, so it is
+    ///   [`Asked::Exactly`] too. Asked permissively, a local copy whose
+    ///   kind cannot be read — it sits under a directory this machine
+    ///   cannot search — looks managed although no pattern selects it,
+    ///   and a narrowing made on another machine deletes it here.
     /// - The **watcher** asks "might this event matter", and is
     ///   deliberately permissive: a path that has just vanished counts
     ///   as whatever it could have been, so a deleted tree still wakes
@@ -1568,8 +1588,13 @@ impl ExcludeSet {
 }
 
 /// Which question a reader of the selection lists is asking.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Asked {
+///
+/// Every caller of [`TrackedSet::excluded_by_lists`] names one. There is
+/// no default: inheriting the watcher's permissive answer by omission is
+/// how synchronization came to delete a file another machine had merely
+/// stopped selecting.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Asked {
     /// Is this path itself selected? What a capture stores and what
     /// retention keeps.
     Exactly,
@@ -2656,7 +2681,7 @@ mod tests {
         let exclude = set.exclude_set().unwrap();
 
         // the directory entry: walked, so its root is not judged
-        assert!(!set.excluded_by_lists(&exclude, &directory));
+        assert!(!set.excluded_by_lists(&exclude, &directory, Asked::Possibly));
         assert!(set.would_retain(&directory).unwrap());
         assert!(
             set.walk()
@@ -2665,7 +2690,7 @@ mod tests {
                 .contains_key(&directory.join("kept.toml"))
         );
         // and a file entry is judged, exactly as the walk judges it
-        assert!(set.excluded_by_lists(&exclude, &file));
+        assert!(set.excluded_by_lists(&exclude, &file, Asked::Possibly));
         assert!(!set.would_retain(&file).unwrap());
         assert!(!set.walk().unwrap().files.contains_key(&file));
 
@@ -2674,11 +2699,11 @@ mod tests {
         std::fs::remove_dir_all(&directory).unwrap();
         std::fs::remove_file(&file).unwrap();
         assert!(
-            !set.excluded_by_lists(&exclude, &directory),
+            !set.excluded_by_lists(&exclude, &directory, Asked::Possibly),
             "the removal of a tracked directory was ignored"
         );
         assert!(
-            !set.excluded_by_lists(&exclude, &file),
+            !set.excluded_by_lists(&exclude, &file, Asked::Possibly),
             "the removal of a tracked file was ignored"
         );
     }
@@ -2715,7 +2740,7 @@ mod tests {
             // the entry is a file, so the watcher asks the same question
             // the capture does and gets the same answer
             assert_eq!(
-                !set.excluded_by_lists(&set.exclude_set().unwrap(), &file),
+                !set.excluded_by_lists(&set.exclude_set().unwrap(), &file, Asked::Possibly),
                 !declared,
                 "watcher with include = {include:?}"
             );
@@ -2783,7 +2808,7 @@ mod tests {
         // watcher, because a deleted tree is a change history must see
         let exclude = set.exclude_set().unwrap();
         std::fs::remove_dir_all(root.join("rules")).unwrap();
-        assert!(!set.excluded_by_lists(&exclude, &root.join("rules")));
+        assert!(!set.excluded_by_lists(&exclude, &root.join("rules"), Asked::Possibly));
     }
 
     /// The credential guard is lifted by a pattern that selected the
@@ -2922,14 +2947,14 @@ mod tests {
         // an event on either has to be looked at
         for directory in [root.clone(), root.join("rules")] {
             assert!(
-                !set.excluded_by_lists(&exclude, &directory),
+                !set.excluded_by_lists(&exclude, &directory, Asked::Possibly),
                 "the watcher ignored {}",
                 directory.display()
             );
         }
         // a directory nothing could select is still dropped
         std::fs::create_dir(root.join("sessions")).unwrap();
-        assert!(set.excluded_by_lists(&exclude, &root.join("sessions")));
+        assert!(set.excluded_by_lists(&exclude, &root.join("sessions"), Asked::Possibly));
 
         // **and the files inside one the patterns can reach are still
         // judged one by one.** A list of names reaches into every
@@ -2945,16 +2970,16 @@ mod tests {
         std::fs::write(root.join("sessions/one.jsonl"), "noise").unwrap();
         std::fs::write(root.join("config.toml"), "keep").unwrap();
         assert!(
-            named.excluded_by_lists(&exclude, &root.join("sessions/one.jsonl")),
+            named.excluded_by_lists(&exclude, &root.join("sessions/one.jsonl"), Asked::Possibly),
             "the watcher woke for a transcript the list does not select"
         );
-        assert!(!named.excluded_by_lists(&exclude, &root.join("config.toml")));
+        assert!(!named.excluded_by_lists(&exclude, &root.join("config.toml"), Asked::Possibly));
         // a deletion leaves nothing to stat, and a selected file that
         // was deleted is still a change worth capturing
         std::fs::remove_file(root.join("config.toml")).unwrap();
-        assert!(!named.excluded_by_lists(&exclude, &root.join("config.toml")));
+        assert!(!named.excluded_by_lists(&exclude, &root.join("config.toml"), Asked::Possibly));
         // the directory a name pattern could match in is still watched
-        assert!(!named.excluded_by_lists(&exclude, &root.join("sessions")));
+        assert!(!named.excluded_by_lists(&exclude, &root.join("sessions"), Asked::Possibly));
 
         // **a directory that is gone counts as what it could have
         // been.** An anchored list never selects the directory itself,
@@ -2963,20 +2988,20 @@ mod tests {
         // exist.
         std::fs::remove_dir_all(root.join("rules")).unwrap();
         assert!(
-            !set.excluded_by_lists(&exclude_anchored, &root.join("rules")),
+            !set.excluded_by_lists(&exclude_anchored, &root.join("rules"), Asked::Possibly),
             "a removed directory of selected files was ignored"
         );
         std::fs::remove_dir_all(root.join("sessions")).unwrap();
         assert!(
-            set.excluded_by_lists(&exclude_anchored, &root.join("sessions")),
+            set.excluded_by_lists(&exclude_anchored, &root.join("sessions"), Asked::Possibly),
             "a removed directory nothing could select woke the watcher"
         );
 
         // and the files are decided exactly, by both
         assert!(set.would_retain(&root.join("rules/one.md")).unwrap());
         assert!(!set.would_retain(&root.join("notes.md")).unwrap());
-        assert!(!set.excluded_by_lists(&exclude, &root.join("rules/one.md")));
-        assert!(set.excluded_by_lists(&exclude, &root.join("notes.md")));
+        assert!(!set.excluded_by_lists(&exclude, &root.join("rules/one.md"), Asked::Possibly));
+        assert!(set.excluded_by_lists(&exclude, &root.join("notes.md"), Asked::Possibly));
     }
 
     /// What a pattern selects decides what may be skipped, so the two
@@ -3047,7 +3072,7 @@ mod tests {
         // and the watcher, which asks a different question, wakes for
         // both because either might have just been deleted
         let exclude = set.exclude_set().unwrap();
-        assert!(!set.excluded_by_lists(&exclude, &selected));
+        assert!(!set.excluded_by_lists(&exclude, &selected, Asked::Possibly));
     }
 
     /// **Unselected is not absent.** A file that appears at a tracked
@@ -3113,6 +3138,41 @@ mod tests {
             "a directory the list selects was skipped unopened"
         );
         assert!(set.walk().unwrap().files.contains_key(&odd.join("kept.md")));
+    }
+
+    /// A path whose kind cannot be read is where the strict and the
+    /// permissive questions disagree, and synchronization asks the
+    /// strict one: a file another machine stopped selecting is not a
+    /// deletion to replay here, however unreadable the local copy is.
+    #[test]
+    fn a_path_with_no_kind_answers_the_question_it_was_asked() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("sample");
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        let mut tracked = entry(&root);
+        // a name-only list: it can match at any depth, so no directory
+        // can be pruned and the permissive answer is always "might
+        // matter"
+        tracked.include = Some(vec!["keep".into()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+        let exclude = set.exclude_set().unwrap();
+
+        // nothing is there to stat, so the reader decides
+        let narrowed = root.join("nested/leave");
+        assert!(
+            set.excluded_by_lists(&exclude, &narrowed, Asked::Exactly),
+            "a path the include list does not select counted as managed, so a narrowing elsewhere would delete it here"
+        );
+        assert!(
+            !set.excluded_by_lists(&exclude, &narrowed, Asked::Possibly),
+            "the watcher stopped waking for a path that has just vanished"
+        );
+
+        // what the list does name is selected under either question
+        let selected = root.join("nested/keep");
+        assert!(!set.excluded_by_lists(&exclude, &selected, Asked::Exactly));
+        assert!(!set.excluded_by_lists(&exclude, &selected, Asked::Possibly));
     }
 
     fn entry(path: &Path) -> TrackedEntry {
@@ -3697,7 +3757,7 @@ mod tests {
                 "would_retain {display}"
             );
             assert_eq!(
-                !set.excluded_by_lists(&set.exclude_set().unwrap(), &file),
+                !set.excluded_by_lists(&set.exclude_set().unwrap(), &file, Asked::Possibly),
                 expected,
                 "watcher {display}"
             );
@@ -3727,7 +3787,7 @@ mod tests {
         assert!(!walk.files.contains_key(&secret), "capture");
         assert!(!set.would_retain(&secret).unwrap(), "would_retain");
         assert!(
-            set.excluded_by_lists(&set.exclude_set().unwrap(), &secret),
+            set.excluded_by_lists(&set.exclude_set().unwrap(), &secret, Asked::Possibly),
             "watcher"
         );
         assert!(

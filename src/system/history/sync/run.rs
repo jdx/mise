@@ -22,7 +22,7 @@ use crate::file::display_path;
 use crate::system::history::checkpoint::Store;
 use crate::system::history::config::OriginTomlConfig;
 use crate::system::history::store as hstore;
-use crate::system::history::tracked::{ExcludeSet, TrackedSet};
+use crate::system::history::tracked::{Asked, ExcludeSet, TrackedSet};
 
 const PUSH_RETRIES: usize = 5;
 
@@ -1013,14 +1013,17 @@ pub(super) fn eligible(
 ) -> bool {
     match roots.locate(branch_path) {
         Located::Tracked { path, variant } => match tracked.entry_for(&path) {
-            Some(entry) => entry.variant == variant && !tracked.excluded_by_lists(exclude, &path),
+            Some(entry) => {
+                entry.variant == variant
+                    && !tracked.excluded_by_lists(exclude, &path, Asked::Exactly)
+            }
             None => false,
         },
         Located::Config(path) => {
             tracked
                 .entry_for(&path)
                 .is_some_and(|entry| entry.variant.is_none())
-                && !tracked.excluded_by_lists(exclude, &path)
+                && !tracked.excluded_by_lists(exclude, &path, Asked::Exactly)
         }
         Located::Marker => false,
         Located::Unmapped => false,
@@ -1466,5 +1469,37 @@ mod tests {
         ));
         // and a path no entry covers is still not eligible
         assert!(!eligible(&roots, &tracked, &exclude, "home/.elsewhere"));
+    }
+
+    /// Synchronization asks the strict question, the same one retention
+    /// asks. A local copy whose kind cannot be read — it is gone, or it
+    /// sits under a directory this machine cannot search — is not
+    /// managed here unless the lists actually select it. Answered
+    /// permissively, a name-only `include` pattern prunes nothing, the
+    /// path looks managed, and a narrowing made on another machine
+    /// deletes it here.
+    #[test]
+    fn a_path_with_no_readable_kind_is_not_eligible_for_deletion() {
+        let roots = Roots {
+            home: "/home/u".into(),
+            config_dir: "/config/mise".into(),
+        };
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut entry = TrackedEntry::new("/home/u/.sample".into(), "track", policy);
+        entry.include = Some(vec!["keep".into()]);
+        let tracked = TrackedSet {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        let exclude = tracked.exclude_set().unwrap();
+        // nothing of this test exists on disk, so every path below has
+        // no kind to read
+        assert!(eligible(&roots, &tracked, &exclude, "home/.sample/keep"));
+        assert!(!eligible(
+            &roots,
+            &tracked,
+            &exclude,
+            "home/.sample/nested/leave"
+        ));
     }
 }

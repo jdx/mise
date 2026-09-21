@@ -1228,7 +1228,9 @@ impl State {
         self.watched
             .entry_for(path)
             .is_some_and(|entry| entry.policy.autosave)
-            && !self.watched.excluded_by_lists(&self.exclude, path)
+            && !self
+                .watched
+                .excluded_by_lists(&self.exclude, path, tracked::Asked::Possibly)
     }
 
     /// Whether a path that does not exist right now may still be one the
@@ -1244,11 +1246,17 @@ impl State {
             .watched
             .entry_for(path)
             .is_some_and(|entry| entry.policy.autosave)
-            && !self.watched.excluded_by_lists(&self.exclude, path))
+            && !self
+                .watched
+                .excluded_by_lists(&self.exclude, path, tracked::Asked::Possibly))
             || (self.tracked.entry_for(path).is_some_and(|entry| {
                 entry.policy.autosave
                     && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
-            }) && !self.tracked.excluded_by_lists(&self.exclude, path))
+            }) && !self.tracked.excluded_by_lists(
+                &self.exclude,
+                path,
+                tracked::Asked::Possibly,
+            ))
     }
 }
 

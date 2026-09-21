@@ -7,9 +7,10 @@ require_cmd git
 export MISE_HISTORY_NOTIFY=false
 origin="$PWD/selection-sync-origin.git"
 git init -q --bare -b main "$origin"
-mkdir -p ~/.sample
+mkdir -p ~/.sample/nested
 echo keep >~/.sample/keep
 echo leave >~/.sample/leave
+echo nested >~/.sample/nested/leave
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.sample" = { mode = "track" }
@@ -19,10 +20,11 @@ assert_succeed "mise dot origin set file://$origin --sync manual --yes"
 assert_succeed 'mise dot sync'
 
 second="$(dirname "$HOME")/second"
-mkdir -p "$second/.config/mise" "$second/.local/state/mise/history" "$second/.sample"
+mkdir -p "$second/.config/mise" "$second/.local/state/mise/history" "$second/.sample/nested"
 git clone -q --bare "$origin" "$second/.local/state/mise/history/repo.git"
 echo keep >"$second/.sample/keep"
 echo leave >"$second/.sample/leave"
+echo nested >"$second/.sample/nested/leave"
 cat >"$second/.config/mise/config.toml" <<'TOML'
 [dotfiles]
 "~/.sample" = { mode = "track" }
@@ -51,11 +53,21 @@ assert_succeed 'mise dot save'
 assert "cat ~/.sample/leave" 'leave'
 assert_succeed 'mise dot sync'
 
-# machine two keeps its copy: narrowing selection is not a deletion
+# machine two keeps its copy: narrowing selection is not a deletion —
+# including the copy whose kind it cannot even read. Asked permissively
+# ("might this path matter"), a name-only include list prunes nothing, so
+# an unreadable path looks managed although no pattern selects it, and the
+# narrowing deletes it. Synchronization asks the strict question instead.
+# (As root, chmod does not restrict and the path is simply read as the
+# file it is; the assertions hold either way.)
 assert_succeed 'b dot sync --fetch-only'
+chmod 000 "$second/.sample/nested"
 assert_not_contains 'b dot pull --dry-run' 'home/.sample/leave'
+assert_not_contains 'b dot pull --dry-run' 'home/.sample/nested/leave'
 assert_succeed 'b dot pull --yes'
+chmod 755 "$second/.sample/nested"
 assert "cat $second/.sample/leave" 'leave'
+assert "cat $second/.sample/nested/leave" 'nested'
 
 # a file deleted while it is still selected is still propagated
 rm ~/.sample/keep
