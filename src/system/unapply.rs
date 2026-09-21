@@ -121,8 +121,25 @@ pub(crate) async fn plan(
         service_candidates.push(request);
     }
     // Removal deletes the installed unit, agent, or task by name, so the
-    // installed definition has to be compared with the declaration first.
-    for status in user_services::status(&service_candidates).await? {
+    // installed definition has to be compared with the declaration first. One
+    // service mise cannot render or query is reported like any other service it
+    // keeps, rather than stopping the rest of the module from being removed.
+    for request in service_candidates {
+        let name = request.name.clone();
+        let status = match user_services::status(std::slice::from_ref(&request)).await {
+            Ok(mut statuses) => statuses.pop(),
+            Err(error) => {
+                unapply.skipped.push(Skip {
+                    kind: "user-service",
+                    name,
+                    reason: format!("{error}"),
+                });
+                continue;
+            }
+        };
+        let Some(status) = status else {
+            continue;
+        };
         if status.not_installed() {
             if opts.verbose {
                 unapply.skipped.push(Skip {
