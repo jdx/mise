@@ -20,7 +20,7 @@ cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
 post_adopt = "setup"
 
 [tasks.setup]
-run = 'printf "ran\n" >>"$HOME/post-adopt-ran"; mise bootstrap --only dotfiles,task >/dev/null 2>&1; test -z "$FAIL_SETUP"'
+run = 'printf "ran\n" >>"$HOME/post-adopt-ran"; sleep "${SETUP_SLEEP:-0}"; mise bootstrap --only dotfiles,task >/dev/null 2>&1; test -z "$FAIL_SETUP"'
 EOF2
 assert_succeed "mise bootstrap dotfiles track $MISE_CONFIG_DIR/config.toml"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --yes"
@@ -78,6 +78,54 @@ sed -i.bak "s|url = \"file://$origin-other\"|url = \"file://$origin\"|" "$C/.con
 # and back on the original setup it is still finished
 assert_succeed "$c bootstrap --only dotfiles,task"
 assert "cat $C/post-adopt-ran" $'ran\nran'
+
+# ---- two bootstraps at once, with history off so the history
+# operation scope does not serialize them for us — which is exactly the
+# case the claim exists for. The one that does not get the claim waits
+# for the outcome and adopts it: reporting success for work it never saw
+# finish would tell automation the machine is set up when nothing
+# observed it being set up.
+W="$(dirname "$HOME")/wait-home"
+wrapper "$W" "$PWD/wait"
+w="$PWD/wait"
+# installed without the task, so both runs below start from "unfinished"
+assert_succeed "$w bootstrap --adopt file://$origin --yes --only dotfiles"
+assert_fail "test -e $W/post-adopt-ran"
+
+MISE_HISTORY_ENABLED=false SETUP_SLEEP=6 timeout 180 "$w" bootstrap --only dotfiles,task >"$PWD/slow.log" 2>&1 &
+slow=$!
+sleep 2
+assert_contains "MISE_HISTORY_ENABLED=false timeout 300 $w bootstrap --only dotfiles,task 2>&1" 'waiting for it'
+wait "$slow"
+# the task ran once, and both runs succeeded
+assert "cat $W/post-adopt-ran" "ran"
+
+# when it fails, the waiting one fails too, with the same guidance
+F="$(dirname "$HOME")/wait-fail-home"
+wrapper "$F" "$PWD/waitfail"
+f="$PWD/waitfail"
+assert_succeed "$f bootstrap --adopt file://$origin --yes --only dotfiles"
+MISE_HISTORY_ENABLED=false FAIL_SETUP=1 SETUP_SLEEP=6 timeout 180 "$f" bootstrap --only dotfiles,task >"$PWD/fail.log" 2>&1 &
+failing=$!
+sleep 2
+out="$(MISE_HISTORY_ENABLED=false timeout 300 "$f" bootstrap --only dotfiles,task 2>&1)" && fail "a waiting bootstrap must not report success for a task that failed"
+[[ $out == *"did not finish it"* ]] || fail "the wait does not say the setup is unfinished: $out"
+[[ $out == *'run `mise bootstrap` again'* ]] || fail "the wait does not say how to retry: $out"
+wait "$failing" || true
+# and once it is fixed, an ordinary bootstrap finishes the machine
+assert_succeed "timeout 180 $f bootstrap --only dotfiles,task"
+assert "cat $F/post-adopt-ran" $'ran\nran'
+
+# a claim whose holder is killed is not a machine wedged forever: the
+# next bootstrap takes the claim and finishes the job
+K="$(dirname "$HOME")/killed-home"
+wrapper "$K" "$PWD/killed"
+k="$PWD/killed"
+assert_succeed "$k bootstrap --adopt file://$origin --yes --only dotfiles"
+SETUP_SLEEP=60 timeout -s KILL 4 "$k" bootstrap --only dotfiles,task >/dev/null 2>&1 || true
+assert "cat $K/post-adopt-ran" "ran"
+assert_succeed "timeout 180 $k bootstrap --only dotfiles,task"
+assert "cat $K/post-adopt-ran" $'ran\nran'
 
 # ---- machine D excludes the task part: the setup is installed and the
 # task is left alone, exactly as `bootstrap` would be

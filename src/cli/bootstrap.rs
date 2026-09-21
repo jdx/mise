@@ -2016,11 +2016,9 @@ impl Bootstrap {
         // the operating system if this process dies. A second bootstrap
         // is told what is happening rather than waiting behind arbitrary
         // user code or running it twice.
-        let Some(_claim) = system::history::config::claim_post_adopt()? else {
-            info!(
-                "dotfiles: the post-adopt task {task} is already being run by another mise process on this machine; leaving it to that one"
-            );
-            return Ok(());
+        let claim = system::history::config::claim_post_adopt()?;
+        let Some(_claim) = claim else {
+            return self.await_post_adopt(&task, &setup).await;
         };
         // re-checked under the claim: the process that held it before may
         // have finished the task while this one was waiting for it
@@ -2051,6 +2049,54 @@ impl Bootstrap {
         }
         let _lock = system::history::config::lock_post_adopt()?;
         system::history::config::record_post_adopt(&setup)
+    }
+
+    /// Waits for the process holding the claim to finish the post-adopt
+    /// task, and answers with what it did.
+    ///
+    /// **A bootstrap reports success only when the task has actually
+    /// completed — whether this process ran it or watched another
+    /// process finish it.** Work that is merely someone else's
+    /// responsibility is not success: automation reads the exit code,
+    /// and a zero here would say a machine is set up when nothing
+    /// observed it being set up.
+    ///
+    /// Waiting is safe because a bootstrap invoked *by* the task skips
+    /// this step entirely, so whatever holds the claim is an unrelated
+    /// concurrent bootstrap, which either finishes or dies. It is
+    /// bounded anyway, and a claim released without a record — the
+    /// holder failed, or was killed — is reported as an unfinished
+    /// setup, which the next `mise bootstrap` simply picks up.
+    async fn await_post_adopt(&self, task: &str, setup: &str) -> Result<()> {
+        const LIMIT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+        const POLL: std::time::Duration = std::time::Duration::from_millis(250);
+        info!(
+            "dotfiles: another mise process on this machine is running the post-adopt task {task}; waiting for it"
+        );
+        let deadline = std::time::Instant::now() + LIMIT;
+        loop {
+            {
+                let _lock = system::history::config::lock_post_adopt()?;
+                if system::history::config::post_adopt_already_ran(setup) {
+                    info!("dotfiles: the post-adopt task {task} was finished by that process");
+                    return Ok(());
+                }
+            }
+            // the claim is free and nothing was recorded: the process
+            // that held it failed or was killed, and said so itself
+            if system::history::config::claim_post_adopt()?.is_some() {
+                bail!(
+                    "another mise process was running the post-adopt task {task} and did not finish it; the machine may not be fully set up. Fix what that run reported and run `mise bootstrap` again"
+                );
+            }
+            if std::time::Instant::now() >= deadline {
+                bail!(
+                    "the post-adopt task {task} is still running in another mise process after {} minutes; the machine may not be fully set up. Run `mise bootstrap` again once it has finished",
+                    LIMIT.as_secs() / 60
+                );
+            }
+            tokio::time::sleep(POLL).await;
+        }
     }
 
     /// Runs the bootstrap itself as a child process from `checkout` (the

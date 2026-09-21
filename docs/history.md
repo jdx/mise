@@ -478,6 +478,12 @@ machine merely by being fetched. `mise bootstrap --adopt <url> --dry-run`
 reads the task out of the incoming setup and names it, so you can see what
 it would run before you adopt it.
 
+Two bootstraps started at once run it once: one claims it, the other
+waits for the outcome and reports the same thing, because a machine is
+only set up when something watched it being set up. A bootstrap the task
+itself invokes skips the step entirely — setup work is once per adoption,
+not once per nested invocation.
+
 If the task fails, the setup is installed and unfinished rather than undone,
 and mise says exactly that. A failed task is not recorded, so fixing what it
 reported and running `mise bootstrap` again finishes the machine:
