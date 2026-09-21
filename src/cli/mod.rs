@@ -257,16 +257,19 @@ Shorthand for `mise tasks run <TASK>`."#
 /// off has said so in one place. `Style::auto()` would ask the terminal directly and miss all
 /// of it. This is the rule `render_task_help` already follows.
 fn help_style() -> usage_rs::help::Style {
-    if console::colors_enabled() {
-        usage_rs::help::Style::COLOURED
-    } else {
-        usage_rs::help::Style::PLAIN
-    }
+    help_style_for(console::colors_enabled())
 }
 
 /// The same question for a page going to stderr, which `console` tracks separately.
 fn help_style_stderr() -> usage_rs::help::Style {
-    if console::colors_enabled_stderr() {
+    help_style_for(console::colors_enabled_stderr())
+}
+
+/// The answer, given what `console` decided. Split out so it can be tested: the test binary
+/// disables colour and sets `NO_COLOR` for every test in it, which makes a rendered page plain
+/// whichever policy produced it, so only the mapping itself can be pinned.
+fn help_style_for(coloured: bool) -> usage_rs::help::Style {
+    if coloured {
         usage_rs::help::Style::COLOURED
     } else {
         usage_rs::help::Style::PLAIN
@@ -1338,6 +1341,17 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    /// A help page follows mise's colour decision, not the terminal's.
+    ///
+    /// `Style::auto()` asks the terminal and so ignored `color`, `MISE_COLOR` and `CLICOLOR`,
+    /// which `Settings` folds into `console` — a user who turned colour off still got a
+    /// coloured help page. This pins the mapping the fix put in its place.
+    fn help_colour_follows_mise_rather_than_the_terminal() {
+        assert_eq!(help_style_for(true), usage_rs::help::Style::COLOURED);
+        assert_eq!(help_style_for(false), usage_rs::help::Style::PLAIN);
+    }
 
     #[test]
     /// Keep early recognition consistent with the full parser across inherited flag placements.
