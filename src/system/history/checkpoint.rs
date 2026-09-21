@@ -399,12 +399,20 @@ impl Store {
                             &mut modes,
                             &walk,
                         )?;
-                        report_narrowed(
+                        // **A notice is never worth failing a capture.**
+                        // This reads the parent's manifest and tree, and
+                        // either can legitimately refuse — a manifest
+                        // written by a newer mise, a corrupted blob — so
+                        // what it cannot say, it does not say, and the
+                        // save goes on.
+                        if let Err(err) = report_narrowed(
                             repo,
                             previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
                             tracked,
                             &draft,
-                        )?;
+                        ) {
+                            debug!("history: could not compare the previous selection: {err:#}");
+                        }
                         let mut manifest = super::manifest::Manifest::read(repo, &composed)?
                             .ok_or_else(|| {
                                 eyre::eyre!("captured tree is missing enrollment metadata")
