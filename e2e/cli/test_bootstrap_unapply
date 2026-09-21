@@ -18,6 +18,9 @@ content = "ssh"
 [bootstrap.directories."$PWD/ssh.d"]
 mode = "0755"
 
+[bootstrap.files."$PWD/ssh.d/inner.conf"]
+content = "inner"
+
 [bootstrap.files."$PWD/shared.conf"]
 content = "shared"
 
@@ -84,6 +87,17 @@ assert_fail "test -e $HOME/.sshcopy"
 assert "cat base.conf" "base"
 assert "cat shared.conf" "shared"
 assert "cat sources/sshconfig" "ssh config"
+
+# A directory that still holds something this plan does not remove is kept: the
+# removal is not recursive, and failing during the apply would remove a module
+# only partly.
+assert_succeed "mise -E ssh,gpg bootstrap --only files,dotfiles --yes"
+touch ssh.d/unmanaged
+assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "not empty"
+assert_directory_exists "$PWD/ssh.d"
+assert_fail "test -e $PWD/ssh.d/inner.conf"
+assert_succeed "test -e $PWD/ssh.d/unmanaged"
+rm -r ssh.d
 
 # Nothing is left to remove on a second run.
 assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "nothing to remove for ssh"

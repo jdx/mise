@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use eyre::Result;
 
 use crate::config::Config;
+use crate::path::PathExt;
 use crate::system::managed_files::{ManagedDirectoryRequest, ManagedFileRequest, ManagedState};
 use crate::system::resources::ResourceAction;
 use crate::system::{edits, files, managed_files, secrets, user_services};
@@ -97,23 +98,6 @@ pub(crate) async fn plan(
         unapply.files.push(file);
         unapply.removals.push(removal);
     }
-    // Deeper paths first so a directory is empty by the time it is removed.
-    directories.sort_by_key(|directory| std::cmp::Reverse(directory.path.components().count()));
-    for mut directory in directories {
-        let Some(removal) = classify(
-            &directory.plan()?.action,
-            "directory",
-            &directory.path,
-            opts,
-            &mut unapply,
-        ) else {
-            continue;
-        };
-        directory.state = ManagedState::Absent;
-        unapply.directories.push(directory);
-        unapply.removals.push(removal);
-    }
-
     let base_services = user_services::requests_from_config(&base)?
         .into_iter()
         .map(|request| request.name)
@@ -243,8 +227,54 @@ pub(crate) async fn plan(
         }
     }
 
+    // Directories come last: removal is never recursive, so whether one can be
+    // removed depends on what everything else in this plan takes with it.
+    // Learning otherwise during the apply would leave the module half removed.
+    let mut scheduled = unapply
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .chain(unapply.dotfiles.iter().map(|file| file.target.clone()))
+        .collect::<HashSet<_>>();
+    // Deeper paths first so a parent sees its removed children as gone.
+    directories.sort_by_key(|directory| std::cmp::Reverse(directory.path.components().count()));
+    for mut directory in directories {
+        let Some(removal) = classify(
+            &directory.plan()?.action,
+            "directory",
+            &directory.path,
+            opts,
+            &mut unapply,
+        ) else {
+            continue;
+        };
+        if let Some(remaining) = unscheduled_entry(&directory.path, &scheduled) {
+            unapply.skipped.push(Skip {
+                kind: "directory",
+                name: directory.path.to_string_lossy().into_owned(),
+                reason: format!("not empty, {} remains", remaining.display_user()),
+            });
+            continue;
+        }
+        scheduled.insert(directory.path.clone());
+        directory.state = ManagedState::Absent;
+        unapply.directories.push(directory);
+        unapply.removals.push(removal);
+    }
+
     unapply.uncovered = uncovered_sections(config, environments);
     Ok(unapply)
+}
+
+/// The first entry in `path` that this plan does not remove, if any. A
+/// directory holding one is not this command's to delete: the declaration
+/// describes the directory, not whatever else ended up inside it.
+fn unscheduled_entry(path: &Path, scheduled: &HashSet<PathBuf>) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(path).ok()?;
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|entry| !scheduled.contains(entry))
 }
 
 /// Decide whether a managed path can be removed from its current state.
@@ -341,19 +371,23 @@ fn uncovered_sections(config: &Config, environments: &[String]) -> Vec<Uncovered
     let mut packages = 0;
     let mut repos = 0;
     let mut compose = 0;
-    for (path, config_file) in &config.config_files {
-        if !crate::config::environments_for_config_path(path)
-            .iter()
-            .any(|environment| environments.iter().any(|name| name == environment))
-        {
-            continue;
+    // Independent bootstrap roots keep their own config maps, and a module can
+    // declare all of its packages in one of them.
+    for config_files in config.bootstrap_config_maps() {
+        for (path, config_file) in config_files {
+            if !crate::config::environments_for_config_path(path)
+                .iter()
+                .any(|environment| environments.iter().any(|name| name == environment))
+            {
+                continue;
+            }
+            let Some(bootstrap) = config_file.bootstrap_config() else {
+                continue;
+            };
+            packages += bootstrap.packages.len();
+            repos += bootstrap.repos.len();
+            compose += bootstrap.compose.len();
         }
-        let Some(bootstrap) = config_file.bootstrap_config() else {
-            continue;
-        };
-        packages += bootstrap.packages.len();
-        repos += bootstrap.repos.len();
-        compose += bootstrap.compose.len();
     }
     [
         (

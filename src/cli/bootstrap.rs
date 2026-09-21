@@ -2217,12 +2217,17 @@ fn unapply_child_args(environments: &str, args: &[String]) -> Vec<OsString> {
     let mut args = args.iter().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--env" | "-E" | "--profile" | "-P" => {
+            // The selection is replaced, and `--cd` already took effect in this
+            // process: the child inherits that directory, and a relative path
+            // would resolve a second time from it.
+            "--env" | "-E" | "--profile" | "-P" | "--cd" | "-C" => {
                 args.next();
             }
             _ if arg.starts_with("--env=")
                 || arg.starts_with("--profile=")
-                || (arg.starts_with("-E") || arg.starts_with("-P")) && arg.len() > 2 => {}
+                || arg.starts_with("--cd=")
+                || (arg.starts_with("-E") || arg.starts_with("-P") || arg.starts_with("-C"))
+                    && arg.len() > 2 => {}
             _ => {
                 forwarded.push(arg.into());
                 if global_option_takes_value(arg)
@@ -2236,6 +2241,9 @@ fn unapply_child_args(environments: &str, args: &[String]) -> Vec<OsString> {
     forwarded
 }
 
+/// Whether a global option consumes the argument after it. Both child-argument
+/// builders drop `--cd`/`-C` and the selection options before consulting this,
+/// so those are listed for correctness rather than for a current caller.
 fn global_option_takes_value(arg: &str) -> bool {
     matches!(
         arg,
@@ -2653,11 +2661,16 @@ impl BootstrapUnapply {
         if !self.dry_run
             && !self.yes
             && console::user_attended_stderr()
-            && !crate::ui::prompt::confirm(format!(
-                "bootstrap: remove {} resource(s) contributed by {}?",
-                unapply.removals.len(),
-                self.environment.join(", ")
-            ))?
+            // Defaults to no: this removes resources, and a prompt that reaches
+            // EOF must not be read as consent.
+            && !crate::ui::prompt::confirm_with_default(
+                format!(
+                    "bootstrap: remove {} resource(s) contributed by {}?",
+                    unapply.removals.len(),
+                    self.environment.join(", ")
+                ),
+                false,
+            )?
             .is_yes()
         {
             info!("bootstrap unapply: skipped");
@@ -5384,8 +5397,8 @@ mod tests {
     fn unapply_reexec_replaces_the_selection_and_keeps_other_arguments() {
         let args = [
             "mise",
-            "--cd",
-            "/repo",
+            "--log-level",
+            "debug",
             "-E",
             "gpg",
             "bootstrap",
@@ -5399,8 +5412,8 @@ mod tests {
             [
                 "--env",
                 "gpg,ssh",
-                "--cd",
-                "/repo",
+                "--log-level",
+                "debug",
                 "bootstrap",
                 "unapply",
                 "ssh",
@@ -5411,23 +5424,23 @@ mod tests {
     }
 
     #[test]
-    fn unapply_reexec_keeps_a_value_that_looks_like_a_selection_flag() {
-        // The value of a global option is not an option: forwarding has to
-        // consume it, or a directory spelled like `-E...` is dropped as one.
-        let args = ["mise", "--cd", "-Eweird", "bootstrap", "unapply", "ssh"].map(String::from);
-        assert_eq!(
-            unapply_child_args("ssh", &args),
-            [
-                "--env",
-                "ssh",
-                "--cd",
-                "-Eweird",
-                "bootstrap",
-                "unapply",
-                "ssh"
-            ]
-            .map(OsString::from)
-        );
+    fn unapply_reexec_drops_a_directory_this_process_already_entered() {
+        // `--cd` took effect before the re-invocation, so the child inherits
+        // that directory; forwarding a relative path would resolve it again.
+        for directory in [
+            vec!["--cd", "sub"],
+            vec!["--cd=sub"],
+            vec!["-C", "sub"],
+            vec!["-Csub"],
+        ] {
+            let mut args = vec!["mise".to_string()];
+            args.extend(directory.iter().map(|arg| arg.to_string()));
+            args.extend(["bootstrap", "unapply", "ssh"].map(String::from));
+            assert_eq!(
+                unapply_child_args("ssh", &args),
+                ["--env", "ssh", "bootstrap", "unapply", "ssh"].map(OsString::from)
+            );
+        }
     }
 
     #[test]
