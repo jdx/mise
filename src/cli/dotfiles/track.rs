@@ -784,7 +784,13 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
     let changed = if add {
         append_rule(array, glob)
     } else {
-        drop_glob(array, glob)
+        // every rule that means this argument, not the first one found:
+        // `any` would stop at the first removal and leave the rest
+        let mut changed = false;
+        for rule in rules_for_argument(glob) {
+            changed |= drop_glob(array, &rule);
+        }
+        changed
     };
     if changed {
         crate::file::write(&global, doc.to_string())?;
@@ -854,11 +860,44 @@ fn append_rule(array: &mut toml_edit::Array, glob: &str) -> bool {
 /// `untrack` simply did not work. Escaping a real glob produces something
 /// no list holds, so trying both spellings cannot remove a rule the user
 /// did not name.
-fn drop_glob(array: &mut toml_edit::Array, glob: &str) -> bool {
-    let escaped = globset::escape(glob);
+/// Takes exactly `rule` out of the list. No spelling is inferred here:
+/// what to remove is [`rules_for_argument`]'s answer.
+fn drop_glob(array: &mut toml_edit::Array, rule: &str) -> bool {
     let before = list_entries(array);
-    array.retain(|value| !matches!(value.as_str(), Some(rule) if rule == glob || rule == escaped));
+    array.retain(|value| value.as_str() != Some(rule));
     list_entries(array) != before
+}
+
+/// The list entries that mean `argument`, for taking a rule back out.
+///
+/// **Two kinds of argument, two derivations, and nothing in between.**
+/// `mise dot exclude` writes the glob a user typed, so that glob is
+/// removed exactly as typed. `mise dot untrack` writes a path through
+/// [`exclude_rule_for_path`], the single function that turns a path into
+/// a rule, so for an argument that names a path the same function says
+/// what to remove — both forms it can produce, since which one was
+/// written depended on whether the path was a directory then, and the
+/// answer now is not evidence about then.
+///
+/// Matching spellings against each other instead was wrong twice over:
+/// it removed `foo[*]` when asked for `foo*`, which are different rules,
+/// and it never removed the `/**` form at all, so a directory untrack
+/// could not be undone.
+fn rules_for_argument(argument: &str) -> Vec<String> {
+    let mut rules = vec![argument.to_string()];
+    // A path is absolute or `~`-rooted; a glob like `sessions/**` is
+    // neither, and deriving from it would invent a rule nobody wrote.
+    let target = crate::system::files::resolve_target_arg(argument);
+    if target.is_absolute() {
+        let key = normalized_target(&target);
+        for directory in [false, true] {
+            let rule = exclude_rule_for_path(&key, directory);
+            if !rules.contains(&rule) {
+                rules.push(rule);
+            }
+        }
+    }
+    rules
 }
 
 #[cfg(test)]
