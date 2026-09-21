@@ -1647,7 +1647,22 @@ pub(crate) fn owning_display<'a, T: 'a>(
     items
         .into_iter()
         .filter(|item| display_under(path, key(item)))
-        .max_by_key(|item| Path::new(key(item)).components().count())
+        // **Normalized once, then used for everything after.** A
+        // recorded display path keeps the separator of the host that
+        // wrote it, so `~\.config\mise` counted as components on a unix
+        // reader is one component, not three — and the most specific
+        // entry would lose to a shallower one. The comparison above
+        // already reads both spellings as the same path; the ranking has
+        // to read them the same way too.
+        .max_by_key(|item| display_depth(key(item)))
+}
+
+/// How deep a display path is, whichever host's separator it carries.
+fn display_depth(path: &str) -> usize {
+    display_separators(path)
+        .split('/')
+        .filter(|component| !component.is_empty() && *component != ".")
+        .count()
 }
 
 /// The permission key under which the enrollment this machine selects
@@ -1984,6 +1999,43 @@ mod tests {
             unusable_pattern(&body).is_some(),
             "the written form is unusable, so the pattern is refused: {forms:?}"
         );
+    }
+
+    /// A recorded display path carries the separator of the host that
+    /// wrote it, and the most specific entry has to win on either host —
+    /// the comparison and the ranking must read the same path the same
+    /// way.
+    #[test]
+    fn the_owner_of_a_recorded_path_is_the_same_on_either_host() {
+        struct Recorded(&'static str);
+        for (entries, path, expected) in [
+            (
+                vec![Recorded("~/.config"), Recorded("~/.config/mise")],
+                "~/.config/mise/config.toml",
+                "~/.config/mise",
+            ),
+            // the same set as a Windows checkpoint records it, read here
+            (
+                vec![Recorded("~\\.config"), Recorded("~\\.config\\mise")],
+                "~\\.config\\mise\\config.toml",
+                "~\\.config\\mise",
+            ),
+            // and mixed, which is what a machine reading another's
+            // checkpoint actually sees
+            (
+                vec![Recorded("~/.config"), Recorded("~\\.config\\mise")],
+                "~/.config/mise/config.toml",
+                "~\\.config\\mise",
+            ),
+        ] {
+            let owner = owning_display(&entries, path, |entry| entry.0);
+            assert_eq!(
+                owner.map(|entry| entry.0),
+                Some(expected),
+                "{path} under {:?}",
+                entries.iter().map(|entry| entry.0).collect::<Vec<_>>()
+            );
+        }
     }
 
     fn entry(path: &Path) -> TrackedEntry {
