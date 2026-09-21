@@ -10,7 +10,7 @@ use super::shadow::{HistoryRepo, Overlay};
 
 pub(crate) const PATH: &str = ".mise-history/manifest.json";
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Enrollment {
     /// A portable repository path, rooted at `home/` or `config/`.
@@ -371,7 +371,7 @@ impl Manifest {
         self.enrollment
             .iter()
             .filter(|entry| path == entry.path || strictly_below(path, &entry.path))
-            .max_by_key(|entry| entry.path.split('/').count())
+            .max_by_key(|entry| portable_components(&entry.path))
     }
 
     /// Carry inactive streams and repository-owned files from the same parent
@@ -528,6 +528,22 @@ impl Manifest {
     }
 }
 
+/// How many components a portable path has.
+///
+/// **The most-specific-owner rule is one rule, so it is one call.** Live
+/// ownership ranks with `Path::components`, which skips an empty segment
+/// and a `.`. Counting a portable path with `split('/')` did not: a
+/// trailing or a doubled slash inflated it, and a manifest written
+/// elsewhere or edited by hand could then rank `home/.config/` above
+/// `home/.config/mise` and name the wrong enrollment's stream — the
+/// defect that ranking by byte length was, arriving from the other side.
+/// Rather than a second implementation that agrees today, this is the
+/// same call: a portable path is `/`-separated, and `/` is a separator
+/// on every host mise runs on.
+fn portable_components(path: &str) -> usize {
+    std::path::Path::new(path).components().count()
+}
+
 /// Whether a portable path is inside the directory `prefix` (not `prefix`
 /// itself).
 fn strictly_below(path: &str, prefix: &str) -> bool {
@@ -549,6 +565,51 @@ fn plain(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A portable path is counted the way a live one is, so the
+    /// most-specific-owner rule cannot mean two things. A trailing or a
+    /// doubled slash is not a component; counting it as one would rank
+    /// `home/.config/` above `home/.config/mise`.
+    #[test]
+    fn a_portable_path_is_counted_the_way_a_live_path_is() {
+        for path in [
+            "home/.config/",
+            "home//.config",
+            "home/./.config",
+            "home/.config",
+            "home/.config/mise",
+            "config/settings.toml",
+            "home@linux/.zshrc",
+        ] {
+            assert_eq!(
+                portable_components(path),
+                std::path::Path::new(path).components().count(),
+                "{path} is counted differently from the live path it names"
+            );
+        }
+        assert_eq!(portable_components("home/.config/"), 2);
+        assert_eq!(portable_components("home//.config"), 2);
+        assert_eq!(portable_components("home/./.config"), 2);
+        assert_eq!(portable_components("home/.config/mise"), 3);
+
+        // and the deeper enrollment owns the path, whichever way the
+        // shallower one is spelled
+        let enroll = |path: &str| Enrollment {
+            path: path.to_string(),
+            autosave: true,
+            ..Default::default()
+        };
+        let manifest = Manifest {
+            enrollment: vec![enroll("home/.config"), enroll("home/.config/mise")],
+            ..Default::default()
+        };
+        assert_eq!(
+            manifest
+                .owner("home/.config/mise/config.toml")
+                .map(|entry| entry.path.as_str()),
+            Some("home/.config/mise")
+        );
+    }
 
     #[test]
     fn future_format_is_reported_before_unknown_fields() -> Result<()> {
