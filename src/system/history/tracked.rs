@@ -1329,12 +1329,22 @@ pub(crate) fn unusable_pattern(body: &str) -> Option<String> {
             "environment variables are not supported in exclusion patterns; write `~/…` or an absolute path".into(),
         );
     }
-    let probe = if is_path_anchored(body) {
-        anchored_globs(body).pop()?
+    // Every form the pattern is compiled from is checked, not just the
+    // last one. An anchored pattern becomes two globs — as written and
+    // normalized — and they are not equally valid: a directory literally
+    // named `link[x` makes the written form an unclosed character class
+    // while its normalized form, through a symlink, has no bracket at
+    // all. Checking one of them would accept a pattern that
+    // `PatternRule::compile` then drops with a warning, which is the
+    // opposite of what this exists to prevent.
+    let probes = if is_path_anchored(body) {
+        anchored_globs(body)
     } else {
-        body.to_string()
+        vec![body.to_string()]
     };
-    Glob::new(&probe).err().map(|err| err.to_string())
+    probes
+        .iter()
+        .find_map(|probe| Glob::new(probe).err().map(|err| err.to_string()))
 }
 
 /// Whether a pattern names a path rather than a file name. `~` alone is
@@ -1894,6 +1904,33 @@ mod tests {
             &patterns,
             &root.join("cache\\index"),
         ));
+    }
+
+    /// A pattern is compiled from more than one glob when it is
+    /// anchored, and the refusal has to cover all of them: a form that
+    /// only `PatternRule::compile` rejects is dropped with a warning long
+    /// after `mise dot exclude` accepted the pattern.
+    #[cfg(unix)]
+    #[test]
+    fn a_pattern_is_refused_when_any_form_it_compiles_to_is_unusable() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("real")).unwrap();
+        // a directory whose real name opens a character class that the
+        // path it resolves to does not
+        let link = tmp.path().join("link[x");
+        std::os::unix::fs::symlink(tmp.path().join("real"), &link).unwrap();
+        let body = format!("{}/**", link.display());
+
+        let forms = anchored_globs(&body);
+        assert_eq!(forms.len(), 2, "expected two forms, got {forms:?}");
+        assert!(
+            Glob::new(&forms[1]).is_ok(),
+            "the normalized form is the usable one: {forms:?}"
+        );
+        assert!(
+            unusable_pattern(&body).is_some(),
+            "the written form is unusable, so the pattern is refused: {forms:?}"
+        );
     }
 
     fn entry(path: &Path) -> TrackedEntry {
