@@ -114,6 +114,15 @@ for entry in '{ mode = "track" }' '{ mode = "track", include = ["secrets.fish"] 
   assert_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
   assert_not_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
 done
+# a list selects paths inside a tracked directory, so an entry that is
+# itself a file is left out by any list it declares — and told, not
+# dropped quietly
+printf '[dotfiles]\n"~/.config/fish/functions/hello.fish" = { mode = "track", include = ["hello.fish"] }\n' >"$MISE_CONFIG_DIR/config.toml"
+assert_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/hello.fish'
+assert_contains 'mise dot paths' 'selects nothing'
+printf '[dotfiles]\n"~/.config/fish/functions/hello.fish" = { mode = "track" }\n' >"$MISE_CONFIG_DIR/config.toml"
+assert_not_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/hello.fish'
+
 # and a declared-but-empty list selects nothing at all, so the file is
 # neither captured nor even considered
 printf '[dotfiles]\n"~/.config/fish/functions/secrets.fish" = { mode = "track", include = [] }\n' >"$MISE_CONFIG_DIR/config.toml"

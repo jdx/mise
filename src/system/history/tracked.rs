@@ -119,24 +119,22 @@ impl TrackedEntry {
     /// here; rule 3 is the order the two lists are applied in, at every
     /// call site.
     ///
-    /// The entry path itself is always included, as it is never excluded
-    /// by the entry's own list: the list selects within the entry, it
-    /// does not un-declare it.
+    /// **A list selects paths *inside* the entry, and the entry itself is
+    /// not one of them**: its patterns are read relative to the entry, so
+    /// none of them can name it. An entry that is itself a file is
+    /// therefore left out by any list it declares — the same answer a
+    /// declared-but-empty list gives, which is what makes "declared and
+    /// empty" a choice rather than a special case. A directory entry's
+    /// own path is not a file and is never captured either way.
     pub(crate) fn is_included(&self, path: &Path) -> bool {
         let Some(patterns) = self.include_patterns() else {
             return true;
         };
-        // a list that names nothing selects nothing, the entry's own path
-        // included: "declared and empty" is a choice, not the absence of
-        // one, and an entry that is itself a file is still subject to it
-        if patterns.is_empty() {
-            return false;
-        }
         match path.strip_prefix(&self.path) {
             Ok(rel) if !rel.as_os_str().is_empty() => {
-                crate::system::files::is_excluded(rel, &patterns)
+                crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
             }
-            _ => true,
+            _ => false,
         }
     }
 
@@ -148,15 +146,9 @@ impl TrackedEntry {
     /// the guard for it. Overriding the guard means a pattern that names
     /// the file, which is something only a directory entry can have.
     fn selected_by_pattern(&self, path: &Path) -> bool {
-        let Some(patterns) = self.include_patterns() else {
-            return false;
-        };
-        match path.strip_prefix(&self.path) {
-            Ok(rel) if !rel.as_os_str().is_empty() => {
-                crate::system::files::is_excluded(rel, &patterns)
-            }
-            _ => false,
-        }
+        // the same matcher, not a second copy of it: the two questions
+        // differ only in what they answer when no list was declared
+        self.include.is_some() && self.is_included(path)
     }
 
     /// Why a capture leaves `path` out under this entry, if it does,
@@ -727,9 +719,15 @@ fn walk_entry(
         if exclude.is_match(&entry.path, &entry.path) {
             return;
         }
-        // a declared-but-empty `include` selects nothing, and an entry
-        // that is itself a file is no exception
+        // an `include` list selects paths inside a tracked directory, so
+        // a file entry that declares one selects nothing at all. Said out
+        // loud rather than dropped quietly: a file that stops being saved
+        // is exactly the kind of thing a user needs told.
         if !entry.is_included(&entry.path) {
+            walk.omitted.push(PathReason {
+                path: display,
+                reason: "its include list selects nothing: a list selects paths inside a tracked directory, and this entry is a file".into(),
+            });
             return;
         }
         match classify_file(&meta) {
@@ -841,7 +839,14 @@ fn walk_entry(
         if let Some(entry_include) = &entry_include {
             *walk.considered.entry(index).or_default() += 1;
             match path.strip_prefix(&entry.path) {
-                Ok(rel) if !crate::system::files::is_excluded(rel, entry_include) => continue,
+                Ok(rel)
+                    if !crate::system::files::is_excluded(
+                        &pattern_relative(rel),
+                        entry_include,
+                    ) =>
+                {
+                    continue;
+                }
                 Err(_) => continue,
                 Ok(_) => {}
             }
@@ -987,17 +992,20 @@ pub(crate) fn excluded_by_entry(entry_path: &Path, patterns: &[String], path: &P
 }
 
 /// Whether `patterns` (an entry's own `include` list, relative to
-/// `entry_path`) select `path`; the entry path itself always is. The
-/// mirror of [`excluded_by_entry`], for a replay reading the list a
-/// checkpoint recorded.
+/// `entry_path`) select `path`; the entry path itself never is, exactly
+/// as [`TrackedEntry::is_included`] answers it. The mirror of
+/// [`excluded_by_entry`], for a replay reading the list a checkpoint
+/// recorded.
 pub(crate) fn included_by_entry(entry_path: &Path, patterns: &[String], path: &Path) -> bool {
     let patterns: Vec<glob::Pattern> = patterns
         .iter()
         .filter_map(|pattern| glob::Pattern::new(pattern).ok())
         .collect();
     match path.strip_prefix(entry_path) {
-        Ok(rel) if !rel.as_os_str().is_empty() => crate::system::files::is_excluded(rel, &patterns),
-        _ => true,
+        Ok(rel) if !rel.as_os_str().is_empty() => {
+            crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+        }
+        _ => false,
     }
 }
 
@@ -2325,6 +2333,55 @@ mod tests {
         );
     }
 
+    /// A list selects paths inside a tracked directory. An entry that is
+    /// itself a file has nothing inside it, so any list it declares
+    /// leaves it out — one answer for the empty list and the non-empty
+    /// one alike, and the same answer from the capture walk, the
+    /// watcher's filter and a replay reading the recorded list.
+    #[test]
+    fn an_include_list_on_a_file_entry_selects_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("config.toml");
+        std::fs::write(&file, "keep").unwrap();
+
+        for include in [None, Some(vec![]), Some(vec!["config.toml".to_string()])] {
+            let declared = include.is_some();
+            let mut tracked = entry(&file);
+            tracked.include = include.clone();
+            let mut set = TrackedSet::default();
+            set.push(tracked);
+
+            let walk = set.walk().unwrap();
+            assert_eq!(
+                walk.files.contains_key(&file),
+                !declared,
+                "capture with include = {include:?}"
+            );
+            assert_eq!(
+                set.would_retain(&file).unwrap(),
+                !declared,
+                "would_retain with include = {include:?}"
+            );
+            assert_eq!(
+                !set.excluded_by_lists(&set.exclude_set().unwrap(), &file),
+                !declared,
+                "watcher with include = {include:?}"
+            );
+            assert!(
+                !included_by_entry(&file, include.as_deref().unwrap_or_default(), &file),
+                "replay with include = {include:?}"
+            );
+            // and the drop is reported rather than silent
+            assert_eq!(
+                walk.omitted
+                    .iter()
+                    .any(|omitted| omitted.reason.contains("selects nothing")),
+                declared,
+                "reported with include = {include:?}"
+            );
+        }
+    }
+
     fn entry(path: &Path) -> TrackedEntry {
         TrackedEntry::new(
             path.to_path_buf(),
@@ -3077,6 +3134,9 @@ mod tests {
         // a declared but empty list selects nothing, and is never read as
         // no list at all — that would capture the whole tree
         assert!(captured(Some(&[]), &[]).is_empty());
+        // and a list that names nothing present is the same answer: the
+        // list decides, so what it does not select is not captured
+        assert!(captured(Some(&["nothing-here"]), &[]).is_empty());
         // rule 3: an explicit exclude wins over an include
         assert_eq!(
             captured(Some(&["config.toml", "rules/**"]), &["rules/deep"]),

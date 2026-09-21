@@ -652,13 +652,18 @@ The rules, in order:
    filtering would otherwise leave it out. A literal and a glob carry the
    same authority — `include = ["**"]` selects credential-named files
    too. Anything selected that looks like a credential store is reported
-   as captured in plaintext, wherever selection is shown.
+   as saved in plaintext, wherever selection is shown — unless the entry
+   sets `encrypt = true`, which stores it encrypted and reports it as
+   encrypted. Selection and encryption are separate choices: the list
+   decides what is saved, `encrypt` decides how.
 
 An `include` list that is present but empty selects nothing, which is not
-the same as having no list at all — including on an entry that is itself
-a file. Declaring a list on such an entry does not lift the credential
-guard either: overriding it means a pattern that names the file, which
-only a directory entry can have. A pattern that is not a valid glob is
+the same as having no list at all. A list selects paths _inside_ a
+tracked directory, so an entry that is itself a file is left out by any
+list it declares — empty or not — and `mise dot paths` says so. Declaring
+a list on such an entry does not lift the credential guard either:
+overriding it means a pattern that names the file, which only a directory
+entry can have. A pattern that is not a valid glob is
 an error naming the entry and the pattern, for either list: a list mise
 could not read in full would silently capture more than you asked for.
 
@@ -686,21 +691,24 @@ means adding an `include`, which no configuration has until you write
 one.
 
 Selection and encryption are separate questions. `include` decides _what_
-is captured; `encrypt` decides _how_. A credential file you genuinely
-want in history belongs in an encrypted entry:
+is captured; `encrypt` decides _how_.
+
+::: warning
+A credential file selected on an entry **without** `encrypt` is stored in
+plaintext in history and pushed to any connected origin, and older
+commits keep it. mise warns on every save and marks the file
+`plaintext:`.
+:::
+
+A credential file you genuinely want in history belongs in an encrypted
+entry, which stores it encrypted and reports it as encrypted rather than
+as plaintext — see [encrypted tracking](#encrypted-shared-files), or
+`mise dot track <path> --encrypt`:
 
 ```toml
 [dotfiles]
 "~/.config/fish" = { mode = "track", include = ["functions/secrets.fish"], encrypt = true }
 ```
-
-::: warning
-A file captured this way is stored in plaintext in history and pushed to
-any connected origin, and older commits keep it. mise warns on every
-save. Use [encrypted tracking](#encrypted-shared-files) —
-`encrypt = true`, or `mise dot track <path> --encrypt` — for anything
-that really is a credential.
-:::
 
 `mise dot paths` and `mise dot track --dry-run` show the list and how
 much it selects, for example `~/.codex: 2 of 22,972 files (include
