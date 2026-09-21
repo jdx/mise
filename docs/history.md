@@ -726,6 +726,10 @@ as plaintext — see [encrypted tracking](#encrypted-shared-files), or
 "~/.config/fish" = { mode = "track", include = ["functions/secrets.fish"], encrypt = true }
 ```
 
+If the watcher saves before you run anything, the notice waits: the next
+`mise dot` command says it, because a warning in the watcher's own log is
+one nobody reads.
+
 `mise dot paths` and `mise dot track --dry-run` show the list and how
 much it selects, for example `~/.codex: 2 of 22,972 files (include
 list)`, and list a file captured under rule 4 as `plaintext:`. Narrowing

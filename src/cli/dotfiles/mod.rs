@@ -95,6 +95,13 @@ enum Commands {
 
 impl Dotfiles {
     pub(crate) async fn run(self) -> Result<()> {
+        // Anything a background save had to say is said here, to the
+        // person who is now present, before the command they asked for
+        // runs. The watcher itself is where those notices come from, so
+        // it is not where they are delivered.
+        if !matches!(self.command, Commands::Watch(_)) {
+            crate::system::history::notices::drain();
+        }
         match self.command {
             Commands::Add(cmd) => cmd.run().await,
             Commands::Apply(cmd) => crate::cli::bootstrap::run_dotfiles_apply(cmd).await,
