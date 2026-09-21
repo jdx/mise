@@ -87,6 +87,13 @@ impl TrackedEntry {
     }
 
     /// The compiled `include` patterns.
+    ///
+    /// A pattern that cannot be read is dropped, which makes the list
+    /// select less: on a capture that means a file is not saved, and on
+    /// a replay it means the file reads as unselected, which never
+    /// deletes. Both directions are the safe one, and such a pattern is
+    /// refused where it is written, so this is the last line rather than
+    /// the only one.
     pub(crate) fn include_patterns(&self) -> Option<Vec<glob::Pattern>> {
         Some(
             self.include
@@ -101,12 +108,30 @@ impl TrackedEntry {
     /// one does. Used to explain why a pattern reaching into a nested
     /// repository selects nothing, rather than leaving the user to
     /// wonder whether they wrote it wrong.
+    /// Whether nothing in the entry's `include` list could select
+    /// anything inside `directory`, so the walk can skip it whole.
+    ///
+    /// **Every way of not knowing answers "walk it".** With the limits
+    /// counting what is captured, a directory walked for nothing costs
+    /// time; one skipped by mistake costs a file the user asked to keep.
+    /// So an entry with no list never prunes, and a directory this entry
+    /// cannot even relate to itself is walked rather than skipped.
+    pub(crate) fn include_prunes(&self, directory: &Path) -> bool {
+        let Some(patterns) = self.include.as_ref() else {
+            return false;
+        };
+        let Ok(rel) = directory.strip_prefix(&self.path) else {
+            return false;
+        };
+        let components = path_components(rel);
+        !patterns
+            .iter()
+            .any(|pattern| reaches_into(pattern, &components))
+    }
+
     pub(crate) fn include_reaching_into(&self, directory: &Path) -> Option<&str> {
         let rel = directory.strip_prefix(&self.path).ok()?;
-        let components: Vec<String> = rel
-            .components()
-            .map(|component| component.as_os_str().to_string_lossy().into_owned())
-            .collect();
+        let components = path_components(rel);
         self.include
             .iter()
             .flatten()
@@ -810,8 +835,7 @@ fn walk_entry(
             // a walk while a wrong one would cost a file. The repository
             // check comes first, so one is still reported before its
             // parent is skipped for not being selected.
-            if !repository && entry.include.is_some() && entry.include_reaching_into(path).is_none()
-            {
+            if !repository && entry.include_prunes(path) {
                 walker.skip_current_dir();
                 continue;
             }
@@ -1553,6 +1577,13 @@ impl PatternRule {
     }
 }
 
+/// A relative path as the components a pattern is matched against.
+fn path_components(rel: &Path) -> Vec<String> {
+    rel.components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect()
+}
+
 /// Whether an `include` pattern could select something inside the
 /// directory at `components` (relative to the tracked entry).
 ///
@@ -1583,9 +1614,12 @@ fn reaches_into(pattern: &str, components: &[String]) -> bool {
             // takes everything under it.
             (Some(_), None) | (None, _) => return true,
             (Some(part), Some(component)) => {
+                // a component pattern that cannot be read is not a
+                // mismatch: this answer decides whether a directory is
+                // walked at all, so "cannot tell" descends
                 let matches = glob::Pattern::new(part)
                     .map(|glob| glob.matches(component))
-                    .unwrap_or(false);
+                    .unwrap_or(true);
                 if !matches {
                     return false;
                 }
@@ -2454,6 +2488,42 @@ mod tests {
                 reported.reason
             );
         }
+    }
+
+    /// The promise of the feature, end to end: one named file beside a
+    /// directory of noise is captured, the noise is not walked, and the
+    /// scan limits — which count what is captured — are nowhere near.
+    #[test]
+    fn a_narrow_include_list_does_not_walk_what_it_leaves_out() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules")).unwrap();
+        std::fs::create_dir_all(root.join("sessions/deep")).unwrap();
+        std::fs::write(root.join("rules/one.md"), "keep").unwrap();
+        for i in 0..40 {
+            std::fs::write(root.join(format!("sessions/{i}.jsonl")), "noise").unwrap();
+            std::fs::write(root.join(format!("sessions/deep/{i}.jsonl")), "noise").unwrap();
+        }
+
+        let mut tracked = entry(&root);
+        tracked.include = Some(vec!["rules/**".to_string()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+        let index = set.entry_index_for(&root).unwrap();
+        let walk = set.walk().unwrap();
+
+        assert_eq!(
+            walk.files.keys().collect::<Vec<_>>(),
+            vec![&root.join("rules/one.md")]
+        );
+        // the 80 files under `sessions` were never examined, let alone
+        // counted: `considered` only counts what the walk reached
+        assert!(
+            walk.considered.get(&index).copied().unwrap_or(0) <= 2,
+            "the walk descended into what the list leaves out: {:?}",
+            walk.considered
+        );
+        assert!(walk.incomplete.is_empty(), "{:?}", walk.incomplete);
     }
 
     fn entry(path: &Path) -> TrackedEntry {
