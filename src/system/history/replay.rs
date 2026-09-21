@@ -1416,7 +1416,7 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
         || coverage
             .entries
             .iter()
-            .any(|entry| !entry.exclude.is_empty() || entry.include.is_some());
+            .any(|entry| entry.exclude.is_some() || entry.include.is_some());
     let legacy = coverage.matcher != Some(super::tracked::MATCHER_VERSION) && has_patterns;
     let exclude = super::tracked::ExcludeSet::new(&coverage.exclude).ok();
     if let Some(exclude) = &exclude
@@ -1427,7 +1427,7 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     }
     // the entry's own lists, recorded with the checkpoint: a file either
     // of them left out was never known to be absent
-    if super::tracked::excluded_by_entry(&root, &owner.exclude, &local) {
+    if super::tracked::excluded_by_entry(&root, owner.exclude.as_deref().unwrap_or(&[]), &local) {
         return PathState::Uncovered;
     }
     // **Unselected is not absent.** `Absent` is the one answer that

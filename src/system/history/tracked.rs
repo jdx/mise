@@ -57,8 +57,14 @@ pub(crate) struct TrackedEntry {
     /// The entry's own `exclude` globs, relative to its path, with the
     /// rules of a deployment entry's list (see
     /// [`crate::system::files::is_excluded`]).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub exclude: Vec<String>,
+    ///
+    /// `None` means the declaration said nothing, so whatever the saved
+    /// manifest carries stands. `Some` means it spoke — including
+    /// `Some([])`, which clears the list another machine published.
+    /// Flattening the two into one empty vec left no way to say "capture
+    /// all of it after all".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
     /// The entry's own `include` globs, relative to its path and matched
     /// like `exclude`.
     ///
@@ -75,6 +81,7 @@ impl TrackedEntry {
     pub(crate) fn exclude_patterns(&self) -> Vec<glob::Pattern> {
         self.exclude
             .iter()
+            .flatten()
             .filter_map(|pattern| glob::Pattern::new(pattern).ok())
             .collect()
     }
@@ -83,7 +90,7 @@ impl TrackedEntry {
     /// the entry whose entry-relative form matches, as for a deployment
     /// entry. The entry path itself is never excluded by its own list.
     pub(crate) fn is_excluded(&self, path: &Path) -> bool {
-        excluded_by_entry(&self.path, &self.exclude, path)
+        excluded_by_entry(&self.path, self.exclude.as_deref().unwrap_or(&[]), path)
     }
 
     /// The compiled `include` patterns.
@@ -226,7 +233,7 @@ impl TrackedEntry {
             policy,
             variant: None,
             declared_in: None,
-            exclude: vec![],
+            exclude: None,
             include: None,
         }
     }
@@ -390,11 +397,7 @@ impl TrackedSet {
                 autosave: request.policy.autosave,
                 encrypt: request.policy.encrypt,
                 variants: request.variants.clone(),
-                exclude: request
-                    .exclude
-                    .iter()
-                    .map(|pattern| pattern.as_str().to_owned())
-                    .collect(),
+                exclude: declared_exclude(&request),
                 include: request.include.as_ref().map(|patterns| {
                     patterns
                         .iter()
@@ -412,11 +415,7 @@ impl TrackedSet {
                         request.policy,
                     );
                     entry.declared_in = declared_in;
-                    entry.exclude = request
-                        .exclude
-                        .iter()
-                        .map(|pattern| pattern.as_str().to_owned())
-                        .collect();
+                    entry.exclude = declared_exclude(&request);
                     entry.include = request.include.as_ref().map(|patterns| {
                         patterns
                             .iter()
@@ -2099,6 +2098,24 @@ fn unusable_exclusions(exclude: &ExcludeSet) -> Option<String> {
 /// when the older matcher would have called it excluded.
 pub(crate) const MATCHER_VERSION: u32 = 1;
 
+/// The `exclude` list a declaration wrote, or `None` when it wrote none.
+///
+/// **Saying nothing and saying nothing-is-excluded are different
+/// answers.** The composed request flattens both to an empty pattern
+/// list, so the explicitness the configuration layer already records is
+/// what tells them apart. Without it a machine could never clear a list
+/// another machine published: writing `exclude = []` would read as "I
+/// have no opinion" and the saved list would stand for ever.
+fn declared_exclude(request: &crate::system::files::FileRequest) -> Option<Vec<String>> {
+    request.policy.explicit.exclude.then(|| {
+        request
+            .exclude
+            .iter()
+            .map(|pattern| pattern.as_str().to_owned())
+            .collect()
+    })
+}
+
 /// Directories mise owns that are never captured.
 pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = [
@@ -2425,7 +2442,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec![],
+                exclude: None,
                 include: None,
             }],
             ..Default::default()
@@ -3934,7 +3951,7 @@ mod tests {
         let captured = |include: Option<&[&str]>, exclude: &[&str]| -> Vec<String> {
             let mut entry = entry(&root);
             entry.include = include.map(|p| p.iter().map(|p| (*p).to_string()).collect());
-            entry.exclude = exclude.iter().map(|p| (*p).to_string()).collect();
+            entry.exclude = Some(exclude.iter().map(|p| (*p).to_string()).collect());
             let mut set = TrackedSet::default();
             set.push(entry);
             let walk = set.walk().unwrap();
@@ -4358,7 +4375,7 @@ mod tests {
         // a component pattern matches anywhere, an anchored one only at
         // the entry root, and a matching directory takes its subtree
         let mut entry = entry(&root);
-        entry.exclude = vec!["*.md".into(), "sessions/**".into(), "cache".into()];
+        entry.exclude = Some(vec!["*.md".into(), "sessions/**".into(), "cache".into()]);
         let mut set = TrackedSet::default();
         set.push(entry);
         let walk = set.walk().unwrap();
@@ -4383,13 +4400,13 @@ mod tests {
         // the entry path itself is never dropped by its own list
         let mut entry =
             super::TrackedEntry::new(root.clone(), "track", Policy::for_mode(FileMode::Track));
-        entry.exclude = vec!["codex".into()];
+        entry.exclude = Some(vec!["codex".into()]);
         assert!(!entry.is_excluded(&root));
         assert!(!entry.is_excluded(tmp.path()));
         // a global `!glob` re-include does not override an entry's list
         let mut entry =
             super::TrackedEntry::new(root.clone(), "track", Policy::for_mode(FileMode::Track));
-        entry.exclude = vec!["cache".into()];
+        entry.exclude = Some(vec!["cache".into()]);
         let mut set = TrackedSet {
             exclude: vec![
                 format!("{}/**", root.display()),
@@ -4403,7 +4420,7 @@ mod tests {
         assert!(!set.would_retain(&root.join("cache/index")).unwrap());
         assert_eq!(
             set.coverage(&walk).entries[0].exclude,
-            vec!["cache".to_string()]
+            Some(vec!["cache".to_string()])
         );
     }
 
@@ -4430,17 +4447,28 @@ mod tests {
                 environment: vec![],
                 source: None,
             },
-            policy: Policy::for_mode(FileMode::Track),
+            // the declaration wrote `exclude`, which is what makes the
+            // list its own answer rather than silence
+            policy: Policy {
+                explicit: crate::system::files::ExplicitFields {
+                    exclude: true,
+                    ..Default::default()
+                },
+                ..Policy::for_mode(FileMode::Track)
+            },
             variants: vec![],
             enabled: true,
         }]);
         assert_eq!(set.manifest.enrollment.len(), 1);
         assert_eq!(
             set.manifest.enrollment[0].exclude,
-            vec!["sessions".to_string()]
+            Some(vec!["sessions".to_string()])
         );
         let rebuilt = set.manifest.tracking().unwrap();
-        assert_eq!(rebuilt.entries[0].exclude, vec!["sessions".to_string()]);
+        assert_eq!(
+            rebuilt.entries[0].exclude,
+            Some(vec!["sessions".to_string()])
+        );
         assert!(rebuilt.entries[0].is_excluded(&target.join("sessions/one")));
     }
 

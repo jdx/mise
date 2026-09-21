@@ -1286,7 +1286,7 @@ mod capture_tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec![],
+                exclude: None,
                 include: None,
             }],
             ..Default::default()
@@ -1459,7 +1459,7 @@ mod tests {
         };
         let policy = FilePolicy::for_mode(FileMode::Track);
         let mut entry = TrackedEntry::new("/home/u/.sample".into(), "track", policy);
-        entry.exclude = vec!["leave".into()];
+        entry.exclude = Some(vec!["leave".into()]);
         let tracked = TrackedSet {
             entries: vec![entry],
             exclude: vec!["*.log".into()],

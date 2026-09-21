@@ -158,14 +158,28 @@ fn reconcile(
                 if entry.variants != old.variants {
                     existing.variants = entry.variants.clone();
                 }
-                if entry.exclude != old.exclude {
+                // silence is not an instruction: a declaration that
+                // drops the `exclude` key says nothing again, and what
+                // the manifest carries stands. `exclude = []` is how a
+                // list is cleared.
+                if entry.exclude != old.exclude && entry.exclude.is_some() {
                     existing.exclude = entry.exclude.clone();
                 }
                 if entry.include != old.include {
                     existing.include = entry.include.clone();
                 }
             } else {
+                // **A declaration that says nothing about exclusions does
+                // not clear them.** Without a cache to compare against the
+                // local declaration is otherwise taken whole, which would
+                // drop a list this machine never had an opinion about and
+                // make the paths it protects look selected here. Saying
+                // `exclude = []` still clears it: that is an opinion.
+                let saved = existing.exclude.clone();
                 *existing = entry.clone();
+                if existing.exclude.is_none() {
+                    existing.exclude = saved;
+                }
             }
         } else {
             result.enrollment.push(entry.clone());
@@ -237,7 +251,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec![],
+                exclude: None,
                 include: None,
             }],
             ..Default::default()
@@ -253,11 +267,14 @@ mod tests {
     /// still drops it, or the list could never be undone.
     #[test]
     fn an_entry_keeps_the_saved_exclusions_until_its_declaration_changes_them() {
+        // `declare(&[])` is a declaration that says nothing about
+        // exclusions, which is not the same as one that says none
         let declare = |exclude: &[&str]| Manifest {
             enrollment: vec![Enrollment {
                 path: "home/.ssh".into(),
                 autosave: true,
-                exclude: exclude.iter().map(|glob| (*glob).to_string()).collect(),
+                exclude: (!exclude.is_empty())
+                    .then(|| exclude.iter().map(|glob| (*glob).to_string()).collect()),
                 ..Default::default()
             }],
             ..Default::default()
@@ -270,29 +287,53 @@ mod tests {
         let merged = reconcile(&saved, &current, Some(&current), &[]);
         assert_eq!(
             merged.enrollment[0].exclude,
-            vec!["id_*".to_string()],
+            Some(vec!["id_*".to_string()]),
             "a declaration that says nothing dropped the saved exclusions"
         );
 
-        // With no cache to compare against, a local declaration is taken
-        // as written, exclusions along with every other policy — the same
-        // rule the comment above `historical` states, not a special case
-        // for lists. Whether that is the right answer is a question about
-        // reconcile itself: it governs the live set and this one alike,
-        // which is the point of there being one derivation.
+        // and with no cache to compare against it still stands. A
+        // declaration is otherwise taken whole there, which used to drop
+        // a list this machine never had an opinion about — and silence is
+        // silence whether or not the machine has seen itself before.
         let merged = reconcile(&saved, &current, None, &[]);
-        assert!(merged.enrollment[0].exclude.is_empty());
+        assert_eq!(merged.enrollment[0].exclude, Some(vec!["id_*".to_string()]));
 
-        // but a declaration that changes the list is the answer
+        // **and an explicitly empty list clears it.** This is the whole
+        // reason absence and emptiness are told apart: with both read as
+        // "no exclusions", a machine could add to a published list but
+        // never take it away.
+        let cleared = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.ssh".into(),
+                autosave: true,
+                exclude: Some(vec![]),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let merged = reconcile(&saved, &cleared, None, &[]);
+        assert_eq!(
+            merged.enrollment[0].exclude,
+            Some(vec![]),
+            "an explicitly empty list could not clear what was published"
+        );
+
+        // dropping the key is silence again, not an instruction to
+        // capture everything: what the manifest carries stands, and the
+        // `exclude = []` above is how it is actually cleared
         let previous = declare(&["id_*"]);
         let merged = reconcile(&saved, &current, Some(&previous), &[]);
-        assert!(
-            merged.enrollment[0].exclude.is_empty(),
-            "removing the exclusion from the declaration did not take effect"
+        assert_eq!(
+            merged.enrollment[0].exclude,
+            Some(vec!["id_*".to_string()]),
+            "dropping the key was read as clearing the list"
         );
         let widened = declare(&["id_*", "*.pem"]);
         let merged = reconcile(&saved, &widened, Some(&previous), &[]);
-        assert_eq!(merged.enrollment[0].exclude, vec!["id_*", "*.pem"]);
+        assert_eq!(
+            merged.enrollment[0].exclude,
+            Some(vec!["id_*".to_string(), "*.pem".to_string()])
+        );
     }
 
     #[test]

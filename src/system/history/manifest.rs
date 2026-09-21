@@ -18,10 +18,13 @@ pub(crate) struct Enrollment {
     pub autosave: bool,
     pub encrypt: bool,
     pub variants: Vec<Variant>,
-    /// The entry's own `exclude` globs, relative to its path. Written only
-    /// when set, so a setup without them stays readable by older clients.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub exclude: Vec<String>,
+    /// The entry's own `exclude` globs, relative to its path. Written
+    /// only when the declaration states one, so a setup without them
+    /// stays readable by older clients — and a declared but empty list,
+    /// which clears what another machine published, is not mistaken for
+    /// no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
     /// The entry's own `include` globs, relative to its path. Written
     /// only when the entry declares a list, so a setup without one stays
     /// readable by older clients — and a declared but empty list, which
@@ -453,8 +456,12 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
+            // both lists are validated, and either may be absent: a
+            // declaration that states none is not a declaration that
+            // states an empty one
+            let exclude: &[String] = entry.exclude.as_deref().unwrap_or_default();
             let include: &[String] = entry.include.as_deref().unwrap_or_default();
-            for (key, patterns) in [("exclude", entry.exclude.as_slice()), ("include", include)] {
+            for (key, patterns) in [("exclude", exclude), ("include", include)] {
                 for pattern in patterns {
                     if let Err(err) = glob::Pattern::new(pattern) {
                         bail!(
@@ -607,7 +614,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
-            exclude: vec![],
+            exclude: None,
             include: None,
         };
         let json = serde_json::to_string(&plain).unwrap();
@@ -627,7 +634,7 @@ mod tests {
                 ..plain.clone()
             },
             Enrollment {
-                exclude: vec!["cache/**".into()],
+                exclude: Some(vec!["cache/**".into()]),
                 ..plain.clone()
             },
         ] {
@@ -1031,7 +1038,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
-            exclude: vec![],
+            exclude: None,
             include: None,
         }
     }
@@ -1105,7 +1112,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec![],
+                exclude: None,
                 include: None,
             }],
             ..Default::default()
@@ -1160,7 +1167,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![active, inactive],
-                exclude: vec![],
+                exclude: None,
                 include: None,
             }],
             ..Default::default()
@@ -1232,7 +1239,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
-            exclude: vec![],
+            exclude: None,
             include: None,
         };
         let mut manifest = Manifest {
@@ -1261,13 +1268,13 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec!["sessions".into()],
+                exclude: Some(vec!["sessions".into()]),
                 include: None,
             }],
             ..Default::default()
         };
         assert!(manifest.validate().is_ok());
-        manifest.enrollment[0].exclude.push("[".into());
+        manifest.enrollment[0].exclude = Some(vec!["[".into()]);
         let error = manifest.validate().unwrap_err().to_string();
         assert!(error.contains("invalid exclude pattern"), "{error}");
         assert!(error.contains("home/.codex"), "{error}");

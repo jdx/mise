@@ -1868,7 +1868,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
-                exclude: vec![],
+                exclude: None,
                 include: None,
             }],
             ..Default::default()
@@ -2082,7 +2082,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants,
-            exclude: vec![],
+            exclude: None,
             include: None,
         };
         let containing = outer.tree_path(&private)?;
