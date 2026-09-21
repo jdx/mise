@@ -253,6 +253,16 @@ impl Upgrade {
                     .path()
                     .expect("persistable request must have a path")
                     .to_path_buf();
+                if let ToolRequest::Path { path, .. } = request
+                    && !path.exists()
+                {
+                    warn!(
+                        "cannot persist explicit bump for {} from nonexistent {}",
+                        tool.ba,
+                        display_path(path)
+                    );
+                    continue;
+                }
                 let request = ToolRequest::new_with_options(
                     configured_ba.clone(),
                     &request.version(),
@@ -301,8 +311,54 @@ impl Upgrade {
         } else {
             None
         };
-        let mut outdated = ts
-            .list_outdated_versions_with_progress(
+        // An explicit CLI selector is the target to persist, not merely a
+        // hint for the usual backend-latest bump. Resolve those requests
+        // against their own selector while retaining backend-latest bumping
+        // for bare tool arguments.
+        let explicit_filter_tools = self
+            .bump
+            .then(|| {
+                self.tool
+                    .iter()
+                    .filter(|tool| tool.tvr.is_some())
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .filter(|tools| !tools.is_empty())
+            .unwrap_or_default();
+        let mut outdated = if !explicit_filter_tools.is_empty() {
+            let mut explicit = ts
+                .list_outdated_versions_with_progress(
+                    &config,
+                    false,
+                    &opts,
+                    Some(&explicit_filter_tools),
+                    exclude_tools,
+                    !self.is_dry_run() && !self.raw,
+                )
+                .await;
+            let bare_filter_tools = self
+                .tool
+                .iter()
+                .filter(|tool| tool.tvr.is_none())
+                .cloned()
+                .collect::<Vec<_>>();
+            if !bare_filter_tools.is_empty() {
+                explicit.extend(
+                    ts.list_outdated_versions_with_progress(
+                        &config,
+                        true,
+                        &opts,
+                        Some(&bare_filter_tools),
+                        exclude_tools,
+                        !self.is_dry_run() && !self.raw,
+                    )
+                    .await,
+                );
+            }
+            explicit
+        } else {
+            ts.list_outdated_versions_with_progress(
                 &config,
                 self.bump,
                 &opts,
@@ -310,7 +366,8 @@ impl Upgrade {
                 exclude_tools,
                 !self.is_dry_run() && !self.raw,
             )
-            .await;
+            .await
+        };
         if Settings::get().pin {
             for bump in &mut explicit_config_bumps {
                 let resolved = outdated
@@ -354,11 +411,28 @@ impl Upgrade {
                 .filter(|bump| explicit_bump_is_installed(&ts, &config, bump))
                 .cloned()
                 .collect::<Vec<_>>();
-            if !installed_explicit_config_bumps.is_empty() {
+            let has_explicit_config_bumps = !installed_explicit_config_bumps.is_empty();
+            if has_explicit_config_bumps {
                 if self.is_dry_run() {
                     print_explicit_config_bumps(&installed_explicit_config_bumps)?;
                 } else {
                     apply_explicit_config_bumps(&installed_explicit_config_bumps).await?;
+                    config = Config::reset().await?;
+                    // Re-resolve without the old lockfile pin so a config-only
+                    // selector change updates the lockfile to the installed
+                    // version instead of preserving the stale entry.
+                    let ts = ToolsetBuilder::new()
+                        .with_scope(self.scope())
+                        .with_resolve_options(opts.clone())
+                        .build(&config)
+                        .await?;
+                    config::rebuild_shims_and_runtime_symlinks(
+                        &config,
+                        &ts,
+                        &[],
+                        crate::lockfile::LockfileUpdateMode::AllowLocked,
+                    )
+                    .await?;
                 }
             }
             let bump_outdated = if self.bump {
@@ -376,7 +450,7 @@ impl Upgrade {
                 .filter(|o| o.bump.is_some())
                 .collect::<Vec<_>>()
             };
-            if bump_outdated.is_empty() {
+            if bump_outdated.is_empty() && !has_explicit_config_bumps {
                 info!("All tools are up to date");
             } else {
                 let hidden = bump_outdated.len().saturating_sub(MAX_OUT_OF_RANGE_UPDATES);
@@ -509,15 +583,10 @@ impl Upgrade {
                     display_path(cf.get_path())
                 );
             }
-            let candidates = ts
-                .list_current_versions()
-                .into_iter()
-                .map(|(_, version)| version)
-                .collect::<Vec<_>>();
             let mut planned_explicit_config_bumps = Vec::new();
             for bump in explicit_config_bumps {
                 let pending = find_explicit_bump_outdated(&outdated, bump);
-                let eligible = explicit_bump_is_eligible(pending, bump, &candidates, &ts, config);
+                let eligible = explicit_bump_is_eligible(pending, bump, None, &ts, config);
                 if eligible {
                     planned_explicit_config_bumps.push(bump.clone());
                 }
@@ -675,7 +744,13 @@ impl Upgrade {
             let mut eligible_explicit_config_bumps = Vec::new();
             for bump in explicit_config_bumps {
                 let pending = find_explicit_bump_outdated(&outdated, bump);
-                if explicit_bump_is_eligible(pending, bump, &successful_versions, &ts, config)
+                if explicit_bump_is_eligible(
+                    pending,
+                    bump,
+                    Some(&successful_versions),
+                    &ts,
+                    config,
+                )
                 {
                     eligible_explicit_config_bumps.push(bump.clone());
                 }
@@ -1204,16 +1279,13 @@ fn find_explicit_bump_outdated<'a>(
 fn explicit_bump_is_eligible(
     pending: Option<&OutdatedInfo>,
     bump: &ExplicitConfigBump,
-    candidates: &[ToolVersion],
+    successful_versions: Option<&[ToolVersion]>,
     toolset: &Toolset,
     config: &Arc<Config>,
 ) -> bool {
     if let Some(pending) = pending {
-        let candidate = explicit_bump_matches_successful(pending, candidates);
-        if !candidate {
-            return false;
-        }
-        return !matches!(&pending.tool_request, ToolRequest::Path { path, .. } if !path.exists());
+        return successful_versions
+            .is_none_or(|versions| explicit_bump_matches_successful(pending, versions));
     }
     explicit_bump_is_installed(toolset, config, bump)
 }
