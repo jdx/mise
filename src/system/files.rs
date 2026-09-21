@@ -1043,13 +1043,22 @@ fn merge_file_entry(
             );
             return;
         }
-        let (exclude, include) = match (
+        let compiled = (
             compile_patterns("exclude", exclude),
             compile_patterns("include", include),
-        ) {
+        );
+        let (exclude, include) = match compiled {
             (Ok(exclude), Ok(include)) => (exclude.unwrap_or_default(), include),
-            (Err(reason), _) | (_, Err(reason)) => {
-                record_invalid(&target_raw, &origin.config, &reason);
+            // both lists are reported when both are wrong: naming one and
+            // dropping the other sends the user back for a second round
+            // over a mistake mise had already seen
+            (exclude, include) => {
+                let reasons = [exclude.err(), include.err()]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                record_invalid(&target_raw, &origin.config, &reasons);
                 return;
             }
         };

@@ -166,6 +166,16 @@ assert_succeed 'mise dot track ~/.config/empty'
 assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.config/empty/file.txt"
 assert_contains 'mise dot paths' '~/.config/empty: 0 of 1 files (include list)'
 
+# and when both lists are unreadable, both are named: reporting one and
+# dropping the other sends the user back for a second round over a
+# mistake mise had already seen
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/empty" = { mode = "track", include = ["["], exclude = ["[worse"] }
+TOML
+assert_contains 'mise dot paths 2>&1' "invalid exclude pattern '[worse'"
+assert_contains 'mise dot paths 2>&1' "invalid include pattern '['"
+
 # A pattern mise cannot read is an error naming the entry and the
 # pattern, never a shorter list that would capture more.
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
