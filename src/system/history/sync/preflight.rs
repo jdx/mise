@@ -124,8 +124,33 @@ pub(super) fn prospective(
     // The repository inventory, not a source or output mentioned by incoming
     // configuration, determines which files the batch may install.
     let mut prospective = tracked.clone();
+    carry_exclusions(&mut prospective, &declarations);
     prospective.required_sources = declarations.required_sources;
     Ok(prospective)
+}
+
+/// Give the prospective set the exclusions the incoming configuration
+/// declares, global and per entry.
+///
+/// **The question is about the state after the batch, so it is asked with
+/// the rules the batch installs.** Validating with the manifest's current
+/// lists would decide what is still managed — and so whether a path
+/// missing upstream is a deletion — by exactly the rules that are being
+/// replaced. An entry the incoming configuration no longer declares keeps
+/// its own list: which entries exist is the repository inventory's answer,
+/// not this function's.
+fn carry_exclusions(prospective: &mut TrackedSet, declared: &TrackedSet) {
+    prospective.exclude = declared.exclude.clone();
+    prospective.manifest.exclude = declared.exclude.clone();
+    for entry in &mut prospective.entries {
+        if let Some(incoming) = declared
+            .entries
+            .iter()
+            .find(|incoming| incoming.path == entry.path)
+        {
+            entry.exclude = incoming.exclude.clone();
+        }
+    }
 }
 
 /// Required source files must exist in the complete proposed write set or
@@ -170,4 +195,51 @@ fn has_incoming_child(roots: &Roots, path: &Path, plans: &[PathPlan]) -> bool {
                 .path()
                 .is_some_and(|p| p.starts_with(path))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::system::files::{FileMode, FilePolicy};
+    use crate::system::history::tracked::TrackedEntry;
+
+    fn entry(path: &str, exclude: &[&str]) -> TrackedEntry {
+        let mut entry = TrackedEntry::new(
+            PathBuf::from(path),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        );
+        entry.exclude = exclude.iter().map(|glob| (*glob).to_string()).collect();
+        entry
+    }
+
+    #[test]
+    fn test_prospective_validates_with_the_incoming_exclusions() {
+        let mut current = TrackedSet {
+            exclude: vec!["old/**".into()],
+            ..Default::default()
+        };
+        current.manifest.exclude = current.exclude.clone();
+        current.entries.push(entry("/home/u/.sample", &["was"]));
+        current.entries.push(entry("/home/u/.other", &["kept"]));
+
+        let mut declared = TrackedSet {
+            exclude: vec!["new/**".into()],
+            ..Default::default()
+        };
+        declared.entries.push(entry("/home/u/.sample", &["now"]));
+
+        let mut prospective = current.clone();
+        carry_exclusions(&mut prospective, &declared);
+
+        // the global list the batch installs, in both the set and the
+        // manifest the walk copies it into
+        assert_eq!(prospective.exclude, vec!["new/**".to_string()]);
+        assert_eq!(prospective.manifest.exclude, vec!["new/**".to_string()]);
+        // the entry's own list, by path
+        assert_eq!(prospective.entries[0].exclude, vec!["now".to_string()]);
+        // an entry the incoming configuration does not declare keeps its
+        // own: which entries exist is the inventory's answer
+        assert_eq!(prospective.entries[1].exclude, vec!["kept".to_string()]);
+    }
 }
