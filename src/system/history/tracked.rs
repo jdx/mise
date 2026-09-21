@@ -1693,7 +1693,14 @@ fn path_components(rel: &Path) -> Vec<String> {
 /// the first of those, and the user is then told their pattern selects
 /// nothing without being told which pattern.
 fn reaches_into(pattern: &str, components: &[String]) -> bool {
-    let pattern = pattern.replace('\\', "/");
+    // **Pruning is an optimization and must never change what is
+    // selected, so it reads a pattern exactly as the matcher reads it.**
+    // On Windows a backslash separates; on unix it is a character in a
+    // name or a glob escape, and rewriting it here would invent a
+    // directory boundary the matcher does not see — and then skip a
+    // directory whose files the list still selects. Same rule as
+    // `pattern_relative` and `display_separators`, not a third one.
+    let pattern = display_separators(pattern);
     // a name matches a component at any depth, so it can name a file
     // inside any directory
     if !pattern.contains('/') {
@@ -2863,6 +2870,34 @@ mod tests {
                 path.display()
             );
         }
+    }
+
+    /// **Pruning must never change what is selected.** On unix a
+    /// backslash is a character in a name, so a pattern carrying one
+    /// selects a directory whose name carries one — and the walk has to
+    /// go in there rather than reading the backslash as a separator and
+    /// skipping it.
+    #[cfg(unix)]
+    #[test]
+    fn a_pattern_with_a_backslash_selects_what_it_names_on_unix() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        let odd = root.join("we\\ird");
+        std::fs::create_dir_all(&odd).unwrap();
+        std::fs::write(odd.join("kept.md"), "keep").unwrap();
+
+        let mut tracked = entry(&root);
+        tracked.include = Some(vec!["we\\ird/**".to_string()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+
+        // the matcher selects it, so the walk must reach it
+        assert!(set.entries[0].is_included(&odd.join("kept.md")));
+        assert!(
+            !set.entries[0].include_prunes(&odd),
+            "a directory the list selects was skipped unopened"
+        );
+        assert!(set.walk().unwrap().files.contains_key(&odd.join("kept.md")));
     }
 
     fn entry(path: &Path) -> TrackedEntry {
