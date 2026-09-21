@@ -435,6 +435,7 @@ impl TrackedSet {
     fn walk_entries(&self, selected: Option<&[usize]>) -> Result<Walk> {
         let set = self;
         let exclude = set.exclude_set()?;
+        refuse_unusable_exclusions(&exclude)?;
         let hard = hard_exclusions();
         let home = normalize(&dirs::HOME);
         let mut walk = Walk {
@@ -1056,6 +1057,17 @@ impl ExcludeSet {
         })
     }
 
+    /// The `[history] exclude` rules this matcher cannot use.
+    ///
+    /// **An exclusion that does not work must not be read as no
+    /// exclusion.** A capture asks here and refuses rather than store
+    /// the files the broken rule named, because those are the files the
+    /// user wrote it to keep out, and a capture can be published to a
+    /// connected origin.
+    pub(crate) fn unusable(&self) -> &[(String, String)] {
+        &self.list.unusable
+    }
+
     /// Whether `path`, tracked under `root`, is excluded.
     ///
     /// **A path is excluded when the last rule that matches it, or any of
@@ -1230,6 +1242,10 @@ impl ExcludeSet {
 #[derive(Debug, Default)]
 pub(crate) struct PatternList {
     rules: Vec<PatternRule>,
+    /// Rules this matcher cannot use, as `(pattern, reason)`, kept
+    /// rather than warned about and forgotten. See
+    /// [`ExcludeSet::unusable`].
+    unusable: Vec<(String, String)>,
 }
 
 /// What a pattern is matched against.
@@ -1496,31 +1512,71 @@ fn separators(path: &Path) -> String {
 impl PatternList {
     pub(crate) fn new(patterns: &[String]) -> Result<Self> {
         let mut rules = vec![];
+        let mut unusable = vec![];
         for pattern in patterns {
             let (body, negated) = match pattern.strip_prefix('!') {
                 Some(rest) => (rest, true),
                 None => (pattern.as_str(), false),
             };
-            // **A rule this matcher cannot use is dropped with a loud
-            // warning; building the matcher never fails.** A list lives
-            // in configuration that was written against an older mise,
-            // and a matcher that refuses to build takes the watcher and
-            // every capture down with it — far worse than the one dead
-            // rule it was objecting to. `mise dot exclude` refuses such a
-            // pattern at the point the user writes it, so nothing new
-            // gets in; what is already there is skipped, here and at
-            // replay alike, so the two sides still agree about coverage.
+            // **A rule this matcher cannot use is recorded, not dropped
+            // quietly.** Building the matcher still never fails: a list
+            // lives in configuration that was written against an older
+            // mise, and a matcher that refuses to build takes the
+            // watcher down with it. What must not happen is the capture
+            // going ahead without the rule, which is the one case where
+            // dropping it broadens the snapshot to exactly the files
+            // the rule existed to leave out. So the rule is kept here
+            // and [`ExcludeSet::unusable`] hands it to the capture,
+            // which refuses. `mise dot exclude` refuses such a pattern
+            // at the point the user writes it, so nothing new gets in.
             if let Some(reason) = unusable_pattern(body) {
-                warn!("history: ignoring exclusion pattern {pattern:?}: {reason}");
+                unusable.push((pattern.clone(), reason));
                 continue;
             }
             match PatternRule::compile(body, negated) {
                 Ok(rule) => rules.push(rule),
-                Err(err) => warn!("history: ignoring exclusion pattern {pattern:?}: {err}"),
+                Err(err) => unusable.push((pattern.clone(), err.to_string())),
             }
         }
-        Ok(Self { rules })
+        Ok(Self { rules, unusable })
     }
+}
+
+/// Refuse to walk while an `[history] exclude` rule cannot be used.
+///
+/// **A capture that cannot apply an exclusion does not go ahead
+/// without it.** Dropping the rule broadens the snapshot to precisely
+/// the paths it was written to leave out, and that snapshot can be
+/// published to a connected origin — so the safe answer is to stop and
+/// say which rule, and in which file, is the problem. The watcher's
+/// save takes the same refusal and declines to capture, which leaves
+/// it running and reporting rather than quietly storing the files.
+fn refuse_unusable_exclusions(exclude: &ExcludeSet) -> Result<()> {
+    let unusable = exclude.unusable();
+    if unusable.is_empty() {
+        return Ok(());
+    }
+    let sources: Vec<String> = unusable
+        .iter()
+        .map(|(pattern, reason)| {
+            let files = super::config::exclusion_sources(pattern);
+            match files.is_empty() {
+                true => format!("{pattern:?}: {reason}"),
+                false => format!(
+                    "{pattern:?} in {}: {reason}",
+                    files
+                        .iter()
+                        .map(|path| display_path(path))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            }
+        })
+        .collect();
+    eyre::bail!(
+        "[history] exclude cannot be applied, so nothing is captured: {}; fix or remove the pattern, then try again",
+        sources.join("; ")
+    )
 }
 
 /// The matcher a checkpoint's `exclude` list was read with. Bumped only
