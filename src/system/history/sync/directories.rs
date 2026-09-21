@@ -8,7 +8,7 @@ use crate::system::history::{
     journal,
     manifest::Manifest,
     shadow::HistoryRepo,
-    tracked::{TrackedEntry, TrackedSet, governing_key, mode_from},
+    tracked::{ExcludeSet, TrackedEntry, TrackedSet, governing_key, mode_from},
 };
 
 #[derive(Clone, Debug)]
@@ -48,8 +48,13 @@ enum Claim {
     Containing,
 }
 
-fn claim(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> Option<Claim> {
-    if super::run::eligible(roots, tracked, branch_path) {
+fn claim(
+    roots: &Roots,
+    tracked: &TrackedSet,
+    exclude: &ExcludeSet,
+    branch_path: &str,
+) -> Option<Claim> {
+    if super::run::eligible(roots, tracked, exclude, branch_path) {
         return Some(Claim::Enrolled);
     }
     let path = match roots.locate(branch_path) {
@@ -128,6 +133,7 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
         .flatten()
         .unwrap_or_default();
     let roots = Roots::current();
+    let exclude = tracked.exclude_set()?;
     let mut steps = vec![];
     let paths: std::collections::BTreeSet<_> = tracked
         .manifest
@@ -139,7 +145,7 @@ pub(super) fn plan(repo: &HistoryRepo, tracked: &TrackedSet, tree: &str) -> Resu
     // covers it and the incoming tree holds it in a stream selected here
     let mut directories: std::collections::BTreeSet<PathBuf> = Default::default();
     for portable in paths {
-        if claim(&roots, tracked, portable).is_none() {
+        if claim(&roots, tracked, &exclude, portable).is_none() {
             continue;
         }
         let path = roots.locate(portable).path().unwrap().to_path_buf();
@@ -275,6 +281,7 @@ mod tests {
             ],
             ..Default::default()
         };
+        let exclude = tracked.exclude_set().unwrap();
         for path in [
             "home/.claude",
             "home/.claude/settings.json",
@@ -282,14 +289,14 @@ mod tests {
             "config/tasks/private",
             "home/.ssh",
         ] {
-            assert!(claim(&roots, &tracked, path).is_some(), "{path}");
+            assert!(claim(&roots, &tracked, &exclude, path).is_some(), "{path}");
         }
         assert_eq!(
-            claim(&roots, &tracked, "home/.claude/settings.json"),
+            claim(&roots, &tracked, &exclude, "home/.claude/settings.json"),
             Some(Claim::Enrolled)
         );
         assert_eq!(
-            claim(&roots, &tracked, "home/.ssh"),
+            claim(&roots, &tracked, &exclude, "home/.ssh"),
             Some(Claim::Containing)
         );
         // a containing directory has no per-stream record
@@ -303,7 +310,7 @@ mod tests {
             "config@linux/tasks",
             "fs/etc",
         ] {
-            assert!(claim(&roots, &tracked, path).is_none(), "{path}");
+            assert!(claim(&roots, &tracked, &exclude, path).is_none(), "{path}");
         }
     }
 

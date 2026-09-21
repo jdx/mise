@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# An exclusion that cannot be compiled is not read as no exclusion: the
+# capture refuses, naming the rule and the file that declares it, rather
+# than storing the very files the rule was written to leave out.
+require_cmd git
+repo="$MISE_STATE_DIR/history/repo.git"
+mkdir -p ~/.codex/sessions
+echo 'model = "x"' >~/.codex/config.toml
+echo 'a transcript' >~/.codex/sessions/session.json
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+
+[history]
+exclude = ["sessions/**"]
+TOML
+assert_succeed 'mise dot save'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/session.json"
+before=$(git --git-dir="$repo" rev-parse HEAD)
+
+# the same list with one rule the matcher cannot compile
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+
+[history]
+exclude = ["["]
+TOML
+echo 'changed' >~/.codex/config.toml
+assert_fail 'mise dot save' 'cannot be applied'
+assert_fail 'mise dot save' '"[" in ~/.config/mise/config.toml'
+assert "git --git-dir=$repo rev-parse HEAD" "$before"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/session.json"
+
+# fixing the rule lets the capture through again
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track" }
+
+[history]
+exclude = ["sessions/**"]
+TOML
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'changed'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/session.json"

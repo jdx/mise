@@ -139,34 +139,6 @@ impl TrackedEntry {
             .map(String::as_str)
     }
 
-    /// Whether the entry's `include` list makes `path` worth looking at.
-    ///
-    /// **"Is this path itself selected?" and "could anything beneath it
-    /// be selected?" are different questions, and which one applies
-    /// depends on the kind of path.** A capture stores files, so it asks
-    /// the first. A watcher deciding whether an event matters asks the
-    /// first of a file too — otherwise every one of the session
-    /// transcripts an `include` list exists to ignore would schedule a
-    /// save — and the second of a directory, so an event on the tracked
-    /// directory itself, or on one the patterns reach into, still wakes
-    /// it.
-    ///
-    /// **A path with no kind counts as either.** A removal or a rename
-    /// leaves nothing to ask, and the two answers disagree there: an
-    /// anchored list like `rules/**` never selects the directory
-    /// `rules` itself, so reading a vanished path as a file would let a
-    /// deleted tree go unnoticed and leave history claiming files that
-    /// are gone. Such a path is relevant if it is selected as a file or
-    /// if anything beneath it could have been. The extra wakeups are
-    /// bounded to paths that have just disappeared.
-    pub(crate) fn include_relevant(&self, path: &Path) -> bool {
-        match std::fs::symlink_metadata(path) {
-            Ok(meta) if meta.is_dir() => !self.include_prunes(path),
-            Ok(_) => self.is_included(path),
-            Err(_) => self.is_included(path) || !self.include_prunes(path),
-        }
-    }
-
     /// Whether the entry's `include` list selects `path`.
     ///
     /// **Rule 1: without an `include` list the whole tracked tree is
@@ -540,20 +512,13 @@ impl TrackedSet {
         {
             return Ok(false);
         }
-        // a nested repository below the entry is a gitlink: nothing under
-        // it is captured
-        let nested = path
-            .ancestors()
-            .skip(1)
-            .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
-            .any(|ancestor| ancestor.join(".git").exists());
-        if nested {
-            return Ok(false);
-        }
-        // retention asks the patterns, not the filesystem: a path the
-        // list no longer selects is not carried forward because it
-        // happened to be unreadable
-        Ok(!self.dropped(&self.exclude_set()?, owner, path, Asked::Exactly))
+        Ok(!self.dropped(
+            &self.exclude_set()?,
+            owner,
+            path,
+            Asked::Exactly,
+            kind_of(path),
+        ))
     }
 
     /// Whether the selection lists drop `path`: the global globs read
@@ -564,37 +529,57 @@ impl TrackedSet {
     ///
     /// The one composition. `would_retain` adds the filesystem checks a
     /// capture also makes; the watcher asks this alone, because it is
-    /// deciding what to watch rather than what a walk found. Both pick
-    /// the owner with [`owning_entry`], so they cannot disagree.
+    /// deciding what to watch rather than what a walk found; and
+    /// synchronization asks it to tell a path selection stopped
+    /// covering from one that was deleted. All of them pick the owner
+    /// with [`owning_entry`], so they cannot disagree.
     pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
         match self.entry_for(path) {
-            Some(owner) => self.dropped(exclude, owner, path, Asked::Possibly),
+            Some(owner) => self.dropped(exclude, owner, path, Asked::Possibly, kind_of(path)),
             None => true,
         }
     }
 
-    /// **Three readers ask three different questions of one
-    /// configuration, and they are not the same question.**
+    /// **One predicate, two axes: which question is being asked, and
+    /// what is being asked about.** Stated here and implemented here,
+    /// because four separate bugs came from these questions being
+    /// answered by parallel copies.
     ///
-    /// - A **capture** asks "should I store this path now", and answers
-    ///   from the patterns: [`Asked::Exactly`].
-    /// - The **watcher** asks "might this event matter", and is
-    ///   deliberately permissive — a directory is relevant when anything
-    ///   beneath it could be selected, and a path that has just vanished
-    ///   counts as whatever it could have been: [`Asked::Possibly`].
-    /// - **Retention** asks "is this still selected", to decide whether
+    /// The *kind* axis:
+    ///
+    /// - For a **file**, the question is "is this file selected".
+    /// - For a **directory**, it is "does this tree contain any
+    ///   selected path". A directory is covered when something beneath
+    ///   it is selected, although no pattern ever selects the directory
+    ///   itself: an anchored list like `rules/**` does not name `rules`.
+    ///   Asking `is_included` of a directory reported a tracked tree as
+    ///   uncaptured, so `mise dot track` warned about a symlink whose
+    ///   source it was capturing, and a rollback skipped the empty
+    ///   subdirectories a capture still walks.
+    /// - A path with **no kind** — removed or renamed — is where the
+    ///   two disagree, and the reader decides.
+    ///
+    /// The *reader* axis, which only a path with no kind is left to:
+    ///
+    /// - A **capture** asks "should I store this path now", and
+    ///   **retention** asks "is this still selected", to decide whether
     ///   a previously saved version is carried forward when the file
-    ///   cannot be read now. That is a question about the patterns and
-    ///   nothing else: [`Asked::Exactly`]. Answering it permissively
-    ///   would keep files the user has taken out of their `include` list
-    ///   in history indefinitely, for no better reason than that they
-    ///   happened to be unreadable at save time.
+    ///   cannot be read now. Both answer from the patterns alone:
+    ///   [`Asked::Exactly`]. Answering permissively would keep files
+    ///   the user has taken out of their `include` list in history
+    ///   indefinitely, for no better reason than that they happened to
+    ///   be unreadable at save time.
+    /// - The **watcher** asks "might this event matter", and is
+    ///   deliberately permissive: a path that has just vanished counts
+    ///   as whatever it could have been, so a deleted tree still wakes
+    ///   it. [`Asked::Possibly`].
     fn dropped(
         &self,
         exclude: &ExcludeSet,
         owner: &TrackedEntry,
         path: &Path,
         asked: Asked,
+        kind: Kind,
     ) -> bool {
         // **A tracked directory's own root is not something the global
         // list judges.** The walk never tests it: it steps past the root
@@ -610,17 +595,23 @@ impl TrackedSet {
         // change history has to notice, and a pattern equal to its name
         // swallowing that event would leave its files in history after
         // they are gone.
-        let judged =
-            path != owner.path || std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.is_dir());
+        if inside_nested_repository(owner, path) {
+            return true;
+        }
+        let judged = path != owner.path || kind == Kind::File;
         if judged && exclude.is_match(path, &owner.path) {
             return true;
         }
         if owner.is_excluded(path) {
             return true;
         }
-        match asked {
-            Asked::Exactly => !owner.is_included(path),
-            Asked::Possibly => !owner.include_relevant(path),
+        match kind {
+            Kind::File => !owner.is_included(path),
+            Kind::Directory => owner.include_prunes(path),
+            Kind::Unknown => match asked {
+                Asked::Exactly => !owner.is_included(path),
+                Asked::Possibly => !owner.is_included(path) && owner.include_prunes(path),
+            },
         }
     }
 
@@ -651,6 +642,7 @@ impl TrackedSet {
     fn walk_entries(&self, selected: Option<&[usize]>) -> Result<Walk> {
         let set = self;
         let exclude = set.exclude_set()?;
+        refuse_unusable_exclusions(&exclude)?;
         let hard = hard_exclusions();
         let home = normalize(&dirs::HOME);
         let mut walk = Walk {
@@ -888,6 +880,42 @@ fn walk_entry(
             continue;
         }
         let file_type = candidate.file_type();
+        // **A repository inside a tracked directory is structure, not
+        // selection.** Asked of every directory before any exclude,
+        // include or re-include rule, because no rule in a selection
+        // list may send the walk into another working tree. A directory
+        // an exclusion drops is not always pruned — a later `!` rule can
+        // re-include something below it — so the walk descends, and with
+        // this check further down it descended into repositories, and a
+        // re-include then captured their files. `would_retain` refuses
+        // those same paths, so capture and retention disagreed about
+        // files that a connected origin would have received.
+        //
+        // A repository found under an excluded directory is reported
+        // too: it costs one `.git` probe per directory the walk was
+        // about to skip anyway, and saying "this is a repository" about
+        // a path the user will look for is better than saying nothing.
+        if file_type.is_dir() && path.join(".git").exists() {
+            // A repository found inside a tracked directory is skipped
+            // whole, and nothing is written for it — not its files, not
+            // a commit pointer. A pointer would name objects this
+            // history does not have, and there is a supported way to
+            // get the files: track the repository itself. An `include`
+            // pattern that names paths inside one is called out, so the
+            // skip does not read as the list being wrong.
+            let reason = match entry.include_reaching_into(path) {
+                Some(pattern) => format!(
+                    "{NESTED_REPOSITORY_REASON}; the include pattern {pattern:?} selects nothing inside it"
+                ),
+                None => NESTED_REPOSITORY_REASON.to_string(),
+            };
+            walk.nested.push(PathReason {
+                path: display_path(path),
+                reason,
+            });
+            walker.skip_current_dir();
+            continue;
+        }
         // an excluded directory is not entered at all: `~/.codex/sessions`
         // can hold tens of thousands of files, and none of them can come
         // back into the capture
@@ -908,37 +936,15 @@ fn walk_entry(
             }
             continue;
         }
-        // **A repository inside a tracked directory is skipped whatever
-        // the entry's `include` list says.** Decided before the include
-        // list, so a pattern naming paths inside one cannot reach in —
-        // and so the skip is still reported when the list does not select
-        // the directory itself. There is a supported way to capture those
-        // files, and the message names it.
         if file_type.is_dir() {
-            let repository = path.join(".git").exists();
             // **What the list cannot select is not walked.** The mirror
             // of exclude pruning, conservative in the same direction:
             // `include_reaching_into` says a pattern could name something
             // here whenever it cannot rule it out, so a missed skip costs
-            // a walk while a wrong one would cost a file. The repository
-            // check comes first, so one is still reported before its
-            // parent is skipped for not being selected.
-            if !repository && entry.include_prunes(path) {
+            // a walk while a wrong one would cost a file. A repository
+            // was already decided above, before any of this.
+            if entry.include_prunes(path) {
                 walk.skipped.insert(index);
-                walker.skip_current_dir();
-                continue;
-            }
-            if repository {
-                let reason = match entry.include_reaching_into(path) {
-                    Some(pattern) => format!(
-                        "{NESTED_REPOSITORY_REASON}; the include pattern {pattern:?} selects nothing inside it"
-                    ),
-                    None => NESTED_REPOSITORY_REASON.to_string(),
-                };
-                walk.nested.push(PathReason {
-                    path: display_path(path),
-                    reason,
-                });
                 walker.skip_current_dir();
             }
             continue;
@@ -1377,6 +1383,17 @@ impl ExcludeSet {
         })
     }
 
+    /// The `[history] exclude` rules this matcher cannot use.
+    ///
+    /// **An exclusion that does not work must not be read as no
+    /// exclusion.** A capture asks here and refuses rather than store
+    /// the files the broken rule named, because those are the files the
+    /// user wrote it to keep out, and a capture can be published to a
+    /// connected origin.
+    pub(crate) fn unusable(&self) -> &[(String, String)] {
+        &self.list.unusable
+    }
+
     /// Whether `path`, tracked under `root`, is excluded.
     ///
     /// **A path is excluded when the last rule that matches it, or any of
@@ -1561,6 +1578,10 @@ enum Asked {
 #[derive(Debug, Default)]
 pub(crate) struct PatternList {
     rules: Vec<PatternRule>,
+    /// Rules this matcher cannot use, as `(pattern, reason)`, kept
+    /// rather than warned about and forgotten. See
+    /// [`ExcludeSet::unusable`].
+    unusable: Vec<(String, String)>,
 }
 
 /// What a pattern is matched against.
@@ -1887,31 +1908,118 @@ fn separators(path: &Path) -> String {
 impl PatternList {
     pub(crate) fn new(patterns: &[String]) -> Result<Self> {
         let mut rules = vec![];
+        let mut unusable = vec![];
         for pattern in patterns {
             let (body, negated) = match pattern.strip_prefix('!') {
                 Some(rest) => (rest, true),
                 None => (pattern.as_str(), false),
             };
-            // **A rule this matcher cannot use is dropped with a loud
-            // warning; building the matcher never fails.** A list lives
-            // in configuration that was written against an older mise,
-            // and a matcher that refuses to build takes the watcher and
-            // every capture down with it — far worse than the one dead
-            // rule it was objecting to. `mise dot exclude` refuses such a
-            // pattern at the point the user writes it, so nothing new
-            // gets in; what is already there is skipped, here and at
-            // replay alike, so the two sides still agree about coverage.
+            // **A rule this matcher cannot use is recorded, not dropped
+            // quietly.** Building the matcher still never fails: a list
+            // lives in configuration that was written against an older
+            // mise, and a matcher that refuses to build takes the
+            // watcher down with it. What must not happen is the capture
+            // going ahead without the rule, which is the one case where
+            // dropping it broadens the snapshot to exactly the files
+            // the rule existed to leave out. So the rule is kept here
+            // and [`ExcludeSet::unusable`] hands it to the capture,
+            // which refuses. `mise dot exclude` refuses such a pattern
+            // at the point the user writes it, so nothing new gets in.
             if let Some(reason) = unusable_pattern(body) {
-                warn!("history: ignoring exclusion pattern {pattern:?}: {reason}");
+                unusable.push((pattern.clone(), reason));
                 continue;
             }
             match PatternRule::compile(body, negated) {
                 Ok(rule) => rules.push(rule),
-                Err(err) => warn!("history: ignoring exclusion pattern {pattern:?}: {err}"),
+                Err(err) => unusable.push((pattern.clone(), err.to_string())),
             }
         }
-        Ok(Self { rules })
+        Ok(Self { rules, unusable })
     }
+}
+
+/// What a path is, as far as the caller of the selection predicate can
+/// tell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Kind {
+    /// A file, a symlink, or anything else that is not a directory.
+    File,
+    Directory,
+    /// Nothing left to ask: the path has been removed or renamed.
+    Unknown,
+}
+
+/// The kind to judge `path` as.
+///
+/// **Nothing in a declaration says which kind an entry is**, and no
+/// field is a safe proxy for one: `mode = "track"` covers a file and a
+/// directory alike, and an `include` list on an entry that turns out to
+/// be a file is reported and kept, not removed from the set, so reading
+/// the list as "therefore a directory" gives that entry the wrong
+/// answer. The filesystem is asked instead, and a path that is not
+/// there has no kind — which is the case [`TrackedSet::dropped`] hands
+/// to the reader, because that is the one case where a file's answer
+/// and a directory's answer differ and neither is available.
+fn kind_of(path: &Path) -> Kind {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => Kind::Directory,
+        Ok(_) => Kind::File,
+        Err(_) => Kind::Unknown,
+    }
+}
+
+/// Whether `path` lies inside a repository nested below `owner`'s root.
+///
+/// **Structure, not selection.** A working tree inside a tracked
+/// directory is never captured — its files belong to that repository,
+/// and history has none of its objects — so no pattern, in any list, can
+/// bring one back. Every reader asks this before it asks what the lists
+/// say: the walk when it decides whether to descend, `would_retain`
+/// when it decides whether a saved version is still covered, and the
+/// watcher, which would otherwise wake for every write inside a
+/// checked-out repository it can never save.
+fn inside_nested_repository(owner: &TrackedEntry, path: &Path) -> bool {
+    path.ancestors()
+        .skip(1)
+        .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+        .any(|ancestor| ancestor.join(".git").exists())
+}
+
+/// Refuse to walk while an `[history] exclude` rule cannot be used.
+///
+/// **A capture that cannot apply an exclusion does not go ahead
+/// without it.** Dropping the rule broadens the snapshot to precisely
+/// the paths it was written to leave out, and that snapshot can be
+/// published to a connected origin — so the safe answer is to stop and
+/// say which rule, and in which file, is the problem. The watcher's
+/// save takes the same refusal and declines to capture, which leaves
+/// it running and reporting rather than quietly storing the files.
+fn refuse_unusable_exclusions(exclude: &ExcludeSet) -> Result<()> {
+    let unusable = exclude.unusable();
+    if unusable.is_empty() {
+        return Ok(());
+    }
+    let sources: Vec<String> = unusable
+        .iter()
+        .map(|(pattern, reason)| {
+            let files = super::config::exclusion_sources(pattern);
+            match files.is_empty() {
+                true => format!("{pattern:?}: {reason}"),
+                false => format!(
+                    "{pattern:?} in {}: {reason}",
+                    files
+                        .iter()
+                        .map(display_path)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            }
+        })
+        .collect();
+    eyre::bail!(
+        "[history] exclude cannot be applied, so nothing is captured: {}; fix or remove the pattern, then try again",
+        sources.join("; ")
+    )
 }
 
 /// The matcher a checkpoint's `exclude` list was read with. Bumped only
@@ -2569,6 +2677,58 @@ mod tests {
                 "reported with include = {include:?}"
             );
         }
+    }
+
+    /// **A directory is covered when something beneath it is, although
+    /// no pattern ever selects a directory.** Asking a directory "are
+    /// you selected" made every reader call a tracked tree uncaptured:
+    /// `mise dot track` warned that a symlink's source was not in
+    /// history while the capture was saving its files, and a rollback
+    /// called the subdirectories a capture still walks uncovered.
+    #[test]
+    fn a_directory_is_covered_by_what_its_include_list_selects_below_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("rules/deep")).unwrap();
+        std::fs::create_dir_all(root.join("sessions")).unwrap();
+        std::fs::write(root.join("rules/one.md"), "keep").unwrap();
+        std::fs::write(root.join("sessions/a.jsonl"), "drop").unwrap();
+        let mut tracked = entry(&root);
+        tracked.include = Some(vec!["rules/**".to_string()]);
+        let mut set = TrackedSet::default();
+        set.push(tracked);
+
+        // the tree the list selects into, and every directory on the way
+        for directory in [root.clone(), root.join("rules"), root.join("rules/deep")] {
+            assert!(
+                set.would_capture(&directory).unwrap(),
+                "would_capture {}",
+                directory.display()
+            );
+            assert!(
+                set.would_retain(&directory).unwrap(),
+                "would_retain {}",
+                directory.display()
+            );
+        }
+        // and one no pattern can reach into is not
+        assert!(!set.would_capture(&root.join("sessions")).unwrap());
+
+        // files still answer as files: strict, from the patterns, with
+        // no stat of their own
+        assert!(set.would_retain(&root.join("rules/one.md")).unwrap());
+        assert!(!set.would_retain(&root.join("sessions/a.jsonl")).unwrap());
+
+        // an unreadable file the list does not select is still not
+        // retained: unreadable is not unknown
+        let unselected = root.join("sessions/a.jsonl");
+        assert!(!set.would_retain(&unselected).unwrap());
+
+        // a selected directory that has just vanished still wakes the
+        // watcher, because a deleted tree is a change history must see
+        let exclude = set.exclude_set().unwrap();
+        std::fs::remove_dir_all(root.join("rules")).unwrap();
+        assert!(!set.excluded_by_lists(&exclude, &root.join("rules")));
     }
 
     /// The credential guard is lifted by a pattern that selected the
@@ -3425,12 +3585,21 @@ mod tests {
         std::fs::write(inner.join("inner.toml"), "keep").unwrap();
         std::fs::write(inner.join("cache/index"), "drop").unwrap();
         std::fs::write(inner.join("cache/keep.conf"), "keep").unwrap();
+        // a working tree of its own, under a directory the global list
+        // excludes and a later `!` rule reaches back into. The `!` rule
+        // keeps `cache` from being pruned, so the walk descends — and
+        // nothing in a selection list may carry it into another
+        // repository.
+        let repository = inner.join("cache/repo");
+        std::fs::create_dir_all(repository.join(".git")).unwrap();
+        std::fs::write(repository.join("secret"), "not ours").unwrap();
 
         let mut set = TrackedSet {
             exclude: vec![
                 "b".to_string(),
                 "cache".to_string(),
                 format!("!{}/cache/keep.conf", inner.display()),
+                format!("!{}/cache/repo/secret", inner.display()),
             ],
             ..Default::default()
         };
@@ -3468,18 +3637,46 @@ mod tests {
             assert_eq!(covered, expected, "replay {display}");
         }
 
-        // `Absent` only when the record positively says so. Each other
-        // input gets the answer that fits it — a repository the record
-        // says was skipped reads as `Omitted` carrying the record's own
-        // explanation, a record this mise cannot interpret reads as
-        // `Unevaluable` — and none of them deletes.
-        let display = display_path(outer.join("outer.toml"));
+        // The repository is reported as one, not silently skipped, and
+        // every reader refuses what is inside it — the walk because it
+        // never descended, `would_retain` and the watcher because no
+        // list may reach into another working tree, and a replay with
+        // the reason rather than by calling it uncovered.
+        assert_eq!(
+            walk.nested
+                .iter()
+                .map(|nested| nested.path.as_str())
+                .collect::<Vec<_>>(),
+            vec![display_path(&repository).as_str()],
+        );
         let describe = |state: &PathState| match state {
             PathState::Absent => "absent".to_string(),
             PathState::Uncovered => "uncovered".to_string(),
             PathState::Omitted(reason) => format!("omitted: {reason}"),
             PathState::Unevaluable(reason) => format!("unevaluable: {reason}"),
         };
+        let secret = repository.join("secret");
+        assert!(!walk.files.contains_key(&secret), "capture");
+        assert!(!set.would_retain(&secret).unwrap(), "would_retain");
+        assert!(
+            set.excluded_by_lists(&set.exclude_set().unwrap(), &secret),
+            "watcher"
+        );
+        assert!(
+            matches!(
+                classify_coverage(&coverage, &display_path(&secret)),
+                PathState::Omitted(reason) if reason.contains("repository")
+            ),
+            "replay: {}",
+            describe(&classify_coverage(&coverage, &display_path(&secret)))
+        );
+
+        // `Absent` only when the record positively says so. Each other
+        // input gets the answer that fits it — a repository the record
+        // says was skipped reads as `Omitted` carrying the record's own
+        // explanation, a record this mise cannot interpret reads as
+        // `Unevaluable` — and none of them deletes.
+        let display = display_path(outer.join("outer.toml"));
         for (name, broken, omitted_as) in [
             (
                 "written before this matcher",

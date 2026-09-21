@@ -116,3 +116,26 @@ assert_fail "test -e $third/.hammerspoon/Spoons/Sky.spoon"
 assert_succeed "$c dot sync"
 assert_succeed "$b dot sync"
 assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"
+
+# A re-include may bring back a path the user excluded; it may never
+# bring back a path inside another working tree. The exclusion keeps
+# `vendor` out, the `!` rule names a file below it — which is what stops
+# the walk pruning `vendor` and makes it descend — and the repository in
+# there is still skipped, reported, and left uncaptured.
+repo="$MISE_STATE_DIR/history/repo.git"
+mkdir -p ~/.tooling/vendor/checkout
+echo 'settings' >~/.tooling/config.toml
+echo 'theirs' >~/.tooling/vendor/checkout/secret.txt
+git -C ~/.tooling/vendor/checkout init -q -b main
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.tooling" = { mode = "track" }
+
+[history]
+exclude = ["vendor", "!~/.tooling/vendor/checkout/secret.txt"]
+TOML
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.tooling/config.toml" 'settings'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.tooling/vendor/checkout/secret.txt"
+assert_contains 'mise dot paths' '~/.tooling/vendor/checkout'
+assert_contains 'mise dot paths' 'a separate Git repository'
