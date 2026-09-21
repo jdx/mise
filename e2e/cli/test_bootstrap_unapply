@@ -99,5 +99,13 @@ assert_fail "test -e $PWD/ssh.d/inner.conf"
 assert_succeed "test -e $PWD/ssh.d/unmanaged"
 rm -r ssh.d
 
+# A declaration of absence describes nothing the module applied, so unapplying
+# it is not a removal.
+cat <<EOF >mise.absent.toml
+[bootstrap.files."$PWD/never.conf"]
+state = "absent"
+EOF
+assert_contains "mise -E absent bootstrap unapply absent --yes 2>&1" "nothing to remove for absent"
+
 # Nothing is left to remove on a second run.
 assert_contains "mise -E gpg bootstrap unapply ssh --yes 2>&1" "nothing to remove for ssh"

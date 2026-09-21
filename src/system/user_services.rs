@@ -395,6 +395,8 @@ pub(crate) fn manager_name() -> &'static str {
 const NOT_INSTALLED: &str = "not installed";
 /// Reported when the installed definition no longer matches the declaration.
 const DIFFERS: &str = "installed, differs";
+/// Reported for a service declared absent that has nothing installed.
+const ABSENT: &str = "absent";
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct UserServiceStatus {
@@ -421,7 +423,7 @@ pub(crate) struct UserServiceStatus {
 impl UserServiceStatus {
     /// Whether nothing is installed for this service.
     pub(crate) fn not_installed(&self) -> bool {
-        self.current == NOT_INSTALLED
+        self.current == NOT_INSTALLED || self.current == ABSENT
     }
 
     /// Whether the installed definition is known to match the declaration.
@@ -642,7 +644,7 @@ fn absent_state(installed: bool) -> (&'static str, ResourceAction) {
     if installed {
         ("installed", ResourceAction::Remove)
     } else {
-        ("absent", ResourceAction::Noop)
+        (ABSENT, ResourceAction::Noop)
     }
 }
 
@@ -825,6 +827,8 @@ mod tests {
             UserServiceStatus::new(&request, current.to_string(), ResourceAction::Update)
         };
         assert!(status(NOT_INSTALLED).not_installed());
+        // A service declared absent reports its converged state differently.
+        assert!(status(ABSENT).not_installed());
         assert!(!status(DIFFERS).not_installed());
 
         assert!(status("running").matches_declaration());

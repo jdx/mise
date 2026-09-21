@@ -90,6 +90,9 @@ pub(crate) async fn plan(
     directories.retain(|directory| !base_directory_paths.contains(&directory.path));
 
     for mut file in files {
+        if declares_absence(file.state, "file", &file.path, opts, &mut unapply) {
+            continue;
+        }
         let Some(removal) = classify(&file.plan()?.action, "file", &file.path, opts, &mut unapply)
         else {
             continue;
@@ -108,6 +111,16 @@ pub(crate) async fn plan(
     let mut service_candidates = vec![];
     for request in user_services::requests_from_config(config)? {
         if base_services.contains(&request.name) {
+            continue;
+        }
+        if request.state == crate::system::services_common::ServiceState::Absent {
+            if opts.verbose {
+                unapply.skipped.push(Skip {
+                    kind: "user-service",
+                    name: request.name,
+                    reason: "declared absent, nothing was installed for it".into(),
+                });
+            }
             continue;
         }
         if !services_available {
@@ -256,6 +269,15 @@ pub(crate) async fn plan(
     // Deeper paths first so a parent sees its removed children as gone.
     directories.sort_by_key(|directory| std::cmp::Reverse(directory.path.components().count()));
     for mut directory in directories {
+        if declares_absence(
+            directory.state,
+            "directory",
+            &directory.path,
+            opts,
+            &mut unapply,
+        ) {
+            continue;
+        }
         let Some(removal) = classify(
             &directory.plan()?.action,
             "directory",
@@ -292,6 +314,29 @@ fn unscheduled_entry(path: &Path, scheduled: &HashSet<PathBuf>) -> Option<PathBu
         .flatten()
         .map(|entry| entry.path())
         .find(|entry| !scheduled.contains(entry))
+}
+
+/// Whether this declaration describes an absence rather than something the
+/// module applied. Undoing `state = "absent"` would mean creating the resource,
+/// which is not what removing a module means.
+fn declares_absence(
+    state: ManagedState,
+    kind: &'static str,
+    path: &Path,
+    opts: &UnapplyOpts,
+    unapply: &mut Unapply,
+) -> bool {
+    if state != ManagedState::Absent {
+        return false;
+    }
+    if opts.verbose {
+        unapply.skipped.push(Skip {
+            kind,
+            name: path.to_string_lossy().into_owned(),
+            reason: "declared absent, nothing was applied for it".into(),
+        });
+    }
+    true
 }
 
 /// Decide whether a managed path can be removed from its current state.
