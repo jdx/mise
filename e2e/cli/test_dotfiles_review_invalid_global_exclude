@@ -180,5 +180,5 @@ assert_contains 'mise dot paths 2>&1' '"[" in ~/.config/mise/config.toml'
 # Removing a specific rule does not promise inclusion under a broader rule.
 mise dot exclude '~/.codex/**'
 mise dot exclude '~/.codex/solo'
-assert_contains "mise dot include '~/.codex/solo' 2>&1" 'other exclusion rules still apply'
+assert_contains "mise dot include '~/.codex/solo' 2>&1" 'removed exclusion rule'
 assert_contains 'mise dot paths' 'exclude: ~/.codex/**'
