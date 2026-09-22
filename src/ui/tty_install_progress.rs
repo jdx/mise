@@ -256,20 +256,27 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
             left.push_str(&format!("  {bytes}"));
         }
         job.prop("left", &left);
+        // The bar sits last, beside the spinner, so every row's bar starts in
+        // the same column whatever the artifact and elapsed time before it say.
         let mut right = String::new();
-        if !tool.weights.is_empty() && layout.row_bar {
-            let filled = filled_cells(tool.fraction, ROW_BAR_WIDTH, tool.outcome.is_some());
-            right.push_str(&format!(
-                "{}{}  ",
-                style::ecyan("█".repeat(filled)),
-                style::edim("░".repeat(ROW_BAR_WIDTH - filled))
-            ));
-        }
-        right.push_str(&elapsed(started, now));
         if let Some(artifact) = &tool.artifact
             && layout.artifact
         {
-            right.push_str(&format!("  {}", style::edim(artifact)));
+            right.push_str(&format!("{}  ", style::edim(artifact)));
+        }
+        right.push_str(&elapsed(started, now));
+        if layout.row_bar {
+            if tool.weights.is_empty() {
+                // Hold the bar's place so elapsed times still end together.
+                right.push_str(&" ".repeat(ROW_BAR_WIDTH + 2));
+            } else {
+                let filled = filled_cells(tool.fraction, ROW_BAR_WIDTH, tool.outcome.is_some());
+                right.push_str(&format!(
+                    "  {}{}",
+                    style::ecyan("█".repeat(filled)),
+                    style::edim("░".repeat(ROW_BAR_WIDTH - filled))
+                ));
+            }
         }
         job.prop("right", &right);
     }
