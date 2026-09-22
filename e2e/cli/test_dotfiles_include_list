@@ -138,21 +138,21 @@ assert_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fi
 assert_not_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
 assert "mise dot paths --json | jq -r '.plaintext[0].path'" '~/.config/fish/functions/secrets.fish'
 
-# **but the watcher does not say it into its own log.** It walks at
-# startup and on every configuration reload, usually detached, so a
-# warning there is said where nobody reads it. It is written down
-# instead, and the next command a person runs says it.
+# Background saves keep warnings for the next command a person runs.
 notices="$MISE_STATE_DIR/history/notices"
 # a save that changes nothing saves nothing, and must not claim a
 # plaintext capture that did not happen
 echo 'set -x API_TOKEN synthetic2b' >~/.config/fish/functions/secrets.fish
 assert_contains 'mise dot save 2>&1' 'saved in plaintext'
 assert_not_contains 'mise dot save 2>&1' 'saved in plaintext'
+# A startup walk with no changes must not announce a new capture.
+mise dot watch --once >watch-unchanged.log 2>&1
+assert_not_contains 'cat watch-unchanged.log' 'saved in plaintext'
+assert_fail "test -s $notices"
 echo 'set -x API_TOKEN synthetic3' >~/.config/fish/functions/secrets.fish
 mise dot watch --once >watch-once.log 2>&1
 assert_not_contains 'cat watch-once.log' 'saved in plaintext'
-# a standing condition is one notice however many times the watcher
-# walks, so a reload loop cannot grow the file without bound
+# Repeated background captures deduplicate an undelivered warning.
 echo 'set -x API_TOKEN synthetic4' >~/.config/fish/functions/secrets.fish
 mise dot watch --once >>watch-once.log 2>&1
 assert_not_contains 'cat watch-once.log' 'saved in plaintext'

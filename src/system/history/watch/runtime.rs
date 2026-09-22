@@ -1263,16 +1263,9 @@ impl State {
 /// links themselves so dangling links remain observable. Targets are not enrolled.
 fn watched_set(tracked: &TrackedSet) -> Result<(TrackedSet, Vec<PathBuf>)> {
     let walk = tracked.walk()?;
-    // **The watcher's log is not somewhere anyone is looking.** This
-    // runs at startup and on every configuration reload, in a process
-    // that is usually detached, so warning here is how a
-    // security-relevant line — an include list selecting a
-    // credential-named file, saved in plaintext — ends up said only
-    // where nobody reads it. The capture path already defers a save
-    // nobody asked for to the notices file; this is the same rule at the
-    // other end of the same walk. Recording a standing condition is
-    // deduplicated, so a reload loop does not repeat it.
-    for warning in walk.warnings.iter().chain(&walk.capture_warnings) {
+    // Keep scan diagnostics from detached startup and reload walks.
+    // Capture warnings belong to the save path, after the snapshot is durable.
+    for warning in &walk.warnings {
         let message = format!("history: {warning}");
         if let Err(err) = crate::system::history::notices::record(&message) {
             warn!("{message}");
