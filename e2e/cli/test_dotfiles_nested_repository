@@ -124,6 +124,7 @@ mkdir -p "$work/home/.hammerspoon/Spoons/Sky.spoon"
 echo 'incoming replacement' >"$work/home/.hammerspoon/Spoons/Sky.spoon/init.lua"
 echo 'incoming addition' >"$work/home/.hammerspoon/Spoons/Sky.spoon/new.lua"
 git -C "$work" add home/.hammerspoon/Spoons/Sky.spoon
+git -C "$work" fetch -q origin
 tree=$(git -C "$work" write-tree)
 commit=$(git -C "$work" -c user.name=t -c user.email=t@example.com commit-tree "$tree" -p "$(git --git-dir="$origin" rev-parse main)" -m 'ordinary incoming files')
 git -C "$work" push -q "$origin" "$commit:refs/heads/main"
