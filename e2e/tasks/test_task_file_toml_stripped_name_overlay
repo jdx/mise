@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+
+# A file task's name keeps its extension ("hello.sh") while `mise run` and
+# `mise tasks ls` both address it by the stem ("hello"), so `[tasks.hello]` is
+# the block people write to attach metadata to `mise-tasks/hello.sh`. Keyed on
+# the exact name it used to become a separate task with no executable content
+# that shadowed the script, and `mise run hello` exited 0 having run nothing.
+
+mkdir -p mise-tasks
+cat >mise-tasks/hello.sh <<'SCRIPT'
+#!/usr/bin/env bash
+echo "ran-hello-marker GREETING=$GREETING"
+SCRIPT
+chmod +x mise-tasks/hello.sh
+
+cat >mise.toml <<'TOML'
+[tasks.hello]
+description = "overlaid description"
+env = { GREETING = "hi" }
+TOML
+
+mise trust
+
+# The block overlays the script instead of shadowing it, so there is one task.
+assert "mise tasks ls --no-header" "hello  overlaid description"
+
+out="$(mise run hello)"
+assert_contains_text "$out" "ran-hello-marker GREETING=hi"
+
+count="$(printf '%s\n' "$out" | grep -c 'ran-hello-marker' || true)"
+if [[ $count != "1" ]]; then
+  echo "FAIL: expected the script to run exactly once, but 'ran-hello-marker' appeared $count time(s):"
+  printf '%s\n' "$out"
+  exit 1
+fi
+
+# The name carrying the extension keeps working.
+assert_contains "mise run hello.sh" "ran-hello-marker GREETING=hi"
+
+# The merged task is a real task, not the "no executable content" shape.
+assert_contains "mise tasks validate" "validated successfully"
+
+# The spelling must not change what a block does, so a `depends` under the
+# extension-stripped name reaches the script exactly as it does under the full
+# name: the dependency runs and then the script does.
+for spelling in hello hello.sh; do
+  cat >mise.toml <<TOML
+[tasks.lint]
+run = "echo lint-ran"
+
+[tasks."$spelling"]
+depends = ["lint"]
+TOML
+
+  out="$(mise run hello)"
+  assert_contains_text "$out" "lint-ran"
+  assert_contains_text "$out" "ran-hello-marker"
+  # One task: the script is not listed separately under its full name.
+  assert_not_contains "mise tasks ls --no-header" "hello.sh"
+done
+
+# An inline block with its own command still wins over the file task, and a
+# metadata-only block at higher precedence overlays that inline base rather
+# than the script.
+cat >mise.toml <<'TOML'
+[tasks.hello]
+run = "echo inline-ran"
+TOML
+cat >mise.local.toml <<'TOML'
+[tasks.hello]
+description = "from local"
+TOML
+
+mise trust
+
+assert_contains "mise tasks ls --no-header" "from local"
+out="$(mise run hello)"
+assert_contains_text "$out" "inline-ran"
+assert_not_contains_text "$out" "ran-hello-marker"
+
+# A lower-precedence block of the other spelling must neither overwrite the
+# higher-precedence one nor survive as a task shadowing the script.
+rm -f mise.local.toml
+cat >mise.toml <<'TOML'
+[tasks.hello]
+description = "low precedence"
+TOML
+cat >mise.local.toml <<'TOML'
+[tasks."hello.sh"]
+description = "high precedence"
+TOML
+
+mise trust
+mise trust ./mise.local.toml
+
+assert "mise tasks ls --no-header" "hello  high precedence"
+assert_contains "mise run hello" "ran-hello-marker"
+
+# A script takes only its highest-precedence definition, so the `depends` in
+# `mise.toml` does not survive the description in `mise.local.toml`. The two
+# spellings name one script, so they compete for that single slot.
+cat >mise.toml <<'TOML'
+[tasks.lint]
+run = "echo lint-ran"
+
+[tasks."hello.sh"]
+depends = ["lint"]
+TOML
+cat >mise.local.toml <<'TOML'
+[tasks.hello]
+description = "from local"
+TOML
+
+mise trust
+mise trust ./mise.local.toml
+
+assert "mise tasks ls --no-header" "hello  from local
+lint"
+out="$(mise run hello)"
+assert_not_contains_text "$out" "lint-ran"
+assert_contains_text "$out" "ran-hello-marker"
+assert_contains "mise tasks validate" "validated successfully"
