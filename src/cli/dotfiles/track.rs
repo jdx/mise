@@ -97,9 +97,26 @@ impl DotfilesTrack {
         // declaration alone reported files as captured that a capture
         // then leaves out. `effective` is `from_config` and then
         // `enrollment::resolve`, which is where a published list comes
-        // from; it touches no repository that does not already exist, so
-        // a dry run still writes nothing.
-        let effective = TrackedSet::effective().await?;
+        // from.
+        //
+        // **But a preview reads; it does not bring a repository into
+        // existence.** Opening the history repository initializes it, so
+        // asking unconditionally would let `--dry-run` write into a
+        // half-created state directory, and would fail a preview that
+        // needs only configuration when the repository is damaged. So it
+        // asks only when there is something to read, and falls back to
+        // the declarations when reading fails.
+        let effective =
+            match crate::system::history::shadow::HistoryRepo::path_in(&crate::dirs::STATE)
+                .join("HEAD")
+                .is_file()
+            {
+                true => TrackedSet::effective().await.unwrap_or_else(|err| {
+                    debug!("dotfiles: previewing from declarations alone: {err:#}");
+                    TrackedSet::default()
+                }),
+                false => TrackedSet::default(),
+            };
         let mut preview_set = TrackedSet {
             exclude: exclude.clone(),
             ..Default::default()
