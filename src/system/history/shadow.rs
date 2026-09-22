@@ -635,6 +635,7 @@ impl HistoryRepo {
     }
 
     /// Commit the tracked-file tree and minimal metadata to ordinary history.
+    #[cfg(test)]
     pub(crate) fn write_checkpoint(
         &self,
         snapshot_tree: Option<&str>,
@@ -675,6 +676,7 @@ impl HistoryRepo {
         self.commit_tree(&tree, parent.as_deref().into_iter().collect(), &message)
     }
 
+    #[cfg(test)]
     fn advance_head(&self, commit: &str) -> Result<()> {
         // The commit's parent is the head observed when it was prepared.
         // A concurrent writer must never have its commit overwritten.

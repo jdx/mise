@@ -654,11 +654,11 @@ from history. See [remove plaintext from history](#remove-plaintext-from-history
 
 Warnings appear according to how the capture runs:
 
-| Capture                    | Where to read the warning                         |
-| -------------------------- | ------------------------------------------------- |
-| Explicit save or tracking  | In that command's output                          |
-| Bootstrap                  | During the bootstrap command                      |
-| Watcher or automatic apply | At the next `mise dot` command other than `watch` |
+| Capture                    | Where to read the warning                                              |
+| -------------------------- | ---------------------------------------------------------------------- |
+| Explicit save or tracking  | In that command's output                                               |
+| Bootstrap                  | During the bootstrap command                                           |
+| Watcher or automatic apply | At the next `mise dot` command other than `watch`, or `mise bootstrap` |
 
 For example, after the watcher applies a narrower include list, run:
 
@@ -667,7 +667,7 @@ mise dot paths
 ```
 
 The command delivers pending notices before listing the current selection.
-Dotfiles commands also deliver notices produced while they run, including
+Dotfiles commands and `mise bootstrap` also deliver notices produced while they run, including
 when the command fails. Matching plaintext warnings are shown once per
 process, even if both a stored notice and the command's capture report them.
 A background condition can be reported again after its previous notice

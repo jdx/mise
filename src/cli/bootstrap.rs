@@ -1342,7 +1342,21 @@ impl Bootstrap {
         (self.dry_run, self.yes)
     }
 
-    pub(crate) async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
+        // Dotfiles subcommands handle their own notices; in particular,
+        // a background watcher must leave them for a foreground command.
+        let deliver_notices = self.command.is_none();
+        if deliver_notices {
+            system::history::notices::drain();
+        }
+        let result = self.run_with_notices().await;
+        if deliver_notices {
+            system::history::notices::drain();
+        }
+        result
+    }
+
+    async fn run_with_notices(mut self) -> Result<()> {
         normalize_adopt_alias(&mut self.adopt, self.from_git.take());
         if self.from.is_some() || self.adopt.is_some() {
             if self.command.is_some() {
