@@ -307,7 +307,7 @@ backend = "cargo:flamegraph"
 specifiers = ["latest"]
 
 [[tools.communique]]
-version = "1.4.0"
+version = "1.4.1"
 backend = "github:jdx/communique"
 specifiers = ["latest"]
 
