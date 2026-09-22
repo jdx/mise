@@ -1399,17 +1399,17 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     };
     let local = file::replace_path(Path::new(display));
     let root = file::replace_path(Path::new(&owner.path));
-    // The checkpoint's exclusions are read exactly as a capture reads
-    // them — the matcher expands `~` and nothing else, and a rule it
-    // cannot use is dropped on both sides alike — so the two cannot
-    // disagree about what this checkpoint covered.
+    // Recompile saved exclusions against the current filesystem. If a
+    // symlink now expands a rule into an unusable glob, coverage is unknown.
     // A checkpoint written by another matcher read its exclusions
     // differently — an older one matched more for some patterns, and a
     // newer one is simply unknown here. Either way, where it has
     // exclusions, what it covered cannot be reconstructed.
     let legacy =
         coverage.matcher != Some(super::tracked::MATCHER_VERSION) && !coverage.exclude.is_empty();
-    let exclude = super::tracked::ExcludeSet::new(&coverage.exclude).ok();
+    let exclude = super::tracked::ExcludeSet::new(&coverage.exclude)
+        .ok()
+        .filter(|exclude| exclude.unusable().is_empty());
     if let Some(exclude) = &exclude
         && !legacy
         && exclude.is_match(&local, &root)

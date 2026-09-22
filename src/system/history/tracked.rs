@@ -2157,6 +2157,42 @@ mod tests {
         assert!(PatternRule::compile("rules/[unclosed/**", false).is_err());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn replay_skips_exclusions_made_unusable_by_a_changed_symlink() {
+        use crate::system::history::replay::{PathState, classify_coverage};
+        let tmp = tempfile::tempdir().unwrap();
+        let temp_root = tmp.path().canonicalize().unwrap();
+        let root = temp_root.join("real");
+        let bad = temp_root.join("invalid[");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&bad).unwrap();
+        let local = root.join("private.txt");
+        std::fs::write(&local, "keep locally").unwrap();
+        let link = temp_root.join("link");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+        let mut set = TrackedSet {
+            exclude: vec![format!("{}/**", link.display())],
+            ..Default::default()
+        };
+        set.push(entry(&root));
+        assert!(set.exclude_set().unwrap().unusable().is_empty());
+        let walk = set.walk().unwrap();
+        assert!(!walk.files.contains_key(&local));
+        let coverage = set.coverage(&walk);
+        assert!(matches!(
+            classify_coverage(&coverage, &display_path(&local)),
+            PathState::Uncovered
+        ));
+
+        std::fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(&bad, &link).unwrap();
+        assert!(!set.exclude_set().unwrap().unusable().is_empty());
+        let state = classify_coverage(&coverage, &display_path(&local));
+        assert!(matches!(state, PathState::Unevaluable(_)));
+        assert!(state.skip_reason("0123456789").is_some());
+    }
+
     /// A pattern is compiled from more than one glob when it is
     /// anchored, and the refusal has to cover all of them: a form that
     /// only `PatternRule::compile` rejects is dropped with a warning long
@@ -2997,17 +3033,15 @@ mod tests {
             state.skip_reason("0123456789").is_some(),
             "an uncovered path must never delete a live file"
         );
-        // a rule neither side can use is dropped by both, so the record
-        // stays readable — that agreement is what makes dropping safe
+        // Unusable rules make deletion coverage uncertain, even when the
+        // record claims the current matcher version.
         let mut unusable = coverage.clone();
         unusable
             .exclude
             .push("$MISE_TEST_UNSUPPORTED/**".to_string());
-        assert_eq!(
-            matches!(classify_coverage(&unusable, &display), PathState::Absent),
-            matches!(classify_coverage(&coverage, &display), PathState::Absent),
-            "an unusable rule changes nothing, because capture ignored it too"
-        );
+        let state = classify_coverage(&unusable, &display);
+        assert!(matches!(state, PathState::Unevaluable(_)));
+        assert!(state.skip_reason("0123456789").is_some());
 
         // a record this mise can read answers normally
         let mut plain = coverage.clone();
