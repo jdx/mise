@@ -262,7 +262,38 @@ impl Store {
             }
             Err(err) => return Err(err),
         };
-        walk.report_warnings();
+        // **A warning nobody is there to read is a warning that did not
+        // happen.** A save the user asked for says these; the watcher's
+        // own saves write them down, and the next `mise dot` command
+        // says them — the same rule the narrowing report follows, and
+        // the same reason: its log is not somewhere anyone is looking.
+        // **Said exactly once, and never lost.** A protective snapshot
+        // walks the same tree the outcome then walks, so saying both out
+        // loud says everything twice — the rule the omission report
+        // already follows. But the snapshot is committed before the
+        // operation, and the operation can fail before any save that
+        // would say these, so staying silent would drop the warning for
+        // a credential that is now in plaintext history. So it writes
+        // them down, and the save that says them out loud takes those
+        // copies back: on the way through, said once; on a failure, kept
+        // for the next command.
+        let messages: Vec<String> = walk
+            .warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        let speak = !draft.protective && heard(&draft);
+        for message in &messages {
+            if speak {
+                super::notices::say(message);
+            } else if let Err(err) = super::notices::record_in(&self.state_dir, message) {
+                super::notices::say(message);
+                debug!("history: could not keep the notice: {err}");
+            }
+        }
+        if speak && let Err(err) = super::notices::forget_in(&self.state_dir, &messages) {
+            debug!("history: could not take back the said notices: {err}");
+        }
         report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
@@ -408,6 +439,21 @@ impl Store {
                             &mut modes,
                             &walk,
                         )?;
+                        // **A notice is never worth failing a capture.**
+                        // This reads the parent's manifest and tree, and
+                        // either can legitimately refuse — a manifest
+                        // written by a newer mise, a corrupted blob — so
+                        // what it cannot say, it does not say, and the
+                        // save goes on.
+                        if let Err(err) = report_narrowed(
+                            repo,
+                            &self.state_dir,
+                            previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
+                            tracked,
+                            &draft,
+                        ) {
+                            debug!("history: could not compare the previous selection: {err:#}");
+                        }
                         let mut manifest = super::manifest::Manifest::read(repo, &composed)?
                             .ok_or_else(|| {
                                 eyre::eyre!("captured tree is missing enrollment metadata")
@@ -994,6 +1040,118 @@ fn under_entry(path: &str, entry: &str) -> bool {
         || path
             .strip_prefix(entry)
             .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Whether someone is there to hear what this save has to say: a save
+/// the user asked for, rather than one the watcher made on its own
+/// schedule.
+///
+/// **The case that matters is the one under a command that does not
+/// deliver notices.** `mise dot` drains them around every subcommand,
+/// so a rollback, an undo or a pull says a deferred warning within the
+/// same command either way — the drain after dispatch runs whether the
+/// command succeeded or failed. `mise bootstrap` is a separate
+/// top-level command that never drains, so a warning deferred there
+/// waits for a `mise dot` command the user may never run.
+///
+/// The unattended saves stay deferred, because their logs are not
+/// somewhere anyone is looking: `Trigger::Edit` is the watcher's own
+/// save, and `Trigger::Apply` is reachable from its automatic apply
+/// through `begin_automatic_apply`, not only from `mise dot pull`.
+fn heard(draft: &Draft) -> bool {
+    matches!(
+        draft.trigger,
+        Some(
+            store::Trigger::Save
+                | store::Trigger::Agent
+                | store::Trigger::Update
+                | store::Trigger::Baseline
+                | store::Trigger::BootstrapBefore
+                | store::Trigger::Bootstrap
+        )
+    )
+}
+
+/// Says how much an entry's `include` list now leaves out of what an
+/// earlier checkpoint held.
+///
+/// Narrowing a list drops paths already in history from every checkpoint
+/// after it. That is what the user asked for, but it happens silently —
+/// nothing about the tree changed — so it is said at the point of change.
+///
+/// **There is exactly one opportunity to say it, and it is taken
+/// whatever caused the save.** The checkpoint that applies the narrowing
+/// is the last one whose parent still holds those paths; from the next
+/// one on there is nothing left to compare against and the drop can
+/// never be reported. Which command ran is not something the paths care
+/// about, and the watcher saving first is not a reason for the user to
+/// hear nothing — so a `mise dot save`, a `mise dot track` applying a
+/// hand-edited list, and the watcher's own save all report it. It cannot
+/// repeat: the narrowing changes the tree, so the checkpoint is written,
+/// and the next parent is the narrowed one.
+fn report_narrowed(
+    repo: &HistoryRepo,
+    state_dir: &Path,
+    parent: Option<&str>,
+    tracked: &TrackedSet,
+    draft: &Draft,
+) -> Result<()> {
+    let Some(parent) = parent else {
+        return Ok(());
+    };
+    if tracked.entries.iter().all(|entry| entry.include.is_none()) {
+        return Ok(());
+    }
+    // **Nothing narrowed, nothing to scan.** The lists are recorded with
+    // the checkpoint, so the cheap question — are this save's enrollment
+    // and `include` values the ones the parent already holds? — is
+    // answered from the manifest, and only a difference pays for a walk
+    // of the parent tree. An entry added or removed counts as a
+    // difference, because either can change what an existing entry owns.
+    if let Some(previous) = super::manifest::Manifest::read(repo, parent)? {
+        let selection = |manifest: &super::manifest::Manifest| {
+            manifest
+                .enrollment
+                .iter()
+                .map(|entry| (entry.path.clone(), entry.include.clone()))
+                .collect::<Vec<_>>()
+        };
+        if selection(&previous) == selection(&tracked.manifest) {
+            return Ok(());
+        }
+    }
+    let roots = super::sync::layout::Roots::current();
+    let mut dropped: BTreeMap<String, u64> = BTreeMap::new();
+    for file in repo.ls_tree(parent)? {
+        let located = roots.locate(&file.path);
+        let Some(path) = located.path() else { continue };
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if entry.include.is_none() || entry.is_included(path) {
+            continue;
+        }
+        *dropped.entry(entry.display()).or_default() += 1;
+    }
+    // A save the user is watching says it; one the watcher made on its
+    // own schedule writes it down, because the log it would otherwise go
+    // to is not somewhere anyone is looking, and this is the only chance
+    // to say it at all.
+    let heard = heard(draft);
+    for (entry, count) in dropped {
+        let message = format!(
+            "history: {entry}: its include list leaves out {count} path(s) an earlier checkpoint held; they are not saved from this checkpoint on"
+        );
+        if heard {
+            warn!("{message}");
+        } else if let Err(err) = super::notices::record_in(state_dir, &message) {
+            // saying it late is better than not at all, and failing the
+            // save over a notice would be worse than either
+            warn!("{message}");
+            debug!("history: could not keep the notice: {err}");
+        }
+    }
+    Ok(())
 }
 
 /// A failed observation is not evidence of deletion. Carry only saved objects
