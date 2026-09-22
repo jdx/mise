@@ -40,19 +40,24 @@ assert_contains "mise run hello.sh" "ran-hello-marker GREETING=hi"
 # The merged task is a real task, not the "no executable content" shape.
 assert_contains "mise tasks validate" "validated successfully"
 
-# A block with dependencies of its own is a group that already runs, so it
-# stays a separate task and does not absorb the script.
-cat >mise.toml <<'TOML'
+# The spelling must not change what a block does, so a `depends` under the
+# extension-stripped name reaches the script exactly as it does under the full
+# name: the dependency runs and then the script does.
+for spelling in hello hello.sh; do
+  cat >mise.toml <<TOML
 [tasks.lint]
 run = "echo lint-ran"
 
-[tasks.hello]
+[tasks."$spelling"]
 depends = ["lint"]
 TOML
 
-out="$(mise run hello)"
-assert_contains_text "$out" "lint-ran"
-assert_not_contains_text "$out" "ran-hello-marker"
+  out="$(mise run hello)"
+  assert_contains_text "$out" "lint-ran"
+  assert_contains_text "$out" "ran-hello-marker"
+  # One task: the script is not listed separately under its full name.
+  assert_not_contains "mise tasks ls --no-header" "hello.sh"
+done
 
 # An inline block with its own command still wins over the file task, and a
 # metadata-only block at higher precedence overlays that inline base rather
@@ -91,13 +96,14 @@ mise trust ./mise.local.toml
 assert "mise tasks ls --no-header" "hello  high precedence"
 assert_contains "mise run hello" "ran-hello-marker"
 
-# A dependency group in a lower-precedence config is executable content, so the
-# metadata block above it must not be absorbed by the script in its place.
+# A script takes only its highest-precedence definition, so the `depends` in
+# `mise.toml` does not survive the description in `mise.local.toml`. The two
+# spellings name one script, so they compete for that single slot.
 cat >mise.toml <<'TOML'
 [tasks.lint]
 run = "echo lint-ran"
 
-[tasks.hello]
+[tasks."hello.sh"]
 depends = ["lint"]
 TOML
 cat >mise.local.toml <<'TOML'
@@ -108,33 +114,9 @@ TOML
 mise trust
 mise trust ./mise.local.toml
 
-out="$(mise run hello)"
-assert_not_contains_text "$out" "ran-hello-marker"
-# The group keeps its dependency rather than being dropped, which would leave
-# `hello` a commandless task that exits 0 without running anything.
-assert_contains_text "$out" "lint-ran"
-assert_contains "mise tasks validate" "validated successfully"
-
-# A stripped metadata block above a full-name block must not suppress it: the
-# higher block wins the description, the lower still contributes its depends.
-cat >mise.toml <<'TOML'
-[tasks.lint]
-run = "echo lint-ran"
-
-[tasks."hello.sh"]
-description = "low precedence"
-depends = ["lint"]
-TOML
-cat >mise.local.toml <<'TOML'
-[tasks.hello]
-description = "high precedence"
-TOML
-
-mise trust
-mise trust ./mise.local.toml
-
-assert "mise tasks ls --no-header" "hello  high precedence
+assert "mise tasks ls --no-header" "hello  from local
 lint"
 out="$(mise run hello)"
-assert_contains_text "$out" "lint-ran"
+assert_not_contains_text "$out" "lint-ran"
 assert_contains_text "$out" "ran-hello-marker"
+assert_contains "mise tasks validate" "validated successfully"

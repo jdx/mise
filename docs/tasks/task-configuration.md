@@ -1291,31 +1291,31 @@ env = { GREETING = "hi" }
 its description. The script's full name includes its extension; `mise run`
 also accepts the name without the extension.
 
-The name without the extension matches the script only when the block has no
-`run`, `run_windows`, `file`, `depends`, or `depends_post`. A block with only
-`wait_for` still matches, because `wait_for` orders tasks that are already
-running rather than adding any. To add dependencies to the script, use its full
-name:
+Both spellings behave identically, so the name you use is a matter of taste.
+Dependencies work the same way under either one:
 
 ```toml [mise.toml]
-[tasks."hello.sh"]
+[tasks.hello] # or [tasks."hello.sh"]
 description = "Say hello after linting"
 depends = ["lint"]
 ```
 
-With `[tasks.hello]` instead, `depends = ["lint"]` defines a separate task group:
-`mise run hello` runs `lint` without running `hello.sh`. Likewise, a block with
-its own command defines a separate task. You can still run the script explicitly
-with `mise run hello.sh`.
+`mise run hello` runs `lint` and then the script.
 
-If an inline command or dependency group already uses the name `hello` in another
-config file, metadata under `[tasks.hello]` applies to that inline task rather
-than to `hello.sh`. See [layered task definitions](#layered-task-definitions).
+A block that declares its own `run`, `run_windows`, or `file` is not
+configuring the script — it defines a separate task under that name. If an
+inline command already uses the name `hello` in another config file, metadata
+under `[tasks.hello]` applies to that task rather than to `hello.sh`, which
+stays reachable as `mise run hello.sh`. See
+[layered task definitions](#layered-task-definitions).
 
-When both spellings target the same script, only the block from the
-highest-precedence config applies. If multiple scripts share a name without the
-extension, such as `hello.sh` and `hello.js`, a metadata-only `[tasks.hello]`
-block applies to both. Use the full name to configure just one script.
+A script takes only its highest-precedence definition. Lower-precedence blocks
+contribute nothing, not even additive fields such as `env` or `alias`, and
+because the two spellings name one script they compete for that single slot: a
+`[tasks.hello]` in `mise.local.toml` replaces a `[tasks."hello.sh"]` in
+`mise.toml` rather than adding to it. If multiple scripts share a name without
+the extension, such as `hello.sh` and `hello.js`, a `[tasks.hello]` block
+applies to both. Use the full name to configure just one script.
 
 #### Layered task definitions
 
