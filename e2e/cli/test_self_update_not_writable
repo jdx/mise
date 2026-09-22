@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# A mise the current user cannot replace -- the root-owned /usr/local/bin/mise that the install
+# script leaves behind, an install under /opt -- used to fail only after downloading the release,
+# with "Permission denied (os error 13) at path .mise.__temp__XKV5Oz": a temp name the user has
+# never seen, and no mention of the directory that refused it.
+
+# An explicit version keeps this offline: no release is looked up, and nothing is downloaded
+# before the check under test.
+version="$(mise version | tail -n1 | awk '{print $1}' | sed 's/-DEBUG$//')"
+
+mkdir -p readonly/bin
+# A hard link where the filesystem allows one: the binary is large, and what matters here is only
+# the directory it sits in.
+ln "$(type -P mise)" readonly/bin/mise 2>/dev/null || cp "$(type -P mise)" readonly/bin/mise
+
+# Root ignores the mode bits, so there is no unwritable directory to make for it.
+if [ "$(id -u)" != 0 ]; then
+  chmod a-w readonly/bin
+
+  assert_fail "readonly/bin/mise self-update 9999.0.0 --no-plugins" "is not writable"
+  # The directory is named, and so is the binary: a stray /usr/local/bin/mise shadowing a
+  # packaged one is the usual cause, and the path is what gives that away.
+  assert_fail "readonly/bin/mise self-update 9999.0.0 --no-plugins" "readonly/bin/mise"
+  assert_fail "readonly/bin/mise self-update 9999.0.0 --no-plugins" "sudo mise self-update"
+
+  # A mise with nothing to update still says so. The permission problem it was never going to
+  # hit must not take its place.
+  assert_contains "readonly/bin/mise self-update $version --no-plugins 2>&1" "mise is already up to date"
+
+  chmod u+w readonly/bin
+fi
+
+# The same install, writable, gets as far as the update itself.
+assert_contains "readonly/bin/mise self-update $version --no-plugins 2>&1" "mise is already up to date"

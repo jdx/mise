@@ -888,7 +888,7 @@ impl Builder {
         );
         labels.insert(
             "dev.mise.version".to_string(),
-            crate::cli::version::VERSION_PLAIN.to_string(),
+            crate::version::VERSION_PLAIN.to_string(),
         );
         for (_, tv) in versions {
             labels.insert(

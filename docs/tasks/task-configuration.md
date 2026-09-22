@@ -1073,53 +1073,6 @@ vars = { e2e_args = "--headed" }
 run = './scripts/test-e2e.sh {{vars.e2e_args}}'
 ```
 
-## Configuring file tasks from TOML
-
-A `[tasks.<name>]` block naming an auto-discovered [file task](/tasks/file-tasks)
-gives that script properties from `mise.toml`. A script's name includes its file
-extension:
-
-```mise-toml
-[tasks."hello.sh"] # mise-tasks/hello.sh
-description = "say hello"
-depends = ["build"]
-```
-
-The script stays the task's command and the block contributes the rest.
-
-A block that spells out its own command — `run`, `run_windows`, or `file` —
-replaces the script instead, because it is a task in its own right rather than a
-set of properties for the discovered one:
-
-```mise-toml
-[tasks."hello.sh"]
-run = "echo hi" # runs instead of mise-tasks/hello.sh
-```
-
-::: warning
-Earlier versions of mise silently dropped that `run` and ran the script anyway.
-If a config relies on the old behavior, remove the command from the block.
-:::
-
-Taking a script over this way needs the standing of the config that found it.
-A block only replaces the script when it comes from the config whose
-[`task_config.includes`](#task_config.includes) selected the script's directory,
-or from a higher-precedence one — the rule inline blocks already follow for
-tasks defined in included TOML files. A block from further down the chain
-contributes its metadata and leaves the script running.
-
-A command-bearing block under the extension-stripped name, `[tasks.hello]`,
-defines a task of its own beside `mise-tasks/hello.sh` rather than replacing it.
-Both are listed, `mise run hello` picks the exact name — the TOML task — and
-`mise run hello.sh` runs the script. A script with no extension has no such
-distinction: its name already is the bare stem, so `[tasks.hello]` naming
-`mise-tasks/hello` is the exact-name case above.
-
-On Windows, a script paired with a
-[Windows-native sibling](/tasks/file-tasks#windows) is replaced by that sibling
-under the bare stem, so `build.sh` plus `build.ps1` is configured as
-`[tasks.build]` rather than `[tasks."build.ps1"]`.
-
 ## `[task_config]` options
 
 Options available in the top-level `mise.toml` `[task_config]` section. These apply to all tasks that
@@ -1301,19 +1254,7 @@ includes = [
 ]
 ```
 
-An inline `[tasks.<name>]` command takes precedence over a same-named task from
-an included TOML file when it comes from the config that selected the include
-or a higher-precedence config. An inline block without `run`, `run_windows`, or
-`file` instead overlays metadata such as description, environment, and
-dependencies. The same split applies to executable file tasks — see
-[Configuring file tasks from TOML](#configuring-file-tasks-from-toml).
-
-The same overlay rule applies across layered inline task definitions. For
-example, a metadata-only task in `mise.local.toml` overlays the nearest
-lower-precedence command-bearing definition in `mise.toml`. A higher-precedence
-definition with its own command still replaces the lower task. All metadata-only
-definitions above the selected command-bearing base contribute in precedence
-order, while definitions below it do not contribute metadata.
+#### Included TOML files
 
 Included task toml files have a different format than `mise.toml`: they are simply a list of tasks.
 The file uses the same format as the `[tasks]` section of `mise.toml` but without the `[tasks]` prefix:
@@ -1333,6 +1274,109 @@ vars = { target = "linux" }
 :::
 
 For auto-completion and validation in included toml task files, use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
+
+#### Configuring file tasks from TOML
+
+Use a `[tasks.<name>]` block to add metadata to an executable file task while
+keeping the script as its command. For `mise-tasks/hello.sh`, either
+`[tasks.hello]` or `[tasks."hello.sh"]` can supply a description and environment:
+
+```toml [mise.toml]
+[tasks.hello]
+description = "Say hello"
+env = { GREETING = "hi" }
+```
+
+`mise run hello` runs the script with `GREETING=hi`, and `mise tasks ls` shows
+its description. The script's full name includes its extension; `mise run`
+also accepts the name without the extension.
+
+Both spellings behave identically, so the name you use is a matter of taste.
+Dependencies work the same way under either one:
+
+```toml [mise.toml]
+[tasks.hello] # or [tasks."hello.sh"]
+description = "Say hello after linting"
+depends = ["lint"]
+```
+
+`mise run hello` runs `lint` and then the script.
+
+A block that declares its own `run`, `run_windows`, or `file` is not
+configuring the script, and what happens then depends on the spelling. Under the
+extension-stripped name the two coexist: `[tasks.hello]` is a separate task,
+`mise run hello` picks it, and the script stays reachable as
+`mise run hello.sh`. Under the script's full name they cannot, so
+`[tasks."hello.sh"]` replaces the script and its command is what runs:
+
+```toml [mise.toml]
+[tasks."hello.sh"]
+run = "echo hi" # runs instead of mise-tasks/hello.sh
+```
+
+::: warning
+Earlier versions of mise silently dropped that `run` and ran the script anyway.
+If a config relies on the old behavior, remove the command from the block.
+:::
+
+Taking a script over needs the standing of the config that found it: a block
+replaces the script only when it comes from the config whose
+[`task_config.includes`](#task_config.includes) selected the script's directory,
+or from a higher-precedence one. A block from further down the chain contributes
+its metadata and leaves the script running.
+
+On Windows, a script paired with a
+[Windows-native sibling](/tasks/file-tasks#windows) is replaced by that sibling
+under the bare stem, so `build.sh` plus `build.ps1` is configured as
+`[tasks.build]` rather than `[tasks."build.ps1"]`.
+
+If an inline command already uses the name `hello` in another config file,
+metadata under `[tasks.hello]` applies to that task rather than to `hello.sh`,
+which stays reachable as `mise run hello.sh`. See
+[layered task definitions](#layered-task-definitions).
+
+A script takes only its highest-precedence definition. Lower-precedence blocks
+contribute nothing, not even additive fields such as `env` or `alias`, and
+because the two spellings name one script they compete for that single slot: a
+`[tasks.hello]` in `mise.local.toml` replaces a `[tasks."hello.sh"]` in
+`mise.toml` rather than adding to it. If multiple scripts share a name without
+the extension, such as `hello.sh` and `hello.js`, a `[tasks.hello]` block
+applies to both. Use the full name to configure just one script.
+
+#### Layered task definitions
+
+An inline `[tasks.<name>]` block without `run`, `run_windows`, or `file` adds
+metadata to a task of the same name from a lower-precedence config. It can add a
+description, environment variables, or dependencies without repeating the command.
+
+::: code-group
+
+```toml [mise.toml]
+[tasks.check]
+depends = ["lint", "test"]
+```
+
+```toml [mise.local.toml]
+[tasks.check]
+description = "Run the project checks"
+```
+
+:::
+
+Here, `mise run check` still runs `lint` and `test`. A dependency group can receive
+metadata even when it has no command of its own.
+
+When a definition with `run`, `run_windows`, or `file` exists, it provides the
+command. Blocks above the highest-precedence command definition add metadata in
+precedence order, including any `depends` they declare. Definitions below that
+command do not contribute. When no definition has a command, the
+highest-precedence dependency group provides the base instead.
+
+For a task from an [included TOML file](#included-toml-files), an inline command
+replaces the included task, while an inline block without a command adds metadata.
+The inline block must come from the config that selected the include or a
+higher-precedence config — the same requirement a command has to meet to replace
+an executable script under its full name.
 
 #### Remote Git Includes <Badge type="warning" text="experimental" />
 

@@ -20,12 +20,12 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::OnceCell;
 use url::Url;
 
-use crate::cli::version;
 use crate::config::Settings;
 use crate::file::display_path;
 use crate::netrc;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::time::format_duration;
+use crate::version;
 use crate::{env, file};
 
 pub(crate) static HTTP: Lazy<Client> =

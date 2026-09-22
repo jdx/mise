@@ -567,7 +567,7 @@ impl Store {
             uuid,
             machine: self.machine.clone(),
             created_at: store::now_rfc3339(),
-            mise_version: crate::cli::version::VERSION_PLAIN.clone(),
+            mise_version: crate::version::VERSION_PLAIN.clone(),
             trigger: draft.trigger(),
             description,
             description_source,

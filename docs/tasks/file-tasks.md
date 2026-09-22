@@ -59,9 +59,11 @@ You can provide additional configuration for file tasks by adding `#MISE` commen
 
 Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
 
-The same options can come from `mise.toml` instead, in a `[tasks.<name>]` block
-naming the file — see
-[configuring file tasks from TOML](/tasks/task-configuration#configuring-file-tasks-from-toml).
+You can also configure a script from `mise.toml`. For a script named `build.sh`,
+either `[tasks.build]` or `[tasks."build.sh"]` can add a description,
+environment variables, or dependencies. See
+[configuring file tasks from TOML](/tasks/task-configuration.html#configuring-file-tasks-from-toml)
+for examples and naming rules.
 
 ### Multi-line values
 

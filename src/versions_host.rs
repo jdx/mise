@@ -582,7 +582,7 @@ pub(crate) fn track_install(tool: &str, full: &str, version: &str) {
 }
 
 async fn track_install_async(tool: &str, full: &str, version: &str) -> eyre::Result<()> {
-    use crate::cli::version::{ARCH, OS};
+    use crate::platform::{ARCH, OS};
 
     let url = track_install_url(tool);
 

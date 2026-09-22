@@ -420,7 +420,7 @@ fn is_temporary_runtime_label(v: &str) -> bool {
     debug_assert!(
         {
             let remove_version = Versioning::new("2026.10.0").unwrap();
-            *crate::cli::version::V < remove_version
+            *crate::version::V < remove_version
         },
         "Temporary runtime symlink migration guard should be removed in version 2026.10.0."
     );

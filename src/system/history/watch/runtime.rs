@@ -765,8 +765,7 @@ async fn finish_sync(
         &format!(
             "synchronized: {}, {} incoming change(s) pending, {} conflict(s)",
             match &outcome.published {
-                Some(commit) =>
-                    format!("published {}", crate::cli::dotfiles::history::short(commit)),
+                Some(commit) => format!("published {}", crate::system::history::short(commit)),
                 None => "nothing new to publish".to_string(),
             },
             outcome.pending,

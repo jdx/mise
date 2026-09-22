@@ -7,7 +7,7 @@ assert_contains() {
   local output
   output="${1}"
   shift
-  if ! echo "${output}" | grep -q "$@"; then
+  if ! grep -q "$@" <<<"${output}"; then
     echo "Expected to find '$*' in:"
     echo "${output}"
     exit 1
@@ -18,7 +18,7 @@ assert_not_contains() {
   local output
   output="${1}"
   shift
-  if echo "${output}" | grep -q "$@"; then
+  if grep -q "$@" <<<"${output}"; then
     echo "Did not expect to find '$*' in:"
     echo "${output}"
     exit 1

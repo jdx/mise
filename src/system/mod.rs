@@ -241,7 +241,7 @@ impl PackageTomlConfig {
             || options
                 .os
                 .iter()
-                .any(|entry| crate::cli::version::os_selector_matches(entry))
+                .any(|entry| crate::platform::os_selector_matches(entry))
     }
 
     /// Whether this package is enabled by at least one active mise environment.
@@ -3066,7 +3066,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn folded_package_names_filtered_apart_by_os_are_not_a_conflict() -> Result<()> {
-        let current_os = crate::cli::version::OS.as_str();
+        let current_os = crate::platform::OS.as_str();
         let inactive_os = if current_os == "linux" {
             "macos"
         } else {
@@ -3093,8 +3093,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_packages_from_config_files_filters_os_and_arch() -> Result<()> {
-        let current_os = crate::cli::version::OS.as_str();
-        let current_arch = crate::cli::version::ARCH.as_str();
+        let current_os = crate::platform::OS.as_str();
+        let current_arch = crate::platform::ARCH.as_str();
         let inactive_os = if current_os == "linux" {
             "macos"
         } else {
