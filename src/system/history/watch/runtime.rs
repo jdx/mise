@@ -1226,7 +1226,11 @@ impl State {
             return false;
         }
         match self.watched.entry_for(path) {
-            Some(entry) => entry.policy.autosave && !entry.is_excluded(path) && !tracked::inside_nested_repository(entry, path),
+            Some(entry) => {
+                entry.policy.autosave
+                    && !entry.is_excluded(path)
+                    && !tracked::inside_nested_repository(entry, path)
+            }
             None => false,
         }
     }
@@ -1241,9 +1245,12 @@ impl State {
             return false;
         }
         self.watched.entry_for(path).is_some_and(|entry| {
-            entry.policy.autosave && !entry.is_excluded(path) && !tracked::inside_nested_repository(entry, path)
+            entry.policy.autosave
+                && !entry.is_excluded(path)
+                && !tracked::inside_nested_repository(entry, path)
         }) || self.tracked.entry_for(path).is_some_and(|entry| {
-            entry.policy.autosave && !entry.is_excluded(path)
+            entry.policy.autosave
+                && !entry.is_excluded(path)
                 && !tracked::inside_nested_repository(entry, path)
                 && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
         })

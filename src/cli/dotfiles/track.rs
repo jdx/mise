@@ -134,8 +134,7 @@ impl DotfilesTrack {
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);
             let normalized = normalize_target(&target);
-            let mut entry =
-                TrackedEntry::new(normalized.clone(), "track", self.policy(existing));
+            let mut entry = TrackedEntry::new(normalized.clone(), "track", self.policy(existing));
             // re-tracking previews under the entry's effective exclude
             // list: the saved one when this machine's declaration says
             // nothing, its own when it does
