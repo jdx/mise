@@ -42,6 +42,26 @@ separate Node.js or package-manager executable.
 Declare `node` in `[tools]` when needed. mise installs a configured Node.js
 before npm tools, but does not add it to your project automatically.
 
+### Which Node.js the CLI runs on {#runtime-node}
+
+An npm tool is not pinned to the `node` declared alongside it. Its executable
+resolves `node` from the toolset active in the directory the command runs in.
+Two consequences:
+
+- A globally configured npm tool needs `node` in scope wherever it is invoked, not
+  only in the config that declares the tool. Without that, the tool fails at
+  startup even though `node` is configured globally.
+- A project's own `node`, from its `mise.toml` or an idiomatic version file, takes
+  precedence inside that project. The same globally installed CLI can therefore run
+  on a different Node.js version from one directory to the next.
+
+To run a tool on a fixed Node.js version regardless of the current directory, name
+both tools on the command line:
+
+```sh
+mise exec node@24 npm:prettier -- prettier --version
+```
+
 ## Choosing an installer
 
 Use [`npm.package_manager`](/configuration/settings.html#npm.package_manager)
@@ -446,7 +466,7 @@ interoperability is not an upstream compatibility guarantee.
 
 ## Troubleshooting
 
-- **`node` is missing when the CLI starts:** configure Node.js explicitly; the embedded installer does not add a runtime to your project.
+- **`node` is missing when the CLI starts:** configure Node.js explicitly; the embedded installer does not add a runtime to your project. The CLI resolves `node` where it runs, so a globally configured tool also needs `node` in scope in that directory. See [Which Node.js the CLI runs on](#runtime-node).
 - **A native dependency is missing:** inspect the selected installer's lifecycle-script policy and approve only the required builds using its supported option.
 - **Private package metadata works but installation fails:** check the installer you selected and whether both clients can read the registry and credentials.
 - **Aube trust or download-count policy blocks installation:** inspect the specific policy error and the relevant option above before changing installers.
