@@ -95,7 +95,7 @@ impl DotfilesTrack {
             exclude: exclude.clone(),
             ..Default::default()
         };
-        let mut resolved: Vec<PathBuf> = vec![];
+        let mut resolved: Vec<(PathBuf, PathBuf)> = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
                 .components()
@@ -107,12 +107,13 @@ impl DotfilesTrack {
             let existing = managed
                 .iter()
                 .find(|req| req.target == target && req.mode == FileMode::Track);
+            let normalized = normalize_target(&target);
             preview_set.push(TrackedEntry::new(
-                normalize_target(&target),
+                normalized.clone(),
                 "track",
                 self.policy(existing),
             ));
-            resolved.push(target);
+            resolved.push((target, normalized));
         }
         // every declaration is in the set, so a target nested under one
         // of them is attributed the way a capture would attribute it
@@ -124,11 +125,11 @@ impl DotfilesTrack {
         // the machine to print nothing about them
         let targets: Vec<usize> = resolved
             .iter()
-            .filter_map(|target| preview_set.entry_index_for(&normalize_target(target)))
+            .filter_map(|(_, normalized)| preview_set.entry_index_for(normalized))
             .collect();
         let preview_walk = preview_set.walk_selected(&targets)?;
         let mut previews: Vec<String> = vec![];
-        for target in resolved {
+        for (target, normalized) in resolved {
             let target_key = normalized_target(&target);
             let present = target.exists() || target.is_symlink();
             if !present {
@@ -204,7 +205,7 @@ impl DotfilesTrack {
             let set = &preview_set;
             let preview = preview_walk.preview_of(
                 set,
-                set.entry_index_for(&normalize_target(&target))
+                set.entry_index_for(&normalized)
                     .expect("every target is an entry of the preview set"),
             );
             let summary = preview.summary();
