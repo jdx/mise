@@ -291,7 +291,7 @@ pub(crate) fn report(outcome: &run::SyncOutcome) {
     match &outcome.published {
         Some(commit) => info!(
             "history: published {}",
-            crate::cli::dotfiles::history::short(commit)
+            crate::system::history::short(commit)
         ),
         None => info!("history: nothing new to publish"),
     }
@@ -327,7 +327,7 @@ pub(crate) fn confirmed(yes: bool, question: &str) -> Result<bool> {
 /// machine's own declaration never conflicts with the configuration it
 /// pulls.
 fn origin_file() -> Result<PathBuf> {
-    crate::cli::dotfiles::track::declaration_file(true)
+    crate::config::edit::declaration_file(true)
 }
 
 /// Writes the ordinary repository connection.
@@ -336,7 +336,7 @@ pub(super) fn write_config(url: &str, branch: &str, mode: Option<SyncMode>) -> R
     if let Some(parent) = global.parent() {
         crate::file::create_dir_all(parent)?;
     }
-    let mut doc = crate::cli::dotfiles::track::read_document(&global)?;
+    let mut doc = crate::config::edit::read_document(&global)?;
     let history = doc
         .entry("history")
         .or_insert(Item::Table(toml_edit::Table::new()));
@@ -445,7 +445,7 @@ fn remove_locked(state_dir: &std::path::Path, status: &mut run::SyncStatus) -> R
         if !file.exists() {
             continue;
         }
-        let mut doc = crate::cli::dotfiles::track::read_document(&file)?;
+        let mut doc = crate::config::edit::read_document(&file)?;
         let mut changed = false;
         if let Some(history) = doc.get_mut("history").and_then(Item::as_table_mut) {
             changed = history.remove("origin").is_some();

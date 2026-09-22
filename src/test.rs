@@ -19,6 +19,13 @@ use crate::{env, file};
 )]
 #[cfg_attr(not(target_vendor = "apple"), ctor::ctor(unsafe))]
 fn init() {
+    // Invocations that only list tests (`--list`, which nextest runs twice per
+    // binary, concurrently) must not reset the shared fixture tree: one
+    // process's remove_all() unlinks the directory another just chdir'd into,
+    // and that process then aborts on its next current_dir() call.
+    if std::env::args_os().any(|a| a == "--list") {
+        return;
+    }
     // Tests must start from the environment nextest gives their process, not
     // from an activation diff inherited from the process that launched it.
     // This has to happen before the first access to env::HOME initializes

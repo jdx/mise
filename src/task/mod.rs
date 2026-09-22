@@ -3722,6 +3722,23 @@ pub(crate) fn strip_extension(name: &str) -> &str {
     if result.is_empty() { name } else { result }
 }
 
+/// [`strip_extension`] for a whole task name, keeping any monorepo path prefix
+/// (which may itself contain dots) intact: `//projects/my.app:build.sh` strips
+/// to `//projects/my.app:build`.
+pub(crate) fn strip_task_name_extension(name: &str) -> Cow<'_, str> {
+    match name.split_once(':') {
+        Some((path, task)) => {
+            let stripped = strip_extension(task);
+            if stripped.len() == task.len() {
+                Cow::Borrowed(name)
+            } else {
+                Cow::Owned(format!("{path}:{stripped}"))
+            }
+        }
+        None => Cow::Borrowed(strip_extension(name)),
+    }
+}
+
 impl<T> GetMatchingExt<T> for BTreeMap<String, T>
 where
     T: Eq + Hash,
@@ -3909,12 +3926,7 @@ where
 
         // The extension-stripped form of a key, keeping any monorepo path
         // prefix (which may itself contain dots) intact.
-        let stripped_key = |k: &str| -> String {
-            match k.split_once(':') {
-                Some((path, task)) => format!("{path}:{}", strip_extension(task)),
-                None => strip_extension(k).to_string(),
-            }
-        };
+        let stripped_key = strip_task_name_extension;
 
         // Keys that match without extension stripping suppress only the
         // extension-bearing task that shares their identity, e.g. a file task
@@ -3931,8 +3943,7 @@ where
             .iter()
             .filter(|(k, _)| {
                 exact_keys.contains(k.as_str())
-                    || (entry_matches(k.as_str(), true)
-                        && !exact_keys.contains(stripped_key(k).as_str()))
+                    || (entry_matches(k.as_str(), true) && !exact_keys.contains(&*stripped_key(k)))
             })
             .map(|(_, t)| t)
             .unique()
@@ -5657,6 +5668,30 @@ echo "hello world"
         // Test 10: Task names with dots in the middle
         assert_eq!(strip_extension("test.unit"), "test");
         assert_eq!(strip_extension("build.prod.js"), "build.prod");
+    }
+
+    #[test]
+    fn test_strip_task_name_extension() {
+        use super::strip_task_name_extension;
+
+        assert_eq!(strip_task_name_extension("hello.sh"), "hello");
+        assert_eq!(strip_task_name_extension("hello"), "hello");
+        // A dot in the monorepo path prefix is not an extension.
+        assert_eq!(
+            strip_task_name_extension("//projects/my.app:build.sh"),
+            "//projects/my.app:build"
+        );
+        assert_eq!(
+            strip_task_name_extension("//projects/my.app:build"),
+            "//projects/my.app:build"
+        );
+        // Task groups keep their colons; only the rightmost dot goes.
+        assert_eq!(
+            strip_task_name_extension("//pkg:build:frontend.sh"),
+            "//pkg:build:frontend"
+        );
+        // Hidden files keep their leading dot rather than stripping to empty.
+        assert_eq!(strip_task_name_extension(".hidden"), ".hidden");
     }
 
     #[test]

@@ -47,7 +47,7 @@ impl Variant {
             || self
                 .os
                 .iter()
-                .any(|entry| crate::cli::version::os_selector_matches(entry));
+                .any(|entry| crate::platform::os_selector_matches(entry));
         let profile_ok = self
             .profile
             .as_ref()
@@ -62,9 +62,9 @@ impl Variant {
         let os = self
             .os
             .iter()
-            .filter(|entry| crate::cli::version::os_selector_matches(entry))
+            .filter(|entry| crate::platform::os_selector_matches(entry))
             .map(|entry| {
-                let os = if crate::cli::version::is_os_family_selector(entry) {
+                let os = if crate::platform::is_os_family_selector(entry) {
                     1
                 } else {
                     2
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn selection_prefers_the_most_specific_match() {
-        let this_os = crate::cli::version::OS.to_string();
+        let this_os = crate::platform::OS.to_string();
         let other_os = if this_os == "linux" { "macos" } else { "linux" };
         let variants = vec![v(&[&this_os], None, false), v(&[other_os], None, false)];
         assert_eq!(
@@ -221,8 +221,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn unix_family_selects_below_a_specific_os() {
-        let this_os = crate::cli::version::OS.to_string();
-        let this_arch = crate::cli::version::ARCH.to_string();
+        let this_os = crate::platform::OS.to_string();
+        let this_arch = crate::platform::ARCH.to_string();
         let variants = vec![v(&["unix"], None, false), v(&["windows"], None, false)];
         assert_eq!(
             select(&variants, &[]),

@@ -1103,7 +1103,7 @@ mod tests {
         );
 
         let mut inactive_options = parse_tool_options(r#"postinstall="echo inactive""#);
-        let inactive_os = match crate::cli::version::OS.as_str() {
+        let inactive_os = match crate::platform::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
         };

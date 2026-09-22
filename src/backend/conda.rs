@@ -167,6 +167,12 @@ impl CondaBackend {
         }
     }
 
+    /// The conda platform of the running host
+    fn current_conda_platform() -> Result<CondaPlatform> {
+        CondaPlatform::current()
+            .ok_or_else(|| eyre::eyre!("conda backend does not support this platform"))
+    }
+
     fn detect_virtual_packages(platform: CondaPlatform) -> Result<Vec<GenericVirtualPackage>> {
         VirtualPackages::detect_for_platform(
             platform,
@@ -441,7 +447,7 @@ impl CondaBackend {
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
         let records = self
-            .solve_packages(vec![match_spec], CondaPlatform::current(), opts)
+            .solve_packages(vec![match_spec], Self::current_conda_platform()?, opts)
             .await?;
 
         // Separate main package from deps
@@ -460,7 +466,8 @@ impl CondaBackend {
         all_records.push(main_record.clone());
 
         // Extract python info from solved records for noarch python packages
-        let python_info = Self::python_info_from_records(&all_records, CondaPlatform::current());
+        let python_info =
+            Self::python_info_from_records(&all_records, Self::current_conda_platform()?);
 
         // Download all in parallel
         ctx.pr
@@ -546,7 +553,7 @@ impl CondaBackend {
 
         // Extract python info from basenames for noarch python packages
         let python_info =
-            Self::python_info_from_basenames(&dep_basenames, CondaPlatform::current());
+            Self::python_info_from_basenames(&dep_basenames, Self::current_conda_platform()?);
 
         // Collect dep (url, checksum) pairs from lockfile (deps first, main last)
         let mut downloads: Vec<(String, Option<String>)> = vec![];
@@ -1063,7 +1070,7 @@ impl Backend for CondaBackend {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = CondaOptions::new(&raw_opts);
         let channel = opts.channel()?;
-        let current_platform = CondaPlatform::current();
+        let current_platform = Self::current_conda_platform()?;
         let tool_name = self.tool_name();
 
         let gateway = Self::create_gateway()?;

@@ -59,7 +59,7 @@ impl DoctorCheck {
             || self
                 .os
                 .iter()
-                .any(|os| crate::cli::version::os_selector_matches(os))
+                .any(|os| crate::platform::os_selector_matches(os))
     }
 }
 

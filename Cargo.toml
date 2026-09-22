@@ -102,13 +102,13 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-usage_rs = { package = "usage-rs", version = "6.8", features = [
+usage_rs = { package = "usage-rs", version = "6.11", features = [
   "completions",
   "config",
   "diagnostics",
   "validation",
 ] }
-usage-cli = "6.8"
+usage-cli = "6.11"
 color-eyre = { version = "0.6", default-features = false, features = [
   "track-caller",
 ] }
@@ -183,8 +183,8 @@ petgraph = "0.8"
 pgp = "0.20"
 phf = "0.14"
 rand = "0.10"
-rattler = { version = "0.48", default-features = false }
-rattler_conda_types = { version = "0.52", default-features = false }
+rattler = { version = "0.49", default-features = false }
+rattler_conda_types = { version = "0.53", default-features = false }
 rattler_repodata_gateway = { version = "0.33", default-features = false, features = [
   "gateway",
 ] }
@@ -192,7 +192,7 @@ rattler_solve = { version = "9", default-features = false, features = [
   "resolvo",
 ] }
 rattler_package_streaming = { version = "0.27", default-features = false }
-rattler_virtual_packages = { version = "6", default-features = false }
+rattler_virtual_packages = { version = "7", default-features = false }
 regex = "1"
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = [
@@ -268,7 +268,7 @@ unicode-normalization = "0.1"
 url = "2"
 urlencoding = "2"
 uuid = { version = "1", features = ["v7"] }
-usage-lib = { version = "6.8", features = ["docs"] }
+usage-lib = { version = "6.11", features = ["docs"] }
 versions = { version = "8", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }

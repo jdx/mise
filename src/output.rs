@@ -188,11 +188,11 @@ macro_rules! deprecated_at {
         let warn_version = Versioning::new($warn_at).expect("invalid warn_at version in deprecated_at!");
         let remove_version = Versioning::new($remove_at).expect("invalid remove_at version in deprecated_at!");
         debug_assert!(
-            *$crate::cli::version::V < remove_version,
+            *$crate::version::V < remove_version,
             "Deprecated code [{}] should have been removed in version {}. Please remove this deprecated functionality.",
             $id, $remove_at
         );
-        if *$crate::cli::version::V >= warn_version {
+        if *$crate::version::V >= warn_version {
             if $crate::output::DEPRECATED.lock().unwrap().insert($id) {
                 warn!("deprecated [{}]: {} This will be removed in mise {}.", $id, format!($($arg)*), $remove_at);
             }

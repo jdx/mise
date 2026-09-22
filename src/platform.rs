@@ -1,6 +1,7 @@
 use crate::config::Settings;
+use crate::env;
 use eyre::{Result, bail};
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, sync::LazyLock as Lazy};
 
 /// Represents a target platform for lockfile operations
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -327,9 +328,90 @@ fn is_musl_system() -> bool {
     detect_libc() == Some("musl")
 }
 
+pub(crate) static OS: Lazy<String> = Lazy::new(|| env::consts::OS.into());
+pub(crate) static ARCH: Lazy<String> = Lazy::new(|| {
+    match env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        _ => env::consts::ARCH,
+    }
+    .to_string()
+});
+
+/// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
+pub(crate) fn normalize_os(os: &str) -> &str {
+    match os {
+        "darwin" | "macos" => "macos",
+        "windows" | "win" => "windows",
+        other => other,
+    }
+}
+
+/// Normalize architecture name aliases to the canonical form used by [`ARCH`].
+pub(crate) fn normalize_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" | "amd64" | "x64" => "x64",
+        "aarch64" | "arm64" => "arm64",
+        other => other,
+    }
+}
+
+/// Whether an `os` or `os/arch` selector matches the current platform.
+/// Besides an OS name, the OS family `unix` matches every non-Windows platform.
+pub(crate) fn os_selector_matches(entry: &str) -> bool {
+    let (os, arch) = entry
+        .split_once('/')
+        .map_or((entry, None), |(os, arch)| (os, Some(arch)));
+    let os = normalize_os(os);
+    (os == OS.as_str() || os == env::consts::FAMILY)
+        && arch.is_none_or(|arch| normalize_arch(arch) == ARCH.as_str())
+}
+
+/// Whether a selector names the OS family (`unix`, `unix/arm64`) rather than one OS.
+pub(crate) fn is_os_family_selector(entry: &str) -> bool {
+    entry.split('/').next() == Some("unix")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_os() {
+        assert_eq!(normalize_os("macos"), "macos");
+        assert_eq!(normalize_os("darwin"), "macos");
+        assert_eq!(normalize_os("linux"), "linux");
+        assert_eq!(normalize_os("windows"), "windows");
+        assert_eq!(normalize_os("win"), "windows");
+        assert_eq!(normalize_os("freebsd"), "freebsd");
+    }
+
+    #[test]
+    fn test_os_selector_matches() {
+        let os = OS.as_str();
+        let arch = ARCH.as_str();
+        let other_arch = if arch == "x64" { "arm64" } else { "x64" };
+        assert!(os_selector_matches(os));
+        assert!(os_selector_matches(&format!("{os}/{arch}")));
+        assert!(!os_selector_matches(&format!("{os}/{other_arch}")));
+        assert!(!os_selector_matches("plan9"));
+        assert_eq!(os_selector_matches("unix"), cfg!(unix));
+        assert_eq!(os_selector_matches(&format!("unix/{arch}")), cfg!(unix));
+        assert!(!os_selector_matches(&format!("unix/{other_arch}")));
+        assert!(is_os_family_selector("unix"));
+        assert!(is_os_family_selector("unix/arm64"));
+        assert!(!is_os_family_selector("linux"));
+    }
+
+    #[test]
+    fn test_normalize_arch() {
+        assert_eq!(normalize_arch("arm64"), "arm64");
+        assert_eq!(normalize_arch("aarch64"), "arm64");
+        assert_eq!(normalize_arch("x64"), "x64");
+        assert_eq!(normalize_arch("x86_64"), "x64");
+        assert_eq!(normalize_arch("amd64"), "x64");
+        assert_eq!(normalize_arch("riscv64"), "riscv64");
+    }
 
     #[test]
     fn test_platform_parse_basic() {

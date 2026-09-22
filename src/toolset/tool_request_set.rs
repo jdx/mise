@@ -740,7 +740,7 @@ mod tests {
     }
 
     fn inactive_os() -> String {
-        match crate::cli::version::OS.as_str() {
+        match crate::platform::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
         }
@@ -763,7 +763,7 @@ mod tests {
         let (ba, mut requests) = unknown_tool_request(Some(vec![inactive_os()]));
         let options = ToolVersionOptions {
             core: CoreToolOptions {
-                os: Some(vec![crate::cli::version::OS.to_string()]),
+                os: Some(vec![crate::platform::OS.to_string()]),
                 ..Default::default()
             },
             ..Default::default()

@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex, Once};
 
 use clx::progress::{self, ProgressJobBuilder, ProgressOutput};
 
-use crate::cli::version::VERSION_PLAIN;
 use crate::config::Settings;
 use crate::env;
 use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
+use crate::version::VERSION_PLAIN;
 
 #[derive(Debug)]
 pub(crate) struct MultiProgressReport {

@@ -7,17 +7,16 @@ use self_update::backends::github::Update;
 use self_update::update::ReleaseAsset;
 use self_update::{VersionStatus, cargo_crate_version};
 
-use crate::cli::version::{ARCH, OS, SelfUpdateSource};
+use crate::cli::version::SelfUpdateSource;
 use crate::config::Settings;
 use crate::env;
 #[cfg(windows)]
 use crate::file::MAX_PATH;
+use crate::platform::{ARCH, OS};
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-#[cfg(target_os = "macos")]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -414,6 +413,102 @@ fn update_plugins(bin: &std::path::Path) {
     }
 }
 
+/// Whether a failed write probe of the install directory means the update cannot proceed.
+///
+/// Only the errors that say "this user cannot write here" stop the update. Anything else -- a
+/// directory that has gone missing, an exotic filesystem error -- is left to the update itself,
+/// which is where the real operation and the error that describes it are.
+fn write_probe_is_fatal(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem
+    )
+}
+
+/// Create and remove a file in `dir`, the way replacing the binary is about to.
+fn probe_install_dir(dir: &Path) -> std::io::Result<()> {
+    tempfile::Builder::new()
+        .prefix(".mise-self-update-probe")
+        .tempfile_in(dir)
+        .map(|_| ())
+}
+
+/// Whether a sticky directory stops this user from renaming a file in it.
+///
+/// On a sticky directory (`S_ISVTX`, the bit `/tmp` carries) creating a file is allowed but
+/// renaming or removing one is restricted to the file's owner, the directory's owner, and root.
+/// Replacing mise renames the *existing* binary out of the way, so a bindir that is group-writable
+/// and sticky with a root-owned mise in it passes the write probe -- the probe's own file belongs
+/// to the prober -- and then fails at the rename. Taking the four facts as arguments keeps the
+/// rule testable without a second user to own the file.
+#[cfg(unix)]
+fn sticky_blocks_rename(dir_mode: u32, dir_uid: u32, file_uid: u32, euid: u32) -> bool {
+    const S_ISVTX: u32 = 0o1000;
+
+    dir_mode & S_ISVTX != 0 && euid != 0 && dir_uid != euid && file_uid != euid
+}
+
+/// [`sticky_blocks_rename`] against the real directory and binary. A stat that fails says nothing,
+/// so it reports no obstruction and leaves the outcome to the update.
+#[cfg(unix)]
+fn sticky_dir_blocks_replacing(dir: &Path, exe: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    let (Ok(dir_meta), Ok(exe_meta)) = (std::fs::metadata(dir), std::fs::metadata(exe)) else {
+        return false;
+    };
+    sticky_blocks_rename(
+        dir_meta.mode(),
+        dir_meta.uid(),
+        exe_meta.uid(),
+        nix::unistd::geteuid().as_raw(),
+    )
+}
+
+/// Why the running binary cannot be replaced.
+#[derive(Clone, Copy)]
+enum Unreplaceable {
+    /// The install directory refuses writes from this user.
+    DirectoryNotWritable,
+    /// The install directory is sticky and the binary belongs to someone else, so only its owner
+    /// can rename it.
+    #[cfg(unix)]
+    StickyForeignBinary,
+}
+
+/// What to print when the install directory cannot be written to.
+///
+/// Names the binary as well as the directory: the install that is stuck is frequently not the one
+/// the user thinks they are running -- a root-owned `/usr/local/bin/mise` shadowing a packaged
+/// `/usr/bin/mise` produces exactly this failure, and the path is what gives that away.
+fn install_dir_not_writable_message(exe: &Path, dir: &Path, why: Unreplaceable) -> String {
+    let cause = match why {
+        Unreplaceable::DirectoryNotWritable => {
+            format!("{} is not writable by the current user", dir.display())
+        }
+        #[cfg(unix)]
+        Unreplaceable::StickyForeignBinary => format!(
+            "{} is sticky and {} belongs to another user, so only its owner can replace it",
+            dir.display(),
+            exe.display()
+        ),
+    };
+    let elevate = if cfg!(windows) {
+        "run mise self-update again from an elevated (Administrator) prompt"
+    } else {
+        "run `sudo mise self-update` to update this install"
+    };
+    let mut msg = format!(
+        "cannot replace {exe}: {cause}\n\nEither {elevate}, or update mise the same way you installed it.",
+        exe = exe.display(),
+    );
+    if let Some(instructions) = upgrade_instructions_text() {
+        msg.push_str("\n\n");
+        msg.push_str(&instructions);
+    }
+    msg
+}
+
 impl SelfUpdate {
     pub(crate) async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
@@ -495,6 +590,58 @@ impl SelfUpdate {
         bail!("{msg}");
     }
 
+    /// Stop before anything is downloaded when the running binary cannot be replaced.
+    ///
+    /// `self-replace` renames the running mise out of its directory and writes the new binary in
+    /// its place, so an update needs write permission on the *directory*, not on the file. A
+    /// root-owned install being updated by a normal user -- `/usr/local/bin/mise`, an install
+    /// under `/opt` -- therefore fails, but only after the release has been downloaded, and with
+    /// a message that names a temp file nobody asked for and no directory at all:
+    /// `Permission denied (os error 13) at path "/usr/local/bin/.mise.__temp__XKV5Oz"`. Probing
+    /// first turns that into the two things the user needs: which install is stuck, and what to
+    /// do about it.
+    ///
+    /// Deliberately after the up-to-date comparison, so a mise that has nothing to update still
+    /// reports that rather than a permission problem it was never going to hit.
+    fn ensure_install_dir_writable() -> Result<()> {
+        let exe = std::env::current_exe().unwrap_or_else(|_| env::MISE_BIN.clone());
+        let Some(dir) = exe.parent() else {
+            return Ok(());
+        };
+        match probe_install_dir(dir) {
+            // Writing to the directory is necessary but not sufficient: the update also renames
+            // the binary that is already there, which a sticky directory reserves to its owner.
+            Ok(()) => {
+                #[cfg(unix)]
+                if sticky_dir_blocks_replacing(dir, &exe) {
+                    bail!(
+                        "{}",
+                        install_dir_not_writable_message(
+                            &exe,
+                            dir,
+                            Unreplaceable::StickyForeignBinary
+                        )
+                    );
+                }
+                Ok(())
+            }
+            Err(err) if write_probe_is_fatal(&err) => {
+                bail!(
+                    "{}",
+                    install_dir_not_writable_message(
+                        &exe,
+                        dir,
+                        Unreplaceable::DirectoryNotWritable
+                    )
+                )
+            }
+            Err(err) => {
+                debug!("could not probe {} for writability: {err}", dir.display());
+                Ok(())
+            }
+        }
+    }
+
     fn do_update(&self) -> Result<VersionStatus> {
         // Use block_in_place to allow self_update's blocking HTTP calls
         // to work within mise's async runtime
@@ -550,6 +697,8 @@ impl SelfUpdate {
         if !self.force && v == current_version {
             return Ok(VersionStatus::UpToDate(current_version));
         }
+
+        Self::ensure_install_dir_writable()?;
 
         let target = release_archive_name(&v, &OS, &ARCH, crate::build_time::TARGET);
         // Always set release_tag to ensure we download the correct release
@@ -1005,6 +1154,118 @@ mod post_update_tests {
         // And the step swallows it. There is no error here to propagate — which is exactly what
         // the `?` this replaces used to do.
         update_plugins(&missing);
+    }
+}
+
+#[cfg(test)]
+mod install_dir_tests {
+    use super::*;
+
+    #[test]
+    fn a_writable_directory_probes_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        probe_install_dir(dir.path()).unwrap();
+        // The probe cleans up after itself; an update that then fails must not leave a 40MB
+        // artifact of its own behind either, so the directory has to come back empty.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn only_a_permission_failure_stops_the_update() {
+        use std::io::{Error, ErrorKind};
+
+        assert!(write_probe_is_fatal(&Error::from(
+            ErrorKind::PermissionDenied
+        )));
+        assert!(write_probe_is_fatal(&Error::from(
+            ErrorKind::ReadOnlyFilesystem
+        )));
+        // Everything else belongs to the update itself, which reports the operation that really
+        // failed rather than a probe standing in for it.
+        assert!(!write_probe_is_fatal(&Error::from(ErrorKind::NotFound)));
+        assert!(!write_probe_is_fatal(&Error::other("something else")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unwritable_directory_is_a_permission_failure() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("bin");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        match probe_install_dir(&dir) {
+            // Root ignores the mode bits, so under a root test runner there is nothing to assert.
+            Ok(()) => assert_eq!(nix::unistd::geteuid().as_raw(), 0),
+            Err(err) => assert!(write_probe_is_fatal(&err), "{err:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sticky_directory_reserves_renaming_to_the_owner() {
+        const STICKY: u32 = 0o41777;
+        const PLAIN: u32 = 0o40755;
+
+        // The shape the write probe cannot see: a group-writable, sticky bindir holding a
+        // root-owned mise. Creating a file there works; renaming root's does not.
+        assert!(sticky_blocks_rename(STICKY, 0, 0, 1000));
+
+        // Not sticky: ordinary directory permissions decide, and the probe already covered them.
+        assert!(!sticky_blocks_rename(PLAIN, 0, 0, 1000));
+        // The sticky rule exempts the file's owner, the directory's owner, and root.
+        assert!(!sticky_blocks_rename(STICKY, 0, 1000, 1000));
+        assert!(!sticky_blocks_rename(STICKY, 1000, 0, 1000));
+        assert!(!sticky_blocks_rename(STICKY, 0, 0, 0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_users_own_binary_in_a_sticky_directory_is_replaceable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o1777)).unwrap();
+        let exe = dir.path().join("mise");
+        std::fs::write(&exe, b"#!/bin/sh\n").unwrap();
+
+        // Both the file and the temporary directory belong to the test runner, so the sticky bit
+        // takes nothing away here -- the check must not fire merely because the bit is set.
+        assert!(!sticky_dir_blocks_replacing(dir.path(), &exe));
+    }
+
+    #[test]
+    fn the_message_names_the_binary_and_its_directory() {
+        let msg = install_dir_not_writable_message(
+            Path::new("/usr/local/bin/mise"),
+            Path::new("/usr/local/bin"),
+            Unreplaceable::DirectoryNotWritable,
+        );
+        // The binary is the part that identifies which of several mise installs is stuck.
+        assert!(msg.contains("/usr/local/bin/mise"), "{msg}");
+        assert!(msg.contains("/usr/local/bin is not writable"), "{msg}");
+        if cfg!(windows) {
+            assert!(msg.contains("Administrator"), "{msg}");
+        } else {
+            assert!(msg.contains("sudo mise self-update"), "{msg}");
+        }
+        assert!(msg.contains("the same way you installed it"), "{msg}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_sticky_message_says_why_the_binary_cannot_be_replaced() {
+        let msg = install_dir_not_writable_message(
+            Path::new("/usr/local/bin/mise"),
+            Path::new("/usr/local/bin"),
+            Unreplaceable::StickyForeignBinary,
+        );
+        assert!(msg.contains("/usr/local/bin is sticky"), "{msg}");
+        assert!(msg.contains("belongs to another user"), "{msg}");
+        // Still writable, so the directory wording from the other case would be wrong here.
+        assert!(!msg.contains("not writable"), "{msg}");
     }
 }
 

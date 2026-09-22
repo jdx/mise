@@ -166,7 +166,7 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ steps.release.outputs.version }}
       - name: Build and push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: context
           file: packaging/${{ matrix.flavor }}/Dockerfile
@@ -216,7 +216,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
       - name: Build and push Docker image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           push: true
@@ -268,7 +268,7 @@ jobs:
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           platforms: ${{ matrix.platform.platform }}
           labels: ${{ steps.meta.outputs.labels }}

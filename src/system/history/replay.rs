@@ -119,7 +119,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     if req.to.is_none() && req.all {
         bail!("`--all` needs `--to <ref>`");
     }
-    let (store, tracked, entries) = crate::cli::dotfiles::history::open().await?;
+    let (store, tracked, entries) = crate::system::history::open().await?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("rolling back requires git"))?;
@@ -139,7 +139,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
     }
     let targets = match &req.to {
         Some(reference) => {
-            let entry = crate::cli::dotfiles::history::resolve(
+            let entry = crate::system::history::resolve(
                 reference,
                 &entries,
                 (paths.len() == 1)
@@ -225,7 +225,7 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
 
 pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
     ensure_enabled()?;
-    let (store, tracked, entries) = crate::cli::dotfiles::history::open().await?;
+    let (store, tracked, entries) = crate::system::history::open().await?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("undoing requires git"))?;
@@ -254,7 +254,7 @@ pub(crate) async fn undo(req: UndoRequest) -> Result<()> {
         undoes_of.insert(entry.checkpoint.uuid.clone(), target);
     }
     let operation = match &req.reference {
-        Some(reference) => crate::cli::dotfiles::history::resolve(reference, &entries, None)?,
+        Some(reference) => crate::system::history::resolve(reference, &entries, None)?,
         None => entries
             .iter()
             .rev()
