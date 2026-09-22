@@ -366,7 +366,7 @@ mod tests {
     async fn runtime_args_use_platform_supported_version_and_lockfile_owner() {
         crate::toolset::install_state::init().await.unwrap();
         let ba = Arc::new(BackendArg::from("dummy"));
-        let inactive_os = match crate::cli::version::OS.as_str() {
+        let inactive_os = match crate::platform::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
         };

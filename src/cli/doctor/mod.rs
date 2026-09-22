@@ -9,7 +9,6 @@ use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
 use crate::cli::self_update::SelfUpdate;
 use crate::cli::version;
-use crate::cli::version::VERSION;
 use crate::config::{Config, IGNORED_CONFIG_FILES};
 use crate::env::PATH_KEY;
 use crate::file::{canonicalize_cached, canonicalize_or_self, display_path};
@@ -20,6 +19,7 @@ use crate::registry::REGISTRY;
 use crate::toolset::install_state;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::{info, style};
+use crate::version::VERSION;
 use crate::{backend, dirs, duration, env, file, shims};
 use console::{Alignment, pad_str, style};
 use heck::ToSnakeCase;
@@ -466,7 +466,7 @@ impl Doctor {
             }
             self.warnings.push(format!(
                 "new mise version {latest} available, currently on {}",
-                *version::V
+                *crate::version::V
             ));
         }
     }

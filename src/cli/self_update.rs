@@ -7,11 +7,12 @@ use self_update::backends::github::Update;
 use self_update::update::ReleaseAsset;
 use self_update::{VersionStatus, cargo_crate_version};
 
-use crate::cli::version::{ARCH, OS, SelfUpdateSource};
+use crate::cli::version::SelfUpdateSource;
 use crate::config::Settings;
 use crate::env;
 #[cfg(windows)]
 use crate::file::MAX_PATH;
+use crate::platform::{ARCH, OS};
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
