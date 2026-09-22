@@ -1041,10 +1041,7 @@ pub(super) fn eligible(
 ) -> bool {
     match roots.locate(branch_path) {
         Located::Tracked { path, variant } => match tracked.entry_for(&path) {
-            Some(entry) => {
-                entry.variant == variant
-                    && !tracked.excluded_by_lists(exclude, &path)
-            }
+            Some(entry) => entry.variant == variant && !tracked.excluded_by_lists(exclude, &path),
             None => false,
         },
         Located::Config(path) => {
