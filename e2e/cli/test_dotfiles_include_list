@@ -63,23 +63,40 @@ assert_succeed 'mise dot save'
 assert "git --git-dir=$repo show HEAD:home/.codex/rules/one.md" 'edited'
 assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/rules/deep/two.md"
 
+# narrowing the list is reported, not silent
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.codex" = { mode = "track", include = ["config.toml"] }
 TOML
 echo 'model = "y"' >~/.codex/config.toml
-assert_succeed 'mise dot save'
+assert_contains 'mise dot save 2>&1' 'leaves out'
 
-# a hand-edited list is applied by `mise dot track`
+# `mise dot track` is how a hand-edited list is applied, and it gets the
+# one chance to say what the narrowing drops: from the next checkpoint on
+# the parent tree is already narrowed and nothing is left to report
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.codex" = { mode = "track", include = ["rules/one.md"] }
 TOML
-assert_succeed 'mise dot track ~/.codex'
+assert_contains 'mise dot track ~/.codex 2>&1' 'leaves out'
+
+# and when a background save gets there first, the notice waits for
+# someone to be there: the watcher's own log is not where the user is
+# looking, and there is no second chance to say it
+echo 'edited' >~/.codex/rules/one.md
+assert_succeed 'mise dot save'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml"] }
+TOML
+assert_succeed 'mise dot watch --once'
+assert_contains 'mise dot paths 2>&1' 'leaves out'
+# said once, then it is gone
+assert_not_contains 'mise dot paths 2>&1' 'leaves out'
 
 # An include list decides what is captured: a glob is as authoritative
 # as a literal, and either one selecting a credential-named file
-# captures it in plaintext, which `mise dot paths` reports.
+# captures it in plaintext, said out loud.
 mkdir -p ~/.config/fish/functions
 echo 'function hello; end' >~/.config/fish/functions/hello.fish
 echo 'set -x API_TOKEN synthetic' >~/.config/fish/functions/secrets.fish
@@ -87,7 +104,7 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.config/fish" = { mode = "track", include = ["functions/*.fish"] }
 TOML
-assert_contains 'mise dot track ~/.config/fish 2>&1' 'plaintext'
+assert_contains 'mise dot track ~/.config/fish 2>&1' 'saved in plaintext'
 assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/hello.fish" 'function hello; end'
 assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 'set -x API_TOKEN synthetic'
 assert_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
@@ -97,12 +114,41 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 "~/.config/fish" = { mode = "track", include = ["functions/hello.fish", "functions/secrets.fish"] }
 TOML
 echo 'set -x API_TOKEN synthetic2' >~/.config/fish/functions/secrets.fish
-assert_succeed 'mise dot save'
+assert_contains 'mise dot save 2>&1' 'saved in plaintext'
 assert_contains 'mise dot track --dry-run ~/.config/fish' 'plaintext: ~/.config/fish/functions/secrets.fish'
 assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 'set -x API_TOKEN synthetic2'
 assert_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'
 assert_not_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
 assert "mise dot paths --json | jq -r '.plaintext[0].path'" '~/.config/fish/functions/secrets.fish'
+
+# **but the watcher does not say it into its own log.** It walks at
+# startup and on every configuration reload, usually detached, so a
+# warning there is said where nobody reads it. It is written down
+# instead, and the next command a person runs says it.
+notices="$MISE_STATE_DIR/history/notices"
+echo 'set -x API_TOKEN synthetic3' >~/.config/fish/functions/secrets.fish
+mise dot watch --once >watch-once.log 2>&1
+assert_not_contains 'cat watch-once.log' 'saved in plaintext'
+# a standing condition is one notice however many times the watcher
+# walks, so a reload loop cannot grow the file without bound
+echo 'set -x API_TOKEN synthetic4' >~/.config/fish/functions/secrets.fish
+mise dot watch --once >>watch-once.log 2>&1
+assert_not_contains 'cat watch-once.log' 'saved in plaintext'
+assert "grep -c 'saved in plaintext' $notices" '1'
+# and the next command a person runs delivers it and clears it
+assert_contains 'mise dot origin 2>&1' 'saved in plaintext'
+assert_fail "test -s $notices"
+
+# a command that both delivers the notice and walks the same tree says
+# it once, not once per route — the delivery and the walk do not know
+# about each other, and either can be the only one
+echo 'set -x API_TOKEN synthetic7' >~/.config/fish/functions/secrets.fish
+mise dot watch --once >/dev/null 2>&1
+assert "grep -c 'saved in plaintext' $notices" '1'
+mise dot paths >paths.log 2>&1
+assert "grep -c 'WARN.*saved in plaintext' paths.log" '1'
+# the omission listing is different output and still there
+assert "grep -c 'plaintext: ~/.config/fish/functions/secrets.fish' paths.log" '1'
 
 # what a checkpoint was saved under is visible afterwards: both lists,
 # since either decides what it holds
@@ -164,7 +210,26 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 "~/.config/fish" = { mode = "track", include = ["functions/hello.fish", "functions/secrets.fish"] }
 TOML
 
+# **a bootstrap says it during the run.** Notices are drained by
+# `mise dot`, and `mise bootstrap` is a separate top-level command that
+# never drains, so deferring there would wait for a `mise dot` command
+# the user may never run.
+echo 'set -x API_TOKEN synthetic5' >~/.config/fish/functions/secrets.fish
+mise bootstrap >bootstrap.log 2>&1
+assert_contains 'cat bootstrap.log' 'saved in plaintext'
 # said once, not once per snapshot: a bootstrap takes a protective
+# checkpoint before applying and saves the outcome afterwards, and both
+# walk the same tree
+assert "grep -c 'saved in plaintext' bootstrap.log" '1'
+assert_fail "test -s $notices"
+
+# a wrapped capture reports it inline as well — it does not reach the
+# deferral at all, and this pins that so a future change to the capture
+# path cannot quietly send it to the notices file under `mise bootstrap`,
+# which never drains
+assert_contains "mise bootstrap dotfiles capture -- sh -c 'printf synthetic6 >~/.config/fish/functions/secrets.fish' 2>&1" 'saved in plaintext'
+assert_fail "test -s $notices"
+
 # a directory-shaped pattern carries the same authority as any other:
 # selection decides, and the credential-named file inside is captured.
 # (`encrypt = true` capturing it with nothing in the clear is covered by
@@ -174,7 +239,7 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 "~/.config/fish" = { mode = "track", include = ["functions"] }
 TOML
 echo 'set -x API_TOKEN synthetic3' >~/.config/fish/functions/secrets.fish
-assert_succeed 'mise dot save'
+assert_contains 'mise dot save 2>&1' 'saved in plaintext'
 assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 'set -x API_TOKEN synthetic3'
 
 # An entry with no include list gets the builtin filtering exactly as it
