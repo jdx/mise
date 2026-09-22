@@ -2157,6 +2157,43 @@ mod tests {
         assert!(PatternRule::compile("rules/[unclosed/**", false).is_err());
     }
 
+    #[test]
+    fn replay_versions_only_the_patterns_that_can_affect_a_path() {
+        use crate::system::history::replay::{PathState, classify_coverage};
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("plain");
+        let other = tmp.path().join("filtered");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&other).unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        let mut filtered = entry(&other);
+        filtered.exclude = Some(vec!["private/**".into()]);
+        set.push(filtered);
+        let mut coverage = set.coverage(&set.walk().unwrap());
+        coverage.matcher = Some(MATCHER_VERSION + 1);
+        let display = display_path(root.join("new.txt"));
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Absent
+        ));
+        let index = coverage
+            .entries
+            .iter()
+            .position(|entry| entry.path == display_path(&root))
+            .unwrap();
+        coverage.entries[index].exclude = Some(vec![]);
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Absent
+        ));
+        coverage.entries[index].exclude = Some(vec!["private/**".into()]);
+        assert!(matches!(
+            classify_coverage(&coverage, &display),
+            PathState::Unevaluable(_)
+        ));
+    }
+
     #[cfg(unix)]
     #[test]
     fn replay_skips_exclusions_made_unusable_by_a_changed_symlink() {

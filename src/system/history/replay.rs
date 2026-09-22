@@ -1406,7 +1406,10 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     // newer one is simply unknown here. Either way, where it has
     // exclusions, what it covered cannot be reconstructed.
     let has_patterns = !coverage.exclude.is_empty()
-        || coverage.entries.iter().any(|entry| entry.exclude.is_some());
+        || owner
+            .exclude
+            .as_ref()
+            .is_some_and(|patterns| !patterns.is_empty());
     let legacy = coverage.matcher != Some(super::tracked::MATCHER_VERSION) && has_patterns;
     let exclude = super::tracked::ExcludeSet::new(&coverage.exclude)
         .ok()
