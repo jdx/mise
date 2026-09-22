@@ -1255,7 +1255,7 @@ impl Walk {
     /// invisible.
     pub(crate) fn report_warnings(&self) {
         for warning in &self.warnings {
-            super::notices::say(&format!("history: {warning}"));
+            warn!("history: {warning}");
         }
     }
 }

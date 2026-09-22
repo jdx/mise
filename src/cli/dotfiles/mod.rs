@@ -95,23 +95,7 @@ enum Commands {
 
 impl Dotfiles {
     pub(crate) async fn run(self) -> Result<()> {
-        // Anything a background save had to say is said here, to the
-        // person who is now present, before the command they asked for
-        // runs. The watcher itself is where those notices come from, so
-        // it is not where they are delivered.
-        let deliver = !matches!(self.command, Commands::Watch(_));
-        if deliver {
-            crate::system::history::notices::drain();
-        }
-        let outcome = self.dispatch().await;
-        // **And again afterwards.** A command that captures — `mise dot
-        // sync` applying incoming changes, say — can write a notice
-        // while it runs, and making the user wait for their next command
-        // to hear about their own is not delivering it.
-        if deliver {
-            crate::system::history::notices::drain();
-        }
-        outcome
+        self.dispatch().await
     }
 
     async fn dispatch(self) -> Result<()> {

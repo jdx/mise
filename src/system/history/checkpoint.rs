@@ -262,37 +262,18 @@ impl Store {
             }
             Err(err) => return Err(err),
         };
-        // **A warning nobody is there to read is a warning that did not
-        // happen.** A save the user asked for says these; the watcher's
-        // own saves write them down, and the next `mise dot` command
-        // says them — the same rule the narrowing report follows, and
-        // the same reason: its log is not somewhere anyone is looking.
-        // **Said exactly once, and never lost.** A protective snapshot
-        // walks the same tree the outcome then walks, so saying both out
-        // loud says everything twice — the rule the omission report
-        // already follows. But the snapshot is committed before the
-        // operation, and the operation can fail before any save that
-        // would say these, so staying silent would drop the warning for
-        // a credential that is now in plaintext history. So it writes
-        // them down, and the save that says them out loud takes those
-        // copies back: on the way through, said once; on a failure, kept
-        // for the next command.
-        let messages: Vec<String> = walk
-            .warnings
-            .iter()
-            .map(|warning| format!("history: {warning}"))
-            .collect();
-        let speak = !draft.protective && heard(&draft);
-        for message in &messages {
-            if speak {
-                super::notices::say(message);
-            } else if let Err(err) = super::notices::record_in(&self.state_dir, message) {
-                super::notices::say(message);
-                debug!("history: could not keep the notice: {err}");
+        // A capture that leaves a credential-named file in plaintext
+        // because an include list selected it says so on every save: it
+        // goes to any connected origin that way.
+        //
+        // A protective snapshot before an operation says nothing: it
+        // walks the same tree the outcome then walks, so saying it here
+        // too would say everything twice — the rule the omission report
+        // already follows.
+        if !draft.protective {
+            for warning in &walk.warnings {
+                warn!("history: {warning}");
             }
-        }
-        if speak && let Err(err) = super::notices::forget_in(&self.state_dir, &messages) {
-            debug!("history: could not take back the said notices: {err}");
         }
         report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
@@ -447,10 +428,8 @@ impl Store {
                         // save goes on.
                         if let Err(err) = report_narrowed(
                             repo,
-                            &self.state_dir,
                             previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
                             tracked,
-                            &draft,
                         ) {
                             debug!("history: could not compare the previous selection: {err:#}");
                         }
@@ -1042,36 +1021,6 @@ fn under_entry(path: &str, entry: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
-/// Whether someone is there to hear what this save has to say: a save
-/// the user asked for, rather than one the watcher made on its own
-/// schedule.
-///
-/// **The case that matters is the one under a command that does not
-/// deliver notices.** `mise dot` drains them around every subcommand,
-/// so a rollback, an undo or a pull says a deferred warning within the
-/// same command either way — the drain after dispatch runs whether the
-/// command succeeded or failed. `mise bootstrap` is a separate
-/// top-level command that never drains, so a warning deferred there
-/// waits for a `mise dot` command the user may never run.
-///
-/// The unattended saves stay deferred, because their logs are not
-/// somewhere anyone is looking: `Trigger::Edit` is the watcher's own
-/// save, and `Trigger::Apply` is reachable from its automatic apply
-/// through `begin_automatic_apply`, not only from `mise dot pull`.
-fn heard(draft: &Draft) -> bool {
-    matches!(
-        draft.trigger,
-        Some(
-            store::Trigger::Save
-                | store::Trigger::Agent
-                | store::Trigger::Update
-                | store::Trigger::Baseline
-                | store::Trigger::BootstrapBefore
-                | store::Trigger::Bootstrap
-        )
-    )
-}
-
 /// Says how much an entry's `include` list now leaves out of what an
 /// earlier checkpoint held.
 ///
@@ -1089,13 +1038,7 @@ fn heard(draft: &Draft) -> bool {
 /// hand-edited list, and the watcher's own save all report it. It cannot
 /// repeat: the narrowing changes the tree, so the checkpoint is written,
 /// and the next parent is the narrowed one.
-fn report_narrowed(
-    repo: &HistoryRepo,
-    state_dir: &Path,
-    parent: Option<&str>,
-    tracked: &TrackedSet,
-    draft: &Draft,
-) -> Result<()> {
+fn report_narrowed(repo: &HistoryRepo, parent: Option<&str>, tracked: &TrackedSet) -> Result<()> {
     let Some(parent) = parent else {
         return Ok(());
     };
@@ -1137,19 +1080,10 @@ fn report_narrowed(
     // own schedule writes it down, because the log it would otherwise go
     // to is not somewhere anyone is looking, and this is the only chance
     // to say it at all.
-    let heard = heard(draft);
     for (entry, count) in dropped {
-        let message = format!(
+        warn!(
             "history: {entry}: its include list leaves out {count} path(s) an earlier checkpoint held; they are not saved from this checkpoint on"
         );
-        if heard {
-            warn!("{message}");
-        } else if let Err(err) = super::notices::record_in(state_dir, &message) {
-            // saying it late is better than not at all, and failing the
-            // save over a notice would be worse than either
-            warn!("{message}");
-            debug!("history: could not keep the notice: {err}");
-        }
     }
     Ok(())
 }
