@@ -567,10 +567,11 @@ also selects credential-named files. Encryption is a separate setting;
 
 ::: warning Plaintext selection
 Without `encrypt = true`, credential-named files selected by an include
-list are saved in plaintext and may be shared with your origin. mise
-warns before tracking and labels these files `plaintext:` in previews
-and path listings. Adding encryption later does not remove plaintext
-from earlier commits.
+list are saved in plaintext and may be shared with your origin. Previews
+and path listings label these files `plaintext:`. Saves also generate
+[capture warnings](#capture-warnings), which background operations deliver
+through a later foreground command. Adding encryption later does not
+remove plaintext from earlier commits.
 :::
 
 For example, to save a shell function whose name triggers the credential
