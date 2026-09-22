@@ -1045,10 +1045,10 @@ pub(super) fn eligible(
             None => false,
         },
         Located::Config(path) => {
-            tracked.entry_for(&path).is_some_and(|entry| {
-                entry.variant.is_none()
-                    && !crate::system::history::tracked::inside_nested_repository(entry, &path)
-            }) && !tracked.excluded_by_lists(exclude, &path)
+            tracked
+                .entry_for(&path)
+                .is_some_and(|entry| entry.variant.is_none())
+                && !tracked.excluded_by_lists(exclude, &path)
         }
         Located::Marker => false,
         Located::Unmapped => false,

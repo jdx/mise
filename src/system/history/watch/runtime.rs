@@ -1226,7 +1226,7 @@ impl State {
         // the owner is found first
         self.watched
             .entry_for(path)
-            .is_some_and(|entry| entry.policy.autosave && !tracked::inside_nested_repository(entry, path))
+            .is_some_and(|entry| entry.policy.autosave)
             && !self.watched.excluded_by_lists(&self.exclude, path)
     }
 
@@ -1242,10 +1242,10 @@ impl State {
         (self
             .watched
             .entry_for(path)
-            .is_some_and(|entry| entry.policy.autosave && !tracked::inside_nested_repository(entry, path))
+            .is_some_and(|entry| entry.policy.autosave)
             && !self.watched.excluded_by_lists(&self.exclude, path))
             || (self.tracked.entry_for(path).is_some_and(|entry| {
-                entry.policy.autosave && !tracked::inside_nested_repository(entry, path)
+                entry.policy.autosave
                     && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
             }) && !self.tracked.excluded_by_lists(&self.exclude, path))
     }
