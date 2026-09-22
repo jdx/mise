@@ -1027,6 +1027,14 @@ fn under_entry(path: &str, entry: &str) -> bool {
 /// Whether someone is there to hear what this save has to say: a save
 /// the user asked for, rather than one the watcher made on its own
 /// schedule.
+///
+/// **A bootstrap is a save the user asked for, and it is the one case
+/// where getting this wrong loses the message for good.** Notices are
+/// delivered by `mise dot`, which drains them around every subcommand,
+/// so a rollback or a pull would say a deferred warning within the same
+/// command either way. `mise bootstrap` is a separate top-level command
+/// that never drains, so a warning deferred there waits for a
+/// `mise dot` command the user may never run.
 fn heard(draft: &Draft) -> bool {
     matches!(
         draft.trigger,
@@ -1035,6 +1043,8 @@ fn heard(draft: &Draft) -> bool {
                 | store::Trigger::Agent
                 | store::Trigger::Update
                 | store::Trigger::Baseline
+                | store::Trigger::BootstrapBefore
+                | store::Trigger::Bootstrap
         )
     )
 }

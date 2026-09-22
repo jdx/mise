@@ -139,6 +139,14 @@ assert "grep -c 'saved in plaintext' $notices" '1'
 assert_contains 'mise dot origin 2>&1' 'saved in plaintext'
 assert_fail "test -s $notices"
 
+# **a bootstrap says it during the run.** Notices are drained by
+# `mise dot`, and `mise bootstrap` is a separate top-level command that
+# never drains, so deferring there would wait for a `mise dot` command
+# the user may never run.
+echo 'set -x API_TOKEN synthetic5' >~/.config/fish/functions/secrets.fish
+assert_contains 'mise bootstrap 2>&1' 'saved in plaintext'
+assert_fail "test -s $notices"
+
 # a directory-shaped pattern carries the same authority as any other:
 # selection decides, and the credential-named file inside is captured.
 # (`encrypt = true` capturing it with nothing in the clear is covered by
