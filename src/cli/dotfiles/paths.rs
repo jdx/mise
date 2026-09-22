@@ -45,6 +45,17 @@ struct PathRow {
     /// empty one — which clears a list another machine published.
     #[serde(skip_serializing_if = "Option::is_none")]
     exclude: Option<Vec<String>>,
+    /// The entry's own `include` patterns, relative to its path; absent
+    /// when the entry declares none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    include: Option<Vec<String>>,
+    /// How many files the entry's tree holds in all, when an `include`
+    /// list means that is more than the number captured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    considered: Option<u64>,
+    /// Whether the walk skipped a directory the include list could not
+    /// reach into, which makes `considered` a floor rather than a total.
+    searched_partially: bool,
 }
 
 impl DotfilesPaths {
@@ -76,6 +87,9 @@ impl DotfilesPaths {
                 files: counts[index],
                 declared_in: entry.declared_in.as_deref().map(display_path),
                 exclude: entry.exclude.clone(),
+                include: entry.include.clone(),
+                considered: walk.considered.get(&index).copied(),
+                searched_partially: walk.skipped.contains(&index),
             })
             .collect();
         if self.json {
@@ -84,6 +98,7 @@ impl DotfilesPaths {
                 "exclude": tracked.exclude,
                 "invalid": tracked.invalid,
                 "omitted": walk.omitted,
+                "plaintext": walk.plaintext,
                 "nested": walk.nested,
                 "incomplete": walk.incomplete,
             });
@@ -126,6 +141,29 @@ impl DotfilesPaths {
                 for glob in row.exclude.iter().flatten() {
                     miseprintln!("  exclude ({}): {glob}", row.path);
                 }
+                for glob in row.include.iter().flatten() {
+                    miseprintln!("  include ({}): {glob}", row.path);
+                }
+                if let Some(considered) = row.considered {
+                    // "of N" is only said when N is the whole tree: a
+                    // directory the list could not reach into is skipped
+                    // unopened, and counting it would mean doing the
+                    // work the list exists to avoid
+                    if row.searched_partially {
+                        miseprintln!(
+                            "  {}: {} files (include list)",
+                            row.path,
+                            crate::system::history::tracked::with_separators(row.files as usize),
+                        );
+                    } else {
+                        miseprintln!(
+                            "  {}: {} of {} files (include list)",
+                            row.path,
+                            crate::system::history::tracked::with_separators(row.files as usize),
+                            crate::system::history::tracked::with_separators(considered as usize)
+                        );
+                    }
+                }
             }
         }
         for invalid in &tracked.invalid {
@@ -136,6 +174,9 @@ impl DotfilesPaths {
         }
         for nested in &walk.nested {
             miseprintln!("  nested: {} ({})", nested.path, nested.reason);
+        }
+        for plaintext in &walk.plaintext {
+            miseprintln!("  plaintext: {} ({})", plaintext.path, plaintext.reason);
         }
         for incomplete in &walk.incomplete {
             miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);

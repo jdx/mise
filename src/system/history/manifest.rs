@@ -25,6 +25,12 @@ pub(crate) struct Enrollment {
     /// no list at all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<Vec<String>>,
+    /// The entry's own `include` globs, relative to its path. Written
+    /// only when the entry declares a list, so a setup without one stays
+    /// readable by older clients — and a declared but empty list, which
+    /// selects nothing, is not mistaken for no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -268,6 +274,12 @@ impl Manifest {
                         &theirs.exclude,
                         &format!("{path}: exclude"),
                     )?,
+                    include: choose(
+                        &before.include,
+                        &ours.include,
+                        &theirs.include,
+                        &format!("{path}: include"),
+                    )?,
                 }),
                 _ => choose(&before, &ours, &theirs, path)?.cloned(),
             };
@@ -341,6 +353,7 @@ impl Manifest {
             let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
             entry.variant = variant;
             entry.exclude = enrollment.exclude.clone();
+            entry.include = enrollment.include.clone();
             tracked.entries.push(entry);
         }
         Ok(tracked)
@@ -443,12 +456,19 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
-            for pattern in entry.exclude.iter().flatten() {
-                if let Err(err) = glob::Pattern::new(pattern) {
-                    bail!(
-                        "invalid exclude pattern {pattern:?} for {}: {err}",
-                        entry.path
-                    );
+            // both lists are validated, and either may be absent: a
+            // declaration that states none is not a declaration that
+            // states an empty one
+            let exclude: &[String] = entry.exclude.as_deref().unwrap_or_default();
+            let include: &[String] = entry.include.as_deref().unwrap_or_default();
+            for (key, patterns) in [("exclude", exclude), ("include", include)] {
+                for pattern in patterns {
+                    if let Err(err) = glob::Pattern::new(pattern) {
+                        bail!(
+                            "invalid {key} pattern {pattern:?} for {}: {err}",
+                            entry.path
+                        );
+                    }
                 }
             }
             for variant in &entry.variants {
@@ -568,6 +588,65 @@ fn plain(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A reader that cannot see an entry's lists must refuse the
+    /// manifest, not ignore them.** An older mise that skipped an
+    /// unknown `include` would read the entry as covering its whole
+    /// tree, and a rollback would then delete the files the list never
+    /// selected — the checkpoint "did not hold" them because they were
+    /// never selected, which is not the same as their being absent.
+    /// `deny_unknown_fields` is what makes that impossible, so it is
+    /// asserted here rather than assumed.
+    #[test]
+    fn a_reader_without_the_lists_refuses_the_manifest() {
+        /// `Enrollment` exactly as a released mise declares it.
+        #[derive(Debug, serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct ReleasedEnrollment {
+            path: String,
+            autosave: bool,
+            encrypt: bool,
+            variants: Vec<crate::system::history::select::Variant>,
+        }
+
+        let plain = Enrollment {
+            path: "home/.codex".into(),
+            autosave: true,
+            encrypt: false,
+            variants: vec![],
+            exclude: None,
+            include: None,
+        };
+        let json = serde_json::to_string(&plain).unwrap();
+        let read: ReleasedEnrollment = serde_json::from_str(&json).unwrap();
+        assert_eq!(read.path, "home/.codex");
+        assert!(read.autosave);
+        assert!(!read.encrypt);
+        assert!(read.variants.is_empty());
+
+        for entry in [
+            Enrollment {
+                include: Some(vec!["config.toml".into()]),
+                ..plain.clone()
+            },
+            Enrollment {
+                include: Some(vec![]),
+                ..plain.clone()
+            },
+            Enrollment {
+                exclude: Some(vec!["cache/**".into()]),
+                ..plain.clone()
+            },
+        ] {
+            let json = serde_json::to_string(&entry).unwrap();
+            let error = serde_json::from_str::<ReleasedEnrollment>(&json)
+                .expect_err("a released mise must refuse an entry it cannot fully read");
+            assert!(
+                error.to_string().contains("unknown field"),
+                "unexpected refusal: {error}"
+            );
+        }
+    }
 
     /// A portable path is counted the way a live one is, so the
     /// most-specific-owner rule cannot mean two things. A trailing or a
@@ -960,6 +1039,7 @@ mod tests {
             encrypt: false,
             variants: vec![],
             exclude: None,
+            include: None,
         }
     }
 
@@ -1033,6 +1113,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: None,
+                include: None,
             }],
             ..Default::default()
         };
@@ -1087,6 +1168,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![active, inactive],
                 exclude: None,
+                include: None,
             }],
             ..Default::default()
         };
@@ -1158,6 +1240,7 @@ mod tests {
             encrypt: false,
             variants: vec![],
             exclude: None,
+            include: None,
         };
         let mut manifest = Manifest {
             enrollment: vec![enrollment.clone()],
@@ -1186,6 +1269,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: Some(vec!["sessions".into()]),
+                include: None,
             }],
             ..Default::default()
         };

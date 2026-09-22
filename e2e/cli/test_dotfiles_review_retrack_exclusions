@@ -47,6 +47,25 @@ repository="$second/.local/state/mise/history/repo.git"
 assert_contains "git --git-dir=$repository show HEAD:.mise-history/manifest.json" 'sessions'
 assert_succeed "git --git-dir=$repository cat-file -e HEAD:home/.codex/config.toml"
 assert_fail "git --git-dir=$repository cat-file -e HEAD:home/.codex/sessions/session.json"
+# an include list survives the same way, and losing it would be worse:
+# the entry would widen to its whole tree
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml"] }
+TOML
+echo 'picked' >~/.codex/config.toml
+echo 'not picked' >~/.codex/cache.db
+assert_succeed 'mise dot save'
+assert_succeed 'mise dot sync'
+assert_succeed 'b dot sync --fetch-only'
+# this machine edited the same file, so take the published version: the
+# point here is the selection that travels with it, not the merge
+assert_succeed 'b dot pull --take-remote-all --yes'
+echo 'its own cache' >"$second/.codex/cache.db"
+assert_succeed "b dot track $second/.codex"
+assert_contains "git --git-dir=$repository show HEAD:.mise-history/manifest.json" 'config.toml'
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/.codex/cache.db"
+
 # still true on the next ordinary save, and nothing published it
 echo 'edited' >"$second/.codex/config.toml"
 assert_succeed 'b dot save'

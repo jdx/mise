@@ -100,13 +100,21 @@ pub(crate) fn resolve(
             // the shared list exists to keep out — and could publish
             // them. Silence is not an instruction here either.
             let mut enrolled = declaration.clone();
-            if enrolled.exclude.is_none()
-                && let Some(reconciled) = manifest
-                    .enrollment
-                    .iter()
-                    .find(|entry| entry.path == portable)
+            if let Some(reconciled) = manifest
+                .enrollment
+                .iter()
+                .find(|entry| entry.path == portable)
             {
-                enrolled.exclude = reconciled.exclude.clone();
+                if enrolled.exclude.is_none() {
+                    enrolled.exclude = reconciled.exclude.clone();
+                }
+                // and the include list with it: enrolling a path says
+                // nothing about which of its files were selected, and
+                // losing a published list here would widen the entry to
+                // its whole tree
+                if enrolled.include.is_none() {
+                    enrolled.include = reconciled.include.clone();
+                }
             }
             manifest.enrollment.retain(|entry| entry.path != portable);
             manifest.enrollment.push(enrolled);
@@ -177,22 +185,45 @@ fn reconcile(
                 }
                 // silence is not an instruction: a declaration that
                 // drops the `exclude` key says nothing again, and what
-                // the manifest carries stands. `exclude = []` is how a
-                // list is cleared.
+                // the manifest carries stands. `exclude = []` is how the
+                // list is cleared, and it expresses the default — no
+                // exclusions — so nothing is unreachable.
                 if entry.exclude != old.exclude && entry.exclude.is_some() {
                     existing.exclude = entry.exclude.clone();
                 }
+                // **`include` cannot borrow that rule, because absence
+                // is a third meaning it alone can express.** An absent
+                // list selects the tree with credential filtering, `[]`
+                // selects nothing, and `["**"]` selects credential-named
+                // files too — so if dropping the key could not take
+                // effect, a published list could never be returned to
+                // the default. Here there is a cache to compare against:
+                // this machine declared the list before and does not
+                // now, which is an edit, not silence. Without a cache
+                // there is no such evidence, and the branch below keeps
+                // what was published.
+                if entry.include != old.include {
+                    existing.include = entry.include.clone();
+                }
             } else {
-                // **A declaration that says nothing about exclusions does
-                // not clear them.** Without a cache to compare against the
+                // **A declaration that says nothing about selection does
+                // not clear it.** Without a cache to compare against the
                 // local declaration is otherwise taken whole, which would
                 // drop a list this machine never had an opinion about and
-                // make the paths it protects look selected here. Saying
-                // `exclude = []` still clears it: that is an opinion.
-                let saved = existing.exclude.clone();
+                // make the paths it leaves out look selected here. That
+                // is the wrong direction to fail in for both lists: a
+                // dropped `exclude` re-selects what it omitted, and a
+                // dropped `include` widens the entry back to the whole
+                // tree. Saying `exclude = []` or `include = []` still
+                // clears it: that is an opinion.
+                let exclude = existing.exclude.clone();
+                let include = existing.include.clone();
                 *existing = entry.clone();
                 if existing.exclude.is_none() {
-                    existing.exclude = saved;
+                    existing.exclude = exclude;
+                }
+                if existing.include.is_none() {
+                    existing.include = include;
                 }
             }
         } else {
@@ -266,6 +297,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: None,
+                include: None,
             }],
             ..Default::default()
         }
@@ -346,6 +378,83 @@ mod tests {
         assert_eq!(
             merged.enrollment[0].exclude,
             Some(vec!["id_*".to_string(), "*.pem".to_string()])
+        );
+    }
+
+    /// **An include list is selection too, and reconcile owes it the
+    /// same silence rule as `exclude`.** The two fail in opposite
+    /// directions and the include one is the dangerous direction: a
+    /// dropped `exclude` re-selects what it omitted, while a dropped
+    /// `include` widens the entry back to the whole tree, so the caches,
+    /// sessions and credential-named files the list was written to keep
+    /// out become capturable — and publishable — on a machine that never
+    /// had an opinion about them.
+    #[test]
+    fn an_entry_keeps_the_saved_include_list_until_its_declaration_changes_it() {
+        let declare = |include: Option<&[&str]>| Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.codex".into(),
+                autosave: true,
+                include: include
+                    .map(|globs| globs.iter().map(|glob| (*glob).to_string()).collect()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let saved = declare(Some(&["config.toml"]));
+        let silent = declare(None);
+
+        // a machine that has a cache and says nothing in either it or
+        // its declaration has expressed no opinion: the published list
+        // stands rather than widening the entry to the whole tree
+        let merged = reconcile(&saved, &silent, Some(&silent), &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec!["config.toml".to_string()]),
+            "a declaration that says nothing dropped the saved include list"
+        );
+
+        // **but deleting a key this machine did declare is an edit, and
+        // the only way back to the default.** An absent list is a third
+        // meaning `[]` and `["**"]` cannot express — the tree with
+        // credential filtering — so if this could not take effect a
+        // published list would be a one-way door.
+        let merged = reconcile(&saved, &silent, Some(&saved), &[]);
+        assert_eq!(
+            merged.enrollment[0].include, None,
+            "deleting a declared include list could not restore the default selection"
+        );
+
+        // and with no cache, where the declaration is otherwise taken
+        // whole — the adopt and first-resolve path
+        let merged = reconcile(&saved, &silent, None, &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec!["config.toml".to_string()]),
+            "with no cache a silent declaration widened the entry to the whole tree"
+        );
+
+        // an explicitly empty list is an opinion and still clears it,
+        // selecting nothing — otherwise a list could be added to but
+        // never taken away
+        let merged = reconcile(&saved, &declare(Some(&[])), None, &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec![]),
+            "an explicitly empty include list could not clear what was published"
+        );
+
+        // and a genuine change still lands, with or without a cache
+        let widened = declare(Some(&["config.toml", "rules/**"]));
+        let merged = reconcile(&saved, &widened, Some(&saved), &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec!["config.toml".to_string(), "rules/**".to_string()])
+        );
+        let merged = reconcile(&saved, &widened, None, &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec!["config.toml".to_string(), "rules/**".to_string()])
         );
     }
 

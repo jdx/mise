@@ -100,6 +100,10 @@ impl Dotfiles {
     }
 
     pub(crate) async fn run(self) -> Result<()> {
+        self.dispatch().await
+    }
+
+    async fn dispatch(self) -> Result<()> {
         match self.command {
             Commands::Add(cmd) => cmd.run().await,
             Commands::Apply(cmd) => crate::cli::bootstrap::run_dotfiles_apply(cmd).await,

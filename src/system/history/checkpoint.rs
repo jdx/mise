@@ -1656,6 +1656,7 @@ mod tests {
                     encrypt: false,
                     variants: vec![],
                     exclude: None,
+                    include: None,
                 }],
                 ..Default::default()
             },
@@ -1722,6 +1723,7 @@ mod tests {
                     encrypt: false,
                     variants: vec![],
                     exclude: None,
+                    include: None,
                 }],
                 ..Default::default()
             },
