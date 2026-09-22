@@ -794,6 +794,14 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 if include.is_some() && mode != FileMode::Track {
                     bail!("dotfile {target}: include applies only to mode = \"track\"");
                 }
+                if include.is_some()
+                    && std::fs::symlink_metadata(resolve_target_arg(&target))
+                        .is_ok_and(|meta| !meta.is_dir())
+                {
+                    bail!(
+                        "dotfile {target}: include selects paths inside a tracked directory; remove it from this file or track its parent directory"
+                    );
+                }
                 // Both selection lists, not just one: an incoming
                 // `include` this mise cannot compile must fail preflight
                 // rather than be dropped, or the entry silently selects
