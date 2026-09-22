@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Regression for embedded-aube lifecycle scripts that re-invoke their package
+# manager (jdx/mise#13451).
+#
+# Every package manager exports npm_execpath, and packages use it to re-enter
+# the same one. Embedded, aube points it at a shim that calls:
+#   $AUBE_CLI_EXE __aube-cli <args>
+# mise must intercept that before naked-run rewriting, or a package verifying
+# its prebuilt binary with `${npm_execpath} run verify-build` runs
+# `mise run verify-build`, fails with "no tasks defined", and concludes a
+# perfectly good artifact is broken.
+
+cat >package.json <<'JSON'
+{
+  "name": "aube-cli-trampoline-probe",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": { "verify-build": "echo verified-by-aube" }
+}
+JSON
+
+# The trampoline reaches aube's own run, not mise's task runner.
+assert_contains "mise __aube-cli run --no-install verify-build" "verified-by-aube"
+assert_not_contains "mise __aube-cli run --no-install verify-build" "no tasks defined"
+
+# Going through the task runner is the bug path (naked-run rewrite).
+assert_fail "mise run __aube-cli run --no-install verify-build"
+
+# The reported case: re2's install script downloads a prebuilt binary and
+# checks it with `${npm_execpath} run verify-build`. The check has to run as a
+# package script — if it lands in mise's task runner the install still
+# succeeds, just after an unnecessary source build, so assert the failure
+# signature rather than the exit status.
+cat >mise.toml <<'TOML'
+[tools]
+node = "24"
+"npm:re2" = { version = "1.26.1", allow_builds = ["re2"] }
+TOML
+
+assert_succeed "mise install"
+assert_not_contains "mise install --force" "no tasks defined"
