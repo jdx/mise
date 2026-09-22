@@ -935,15 +935,11 @@ skipped rather than creating an empty directory, failing on it, or
 pausing the setup because another machine's pointer differs. No new
 pointer is ever written.
 
-Which repositories a checkpoint skipped is recorded on the machine that
-wrote it, not in the shared history, so a rollback there knows the
-checkpoint never held those files — including after you remove the
-`.git` and the directory becomes ordinary content, when looking at the
-filesystem would no longer tell. Other machines find their own nested
-repositories the same way, by looking. The record is best effort: it
-lives in this machine's checkpoint cache, so rebuilding that cache from
-Git loses it, and a rollback then falls back to what the filesystem
-says.
+Skipped repositories are recorded as omissions in shared checkpoint
+metadata. Rollback preserves those paths even after `.git` is removed,
+on another machine, or after the local cache is rebuilt. The originating
+machine's cache also keeps the more specific nested-repository reason;
+a rebuilt cache may show the generic omission reason instead.
 
 Commands that modify or capture tracked files save checkpoints before and
 after their work. Their metadata includes operation labels and the link
