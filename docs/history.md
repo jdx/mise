@@ -568,7 +568,7 @@ also selects credential-named files. Encryption is a separate setting;
 ::: warning Plaintext selection
 Without `encrypt = true`, credential-named files selected by an include
 list are saved in plaintext and may be shared with your origin. mise
-warns during capture and labels these files `plaintext:` in previews
+warns before tracking and labels these files `plaintext:` in previews
 and path listings. Adding encryption later does not remove plaintext
 from earlier commits.
 :::
@@ -604,8 +604,7 @@ before tracking it again.
 `mise dot paths` and `mise dot track --dry-run` show the selection and any
 plaintext notices. Unreachable subdirectories are skipped without being
 scanned, so a preview may show a selected-file count without a total for
-the whole directory. Background saves queue plaintext and selection-
-narrowing notices for the next `mise dot` command.
+the whole directory.
 
 ::: tip The include command edits a different list
 `mise dot include <glob>` removes a rule from the global `[history] exclude`
