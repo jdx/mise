@@ -223,7 +223,8 @@ fn omitted_under(
     omitted: &[crate::system::history::store::PathReason],
     target: &std::path::Path,
 ) -> usize {
-    let display = crate::file::display_path(target);
+    let target = crate::system::history::tracked::normalize_target(target);
+    let display = crate::file::display_path(&target);
     omitted
         .iter()
         .filter(|omitted| crate::system::history::tracked::display_under(&omitted.path, &display))
