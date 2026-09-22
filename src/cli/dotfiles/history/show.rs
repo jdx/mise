@@ -124,7 +124,23 @@ impl HistoryShow {
                 ]);
             }
             table.print()?;
+            // Both lists, since either one decides what the checkpoint
+            // holds: a reader auditing what was covered cannot tell an
+            // entry saved under a selection from one saved whole if only
+            // the exclusions are shown. An empty include list is printed
+            // too — it selects nothing, which is the most surprising
+            // state to have to infer from silence.
             for entry in &coverage.entries {
+                if let Some(include) = &entry.include {
+                    match include.is_empty() {
+                        true => miseprintln!("  include ({}): none", entry.path),
+                        false => {
+                            for glob in include {
+                                miseprintln!("  include ({}): {glob}", entry.path);
+                            }
+                        }
+                    }
+                }
                 for glob in entry.exclude.iter().flatten() {
                     miseprintln!("  exclude ({}): {glob}", entry.path);
                 }

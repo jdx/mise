@@ -150,6 +150,11 @@ assert "grep -c 'WARN.*saved in plaintext' paths.log" '1'
 # the omission listing is different output and still there
 assert "grep -c 'plaintext: ~/.config/fish/functions/secrets.fish' paths.log" '1'
 
+# what a checkpoint was saved under is visible afterwards: both lists,
+# since either decides what it holds
+assert_contains 'mise dot history show' 'include (~/.config/fish)'
+assert_contains 'mise dot history show' 'functions/hello.fish'
+
 # **an `include` list is enough on its own to declare a tracked entry.**
 # The entry recognizer lists the keys that make a table a file entry;
 # `include` was a known key everywhere else, so a declaration carrying
