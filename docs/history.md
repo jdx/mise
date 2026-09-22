@@ -220,47 +220,6 @@ writes live files, so it runs no reload commands either. A glob under a
 directory that an entry symlinks matches, so `"~/.config/hypr/**"` fires for
 a `"~/.config/hypr" = "dotfiles/hypr"` entry.
 
-### Set a machine up the first time it adopts a setup
-
-Reload commands do not run on a first adopt, and cannot: they are read
-from the configuration that is itself among the arriving files, so when
-those files land there is nothing yet to read. That is also the moment a
-fresh machine most needs the work done — restoring a file is not the same
-as making it take effect. A shell needs its plugins installed, a prompt
-needs its variables set, a directory whose mode matters needs it applied.
-
-Declare a `post-adopt` task for that work:
-
-```toml
-[tasks.post-adopt]
-run = [
-  "fisher update",
-  "tide configure --auto",
-  "chmod 700 ~/.gnupg",
-]
-```
-
-`mise bootstrap --adopt <url>` runs it after the adopted setup has been
-bootstrapped, so anything it needs is already installed. Nothing runs
-unless the setup declares the task — the same rule the `bootstrap` task
-follows.
-
-Adopting records that the machine still needs setting up, rather than
-running the task inline, so an adopt that stops short still gets there. If
-the setup is paused by a conflict, or the bootstrap that follows fails,
-the `mise bootstrap` you run after fixing it runs the task. Once it has
-succeeded, an ordinary `mise bootstrap` does not run it again.
-
-**Write the task so it can run more than once.** A failing task fails the
-command and leaves the machine marked, so the next attempt tries again —
-which is what stops a setup step that did not happen from being silently
-skipped. Adopting again also asks for the setup again. `--skip task`, and
-an `--only` selection that leaves tasks out, skip it and leave the mark
-for a later bootstrap; `--skip tools` stops it installing what it needs.
-
-This does not replace `[history.reload]`, which still runs on every later
-pull.
-
 ## Sharing across machines
 
 Connect a private Git repository, called an **origin**, to share tracked
@@ -293,6 +252,18 @@ Review the connection preview before confirming. With `--sync sync`, the
 watcher pushes saved changes and periodically fetches and applies changes
 from other machines. To bring another machine into this workflow, follow
 [Set up a machine](/bootstrap/setup.html#set-up-another-machine).
+
+### Initialize an adopted machine
+
+Use a [`post-adopt` task](/bootstrap.html#post-adopt-tasks) for setup work
+that should follow adoption, such as initializing application state or
+configuring a shell plugin. It runs after the selected bootstrap phases
+complete, and failed or deferred work can be retried with `mise bootstrap`.
+
+This differs from `[history.reload]`, which reacts to matching file changes.
+Reload commands are read before files are restored, so a table arriving
+with the adopted configuration cannot run during that initial restore.
+Reload commands already configured on the receiving machine can still run.
 
 ### Choose a sync mode
 
@@ -645,8 +616,8 @@ before tracking it again.
 `mise dot paths` and `mise dot track --dry-run` show the selection and any
 plaintext notices. Unreachable subdirectories are skipped without being
 scanned, so a preview may show a selected-file count without a total for
-the whole directory. Background saves queue plaintext and selection-
-narrowing notices for the next `mise dot` command.
+the whole directory. See [capture warnings](#capture-warnings) for notices
+from saves and background operations.
 
 ::: tip The include command edits a different list
 `mise dot include <glob>` removes a rule from the global `[history] exclude`
@@ -659,6 +630,42 @@ checkpoint coverage. Upgrade the machines sharing the setup before using
 them: older clients reject manifests containing this field. New checkpoints
 also use schema version 2, which older clients cannot roll back, even when
 no include list is configured.
+
+### Capture warnings
+
+Saves warn when an include list selects a credential-named file for
+plaintext storage. They also report when a changed include list leaves
+out files that an earlier checkpoint contained. The latter notice means
+those paths stop appearing in new checkpoints; their earlier versions
+remain in Git history.
+
+Warnings appear according to how the capture runs:
+
+| Capture                    | Where to read the warning                         |
+| -------------------------- | ------------------------------------------------- |
+| Explicit save or tracking  | In that command's output                          |
+| Bootstrap                  | During the bootstrap command                      |
+| Watcher or automatic apply | At the next `mise dot` command other than `watch` |
+
+For example, after the watcher applies a narrower include list, run:
+
+```sh
+mise dot paths
+```
+
+The command delivers pending notices before listing the current selection.
+Dotfiles commands also deliver notices produced while they run, including
+when the command fails. Matching plaintext warnings are shown once per
+process, even if both a stored notice and the command's capture report them.
+A background condition can be reported again after its previous notice
+has been delivered.
+
+Warnings from protective checkpoints are kept until they can be reported.
+If an operation fails after saving its protective checkpoint, its pending
+notices remain available to a later dotfiles command. These notices do not
+change selection or encryption settings; use `encrypt = true` for private
+contents and review [existing plaintext history](#remove-plaintext-from-history)
+before publishing it.
 
 ### Exclude files from one directory
 
