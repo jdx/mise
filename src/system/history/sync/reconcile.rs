@@ -225,9 +225,11 @@ pub(crate) fn reconcile(
         // change, decided like any other.
         if (is_gitlink(s) || is_gitlink(t)) && pointer_or_absent(s) && pointer_or_absent(t) {
             plan.skipped = Some(NESTED_NOT_SHARED.into());
-            plan.next.acknowledged = t_version.clone();
-            plan.next.reconciled = t_version.clone();
-            plan.next.applied = t_version;
+            // Skipping does not change this machine's content. Keep its
+            // actual version as the base for later incoming files.
+            plan.next.acknowledged = s_version.clone();
+            plan.next.reconciled = s_version.clone();
+            plan.next.applied = s_version;
             plans.push(plan);
             continue;
         }
@@ -358,15 +360,15 @@ pub(crate) fn reconcile(
             plans.push(plan);
         }
     }
-    skip_pointer_applications(&mut plans);
+    skip_pointer_applications(&mut plans, shared);
     Ok(plans)
 }
 
 /// An application that would write a pointer (content here became a
 /// repository elsewhere, or a decision took the remote side of such a
-/// conflict) is never performed: it is recorded as skipped and
-/// acknowledged, so it neither waits nor blocks publication.
-pub(crate) fn skip_pointer_applications(plans: &mut [PathPlan]) {
+/// conflict) is never performed. Retain the local content as the merge
+/// base, so a later file update does not merge against an unapplied pointer.
+pub(crate) fn skip_pointer_applications(plans: &mut [PathPlan], shared: &BTreeMap<String, Object>) {
     for plan in plans {
         if plan.conflict.is_none()
             && plan
@@ -374,7 +376,8 @@ pub(crate) fn skip_pointer_applications(plans: &mut [PathPlan]) {
                 .as_ref()
                 .is_some_and(|object| is_gitlink(object.as_ref()))
         {
-            let version = plan.apply.take().flatten();
+            plan.apply = None;
+            let version = shared.get(&plan.branch_path).cloned();
             plan.skipped = Some(NESTED_NOT_SHARED.into());
             plan.next.acknowledged = version.clone();
             plan.next.reconciled = version.clone();
@@ -533,6 +536,51 @@ mod tests {
     }
 
     #[test]
+    fn files_arriving_after_a_skipped_pointer_use_the_local_base() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
+        let path = "home/plugin".to_string();
+        let pointer = ("160000".to_string(), "unavailable-commit".to_string());
+        let incoming = Upstream {
+            files: [(path.clone(), pointer)].into(),
+            commit: Some("pointer-head".into()),
+        };
+        // Cover both an absent path and a file that remains unchanged while
+        // the upstream version temporarily becomes an unsupported gitlink.
+        for local in [None, Some(obj("local"))] {
+            let shared = local
+                .clone()
+                .map(|o| (path.clone(), o))
+                .into_iter()
+                .collect();
+            let state = [(
+                path.clone(),
+                SyncRecord {
+                    acknowledged: local.clone(),
+                    reconciled: local.clone(),
+                    applied: local.clone(),
+                    upstream_commit: Some("previous-head".into()),
+                },
+            )]
+            .into();
+            let first = reconcile(&repo, &shared, &incoming, &state, &BTreeSet::new()).unwrap();
+            assert!(first[0].is_noop());
+            assert_eq!(first[0].next.acknowledged, local);
+            let state = [(path.clone(), first[0].next.clone())].into();
+            let repeated = reconcile(&repo, &shared, &incoming, &state, &BTreeSet::new()).unwrap();
+            assert!(repeated.iter().all(PathPlan::is_noop));
+            let files = Upstream {
+                files: [(path.clone(), obj("new-file"))].into(),
+                commit: Some("files-head".into()),
+            };
+            let next = reconcile(&repo, &shared, &files, &state, &BTreeSet::new()).unwrap();
+            assert!(next[0].conflict.is_none());
+            assert!(next[0].publish.is_none());
+            assert_eq!(next[0].apply, Some(Some(obj("new-file"))));
+        }
+    }
+
+    #[test]
     fn a_nested_repository_pointer_is_skipped_not_applied_or_removed() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = HistoryRepo::open_or_init_in(tmp.path()).unwrap().unwrap();
@@ -556,7 +604,7 @@ mod tests {
         assert!(plans[0].publish.is_none());
         assert!(plans[0].conflict.is_none());
         assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
-        assert_eq!(plans[0].next.applied, Some(pointer("aaaa")));
+        assert_eq!(plans[0].next.applied, None);
         // a machine whose nested repository is at another commit: never a
         // conflict that pauses the setup, never a removal
         let shared = [(path(), pointer("bbbb"))].into();
@@ -602,7 +650,7 @@ mod tests {
         assert!(plans[0].apply.is_none());
         assert!(plans[0].conflict.is_none());
         assert_eq!(plans[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
-        assert_eq!(plans[0].next.applied, Some(pointer("aaaa")));
+        assert_eq!(plans[0].next.applied, Some(obj("plain")));
         // a decision that takes the remote pointer over local content is
         // never written either: the same skip applies after resolutions
         let mut decided = vec![PathPlan {
@@ -610,10 +658,10 @@ mod tests {
             apply: Some(Some(pointer("aaaa"))),
             ..Default::default()
         }];
-        skip_pointer_applications(&mut decided);
+        skip_pointer_applications(&mut decided, &plain);
         assert!(decided[0].apply.is_none());
         assert_eq!(decided[0].skipped.as_deref(), Some(NESTED_NOT_SHARED));
-        assert_eq!(decided[0].next.applied, Some(pointer("aaaa")));
+        assert_eq!(decided[0].next.applied, Some(obj("plain")));
         // a file against a pointer is a type change, never a silent skip
         let plain = [(path(), obj("plain"))].into();
         let upstream = Upstream {
