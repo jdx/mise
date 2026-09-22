@@ -874,13 +874,7 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
     let changed = if add {
         append_rule(array, glob)
     } else {
-        // every rule that means this argument, not the first one found:
-        // `any` would stop at the first removal and leave the rest
-        let mut changed = false;
-        for rule in rules_for_argument(glob) {
-            changed |= drop_glob(array, &rule);
-        }
-        changed
+        remove_argument(array, glob)
     };
     if changed {
         crate::file::write(&global, doc.to_string())?;
@@ -958,33 +952,63 @@ fn drop_glob(array: &mut toml_edit::Array, rule: &str) -> bool {
     list_entries(array) != before
 }
 
-/// The list entries that mean `argument`, for taking a rule back out.
+/// Takes back whatever the list holds for `argument`, and reports
+/// whether that changed anything.
 ///
-/// **Two kinds of argument, two derivations, and nothing in between.**
-/// `mise dot exclude` writes the glob a user typed, so that glob is
-/// removed exactly as typed. `mise dot untrack` writes a path through
-/// [`exclude_rule_for_path`], the single function that turns a path into
-/// a rule, so for an argument that names a path the same function says
-/// what to remove — both forms it can produce, since which one was
-/// written depended on whether the path was a directory then, and the
-/// answer now is not evidence about then.
+/// **What the user typed wins over what it could be derived into.** A
+/// rooted argument is both a possible glob and a possible path:
+/// `~/.codex/foo*` is the rule a user typed with `mise dot exclude`, and
+/// it is also what `mise dot untrack` would have written for a file
+/// literally named `foo*` — escaped, as `~/.codex/foo[*]`. Removing both
+/// derivations unconditionally meant taking back a glob silently
+/// re-included a file someone had untracked by name, which is the same
+/// collision `foo*` and `foo[*]` already had, surviving one spelling
+/// further up in rooted form. No syntax tells the two apart, because
+/// `cache[1]` is a valid glob as well as a real filename.
+///
+/// The list settles what syntax cannot: remove the entry that spells the
+/// argument exactly, and derive the path spellings only when the list
+/// holds no such entry — which is precisely the `untrack` undo the
+/// derivation exists for.
+fn remove_argument(array: &mut toml_edit::Array, argument: &str) -> bool {
+    if drop_glob(array, argument) {
+        return true;
+    }
+    // every rule that means this argument, not the first one found:
+    // `any` would stop at the first removal and leave the rest
+    let mut changed = false;
+    for rule in path_rules_for_argument(argument) {
+        changed |= drop_glob(array, &rule);
+    }
+    changed
+}
+
+/// The list entries [`exclude_rule_for_path`] could have written for an
+/// argument that names a path.
+///
+/// `mise dot untrack` writes a path through that function, the single
+/// one that turns a path into a rule, so the same function says what to
+/// remove — both forms it can produce, since which one was written
+/// depended on whether the path was a directory then, and the answer now
+/// is not evidence about then.
 ///
 /// Matching spellings against each other instead was wrong twice over:
 /// it removed `foo[*]` when asked for `foo*`, which are different rules,
 /// and it never removed the `/**` form at all, so a directory untrack
 /// could not be undone.
-fn rules_for_argument(argument: &str) -> Vec<String> {
-    let mut rules = vec![argument.to_string()];
+fn path_rules_for_argument(argument: &str) -> Vec<String> {
     // A path is absolute or `~`-rooted; a glob like `sessions/**` is
     // neither, and deriving from it would invent a rule nobody wrote.
     let target = crate::system::files::resolve_target_arg(argument);
-    if target.is_absolute() {
-        let key = normalized_target(&target);
-        for directory in [false, true] {
-            let rule = exclude_rule_for_path(&key, directory);
-            if !rules.contains(&rule) {
-                rules.push(rule);
-            }
+    if !target.is_absolute() {
+        return vec![];
+    }
+    let key = normalized_target(&target);
+    let mut rules = vec![];
+    for directory in [false, true] {
+        let rule = exclude_rule_for_path(&key, directory);
+        if rule != argument && !rules.contains(&rule) {
+            rules.push(rule);
         }
     }
     rules
@@ -1010,6 +1034,51 @@ mod exclude_list_tests {
             append_rule(&mut list, appended);
             assert_eq!(entries(&list), expected, "{existing:?} + {appended:?}");
         }
+    }
+
+    /// **A rooted glob and the escaped rule for a file of that name are
+    /// two different rules, and taking one back must not take the
+    /// other.** `~/.codex/foo*` is what `mise dot exclude` writes for a
+    /// glob; `~/.codex/foo[*]` is what `mise dot untrack` writes for a
+    /// file literally named `foo*`. Deriving both from the argument
+    /// removed the literal rule too, so `mise dot include` on the glob
+    /// silently re-included a file someone had untracked by name. This
+    /// is the `foo*` / `foo[*]` collision one spelling further up: bare
+    /// arguments never derive, so only the rooted form still had it.
+    #[test]
+    fn a_rooted_glob_does_not_take_the_literal_rule_with_it() {
+        let glob = "~/.codex/foo*";
+        let literal = exclude_rule_for_path(glob, false);
+        assert_eq!(literal, "~/.codex/foo[*]", "escaping changed spelling");
+
+        let mut list = array(&[glob, &literal]);
+        assert!(remove_argument(&mut list, glob));
+        assert_eq!(
+            entries(&list),
+            vec![literal.clone()],
+            "taking back a rooted glob removed the rule for a file named `foo*`"
+        );
+
+        // and the same argument still undoes an `untrack` when that
+        // escaped rule is all the list holds — which is what deriving
+        // the path spellings is for
+        let mut list = array(&[&literal]);
+        assert!(remove_argument(&mut list, glob));
+        assert!(
+            entries(&list).is_empty(),
+            "the untrack undo stopped working once nothing spelled the argument"
+        );
+
+        // the directory spelling is reached the same way, and only when
+        // the argument itself is not in the list
+        let directory = exclude_rule_for_path("~/.codex/logs[a]", true);
+        assert_eq!(directory, "~/.codex/logs[[]a[]]/**");
+        let mut list = array(&["~/.codex/logs[a]", &directory]);
+        assert!(remove_argument(&mut list, "~/.codex/logs[a]"));
+        assert_eq!(entries(&list), vec![directory.clone()]);
+        let mut list = array(&[&directory]);
+        assert!(remove_argument(&mut list, "~/.codex/logs[a]"));
+        assert!(entries(&list).is_empty());
     }
 
     fn array(entries: &[&str]) -> toml_edit::Array {

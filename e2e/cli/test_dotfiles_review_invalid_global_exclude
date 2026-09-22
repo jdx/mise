@@ -122,6 +122,23 @@ assert_succeed "mise dot include 'foo*'"
 assert "$(count 'foo*')" 0
 assert "$(count 'foo[*]')" 1
 
+# and the same two rules in rooted form, where the argument is both a
+# glob a user typed and a path `untrack` could have escaped. Taking the
+# glob back must leave the rule for the file actually named `foo*`.
+assert_succeed "mise dot exclude '~/.codex/bar*'"
+echo 'literal' >"$HOME/.codex/bar*"
+assert_succeed 'mise dot save'
+assert_succeed "mise dot untrack '$HOME/.codex/bar*'"
+assert "$(count '~/.codex/bar*')" 1
+assert "$(count '~/.codex/bar[*]')" 1
+assert_succeed "mise dot include '~/.codex/bar*'"
+assert "$(count '~/.codex/bar*')" 0
+assert "$(count '~/.codex/bar[*]')" 1
+# the escaped rule is still the one that undoes the untrack, once
+# nothing in the list spells the argument
+assert_succeed "mise dot include '~/.codex/bar*'"
+assert "$(count '~/.codex/bar[*]')" 0
+
 # the $ is the point: it stays literal
 # shellcheck disable=SC2016
 dollar='~/.codex/price$x'
