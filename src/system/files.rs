@@ -784,6 +784,16 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 {
                     bail!("invalid manifest {manifest:?} for dotfile {target}");
                 }
+                // **Preflight has to reject what composition would
+                // drop, not just what it cannot parse.** An `include` on
+                // a deployment entry is refused when the configuration is
+                // composed, so accepting it here let a pull report
+                // success while quietly leaving that entry out. Two
+                // readers of one declaration must not disagree about
+                // whether it is usable.
+                if include.is_some() && mode != FileMode::Track {
+                    bail!("dotfile {target}: include applies only to mode = \"track\"");
+                }
                 // Both selection lists, not just one: an incoming
                 // `include` this mise cannot compile must fail preflight
                 // rather than be dropped, or the entry silently selects
