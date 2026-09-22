@@ -62,7 +62,7 @@ run = "echo lower-inline-ran"
 env = { GREETING = "hi" }
 
 # The block that replaces mise-tasks/hello.sh is in mise.toml, above this one,
-# so the replacement is already in place by the time this is read.
+# so this is the lower of the two definitions naming that script.
 [tasks.hello]
 description = "stem block from a lower config"
 EOF
@@ -113,8 +113,10 @@ assert "mise run low" "low-script-ran GREETING=hi"
 assert_contains "mise tasks" "decorated from a lower config"
 
 # A replacement stands in for the script under its name, so a block spelling
-# that name by its stem overlays the replacement instead of landing beside it as
-# a task of its own that "mise run hello" would prefer and that runs nothing.
+# that name by its stem resolves to it instead of landing beside it as a task of
+# its own that "mise run hello" would prefer and that runs nothing. Coming from
+# a config below the one that replaced the script, it adds nothing -- the rule
+# a second block naming one script already follows.
 assert "mise run hello" "inline-ran"
-assert_contains "mise tasks" "stem block from a lower config"
+assert_not_contains "mise tasks" "stem block from a lower config"
 assert_not_contains "mise tasks ls --no-header" "hello.sh"

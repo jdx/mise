@@ -4914,9 +4914,9 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     let mut file_task_overlays: IndexMap<String, Task> = IndexMap::new();
     // Names whose script an inline command took over. The replacement stands in
     // for the script under that name, so a block spelling it by the stem still
-    // finds it -- otherwise `[tasks.hello]` would land beside the replacement as
-    // a task of its own, and `mise run hello`, preferring the exact name, would
-    // run nothing.
+    // resolves to it -- otherwise `[tasks.hello]` would land beside the
+    // replacement as a task of its own, and `mise run hello`, preferring the
+    // exact name, would run nothing.
     let mut replaced_file_task_names: BTreeSet<String> = BTreeSet::new();
     let mut seen_config_task_names = BTreeSet::new();
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
@@ -4938,6 +4938,15 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             );
             if !targets.is_empty() {
                 for name in targets {
+                    // A name an inline command already took over has its one
+                    // definition: that block outranked everything below it, so
+                    // a block arriving after it adds nothing, exactly as it
+                    // would to a script (#11103). Resolving to the name is
+                    // still what matters -- it keeps the block from becoming a
+                    // task of its own that would shadow the replacement.
+                    if replaced_file_task_names.contains(&name) {
+                        continue;
+                    }
                     file_task_overlays.entry(name).or_insert_with(|| t.clone());
                 }
                 continue;
@@ -5079,8 +5088,10 @@ fn file_task_overlay_targets(
 /// `hello.js`.
 ///
 /// A name in `replaced_file_task_names` held a script until an inline command
-/// took it over, so it counts here too: which spelling the loop reached first
-/// must not decide whether a stem block finds the task.
+/// took it over, so it counts here too: a stem block has to resolve to the
+/// replacement rather than become a task of its own beside it. Whether it then
+/// contributes anything is the caller's call — after a command has claimed the
+/// name, a later block adds nothing.
 fn stripped_name_overlay_targets(
     by_name: &IndexMap<String, Task>,
     name: &str,
@@ -7246,21 +7257,23 @@ mod tests {
     }
 
     /// A replacement stands in for the script under that name, so a block
-    /// spelling the name by its stem still overlays it, whichever order the two
-    /// arrive in. Landing beside the replacement instead would leave a
-    /// commandless task that `mise run hello` prefers and that runs nothing --
-    /// the shape #13448 fixed for scripts.
+    /// spelling the name by its stem resolves to it instead of landing beside
+    /// it as a commandless task that `mise run hello` would prefer and that
+    /// would run nothing -- the shape #13448 fixed for scripts.
+    ///
+    /// Which of the two definitions applies is then the ordinary precedence
+    /// question, and `config_tasks` is ordered highest first.
     #[test]
-    fn test_a_stripped_name_block_overlays_a_replaced_file_task() {
+    fn test_a_stripped_name_block_resolves_to_a_replaced_file_task() {
         let command = inline_task("hello.sh", "echo inline");
         let stem = Task {
             description: "overlaid".to_string(),
             ..inline_overlay("hello")
         };
 
-        for blocks in [
-            vec![command.clone(), stem.clone()],
-            vec![stem.clone(), command.clone()],
+        for (blocks, applies) in [
+            (vec![command.clone(), stem.clone()], false),
+            (vec![stem.clone(), command.clone()], true),
         ] {
             let first = blocks[0].name.clone();
             let tasks = merge_file_and_config_tasks(vec![file_task("hello.sh")], blocks);
@@ -7272,11 +7285,38 @@ mod tests {
                 vec![RunEntry::Script("echo inline".to_string())],
                 "{first} first lost the command"
             );
+            // Only the highest-precedence block reaches the task (#11103), so
+            // the stem block contributes exactly when it came first.
             assert_eq!(
-                tasks[0].description, "overlaid",
-                "{first} first lost the overlay"
+                tasks[0].description,
+                if applies { "overlaid" } else { "" },
+                "{first} first gave the wrong block the definition"
             );
         }
+    }
+
+    /// The full-name spelling answers the same way, so which one a config used
+    /// does not change whether a second block reaches the replacement.
+    #[test]
+    fn test_an_exact_name_block_after_a_replacement_adds_nothing() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![
+                inline_task("hello.sh", "echo inline"),
+                Task {
+                    description: "from a lower config".to_string(),
+                    config_precedence: 1,
+                    ..inline_overlay("hello.sh")
+                },
+            ],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(
+            tasks[0].run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+        assert_eq!(tasks[0].description, "");
     }
 
     /// On Windows a `.ps1` paired with a POSIX sibling is renamed to the bare
