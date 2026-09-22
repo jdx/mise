@@ -734,15 +734,6 @@ impl TrackedSet {
             });
             false
         });
-        // a credential-named file saved because an entry named it exactly
-        // is worth saying out loud on every capture, not only in
-        // `mise dot paths`: it goes to any connected origin as plaintext
-        for plaintext in &walk.plaintext {
-            walk.warnings.push(format!(
-                "{}: an include list selects it, so it is saved in plaintext although it looks like a credential store; `encrypt = true` saves it encrypted instead",
-                plaintext.path
-            ));
-        }
         walk.entries = set.entries.clone();
         let config = normalize(&global_config_dir());
         let mut roots: BTreeMap<String, CaptureRoot> = BTreeMap::new();

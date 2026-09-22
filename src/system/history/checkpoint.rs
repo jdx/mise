@@ -262,19 +262,7 @@ impl Store {
             }
             Err(err) => return Err(err),
         };
-        // A capture that leaves a credential-named file in plaintext
-        // because an include list selected it says so on every save: it
-        // goes to any connected origin that way.
-        //
-        // A protective snapshot before an operation says nothing: it
-        // walks the same tree the outcome then walks, so saying it here
-        // too would say everything twice — the rule the omission report
-        // already follows.
-        if !draft.protective {
-            for warning in &walk.warnings {
-                warn!("history: {warning}");
-            }
-        }
+        walk.report_warnings();
         report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
@@ -420,19 +408,6 @@ impl Store {
                             &mut modes,
                             &walk,
                         )?;
-                        // **A notice is never worth failing a capture.**
-                        // This reads the parent's manifest and tree, and
-                        // either can legitimately refuse — a manifest
-                        // written by a newer mise, a corrupted blob — so
-                        // what it cannot say, it does not say, and the
-                        // save goes on.
-                        if let Err(err) = report_narrowed(
-                            repo,
-                            previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
-                            tracked,
-                        ) {
-                            debug!("history: could not compare the previous selection: {err:#}");
-                        }
                         let mut manifest = super::manifest::Manifest::read(repo, &composed)?
                             .ok_or_else(|| {
                                 eyre::eyre!("captured tree is missing enrollment metadata")
@@ -1019,73 +994,6 @@ fn under_entry(path: &str, entry: &str) -> bool {
         || path
             .strip_prefix(entry)
             .is_some_and(|rest| rest.starts_with('/'))
-}
-
-/// Says how much an entry's `include` list now leaves out of what an
-/// earlier checkpoint held.
-///
-/// Narrowing a list drops paths already in history from every checkpoint
-/// after it. That is what the user asked for, but it happens silently —
-/// nothing about the tree changed — so it is said at the point of change.
-///
-/// **There is exactly one opportunity to say it, and it is taken
-/// whatever caused the save.** The checkpoint that applies the narrowing
-/// is the last one whose parent still holds those paths; from the next
-/// one on there is nothing left to compare against and the drop can
-/// never be reported. Which command ran is not something the paths care
-/// about, and the watcher saving first is not a reason for the user to
-/// hear nothing — so a `mise dot save`, a `mise dot track` applying a
-/// hand-edited list, and the watcher's own save all report it. It cannot
-/// repeat: the narrowing changes the tree, so the checkpoint is written,
-/// and the next parent is the narrowed one.
-fn report_narrowed(repo: &HistoryRepo, parent: Option<&str>, tracked: &TrackedSet) -> Result<()> {
-    let Some(parent) = parent else {
-        return Ok(());
-    };
-    if tracked.entries.iter().all(|entry| entry.include.is_none()) {
-        return Ok(());
-    }
-    // **Nothing narrowed, nothing to scan.** The lists are recorded with
-    // the checkpoint, so the cheap question — are this save's enrollment
-    // and `include` values the ones the parent already holds? — is
-    // answered from the manifest, and only a difference pays for a walk
-    // of the parent tree. An entry added or removed counts as a
-    // difference, because either can change what an existing entry owns.
-    if let Some(previous) = super::manifest::Manifest::read(repo, parent)? {
-        let selection = |manifest: &super::manifest::Manifest| {
-            manifest
-                .enrollment
-                .iter()
-                .map(|entry| (entry.path.clone(), entry.include.clone()))
-                .collect::<Vec<_>>()
-        };
-        if selection(&previous) == selection(&tracked.manifest) {
-            return Ok(());
-        }
-    }
-    let roots = super::sync::layout::Roots::current();
-    let mut dropped: BTreeMap<String, u64> = BTreeMap::new();
-    for file in repo.ls_tree(parent)? {
-        let located = roots.locate(&file.path);
-        let Some(path) = located.path() else { continue };
-        let Some(entry) = tracked.entry_for(path) else {
-            continue;
-        };
-        if entry.include.is_none() || entry.is_included(path) {
-            continue;
-        }
-        *dropped.entry(entry.display()).or_default() += 1;
-    }
-    // A save the user is watching says it; one the watcher made on its
-    // own schedule writes it down, because the log it would otherwise go
-    // to is not somewhere anyone is looking, and this is the only chance
-    // to say it at all.
-    for (entry, count) in dropped {
-        warn!(
-            "history: {entry}: its include list leaves out {count} path(s) an earlier checkpoint held; they are not saved from this checkpoint on"
-        );
-    }
-    Ok(())
 }
 
 /// A failed observation is not evidence of deletion. Carry only saved objects
