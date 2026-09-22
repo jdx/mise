@@ -126,6 +126,11 @@ assert "mise dot paths --json | jq -r '.plaintext[0].path'" '~/.config/fish/func
 # warning there is said where nobody reads it. It is written down
 # instead, and the next command a person runs says it.
 notices="$MISE_STATE_DIR/history/notices"
+# a save that changes nothing saves nothing, and must not claim a
+# plaintext capture that did not happen
+echo 'set -x API_TOKEN synthetic2b' >~/.config/fish/functions/secrets.fish
+assert_contains 'mise dot save 2>&1' 'saved in plaintext'
+assert_not_contains 'mise dot save 2>&1' 'saved in plaintext'
 echo 'set -x API_TOKEN synthetic3' >~/.config/fish/functions/secrets.fish
 mise dot watch --once >watch-once.log 2>&1
 assert_not_contains 'cat watch-once.log' 'saved in plaintext'
