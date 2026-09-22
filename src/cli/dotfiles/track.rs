@@ -138,21 +138,21 @@ impl DotfilesTrack {
             // re-tracking previews under the entry's effective exclude
             // list: the saved one when this machine's declaration says
             // nothing, its own when it does
-            if let Some(existing) = existing {
-                let declared: Option<Vec<String>> = existing.policy.explicit.exclude.then(|| {
+            entry.exclude = existing
+                .filter(|existing| existing.policy.explicit.exclude)
+                .map(|existing| {
                     existing
                         .exclude
                         .iter()
                         .map(|pattern| pattern.as_str().to_owned())
                         .collect()
-                });
-                entry.exclude = declared.or_else(|| {
+                })
+                .or_else(|| {
                     effective
                         .entry_for(&entry.path)
                         .filter(|resolved| resolved.path == entry.path)
                         .and_then(|resolved| resolved.exclude.clone())
                 });
-            }
             preview_set.push(entry);
             resolved.push((target, normalized));
         }
