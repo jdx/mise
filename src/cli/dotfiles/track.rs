@@ -836,7 +836,18 @@ pub(crate) fn exclude_rule_for_path(key: &str, directory: bool) -> String {
     }
 }
 
-pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
+/// What an edit to the global exclude list did.
+pub(crate) struct ExcludeEdit {
+    /// Whether the list moved.
+    pub changed: bool,
+    /// Rules still in the list that mean the same argument, after a
+    /// removal took the one it named out. A removal that leaves one of
+    /// these behind has not re-included the path, so the caller must not
+    /// say it has.
+    pub still_excluding: Vec<String>,
+}
+
+pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<ExcludeEdit> {
     use toml_edit::{Item, Value};
     // **mise never writes a rule mise would refuse to load.** Every
     // writer of this list arrives here — `mise dot exclude`, and
@@ -871,15 +882,37 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
             display_path(&global)
         );
     };
-    let changed = if add {
-        append_rule(array, glob)
+    let (changed, still_excluding) = if add {
+        (append_rule(array, glob), vec![])
     } else {
-        remove_argument(array, glob)
+        let changed = remove_argument(array, glob);
+        (changed, rules_still_held(array, glob))
     };
     if changed {
         crate::file::write(&global, doc.to_string())?;
     }
-    Ok(changed)
+    Ok(ExcludeEdit {
+        changed,
+        still_excluding,
+    })
+}
+
+/// The rules that mean `argument` and are still in the list.
+///
+/// **A removal that leaves a sibling spelling behind has not
+/// re-included the path.** `mise dot untrack` writes the escaped rule
+/// for a path, so a list can hold both a glob a user typed and the
+/// escaped rule for a file of that name; taking back the glob leaves the
+/// file excluded. Saying "is captured again" there was simply false, and
+/// this is what lets the caller say what actually happened instead.
+fn rules_still_held(array: &toml_edit::Array, argument: &str) -> Vec<String> {
+    let held: Vec<String> = list_entries(array).into_iter().flatten().collect();
+    let mut candidates = vec![argument.to_string()];
+    candidates.extend(path_rules_for_argument(argument));
+    candidates
+        .into_iter()
+        .filter(|rule| held.contains(rule))
+        .collect()
 }
 
 /// The entries of a list as plain strings, for comparing an edit's result

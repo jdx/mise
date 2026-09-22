@@ -131,13 +131,22 @@ assert_succeed 'mise dot save'
 assert_succeed "mise dot untrack '$HOME/.codex/bar*'"
 assert "$(count '~/.codex/bar*')" 1
 assert "$(count '~/.codex/bar[*]')" 1
-assert_succeed "mise dot include '~/.codex/bar*'"
+# and it says so rather than claiming the path is captured again: the
+# rule for the file named `bar*` is still in force. Run once and assert
+# on the captured output — each assertion would otherwise run the
+# command again, against a list the first one already changed.
+mise dot include '~/.codex/bar*' >include-bar.log 2>&1
+assert_contains 'cat include-bar.log' 'still excludes it'
+assert_contains 'cat include-bar.log' '~/.codex/bar[*]'
 assert "$(count '~/.codex/bar*')" 0
 assert "$(count '~/.codex/bar[*]')" 1
 # the escaped rule is still the one that undoes the untrack, once
 # nothing in the list spells the argument
 assert_succeed "mise dot include '~/.codex/bar*'"
 assert "$(count '~/.codex/bar[*]')" 0
+# with nothing left to exclude it, the claim is the plain one again
+assert_contains "mise dot exclude '~/.codex/solo' 2>&1" 'excluded from capture'
+assert_contains "mise dot include '~/.codex/solo' 2>&1" 'is captured again'
 
 # the $ is the point: it stays literal
 # shellcheck disable=SC2016
