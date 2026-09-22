@@ -287,6 +287,8 @@ pub(crate) struct Walk {
     pub nested: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
     pub warnings: Vec<String>,
+    /// Notices that claim selected contents were saved.
+    pub capture_warnings: Vec<String>,
 }
 
 impl TrackedSet {
@@ -738,7 +740,7 @@ impl TrackedSet {
         // is worth saying out loud on every capture, not only in
         // `mise dot paths`: it goes to any connected origin as plaintext
         for plaintext in &walk.plaintext {
-            walk.warnings.push(format!(
+            walk.capture_warnings.push(format!(
                 "{}: an include list selects it, so it is saved in plaintext although it looks like a credential store; `encrypt = true` saves it encrypted instead",
                 plaintext.path
             ));
@@ -1254,7 +1256,7 @@ impl Walk {
     /// showed the listing silently would be the one place the problem is
     /// invisible.
     pub(crate) fn report_warnings(&self) {
-        for warning in &self.warnings {
+        for warning in self.warnings.iter().chain(&self.capture_warnings) {
             super::notices::say(&format!("history: {warning}"));
         }
     }
@@ -4124,6 +4126,11 @@ mod tests {
             assert!(holds(&walk, "secrets.fish"), "{include:?}");
             assert!(walk.omitted.is_empty(), "{include:?}");
             assert_eq!(walk.plaintext.len(), 1, "{include:?}");
+            assert_eq!(walk.capture_warnings.len(), 1, "{include:?}");
+            assert!(
+                walk.warnings.is_empty(),
+                "capture notices must wait for a commit"
+            );
             assert!(
                 walk.plaintext[0].path.ends_with("secrets.fish"),
                 "{include:?}"

@@ -667,7 +667,7 @@ mise dot paths
 ```
 
 The command delivers pending notices before listing the current selection.
-Dotfiles commands and `mise bootstrap` also deliver notices produced while they run, including
+Non-watch dotfiles commands and `mise bootstrap` also deliver notices produced while they run, including
 when the command fails. Matching plaintext warnings are shown once per
 process, even if both a stored notice and the command's capture report them.
 A background condition can be reported again after its previous notice

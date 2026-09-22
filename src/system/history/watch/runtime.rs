@@ -1272,7 +1272,7 @@ fn watched_set(tracked: &TrackedSet) -> Result<(TrackedSet, Vec<PathBuf>)> {
     // nobody asked for to the notices file; this is the same rule at the
     // other end of the same walk. Recording a standing condition is
     // deduplicated, so a reload loop does not repeat it.
-    for warning in &walk.warnings {
+    for warning in walk.warnings.iter().chain(&walk.capture_warnings) {
         let message = format!("history: {warning}");
         if let Err(err) = crate::system::history::notices::record(&message) {
             warn!("{message}");

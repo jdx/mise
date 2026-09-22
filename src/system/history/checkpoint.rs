@@ -262,6 +262,12 @@ impl Store {
             }
             Err(err) => return Err(err),
         };
+        let scan_notices: Vec<_> = walk
+            .warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        self.deliver_capture_notices(&scan_notices, !draft.protective && heard(&draft));
         report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
@@ -595,7 +601,7 @@ impl Store {
             operation,
         };
         let mut messages: Vec<String> = walk
-            .warnings
+            .capture_warnings
             .iter()
             .map(|warning| format!("history: {warning}"))
             .collect();
