@@ -121,7 +121,17 @@ pub(super) fn prospective(
     if let Some(invalid) = declarations.invalid.first() {
         bail!("{}: {}", invalid.path, invalid.reason);
     }
-    declarations.exclude_set()?;
+    // **An incoming exclusion that cannot be applied is refused here,
+    // not merely compiled.** This line used to fail through
+    // `exclude_set()?` because building the matcher errored on an
+    // unusable pattern; it now records the pattern instead, so asking
+    // only for the matcher would accept the config and write it. A pull
+    // that applies it would then capture, and could publish, exactly the
+    // files the broken rule was written to keep out. The guards on the
+    // live set do not cover this: they read the local list, and this is
+    // the incoming one. Failing here is what `run` turns into an
+    // `InvalidIncoming` conflict with the plan left unapplied.
+    declarations.refuse_unusable_exclusions()?;
     // finished the way `TrackedSet::from_config` finishes a set, so it can
     // be resolved the way a live one is. Recipients are deliberately left
     // unset: `reconcile` then keeps the saved ones, and a batch is not the
