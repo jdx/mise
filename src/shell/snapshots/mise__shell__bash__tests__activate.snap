@@ -20,7 +20,7 @@ mise() {
 	local command
 	command="${1:-}"
 	if [ "$#" = 0 ]; then
-		command "$__MISE_EXE"
+		command /some/dir/mise
 		return
 	fi
 	shift
@@ -29,12 +29,12 @@ mise() {
 	deactivate | shell | sh)
 		# if argv doesn't contains -h,--help
 		if [[ ! " $* " =~ " --help " ]] && [[ ! " $* " =~ " -h " ]]; then
-			eval "$(command "$__MISE_EXE" "$command" "$@")"
+			eval "$(command /some/dir/mise "$command" "$@")"
 			return $?
 		fi
 		;;
 	esac
-	command "$__MISE_EXE" "$command" "$@"
+	command /some/dir/mise "$command" "$@"
 }
 
 _mise_hook() {

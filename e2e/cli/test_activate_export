@@ -11,3 +11,9 @@ assert_contains "mise activate bash" "export __MISE_EXE=/"
 # 3) Child shell can access __MISE_EXE because it is exported
 eval "$(mise activate bash --no-hook-env)"
 assert "bash -c 'echo \$__MISE_EXE'" "$__MISE_EXE"
+
+# 4) The mise function still works when only the function definition is
+# carried over (e.g. an agent shell snapshot) and __MISE_EXE is absent
+fn_def="$(declare -f mise)"
+assert "env -u __MISE_EXE bash -c '$fn_def
+mise --version' | grep -c ." "1"

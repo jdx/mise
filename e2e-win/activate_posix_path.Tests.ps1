@@ -96,6 +96,9 @@ export PATH="$original_a:$original_b:$PATH"
 
 apply_mise activate bash
 mise --version >/dev/null
+# Agent shell snapshots carry the function definition but not __MISE_EXE.
+env -u __MISE_EXE "$BASH" --noprofile --norc -c "$(declare -f mise)
+mise --version" >/dev/null
 original-marker.exe cmd.exe >/dev/null
 rest=
 IFS=: read -ra path_entries <<< "$PATH"
