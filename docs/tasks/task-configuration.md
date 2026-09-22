@@ -1339,7 +1339,9 @@ which stays reachable as `mise run hello.sh`. See
 
 Where several blocks name one script, only the highest-precedence one applies —
 this is a separate question from whether a block may replace the script at all.
-The rest contribute nothing, not even additive fields such as `env` or `alias`,
+A block that replaced the script counts as that one definition, so blocks below
+it add nothing to the replacement either. The rest contribute nothing, not even
+additive fields such as `env` or `alias`,
 and because the two spellings name one script they compete for that single slot: a
 `[tasks.hello]` in `mise.local.toml` replaces a `[tasks."hello.sh"]` in
 `mise.toml` rather than adding to it. If multiple scripts share a name without
