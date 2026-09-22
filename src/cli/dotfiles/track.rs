@@ -206,12 +206,6 @@ impl DotfilesTrack {
             .collect();
         let preview_walk = preview_set.walk_selected(&targets)?;
         preview_walk.report_warnings();
-        for plaintext in &preview_walk.plaintext {
-            warn!(
-                "history: {}: an include list selects it for plaintext capture although it looks like a credential store; `encrypt = true` saves it encrypted instead",
-                plaintext.path
-            );
-        }
         let mut previews: Vec<String> = vec![];
         for (target, normalized) in resolved {
             let target_key = normalized_target(&target);
