@@ -146,7 +146,7 @@ assert_succeed "mise dot include '~/.codex/bar*'"
 assert "$(count '~/.codex/bar[*]')" 0
 # with nothing left to exclude it, the claim is the plain one again
 assert_contains "mise dot exclude '~/.codex/solo' 2>&1" 'excluded from capture'
-assert_contains "mise dot include '~/.codex/solo' 2>&1" 'is captured again'
+assert_contains "mise dot include '~/.codex/solo' 2>&1" 'removed exclusion rule'
 
 # the $ is the point: it stays literal
 # shellcheck disable=SC2016
@@ -176,3 +176,9 @@ assert_fail 'mise dot rollback ~/.codex/config.toml --yes' 'cannot be applied'
 assert "cat ~/.codex/config.toml" 'changed'
 assert_succeed 'mise dot paths'
 assert_contains 'mise dot paths 2>&1' '"[" in ~/.config/mise/config.toml'
+
+# Removing a specific rule does not promise inclusion under a broader rule.
+mise dot exclude '~/.codex/**'
+mise dot exclude '~/.codex/solo'
+assert_contains "mise dot include '~/.codex/solo' 2>&1" 'other exclusion rules still apply'
+assert_contains 'mise dot paths' 'exclude: ~/.codex/**'

@@ -208,10 +208,10 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<()> {
             display_path(&global)
         ),
         (false, true) => info!(
-            "history: {glob} is captured again ({})",
+            "history: removed exclusion rule {glob}; other exclusion rules still apply ({})",
             display_path(&global)
         ),
-        (false, false) => info!("history: {glob} was not excluded"),
+        (false, false) => info!("history: exclusion rule {glob} was not present"),
     }
     Ok(())
 }
