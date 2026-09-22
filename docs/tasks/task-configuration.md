@@ -1325,7 +1325,10 @@ replaces the script only when it comes from the config whose
 [`task_config.includes`](#task_config.includes) selected the script's directory,
 or from a higher-precedence one. A block from further down that chain is treated
 as configuring the script like any other — its metadata applies and the script
-keeps running.
+keeps running. When no config declares `task_config.includes` and the directory
+comes from the defaults, no config claimed the script and there is nothing to
+outrank, so a block from anywhere in the chain replaces it. A task from an
+[included TOML file](#included-toml-files) has always followed this same rule.
 
 On Windows, a script paired with a
 [Windows-native sibling](/tasks/file-tasks#windows) is replaced by that sibling

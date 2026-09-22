@@ -7295,6 +7295,33 @@ mod tests {
         }
     }
 
+    /// With no config declaring `task_config.includes`, the script's directory
+    /// came from the built-in defaults, and `include_config_precedence` is the
+    /// sentinel `configs.len()` — below every real config index. No config
+    /// claimed the script, so there is no standing to outrank and a block from
+    /// anywhere in the chain replaces it, the lowest included.
+    #[test]
+    fn test_the_lowest_config_replaces_a_script_found_by_the_defaults() {
+        // Two configs, so the sentinel is 2 and the lowest real index is 1.
+        let script = Task {
+            config_precedence: 2,
+            ..file_task("hello.sh")
+        };
+        let block = Task {
+            config_precedence: 1,
+            ..inline_task("hello.sh", "echo inline")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![script], vec![block]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(
+            tasks[0].run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+        assert_eq!(tasks[0].file, None);
+    }
+
     /// A block above the command still reaches the replacement, under either
     /// spelling: it claims the script's slot before the command arrives, and
     /// the slot is applied to whatever holds the name at the end. Only blocks
