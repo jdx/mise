@@ -609,11 +609,17 @@ impl Store {
             && snapshot.is_some()
             && let Some(repo) = &self.repo
         {
-            match narrowed_notices(
-                repo,
-                previous_tree.as_ref().map(|(_, tree)| tree.as_str()),
-                tracked,
-            ) {
+            let previous_commit = previous_tree
+                .as_ref()
+                .and_then(|(checkpoint, _)| {
+                    index
+                        .entries
+                        .iter()
+                        .rev()
+                        .find(|entry| entry.uuid == checkpoint.uuid)
+                })
+                .map(|entry| entry.commit.as_str());
+            match narrowed_notices(repo, previous_commit, tracked) {
                 Ok(narrowed) => messages.extend(narrowed),
                 Err(err) => debug!("history: could not compare the previous selection: {err:#}"),
             }
@@ -1100,10 +1106,10 @@ fn heard(draft: &Draft) -> bool {
 /// and the next parent is the narrowed one.
 fn narrowed_notices(
     repo: &HistoryRepo,
-    parent: Option<&str>,
+    parent_commit: Option<&str>,
     tracked: &TrackedSet,
 ) -> Result<Vec<String>> {
-    let Some(parent) = parent else {
+    let Some(parent) = parent_commit else {
         return Ok(vec![]);
     };
     if tracked.entries.iter().all(|entry| entry.include.is_none()) {
@@ -1140,8 +1146,9 @@ fn narrowed_notices(
         }
         *dropped.entry(entry.display()).or_default() += 1;
     }
+    let previous = super::short(parent);
     Ok(dropped.into_iter().map(|(entry, count)| format!(
-        "history: {entry}: its include list leaves out {count} path(s) an earlier checkpoint held; they are not saved from this checkpoint on"
+        "history: {entry}: its include list leaves out {count} path(s) held by checkpoint {previous}; they are no longer saved"
     )).collect())
 }
 

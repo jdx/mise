@@ -376,3 +376,32 @@ assert "git --git-dir=$repo show HEAD:home/.config/nested/top.lua" 'top'
 assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.config/nested/plugin/inner.lua"
 assert_contains 'mise dot paths' 'selects nothing inside it'
 assert_contains 'mise dot paths' 'track it directly to capture its working files'
+
+# Separate narrowing events with equal counts must survive notice deduplication.
+mkdir -p ~/.narrowing-notices
+for name in a b c; do echo "$name" >"$HOME/.narrowing-notices/$name"; done
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.narrowing-notices" = { mode = "track", include = ["a", "b", "c"] }
+TOML
+assert_succeed 'mise dot track ~/.narrowing-notices'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.narrowing-notices" = { mode = "track", include = ["b", "c"] }
+TOML
+assert_succeed 'mise dot watch --once'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.narrowing-notices" = { mode = "track", include = ["c"] }
+TOML
+assert_succeed 'mise dot watch --once'
+assert "grep -c 'narrowing-notices:.*leaves out 1 path(s)' $notices" '2'
+first_parent=$(grep 'narrowing-notices:.*leaves out 1 path(s)' "$notices" | sed -n '1s/.*checkpoint \([0-9a-f]*\);.*/\1/p')
+second_parent=$(grep 'narrowing-notices:.*leaves out 1 path(s)' "$notices" | sed -n '2s/.*checkpoint \([0-9a-f]*\);.*/\1/p')
+assert "git --git-dir=$repo cat-file -t $first_parent" 'commit'
+assert "git --git-dir=$repo cat-file -t $second_parent" 'commit'
+assert "git --git-dir=$repo show $first_parent:home/.narrowing-notices/a" 'a'
+assert "git --git-dir=$repo show $second_parent:home/.narrowing-notices/b" 'b'
+mise dot paths >two-narrowings.log 2>&1
+assert "grep -c 'WARN.*narrowing-notices:.*leaves out 1 path(s)' two-narrowings.log" '2'
+assert_fail "test -s $notices"
