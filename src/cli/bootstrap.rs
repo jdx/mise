@@ -2093,9 +2093,17 @@ impl Bootstrap {
         }
         let config = Config::get().await?;
         let tasks = config.tasks().await?;
+        // **Not seeing the task is not proof there is none.** This
+        // bootstrap may be running before the adopted configuration is
+        // fully in place — the setup is still held, or this invocation is
+        // scoped somewhere the adopted files do not reach — and clearing
+        // the mark on that evidence is how the step gets lost for good,
+        // which is the failure this mark exists to prevent. Only the task
+        // actually running clears it. A setup that never declares one
+        // keeps a mark and an inexpensive lookup, which costs nothing
+        // anyone can see.
         if !tasks.iter().any(|(_, task)| task.is_match("post-adopt")) {
-            debug!("bootstrap: no `post-adopt` task defined, nothing to set up");
-            Self::clear_post_adopt_pending();
+            debug!("bootstrap: no `post-adopt` task visible yet, leaving the machine marked");
             return Ok(());
         }
         info!("bootstrap: running `post-adopt` task");

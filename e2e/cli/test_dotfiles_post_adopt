@@ -76,6 +76,10 @@ export third
 export -f c
 assert_fail "c bootstrap --adopt file://$origin --yes" 'paused'
 assert_fail "test -e $third/.post-adopt-ran"
+# a bootstrap while the setup is still held cannot see the adopted task
+# yet, and must not take that as proof there is none: the mark survives
+assert_succeed 'c bootstrap'
+assert_fail "test -e $third/.post-adopt-ran"
 # resolving the conflict and bootstrapping the ordinary way runs it
 assert_succeed 'c dot pull --take-remote-all --yes'
 assert_succeed 'c bootstrap'
