@@ -154,6 +154,27 @@ assert "grep -c 'plaintext: ~/.config/fish/functions/secrets.fish' paths.log" '1
 # since either decides what it holds
 assert_contains 'mise dot history show' 'include (~/.config/fish)'
 assert_contains 'mise dot history show' 'functions/hello.fish'
+# a list that selects nothing and a list holding the word must not read
+# the same: patterns print bare, so the parenthesised phrase is plainly
+# not one of them
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["none"] }
+TOML
+echo 'function hello; end # again' >~/.config/fish/functions/hello.fish
+assert_succeed 'mise dot save'
+assert_contains 'mise dot history show' 'include (~/.config/fish): none'
+assert_not_contains 'mise dot history show' 'include (~/.config/fish): (selects nothing)'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = [] }
+TOML
+assert_succeed 'mise dot save'
+assert_contains 'mise dot history show' 'include (~/.config/fish): (selects nothing)'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/hello.fish", "functions/secrets.fish"] }
+TOML
 
 # **an `include` list is enough on its own to declare a tracked entry.**
 # The entry recognizer lists the keys that make a table a file entry;
