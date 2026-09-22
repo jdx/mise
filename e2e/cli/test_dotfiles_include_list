@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # A tracked directory's `include` list: name what to keep instead of
-# every kind of noise to leave out. An exact include also captures a file
-# the credential guard would otherwise omit, in plaintext; a glob does
-# not.
+# every kind of noise to leave out. Literal names and globs both select
+# credential-named files that the default guard would otherwise omit.
 require_cmd git
 repo="$MISE_STATE_DIR/history/repo.git"
 
@@ -93,6 +92,24 @@ assert_succeed 'mise dot watch --once'
 assert_contains 'mise dot paths 2>&1' 'leaves out'
 # said once, then it is gone
 assert_not_contains 'mise dot paths 2>&1' 'leaves out'
+
+# A broad include also selects credentials created after tracking begins.
+mkdir -p ~/.config/future-app
+echo 'theme = dark' >~/.config/future-app/settings.conf
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/future-app" = { mode = "track", include = ["**"] }
+TOML
+assert_succeed 'mise dot track ~/.config/future-app'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.config/future-app/secrets.fish"
+echo 'set -x API_TOKEN future-synthetic' >~/.config/future-app/secrets.fish
+assert_succeed 'mise dot watch --once >future-watch.log 2>&1'
+# Capture has already stored the plaintext before the warning is delivered.
+assert "git --git-dir=$repo show HEAD:home/.config/future-app/secrets.fish" 'set -x API_TOKEN future-synthetic'
+assert_not_contains 'cat future-watch.log' 'saved in plaintext'
+assert_contains "cat \"$MISE_STATE_DIR/history/notices\"" '~/.config/future-app/secrets.fish'
+assert_contains 'mise dot origin 2>&1' '~/.config/future-app/secrets.fish'
+assert_fail "test -s \"$MISE_STATE_DIR/history/notices\""
 
 # An include list decides what is captured: a glob is as authoritative
 # as a literal, and either one selecting a credential-named file

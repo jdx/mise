@@ -627,6 +627,31 @@ out files that an earlier checkpoint contained. The latter notice means
 those paths stop appearing in new checkpoints; their earlier versions
 remain in Git history.
 
+An include pattern selects matching files created later, too. For example:
+
+```toml
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["**"] }
+```
+
+If `~/.config/fish/functions/secrets.fish` is added later, the next
+capture includes it in plaintext and generates a warning. A background
+capture stores that warning for a later command; the file can already be
+saved and shared with the origin before you see it. Warnings do not block
+capture or publication.
+
+To encrypt everything selected beneath this directory, configure encryption
+before capturing private files:
+
+```toml
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["**"], encrypt = true }
+```
+
+An `exclude` list can leave out files you do not want to manage. Encryption
+protects selected contents; it does not remove earlier plaintext versions
+from history. See [remove plaintext from history](#remove-plaintext-from-history).
+
 Warnings appear according to how the capture runs:
 
 | Capture                    | Where to read the warning                         |
