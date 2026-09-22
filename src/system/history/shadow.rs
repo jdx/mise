@@ -1885,6 +1885,7 @@ mod tests {
                 encrypt: false,
                 variants: vec![],
                 exclude: Some(vec!["sessions/**".into()]),
+                include: None,
             }],
             ..Default::default()
         };
