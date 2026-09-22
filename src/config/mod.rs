@@ -4866,10 +4866,14 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// files) with inline `[tasks.*]` blocks.
 ///
 /// `config_tasks` are collected in config-file precedence order (highest first).
-/// When a name appears in both an executable script task and an inline block,
-/// the script stays as the base and the TOML block is overlaid via
-/// [`Task::merge_toml_overlay`]. An inline block replaces a same-named task from
-/// an included TOML file. When the same name appears in multiple inline blocks
+/// A command-bearing inline block — one that sets `run`, `run_windows`, or
+/// `file` — replaces the same-named task, whether that task came from an
+/// included TOML file or from an executable script, as long as it comes from the
+/// config that selected the include or a higher-precedence one. A block without
+/// a command, or one that does not outrank the include, keeps that task as the
+/// base and overlays its metadata via [`Task::merge_toml_overlay`]. (An included
+/// TOML task additionally ignores a lower-precedence block outright, rather than
+/// taking its metadata.) When the same name appears in multiple inline blocks
 /// (e.g. `mise.toml` and `mise.local.toml`), the highest-precedence block wins.
 /// If that block has no command, it overlays the nearest lower-precedence
 /// command-bearing block; definitions below that selected base are skipped.
@@ -4887,8 +4891,7 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     for t in config_tasks {
         if !seen_config_task_names.insert(t.name.clone()) {
-            let has_command = !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some();
-            if pending_inline_overlays.contains_key(&t.name) && has_command {
+            if pending_inline_overlays.contains_key(&t.name) && has_command(&t) {
                 let overlays = pending_inline_overlays
                     .shift_remove(&t.name)
                     .expect("pending inline overlays should be present");
@@ -4902,23 +4905,31 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             }
             continue;
         }
-        if let Some(existing) = by_name
-            .get_mut(&t.name)
-            .filter(|existing| existing.is_toml_include)
-        {
-            if t.config_precedence <= existing.config_precedence {
-                if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
-                    existing.merge_toml_overlay(t);
-                } else {
+        if let Some(existing) = by_name.get_mut(&t.name) {
+            // A task that came from an include is replaced only by a block from
+            // the config that selected that include, or from a higher-precedence
+            // one. A lower-precedence block still contributes its metadata.
+            let outranks_include = t.config_precedence <= existing.config_precedence;
+            if existing.is_toml_include {
+                if outranks_include {
+                    if has_command(&t) {
+                        *existing = t;
+                    } else {
+                        existing.merge_toml_overlay(t);
+                    }
+                }
+            } else if existing.file.is_some() {
+                if has_command(&t) && outranks_include {
+                    // The block spells out its own command, so it is a task in
+                    // its own right rather than a set of properties for the
+                    // script -- overlaying here would discard the command.
                     *existing = t;
+                } else {
+                    existing.merge_toml_overlay(t);
                 }
             }
-        } else if let Some(existing) = by_name.get_mut(&t.name) {
-            if existing.file.is_some() {
-                existing.merge_toml_overlay(t);
-            }
         } else {
-            if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+            if !has_command(&t) {
                 pending_inline_overlays
                     .entry(t.name.clone())
                     .or_default()
@@ -4928,6 +4939,13 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
         }
     }
     by_name.into_values().collect()
+}
+
+/// Whether a task definition says what to run, as opposed to only carrying
+/// properties such as a description or dependencies to overlay onto another
+/// definition of the same name.
+fn has_command(task: &Task) -> bool {
+    !task.run.is_empty() || !task.run_windows.is_empty() || task.file.is_some()
 }
 
 fn prefer_windows_file_task_siblings(file_tasks: Vec<Task>) -> Vec<Task> {
@@ -5882,9 +5900,10 @@ async fn load_task_sources_from_configs(
             )
             .await?;
             for task in &mut loaded {
-                if task.is_toml_include {
-                    task.config_precedence = include_config_precedence;
-                }
+                // Both task kinds are reachable only because some config's
+                // `task_config.includes` named this path, so both answer to that
+                // config's precedence when an inline block claims their name.
+                task.config_precedence = include_config_precedence;
                 apply_task_config_inputs(task, config, &task_config.inputs).await?;
                 apply_task_config_cache_default(task, &task_config.cache);
                 apply_task_config_rust_cache_default(task, &task_config.rust_cache);
@@ -6568,6 +6587,143 @@ mod tests {
             PathBuf::from("mise-tasks/hello.ps1")
         );
         assert_eq!(tasks[0].description, "windows task metadata");
+    }
+
+    fn file_task(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            config_source: PathBuf::from(format!("mise-tasks/{name}")),
+            file: Some(PathBuf::from(format!("mise-tasks/{name}"))),
+            ..Default::default()
+        }
+    }
+
+    /// A `[tasks.<name>]` block carrying no command of its own.
+    fn inline_overlay(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            config_source: PathBuf::from("mise.toml"),
+            ..Default::default()
+        }
+    }
+
+    fn inline_task(name: &str, run: &str) -> Task {
+        Task {
+            run: vec![RunEntry::Script(run.to_string())],
+            ..inline_overlay(name)
+        }
+    }
+
+    #[test]
+    fn test_inline_command_replaces_a_matching_file_task() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![inline_task("hello.sh", "echo inline")],
+        );
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello.sh");
+        assert_eq!(
+            tasks[0].run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
+        assert_eq!(tasks[0].file, None);
+    }
+
+    #[test]
+    fn test_inline_file_key_replaces_a_matching_file_task() {
+        let redirected = Task {
+            file: Some(PathBuf::from("scripts/other.sh")),
+            ..inline_overlay("hello.sh")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![file_task("hello.sh")], vec![redirected]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].file, Some(PathBuf::from("scripts/other.sh")));
+    }
+
+    #[test]
+    fn test_inline_metadata_still_overlays_a_matching_file_task() {
+        let overlay = Task {
+            description: "say hello".to_string(),
+            ..inline_overlay("hello.sh")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![file_task("hello.sh")], vec![overlay]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(tasks[0].description, "say hello");
+    }
+
+    /// A script is reachable only because some config's `task_config.includes`
+    /// named its directory, so a block from a config below that one decorates
+    /// the script instead of taking it over.
+    #[test]
+    fn test_a_lower_precedence_command_still_only_overlays_a_file_task() {
+        let script = Task {
+            config_precedence: 0,
+            ..file_task("hello.sh")
+        };
+        let block = Task {
+            config_precedence: 1,
+            description: "from a lower config".to_string(),
+            ..inline_task("hello.sh", "echo inline")
+        };
+
+        let tasks = merge_file_and_config_tasks(vec![script], vec![block]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].file, Some(PathBuf::from("mise-tasks/hello.sh")));
+        assert_eq!(tasks[0].description, "from a lower config");
+    }
+
+    /// The extension-stripped spelling names a task of its own, so the script
+    /// survives alongside it. `get_matching` prefers the exact name, which is
+    /// what keeps `mise run hello` from running both (#10393).
+    #[test]
+    fn test_inline_command_under_the_stripped_name_stays_separate() {
+        use crate::task::GetMatchingExt;
+
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh")],
+            vec![inline_task("hello", "echo inline")],
+        )
+        .into_iter()
+        .map(|task| (task.name.clone(), task))
+        .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(
+            tasks.keys().collect_vec(),
+            vec!["hello", "hello.sh"],
+            "the script keeps its own name"
+        );
+
+        let matches = tasks.get_matching("hello").unwrap();
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].run, vec![RunEntry::Script("echo inline".into())]);
+    }
+
+    /// On Windows a `.ps1` paired with a POSIX sibling is renamed to the bare
+    /// stem, so the block that replaces it is the one spelled with that stem.
+    #[test]
+    fn test_inline_command_replaces_a_renamed_windows_file_task() {
+        let file_tasks = prefer_windows_file_task_siblings_inner(vec![
+            file_task("hello.sh"),
+            file_task("hello.ps1"),
+        ]);
+
+        let tasks =
+            merge_file_and_config_tasks(file_tasks, vec![inline_task("hello", "echo inline")]);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "hello");
+        assert_eq!(
+            tasks[0].run,
+            vec![RunEntry::Script("echo inline".to_string())]
+        );
     }
 
     #[test]

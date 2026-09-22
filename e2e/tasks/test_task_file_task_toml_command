@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+# A `[tasks."<file>"]` block naming a discovered script exactly replaces that
+# script when it spells out its own command and outranks the config that
+# selected the script's include; otherwise it overlays metadata onto it.
+
+mkdir -p mise-tasks mytasks scripts .mise .config
+
+cat <<'EOF' >mise-tasks/hello.sh
+#!/usr/bin/env bash
+echo script-ran
+EOF
+chmod +x mise-tasks/hello.sh
+
+cat <<'EOF' >mise-tasks/meta.sh
+#!/usr/bin/env bash
+echo "GREETING=${GREETING:-unset}"
+EOF
+chmod +x mise-tasks/meta.sh
+
+cat <<'EOF' >mise-tasks/bare
+#!/usr/bin/env bash
+echo bare-script-ran
+EOF
+chmod +x mise-tasks/bare
+
+cat <<'EOF' >mise-tasks/other.sh
+#!/usr/bin/env bash
+echo other-script-ran
+EOF
+chmod +x mise-tasks/other.sh
+
+cat <<'EOF' >mise-tasks/redirected.sh
+#!/usr/bin/env bash
+echo redirected-script-ran
+EOF
+chmod +x mise-tasks/redirected.sh
+
+cat <<'EOF' >scripts/elsewhere.sh
+#!/usr/bin/env bash
+echo elsewhere-ran
+EOF
+chmod +x scripts/elsewhere.sh
+
+cat <<'EOF' >mytasks/low.sh
+#!/usr/bin/env bash
+echo "low-script-ran GREETING=${GREETING:-unset}"
+EOF
+chmod +x mytasks/low.sh
+
+# `.mise/config.toml` is the config that selects the include list, and it ranks
+# below `mise.toml` but above `.config/mise.toml`.
+cat <<'EOF' >.mise/config.toml
+[task_config]
+includes = ["mise-tasks", "mytasks"]
+EOF
+
+cat <<'EOF' >.config/mise.toml
+[tasks."low.sh"]
+description = "decorated from a lower config"
+run = "echo lower-inline-ran"
+env = { GREETING = "hi" }
+EOF
+
+cat <<'EOF' >mise.toml
+[tasks."hello.sh"]
+run = "echo inline-ran"
+
+[tasks."meta.sh"]
+description = "overlaid description"
+env = { GREETING = "from-toml" }
+
+[tasks.bare]
+run = "echo inline-bare-ran"
+
+[tasks.other]
+run = "echo inline-other-ran"
+
+[tasks."redirected.sh"]
+file = "scripts/elsewhere.sh"
+EOF
+
+# The block replaces the script rather than being silently discarded, and the
+# task is still reachable by its extension-stripped name without running twice.
+assert "mise run hello" "inline-ran"
+assert "mise run hello.sh" "inline-ran"
+assert_not_contains "mise run hello" "script-ran"
+
+# A block with no command still contributes metadata to the script.
+assert_contains "mise tasks" "overlaid description"
+assert "mise run meta" "GREETING=from-toml"
+
+# An extensionless script is matched by its plain name, so the same rule applies.
+assert "mise run bare" "inline-bare-ran"
+
+# The extension-stripped spelling is a different task name, so the script
+# survives alongside it and the exact name wins for "mise run other".
+assert "mise run other" "inline-other-ran"
+assert "mise run other.sh" "other-script-ran"
+
+# "file" counts as a command too, so the block points the task elsewhere.
+assert "mise run redirected" "elsewhere-ran"
+
+# A block from a config that ranks below the one selecting the include does not
+# get to take the script over, so it only decorates it -- the same rule inline
+# blocks already follow for tasks from included TOML files.
+assert "mise run low" "low-script-ran GREETING=hi"
+assert_contains "mise tasks" "decorated from a lower config"

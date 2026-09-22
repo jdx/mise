@@ -59,6 +59,10 @@ You can provide additional configuration for file tasks by adding `#MISE` commen
 
 Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
 
+The same options can come from `mise.toml` instead, in a `[tasks.<name>]` block
+named after the file — see
+[configuring file tasks from TOML](/tasks/task-configuration#configuring-file-tasks-from-toml).
+
 ### Multi-line values
 
 Each `#MISE` line is TOML. An array or inline table may be split across several
