@@ -82,8 +82,8 @@ fn forget_from(path: &Path, said: &[String]) -> Result<()> {
         .filter(|line| !said.iter().any(|message| message == line))
         .collect();
     match remaining.is_empty() {
-        true => std::fs::write(path, "")?,
-        false => std::fs::write(path, format!("{}\n", remaining.join("\n")))?,
+        true => crate::file::write_atomic(path, "")?,
+        false => crate::file::write_atomic(path, format!("{}\n", remaining.join("\n")))?,
     }
     Ok(())
 }
