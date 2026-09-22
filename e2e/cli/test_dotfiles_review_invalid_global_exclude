@@ -153,6 +153,14 @@ assert_contains "mise dot include '~/.codex/solo' 2>&1" 'removed exclusion rule'
 dollar='~/.codex/price$x'
 echo 'dear' >"$HOME/.codex/price\$x"
 assert_fail "mise dot untrack '$dollar'" 'environment variables are not supported'
+# A later invalid rule must not change an earlier child or declaration.
+cp "$MISE_CONFIG_DIR/config.toml" before-untrack.toml
+before_untrack=$(git --git-dir="$repo" rev-parse HEAD)
+for earlier in '~/.codex/cacheX' '~/.codex'; do
+  assert_fail "mise dot untrack '$earlier' '$dollar'" 'environment variables are not supported'
+  assert_succeed "cmp before-untrack.toml '$MISE_CONFIG_DIR/config.toml'"
+  assert "git --git-dir=$repo rev-parse HEAD" "$before_untrack"
+done
 assert_not_contains "mise dot paths --json | jq -r '.exclude[]'" 'price'
 assert_succeed 'mise dot save'
 
