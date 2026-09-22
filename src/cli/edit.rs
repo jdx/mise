@@ -13,7 +13,6 @@ use strum::IntoEnumIterator;
 
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
-use crate::cli::version::VERSION_PLAIN;
 use crate::config::config_file;
 use crate::config::{Config, Settings, global_config_path};
 use crate::file::display_path;
@@ -21,6 +20,7 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state;
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
+use crate::version::VERSION_PLAIN;
 use crate::{env, file};
 
 /// Tool provider that lists tools from the mise REGISTRY

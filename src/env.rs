@@ -385,7 +385,7 @@ pub(crate) fn env_conf_d_default_for_version(v: &versions::Versioning) -> bool {
 /// Whether `conf.d` filenames carry environment suffixes, resolving the
 /// setting against the version-gated default.
 pub(crate) fn env_conf_d() -> bool {
-    env_conf_d_setting().unwrap_or_else(|| env_conf_d_default_for_version(&crate::cli::version::V))
+    env_conf_d_setting().unwrap_or_else(|| env_conf_d_default_for_version(&crate::version::V))
 }
 
 /// Default for auto_env when the setting is unset: off until mise 2027.6.0
@@ -400,12 +400,8 @@ pub(crate) fn platform_env_names() -> Vec<String> {
     let mut names: Vec<String> = vec![];
     for name in [
         consts::FAMILY.to_string(),
-        crate::cli::version::OS.to_string(),
-        format!(
-            "{}-{}",
-            *crate::cli::version::OS,
-            *crate::cli::version::ARCH
-        ),
+        crate::platform::OS.to_string(),
+        format!("{}-{}", *crate::platform::OS, *crate::platform::ARCH),
     ] {
         if !names.contains(&name) {
             names.push(name);
@@ -421,7 +417,7 @@ pub(crate) fn platform_env_names() -> Vec<String> {
 /// `{{ mise_env }}` template variable or MISE_ENV propagation to subprocesses.
 pub(crate) static AUTO_ENV_NAMES: Lazy<Vec<String>> = Lazy::new(|| {
     let enabled =
-        auto_env_setting().unwrap_or_else(|| auto_env_default_for_version(&crate::cli::version::V));
+        auto_env_setting().unwrap_or_else(|| auto_env_default_for_version(&crate::version::V));
     if !enabled {
         return vec![];
     }
@@ -1811,14 +1807,10 @@ mod tests {
         let names = platform_env_names();
         assert_eq!(names.len(), 3);
         assert_eq!(names[0], "unix");
-        assert_eq!(names[1], *crate::cli::version::OS);
+        assert_eq!(names[1], *crate::platform::OS);
         assert_eq!(
             names[2],
-            format!(
-                "{}-{}",
-                *crate::cli::version::OS,
-                *crate::cli::version::ARCH
-            )
+            format!("{}-{}", *crate::platform::OS, *crate::platform::ARCH)
         );
     }
 
@@ -1831,7 +1823,7 @@ mod tests {
             names,
             vec![
                 "windows".to_string(),
-                format!("windows-{}", *crate::cli::version::ARCH)
+                format!("windows-{}", *crate::platform::ARCH)
             ]
         );
     }

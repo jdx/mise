@@ -547,10 +547,10 @@ fn warn_deprecated_now(key: &'static str) {
         let warn_version = Versioning::new(warn_at).unwrap();
         let remove_version = Versioning::new(remove_at).unwrap();
         debug_assert!(
-            *crate::cli::version::V < remove_version,
+            *crate::version::V < remove_version,
             "Deprecated setting [{key}] should have been removed in {remove_at}. Please remove this deprecated setting.",
         );
-        if *crate::cli::version::V >= warn_version {
+        if *crate::version::V >= warn_version {
             let id = Box::leak(format!("setting.{key}").into_boxed_str());
             if crate::output::DEPRECATED.lock().unwrap().insert(id) {
                 warn!(

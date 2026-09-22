@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::cli::Cli;
-use crate::cli::version::VERSION;
+use crate::version::VERSION;
 use color_eyre::{Section, SectionExt};
 use eyre::Report;
 use indoc::indoc;
@@ -114,6 +114,7 @@ mod tool_purgatory;
 mod toolset;
 mod ui;
 mod uv;
+mod version;
 mod versions_host;
 mod watch_files;
 mod wildcard;

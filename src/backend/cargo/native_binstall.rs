@@ -919,7 +919,7 @@ fn template_contains_var(template: &str, key: &str) -> bool {
 }
 
 pub(super) fn rollout_warning_active() -> bool {
-    rollout_warning_active_for(&crate::cli::version::V)
+    rollout_warning_active_for(&crate::version::V)
 }
 
 fn rollout_warning_active_for(current: &versions::Versioning) -> bool {

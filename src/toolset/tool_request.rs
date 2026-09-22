@@ -686,7 +686,7 @@ impl ToolRequest {
         if let Some(os_list) = self.os() {
             let matched = os_list
                 .iter()
-                .any(|entry| crate::cli::version::os_selector_matches(entry));
+                .any(|entry| crate::platform::os_selector_matches(entry));
             if !matched {
                 return false;
             }

@@ -16,7 +16,6 @@ use walkdir::WalkDir;
 
 use crate::backend::ABackend;
 use crate::cli::args::{BackendArg, split_bracketed_opts};
-use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig, Tasks};
@@ -44,6 +43,7 @@ use crate::toolset::{
     ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
+use crate::version;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
 pub(crate) mod command_wrapper;

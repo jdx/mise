@@ -415,7 +415,7 @@ impl Writer {
                 uuid,
                 machine: store.machine().clone(),
                 created_at: store::now_rfc3339(),
-                mise_version: crate::cli::version::VERSION_PLAIN.clone(),
+                mise_version: crate::version::VERSION_PLAIN.clone(),
                 trigger: outcome_trigger(kind),
                 description: String::new(),
                 description_source: DescriptionSource::Computed,

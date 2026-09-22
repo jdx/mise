@@ -1007,7 +1007,7 @@ fn wants_windows_launcher(stub_content: &str) -> bool {
     if let Some(os) = doc.get("os").and_then(|os| os.as_array())
         && !os.iter().filter_map(|entry| entry.as_str()).any(|entry| {
             let os = entry.split_once('/').map_or(entry, |(os, _)| os);
-            crate::cli::version::normalize_os(os) == "windows"
+            crate::platform::normalize_os(os) == "windows"
         })
     {
         return false;
