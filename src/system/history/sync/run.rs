@@ -1019,9 +1019,10 @@ pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -
             }
             None => false,
         },
-        Located::Config(path) => tracked
-            .entry_for(&path)
-            .is_some_and(|entry| entry.variant.is_none()),
+        Located::Config(path) => tracked.entry_for(&path).is_some_and(|entry| {
+            entry.variant.is_none()
+                && !crate::system::history::tracked::inside_nested_repository(entry, &path)
+        }),
         Located::Marker => false,
         Located::Unmapped => false,
     }
@@ -1441,26 +1442,31 @@ mod nested_repository_tests {
             home: home.clone(),
             config_dir: home.join(".config/mise"),
         };
-        let parent = home.join("plugins");
-        let nested = parent.join("checkout");
-        std::fs::create_dir_all(nested.join(".git")).unwrap();
-        std::fs::write(nested.join("local.txt"), "local").unwrap();
-        let policy = FilePolicy::for_mode(FileMode::Track);
-        let mut tracked = TrackedSet::default();
-        tracked.push(TrackedEntry::new(parent, "track", policy));
-        for path in [
-            "home/plugins/checkout",
-            "home/plugins/checkout/local.txt",
-            "home/plugins/checkout/incoming.txt",
+        for (parent, prefix) in [
+            (home.join("plugins"), "home/plugins"),
+            (roots.config_dir.join("plugins"), "config/plugins"),
         ] {
-            assert!(!eligible(&roots, &tracked, path), "{path}");
+            let nested = parent.join("checkout");
+            std::fs::create_dir_all(nested.join(".git")).unwrap();
+            std::fs::write(nested.join("local.txt"), "local").unwrap();
+            let policy = FilePolicy::for_mode(FileMode::Track);
+            let mut tracked = TrackedSet::default();
+            tracked.push(TrackedEntry::new(parent, "track", policy));
+            for suffix in ["checkout", "checkout/local.txt", "checkout/incoming.txt"] {
+                let path = format!("{prefix}/{suffix}");
+                assert!(!eligible(&roots, &tracked, &path), "{path}");
+            }
+            assert!(eligible(
+                &roots,
+                &tracked,
+                &format!("{prefix}/ordinary.txt")
+            ));
+            tracked.push(TrackedEntry::new(nested, "track", policy));
+            assert!(eligible(
+                &roots,
+                &tracked,
+                &format!("{prefix}/checkout/incoming.txt")
+            ));
         }
-        assert!(eligible(&roots, &tracked, "home/plugins/ordinary.txt"));
-        tracked.push(TrackedEntry::new(nested, "track", policy));
-        assert!(eligible(
-            &roots,
-            &tracked,
-            "home/plugins/checkout/incoming.txt"
-        ));
     }
 }

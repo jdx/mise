@@ -1226,7 +1226,7 @@ impl State {
             return false;
         }
         match self.watched.entry_for(path) {
-            Some(entry) => entry.policy.autosave,
+            Some(entry) => entry.policy.autosave && !tracked::inside_nested_repository(entry, path),
             None => false,
         }
     }
@@ -1240,13 +1240,13 @@ impl State {
         if self.hard.iter().any(|dir| path.starts_with(dir)) || self.exclude.is_match(path) {
             return false;
         }
-        self.watched
-            .entry_for(path)
-            .is_some_and(|entry| entry.policy.autosave)
-            || self.tracked.entry_for(path).is_some_and(|entry| {
-                entry.policy.autosave
-                    && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
-            })
+        self.watched.entry_for(path).is_some_and(|entry| {
+            entry.policy.autosave && !tracked::inside_nested_repository(entry, path)
+        }) || self.tracked.entry_for(path).is_some_and(|entry| {
+            entry.policy.autosave
+                && !tracked::inside_nested_repository(entry, path)
+                && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
+        })
     }
 }
 
@@ -1853,6 +1853,29 @@ mod tests {
     use super::*;
     use crate::system::files::{FileMode, FilePolicy};
     use crate::system::history::tracked::TrackedEntry;
+
+    #[test]
+    fn a_new_nested_repository_stops_watcher_capture_and_holds() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = normalize(temp.path());
+        let nested = parent.join("checkout");
+        std::fs::create_dir(&nested).unwrap();
+        let file = nested.join("config.txt");
+        std::fs::write(&file, "local").unwrap();
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(parent, "track", policy));
+        let state = State::from_tracked(tracked.clone()).unwrap();
+        assert!(state.relevant(&file));
+        std::fs::create_dir(nested.join(".git")).unwrap();
+        assert!(!state.relevant(&file));
+        assert!(!state.relevant(&nested));
+        std::fs::remove_file(&file).unwrap();
+        assert!(!state.may_cover_missing(&file));
+        tracked.push(TrackedEntry::new(nested, "track", policy));
+        let explicit = State::from_tracked(tracked).unwrap();
+        assert!(explicit.may_cover_missing(&file));
+    }
 
     #[test]
     fn unfinished_reconciliation_preserves_success_timestamp() {
