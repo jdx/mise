@@ -1405,16 +1405,16 @@ pub(crate) fn classify_coverage(coverage: &super::store::Coverage, display: &str
     // differently — an older one matched more for some patterns, and a
     // newer one is simply unknown here. Either way, where it has
     // exclusions, what it covered cannot be reconstructed.
-    // **Every pattern the checkpoint recorded counts, not only the
-    // global ones.** A checkpoint whose entries carry their own
-    // `exclude` or `include` lists is read by the same version-sensitive
-    // matcher, so if those are all it has, it is exactly as unreadable
-    // to a different matcher as one with a global list.
-    let has_patterns = !coverage.exclude.is_empty()
     // Only the owning entry's lists can affect this path.
     let has_patterns = !coverage.exclude.is_empty()
-        || owner.exclude.as_ref().is_some_and(|patterns| !patterns.is_empty())
-        || owner.include.as_ref().is_some_and(|patterns| !patterns.is_empty());
+        || owner
+            .exclude
+            .as_ref()
+            .is_some_and(|patterns| !patterns.is_empty())
+        || owner
+            .include
+            .as_ref()
+            .is_some_and(|patterns| !patterns.is_empty());
     let legacy = coverage.matcher != Some(super::tracked::MATCHER_VERSION) && has_patterns;
     let exclude = super::tracked::ExcludeSet::new(&coverage.exclude)
         .ok()
