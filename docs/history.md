@@ -243,9 +243,15 @@ run = [
 `mise bootstrap --adopt <url>` runs it once, after the adopted setup has
 been bootstrapped, so anything it needs is already installed. Nothing runs
 unless the setup declares the task — the same rule the `bootstrap` task
-follows — and an ordinary `mise bootstrap` on a machine that has already
-adopted does not run it again. A failure fails the command, so a setup
-step that did not happen is not silently skipped.
+follows — and once it has run, an ordinary `mise bootstrap` does not run
+it again.
+
+Adopting records that the machine still needs setting up, rather than
+running the task inline, so an adopt that stops short still gets there. If
+the setup is paused by a conflict, or the bootstrap that follows fails,
+the `mise bootstrap` you run after fixing it runs the task. A failing task
+fails the command and leaves the machine marked, so the next attempt tries
+again: a setup step that did not happen is never silently skipped.
 
 This does not replace `[history.reload]`, which still runs on every later
 pull.

@@ -1834,6 +1834,7 @@ impl Bootstrap {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::Final)
                 .await?;
         }
+        self.run_post_adopt().await?;
         follow_up.print()?;
         Ok(summary)
     }
@@ -1872,6 +1873,14 @@ impl Bootstrap {
                 }
                 return Ok(());
             }
+            // **The machine needs setting up whether or not this command
+            // gets that far.** A held setup sends the user to
+            // `mise bootstrap`, and so does a child bootstrap that fails,
+            // so a post-adopt task called from the happy path here would
+            // be skipped for good in exactly the cases where a setup step
+            // is most likely to be forgotten. Marking it instead means the
+            // next bootstrap that succeeds runs it, once.
+            Self::mark_post_adopt_pending()?;
             // the configuration that arrived is what to bootstrap from; one
             // held for a decision leaves the existing one, whose tasks and
             // installations are not what was asked for
@@ -1882,7 +1891,6 @@ impl Bootstrap {
             }
             let config_dir = system::history::tracked::global_config_dir();
             self.run_child_bootstrap(config_dir).await?;
-            self.run_post_adopt().await?;
             if !outcome.durable_access {
                 warn!("ongoing synchronization still needs credentials on this host (see above)");
             }
@@ -2019,6 +2027,42 @@ impl Bootstrap {
         }
     }
 
+    /// Where an adopt records that this machine still needs its one-time
+    /// setup run.
+    ///
+    /// **A mark, not a call.** An adopt can end without bootstrapping — held
+    /// for a conflict, or a child bootstrap that failed — and both send the
+    /// user to `mise bootstrap`. Recording the need means that command
+    /// finishes the job, instead of the setup being lost precisely when
+    /// something already went wrong.
+    fn post_adopt_pending_path() -> PathBuf {
+        dirs::STATE.join("post-adopt-pending")
+    }
+
+    fn mark_post_adopt_pending() -> Result<()> {
+        let path = Self::post_adopt_pending_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        crate::file::write(&path, "")?;
+        Ok(())
+    }
+
+    /// Best effort: the task has run, and failing the command over the mark
+    /// would undo a setup that succeeded. A mark left behind costs one extra
+    /// run of a task the setup declared as repeatable-at-worst.
+    fn clear_post_adopt_pending() {
+        let path = Self::post_adopt_pending_path();
+        if let Err(err) = std::fs::remove_file(&path)
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            warn!(
+                "bootstrap: could not clear {}: {err}",
+                crate::file::display_path(&path)
+            );
+        }
+    }
+
     /// **A first adopt is the one pull with no reload hooks to run.**
     /// `[history.reload]` commands come from configuration that is itself
     /// among the arriving files, so when they land there is nothing yet to
@@ -2034,14 +2078,22 @@ impl Bootstrap {
     /// needs is installed before it starts. A later pull has
     /// `[history.reload]`, which this does not replace.
     async fn run_post_adopt(&self) -> Result<()> {
-        let config = Config::reset().await?;
+        if self.dry_run || !Self::post_adopt_pending_path().is_file() {
+            return Ok(());
+        }
+        let config = Config::get().await?;
         let tasks = config.tasks().await?;
         if !tasks.iter().any(|(_, task)| task.is_match("post-adopt")) {
-            debug!("bootstrap: no `post-adopt` task defined, skipping");
+            debug!("bootstrap: no `post-adopt` task defined, nothing to set up");
+            Self::clear_post_adopt_pending();
             return Ok(());
         }
         info!("bootstrap: running `post-adopt` task");
-        self.run_task("post-adopt", false).await
+        // the mark outlives a failure on purpose: a setup step that did
+        // not happen is not done, and the next bootstrap tries again
+        self.run_task("post-adopt", false).await?;
+        Self::clear_post_adopt_pending();
+        Ok(())
     }
 
     async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {

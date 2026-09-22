@@ -46,3 +46,33 @@ assert "cat $second/.config/fish/config.fish" 'set -g theme ok'
 rm "$second/.post-adopt-ran"
 assert_succeed 'b bootstrap'
 assert_fail "test -e $second/.post-adopt-ran"
+
+# **a held adopt still gets its setup.** A conflict sends the user to
+# `mise bootstrap`, so the need is recorded rather than called: an adopt
+# that never reaches the end still leaves the machine to be set up, and
+# that is exactly when a manual step gets forgotten.
+third="$(dirname "$HOME")/held-machine"
+mkdir -p "$third/.config/fish"
+# a local file that differs from the incoming one holds the setup
+echo 'set -g theme mine' >"$third/.config/fish/config.fish"
+c() {
+  (
+    cd "$third" || exit
+    env HOME="$third" XDG_CONFIG_HOME="$third/.config" MISE_CONFIG_DIR="$third/.config/mise" \
+      MISE_STATE_DIR="$third/.local/state/mise" MISE_DATA_DIR="$third/.local/share/mise" \
+      MISE_CACHE_DIR="$third/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$third" \
+      MISE_HISTORY_NOTIFY=false mise "$@"
+  )
+}
+export third
+export -f c
+assert_fail "c bootstrap --adopt file://$origin --yes" 'paused'
+assert_fail "test -e $third/.post-adopt-ran"
+# resolving the conflict and bootstrapping the ordinary way runs it
+assert_succeed 'c dot pull --take-remote-all --yes'
+assert_succeed 'c bootstrap'
+assert "cat $third/.post-adopt-ran" 'ran'
+# once: a second bootstrap does not repeat it
+rm "$third/.post-adopt-ran"
+assert_succeed 'c bootstrap'
+assert_fail "test -e $third/.post-adopt-ran"
