@@ -1323,8 +1323,9 @@ If a config relies on the old behavior, remove the command from the block.
 Taking a script over needs the standing of the config that found it: a block
 replaces the script only when it comes from the config whose
 [`task_config.includes`](#task_config.includes) selected the script's directory,
-or from a higher-precedence one. A block from further down the chain contributes
-its metadata and leaves the script running.
+or from a higher-precedence one. A block from further down that chain is treated
+as configuring the script like any other — its metadata applies and the script
+keeps running.
 
 On Windows, a script paired with a
 [Windows-native sibling](/tasks/file-tasks#windows) is replaced by that sibling
@@ -1336,9 +1337,10 @@ metadata under `[tasks.hello]` applies to that task rather than to `hello.sh`,
 which stays reachable as `mise run hello.sh`. See
 [layered task definitions](#layered-task-definitions).
 
-A script takes only its highest-precedence definition. Lower-precedence blocks
-contribute nothing, not even additive fields such as `env` or `alias`, and
-because the two spellings name one script they compete for that single slot: a
+Where several blocks name one script, only the highest-precedence one applies —
+this is a separate question from whether a block may replace the script at all.
+The rest contribute nothing, not even additive fields such as `env` or `alias`,
+and because the two spellings name one script they compete for that single slot: a
 `[tasks.hello]` in `mise.local.toml` replaces a `[tasks."hello.sh"]` in
 `mise.toml` rather than adding to it. If multiple scripts share a name without
 the extension, such as `hello.sh` and `hello.js`, a `[tasks.hello]` block
