@@ -993,7 +993,10 @@ fn apply_resolutions(
 pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
     match roots.locate(branch_path) {
         Located::Tracked { path, variant } => match tracked.entry_for(&path) {
-            Some(entry) => entry.variant == variant,
+            Some(entry) => {
+                entry.variant == variant
+                    && !crate::system::history::tracked::inside_nested_repository(entry, &path)
+            }
             None => false,
         },
         Located::Config(path) => tracked
@@ -1401,5 +1404,43 @@ mod status_tests {
             status.declarations_changed = false;
         })
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod nested_repository_tests {
+    use super::*;
+    use crate::system::files::{FileMode, FilePolicy};
+    use crate::system::history::tracked::{TrackedEntry, normalize};
+
+    #[test]
+    fn incoming_files_leave_live_nested_repositories_alone() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = normalize(temp.path());
+        let roots = Roots {
+            home: home.clone(),
+            config_dir: home.join(".config/mise"),
+        };
+        let parent = home.join("plugins");
+        let nested = parent.join("checkout");
+        std::fs::create_dir_all(nested.join(".git")).unwrap();
+        std::fs::write(nested.join("local.txt"), "local").unwrap();
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(parent, "track", policy));
+        for path in [
+            "home/plugins/checkout",
+            "home/plugins/checkout/local.txt",
+            "home/plugins/checkout/incoming.txt",
+        ] {
+            assert!(!eligible(&roots, &tracked, path), "{path}");
+        }
+        assert!(eligible(&roots, &tracked, "home/plugins/ordinary.txt"));
+        tracked.push(TrackedEntry::new(nested, "track", policy));
+        assert!(eligible(
+            &roots,
+            &tracked,
+            "home/plugins/checkout/incoming.txt"
+        ));
     }
 }

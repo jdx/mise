@@ -330,14 +330,7 @@ impl TrackedSet {
         {
             return Ok(false);
         }
-        // a nested repository below the entry is a gitlink: nothing under
-        // it is captured
-        let nested = path
-            .ancestors()
-            .skip(1)
-            .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
-            .any(|ancestor| ancestor.join(".git").exists());
-        if nested {
+        if inside_nested_repository(owner, path) {
             return Ok(false);
         }
         Ok(!self.exclude_set()?.is_match(path))
@@ -807,6 +800,14 @@ pub(crate) fn global_config_dir() -> PathBuf {
                 .to_path_buf()
         })
         .unwrap_or_else(|| dirs::CONFIG.to_path_buf())
+}
+
+/// A nested working tree, including its root, belongs to its own repository.
+/// Directly tracking that root gives it a separate owner and permits capture.
+pub(crate) fn inside_nested_repository(owner: &TrackedEntry, path: &Path) -> bool {
+    path.ancestors()
+        .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+        .any(|ancestor| ancestor.join(".git").exists())
 }
 
 /// Canonical when the path exists, lexically normalized otherwise.
@@ -1316,6 +1317,7 @@ mod tests {
         assert!(walk.nested[0].reason.contains("track it directly"));
         assert!(walk.omitted.is_empty());
         assert_eq!(set.coverage(&walk).nested, walk.nested);
+        assert!(!set.would_capture(&plugin).unwrap());
         assert!(!set.would_capture(&plugin.join("init.lua")).unwrap());
         // and that remedy works: tracking the repository itself captures
         // its working files, always without `.git`

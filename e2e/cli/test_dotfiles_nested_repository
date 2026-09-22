@@ -116,3 +116,20 @@ assert_fail "test -e $third/.hammerspoon/Spoons/Sky.spoon"
 assert_succeed "$c dot sync"
 assert_succeed "$b dot sync"
 assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"
+
+# Ordinary incoming files also respect a live nested checkout, even
+# when older history held only a pointer at that path.
+git -C "$work" update-index --force-remove home/.hammerspoon/Spoons/Sky.spoon
+mkdir -p "$work/home/.hammerspoon/Spoons/Sky.spoon"
+echo 'incoming replacement' >"$work/home/.hammerspoon/Spoons/Sky.spoon/init.lua"
+echo 'incoming addition' >"$work/home/.hammerspoon/Spoons/Sky.spoon/new.lua"
+git -C "$work" add home/.hammerspoon/Spoons/Sky.spoon
+tree=$(git -C "$work" write-tree)
+commit=$(git -C "$work" -c user.name=t -c user.email=t@example.com commit-tree "$tree" -p "$(git --git-dir="$origin" rev-parse main)" -m 'ordinary incoming files')
+git -C "$work" push -q "$origin" "$commit:refs/heads/main"
+assert_succeed "$b dot sync"
+assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { second = true }'
+assert_fail "test -e $second/.hammerspoon/Spoons/Sky.spoon/new.lua"
+assert "$b dot status --json | jq -r '.history.sync.pending_applications | length'" 0
+assert_succeed "$c dot sync"
+assert "cat $third/.hammerspoon/Spoons/Sky.spoon/new.lua" 'incoming addition'
