@@ -291,7 +291,7 @@ pub(crate) fn report(outcome: &run::SyncOutcome) {
     match &outcome.published {
         Some(commit) => info!(
             "history: published {}",
-            crate::cli::dotfiles::history::short(commit)
+            crate::system::history::short(commit)
         ),
         None => info!("history: nothing new to publish"),
     }
