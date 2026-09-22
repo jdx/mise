@@ -1291,8 +1291,9 @@ env = { GREETING = "hi" }
 its description. The script's full name includes its extension; `mise run`
 also accepts the name without the extension.
 
-Both spellings behave identically, so the name you use is a matter of taste.
-Dependencies work the same way under either one:
+For a block configuring the script, both spellings behave identically, so the
+name you use is a matter of taste. Dependencies work the same way under either
+one:
 
 ```toml [mise.toml]
 [tasks.hello] # or [tasks."hello.sh"]
