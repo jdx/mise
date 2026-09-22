@@ -60,6 +60,11 @@ cat <<'EOF' >.config/mise.toml
 description = "decorated from a lower config"
 run = "echo lower-inline-ran"
 env = { GREETING = "hi" }
+
+# The block that replaces mise-tasks/hello.sh is in mise.toml, above this one,
+# so the replacement is already in place by the time this is read.
+[tasks.hello]
+description = "stem block from a lower config"
 EOF
 
 cat <<'EOF' >mise.toml
@@ -106,3 +111,10 @@ assert "mise run redirected" "elsewhere-ran"
 # blocks already follow for tasks from included TOML files.
 assert "mise run low" "low-script-ran GREETING=hi"
 assert_contains "mise tasks" "decorated from a lower config"
+
+# A replacement stands in for the script under its name, so a block spelling
+# that name by its stem overlays the replacement instead of landing beside it as
+# a task of its own that "mise run hello" would prefer and that runs nothing.
+assert "mise run hello" "inline-ran"
+assert_contains "mise tasks" "stem block from a lower config"
+assert_not_contains "mise tasks ls --no-header" "hello.sh"
