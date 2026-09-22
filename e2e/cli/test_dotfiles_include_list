@@ -121,6 +121,24 @@ assert_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fi
 assert_not_contains 'mise dot paths' 'omitted: ~/.config/fish/functions/secrets.fish'
 assert "mise dot paths --json | jq -r '.plaintext[0].path'" '~/.config/fish/functions/secrets.fish'
 
+# **but the watcher does not say it into its own log.** It walks at
+# startup and on every configuration reload, usually detached, so a
+# warning there is said where nobody reads it. It is written down
+# instead, and the next command a person runs says it.
+notices="$MISE_STATE_DIR/history/notices"
+echo 'set -x API_TOKEN synthetic3' >~/.config/fish/functions/secrets.fish
+mise dot watch --once >watch-once.log 2>&1
+assert_not_contains 'cat watch-once.log' 'saved in plaintext'
+# a standing condition is one notice however many times the watcher
+# walks, so a reload loop cannot grow the file without bound
+echo 'set -x API_TOKEN synthetic4' >~/.config/fish/functions/secrets.fish
+mise dot watch --once >>watch-once.log 2>&1
+assert_not_contains 'cat watch-once.log' 'saved in plaintext'
+assert "grep -c 'saved in plaintext' $notices" '1'
+# and the next command a person runs delivers it and clears it
+assert_contains 'mise dot origin 2>&1' 'saved in plaintext'
+assert_fail "test -s $notices"
+
 # a directory-shaped pattern carries the same authority as any other:
 # selection decides, and the credential-named file inside is captured.
 # (`encrypt = true` capturing it with nothing in the clear is covered by

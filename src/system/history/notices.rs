@@ -25,6 +25,11 @@ fn file_in(state_dir: &Path) -> PathBuf {
     super::store::store_dir_in(state_dir).join("notices")
 }
 
+/// Keeps `message` for the next command a person runs.
+pub(crate) fn record(message: &str) -> Result<()> {
+    record_in(&super::store::state_dir(), message)
+}
+
 /// Keeps `message` for the next command a person runs, in the store
 /// under `state_dir`.
 pub(crate) fn record_in(state_dir: &Path, message: &str) -> Result<()> {
