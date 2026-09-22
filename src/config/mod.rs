@@ -7295,6 +7295,41 @@ mod tests {
         }
     }
 
+    /// A block above the command still reaches the replacement, under either
+    /// spelling: it claims the script's slot before the command arrives, and
+    /// the slot is applied to whatever holds the name at the end. Only blocks
+    /// below the command are the ones that add nothing.
+    #[test]
+    fn test_a_higher_precedence_block_reaches_a_replaced_file_task() {
+        for spelling in ["hello", "hello.sh"] {
+            let metadata = Task {
+                description: "from above".to_string(),
+                config_precedence: 0,
+                ..inline_overlay(spelling)
+            };
+            let command = Task {
+                config_precedence: 1,
+                ..inline_task("hello.sh", "echo inline")
+            };
+
+            let tasks = merge_file_and_config_tasks(
+                vec![file_task("hello.sh")],
+                vec![metadata, command],
+            );
+
+            assert_eq!(tasks.len(), 1, "[tasks.{spelling}] left a second task");
+            assert_eq!(
+                tasks[0].run,
+                vec![RunEntry::Script("echo inline".to_string())],
+                "[tasks.{spelling}] lost the command"
+            );
+            assert_eq!(
+                tasks[0].description, "from above",
+                "[tasks.{spelling}] did not reach the replacement"
+            );
+        }
+    }
+
     /// The full-name spelling answers the same way, so which one a config used
     /// does not change whether a second block reaches the replacement.
     #[test]
