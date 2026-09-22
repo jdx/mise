@@ -40,7 +40,7 @@ echo 'model = "y"' >"$second/.codex/config.toml"
 # re-tracking captures under the published exclusion, and keeps it in
 # the manifest rather than replacing the reconciled entry with the bare
 # local declaration
-assert_contains "b dot track --dry-run $second/.codex" "~/.codex: 1 files"
+assert_contains "b dot track --dry-run $second/.codex" "~/.codex: 1 file"
 assert_contains "b dot track --dry-run $second/.codex" "exclude (~/.codex): sessions"
 assert_succeed "b dot track $second/.codex"
 repository="$second/.local/state/mise/history/repo.git"
