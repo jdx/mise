@@ -637,9 +637,12 @@ pub(crate) const OMISSION_LINES: usize = 10;
 /// Display paths use the platform separator (`\` on Windows), so the
 /// boundary is checked on either.
 pub(crate) fn display_under(path: &str, root: &str) -> bool {
+    // Git metadata uses `~/` even where native display paths keep HOME.
+    let path = file::replace_path(path).to_string_lossy().into_owned();
+    let root = file::replace_path(root).to_string_lossy().into_owned();
     path == root
         || path
-            .strip_prefix(root)
+            .strip_prefix(&root)
             .is_some_and(|rest| rest.starts_with(['/', '\\']))
 }
 
@@ -1185,6 +1188,18 @@ mod tests {
         assert!(display_under("~\\.ssh\\id_test", "~\\.ssh"));
         assert!(!display_under("~/.sshd/x", "~/.ssh"));
         assert!(!display_under("~/.ssh", "~/.ssh/id_test"));
+    }
+
+    #[test]
+    fn display_under_matches_home_and_native_paths() {
+        let root = crate::dirs::HOME.join(".nested");
+        let child = root.join("plugin");
+        assert!(display_under("~/.nested/plugin", &root.to_string_lossy()));
+        assert!(display_under(&child.to_string_lossy(), "~/.nested"));
+        assert!(!display_under(
+            "~/.nested-other/plugin",
+            &root.to_string_lossy()
+        ));
     }
 
     #[test]
