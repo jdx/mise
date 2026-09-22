@@ -7312,10 +7312,8 @@ mod tests {
                 ..inline_task("hello.sh", "echo inline")
             };
 
-            let tasks = merge_file_and_config_tasks(
-                vec![file_task("hello.sh")],
-                vec![metadata, command],
-            );
+            let tasks =
+                merge_file_and_config_tasks(vec![file_task("hello.sh")], vec![metadata, command]);
 
             assert_eq!(tasks.len(), 1, "[tasks.{spelling}] left a second task");
             assert_eq!(
