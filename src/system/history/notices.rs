@@ -25,6 +25,32 @@ fn file_in(state_dir: &Path) -> PathBuf {
     super::store::store_dir_in(state_dir).join("notices")
 }
 
+/// Says `message`, unless this process already said it.
+///
+/// **A standing condition is said once to the person in front of it.**
+/// The same line can reach a person by more than one route in a single
+/// command: a notice the watcher recorded is delivered on the way in,
+/// and then the command's own walk of the same tree finds the same
+/// condition and says it again. Both routes are wanted — neither knows
+/// about the other, and either can be the only one — so the rule lives
+/// here instead of in each of them.
+pub(crate) fn say(message: &str) {
+    let fresh = match said().lock() {
+        Ok(mut said) => said.insert(message.to_string()),
+        // a poisoned lock is not a reason to swallow a warning
+        Err(_) => true,
+    };
+    if fresh {
+        warn!("{message}");
+    }
+}
+
+fn said() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    static SAID: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    SAID.get_or_init(Default::default)
+}
+
 /// Drops kept notices that say exactly what was just said out loud, in
 /// the store under `state_dir`.
 ///
@@ -133,7 +159,7 @@ pub(crate) fn drain() {
 /// longer.
 pub(crate) fn drain_in(state_dir: &Path) {
     for line in take(&file_in(state_dir)) {
-        warn!("{line}");
+        say(&line);
     }
 }
 

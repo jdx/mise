@@ -739,6 +739,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 mode,
                 manifest,
                 exclude,
+                include,
                 variants,
                 ..
             } = entry
@@ -783,7 +784,15 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 {
                     bail!("invalid manifest {manifest:?} for dotfile {target}");
                 }
-                for pattern in exclude.into_iter().flatten() {
+                // Both selection lists, not just one: an incoming
+                // `include` this mise cannot compile must fail preflight
+                // rather than be dropped, or the entry silently selects
+                // the whole tree on the machine that receives it.
+                for pattern in exclude
+                    .into_iter()
+                    .flatten()
+                    .chain(include.into_iter().flatten())
+                {
                     glob::Pattern::new(&pattern)?;
                 }
             }

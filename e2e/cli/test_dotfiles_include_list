@@ -139,6 +139,17 @@ assert "grep -c 'saved in plaintext' $notices" '1'
 assert_contains 'mise dot origin 2>&1' 'saved in plaintext'
 assert_fail "test -s $notices"
 
+# a command that both delivers the notice and walks the same tree says
+# it once, not once per route — the delivery and the walk do not know
+# about each other, and either can be the only one
+echo 'set -x API_TOKEN synthetic7' >~/.config/fish/functions/secrets.fish
+mise dot watch --once >/dev/null 2>&1
+assert "grep -c 'saved in plaintext' $notices" '1'
+mise dot paths >paths.log 2>&1
+assert "grep -c 'WARN.*saved in plaintext' paths.log" '1'
+# the omission listing is different output and still there
+assert "grep -c 'plaintext: ~/.config/fish/functions/secrets.fish' paths.log" '1'
+
 # **an `include` list is enough on its own to declare a tracked entry.**
 # The entry recognizer lists the keys that make a table a file entry;
 # `include` was a known key everywhere else, so a declaration carrying

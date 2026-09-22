@@ -285,9 +285,9 @@ impl Store {
         let speak = !draft.protective && heard(&draft);
         for message in &messages {
             if speak {
-                warn!("{message}");
+                super::notices::say(message);
             } else if let Err(err) = super::notices::record_in(&self.state_dir, message) {
-                warn!("{message}");
+                super::notices::say(message);
                 debug!("history: could not keep the notice: {err}");
             }
         }
