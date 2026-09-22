@@ -159,13 +159,25 @@ fn reconcile(
                     existing.variants = entry.variants.clone();
                 }
                 // silence is not an instruction: a declaration that
-                // drops the `exclude` or `include` key says nothing
-                // again, and what the manifest carries stands. `[]` is
-                // how either list is cleared.
+                // drops the `exclude` key says nothing again, and what
+                // the manifest carries stands. `exclude = []` is how the
+                // list is cleared, and it expresses the default — no
+                // exclusions — so nothing is unreachable.
                 if entry.exclude != old.exclude && entry.exclude.is_some() {
                     existing.exclude = entry.exclude.clone();
                 }
-                if entry.include != old.include && entry.include.is_some() {
+                // **`include` cannot borrow that rule, because absence
+                // is a third meaning it alone can express.** An absent
+                // list selects the tree with credential filtering, `[]`
+                // selects nothing, and `["**"]` selects credential-named
+                // files too — so if dropping the key could not take
+                // effect, a published list could never be returned to
+                // the default. Here there is a cache to compare against:
+                // this machine declared the list before and does not
+                // now, which is an edit, not silence. Without a cache
+                // there is no such evidence, and the branch below keeps
+                // what was published.
+                if entry.include != old.include {
                     existing.include = entry.include.clone();
                 }
             } else {
@@ -367,19 +379,25 @@ mod tests {
         let saved = declare(Some(&["config.toml"]));
         let silent = declare(None);
 
-        // with a cache: dropping the key says nothing, so the published
-        // list stands rather than widening the entry to the whole tree
+        // a machine that has a cache and says nothing in either it or
+        // its declaration has expressed no opinion: the published list
+        // stands rather than widening the entry to the whole tree
         let merged = reconcile(&saved, &silent, Some(&silent), &[]);
         assert_eq!(
             merged.enrollment[0].include,
             Some(vec!["config.toml".to_string()]),
             "a declaration that says nothing dropped the saved include list"
         );
+
+        // **but deleting a key this machine did declare is an edit, and
+        // the only way back to the default.** An absent list is a third
+        // meaning `[]` and `["**"]` cannot express — the tree with
+        // credential filtering — so if this could not take effect a
+        // published list would be a one-way door.
         let merged = reconcile(&saved, &silent, Some(&saved), &[]);
         assert_eq!(
-            merged.enrollment[0].include,
-            Some(vec!["config.toml".to_string()]),
-            "dropping the key was read as clearing the include list"
+            merged.enrollment[0].include, None,
+            "deleting a declared include list could not restore the default selection"
         );
 
         // and with no cache, where the declaration is otherwise taken
