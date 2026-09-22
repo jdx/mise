@@ -920,6 +920,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
             if table.is_empty()
                 || table.contains_key("mode")
                 || table.contains_key("exclude")
+                || table.contains_key("include")
                 || table.contains_key("manifest")
                 || table.contains_key("autosave")
                 || table.contains_key("encrypt")

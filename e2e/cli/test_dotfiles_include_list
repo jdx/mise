@@ -139,6 +139,40 @@ assert "grep -c 'saved in plaintext' $notices" '1'
 assert_contains 'mise dot origin 2>&1' 'saved in plaintext'
 assert_fail "test -s $notices"
 
+# **an `include` list is enough on its own to declare a tracked entry.**
+# The entry recognizer lists the keys that make a table a file entry;
+# `include` was a known key everywhere else, so a declaration carrying
+# only that one was dropped without even an invalid-entry warning — the
+# path simply went untracked and `mise dot paths` never mentioned it.
+mkdir -p ~/.only-include
+echo 'chosen' >~/.only-include/config.toml
+echo 'not chosen' >~/.only-include/cache.db
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.only-include" = { include = ["config.toml"] }
+TOML
+# recognized, so the rule that `include` needs `mode = "track"` is the
+# thing the user is told — rather than nothing at all
+assert_contains 'mise dot paths 2>&1' 'applies only to mode'
+assert_contains 'mise dot paths 2>&1' '~/.only-include'
+# and it is still not captured, because it is not a tracked entry
+assert_succeed 'mise dot save'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.only-include/config.toml"
+
+# adding the mode it asks for makes the same list work
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.only-include" = { mode = "track", include = ["config.toml"] }
+TOML
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.only-include/config.toml" 'chosen'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.only-include/cache.db"
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track", include = ["functions/hello.fish", "functions/secrets.fish"] }
+TOML
+
 # **a bootstrap says it during the run.** Notices are drained by
 # `mise dot`, and `mise bootstrap` is a separate top-level command that
 # never drains, so deferring there would wait for a `mise dot` command
