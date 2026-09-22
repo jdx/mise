@@ -748,14 +748,20 @@ fn prepare(
             files: upstream
                 .files
                 .iter()
-                .filter(|(path, _)| eligible(&roots, set, path))
+                .filter(|(path, object)| {
+                    eligible(&roots, set, path)
+                        || (reconcile::is_gitlink(Some(object)) && owns_stream(&roots, set, path))
+                })
                 .map(|(path, object)| (path.clone(), object.clone()))
                 .collect(),
         };
         let mut plans = reconcile::reconcile(repo, shared, &selected, &sync_state, unsaved)?;
         // Old acknowledgements are not authority to delete a path this
         // machine no longer declares or selects.
-        plans.retain(|plan| eligible(&roots, set, &plan.branch_path));
+        plans.retain(|plan| {
+            eligible(&roots, set, &plan.branch_path)
+                || (plan.skipped.is_some() && owns_stream(&roots, set, &plan.branch_path))
+        });
         for (path, object) in shared {
             if reconcile::is_gitlink(Some(object))
                 || !eligible(&roots, set, path)
@@ -990,6 +996,20 @@ fn apply_resolutions(
 /// another platform's version is never applied here and never read as a
 /// change. Undeclared paths wait for prospective incoming configuration;
 /// their absence from this machine is not a publication of a deletion.
+fn owns_stream(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
+    match roots.locate(branch_path) {
+        Located::Tracked { path, variant } => tracked
+            .entry_for(&path)
+            .is_some_and(|entry| entry.variant == variant),
+        Located::Config(path) => tracked
+            .entry_for(&path)
+            .is_some_and(|entry| entry.variant.is_none()),
+        Located::Marker | Located::Unmapped => false,
+    }
+}
+
+// Legacy pointers produce only skip diagnostics, so their owning stream
+// remains reportable even when live nested content is ineligible for apply.
 pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
     match roots.locate(branch_path) {
         Located::Tracked { path, variant } => match tracked.entry_for(&path) {
