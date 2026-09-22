@@ -181,6 +181,13 @@ echo 'set -x API_TOKEN synthetic5' >~/.config/fish/functions/secrets.fish
 assert_contains 'mise bootstrap 2>&1' 'saved in plaintext'
 assert_fail "test -s $notices"
 
+# a wrapped capture reports it inline as well — it does not reach the
+# deferral at all, and this pins that so a future change to the capture
+# path cannot quietly send it to the notices file under `mise bootstrap`,
+# which never drains
+assert_contains "mise bootstrap dotfiles capture -- sh -c 'printf synthetic6 >~/.config/fish/functions/secrets.fish' 2>&1" 'saved in plaintext'
+assert_fail "test -s $notices"
+
 # a directory-shaped pattern carries the same authority as any other:
 # selection decides, and the credential-named file inside is captured.
 # (`encrypt = true` capturing it with nothing in the clear is covered by

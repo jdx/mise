@@ -1028,13 +1028,18 @@ fn under_entry(path: &str, entry: &str) -> bool {
 /// the user asked for, rather than one the watcher made on its own
 /// schedule.
 ///
-/// **A bootstrap is a save the user asked for, and it is the one case
-/// where getting this wrong loses the message for good.** Notices are
-/// delivered by `mise dot`, which drains them around every subcommand,
-/// so a rollback or a pull would say a deferred warning within the same
-/// command either way. `mise bootstrap` is a separate top-level command
-/// that never drains, so a warning deferred there waits for a
-/// `mise dot` command the user may never run.
+/// **The case that matters is the one under a command that does not
+/// deliver notices.** `mise dot` drains them around every subcommand,
+/// so a rollback, an undo or a pull says a deferred warning within the
+/// same command either way — the drain after dispatch runs whether the
+/// command succeeded or failed. `mise bootstrap` is a separate
+/// top-level command that never drains, so a warning deferred there
+/// waits for a `mise dot` command the user may never run.
+///
+/// The unattended saves stay deferred, because their logs are not
+/// somewhere anyone is looking: `Trigger::Edit` is the watcher's own
+/// save, and `Trigger::Apply` is reachable from its automatic apply
+/// through `begin_automatic_apply`, not only from `mise dot pull`.
 fn heard(draft: &Draft) -> bool {
     matches!(
         draft.trigger,
