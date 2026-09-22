@@ -1075,15 +1075,14 @@ run = './scripts/test-e2e.sh {{vars.e2e_args}}'
 
 ## Configuring file tasks from TOML
 
-An auto-discovered [file task](/tasks/file-tasks) can be given properties from
-`mise.toml` by writing a `[tasks.<name>]` block under the task's full name —
-including the file extension, which is part of the name:
+A `[tasks.<name>]` block naming an auto-discovered [file task](/tasks/file-tasks)
+gives that script properties from `mise.toml`. A script's name includes its file
+extension:
 
 ```mise-toml
 [tasks."hello.sh"] # mise-tasks/hello.sh
 description = "say hello"
 depends = ["build"]
-env = { GREETING = "hi" }
 ```
 
 The script stays the task's command and the block contributes the rest.
@@ -1109,12 +1108,12 @@ or from a higher-precedence one — the rule inline blocks already follow for
 tasks defined in included TOML files. A block from further down the chain
 contributes its metadata and leaves the script running.
 
-Writing the extension-stripped name is a different thing: `[tasks.hello]` is a
-separate task that exists alongside `mise-tasks/hello.sh`. Both are listed, and
-`mise run hello` picks the exact name — the TOML task — while `mise run hello.sh`
-runs the script. A script with no extension has no such distinction: its name
-already is the bare stem, so `[tasks.hello]` matching `mise-tasks/hello` follows
-the rules above.
+A command-bearing block under the extension-stripped name, `[tasks.hello]`,
+defines a task of its own beside `mise-tasks/hello.sh` rather than replacing it.
+Both are listed, `mise run hello` picks the exact name — the TOML task — and
+`mise run hello.sh` runs the script. A script with no extension has no such
+distinction: its name already is the bare stem, so `[tasks.hello]` naming
+`mise-tasks/hello` is the exact-name case above.
 
 On Windows, a script paired with a
 [Windows-native sibling](/tasks/file-tasks#windows) is replaced by that sibling
