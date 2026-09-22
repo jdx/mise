@@ -87,7 +87,7 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.config/fish" = { mode = "track", include = ["functions/*.fish"] }
 TOML
-assert_succeed 'mise dot track ~/.config/fish'
+assert_contains 'mise dot track ~/.config/fish 2>&1' 'plaintext'
 assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/hello.fish" 'function hello; end'
 assert "git --git-dir=$repo show HEAD:home/.config/fish/functions/secrets.fish" 'set -x API_TOKEN synthetic'
 assert_contains 'mise dot paths' 'plaintext: ~/.config/fish/functions/secrets.fish'

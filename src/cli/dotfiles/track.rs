@@ -12,7 +12,7 @@ use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{
-    CREDENTIAL_REASON, TrackedEntry, TrackedSet, capture_exclusion, normalize_target,
+    CREDENTIAL_REASON, TrackedEntry, TrackedSet, normalize_target,
 };
 
 /// Track a file or directory in place
@@ -206,6 +206,12 @@ impl DotfilesTrack {
             .collect();
         let preview_walk = preview_set.walk_selected(&targets)?;
         preview_walk.report_warnings();
+        for plaintext in &preview_walk.plaintext {
+            warn!(
+                "history: {}: an include list selects it for plaintext capture although it looks like a credential store; `encrypt = true` saves it encrypted instead",
+                plaintext.path
+            );
+        }
         let mut previews: Vec<String> = vec![];
         for (target, normalized) in resolved {
             let target_key = normalized_target(&target);
@@ -270,27 +276,21 @@ impl DotfilesTrack {
             // kind yet is told what happens to it as a file instead.
             if !target.is_dir() {
                 let owner = &set.entries[entry_index];
-                match owner.capture_exclusion(&target) {
-                    Some(reason) => {
-                        let advice = if reason == CREDENTIAL_REASON {
-                            "; `mise dot track --encrypt` saves it encrypted"
-                        } else {
-                            ""
-                        };
-                        if present {
-                            warn!(
-                                "dotfiles: {target_key} will be omitted from every save ({reason}){advice}"
-                            );
-                        } else {
-                            warn!(
-                                "dotfiles: {target_key} is omitted from every save if it is created as a file, never as a directory ({reason}){advice}"
-                            );
-                        }
+                if let Some(reason) = owner.capture_exclusion(&target) {
+                    let advice = if reason == CREDENTIAL_REASON {
+                        "; `mise dot track --encrypt` saves it encrypted"
+                    } else {
+                        ""
+                    };
+                    if present {
+                        warn!(
+                            "dotfiles: {target_key} will be omitted from every save ({reason}){advice}"
+                        );
+                    } else {
+                        warn!(
+                            "dotfiles: {target_key} is omitted from every save if it is created as a file, never as a directory ({reason}){advice}"
+                        );
                     }
-                    None if capture_exclusion(&target, &policy).is_some() => warn!(
-                        "dotfiles: {target_key} looks like a credential store and an include list selects it, so it is saved in plaintext and shared with any connected origin; `mise dot track --encrypt` saves it encrypted instead"
-                    ),
-                    None => {}
                 }
             }
             let preview = preview_walk.preview_of(set, entry_index);
