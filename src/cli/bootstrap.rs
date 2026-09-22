@@ -1882,6 +1882,7 @@ impl Bootstrap {
             }
             let config_dir = system::history::tracked::global_config_dir();
             self.run_child_bootstrap(config_dir).await?;
+            self.run_post_adopt().await?;
             if !outcome.durable_access {
                 warn!("ongoing synchronization still needs credentials on this host (see above)");
             }
@@ -2016,6 +2017,31 @@ impl Bootstrap {
                 .filter(|part| !only.contains(part))
                 .collect()
         }
+    }
+
+    /// **A first adopt is the one pull with no reload hooks to run.**
+    /// `[history.reload]` commands come from configuration that is itself
+    /// among the arriving files, so when they land there is nothing yet to
+    /// read — and that is the moment a fresh machine most needs the work
+    /// doing. Restoring a file is not the same as making it take effect:
+    /// a shell needs its plugins installed, a prompt needs its variables
+    /// set, and a directory whose mode matters needs it applied.
+    ///
+    /// A task named `post-adopt` in the adopted configuration is the
+    /// declared place for that work. It is explicit — nothing runs unless
+    /// the setup declares it, the same rule the `bootstrap` task follows —
+    /// and it runs after the adopted setup is bootstrapped, so whatever it
+    /// needs is installed before it starts. A later pull has
+    /// `[history.reload]`, which this does not replace.
+    async fn run_post_adopt(&self) -> Result<()> {
+        let config = Config::reset().await?;
+        let tasks = config.tasks().await?;
+        if !tasks.iter().any(|(_, task)| task.is_match("post-adopt")) {
+            debug!("bootstrap: no `post-adopt` task defined, skipping");
+            return Ok(());
+        }
+        info!("bootstrap: running `post-adopt` task");
+        self.run_task("post-adopt", false).await
     }
 
     async fn run_task(&self, task: &str, skip_tools: bool) -> Result<()> {

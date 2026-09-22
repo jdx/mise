@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# A first adopt has no reload hooks to run: the commands come from
+# configuration that is itself arriving. A `post-adopt` task in the
+# adopted setup is the declared place for the work that has to happen
+# once, on the machine that just received it.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/post-adopt-origin.git"
+git init -q --bare -b main "$origin"
+mkdir -p ~/.config/fish
+echo 'set -g theme ok' >~/.config/fish/config.fish
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.config/fish" = { mode = "track" }
+"~/.config/mise/config.toml" = { mode = "track" }
+
+[tasks.post-adopt]
+run = 'printf ran >"$HOME/.post-adopt-ran"'
+TOML
+assert_succeed 'mise dot save'
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed 'mise dot sync'
+# the machine that declared it is not adopting, so nothing ran here
+assert_fail 'test -e ~/.post-adopt-ran'
+
+second="$(dirname "$HOME")/post-adopt-machine"
+mkdir -p "$second"
+b() {
+  (
+    cd "$second" || exit
+    env HOME="$second" XDG_CONFIG_HOME="$second/.config" MISE_CONFIG_DIR="$second/.config/mise" \
+      MISE_STATE_DIR="$second/.local/state/mise" MISE_DATA_DIR="$second/.local/share/mise" \
+      MISE_CACHE_DIR="$second/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$second" \
+      MISE_HISTORY_NOTIFY=false mise "$@"
+  )
+}
+export second
+export -f b
+
+# adopting runs it once, after the adopted setup is bootstrapped
+assert_succeed "b bootstrap --adopt file://$origin --yes"
+assert "cat $second/.post-adopt-ran" 'ran'
+assert "cat $second/.config/fish/config.fish" 'set -g theme ok'
+
+# and it does not run again on an ordinary bootstrap of the same setup
+rm "$second/.post-adopt-ran"
+assert_succeed 'b bootstrap'
+assert_fail "test -e $second/.post-adopt-ran"

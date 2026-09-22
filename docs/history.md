@@ -220,6 +220,36 @@ writes live files, so it runs no reload commands either. A glob under a
 directory that an entry symlinks matches, so `"~/.config/hypr/**"` fires for
 a `"~/.config/hypr" = "dotfiles/hypr"` entry.
 
+### Set a machine up the first time it adopts a setup
+
+Reload commands do not run on a first adopt, and cannot: they are read
+from the configuration that is itself among the arriving files, so when
+those files land there is nothing yet to read. That is also the moment a
+fresh machine most needs the work done — restoring a file is not the same
+as making it take effect. A shell needs its plugins installed, a prompt
+needs its variables set, a directory whose mode matters needs it applied.
+
+Declare a `post-adopt` task for that work:
+
+```toml
+[tasks.post-adopt]
+run = [
+  "fisher update",
+  "tide configure --auto",
+  "chmod 700 ~/.gnupg",
+]
+```
+
+`mise bootstrap --adopt <url>` runs it once, after the adopted setup has
+been bootstrapped, so anything it needs is already installed. Nothing runs
+unless the setup declares the task — the same rule the `bootstrap` task
+follows — and an ordinary `mise bootstrap` on a machine that has already
+adopted does not run it again. A failure fails the command, so a setup
+step that did not happen is not silently skipped.
+
+This does not replace `[history.reload]`, which still runs on every later
+pull.
+
 ## Sharing across machines
 
 Connect a private Git repository, called an **origin**, to share tracked
