@@ -91,8 +91,25 @@ pub(crate) fn resolve(
                 .iter()
                 .find(|entry| entry.path == portable)
         {
+            // **Enrolling a path explicitly says to track it, not to
+            // forget what it leaves out.** `reconcile` has already
+            // settled this entry's exclusions, including a list another
+            // machine published that this declaration does not repeat;
+            // taking the declaration whole here threw that away, so the
+            // baseline `mise dot track` saves captured exactly the files
+            // the shared list exists to keep out — and could publish
+            // them. Silence is not an instruction here either.
+            let mut enrolled = declaration.clone();
+            if enrolled.exclude.is_none()
+                && let Some(reconciled) = manifest
+                    .enrollment
+                    .iter()
+                    .find(|entry| entry.path == portable)
+            {
+                enrolled.exclude = reconciled.exclude.clone();
+            }
             manifest.enrollment.retain(|entry| entry.path != portable);
-            manifest.enrollment.push(declaration.clone());
+            manifest.enrollment.push(enrolled);
         }
     }
     for path in untrack.iter().chain(&tracked.disabled) {
