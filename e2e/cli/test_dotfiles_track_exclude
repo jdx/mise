@@ -127,3 +127,14 @@ TOML
 assert "mise dot paths --json | jq -c '.entries[] | select(.path == \"~/.twosided\") | .exclude'" '[]'
 assert_succeed 'mise dot save'
 assert "git --git-dir=$repo show HEAD:home/.twosided/sessions/one.jsonl" 'a transcript'
+
+# **A preview reads; it does not bring a repository into existence.**
+# Previewing under the effective exclude list means asking the history
+# repository what another machine published, and opening one
+# initializes it — so a dry run on a half-created state directory used
+# to write into it, and a damaged repository aborted a preview that
+# needs only configuration.
+rm -rf "$MISE_STATE_DIR/history/repo.git"
+mkdir -p "$MISE_STATE_DIR/history/repo.git"
+assert_succeed 'mise dot track --dry-run ~/.twosided'
+assert "find $MISE_STATE_DIR/history/repo.git -mindepth 1 | wc -l | tr -d ' '" '0'
