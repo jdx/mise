@@ -47,6 +47,14 @@ rm "$second/.post-adopt-ran"
 assert_succeed 'b bootstrap'
 assert_fail "test -e $second/.post-adopt-ran"
 
+# a part the user excluded is excluded here too, and the mark survives
+# so a later bootstrap that does include tasks still finishes the job
+rm -f "$second/.post-adopt-ran"
+assert_succeed "b bootstrap --adopt file://$origin --yes --skip task"
+assert_fail "test -e $second/.post-adopt-ran"
+assert_succeed 'b bootstrap'
+assert "cat $second/.post-adopt-ran" 'ran'
+
 # **a held adopt still gets its setup.** A conflict sends the user to
 # `mise bootstrap`, so the need is recorded rather than called: an adopt
 # that never reaches the end still leaves the machine to be set up, and

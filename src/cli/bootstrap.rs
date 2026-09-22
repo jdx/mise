@@ -1834,7 +1834,7 @@ impl Bootstrap {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::Final)
                 .await?;
         }
-        self.run_post_adopt().await?;
+        self.run_post_adopt(&skip).await?;
         follow_up.print()?;
         Ok(summary)
     }
@@ -2077,8 +2077,18 @@ impl Bootstrap {
     /// and it runs after the adopted setup is bootstrapped, so whatever it
     /// needs is installed before it starts. A later pull has
     /// `[history.reload]`, which this does not replace.
-    async fn run_post_adopt(&self) -> Result<()> {
+    async fn run_post_adopt(&self, skip: &HashSet<BootstrapPart>) -> Result<()> {
         if self.dry_run || !Self::post_adopt_pending_path().is_file() {
+            return Ok(());
+        }
+        // **A part the user excluded is excluded here too.** This is a
+        // task, so `--skip task` and an `--only` selection that leaves
+        // tasks out govern it, and `--skip tools` governs whether running
+        // it may install what it needs. The mark stays either way: the
+        // machine still needs setting up, and a later bootstrap that does
+        // include tasks is what finishes it.
+        if skip.contains(&BootstrapPart::Task) {
+            debug!("bootstrap: `post-adopt` task skipped");
             return Ok(());
         }
         let config = Config::get().await?;
@@ -2091,7 +2101,8 @@ impl Bootstrap {
         info!("bootstrap: running `post-adopt` task");
         // the mark outlives a failure on purpose: a setup step that did
         // not happen is not done, and the next bootstrap tries again
-        self.run_task("post-adopt", false).await?;
+        self.run_task("post-adopt", skip.contains(&BootstrapPart::Tools))
+            .await?;
         Self::clear_post_adopt_pending();
         Ok(())
     }
