@@ -91,6 +91,15 @@ impl DotfilesTrack {
         // tracked, so nested targets partition instead of the outer one
         // counting the inner one's files too
         let exclude = crate::system::history::config::exclude_globs()?;
+        // **Previewed under the selection a capture will actually use.**
+        // An entry's exclude list can come from the saved manifest
+        // rather than this machine's declaration, so reading the
+        // declaration alone reported files as captured that a capture
+        // then leaves out. `effective` is `from_config` and then
+        // `enrollment::resolve`, which is where a published list comes
+        // from; it touches no repository that does not already exist, so
+        // a dry run still writes nothing.
+        let effective = TrackedSet::effective().await?;
         let mut preview_set = TrackedSet {
             exclude: exclude.clone(),
             ..Default::default()
@@ -138,22 +147,32 @@ impl DotfilesTrack {
                 .find(|req| req.target == target && req.mode == FileMode::Track);
             let mut entry =
                 TrackedEntry::new(normalize_target(&target), "track", self.policy(existing));
-            // re-tracking previews under the entry's own exclude and
-            // include lists
+            // re-tracking previews under the entry's effective exclude
+            // and include lists: the saved one when this machine's
+            // declaration says nothing, its own when it does
             if let Some(existing) = existing {
-                entry.exclude = existing.policy.explicit.exclude.then(|| {
-                    existing
-                        .exclude
-                        .iter()
-                        .map(|pattern| pattern.as_str().to_owned())
-                        .collect()
-                });
-                entry.include = existing.include.as_ref().map(|patterns| {
-                    patterns
-                        .iter()
-                        .map(|pattern| pattern.as_str().to_owned())
-                        .collect()
-                });
+                let saved = effective
+                    .entry_for(&entry.path)
+                    .filter(|resolved| resolved.path == entry.path);
+                let declared_exclude: Option<Vec<String>> =
+                    existing.policy.explicit.exclude.then(|| {
+                        existing
+                            .exclude
+                            .iter()
+                            .map(|pattern| pattern.as_str().to_owned())
+                            .collect()
+                    });
+                entry.exclude = declared_exclude
+                    .or_else(|| saved.and_then(|resolved| resolved.exclude.clone()));
+                let declared_include: Option<Vec<String>> =
+                    existing.include.as_ref().map(|patterns| {
+                        patterns
+                            .iter()
+                            .map(|pattern| pattern.as_str().to_owned())
+                            .collect()
+                    });
+                entry.include = declared_include
+                    .or_else(|| saved.and_then(|resolved| resolved.include.clone()));
             }
             preview_set.push(entry);
             resolved.push(target);
@@ -651,6 +670,9 @@ fn commit_declaration(
 /// Checks that every declared entry is active and saves their baseline.
 async fn activate_and_baseline(declared: &[(String, PathBuf)]) -> Result<()> {
     let config = Config::reset().await?;
+    // The capture resolves this set again through `enrollment::resolve`,
+    // so the declaration is what this function needs: it is checking
+    // that each requested declaration loaded.
     let tracked = TrackedSet::from_config(&config)?;
     for (key, target) in declared {
         let path = normalize_target(target);
