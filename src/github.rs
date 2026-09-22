@@ -921,7 +921,7 @@ pub(crate) fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
             remember_token_source(host, &token, source);
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
+                tokens::bearer_header("GitHub", &token)?,
             );
             headers.insert(
                 "x-github-api-version",
@@ -941,7 +941,7 @@ pub(crate) fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
         remember_token_source("raw.githubusercontent.com", &token, source);
         headers.insert(
             reqwest::header::AUTHORIZATION,
-            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
+            tokens::bearer_header("GitHub", &token)?,
         );
     }
 
@@ -1396,6 +1396,41 @@ mod tests {
             token_source_for_token(host, "ghp_from_tokens_file"),
             Some(TokenSource::TokensFile)
         );
+    }
+
+    /// A token carrying a character that is illegal in an HTTP header used to
+    /// abort the process from `HeaderValue::from_str(..).unwrap()` (#13471).
+    /// It has to come back as an error, and the error must not leak the token.
+    #[test]
+    fn test_get_headers_rejects_token_with_invalid_header_character() {
+        let _lock = crate::test::lock_ignoring_poison(&TEST_ENV_LOCK);
+        let host = "github-bad-token-test.example.com";
+        let _tokens_file = TokensFileOverrideGuard::set(host, "ghp_bad\nsecret_value");
+
+        let err = get_headers(format!("https://{host}/api/v3/repos/owner/repo/releases"))
+            .expect_err("a token that cannot be a header value must be an error, not a panic");
+        let msg = err.to_string();
+
+        assert!(msg.contains("invalid GitHub token"), "{msg}");
+        assert!(
+            !msg.contains("secret_value"),
+            "token leaked into error: {msg}"
+        );
+    }
+
+    /// A malformed token must not take down an unauthenticated request to an
+    /// unrelated host: `get_headers` only builds an Authorization header for
+    /// the host the token belongs to.
+    #[test]
+    fn test_get_headers_ignores_invalid_token_for_other_hosts() {
+        let _lock = crate::test::lock_ignoring_poison(&TEST_ENV_LOCK);
+        let _tokens_file =
+            TokensFileOverrideGuard::set("github-bad-token-other.example.com", "ghp_bad\ntoken");
+
+        let headers = get_headers("https://downloads.example.com/tool.tar.gz")
+            .expect("a non-API URL builds no auth header");
+
+        assert!(!headers.contains_key(reqwest::header::AUTHORIZATION));
     }
 
     #[test]

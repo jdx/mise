@@ -5,7 +5,7 @@ use crate::{dirs, env};
 use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -118,7 +118,7 @@ async fn list_releases_(
     require_assets: bool,
 ) -> Result<Vec<ForgejoRelease>> {
     let url = format!("{api_url}/repos/{repo}/releases?limit=100");
-    let headers = get_headers(&url, api_url);
+    let headers = get_headers(&url, api_url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<ForgejoRelease>, _>(url, &headers)
         .await?;
@@ -135,7 +135,7 @@ async fn list_releases_(
         {
             break;
         }
-        headers = get_headers(&next, api_url);
+        headers = get_headers(&next, api_url)?;
         let (more, h) = crate::http::HTTP_FETCH
             .json_headers_with_headers::<Vec<ForgejoRelease>, _>(next, &headers)
             .await?;
@@ -172,7 +172,7 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRel
     } else {
         format!("{api_url}/repos/{repo}/releases/tags/{tag}")
     };
-    let headers = get_headers(&url, api_url);
+    let headers = get_headers(&url, api_url)?;
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await
@@ -192,28 +192,28 @@ fn cache_dir() -> PathBuf {
     dirs::CACHE.join("forgejo")
 }
 
-pub(crate) fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
+pub(crate) fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     // An invalid URL just means no auth headers; the real error surfaces when the
     // request is made. Avoid panicking here. See #3547.
     let Ok(url) = url.into_url() else {
-        return headers;
+        return Ok(headers);
     };
     let Ok(api_url) = reqwest::Url::parse(api_url) else {
-        return headers;
+        return Ok(headers);
     };
     if url.origin() != api_url.origin() {
-        return headers;
+        return Ok(headers);
     }
 
     if let Some((token, _source)) = resolve_token(url.host_str().unwrap_or("codeberg.org")) {
         headers.insert(
             reqwest::header::AUTHORIZATION,
-            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
+            tokens::bearer_header("Forgejo", &token)?,
         );
     }
 
-    headers
+    Ok(headers)
 }
 
 /// The source from which a Forgejo token was resolved.
@@ -667,16 +667,17 @@ something_else = "value"
         let headers = get_headers(
             "https://forgejo.example.com/releases/download/tool.tar.gz",
             api_url,
-        );
+        )
+        .unwrap();
         assert_eq!(
             headers.get(reqwest::header::AUTHORIZATION).unwrap(),
             format!("Bearer {TEST_TOKEN}").as_str()
         );
 
-        let headers = get_headers("https://downloads.example.com/tool.tar.gz", api_url);
+        let headers = get_headers("https://downloads.example.com/tool.tar.gz", api_url).unwrap();
         assert!(!headers.contains_key(reqwest::header::AUTHORIZATION));
 
-        let headers = get_headers("http://forgejo.example.com/api/v1/page2", api_url);
+        let headers = get_headers("http://forgejo.example.com/api/v1/page2", api_url).unwrap();
         assert!(!headers.contains_key(reqwest::header::AUTHORIZATION));
     }
 

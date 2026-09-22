@@ -3,7 +3,7 @@ use crate::tokens;
 use eyre::Result;
 use heck::ToKebabCase;
 use reqwest::IntoUrl;
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::collections::HashMap;
@@ -140,7 +140,7 @@ async fn list_releases_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec
         urlencoding::encode(repo)
     );
 
-    let headers = get_headers(&url, api_url);
+    let headers = get_headers(&url, api_url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GitlabRelease>, _>(&url, &headers)
         .await?;
@@ -152,7 +152,7 @@ async fn list_releases_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec
             // previous page at this point (that is how `next_page` reads `Link`), and
             // `json_headers_with_headers` bypasses the automatic host auth, so reusing it
             // would send page 2 onward unauthenticated. Same defect github had (#6318).
-            headers = get_headers(&url, api_url);
+            headers = get_headers(&url, api_url)?;
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GitlabRelease>, _>(&url, &headers)
                 .await?;
@@ -196,7 +196,7 @@ async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<Str
         api_url,
         urlencoding::encode(repo)
     );
-    let headers = get_headers(&url, api_url);
+    let headers = get_headers(&url, api_url)?;
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GitlabTag>, _>(&url, &headers)
         .await?;
@@ -205,7 +205,7 @@ async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<Str
         while let Some(next) = next_page(&headers) {
             url = crate::http::resolve_pagination_url(&url, &next)?;
             // Re-derive auth for every page — see the comment in `list_releases_`.
-            headers = get_headers(&url, api_url);
+            headers = get_headers(&url, api_url)?;
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GitlabTag>, _>(&url, &headers)
                 .await?;
@@ -249,7 +249,7 @@ async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRele
         urlencoding::encode(repo),
         tag
     );
-    let headers = get_headers(&url, api_url);
+    let headers = get_headers(&url, api_url)?;
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await
@@ -269,29 +269,29 @@ fn cache_dir() -> PathBuf {
     dirs::CACHE.join("gitlab")
 }
 
-pub(crate) fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
+pub(crate) fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     // An invalid URL just means no auth headers; the real error surfaces when the
     // request is made. Avoid panicking here. See #3547.
     let Ok(url) = url.into_url() else {
-        return headers;
+        return Ok(headers);
     };
     let Ok(api_url) = reqwest::Url::parse(api_url) else {
-        return headers;
+        return Ok(headers);
     };
     if url.origin() != api_url.origin() {
-        return headers;
+        return Ok(headers);
     }
     let lookup_host = url.host_str().unwrap_or("gitlab.com");
 
     if let Some((token, _source)) = resolve_token(lookup_host) {
         headers.insert(
             reqwest::header::AUTHORIZATION,
-            HeaderValue::from_str(format!("Bearer {token}").as_str()).unwrap(),
+            tokens::bearer_header("GitLab", &token)?,
         );
     }
 
-    headers
+    Ok(headers)
 }
 
 /// The source from which a GitLab token was resolved.
@@ -709,16 +709,17 @@ hosts:
         let headers = get_headers(
             "https://gitlab.example.com/releases/download/tool.tar.gz",
             api_url,
-        );
+        )
+        .unwrap();
         assert_eq!(
             headers.get(reqwest::header::AUTHORIZATION).unwrap(),
             format!("Bearer {TEST_TOKEN}").as_str()
         );
 
-        let headers = get_headers("https://downloads.example.com/tool.tar.gz", api_url);
+        let headers = get_headers("https://downloads.example.com/tool.tar.gz", api_url).unwrap();
         assert!(!headers.contains_key(reqwest::header::AUTHORIZATION));
 
-        let headers = get_headers("http://gitlab.example.com/api/v4/page2", api_url);
+        let headers = get_headers("http://gitlab.example.com/api/v4/page2", api_url).unwrap();
         assert!(!headers.contains_key(reqwest::header::AUTHORIZATION));
     }
 
