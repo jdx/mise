@@ -129,6 +129,56 @@ Git checkout, its origin must match the requested repository.
 Setup repositories always fetch their latest branch. `--update` controls
 the subsequent bootstrap's package metadata and declared repository updates.
 
+### Post-adopt tasks
+
+A shared dotfile setup can declare a task named `post-adopt` for work needed
+on a receiving machine after its files are restored. For example, configure
+Git to use an ignore file restored by the setup:
+
+```toml
+[tasks.post-adopt]
+run = 'git config --global core.excludesFile "$HOME/.config/git/ignore"'
+```
+
+Include this task in the global mise configuration you track and share.
+Declaring the task does not run it on the original machine. Adopting the
+shared setup schedules it:
+
+```sh
+mise bootstrap --adopt you/setup
+```
+
+The task runs after the selected bootstrap phases, including the ordinary
+`bootstrap` task and final hooks. It uses the normal task runner. Declare
+its prerequisites in your setup; skipped bootstrap phases do not provide
+them.
+
+#### Retry or defer setup
+
+If adoption stops for a conflict, resolve it first. If bootstrap or the
+post-adopt task fails, fix the error and retry:
+
+```sh
+mise bootstrap
+```
+
+A failed post-adopt task makes the command fail and remains pending. A
+successful run clears the pending state, so subsequent ordinary bootstrap
+runs do not repeat it. Another adoption schedules it again.
+
+`--skip task`, or an `--only` selection that excludes tasks, defers the task
+until a later bootstrap that includes it. A dry run does not execute it.
+`--skip tools` also prevents its task runner from installing missing tools.
+
+Write the task so it is safe to repeat: a failure can happen after some
+commands have succeeded, and a later retry runs the task again. If the task
+is not visible in the current configuration, the pending state is retained
+until a bootstrap can find and successfully run it.
+
+Use [history reload commands](/history.html#reload-an-application-after-restoring-files)
+for reactions to file changes during later pulls or restores. A post-adopt
+task initializes the receiving setup; an ordinary pull does not schedule it.
+
 ## How it runs
 
 `mise bootstrap` runs the steps below in order.
