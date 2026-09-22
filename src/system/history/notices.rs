@@ -25,6 +25,43 @@ fn file_in(state_dir: &Path) -> PathBuf {
     super::store::store_dir_in(state_dir).join("notices")
 }
 
+/// Drops kept notices that say exactly what was just said out loud, in
+/// the store under `state_dir`.
+///
+/// **A warning is kept so it is not lost, not so it is said twice.** A
+/// protective snapshot writes its warnings down because the operation
+/// may fail before anything else can say them; when the operation does
+/// reach a save that says them, the kept copies have served their
+/// purpose and go. Lines nobody said are left alone.
+pub(crate) fn forget_in(state_dir: &Path, said: &[String]) -> Result<()> {
+    forget_from(&file_in(state_dir), said)
+}
+
+fn forget_from(path: &Path, said: &[String]) -> Result<()> {
+    if !path.exists() || said.is_empty() {
+        return Ok(());
+    }
+    // compared in the form `record_to` stores, or a multi-line warning
+    // would never match the single line it was folded into
+    let said: Vec<String> = said
+        .iter()
+        .map(|message| message.replace('\n', " "))
+        .collect();
+    let _lock = guard(path)?;
+    let Ok(kept) = std::fs::read_to_string(path) else {
+        return Ok(());
+    };
+    let remaining: Vec<&str> = kept
+        .lines()
+        .filter(|line| !said.iter().any(|message| message == line))
+        .collect();
+    match remaining.is_empty() {
+        true => std::fs::write(path, "")?,
+        false => std::fs::write(path, format!("{}\n", remaining.join("\n")))?,
+    }
+    Ok(())
+}
+
 /// Keeps `message` for the next command a person runs.
 pub(crate) fn record(message: &str) -> Result<()> {
     record_in(&super::store::state_dir(), message)
@@ -150,6 +187,54 @@ mod tests {
         // it: the take claimed a file, not the name
         record_to(&path, "third").unwrap();
         assert_eq!(take(&path), vec!["third".to_string()]);
+    }
+
+    /// **Taking back what was said out loud leaves the rest.** A
+    /// protective snapshot records its warnings because the operation
+    /// may fail before anything says them; the save that does say them
+    /// takes those copies back, and must not take anything else with
+    /// them.
+    #[test]
+    fn a_notice_already_said_is_taken_back_and_its_neighbours_are_not() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state/notices");
+
+        // nothing recorded, and an empty list, are both no-ops rather
+        // than errors: the save path calls this on every walk
+        forget_from(&path, &["anything".to_string()]).unwrap();
+        record_to(&path, "plaintext warning").unwrap();
+        record_to(&path, "an unrelated notice").unwrap();
+        forget_from(&path, &[]).unwrap();
+        assert_eq!(
+            take(&path),
+            vec![
+                "plaintext warning".to_string(),
+                "an unrelated notice".to_string()
+            ]
+        );
+
+        record_to(&path, "plaintext warning").unwrap();
+        record_to(&path, "an unrelated notice").unwrap();
+        forget_from(&path, &["plaintext warning".to_string()]).unwrap();
+        assert_eq!(
+            take(&path),
+            vec!["an unrelated notice".to_string()],
+            "forgetting one said notice took its neighbour with it"
+        );
+
+        // a line nobody said is left alone
+        record_to(&path, "still waiting").unwrap();
+        forget_from(&path, &["never said".to_string()]).unwrap();
+        assert_eq!(take(&path), vec!["still waiting".to_string()]);
+
+        // and a multi-line warning is matched in the folded form it is
+        // stored as, not the form it was written in
+        record_to(&path, "two\nlines").unwrap();
+        forget_from(&path, &["two\nlines".to_string()]).unwrap();
+        assert!(
+            take(&path).is_empty(),
+            "a folded notice could not be taken back"
+        );
     }
 
     /// A notice belongs to the store it was recorded in.

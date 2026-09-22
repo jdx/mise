@@ -267,22 +267,32 @@ impl Store {
         // own saves write them down, and the next `mise dot` command
         // says them — the same rule the narrowing report follows, and
         // the same reason: its log is not somewhere anyone is looking.
-        // A protective snapshot before an operation says nothing: it
-        // walks the same tree the outcome then walks, so saying it here
-        // too is saying everything twice — the rule the omission report
-        // already follows. Recording it instead would be worse than
-        // either, since the outcome would warn and a later command
-        // would repeat it from the notices file.
-        if !draft.protective {
-            for warning in &walk.warnings {
-                let message = format!("history: {warning}");
-                if heard(&draft) {
-                    warn!("{message}");
-                } else if let Err(err) = super::notices::record_in(&self.state_dir, &message) {
-                    warn!("{message}");
-                    debug!("history: could not keep the notice: {err}");
-                }
+        // **Said exactly once, and never lost.** A protective snapshot
+        // walks the same tree the outcome then walks, so saying both out
+        // loud says everything twice — the rule the omission report
+        // already follows. But the snapshot is committed before the
+        // operation, and the operation can fail before any save that
+        // would say these, so staying silent would drop the warning for
+        // a credential that is now in plaintext history. So it writes
+        // them down, and the save that says them out loud takes those
+        // copies back: on the way through, said once; on a failure, kept
+        // for the next command.
+        let messages: Vec<String> = walk
+            .warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        let speak = !draft.protective && heard(&draft);
+        for message in &messages {
+            if speak {
+                warn!("{message}");
+            } else if let Err(err) = super::notices::record_in(&self.state_dir, message) {
+                warn!("{message}");
+                debug!("history: could not keep the notice: {err}");
             }
+        }
+        if speak && let Err(err) = super::notices::forget_in(&self.state_dir, &messages) {
+            debug!("history: could not take back the said notices: {err}");
         }
         report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
