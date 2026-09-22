@@ -178,7 +178,12 @@ TOML
 # never drains, so deferring there would wait for a `mise dot` command
 # the user may never run.
 echo 'set -x API_TOKEN synthetic5' >~/.config/fish/functions/secrets.fish
-assert_contains 'mise bootstrap 2>&1' 'saved in plaintext'
+mise bootstrap >bootstrap.log 2>&1
+assert_contains 'cat bootstrap.log' 'saved in plaintext'
+# said once, not once per snapshot: a bootstrap takes a protective
+# checkpoint before applying and saves the outcome afterwards, and both
+# walk the same tree
+assert "grep -c 'saved in plaintext' bootstrap.log" '1'
 assert_fail "test -s $notices"
 
 # a wrapped capture reports it inline as well — it does not reach the

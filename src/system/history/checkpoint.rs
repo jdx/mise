@@ -267,13 +267,21 @@ impl Store {
         // own saves write them down, and the next `mise dot` command
         // says them — the same rule the narrowing report follows, and
         // the same reason: its log is not somewhere anyone is looking.
-        for warning in &walk.warnings {
-            let message = format!("history: {warning}");
-            if heard(&draft) {
-                warn!("{message}");
-            } else if let Err(err) = super::notices::record_in(&self.state_dir, &message) {
-                warn!("{message}");
-                debug!("history: could not keep the notice: {err}");
+        // A protective snapshot before an operation says nothing: it
+        // walks the same tree the outcome then walks, so saying it here
+        // too is saying everything twice — the rule the omission report
+        // already follows. Recording it instead would be worse than
+        // either, since the outcome would warn and a later command
+        // would repeat it from the notices file.
+        if !draft.protective {
+            for warning in &walk.warnings {
+                let message = format!("history: {warning}");
+                if heard(&draft) {
+                    warn!("{message}");
+                } else if let Err(err) = super::notices::record_in(&self.state_dir, &message) {
+                    warn!("{message}");
+                    debug!("history: could not keep the notice: {err}");
+                }
             }
         }
         report_omissions(&walk, &draft);
