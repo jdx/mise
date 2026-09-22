@@ -604,8 +604,8 @@ before tracking it again.
 `mise dot paths` and `mise dot track --dry-run` show the selection and any
 plaintext notices. Unreachable subdirectories are skipped without being
 scanned, so a preview may show a selected-file count without a total for
-the whole directory. Background saves queue plaintext and selection-
-narrowing notices for the next `mise dot` command.
+the whole directory. See [capture warnings](#capture-warnings) for notices
+from saves and background operations.
 
 ::: tip The include command edits a different list
 `mise dot include <glob>` removes a rule from the global `[history] exclude`
@@ -618,6 +618,42 @@ checkpoint coverage. Upgrade the machines sharing the setup before using
 them: older clients reject manifests containing this field. New checkpoints
 also use schema version 2, which older clients cannot roll back, even when
 no include list is configured.
+
+### Capture warnings
+
+Saves warn when an include list selects a credential-named file for
+plaintext storage. They also report when a changed include list leaves
+out files that an earlier checkpoint contained. The latter notice means
+those paths stop appearing in new checkpoints; their earlier versions
+remain in Git history.
+
+Warnings appear according to how the capture runs:
+
+| Capture                    | Where to read the warning                         |
+| -------------------------- | ------------------------------------------------- |
+| Explicit save or tracking  | In that command's output                          |
+| Bootstrap                  | During the bootstrap command                      |
+| Watcher or automatic apply | At the next `mise dot` command other than `watch` |
+
+For example, after the watcher applies a narrower include list, run:
+
+```sh
+mise dot paths
+```
+
+The command delivers pending notices before listing the current selection.
+Dotfiles commands also deliver notices produced while they run, including
+when the command fails. Matching plaintext warnings are shown once per
+process, even if both a stored notice and the command's capture report them.
+A background condition can be reported again after its previous notice
+has been delivered.
+
+Warnings from protective checkpoints are kept until they can be reported.
+If an operation fails after saving its protective checkpoint, its pending
+notices remain available to a later dotfiles command. These notices do not
+change selection or encryption settings; use `encrypt = true` for private
+contents and review [existing plaintext history](#remove-plaintext-from-history)
+before publishing it.
 
 ### Exclude files from one directory
 
