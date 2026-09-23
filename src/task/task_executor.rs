@@ -276,6 +276,15 @@ fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> 
     }
 }
 
+/// Push a failure onto `failed`, returning whether an earlier one was already
+/// there. See [`TaskExecutor::add_failed_task`].
+fn record_failed_task(failed: &FailedTasks, task: Task, status: Option<i32>) -> bool {
+    let mut failed = failed.lock().unwrap();
+    let was_stopping = !failed.is_empty();
+    failed.push((task, status.or(Some(1))));
+    was_stopping
+}
+
 /// Configuration for TaskExecutor
 pub(crate) struct TaskExecutorConfig {
     pub force: bool,
@@ -388,9 +397,15 @@ impl TaskExecutor {
         Ok(())
     }
 
-    pub(crate) fn add_failed_task(&self, task: Task, status: Option<i32>) {
-        let mut failed = self.failed_tasks.lock().unwrap();
-        failed.push((task, status.or(Some(1))));
+    /// Record a failed task, returning whether the run was already stopping
+    /// because an earlier task had failed.
+    ///
+    /// Unless `continue_on_error` is set, the first failure SIGTERMs every
+    /// sibling, so a later failure is almost always collateral damage. The
+    /// check and the push share one lock so two tasks failing at the same
+    /// time can't both see an empty list and both claim to be the cause.
+    pub(crate) fn add_failed_task(&self, task: Task, status: Option<i32>) -> bool {
+        record_failed_task(&self.failed_tasks, task, status)
     }
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
@@ -2542,6 +2557,19 @@ mod tests {
         assert_eq!(
             task_env_path(Path::new(r"/tmp/tasks\build")),
             r"/tmp/tasks\build"
+        );
+    }
+
+    #[test]
+    fn record_failed_task_reports_only_the_first_failure_as_the_cause() {
+        let failed = FailedTasks::default();
+        assert!(!record_failed_task(&failed, Task::default(), Some(2)));
+        assert!(record_failed_task(&failed, Task::default(), None));
+        let failed = failed.lock().unwrap();
+        // A failure without an exit status is still recorded as a failure.
+        assert_eq!(
+            failed.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+            [Some(2), Some(1)]
         );
     }
 
