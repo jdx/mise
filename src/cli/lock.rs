@@ -10,7 +10,9 @@ use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
 use crate::task::Task;
-use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
+use crate::toolset::{
+    ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
@@ -1907,25 +1909,30 @@ impl Lock {
                         .is_some_and(|backend| backend.is_rolling_channel(&effective_version));
                     if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
                         && (self.bump || resolve_options.before_date.is_some() || is_rolling)
-                        && !(self.bump && installed_exact)
                     {
-                        resolve_options.use_locked_version = false;
-                        resolve_options.latest_versions = true;
-                        match request.resolve(config, &resolve_options).await {
-                            Ok(resolved_tv) => tv = resolved_tv,
-                            Err(err) if is_rolling => {
-                                return Err(err.wrap_err(format!(
-                                    "failed to resolve specified rolling channel {request}"
-                                )));
+                        if self.bump && installed_exact {
+                            // The request itself, not the configured tool's, so an
+                            // alias is locked as the version it resolved to.
+                            tv = ToolVersion::new(request, effective_version);
+                        } else {
+                            resolve_options.use_locked_version = false;
+                            resolve_options.latest_versions = true;
+                            match request.resolve(config, &resolve_options).await {
+                                Ok(resolved_tv) => tv = resolved_tv,
+                                Err(err) if is_rolling => {
+                                    return Err(err.wrap_err(format!(
+                                        "failed to resolve specified rolling channel {request}"
+                                    )));
+                                }
+                                // Keeping the locked version would report success for a
+                                // bump that never looked at the remote versions.
+                                Err(err) if self.bump => {
+                                    return Err(err.wrap_err(format!(
+                                        "failed to resolve {request} for `mise lock --bump`"
+                                    )));
+                                }
+                                Err(err) => debug!("failed to resolve specified {request}: {err}"),
                             }
-                            // Keeping the locked version would report success for a
-                            // bump that never looked at the remote versions.
-                            Err(err) if self.bump => {
-                                return Err(err.wrap_err(format!(
-                                    "failed to resolve {request} for `mise lock --bump`"
-                                )));
-                            }
-                            Err(err) => debug!("failed to resolve specified {request}: {err}"),
                         }
                     } else if version == "latest" {
                         if let Some(latest_version) = crate::backend::get(&ba)
