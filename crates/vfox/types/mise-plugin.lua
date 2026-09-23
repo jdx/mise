@@ -127,6 +127,7 @@ ARCH_TYPE = ""
 ---@field version string Installed version
 ---@field install_path string Installation path, still present when the hook runs
 ---@field download_path string Download path
+---@field options table<string, any> Tool options from the current config
 
 ---@class Plugin
 ---@field name string Plugin name
