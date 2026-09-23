@@ -838,8 +838,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         if self.version != "latest" {
             doc["version"] = toml_edit::value(&self.version);
         }
-        // Lock data only lives in mise.lock; drop a `[lock]` section from an
-        // older mise.
+        // Lock data only lives in mise.lock.
         doc.remove("lock");
         let toml_content = doc.to_string();
         let content = format!("#!/usr/bin/env -S mise tool-stub\n\n{toml_content}");

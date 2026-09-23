@@ -326,9 +326,6 @@ project's `mise.lock` from any working directory. Local and environment configs
 the same way on every machine. In locked mode, a stub without an entry for the
 current platform is rejected like any unlocked tool.
 
-Older mise versions wrote lock data into a `[lock]` section in the stub. That
-section is ignored, and `--lock` removes it.
-
 #### Bumping a Locked Version
 
 To pick a newer version, run `--lock` again. It resolves the stub's version

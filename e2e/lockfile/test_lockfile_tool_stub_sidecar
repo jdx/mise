@@ -62,7 +62,7 @@ mv jq.bak bin/jq
 cp bin/jq ../elsewhere/jq
 assert_fail_contains "mise generate tool-stub ../elsewhere/jq --lock 2>&1" "no project config found"
 
-# A `[lock]` section from an older mise is ignored, and --lock removes it.
+# Lock data only lives in mise.lock, so --lock removes a `[lock]` section.
 cat >>bin/jq <<'EOF'
 
 [lock.platforms.linux-x64]
