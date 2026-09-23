@@ -177,6 +177,18 @@ impl ToolStub {
         // same reason, as `task-stubs`.
         self.validate_windows_launcher(&stub_content)?;
 
+        // Each lockfile change is ordered so that a failure at any step leaves
+        // the stub resolvable: an embedded `[lock]` takes precedence over
+        // mise.lock, so the entry is recorded before the stub drops its
+        // `[lock]`, and forgotten only after the stub has gained one.
+        let recorded = match &lockfile_update {
+            Some(LockfileUpdate::Record(sidecar)) => {
+                sidecar.write(&self.output)?;
+                Some(sidecar.lockfile_path.clone())
+            }
+            _ => None,
+        };
+
         if let Some(parent) = self.output.parent() {
             file::create_dir_all(parent)?;
         }
@@ -196,20 +208,14 @@ impl ToolStub {
         if let Some(launcher) = launcher {
             miseprintln!("{verb} Windows launcher: {}", display_path(&launcher));
         }
-        // After every stub file is written, so a failed write never leaves
-        // mise.lock out of step with the stub on disk.
-        match lockfile_update {
-            Some(LockfileUpdate::Record(sidecar)) => {
-                sidecar.write(&self.output)?;
-                miseprintln!("Updated lockfile: {}", display_path(&sidecar.lockfile_path));
+        if let Some(lockfile_path) = recorded {
+            miseprintln!("Updated lockfile: {}", display_path(&lockfile_path));
+        }
+        if let Some(LockfileUpdate::Forget(lockfile_path)) = lockfile_update {
+            let listed = forget_stub_in_lockfile(&lockfile_path, &self.output)?;
+            if listed {
+                miseprintln!("Updated lockfile: {}", display_path(&lockfile_path));
             }
-            Some(LockfileUpdate::Forget(lockfile_path)) => {
-                let listed = forget_stub_in_lockfile(&lockfile_path, &self.output)?;
-                if listed {
-                    miseprintln!("Updated lockfile: {}", display_path(&lockfile_path));
-                }
-            }
-            None => {}
         }
         Ok(())
     }
@@ -978,7 +984,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
     }
 }
 
-/// How `--lock` changes the stub's project lockfile once the stub is written.
+/// How `--lock` changes the stub's project lockfile, around writing the stub.
 enum LockfileUpdate {
     /// Record the stub's lock data in mise.lock.
     Record(Box<SidecarLock>),
