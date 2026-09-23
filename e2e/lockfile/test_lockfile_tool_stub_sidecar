@@ -44,6 +44,9 @@ assert_succeed "mise lock"
 assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
 assert_contains "cat mise.lock" '[[tools."aqua:jqlang/jq"]]'
 
+# A selective run reaches the stub too.
+assert_contains "mise lock aqua:jqlang/jq 2>&1" "aqua:jqlang/jq@1.7"
+
 # Once the stub is gone, `mise lock` drops its reference and its entry.
 mv bin/jq jq.bak
 assert_succeed "mise lock"

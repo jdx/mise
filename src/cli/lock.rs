@@ -1831,7 +1831,7 @@ impl Lock {
                 && !self
                     .tool
                     .iter()
-                    .any(|tool| tool.ba.full() == request.ba().full())
+                    .any(|tool| tool.ba.as_ref() == request.ba().as_ref())
             {
                 continue;
             }
