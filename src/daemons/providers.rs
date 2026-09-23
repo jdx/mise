@@ -366,8 +366,12 @@ impl Providers {
                 }
                 let path = entry.path().join("definition.json");
                 if let Ok(bytes) = std::fs::read(&path) {
-                    let declaration = serde_json::from_slice(&bytes)
-                        .wrap_err_with(|| format!("reading saved provider {}", path.display()))?;
+                    // Stopping needs only the name, so a damaged definition must
+                    // not block cleanup of this or any other provider.
+                    let declaration = serde_json::from_slice(&bytes).unwrap_or_else(|err| {
+                        warn!("reading saved provider {}: {err}", path.display());
+                        toml::Table::new()
+                    });
                     providers.insert(
                         name.clone(),
                         Provider {
@@ -387,24 +391,40 @@ impl Providers {
         if action != "ls" && names.is_empty() {
             bail!("name the providers to {action}");
         }
-        let (_, ts) = runtime::toolset(&config, false).await?;
-        let rt =
-            runtime::Runtime::from_toolset(&config, &ts, which::which("pitchfork").ok().as_deref())
-                .await;
+        // Providers are managed identically from every directory: resolve
+        // pitchfork and its environment from global configuration only, never
+        // from the project the command happens to run in.
+        let global = Config::load_from_config_files(
+            config
+                .config_files
+                .iter()
+                .filter(|(path, _)| crate::config::is_global_config(path))
+                .map(|(path, cf)| (path.clone(), cf.clone()))
+                .collect(),
+            true,
+        )
+        .await?;
+        let (global, ts) = runtime::toolset(&global, false).await?;
         let mut rows = vec![];
         for provider in providers
             .values()
             .filter(|p| names.is_empty() || names.contains(&p.name))
         {
             let root = directory(&provider.name);
+            let fallback = runtime::read_state(&root)
+                .ok()
+                .map(|state| state.bin)
+                .filter(|bin| bin.is_file())
+                .or_else(|| which::which("pitchfork").ok());
+            let rt = runtime::Runtime::from_toolset(&global, &ts, fallback.as_deref()).await;
             if action == "ls" {
-                let daemon = provider.daemon()?;
+                let daemon = provider.daemon().ok();
                 let status = if let Ok(rt) = &rt {
                     rt.status(&crate::dirs::HOME, &provider.id()).await.ok()
                 } else {
                     None
                 };
-                rows.push(serde_json::json!({"name": provider.name, "id": provider.id(), "source": provider.source, "preset": daemon.preset, "port": daemon.port.map(|p| p.port), "data_dir": daemon.data_dir, "ownership": "provider", "status": status.and_then(|v| v.get("status").cloned()).unwrap_or("available".into())}));
+                rows.push(serde_json::json!({"name": provider.name, "id": provider.id(), "source": provider.source, "preset": daemon.as_ref().and_then(|d| d.preset.clone()), "port": daemon.as_ref().and_then(|d| d.port.map(|p| p.port)), "data_dir": daemon.and_then(|d| d.data_dir), "ownership": "provider", "status": status.and_then(|v| v.get("status").cloned()).unwrap_or("available".into())}));
                 continue;
             }
             let rt = rt.as_ref().map_err(|e| eyre::eyre!("{e:#}"))?;

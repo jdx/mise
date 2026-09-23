@@ -31,6 +31,10 @@ ready_delay = 0
 TOML
 mise daemons providers start pg
 assert_contains 'mise daemons providers ls --json' '"status": "running"'
+# Another project's environment cannot redirect provider management.
+mkdir ../elsewhere
+printf '[env]\nPITCHFORK_STATE_DIR = "/nonexistent/pf"\n' >../elsewhere/mise.toml
+assert_contains 'cd ../elsewhere && mise daemons providers ls --json' '"status": "running"'
 pid=$(pitchfork status mise-provider-pg/server --json | jq -r .pid)
 assert "test -f '$MISE_STATE_DIR/daemon-providers/pg/data/PG_VERSION'"
 mise daemons start
