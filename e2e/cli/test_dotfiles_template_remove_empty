@@ -111,9 +111,15 @@ assert_fail "test -e $target"
 # a target mise cannot read cannot be proven its own, but --force removes it
 assert_succeed "WORK=1 mise dot apply --yes"
 chmod 000 "$target"
-assert_contains "mise dot status" "cannot be read to confirm mise wrote it"
-assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
-assert_succeed "mise dot apply --yes --force"
+if cat "$target" >/dev/null 2>&1; then
+  # root still reads it, so its content proves it is mise's own
+  assert_contains "mise dot status" "template renders empty, target will be removed"
+  assert_succeed "mise dot apply --yes"
+else
+  assert_contains "mise dot status" "cannot be read to confirm mise wrote it"
+  assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
+  assert_succeed "mise dot apply --yes --force"
+fi
 assert_fail "test -e $target"
 
 # remove_empty is only valid on template entries
