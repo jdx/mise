@@ -52,6 +52,12 @@ assert_contains "mise backends switch --dry-run hk@1.58.1 2>&1" 'would switch hk
 assert_contains "mise backends switch --dry-run aqua:jdx/hk 2>&1" 'would switch hk@1.58.1'
 assert_fail_contains "mise backends switch --dry-run hk@1.57.0" "not locked to a backend the registry has replaced"
 
+echo "=== a switch that cannot relock restores the lockfile ==="
+cp mise.lock mise.lock.before
+assert_fail_contains "MISE_OFFLINE=1 mise backends switch hk" "restored the previous lockfiles"
+assert "cmp -s mise.lock mise.lock.before && echo same" "same"
+rm mise.lock.before
+
 echo "=== switch moves the lock entry at the same version and reinstalls ==="
 mise backends switch hk
 assert_contains "cat mise.lock" 'version = "1.58.1"'

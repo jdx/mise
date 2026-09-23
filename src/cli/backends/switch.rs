@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 
 use crate::cli::args::ToolArg;
 use crate::cli::lock::Lock;
@@ -55,7 +55,6 @@ pub(super) struct BackendsSwitch {
 struct Switch {
     short: String,
     from: String,
-    to: String,
     lockfile: PathBuf,
     versions: BTreeSet<String>,
 }
@@ -87,9 +86,14 @@ impl BackendsSwitch {
                 .push(switch);
         }
         let mut switched: BTreeSet<(String, String)> = BTreeSet::new();
+        // Entries that had artifact data must get the new backend's back.
+        let mut needs_platforms: Vec<(&PathBuf, String, String)> = vec![];
         // Read before the rewrite clears the switched entries' platforms, so the
         // relock targets the platforms these lockfiles already cover.
         let mut platforms: BTreeSet<String> = BTreeSet::new();
+        // Restored if relocking fails, so a failed switch never leaves entries on
+        // the new backend without artifact data.
+        let mut originals: Vec<(&PathBuf, Option<String>)> = vec![];
         for (path, switches) in &by_lockfile {
             platforms.extend(
                 lockfile::determine_existing_platforms(path)?
@@ -99,14 +103,13 @@ impl BackendsSwitch {
             let mut lockfile = Lockfile::read(path)?;
             for switch in switches {
                 let registry = crate::registry::REGISTRY.get(switch.short.as_str());
-                let versions = lockfile.switch_backend(
+                let moved = lockfile.switch_backend(
                     &switch.short,
                     &switch.from,
                     &switch.versions,
                     |version| {
                         // Each version moves to the backend the registry picks
-                        // for it, which only differs from `to` for
-                        // version-dependent backends.
+                        // for it; version-dependent backends can differ.
                         registry
                             .and_then(|tool| {
                                 tool.backends_for_version(Some(version)).first().copied()
@@ -115,25 +118,31 @@ impl BackendsSwitch {
                             .filter(|backend| backend != &switch.from)
                     },
                 );
-                if versions.is_empty() {
-                    continue;
-                }
                 let prefix = if self.dry_run {
                     "would switch"
                 } else {
                     "switching"
                 };
-                info!(
-                    "{prefix} {}@{} from {} to {} in {}",
-                    switch.short,
-                    versions.join(", "),
-                    switch.from,
-                    switch.to,
-                    display_path(path)
-                );
-                switched.extend(versions.into_iter().map(|v| (switch.short.clone(), v)));
+                let mut by_backend: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+                for (version, backend, had_platforms) in &moved {
+                    by_backend.entry(backend).or_default().push(version);
+                    if *had_platforms {
+                        needs_platforms.push((path, switch.short.clone(), version.clone()));
+                    }
+                }
+                for (backend, versions) in by_backend {
+                    info!(
+                        "{prefix} {}@{} from {} to {backend} in {}",
+                        switch.short,
+                        versions.join(", "),
+                        switch.from,
+                        display_path(path)
+                    );
+                }
+                switched.extend(moved.into_iter().map(|(v, _, _)| (switch.short.clone(), v)));
             }
             if !self.dry_run {
+                originals.push((path, crate::file::read_to_string(path).ok()));
                 lockfile.write(path)?;
             }
         }
@@ -149,12 +158,39 @@ impl BackendsSwitch {
             .iter()
             .map(|short| ToolArg::from_str(short))
             .collect::<Result<Vec<_>>>()?;
-        Lock {
+        let relocked = Lock {
             platform: platforms.into_iter().collect(),
             ..self.lock(tool)
         }
         .run()
-        .await?;
+        .await
+        .and_then(|()| {
+            let missing = needs_platforms
+                .iter()
+                .filter(|(path, short, version)| {
+                    !Lockfile::read(path).is_ok_and(|lf| lf.has_platforms(short, version))
+                })
+                .map(|(_, short, version)| format!("{short}@{version}"))
+                .collect::<Vec<_>>();
+            if missing.is_empty() {
+                Ok(())
+            } else {
+                Err(eyre!(
+                    "the new backend recorded no artifacts for {}",
+                    missing.join(", ")
+                ))
+            }
+        });
+        if let Err(err) = relocked {
+            for (path, original) in originals {
+                if let Some(original) = original {
+                    crate::file::write(path, original)?;
+                }
+            }
+            return Err(err.wrap_err(
+                "could not relock under the new backend; restored the previous lockfiles",
+            ));
+        }
 
         self.reinstall(&switched).await
     }
@@ -190,7 +226,7 @@ impl BackendsSwitch {
         let ts = config.get_toolset().await?;
         let mut switches: Vec<Switch> = vec![];
         for (_, tv) in ts.list_current_versions() {
-            let Some((from, to)) = tv.ba().superseded_locked_backend(&tv.version) else {
+            let Some((from, _)) = tv.ba().superseded_locked_backend(&tv.version) else {
                 continue;
             };
             if !self.selected(&tv, &from) {
@@ -215,7 +251,6 @@ impl BackendsSwitch {
                 None => switches.push(Switch {
                     short,
                     from,
-                    to,
                     lockfile,
                     versions: BTreeSet::from([tv.version.clone()]),
                 }),

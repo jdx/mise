@@ -1148,6 +1148,15 @@ impl Lockfile {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
+    /// Whether `short`'s entry at `version` records artifact data for any platform.
+    pub(crate) fn has_platforms(&self, short: &str, version: &str) -> bool {
+        self.tools_for(short).is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|entry| entry.version == version && !entry.platforms.is_empty())
+        })
+    }
+
     fn tools_for_mut(&mut self, short: &str) -> Option<&mut Vec<LockfileTool>> {
         let key = self.tool_key(short)?.clone();
         self.tools.get_mut(&key)
@@ -1156,14 +1165,15 @@ impl Lockfile {
     /// Move `short`'s entries at `versions` locked under `from` to the backend
     /// `to` returns for their version, keeping the version and dropping the
     /// artifact data recorded for the old backend so the next lock records the
-    /// new one's. Returns the versions moved.
+    /// new one's. Returns each moved version with its new backend and whether
+    /// the old entry carried platform data.
     pub(crate) fn switch_backend(
         &mut self,
         short: &str,
         from: &str,
         versions: &BTreeSet<String>,
         to: impl Fn(&str) -> Option<String>,
-    ) -> Vec<String> {
+    ) -> Vec<(String, String, bool)> {
         let Some(entries) = self.tools_for_mut(short) else {
             return vec![];
         };
@@ -1172,9 +1182,10 @@ impl Lockfile {
             entry.backend.as_deref() == Some(from) && versions.contains(&entry.version)
         }) {
             if let Some(backend) = to(&entry.version) {
-                entry.backend = Some(backend);
+                let had_platforms = !entry.platforms.is_empty();
+                entry.backend = Some(backend.clone());
                 entry.platforms.clear();
-                moved.push(entry.version.clone());
+                moved.push((entry.version.clone(), backend, had_platforms));
             }
         }
         moved
