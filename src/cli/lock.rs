@@ -2190,7 +2190,7 @@ impl Lock {
                         debug!("{msg}");
                     }
                     let error_is_fatal =
-                        resolution.8 == crate::lockfile::LockResolutionStatus::Required;
+                        resolution.7 == crate::lockfile::LockResolutionStatus::Required;
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
                     match lockfile::apply_lock_result(lockfile, resolution) {
@@ -2400,12 +2400,11 @@ mod tests {
             Err(error.clone()),
             BTreeMap::new(),
             BTreeMap::new(),
-            BTreeMap::new(),
             crate::lockfile::LockResolutionStatus::Required,
         );
         let mut lockfile = Lockfile::default();
         let resolution_error = resolution.4.as_ref().err().cloned();
-        let error_is_fatal = resolution.8 == crate::lockfile::LockResolutionStatus::Required;
+        let error_is_fatal = resolution.7 == crate::lockfile::LockResolutionStatus::Required;
 
         let applied = apply_lock_result(&mut lockfile, resolution).unwrap();
         let (status, returned_error) =
@@ -2712,7 +2711,6 @@ mod tests {
             "asdf:dummy".to_string(),
             Platform::parse("linux-x64").unwrap(),
             Ok(PlatformInfo::default()),
-            BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             crate::lockfile::LockResolutionStatus::Optional,

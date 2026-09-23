@@ -480,19 +480,6 @@ pub(crate) fn hard_link_or_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) 
     }
 }
 
-pub(crate) fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()> {
-    let from = from.as_ref();
-    let to = to.as_ref();
-    trace!("cp -r {} {}", from.display(), to.display());
-    recursive_ls(from)?.into_iter().try_for_each(|path| {
-        let relative = path.strip_prefix(from)?;
-        let dest = to.join(relative);
-        create_dir_all(dest.parent().unwrap())?;
-        copy(&path, &dest)?;
-        Ok(())
-    })
-}
-
 pub(crate) fn copy_dir_all_preserve_symlinks(from: &Path, to: &Path) -> Result<()> {
     copy_dir_all_preserve_symlinks_skipping(from, to, &[])
 }
@@ -1065,19 +1052,6 @@ pub(crate) fn ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
     }
 
     Ok(output)
-}
-
-pub(crate) fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
-    if !dir.is_dir() {
-        return Ok(Default::default());
-    }
-
-    Ok(WalkDir::new(dir)
-        .follow_links(true)
-        .into_iter()
-        .filter_ok(|e| e.file_type().is_file())
-        .map_ok(|e| e.path().to_path_buf())
-        .try_collect()?)
 }
 
 #[cfg(unix)]
