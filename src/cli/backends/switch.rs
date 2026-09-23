@@ -183,12 +183,17 @@ impl BackendsSwitch {
                         display_path(path)
                     );
                 }
-                tools.insert(switch.short.clone());
+                if !moved.is_empty() {
+                    tools.insert(switch.short.clone());
+                }
                 switched.extend(moved.into_iter().map(|(v, _, _)| (switch.short.clone(), v)));
             }
-            if !tools.is_empty() {
-                relocks.push((path, tools, platforms));
+            // A lockfile where nothing moved is left alone: not rewritten,
+            // relocked, or snapshotted.
+            if tools.is_empty() {
+                continue;
             }
+            relocks.push((path, tools, platforms));
             if !self.dry_run {
                 originals.push((path, crate::file::read_to_string(path).ok()));
                 rewritten.push((path, lockfile));
@@ -477,10 +482,13 @@ impl Snapshot {
     }
 
     fn restore(self) -> Result<()> {
-        if let Some(content) = &self.content {
-            crate::file::write(&self.lockfile, content)?;
-        }
-        let restored = (|| -> Result<()> {
+        // Restore the sidecars even when the lockfile text cannot be, and keep
+        // the backup whenever either step fails.
+        let lockfile_restored = match &self.content {
+            Some(content) => crate::file::write(&self.lockfile, content),
+            None => Ok(()),
+        };
+        let sidecars_restored = (|| -> Result<()> {
             if self.sidecars.exists() {
                 crate::file::remove_all(&self.sidecars)?;
             }
@@ -492,14 +500,18 @@ impl Snapshot {
             }
             Ok(())
         })();
-        match (restored, self.sidecar_copy) {
-            (Ok(()), _) => Ok(()),
+        let err = match (lockfile_restored, sidecars_restored) {
+            (Ok(()), Ok(())) => return Ok(()),
+            (Err(err), Ok(())) | (Ok(()), Err(err)) => err,
+            (Err(lockfile), Err(sidecars)) => lockfile.wrap_err(format!("{sidecars:#}")),
+        };
+        match self.sidecar_copy {
             // Keep the backup instead of letting the temp dir delete it.
-            (Err(err), Some(copy)) => Err(err.wrap_err(format!(
+            Some(copy) => Err(err.wrap_err(format!(
                 "the previous sidecars are kept in {}",
                 display_path(copy.keep().join("sidecars"))
             ))),
-            (Err(err), None) => Err(err),
+            None => Err(err),
         }
     }
 }
