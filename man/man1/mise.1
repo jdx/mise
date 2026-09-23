@@ -517,6 +517,21 @@ Print the script to disable mise in the current shell session
 \fIAliases: \fRdaemon
 .RE
 .TP
+\fBdaemons providers\fR
+Manage shared servers defined in global [daemon_providers].
+.TP
+\fBdaemons providers ls\fR
+List configured and previously managed shared servers.
+.TP
+\fBdaemons providers start\fR
+Start the named shared servers.
+.TP
+\fBdaemons providers stop\fR
+Stop the named shared servers without deleting their data.
+.TP
+\fBdaemons providers restart\fR
+Restart the named shared servers with their current configuration.
+.TP
 \fBdaemons start\fR
 Arguments passed to pitchfork; daemon names may be short or qualified.
 .TP
@@ -3948,6 +3963,58 @@ With no subcommand, list configured and previously managed daemons.
 .PP
 .TP
 \fB\-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS"
+Manage shared servers defined in global [daemon_providers].
+.PP
+\fBUsage:\fR mise daemons providers [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS LS"
+List configured and previously managed shared servers.
+.PP
+\fBUsage:\fR mise daemons providers ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS START"
+Start the named shared servers.
+.PP
+\fBUsage:\fR mise daemons providers start [OPTIONS] [<NAMES>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS STOP"
+Stop the named shared servers without deleting their data.
+.PP
+\fBUsage:\fR mise daemons providers stop [OPTIONS] [<NAMES>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE DAEMONS PROVIDERS RESTART"
+Restart the named shared servers with their current configuration.
+.PP
+\fBUsage:\fR mise daemons providers restart [OPTIONS] [<NAMES>] ...
+.PP
+\fBOptions:\fR
+.PP
 .TP
 \fB\-h, \-\-help\fR
 Print help

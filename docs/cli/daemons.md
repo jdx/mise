@@ -24,6 +24,7 @@ With no subcommand, list configured and previously managed daemons.
 
 - [`mise daemons logs [ARGS]…`](/cli/daemons/logs.html)
 - [`mise daemons ls [--json]`](/cli/daemons/ls.html)
+- [`mise daemons providers [SUBCOMMAND]`](/cli/daemons/providers.html)
 - [`mise daemons prune [-n --dry-run]`](/cli/daemons/prune.html)
 - [`mise daemons register`](/cli/daemons/register.html)
 - [`mise daemons restart [ARGS]…`](/cli/daemons/restart.html)
