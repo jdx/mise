@@ -12,6 +12,9 @@ pub(crate) struct HistoryReport {
     pub enabled: bool,
     pub tracked_entries: usize,
     pub tracked_files: u64,
+    /// Files under a tracked entry that every save leaves out, with why.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub omitted: Vec<crate::system::history::store::PathReason>,
     pub checkpoints: usize,
     pub latest: Option<LatestReport>,
     pub pending_operations: usize,
@@ -103,6 +106,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             enabled: false,
             tracked_entries: 0,
             tracked_files: 0,
+            omitted: vec![],
             checkpoints: 0,
             latest: None,
             pending_operations: 0,
@@ -129,6 +133,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         enabled,
         tracked_entries: tracked.entries.len(),
         tracked_files,
+        omitted: walk.omitted,
         checkpoints: entries.len(),
         latest,
         pending_operations,
@@ -162,6 +167,12 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
             latest.description
         ),
         None => miseprintln!("  no checkpoint recorded yet; `mise dot save` records one."),
+    }
+    if !report.omitted.is_empty() {
+        miseprintln!(
+            "  {}.",
+            crate::system::history::tracked::omission_summary(&report.omitted)
+        );
     }
     if report.pending_operations > 0 {
         miseprintln!(

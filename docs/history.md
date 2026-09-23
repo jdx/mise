@@ -504,8 +504,7 @@ recovery keeps it untracked.
 
 ## Explicit tracking and exclusions
 
-Use `mode = "track"` for every file or directory you want to save in history.
-For example, in your global configuration:
+Declare each file or directory you want to save in your global configuration:
 
 ```toml
 [dotfiles]
@@ -514,43 +513,75 @@ For example, in your global configuration:
 "~/.gitconfig" = { mode = "template", source = "~/templates/gitconfig.tera" }
 ```
 
-Here, history saves `.zshrc` and the files in `~/templates`. The template
-creates `.gitconfig`; track that output separately if you want its history
-too. You can track files mise also copies, links, or edits.
+History saves `.zshrc` and the files in `~/templates`. The template creates
+`.gitconfig`; track that output separately if you want its history too.
+You can track files that mise also copies, links, or edits.
 
-Tracking takes exact file or directory paths. Directories include new
-files added beneath them. Symlinks record the link itself; track their
-targets separately to save those contents. To share tools, services, and
-template setup, track the relevant mise configuration and sources too.
-Bootstrap reports required files missing from history.
+Tracking entries name exact paths, not globs. A tracked directory includes
+new files added beneath it, subject to the selection rules below. Symlinks
+record the link itself; track their targets separately to save those
+contents. To share tools, services, and template setup, track the relevant
+mise configuration and sources too. Bootstrap reports required files
+missing from history.
 
-Use glob patterns to exclude files from history:
+### Exclude files across tracked entries
+
+Use `mise dot exclude` to add a glob to `[history] exclude` in your global
+configuration. Quote it so your shell does not expand it:
 
 ```sh
-mise dot exclude '~/.config/hypr/plugins/**'
-mise dot include '~/.config/hypr/plugins/**'
+mise dot exclude '~/.codex/sessions/**'
 mise dot paths
 ```
 
-Exclusions are stored in `[history] exclude`. A later `!glob` reverses an
-earlier matching exclusion. `paths` lists tracked paths and files omitted
-from saves. Protected credential files and `*.local.toml` are excluded by
-default; use [encrypted tracking](#encrypted-shared-files) for credentials
+An absolute pattern scopes the exclusion to that location. This example
+leaves `~/.config/kitty/sessions/` unaffected.
+
+To remove that rule, pass the same glob to `mise dot include`:
+
+```sh
+mise dot include '~/.codex/sessions/**'
+```
+
+A later `!glob` in `[history] exclude` reverses an earlier matching
+exclusion. Removing one rule does not override other rules that still
+exclude the path.
+
+### Credential filtering and omissions
+
+Without encryption, built-in filename rules omit `.netrc`, `*.age`,
+`*.key`, `*.pem`, `*.gpg`, `*.kdbx`, `id_*`, `*token*`, `*secret*`,
+`credentials*`, and `oauth*`. Under the mise configuration directory,
+`github_tokens.toml`, `hosts.yml`, and `age.txt` are also omitted.
+
+These rules examine the file's name, not its contents or the names of
+its parent directories. For example, both `id_ed25519` and
+`id_ed25519.pub` match `id_*`, and a shell function named `secrets.fish`
+matches `*secret*`.
+
+`mise dot save` and `mise dot track` report omissions. `mise dot status`
+shows omission counts, and `mise dot paths` lists each path and its
+reason. Use [encrypted tracking](#encrypted-shared-files) for credentials
 you want to save.
 
-Logs, caches, databases, and constantly rewritten session state usually
-belong outside history. Use `autosave = false` for configuration you want
-to save manually. An excluded file is left out of future saves entirely.
+Files ending in `.local.toml` are always omitted as machine-local
+configuration, even when encryption is enabled.
 
-To stop tracking a file:
+### Stop saving a path
+
+Logs, caches, databases, and frequently rewritten session state usually
+belong outside history. Exclude them to stop capturing them. Use
+`autosave = false` for configuration you still want to save manually.
+
+To remove a tracking entry:
 
 ```sh
 mise dot untrack ~/.zshrc
 ```
 
-The file stays in place, while future checkpoints leave it out. Earlier
-committed versions remain in Git and can still be shared. There is no
-per-file local-only history setting.
+The local file stays in place. Future checkpoints leave it out, but
+previously committed versions remain in Git and can still be shared.
+There is no per-file local-only history setting.
 
 ## Encrypted shared files
 

@@ -601,31 +601,87 @@ fn classify_file(meta: &std::fs::Metadata) -> std::result::Result<u64, String> {
     Ok(size)
 }
 
-fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static str> {
-    static NAMES: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_names);
-    static GLOBS: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_globs);
+/// Why the credential guard keeps a file out of capture.
+pub(crate) const CREDENTIAL_REASON: &str = "credential store; encrypt the file before tracking it";
+
+/// Why `path` is left out of every capture under `policy`, if it is: a
+/// machine-local configuration file, or a credential store that is not
+/// enrolled with encryption. The guard is deliberately conservative and
+/// matches by name alone (`id_ed25519.pub` is protected like its private
+/// half); a narrower rule is the user's to add.
+pub(crate) fn capture_exclusion(path: &Path, policy: &Policy) -> Option<&'static str> {
     let name = path.file_name()?.to_str()?;
     if name.ends_with(".local.toml") {
         Some("machine-local configuration")
-    } else if !policy.encrypt
-        && (GLOBS.is_match(name)
-            || (path.starts_with(normalize(&global_config_dir())) && NAMES.is_match(name)))
-    {
-        Some("credential store; encrypt the file before tracking it")
+    } else if !policy.encrypt && is_builtin_credential(path, name) {
+        Some(CREDENTIAL_REASON)
     } else {
         None
     }
+}
+
+/// Whether the builtin rules protect a file of this name at this path.
+pub(crate) fn is_builtin_credential(path: &Path, name: &str) -> bool {
+    static NAMES: std::sync::LazyLock<GlobSet> = std::sync::LazyLock::new(credential_names);
+    static GLOBS: std::sync::LazyLock<GlobSet> =
+        std::sync::LazyLock::new(|| glob_set(CREDENTIAL_GLOBS));
+    GLOBS.is_match(name)
+        || (path.starts_with(normalize(&global_config_dir())) && NAMES.is_match(name))
+}
+
+/// How many omissions a capture report lists one by one before it
+/// summarizes them and points at `mise dot paths`.
+pub(crate) const OMISSION_LINES: usize = 10;
+
+/// Whether the display path `path` is `root` itself or lies below it.
+/// Display paths use the platform separator (`\` on Windows), so the
+/// boundary is checked on either.
+pub(crate) fn display_under(path: &str, root: &str) -> bool {
+    // Git metadata uses `~/` even where native display paths keep HOME.
+    let path = file::replace_path(path).to_string_lossy().into_owned();
+    let root = file::replace_path(root).to_string_lossy().into_owned();
+    path == root
+        || path
+            .strip_prefix(&root)
+            .is_some_and(|rest| rest.starts_with(['/', '\\']))
+}
+
+/// The lines a capture reports about what it left out: every omission
+/// with its reason when there are few, otherwise one summary.
+pub(crate) fn omission_report(omitted: &[PathReason]) -> Vec<String> {
+    if omitted.is_empty() {
+        vec![]
+    } else if omitted.len() <= OMISSION_LINES {
+        omitted
+            .iter()
+            .map(|omitted| format!("omitted: {} ({})", omitted.path, omitted.reason))
+            .collect()
+    } else {
+        vec![omission_summary(omitted)]
+    }
+}
+
+/// One line naming how many files a capture leaves out and why.
+pub(crate) fn omission_summary(omitted: &[PathReason]) -> String {
+    let credentials = omitted
+        .iter()
+        .filter(|omitted| omitted.reason == CREDENTIAL_REASON)
+        .count();
+    let detail = match credentials {
+        0 => String::new(),
+        n if n == omitted.len() => " (credential store)".into(),
+        n => format!(" ({n} credential store)"),
+    };
+    format!(
+        "{} files omitted from capture{detail}; `mise dot paths` lists them",
+        omitted.len()
+    )
 }
 
 /// Credential stores mise itself knows by name; they mean something only
 /// under the global configuration directory.
 fn credential_names() -> GlobSet {
     glob_set(CREDENTIAL_NAMES)
-}
-
-/// Key material by name pattern, private wherever it is captured.
-fn credential_globs() -> GlobSet {
-    glob_set(CREDENTIAL_GLOBS)
 }
 
 fn glob_set(patterns: &[&str]) -> GlobSet {
@@ -1090,6 +1146,96 @@ mod tests {
         assert!(set.would_capture(&included).unwrap());
         assert!(!set.would_capture(&child.join("config.local.toml")).unwrap());
         assert!(!set.would_capture(&child.join("credentials.json")).unwrap());
+    }
+
+    #[test]
+    fn the_credential_guard_matches_by_name_alone() {
+        let policy = Policy::for_mode(FileMode::Track);
+        let dir = Path::new("/nonexistent-mise-test/.ssh");
+        // conservative by name: a public half or a recipient list is
+        // protected like the private half; un-protecting is the user's call
+        for name in [
+            "id_ed25519",
+            "id_ed25519.pub",
+            "secrets.fish",
+            "client_secret.pub",
+            "oauth_token.pub",
+            "credentials.pub",
+        ] {
+            assert_eq!(
+                capture_exclusion(&dir.join(name), &policy),
+                Some(CREDENTIAL_REASON),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            capture_exclusion(&dir.join("recipients.txt"), &policy),
+            None
+        );
+        assert_eq!(
+            capture_exclusion(&dir.join("config.local.toml"), &policy),
+            Some("machine-local configuration")
+        );
+        let mut encrypted = policy;
+        encrypted.encrypt = true;
+        assert_eq!(capture_exclusion(&dir.join("id_ed25519"), &encrypted), None);
+    }
+
+    #[test]
+    fn display_under_accepts_either_separator() {
+        assert!(display_under("~/.ssh", "~/.ssh"));
+        assert!(display_under("~/.ssh/id_test", "~/.ssh"));
+        assert!(display_under("~\\.ssh\\id_test", "~\\.ssh"));
+        assert!(!display_under("~/.sshd/x", "~/.ssh"));
+        assert!(!display_under("~/.ssh", "~/.ssh/id_test"));
+    }
+
+    #[test]
+    fn display_under_matches_home_and_native_paths() {
+        let root = crate::dirs::HOME.join(".nested");
+        let child = root.join("plugin");
+        assert!(display_under("~/.nested/plugin", &root.to_string_lossy()));
+        assert!(display_under(&child.to_string_lossy(), "~/.nested"));
+        assert!(!display_under(
+            "~/.nested-other/plugin",
+            &root.to_string_lossy()
+        ));
+    }
+
+    #[test]
+    fn omission_reports_list_few_and_summarize_many() {
+        let omitted = |n: usize| -> Vec<PathReason> {
+            (0..n)
+                .map(|i| PathReason {
+                    path: format!("~/.config/app/secret{i}"),
+                    reason: CREDENTIAL_REASON.into(),
+                })
+                .collect()
+        };
+        assert!(omission_report(&[]).is_empty());
+        let few = omission_report(&omitted(2));
+        assert_eq!(few.len(), 2);
+        assert_eq!(
+            few[0],
+            format!("omitted: ~/.config/app/secret0 ({CREDENTIAL_REASON})")
+        );
+        let many = omission_report(&omitted(OMISSION_LINES + 1));
+        assert_eq!(
+            many,
+            vec![format!(
+                "{} files omitted from capture (credential store); `mise dot paths` lists them",
+                OMISSION_LINES + 1
+            )]
+        );
+        let mut mixed = omitted(1);
+        mixed.push(PathReason {
+            path: "~/.config/app/config.local.toml".into(),
+            reason: "machine-local configuration".into(),
+        });
+        assert_eq!(
+            omission_summary(&mixed),
+            "2 files omitted from capture (1 credential store); `mise dot paths` lists them"
+        );
     }
 
     #[test]

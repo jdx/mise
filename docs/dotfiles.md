@@ -649,8 +649,12 @@ added beneath it later, subject to those exclusions.
 
 Start with individual configuration files so you can choose what to save.
 Leave logs, caches, databases, and application session state out of history.
-Credential files and `*.local.toml` files are excluded by default; see
-[encrypted tracking](/history.html#encrypted-shared-files) to save credentials.
+Built-in credential rules can omit files even when their parent directory
+is tracked. `mise dot save`, `mise dot track`, and `mise dot status` report
+these omissions; `mise dot paths` lists the affected files and reasons.
+See [credential filtering](/history.html#credential-filtering-and-omissions)
+for the filename rules and [encrypted tracking](/history.html#encrypted-shared-files)
+to save credentials. Files ending in `.local.toml` are never captured.
 
 Tracking a symlink saves the link itself. Track its target separately to
 save the target's contents. If a parent directory is a symlink, track that
