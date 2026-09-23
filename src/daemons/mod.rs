@@ -318,7 +318,6 @@ fn routed_claimant(imported: &[bool]) -> Option<usize> {
 }
 
 pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
-    let providers = providers::load(files)?;
     let mut declarations = IndexMap::new();
     let mut settings: IndexMap<PathBuf, DaemonSettings> = IndexMap::new();
     let mut group_declarations = IndexMap::new();
@@ -378,6 +377,17 @@ pub(crate) fn load(files: &ConfigMap) -> Result<DaemonSet> {
             );
         }
     }
+    let provider_names = declarations
+        .values()
+        .filter_map(|(decl, _, _)| match decl {
+            Declaration::Definition(table) => table
+                .get("provider")
+                .and_then(toml::Value::as_str)
+                .map(str::to_owned),
+            Declaration::Preset(_) => None,
+        })
+        .collect();
+    let providers = providers::load_selected(files, Some(&provider_names))?;
     let mut set = DaemonSet::default();
     // Local name -> qualified ID, so `depends` can name an imported daemon short.
     // Keyed by the importing root: a name means an import only in the project

@@ -7,7 +7,13 @@ fi
 export PITCHFORK_STATE_DIR="$TMPDIR/pf"
 export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
 export PITCHFORK_PROXY_ENABLE=false
-cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork-real
+cat >~/bin/pitchfork <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"$HOME/pitchfork-invocations"
+exec "$HOME/bin/pitchfork-real" "$@"
+SH
+chmod +x ~/bin/pitchfork
 export PATH="$HOME/bin:$PATH"
 trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
 mkdir -p "$MISE_CONFIG_DIR" one two three four
@@ -76,6 +82,15 @@ cd "$base/one"
 mise run probe
 wait "$second_start"
 provider_pid=$(pitchfork status mise-provider-pg/server --json | jq -r .pid)
+# New resource metadata must not force an unchanged server to restart.
+manifest="$MISE_STATE_DIR/daemon-providers/pg/execution.json"
+jq 'del(.preset, .port, .data_dir, .jetstream)' "$manifest" >"$manifest.old"
+mv "$manifest.old" "$manifest"
+: >"$HOME/pitchfork-invocations"
+mise run probe
+assert_fail "grep -E '^(usage|config add)' '$HOME/pitchfork-invocations'"
+actual_provider_pid=$(pitchfork status mise-provider-pg/server --json | jq -r .pid)
+assert "test '$provider_pid' = '$actual_provider_pid'"
 pg_path=$(jq -r .env.PATH "$MISE_STATE_DIR/daemon-providers/pg/execution.json")
 query() {
   env PATH="$pg_path" psql -X -h 127.0.0.1 -p "$pg_port" -U postgres -d "$1" -Atc "$2"

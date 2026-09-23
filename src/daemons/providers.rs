@@ -21,19 +21,29 @@ pub(crate) fn directory(name: &str) -> PathBuf {
 }
 
 pub(crate) fn load(files: &ConfigMap) -> Result<IndexMap<String, Provider>> {
+    load_selected(files, None)
+}
+
+pub(crate) fn load_selected(
+    files: &ConfigMap,
+    names: Option<&std::collections::HashSet<String>>,
+) -> Result<IndexMap<String, Provider>> {
     let mut providers = IndexMap::new();
     for cf in files.values().rev() {
         let declarations = cf.daemon_providers();
         if declarations.is_empty() {
             continue;
         }
-        if !crate::config::is_global_config(cf.get_path()) {
-            bail!(
-                "[daemon_providers] belongs in global mise configuration, not {}",
-                cf.get_path().display()
-            );
-        }
         for (name, declaration) in declarations {
+            if names.is_some_and(|names| !names.contains(&name)) {
+                continue;
+            }
+            if !crate::config::is_global_config(cf.get_path()) {
+                bail!(
+                    "[daemon_providers] belongs in global mise configuration, not {}",
+                    cf.get_path().display()
+                );
+            }
             super::validate_name("provider", &name)?;
             if !name
                 .chars()
@@ -237,7 +247,11 @@ impl Provider {
         Ok(())
     }
 
-    pub(crate) async fn prepare(&self, rt: &runtime::Runtime) -> Result<()> {
+    pub(crate) async fn prepare(
+        &self,
+        rt: &runtime::Runtime,
+        force_registration: bool,
+    ) -> Result<()> {
         let root = directory(&self.name);
         std::fs::create_dir_all(&root)?;
         let _lock = crate::lock_file::LockFile::at(&root.join("provider.lock")).lock()?;
@@ -313,7 +327,7 @@ impl Provider {
             root: root.clone(),
         };
         let bytes = serde_json::to_vec_pretty(&execution)?;
-        if std::fs::read(&manifest).is_ok_and(|old| old != bytes)
+        if std::fs::read(&manifest).is_ok_and(|old| !execution.matches_process(&old))
             && rt.active(&root, &runtime::read_state(&root)?).await?
         {
             bail!(
@@ -339,7 +353,7 @@ impl Provider {
             namespaces: IndexMap::from([(root.clone(), format!("mise-provider-{}", self.name))]),
             ..Default::default()
         };
-        Box::pin(rt.prepare(&root, &set, true, true, &["server".into()])).await?;
+        Box::pin(rt.prepare(&root, &set, force_registration, true, &["server".into()])).await?;
         runtime::write_if_changed(&path, &desired)?;
         Ok(())
     }
@@ -393,6 +407,15 @@ struct Execution {
     env: EnvMap,
     commands: IndexMap<String, String>,
     root: PathBuf,
+}
+
+impl Execution {
+    // Resource metadata may grow across releases without changing the server.
+    fn matches_process(&self, previous: &[u8]) -> bool {
+        serde_json::from_slice::<Self>(previous).is_ok_and(|old| {
+            self.env == old.env && self.commands == old.commands && self.root == old.root
+        })
+    }
 }
 
 #[derive(Debug, usage_rs::Args)]
@@ -530,7 +553,7 @@ impl Providers {
             }
             if action != "stop" {
                 provider.install().await?;
-                provider.prepare(rt).await?;
+                provider.prepare(rt, true).await?;
                 rt.exec(&root, vec!["start".into(), provider.id()]).await?;
             }
         }
@@ -653,11 +676,15 @@ pub(crate) async fn install_set(set: &DaemonSet) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn prepare_set(rt: &runtime::Runtime, set: &DaemonSet) -> Result<()> {
+pub(crate) async fn prepare_set(
+    rt: &runtime::Runtime,
+    set: &DaemonSet,
+    force_registration: bool,
+) -> Result<()> {
     let mut seen = std::collections::HashSet::new();
     for binding in set.daemons.values().filter_map(|d| d.provider.as_ref()) {
         if seen.insert(&binding.provider.name) {
-            Box::pin(binding.provider.prepare(rt)).await?;
+            Box::pin(binding.provider.prepare(rt, force_registration)).await?;
         }
     }
     Ok(())
@@ -822,6 +849,22 @@ mod tests {
                     .contains("does not accept")
             );
         }
+    }
+
+    #[test]
+    fn process_comparison_ignores_metadata_but_protects_execution() {
+        let old = serde_json::json!({"env": {"PATH": "/bin"}, "commands": {"run": "postgres"}, "root": "/tmp/provider"});
+        let bytes = serde_json::to_vec(&old).unwrap();
+        let mut desired: Execution = serde_json::from_value(old).unwrap();
+        desired.preset = "postgres".into();
+        desired.port = 5432;
+        assert!(desired.matches_process(&bytes));
+        desired.env.insert("INJECTED".into(), "value".into());
+        assert!(!desired.matches_process(&bytes));
+        desired.env.remove("INJECTED");
+        desired.commands.insert("run".into(), "other".into());
+        assert!(!desired.matches_process(&bytes));
+        assert!(!desired.matches_process(b"{broken"));
     }
 
     #[test]
