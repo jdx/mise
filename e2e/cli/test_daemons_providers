@@ -26,6 +26,13 @@ version = "18"
 port = 54321
 TOML
 assert_contains 'mise daemons providers ls --json' '"port": 54321'
+cat >"$MISE_CONFIG_DIR/config.local.toml" <<'TOML'
+[daemon_providers.local-postgres]
+preset = "postgres"
+version = "{{ env.CONSUMER_VERSION }}"
+TOML
+assert_contains 'mise daemons providers ls 2>&1 || true' 'must be literal'
+rm "$MISE_CONFIG_DIR/config.local.toml"
 cat >>mise.toml <<'TOML'
 [daemon_providers.untrusted]
 preset = "postgres"

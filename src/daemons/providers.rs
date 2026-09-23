@@ -70,6 +70,19 @@ impl Provider {
         }
         let version = super::take_string(&mut table, "version")?
             .ok_or_else(|| eyre::eyre!("provider {} requires version", self.name))?;
+        for value in [
+            Some(version.as_str()),
+            table.get("tool").and_then(toml::Value::as_str),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if value.contains("{{") || value.contains("{%") {
+                bail!(
+                    "provider versions and tools must be literal, not consumer-dependent templates"
+                );
+            }
+        }
         for key in table.keys() {
             if !matches!(
                 key.as_str(),
