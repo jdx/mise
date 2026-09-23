@@ -1757,12 +1757,16 @@ impl Lock {
                                 });
                             // Resolve overridden requests through the same path as active
                             // tools when the request cannot be copied from the resolved
-                            // toolset. Keep this broad only for idiomatic version files;
-                            // other sources preserve the previous latest-only behavior.
-                            let should_resolve_overridden = active_unresolved
+                            // toolset. These cases bypass this lockfile's pinned version.
+                            let unlock_overridden = active_unresolved
                                 || Settings::get().generate_lockfiles()
                                 || request.version() == "latest"
                                 || source.is_idiomatic_version_file();
+                            // A request shadowed by another config for the same tool (e.g.
+                            // a global `hk = "1"` under a project `hk = "1.58.1"`) still
+                            // belongs in this lockfile. Resolve it through its own lock
+                            // entry so `mise lock --global` keeps the pinned version.
+                            let should_resolve_overridden = unlock_overridden || requested_tool;
                             if !matched_resolved && should_resolve_overridden {
                                 let mut resolve_options = match request
                                     .resolve_options(context.resolve_options)
@@ -1783,7 +1787,7 @@ impl Lock {
                                         }
                                     }
                                 };
-                                if !Settings::get().generate_lockfiles() {
+                                if unlock_overridden && !Settings::get().generate_lockfiles() {
                                     resolve_options.use_locked_version = false;
                                 }
                                 if resolve_options.before_date.is_some() {

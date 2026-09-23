@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# `mise lock --global` locks the global config's request even when the
+# project config declares the same tool and shadows it in the toolset.
+
+export MISE_MINIMUM_RELEASE_AGE=0
+
+write_global_lock() {
+  cat >"$MISE_CONFIG_DIR/mise.lock" <<'TOML'
+[[tools.hk]]
+version = "1.58.1"
+backend = "packslip:github.com/jdx/hk"
+specifiers = ["1"]
+
+[tools.hk."platforms.linux-x64"]
+TOML
+}
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+hk = "1"
+TOML
+cat >mise.toml <<'TOML'
+[tools]
+hk = "1.58.1"
+TOML
+
+write_global_lock
+assert_succeed "mise lock --global --platform linux-x64"
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "1.58.1"'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "hk-x86_64-unknown-linux-gnu.tar.gz"
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'checksum = "sha256:'
+assert_fail "test -f mise.lock"
+
+write_global_lock
+assert_succeed "mise lock --global hk --platform linux-x64"
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "1.58.1"'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'checksum = "sha256:'
