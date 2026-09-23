@@ -382,7 +382,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:855570fc47c8a97e07190676a4c3a1178a7ed7e9363a6822132b49e5faaa812e
+    container: ghcr.io/jdx/mise:deb@sha256:19d55778730e3c7b285900b8b7a7a5b32ec7530ccdc7c1933bee3f1500d26fa7
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
