@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use eyre::{Result, bail, eyre};
+use eyre::{Result, bail};
 
 use crate::cli::args::ToolArg;
 use crate::cli::lock::Lock;
@@ -92,9 +92,10 @@ impl BackendsSwitch {
         let mut relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)> = vec![];
         // Entries that had artifact data must get the new backend's back.
         let mut needs_platforms: Vec<(&PathBuf, String, String)> = vec![];
-        // Restored if relocking fails, so a failed switch never leaves entries on
-        // the new backend without artifact data.
+        // Restored if writing or relocking fails, so a failed switch never
+        // leaves entries on the new backend without artifact data.
         let mut originals: Vec<(&PathBuf, Option<String>)> = vec![];
+        let mut rewritten: Vec<(&PathBuf, Lockfile)> = vec![];
         for (path, switches) in &by_lockfile {
             let platforms = lockfile::determine_existing_platforms(path)?
                 .iter()
@@ -148,63 +149,72 @@ impl BackendsSwitch {
             }
             if !self.dry_run {
                 originals.push((path, crate::file::read_to_string(path).ok()));
-                lockfile.write(path)?;
+                rewritten.push((path, lockfile));
             }
         }
         if self.dry_run || switched.is_empty() {
             return Ok(());
         }
 
-        // The rewritten entries carry no artifact data yet. Relock each
-        // lockfile on its own, for the platforms it already covered, to record
-        // the new backend's checksums and URLs at those versions.
-        lockfile::invalidate_caches();
-        let mut relocked = Ok(());
-        for (path, tools, platforms) in relocks {
-            let tool = tools
-                .iter()
-                .map(|short| ToolArg::from_str(short))
-                .collect::<Result<Vec<_>>>()?;
-            relocked = Lock {
-                platform: platforms,
-                lockfiles: Some(BTreeSet::from([path.clone()])),
-                ..self.lock(tool)
-            }
-            .run()
+        let result = self
+            .write_and_relock(rewritten, relocks, &needs_platforms)
             .await;
-            if relocked.is_err() {
-                break;
-            }
-        }
-        let relocked = relocked.and_then(|()| {
-            let missing = needs_platforms
-                .iter()
-                .filter(|(path, short, version)| {
-                    !Lockfile::read(path).is_ok_and(|lf| lf.has_platforms(short, version))
-                })
-                .map(|(_, short, version)| format!("{short}@{version}"))
-                .collect::<Vec<_>>();
-            if missing.is_empty() {
-                Ok(())
-            } else {
-                Err(eyre!(
-                    "the new backend recorded no artifacts for {}",
-                    missing.join(", ")
-                ))
-            }
-        });
-        if let Err(err) = relocked {
+        if let Err(err) = result {
             for (path, original) in originals {
                 if let Some(original) = original {
                     crate::file::write(path, original)?;
                 }
             }
-            return Err(err.wrap_err(
-                "could not relock under the new backend; restored the previous lockfiles",
-            ));
+            return Err(err
+                .wrap_err("could not switch to the new backend; restored the previous lockfiles"));
         }
 
         self.reinstall(&switched).await
+    }
+
+    /// Write the rewritten lockfiles and relock them under the new backend,
+    /// failing if an entry that had artifact data did not get the new one's.
+    async fn write_and_relock(
+        &self,
+        rewritten: Vec<(&PathBuf, Lockfile)>,
+        relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)>,
+        needs_platforms: &[(&PathBuf, String, String)],
+    ) -> Result<()> {
+        for (path, lf) in rewritten {
+            lf.write(path)?;
+        }
+
+        // The rewritten entries carry no artifact data yet. Relock each
+        // lockfile on its own, for the platforms it already covered, to record
+        // the new backend's checksums and URLs at those versions.
+        lockfile::invalidate_caches();
+        for (path, tools, platforms) in relocks {
+            let tool = tools
+                .iter()
+                .map(|short| ToolArg::from_str(short))
+                .collect::<Result<Vec<_>>>()?;
+            Lock {
+                platform: platforms,
+                lockfiles: Some(BTreeSet::from([path.clone()])),
+                ..self.lock(tool)
+            }
+            .run()
+            .await?;
+        }
+        let missing = needs_platforms
+            .iter()
+            .filter(|(path, short, version)| {
+                !Lockfile::read(path).is_ok_and(|lf| lf.has_platforms(short, version))
+            })
+            .map(|(_, short, version)| format!("{short}@{version}"))
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            bail!(
+                "the new backend recorded no artifacts for {}",
+                missing.join(", ")
+            );
+        }
+        Ok(())
     }
 
     /// The `mise lock` run whose scope this command covers.
