@@ -152,7 +152,8 @@ Aqua badges come from registry metadata, so a check may apply only to some versi
 platforms. Other backends, such as `github:`, detect what a release publishes at install
 time and are not badged here. Each tool's **details** link opens its page on
 [mise-versions.jdx.dev](https://mise-versions.jdx.dev/tools), which lists its versions and
-the security information mise reports for every backend. `mise tool <name>` and
-`mise registry --json --security` report the same information from the command line.
+the security information mise reports for it. From the command line, `mise tool <name>`
+reports the checks for the backend mise would use, while `mise registry --json --security`
+merges the checks of every backend registered for a tool.
 
 <Registry />
