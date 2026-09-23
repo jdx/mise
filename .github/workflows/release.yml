@@ -305,6 +305,10 @@ jobs:
         env:
           OS: windows
           ARCH: ${{matrix.arch}}
+      # The runner is x64 and cannot execute the arm64 binary.
+      - name: Smoke-test vfox Lua errors
+        if: matrix.arch == 'x64'
+        run: scripts/smoke-test-vfox-lua-error.ps1 dist/mise/bin/mise.exe
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tarball-${{matrix.target}}

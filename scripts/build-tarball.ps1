@@ -17,6 +17,14 @@ $BaseName = "mise-v$Version-$Env:OS-$Env:ARCH"
 # OpenSSL was compiled into every release and never called.
 $Features = "rustls-native-roots,self_update,vfox/vendored-lua"
 
+# The serious profile sets `panic = "abort"`, which Windows cannot use. Lua
+# raises errors with longjmp, and mlua deliberately longjmps across its
+# `extern "C-unwind"` callback trampolines. MSVC implements longjmp as an SEH
+# unwind, so under panic=abort those frames abort the process with "panic in a
+# function that cannot unwind" whenever a vfox plugin hits a Lua error.
+# On Unix, longjmp does not unwind, so the other targets keep panic=abort.
+$Env:CARGO_PROFILE_SERIOUS_PANIC = "unwind"
+
 cargo build --profile=serious --ignore-rust-version --no-default-features --features "$Features" --target "$Target"
 cargo build --profile=serious -p mise-shim --target "$Target"
 mkdir -p dist/mise/bin
