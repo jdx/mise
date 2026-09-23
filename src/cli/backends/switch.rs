@@ -170,17 +170,36 @@ impl BackendsSwitch {
             return Ok(());
         }
 
+        let mut graph_cleanups = vec![];
         let result = self
-            .write_and_relock(rewritten, relocks, &needs_platforms)
+            .write_and_relock(rewritten, relocks, &needs_platforms, &mut graph_cleanups)
             .await;
         if let Err(err) = result {
-            for (path, original) in originals {
-                if let Some(original) = original {
-                    crate::file::write(path, original)?;
-                }
+            // Sidecars the rewrite replaced were not pruned, so the restored
+            // lockfiles still find them. Attempt every restore and keep the
+            // original error.
+            let failed = originals
+                .into_iter()
+                .filter_map(|(path, original)| {
+                    let original = original?;
+                    crate::file::write(path, original)
+                        .err()
+                        .map(|e| format!("{}: {e}", display_path(path)))
+                })
+                .collect::<Vec<_>>();
+            lockfile::invalidate_caches();
+            if failed.is_empty() {
+                return Err(err.wrap_err(
+                    "could not switch to the new backend; restored the previous lockfiles",
+                ));
             }
-            return Err(err
-                .wrap_err("could not switch to the new backend; restored the previous lockfiles"));
+            return Err(err.wrap_err(format!(
+                "could not switch to the new backend, and could not restore {}",
+                failed.join(", ")
+            )));
+        }
+        for cleanup in graph_cleanups {
+            cleanup.prune()?;
         }
 
         self.reinstall(&switched).await
@@ -193,9 +212,14 @@ impl BackendsSwitch {
         rewritten: Vec<(&PathBuf, Lockfile)>,
         relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)>,
         needs_platforms: &[(&PathBuf, String, String)],
+        graph_cleanups: &mut Vec<lockfile::GraphCleanup>,
     ) -> Result<()> {
+        // Publish without pruning replaced graph sidecars until the switch has
+        // succeeded, so a rollback never points at a removed sidecar.
         for (path, lf) in rewritten {
-            lf.write(path)?;
+            if let Some(prepared) = lf.prepare_write(path)? {
+                graph_cleanups.push(prepared.publish_deferred()?);
+            }
         }
 
         // The rewritten entries carry no artifact data yet. Relock each

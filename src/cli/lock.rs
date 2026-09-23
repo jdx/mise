@@ -389,7 +389,7 @@ impl Lock {
         let settings = Settings::get();
         let generate = settings.generate_lockfiles();
         let atomic = self.upgrade || generate;
-        if !self.dry_run && !atomic {
+        if !self.dry_run && !atomic && self.lockfiles.is_none() {
             lockfile::migrate_monorepo_lockfiles(&config, self.upgrade)?;
         }
         let before_date = self.get_before_date()?;
@@ -433,7 +433,7 @@ impl Lock {
         };
         let lockfile_targets =
             self.get_lockfile_targets(&config, effective_config_files, &scoped_config_paths);
-        let migration_inputs = lockfile::monorepo_lockfile_migration_paths(&config);
+        let migration_inputs = self.monorepo_migration_paths(&config);
         let can_skip_generation = generate
             && installed.is_some_and(|versions| versions.is_empty())
             && !self.upgrade
@@ -928,7 +928,7 @@ impl Lock {
         // lockfiles untouched on failure.
         if !self.dry_run && atomic {
             verify_generation_snapshots(config_snapshots.iter().chain(initial_lockfiles.iter()))?;
-            let migration_paths = lockfile::monorepo_lockfile_migration_paths(&config);
+            let migration_paths = self.monorepo_migration_paths(&config);
             let mutation_paths: BTreeSet<PathBuf> = staged_upgrade_writes
                 .iter()
                 .map(|staged| staged.path.clone())
@@ -1546,6 +1546,15 @@ impl Lock {
             stale_tools.iter().cloned().collect::<Vec<_>>().join(", ")
         );
         Ok(())
+    }
+
+    /// Legacy monorepo lockfiles to migrate. A run restricted to particular
+    /// lockfiles migrates none: its caller snapshots only those lockfiles.
+    fn monorepo_migration_paths(&self, config: &Config) -> Vec<(PathBuf, PathBuf)> {
+        if self.lockfiles.is_some() {
+            return vec![];
+        }
+        lockfile::monorepo_lockfile_migration_paths(config)
     }
 
     /// The lockfiles a run with these flags writes for the loaded config, each

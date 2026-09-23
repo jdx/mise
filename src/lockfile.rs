@@ -1164,9 +1164,9 @@ impl Lockfile {
 
     /// Move `short`'s entries at `versions` locked under `from` to the backend
     /// `to` returns for their version, keeping the version and dropping the
-    /// artifact data recorded for the old backend so the next lock records the
-    /// new one's. Returns each moved version with its new backend and whether
-    /// the old entry carried artifact data.
+    /// artifact data and dependency graphs recorded for the old backend so the
+    /// next lock records the new one's. Returns each moved version with its new
+    /// backend and whether the old entry carried artifact data.
     pub(crate) fn switch_backend(
         &mut self,
         short: &str,
@@ -1185,6 +1185,9 @@ impl Lockfile {
                 let had_platforms = entry.platforms.values().any(|p| !p.is_empty());
                 entry.backend = Some(backend.clone());
                 entry.platforms.clear();
+                // Dependency graphs are recorded per backend too.
+                entry.aube = None;
+                entry.uv = None;
                 moved.push((entry.version.clone(), backend, had_platforms));
             }
         }
