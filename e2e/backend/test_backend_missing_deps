@@ -57,8 +57,11 @@ test_npm() {
 
   # Version queries go directly to the registry over HTTP and work without
   # node/npm installed, in any package manager mode
+  source "$ROOT/e2e/fixtures/npm/start.sh"
   assert_contains "mise ls-remote npm:left-pad" "1.3.0"
   MISE_NPM_PACKAGE_MANAGER=bun assert_contains "mise ls-remote npm:left-pad" "1.3.0"
+  assert_fake_npm_registry_used left-pad
+  unset NPM_CONFIG_REGISTRY
 
   # Legacy `npm view` mode still needs npm and warns when it is missing
   export MISE_NPM_SHELL_OUT=1
