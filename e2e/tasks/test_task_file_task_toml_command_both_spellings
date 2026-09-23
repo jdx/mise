@@ -56,3 +56,20 @@ EOF
 # rule -- this one is above the command, in `mise.local.toml`.)
 assert "mise run build" "inline-ran"
 assert_contains "mise tasks" "configured under the other spelling"
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo loses-the-slot"
+EOF
+
+cat <<'EOF' >mise.local.toml
+[tasks."build.sh"]
+run = "echo keeps-the-slot"
+EOF
+
+# Two commands, two spellings: the higher one keeps the single slot and the
+# lower one is dropped. The lower one claims nothing either, so `build.bash` --
+# which the winning name never reached -- is still a task of its own rather than
+# disappearing along with the block that would have claimed it.
+assert "mise run build.sh" "keeps-the-slot"
+assert "mise run build.bash" "bash-script-ran"

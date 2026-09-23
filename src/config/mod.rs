@@ -5086,6 +5086,13 @@ fn claim_scripts_for_inline_commands(
     // `config_tasks` arrives highest precedence first, so this map is in that
     // order too and the first block to reach a script is the one that keeps it.
     for (name, precedence) in inline_command_precedence {
+        // A spelling an earlier, higher-precedence command already answers for
+        // is not a task of its own -- it loses the single slot those two
+        // spellings share -- so it claims nothing. Letting it claim a sibling
+        // script would take that script away and leave nothing running it.
+        if claimed.get(name).is_some_and(|owner| owner != name) {
+            continue;
+        }
         let outranks = |task: &Task| *precedence <= task.config_precedence;
         let targets = match by_name.get(name) {
             // An exact name claims that script and nothing else, the same way
@@ -7339,6 +7346,39 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].run, vec![RunEntry::Script("echo inline".into())]);
+    }
+
+    /// A command that loses the slot claims nothing. Letting it claim a script
+    /// the winner's name never reached would take that script away and leave
+    /// nothing running it, since the block itself is then dropped.
+    #[test]
+    fn test_a_command_that_loses_the_slot_leaves_sibling_scripts_alone() {
+        let tasks = merge_file_and_config_tasks(
+            vec![file_task("hello.sh"), file_task("hello.js")],
+            vec![
+                Task {
+                    config_precedence: 0,
+                    ..inline_task("hello.sh", "echo exact")
+                },
+                Task {
+                    config_precedence: 1,
+                    ..inline_task("hello", "echo stem")
+                },
+            ],
+        );
+
+        assert_eq!(
+            tasks.iter().map(|t| t.name.as_str()).sorted().collect_vec(),
+            vec!["hello.js", "hello.sh"],
+            "the sibling the winning name never reached must survive"
+        );
+        let claimed = tasks.iter().find(|t| t.name == "hello.sh").unwrap();
+        assert_eq!(
+            claimed.run,
+            vec![RunEntry::Script("echo exact".to_string())]
+        );
+        let sibling = tasks.iter().find(|t| t.name == "hello.js").unwrap();
+        assert_eq!(sibling.file, Some(PathBuf::from("mise-tasks/hello.js")));
     }
 
     /// A command that cannot outrank the scripts its stem reaches decorates
