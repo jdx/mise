@@ -4376,6 +4376,11 @@
                 "description": "source manifest used to select managed files from a directory",
                 "enum": ["git"]
               },
+              "remove_empty": {
+                "type": "boolean",
+                "default": false,
+                "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force"
+              },
               "permissions": {
                 "type": "string",
                 "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
@@ -4455,6 +4460,38 @@
             },
             "allOf": [
               {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "remove_empty": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": {
+                        "const": "template"
+                      },
+                      "content": false,
+                      "block": false,
+                      "line": false
+                    },
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["mode"]
+                      },
+                      {
+                        "properties": {
+                          "permissions": false
+                        }
+                      }
+                    ]
+                  }
+                ],
                 "if": {
                   "required": ["mode"],
                   "properties": {
@@ -4470,6 +4507,7 @@
                     "exclude": false,
                     "manifest": false,
                     "permissions": false,
+                    "remove_empty": false,
                     "encrypt": {
                       "const": false
                     },

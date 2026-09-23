@@ -1221,6 +1221,7 @@ mod declaration_tests {
             policy,
             variants: vec![],
             enabled: true,
+            remove_empty: false,
         };
         // this file wrote both fields: they stay written at their values
         let previous = ["mode", "autosave", "encrypt"].map(String::from);

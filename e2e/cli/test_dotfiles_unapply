@@ -120,7 +120,8 @@ assert_fail "test -e $HOME/.managed-links/one"
 assert_fail "test -e $HOME/.managed-links/stale"
 assert "readlink ~/.managed-links/alias" "$PWD/dotfiles/links/one"
 assert "readlink ~/.managed-links/excluded" "$PWD/dotfiles/links/excluded"
-assert "find '$MISE_STATE_DIR/dotfiles' -type f | wc -l | tr -d ' '" "0"
+# symlink-each ownership state is gone; template records live one level down
+assert "find '$MISE_STATE_DIR/dotfiles' -maxdepth 1 -type f | wc -l | tr -d ' '" "0"
 
 # Modified copies are refused unless forced.
 assert_fail "mise bootstrap dotfiles unapply ~/.managed-copy --yes" "use --force"
@@ -138,9 +139,13 @@ assert_fail "test -e $HOME/.managed-copydir/managed"
 assert "cat ~/.managed-copydir/unmanaged" "keep me"
 
 # A real template unapply verifies content, then removes it.
+records="find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '"
+assert "$records" "2"
 assert_succeed "mise bootstrap dotfiles unapply ~/.managed-rendered --yes"
 assert_succeed "test -e $HOME/unapply-rendered"
 assert_fail "test -e $HOME/.managed-rendered"
+# its ownership record goes with it
+assert "$records" "1"
 
 # Plain lines require explicit force because they carry no marker.
 assert_fail "mise bootstrap dotfiles unapply ~/.managed-lines/line --yes"

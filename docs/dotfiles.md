@@ -255,7 +255,7 @@ targets, `status` and `apply` report an error naming the path, even with
 `--force`. Remove it yourself.
 
 An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
-`permissions`, `encrypt`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
+`permissions`, `encrypt`, `remove_empty`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
 and an edit entry cannot change the file it removes.
 
 An `absent` target names exactly one path, so it cannot contain `*`, `?`,
@@ -270,7 +270,8 @@ as `would remove` while a file or symlink is still there.
 When a [tracked](#tracking-files-in-place) path is removed, the removal is
 recorded like any other apply, so `mise dot undo` restores the file.
 `mise dot unapply` leaves the target alone, because mise did not create
-the file.
+the file. `mise oci build` adds an OCI whiteout for an `absent` target, so a
+file the base image has there is hidden.
 
 [Destination variants](#platform-specific-destinations) work with
 `absent`, so you can remove a file on some machines only:
@@ -376,6 +377,57 @@ layer.
 With `--dry-run`, mise skips rendering dotfile templates and labels them
 `(if changed)`. Other configuration expressions can still run during a dry
 run, so use it with trusted configuration.
+
+#### Removing a target when a template renders empty {#remove-empty}
+
+A template normally writes its output even when that output is empty. With
+`remove_empty = true`, an output that is empty or contains only whitespace
+removes the target instead. This lets one template decide whether a file
+exists at all, for example a work-only config:
+
+```toml
+[dotfiles]
+"~/.config/app/work.toml" = { source = "work.toml.tera", mode = "template", remove_empty = true }
+```
+
+<div v-pre>
+
+```jinja
+{% if env.WORK == "1" %}
+[proxy]
+url = "http://proxy.example.com"
+{% endif %}
+```
+
+</div>
+
+With `WORK=1`, `mise dot apply` writes the file. Without it, the template
+renders empty and the next apply removes the file. Setting the variable again
+recreates it. `status` and `diff` show a pending removal before any apply.
+
+mise removes a target only when it can tell the file is its own. The target
+must be empty or whitespace-only, or it must still hold exactly the content
+mise last wrote there. Otherwise, apply reports a conflict and keeps the file,
+as it does for other [conflicts](#conflicts). Use `mise dot apply --force` to
+remove it anyway. mise never removes a directory at the target without
+`--force`, and a target it cannot read (for example one written with
+`permissions = "0200"`) is also a conflict, because mise cannot confirm the
+content is its own.
+
+mise stores a digest of what it last wrote to each template target in
+`$MISE_STATE_DIR/dotfiles/`. It records this for every template, so turning on
+`remove_empty` later still allows a safe removal. An apply that finds a target
+already byte-for-byte identical to the render also records it, so that file
+counts as written by mise: removing it loses nothing the template cannot
+produce again, and any later edit makes it a conflict. Because the record is
+local, a machine that has never applied the template treats an existing
+target with other non-empty content as a conflict. `mise dot rollback` and `mise dot undo` bring back a removed file when
+[history](#tracking-files-in-place) tracks it.
+
+`remove_empty` is valid only with `mode = "template"`. With it set, `mise oci
+build` leaves the file out of the image when the template renders empty. It
+also adds an OCI whiteout for that path, so a file the base image has there is
+hidden too.
 
 See [Windows](#windows) for differences in link behavior on that platform.
 
@@ -692,7 +744,8 @@ exist. An entry that sets `permissions` includes them as an octal string.
 An `absent` entry has `"mode": "absent"` and
 `"source": null`. Its state is `applied` once the target is gone and
 `differs` while a file or symlink is still there, with a `reason` such as
-`present; will be removed`. Each entry also includes an `origin` object
+`present; will be removed`, or a template that renders empty and will be
+removed. Each entry also includes an `origin` object
 describing where its configuration came from: the config file, its
 `config_root`, any mise environment in the config filename, and the resolved
 source path.
