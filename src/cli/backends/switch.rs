@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -170,21 +170,25 @@ impl BackendsSwitch {
             return Ok(());
         }
 
-        let mut graph_cleanups = vec![];
+        // Snapshot each lockfile and its graph sidecar directory: a relock can
+        // replace or prune sidecars, so restoring the lockfile text alone could
+        // leave it pointing at files that are gone.
+        let mut snapshots = originals
+            .iter()
+            .map(|(path, content)| Snapshot::take(path, content.clone()))
+            .collect::<Result<Vec<_>>>()?;
+        snapshots.sort_by(|a, b| a.sidecars.cmp(&b.sidecars));
         let result = self
-            .write_and_relock(rewritten, relocks, &needs_platforms, &mut graph_cleanups)
+            .write_and_relock(rewritten, relocks, &needs_platforms)
             .await;
         if let Err(err) = result {
-            // Sidecars the rewrite replaced were not pruned, so the restored
-            // lockfiles still find them. Attempt every restore and keep the
-            // original error.
-            let failed = originals
+            // Attempt every restore and keep the original error. Parents
+            // restore before the nested sidecar roots of local lockfiles.
+            let failed = snapshots
                 .into_iter()
-                .filter_map(|(path, original)| {
-                    let original = original?;
-                    crate::file::write(path, original)
-                        .err()
-                        .map(|e| format!("{}: {e}", display_path(path)))
+                .filter_map(|snapshot| {
+                    let path = display_path(&snapshot.lockfile);
+                    snapshot.restore().err().map(|e| format!("{path}: {e}"))
                 })
                 .collect::<Vec<_>>();
             lockfile::invalidate_caches();
@@ -198,9 +202,6 @@ impl BackendsSwitch {
                 failed.join(", ")
             )));
         }
-        for cleanup in graph_cleanups {
-            cleanup.prune()?;
-        }
 
         self.reinstall(&switched).await
     }
@@ -212,14 +213,9 @@ impl BackendsSwitch {
         rewritten: Vec<(&PathBuf, Lockfile)>,
         relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)>,
         needs_platforms: &[(&PathBuf, String, String)],
-        graph_cleanups: &mut Vec<lockfile::GraphCleanup>,
     ) -> Result<()> {
-        // Publish without pruning replaced graph sidecars until the switch has
-        // succeeded, so a rollback never points at a removed sidecar.
         for (path, lf) in rewritten {
-            if let Some(prepared) = lf.prepare_write(path)? {
-                graph_cleanups.push(prepared.publish_deferred()?);
-            }
+            lf.write(path)?;
         }
 
         // The rewritten entries carry no artifact data yet. Relock each
@@ -402,6 +398,50 @@ impl BackendsSwitch {
         let mut ts = config.get_toolset().await?.clone();
         ts.install_all_versions(&mut config, requests, &opts)
             .await?;
+        Ok(())
+    }
+}
+
+/// A lockfile and its graph sidecar directory as they were before the switch.
+struct Snapshot {
+    lockfile: PathBuf,
+    content: Option<String>,
+    sidecars: PathBuf,
+    /// A copy of `sidecars`, or `None` when the directory did not exist.
+    sidecar_copy: Option<tempfile::TempDir>,
+}
+
+impl Snapshot {
+    fn take(lockfile: &Path, content: Option<String>) -> Result<Self> {
+        let sidecars = lockfile::sidecar_root(lockfile);
+        let sidecar_copy = if sidecars.is_dir() {
+            let copy = tempfile::tempdir()?;
+            crate::file::copy_dir_all_preserve_symlinks(&sidecars, &copy.path().join("sidecars"))?;
+            Some(copy)
+        } else {
+            None
+        };
+        Ok(Self {
+            lockfile: lockfile.to_path_buf(),
+            content,
+            sidecars,
+            sidecar_copy,
+        })
+    }
+
+    fn restore(self) -> Result<()> {
+        if let Some(content) = &self.content {
+            crate::file::write(&self.lockfile, content)?;
+        }
+        if self.sidecars.exists() {
+            crate::file::remove_all(&self.sidecars)?;
+        }
+        if let Some(copy) = &self.sidecar_copy {
+            crate::file::copy_dir_all_preserve_symlinks(
+                &copy.path().join("sidecars"),
+                &self.sidecars,
+            )?;
+        }
         Ok(())
     }
 }

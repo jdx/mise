@@ -1,5 +1,7 @@
 pub(crate) mod generate;
 mod graph;
+
+pub(crate) use graph::sidecar_root;
 pub(crate) use graph::{GraphRef, NativeGraph};
 
 use crate::backend::backend_type::BackendType;
