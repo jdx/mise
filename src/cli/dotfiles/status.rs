@@ -76,16 +76,28 @@ impl DotfilesStatus {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
-            let omitted = match state {
-                FileState::Tracked => omitted_under(&history.omitted, &req.target),
-                _ => 0,
+            let (omitted, nested) = match state {
+                FileState::Tracked => (
+                    paths_under(&history.omitted, &req.target),
+                    paths_under(&history.nested, &req.target),
+                ),
+                _ => (0, 0),
             };
             let state_str = match &state {
                 FileState::Applied => "applied".to_string(),
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
-                FileState::Tracked if omitted > 0 => format!("tracked ({omitted} omitted)"),
+                FileState::Tracked if omitted > 0 || nested > 0 => {
+                    let mut parts = vec![];
+                    if omitted > 0 {
+                        parts.push(format!("{omitted} omitted"));
+                    }
+                    if nested > 0 {
+                        parts.push(format!("{nested} nested"));
+                    }
+                    format!("tracked ({})", parts.join(", "))
+                }
                 FileState::Tracked => "tracked".to_string(),
             };
             any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
@@ -104,6 +116,7 @@ impl DotfilesStatus {
                         FileState::Tracked => "tracked",
                     },
                     "omitted": omitted,
+                    "nested": nested,
                 }));
             } else {
                 file_rows.push(vec![
@@ -218,15 +231,15 @@ impl DotfilesStatus {
     }
 }
 
-/// How many reported omissions are `target` itself or lie beneath it.
-fn omitted_under(
-    omitted: &[crate::system::history::store::PathReason],
+/// How many reported paths are `target` itself or lie beneath it.
+fn paths_under(
+    reported: &[crate::system::history::store::PathReason],
     target: &std::path::Path,
 ) -> usize {
     let target = crate::system::history::tracked::normalize_target(target);
     let display = crate::file::display_path(&target);
-    omitted
+    reported
         .iter()
-        .filter(|omitted| crate::system::history::tracked::display_under(&omitted.path, &display))
+        .filter(|reported| crate::system::history::tracked::display_under(&reported.path, &display))
         .count()
 }

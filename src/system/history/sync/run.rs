@@ -44,6 +44,13 @@ pub(crate) struct PendingApplication {
     pub local: Option<Object>,
 }
 
+/// A path sync leaves alone, and why; listed by `mise dot status`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct SkippedPath {
+    pub branch_path: String,
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Resolution {
     pub local: Option<Object>,
@@ -78,6 +85,9 @@ pub(crate) struct SyncStatus {
     pub conflicts: Vec<Conflict>,
     #[serde(default)]
     pub pending_applications: Vec<PendingApplication>,
+    /// Paths neither applied nor removed, with why (nested repositories).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<SkippedPath>,
     /// Repository metadata and inactive streams can change without live writes.
     #[serde(default)]
     pub pending_repository: bool,
@@ -607,6 +617,15 @@ fn record_pending(
         .iter()
         .filter_map(|plan| plan.conflict.clone())
         .collect();
+    status.skipped = plans
+        .iter()
+        .filter_map(|plan| {
+            Some(SkippedPath {
+                branch_path: plan.branch_path.clone(),
+                reason: plan.skipped.clone()?,
+            })
+        })
+        .collect();
     status.pending_applications = plans
         .iter()
         .filter(|plan| plan.conflict.is_none())
@@ -729,16 +748,23 @@ fn prepare(
             files: upstream
                 .files
                 .iter()
-                .filter(|(path, _)| eligible(&roots, set, path))
+                .filter(|(path, object)| {
+                    eligible(&roots, set, path)
+                        || (reconcile::is_gitlink(Some(object)) && owns_stream(&roots, set, path))
+                })
                 .map(|(path, object)| (path.clone(), object.clone()))
                 .collect(),
         };
         let mut plans = reconcile::reconcile(repo, shared, &selected, &sync_state, unsaved)?;
         // Old acknowledgements are not authority to delete a path this
         // machine no longer declares or selects.
-        plans.retain(|plan| eligible(&roots, set, &plan.branch_path));
+        plans.retain(|plan| {
+            eligible(&roots, set, &plan.branch_path)
+                || (plan.skipped.is_some() && owns_stream(&roots, set, &plan.branch_path))
+        });
         for (path, object) in shared {
-            if !eligible(&roots, set, path)
+            if reconcile::is_gitlink(Some(object))
+                || !eligible(&roots, set, path)
                 || local_manifest.file_permissions(path, Some(object))
                     == set.manifest.file_permissions(path, Some(object))
             {
@@ -766,6 +792,7 @@ fn prepare(
     };
     let mut plans = reconcile_set(tracked)?;
     apply_resolutions(repo, status, shared, upstream, &mut plans)?;
+    reconcile::skip_pointer_applications(&mut plans, shared);
     status.validation_error = None;
     // Source deletion and invalid source types matter even when the bootstrap
     // configuration itself is unchanged or deliberately not tracked.
@@ -774,6 +801,7 @@ fn prepare(
             let prospective = super::preflight::prospective(repo, tracked, &plans)?;
             plans = reconcile_set(&prospective)?;
             apply_resolutions(repo, status, shared, upstream, &mut plans)?;
+            reconcile::skip_pointer_applications(&mut plans, shared);
             super::preflight::sources(repo, &prospective, &plans)
         })();
         if let Err(error) = validation {
@@ -968,15 +996,33 @@ fn apply_resolutions(
 /// another platform's version is never applied here and never read as a
 /// change. Undeclared paths wait for prospective incoming configuration;
 /// their absence from this machine is not a publication of a deletion.
-pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
+fn owns_stream(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
     match roots.locate(branch_path) {
-        Located::Tracked { path, variant } => match tracked.entry_for(&path) {
-            Some(entry) => entry.variant == variant,
-            None => false,
-        },
+        Located::Tracked { path, variant } => tracked
+            .entry_for(&path)
+            .is_some_and(|entry| entry.variant == variant),
         Located::Config(path) => tracked
             .entry_for(&path)
             .is_some_and(|entry| entry.variant.is_none()),
+        Located::Marker | Located::Unmapped => false,
+    }
+}
+
+// Legacy pointers produce only skip diagnostics, so their owning stream
+// remains reportable even when live nested content is ineligible for apply.
+pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
+    match roots.locate(branch_path) {
+        Located::Tracked { path, variant } => match tracked.entry_for(&path) {
+            Some(entry) => {
+                entry.variant == variant
+                    && !crate::system::history::tracked::inside_nested_repository(entry, &path)
+            }
+            None => false,
+        },
+        Located::Config(path) => tracked.entry_for(&path).is_some_and(|entry| {
+            entry.variant.is_none()
+                && !crate::system::history::tracked::inside_nested_repository(entry, &path)
+        }),
         Located::Marker => false,
         Located::Unmapped => false,
     }
@@ -1379,5 +1425,48 @@ mod status_tests {
             status.declarations_changed = false;
         })
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod nested_repository_tests {
+    use super::*;
+    use crate::system::files::{FileMode, FilePolicy};
+    use crate::system::history::tracked::{TrackedEntry, normalize};
+
+    #[test]
+    fn incoming_files_leave_live_nested_repositories_alone() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = normalize(temp.path());
+        let roots = Roots {
+            home: home.clone(),
+            config_dir: home.join(".config/mise"),
+        };
+        for (parent, prefix) in [
+            (home.join("plugins"), "home/plugins"),
+            (roots.config_dir.join("plugins"), "config/plugins"),
+        ] {
+            let nested = parent.join("checkout");
+            std::fs::create_dir_all(nested.join(".git")).unwrap();
+            std::fs::write(nested.join("local.txt"), "local").unwrap();
+            let policy = FilePolicy::for_mode(FileMode::Track);
+            let mut tracked = TrackedSet::default();
+            tracked.push(TrackedEntry::new(parent, "track", policy));
+            for suffix in ["checkout", "checkout/local.txt", "checkout/incoming.txt"] {
+                let path = format!("{prefix}/{suffix}");
+                assert!(!eligible(&roots, &tracked, &path), "{path}");
+            }
+            assert!(eligible(
+                &roots,
+                &tracked,
+                &format!("{prefix}/ordinary.txt")
+            ));
+            tracked.push(TrackedEntry::new(nested, "track", policy));
+            assert!(eligible(
+                &roots,
+                &tracked,
+                &format!("{prefix}/checkout/incoming.txt")
+            ));
+        }
     }
 }

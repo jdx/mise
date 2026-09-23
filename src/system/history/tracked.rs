@@ -111,6 +111,8 @@ pub(crate) struct Walk {
     /// Every captured file with the entry that owns it and its policy.
     pub files: BTreeMap<PathBuf, (usize, Policy)>,
     pub omitted: Vec<PathReason>,
+    /// Nested repositories, captured as a commit pointer without their files.
+    pub nested: Vec<PathReason>,
     pub incomplete: Vec<PathReason>,
     pub warnings: Vec<String>,
 }
@@ -328,14 +330,7 @@ impl TrackedSet {
         {
             return Ok(false);
         }
-        // a nested repository below the entry is a gitlink: nothing under
-        // it is captured
-        let nested = path
-            .ancestors()
-            .skip(1)
-            .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
-            .any(|ancestor| ancestor.join(".git").exists());
-        if nested {
+        if inside_nested_repository(owner, path) {
             return Ok(false);
         }
         Ok(!self.exclude_set()?.is_match(path))
@@ -436,6 +431,7 @@ impl TrackedSet {
             exclude: self.exclude.clone(),
             incomplete: walk.incomplete.clone(),
             omitted,
+            nested: walk.nested.clone(),
         }
     }
 }
@@ -537,9 +533,15 @@ fn walk_entry(
         let file_type = candidate.file_type();
         if file_type.is_dir() {
             if path.join(".git").exists() {
-                // captured as a gitlink; never descended into
-                walk.files.insert(path.to_path_buf(), (index, entry.policy));
-                files += 1;
+                // A repository found inside a tracked directory is skipped
+                // whole, and nothing is written for it — not its files, not
+                // a commit pointer. A pointer would name objects this
+                // history does not have, and there is a supported way to
+                // get the files: track the repository itself.
+                walk.nested.push(PathReason {
+                    path: display_path(path),
+                    reason: NESTED_REPOSITORY_REASON.into(),
+                });
                 walker.skip_current_dir();
             }
             continue;
@@ -604,6 +606,17 @@ fn classify_file(meta: &std::fs::Metadata) -> std::result::Result<u64, String> {
 /// Why the credential guard keeps a file out of capture.
 pub(crate) const CREDENTIAL_REASON: &str = "credential store; encrypt the file before tracking it";
 
+/// What a capture says about a directory with its own `.git` found
+/// inside a tracked one.
+///
+/// **A repository encountered inside a tracked directory is skipped, and
+/// nothing is recorded for it. Tracking a repository's own directory
+/// captures its working files, always without `.git`.** The explanation
+/// names the remedy because there is one: the reach-in is unsupported,
+/// not the goal.
+pub(crate) const NESTED_REPOSITORY_REASON: &str =
+    "a separate Git repository; track it directly to capture its working files";
+
 /// Why `path` is left out of every capture under `policy`, if it is: a
 /// machine-local configuration file, or a credential store that is not
 /// enrolled with encryption. The guard is deliberately conservative and
@@ -646,36 +659,57 @@ pub(crate) fn display_under(path: &str, root: &str) -> bool {
             .is_some_and(|rest| rest.starts_with(['/', '\\']))
 }
 
-/// The lines a capture reports about what it left out: every omission
-/// with its reason when there are few, otherwise one summary.
-pub(crate) fn omission_report(omitted: &[PathReason]) -> Vec<String> {
-    if omitted.is_empty() {
+/// The lines a capture reports about what it left out: every omission and
+/// nested repository with its reason when there are few, otherwise one
+/// summary.
+pub(crate) fn omission_report(omitted: &[PathReason], nested: &[PathReason]) -> Vec<String> {
+    if omitted.is_empty() && nested.is_empty() {
         vec![]
-    } else if omitted.len() <= OMISSION_LINES {
+    } else if omitted.len() + nested.len() <= OMISSION_LINES {
         omitted
             .iter()
             .map(|omitted| format!("omitted: {} ({})", omitted.path, omitted.reason))
+            .chain(
+                nested
+                    .iter()
+                    .map(|nested| format!("nested: {} ({})", nested.path, nested.reason)),
+            )
             .collect()
     } else {
-        vec![omission_summary(omitted)]
+        vec![omission_summary(omitted, nested)]
     }
 }
 
 /// One line naming how many files a capture leaves out and why.
-pub(crate) fn omission_summary(omitted: &[PathReason]) -> String {
-    let credentials = omitted
-        .iter()
-        .filter(|omitted| omitted.reason == CREDENTIAL_REASON)
-        .count();
-    let detail = match credentials {
-        0 => String::new(),
-        n if n == omitted.len() => " (credential store)".into(),
-        n => format!(" ({n} credential store)"),
-    };
-    format!(
-        "{} files omitted from capture{detail}; `mise dot paths` lists them",
-        omitted.len()
-    )
+pub(crate) fn omission_summary(omitted: &[PathReason], nested: &[PathReason]) -> String {
+    let mut parts = vec![];
+    if !omitted.is_empty() {
+        let credentials = omitted
+            .iter()
+            .filter(|omitted| omitted.reason == CREDENTIAL_REASON)
+            .count();
+        let detail = match credentials {
+            0 => String::new(),
+            n if n == omitted.len() => " (credential store)".into(),
+            n => format!(" ({n} credential store)"),
+        };
+        parts.push(format!(
+            "{} files omitted from capture{detail}",
+            omitted.len()
+        ));
+    }
+    if !nested.is_empty() {
+        parts.push(format!(
+            "{} nested {} skipped",
+            nested.len(),
+            if nested.len() == 1 {
+                "repository"
+            } else {
+                "repositories"
+            }
+        ));
+    }
+    format!("{}; `mise dot paths` lists them", parts.join("; "))
 }
 
 /// Credential stores mise itself knows by name; they mean something only
@@ -766,6 +800,14 @@ pub(crate) fn global_config_dir() -> PathBuf {
                 .to_path_buf()
         })
         .unwrap_or_else(|| dirs::CONFIG.to_path_buf())
+}
+
+/// A nested working tree, including its root, belongs to its own repository.
+/// Directly tracking that root gives it a separate owner and permits capture.
+pub(crate) fn inside_nested_repository(owner: &TrackedEntry, path: &Path) -> bool {
+    path.ancestors()
+        .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+        .any(|ancestor| ancestor.join(".git").exists())
 }
 
 /// Canonical when the path exists, lexically normalized otherwise.
@@ -1212,14 +1254,14 @@ mod tests {
                 })
                 .collect()
         };
-        assert!(omission_report(&[]).is_empty());
-        let few = omission_report(&omitted(2));
+        assert!(omission_report(&[], &[]).is_empty());
+        let few = omission_report(&omitted(2), &[]);
         assert_eq!(few.len(), 2);
         assert_eq!(
             few[0],
             format!("omitted: ~/.config/app/secret0 ({CREDENTIAL_REASON})")
         );
-        let many = omission_report(&omitted(OMISSION_LINES + 1));
+        let many = omission_report(&omitted(OMISSION_LINES + 1), &[]);
         assert_eq!(
             many,
             vec![format!(
@@ -1233,9 +1275,67 @@ mod tests {
             reason: "machine-local configuration".into(),
         });
         assert_eq!(
-            omission_summary(&mixed),
+            omission_summary(&mixed, &[]),
             "2 files omitted from capture (1 credential store); `mise dot paths` lists them"
         );
+        let nested = vec![PathReason {
+            path: "~/.hammerspoon/Spoons/Sky.spoon".into(),
+            reason: NESTED_REPOSITORY_REASON.into(),
+        }];
+        assert_eq!(
+            omission_report(&[], &nested),
+            vec![format!(
+                "nested: ~/.hammerspoon/Spoons/Sky.spoon ({NESTED_REPOSITORY_REASON})"
+            )]
+        );
+        assert_eq!(
+            omission_summary(&omitted(1), &nested),
+            "1 files omitted from capture (credential store); 1 nested repository skipped; `mise dot paths` lists them"
+        );
+    }
+
+    #[test]
+    fn a_nested_repository_is_skipped_and_tracking_it_captures_its_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("plugins");
+        let plugin = root.join("nested");
+        std::fs::create_dir_all(plugin.join(".git")).unwrap();
+        std::fs::write(plugin.join(".git/HEAD"), "ref: refs/heads/main").unwrap();
+        std::fs::write(plugin.join("init.lua"), "return {}").unwrap();
+        std::fs::write(root.join("init.lua"), "top").unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&root));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&root.join("init.lua")));
+        // nothing is written for it: not its files, and not a pointer
+        assert!(!walk.files.contains_key(&plugin));
+        assert!(!walk.files.contains_key(&plugin.join("init.lua")));
+        assert_eq!(walk.nested.len(), 1);
+        assert_eq!(walk.nested[0].path, display_path(&plugin));
+        assert_eq!(walk.nested[0].reason, NESTED_REPOSITORY_REASON);
+        // the explanation names the remedy, because there is one
+        assert!(walk.nested[0].reason.contains("track it directly"));
+        assert!(walk.omitted.is_empty());
+        assert_eq!(set.coverage(&walk).nested, walk.nested);
+        assert!(!set.would_capture(&plugin).unwrap());
+        assert!(!set.would_capture(&plugin.join("init.lua")).unwrap());
+        // and that remedy works: tracking the repository itself captures
+        // its working files, always without `.git`
+        set.push(entry(&plugin));
+        let walk = set.walk().unwrap();
+        assert!(walk.files.contains_key(&plugin.join("init.lua")));
+        assert!(!walk.files.contains_key(&plugin));
+        assert!(!walk.files.contains_key(&plugin.join(".git/HEAD")));
+        assert!(
+            !walk
+                .files
+                .keys()
+                .any(|path| path.components().any(|c| c.as_os_str() == ".git")),
+            "`.git` is never captured"
+        );
+        assert!(walk.nested.is_empty());
+        assert!(set.would_capture(&plugin.join("init.lua")).unwrap());
+        assert!(!set.would_capture(&plugin.join(".git/HEAD")).unwrap());
     }
 
     #[test]

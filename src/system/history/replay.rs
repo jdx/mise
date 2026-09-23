@@ -136,6 +136,27 @@ pub(crate) async fn rollback(req: RollbackRequest) -> Result<()> {
                 display_path(path)
             );
         }
+        // a repository found inside a tracked directory is skipped by
+        // every capture, so a rollback has nothing to put back there and
+        // says so rather than quietly doing nothing
+        if let Some(repository) = nested_repository_at_or_above(&tracked, path) {
+            // the target may be the repository itself, and "X is inside
+            // X" is not a sentence that helps anyone
+            if repository == *path {
+                warn!(
+                    "history: {} is {}",
+                    display_path(path),
+                    super::tracked::NESTED_REPOSITORY_REASON
+                );
+            } else {
+                warn!(
+                    "history: {} is inside {}, {}",
+                    display_path(path),
+                    display_path(&repository),
+                    super::tracked::NESTED_REPOSITORY_REASON
+                );
+            }
+        }
     }
     let targets = match &req.to {
         Some(reference) => {
@@ -1290,15 +1311,31 @@ enum PathState {
     Omitted(String),
 }
 
+/// The repository a path lies in, when that repository is itself inside a
+/// tracked directory rather than tracked in its own right.
+fn nested_repository_at_or_above(tracked: &TrackedSet, path: &Path) -> Option<PathBuf> {
+    let owner = tracked.entry_for(path)?;
+    path.ancestors()
+        .take_while(|ancestor| ancestor.starts_with(&owner.path) && *ancestor != owner.path)
+        .find(|ancestor| ancestor.join(".git").exists())
+        .map(Path::to_path_buf)
+}
+
 /// What a checkpoint says about a path it does not hold.
 fn classify(checkpoint: &Checkpoint, display: &str) -> PathState {
     let coverage = &checkpoint.tree.coverage;
-    let under = |prefix: &str| {
-        display == prefix
-            || display
-                .strip_prefix(prefix)
-                .is_some_and(|rest| rest.starts_with('/'))
-    };
+    let under = |prefix: &str| super::tracked::display_under(display, prefix);
+    // **A repository the checkpoint recorded as skipped is not something
+    // it ever held.** The filesystem check finds one that still has its
+    // `.git`; the record is what still answers after the user removes it,
+    // which is the documented way to turn such a directory into ordinary
+    // content — and without this, doing that turns the next rollback into
+    // a deletion of files the checkpoint never had.
+    for nested in &coverage.nested {
+        if under(&nested.path) {
+            return PathState::Omitted(nested.reason.clone());
+        }
+    }
     for omitted in &coverage.omitted {
         if under(&omitted.path) {
             return PathState::Omitted(omitted.reason.clone());

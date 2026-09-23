@@ -896,12 +896,50 @@ records that mode, so a fresh machine recreates the directory private rather
 than world-readable. Home and the configuration directory themselves are
 never recorded.
 
-A symlink is saved as a link. A nested Git repository is saved as a pointer
-to its commit. mise reports oversized files, special files, and unreadable
-paths it cannot save. It keeps their previous saved versions while saving
-other files, so check reported omissions before relying on a checkpoint.
-Explicit exclusions remove paths from future checkpoints. Encryption
-failures stop a save rather than storing plaintext.
+A symlink is saved as a link. mise reports oversized files, special files,
+and unreadable paths it cannot save. It keeps their previous saved versions
+while saving other files, so check reported omissions before relying on a
+checkpoint. Explicit exclusions remove paths from future checkpoints.
+Encryption failures stop a save rather than storing plaintext.
+
+### Nested repositories
+
+A directory with its own `.git` inside a tracked tree (a plugin cloned
+into `~/.hammerspoon/Spoons`, a vendored theme) is a separate repository.
+**mise skips it and records nothing for it** — not its files, and not a
+commit pointer. `mise dot save`, `mise dot track`, `mise dot status` and
+`mise dot paths` each name it and say what to do:
+
+```console
+nested: ~/.hammerspoon/Spoons/SkyRocket.spoon (a separate Git repository;
+        track it directly to capture its working files)
+```
+
+That remedy is the supported one. **Tracking a repository's own directory
+captures its working files**, always without `.git`:
+
+```sh
+mise dot track ~/.hammerspoon/Spoons/SkyRocket.spoon
+```
+
+Reaching into it from a parent entry does not work and is not meant to:
+an `include` pattern on the parent that names paths inside the nested
+repository selects nothing, and mise says so rather than leaving you to
+wonder whether the pattern was wrong. The alternative is to leave the
+directory to the tool that installs it, or remove its `.git` so it
+becomes ordinary content.
+
+A history saved by an older mise may already contain commit pointers.
+Those are read and skipped: `mise dot pull` lists such a pointer as
+skipped rather than creating an empty directory, failing on it, or
+pausing the setup because another machine's pointer differs. No new
+pointer is ever written.
+
+Skipped repositories are recorded as omissions in shared checkpoint
+metadata. Rollback preserves those paths even after `.git` is removed,
+on another machine, or after the local cache is rebuilt. The originating
+machine's cache also keeps the more specific nested-repository reason;
+a rebuilt cache may show the generic omission reason instead.
 
 Commands that modify or capture tracked files save checkpoints before and
 after their work. Their metadata includes operation labels and the link

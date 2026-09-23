@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# A directory with its own .git under a tracked tree is skipped whole:
+# nothing is recorded for it, not its files and not a commit pointer.
+# Capture, status and paths name it and say what to do instead, and
+# tracking the repository itself captures its working files without
+# `.git`. A pointer already in a history from an older mise is read and
+# skipped rather than failing or emptying the repository it names.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+repo="$MISE_STATE_DIR/history/repo.git"
+origin="$PWD/nested-origin.git"
+git init -q --bare -b main "$origin"
+plugin=~/.hammerspoon/Spoons/Sky.spoon
+mkdir -p "$plugin"
+echo 'hs.alert("hi")' >~/.hammerspoon/init.lua
+echo 'return {}' >"$plugin/init.lua"
+git -C "$plugin" init -q -b main
+git -C "$plugin" -c user.name=t -c user.email=t@example.com add -A
+git -C "$plugin" -c user.name=t -c user.email=t@example.com commit -q -m init
+sha=$(git -C "$plugin" rev-parse HEAD)
+
+# Enrollment and every save say what a nested repository leaves out.
+assert_contains 'mise dot track ~/.hammerspoon 2>&1' 'nested: ~/.hammerspoon/Spoons/Sky.spoon (a separate Git repository'
+# nothing is recorded for it: no files, and no commit pointer either
+assert "git --git-dir=$repo ls-tree HEAD home/.hammerspoon/Spoons/Sky.spoon" ''
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.hammerspoon/Spoons/Sky.spoon/init.lua"
+assert "git --git-dir=$repo show HEAD:home/.hammerspoon/init.lua" 'hs.alert("hi")'
+echo 'hs.alert("hello")' >~/.hammerspoon/init.lua
+assert_contains 'mise dot save 2>&1' 'nested: ~/.hammerspoon/Spoons/Sky.spoon (a separate Git repository'
+assert_contains 'mise dot paths' 'nested: ~/.hammerspoon/Spoons/Sky.spoon (a separate Git repository; track it directly to capture its working files)'
+assert "mise dot paths --json | jq -r '.nested[0].path'" '~/.hammerspoon/Spoons/Sky.spoon'
+assert_contains 'mise dot status' 'tracked (1 nested)'
+assert_contains 'mise dot status' '1 nested repository skipped'
+assert "mise dot status --json | jq -r '.history.nested | length'" 1
+assert_contains 'mise dot history show' 'nested: ~/.hammerspoon/Spoons/Sky.spoon'
+# one skip, said once: the checkpoint carries it to other machines as an
+# omission, and this machine's own record keeps the reason that can be
+# acted on — it is not both
+assert "mise dot history show 2>&1 | grep -c 'Spoons/Sky.spoon'" '1'
+
+# Removing the `.git` makes the directory ordinary content — and a
+# rollback to a checkpoint that skipped it does not delete those files,
+# because the checkpoint recorded that it never held them.
+cp -r "$plugin" ~/plugin-copy
+rm -rf "$plugin/.git"
+before_rm="$(mise dot history --json | jq -r '.[0].id')"
+assert_contains "mise dot rollback ~/.hammerspoon --to $before_rm --dry-run 2>&1" 'a separate Git repository'
+assert_succeed "mise dot rollback ~/.hammerspoon --to $before_rm --yes"
+assert "cat $plugin/init.lua" 'return {}'
+rm -rf "$plugin" && cp -r ~/plugin-copy "$plugin"
+
+# The remedy works: tracking the repository itself captures its working
+# files, and never `.git`.
+assert_succeed 'mise dot track ~/.hammerspoon/Spoons/Sky.spoon'
+assert "git --git-dir=$repo show HEAD:home/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return {}'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.hammerspoon/Spoons/Sky.spoon/.git/HEAD"
+assert_not_contains 'mise dot paths' 'nested:'
+# untracking stops managing it; it never deletes the live files, and no
+# pointer takes its place
+assert_succeed 'mise dot untrack ~/.hammerspoon/Spoons/Sky.spoon'
+assert_succeed 'mise dot save'
+assert "cat $plugin/init.lua" 'return {}'
+assert "git --git-dir=$repo ls-tree HEAD home/.hammerspoon/Spoons/Sky.spoon" ''
+
+# Another machine adopts the setup: the pointer is skipped with a reason,
+# the ordinary files arrive, and a nested repository it already has is
+# left alone.
+assert_succeed "mise dot track $MISE_CONFIG_DIR/config.toml"
+assert_succeed "mise dot origin set file://$origin --yes"
+# a pointer a previous mise left in the shared history: written straight
+# into the origin, since this version never creates one
+work="$PWD/legacy-pointer"
+git clone -q "$origin" "$work"
+git -C "$work" update-index --add --cacheinfo "160000,$sha,home/.hammerspoon/Spoons/Sky.spoon"
+tree=$(git -C "$work" write-tree)
+commit=$(git -C "$work" -c user.name=t -c user.email=t@example.com commit-tree "$tree" -p "$(git -C "$work" rev-parse HEAD)" -m 'legacy pointer')
+git -C "$work" push -q "$origin" "$commit:refs/heads/main"
+assert "git --git-dir=$origin ls-tree main home/.hammerspoon/Spoons/Sky.spoon | cut -d' ' -f1" 160000
+wrapper() {
+  local home="$1" script="$2"
+  mkdir -p "$home"
+  cat <<EOF2 >"$script"
+#!/usr/bin/env bash
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \\
+  MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \\
+  MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home" MISE_HISTORY_NOTIFY=false
+cd "\$HOME" && exec mise "\$@"
+EOF2
+  chmod +x "$script"
+}
+second="$(dirname "$HOME")/nested-second"
+wrapper "$second" "$PWD/second"
+b="$PWD/second"
+mkdir -p "$second/.hammerspoon/Spoons/Sky.spoon"
+echo 'return { second = true }' >"$second/.hammerspoon/Spoons/Sky.spoon/init.lua"
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" init -q -b main
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com add -A
+git -C "$second/.hammerspoon/Spoons/Sky.spoon" -c user.name=t -c user.email=t@example.com commit -q -m second
+assert_contains "$b bootstrap --adopt file://$origin --yes --only dotfiles 2>&1" 'skipped: a separate Git repository'
+assert "cat $second/.hammerspoon/init.lua" 'hs.alert("hello")'
+assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { second = true }'
+assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"
+assert_contains "$b dot status" 'not shared: ~/.hammerspoon/Spoons/Sky.spoon (a separate Git repository; a pointer from an older mise, skipped'
+assert "$b dot status --json | jq -r '.history.sync.pending_applications | length'" 0
+assert_succeed "$b dot sync"
+
+# A machine without the directory is not asked to create it: the pointer
+# names nothing here, so there is nothing to skip and nothing to make.
+third="$(dirname "$HOME")/nested-third"
+wrapper "$third" "$PWD/third"
+c="$PWD/third"
+assert_succeed "$c bootstrap --adopt file://$origin --yes --only dotfiles"
+assert "cat $third/.hammerspoon/init.lua" 'hs.alert("hello")'
+assert_fail "test -e $third/.hammerspoon/Spoons/Sky.spoon"
+assert_succeed "$c dot sync"
+assert_succeed "$b dot sync"
+assert_succeed "test -d $second/.hammerspoon/Spoons/Sky.spoon/.git"
+
+# Ordinary incoming files also respect a live nested checkout, even
+# when older history held only a pointer at that path.
+git -C "$work" update-index --force-remove home/.hammerspoon/Spoons/Sky.spoon
+mkdir -p "$work/home/.hammerspoon/Spoons/Sky.spoon"
+echo 'incoming replacement' >"$work/home/.hammerspoon/Spoons/Sky.spoon/init.lua"
+echo 'incoming addition' >"$work/home/.hammerspoon/Spoons/Sky.spoon/new.lua"
+git -C "$work" add home/.hammerspoon/Spoons/Sky.spoon
+git -C "$work" fetch -q origin
+tree=$(git -C "$work" write-tree)
+commit=$(git -C "$work" -c user.name=t -c user.email=t@example.com commit-tree "$tree" -p "$(git --git-dir="$origin" rev-parse main)" -m 'ordinary incoming files')
+git -C "$work" push -q "$origin" "$commit:refs/heads/main"
+assert_succeed "$b dot sync"
+assert_succeed "$b dot pull --yes"
+assert "cat $second/.hammerspoon/Spoons/Sky.spoon/init.lua" 'return { second = true }'
+assert_fail "test -e $second/.hammerspoon/Spoons/Sky.spoon/new.lua"
+assert "$b dot status --json | jq -r '.history.sync.pending_applications | length'" 0
+assert_succeed "$c dot sync"
+assert_succeed "$c dot pull --yes"
+assert "cat $third/.hammerspoon/Spoons/Sky.spoon/new.lua" 'incoming addition'

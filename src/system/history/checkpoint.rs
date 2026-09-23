@@ -615,7 +615,29 @@ impl Store {
             None => String::new(),
         };
         if let Some(repo) = &self.repo {
+            // The record is read back from Git so every machine reads the
+            // same one. Skipped repositories are the exception: nothing is
+            // written to the tree for them, and the shared commit trailer
+            // is a format older clients parse with `deny_unknown_fields`,
+            // so adding a field for them would stop those clients reading
+            // this history at all. The list stays in this machine's own
+            // record, which is where a rollback here consults it.
+            let nested = std::mem::take(&mut checkpoint.tree.coverage.nested);
+            // derived before the record is replaced, while the coverage
+            // entries that decide a path's stream are still here
+            let skipped = skipped_as_rebuilt(&checkpoint, &nested);
             checkpoint = repo.read_meta(&commit)?;
+            // The trailer carried each of them as an ordinary omission,
+            // which is how another machine learns about the skip at all.
+            // On this one the better answer has just come back, so the
+            // generic copy goes: one skip, said once, with the reason
+            // that can be acted on.
+            checkpoint
+                .tree
+                .coverage
+                .omitted
+                .retain(|omitted| !skipped.contains(&omitted.path));
+            checkpoint.tree.coverage.nested = nested;
         }
         store::write_meta_cache_in(&self.state_dir, &checkpoint)?;
         index.entries.push(IndexEntry {
@@ -872,40 +894,66 @@ struct ManualPlan {
     promote: Vec<usize>,
 }
 
-/// Tells the user what the walk left out, so a credential store under a
-/// tracked directory never looks saved. A command the user ran (a save, a
-/// baseline, a bootstrap, rollback, or undo outcome) lists each omission;
-/// the watcher's captures and the protective captures before an operation
-/// get one summary line, since they run on every edit or are followed by
-/// the outcome's full report. A baseline reports only the paths it
-/// enrolls, not omissions under entries tracked earlier.
+/// Tells the user what the walk left out, so a credential store or a
+/// nested repository under a tracked directory never looks saved. A
+/// command the user ran (a save, a baseline, a bootstrap, rollback, or
+/// Each skipped repository as the rebuilt record will spell it.
+///
+/// **One writer, so the comparison can be exact.** The skips reach the
+/// trailer as tree paths, through `Checkpoint::portable_path`, and come
+/// back as display paths through `tree_path_to_display`. The walk's own
+/// display paths are written by `display_path`, which keeps the host's
+/// separator and, off unix, does not shorten `$HOME` to `~` — so on
+/// Windows the same skip is `C:\Users\me\.native\plugin` on one side
+/// and `~/.native/plugin` on the other. Matching those two spellings is
+/// not something a comparison can be taught: folding separators would
+/// still leave the home prefix, and on unix it would call
+/// `~/a/b` and a file genuinely named `a\b` the same path. So both sides
+/// are put through the same pair of conversions and compared with `==`.
+fn skipped_as_rebuilt(
+    checkpoint: &Checkpoint,
+    nested: &[super::store::PathReason],
+) -> BTreeSet<String> {
+    nested
+        .iter()
+        .filter_map(|skip| checkpoint.portable_path(&skip.path))
+        .map(|tree_path| tree_path_to_display(&tree_path))
+        .collect()
+}
+
+/// undo outcome) lists each path; the watcher's captures and the
+/// protective captures before an operation get one summary line, since
+/// they run on every edit or are followed by the outcome's full report. A
+/// baseline reports only the paths it enrolls, not those under entries
+/// tracked earlier.
 fn report_omissions(walk: &super::tracked::Walk, draft: &Draft) {
     let trigger = draft.trigger();
     let explicit = trigger != Trigger::Edit && !draft.protective;
-    let omitted: Vec<store::PathReason> =
-        if trigger == Trigger::Baseline && !draft.explicit_paths.is_empty() {
-            let roots: Vec<String> = draft.explicit_paths.iter().map(display_path).collect();
-            walk.omitted
+    let roots: Vec<String> = if trigger == Trigger::Baseline {
+        draft.explicit_paths.iter().map(display_path).collect()
+    } else {
+        vec![]
+    };
+    let enrolled = |reported: &&store::PathReason| {
+        roots.is_empty()
+            || roots
                 .iter()
-                .filter(|omitted| {
-                    roots
-                        .iter()
-                        .any(|root| super::tracked::display_under(&omitted.path, root))
-                })
-                .cloned()
-                .collect()
-        } else {
-            walk.omitted.clone()
-        };
-    if omitted.is_empty() {
+                .any(|root| super::tracked::display_under(&reported.path, root))
+    };
+    let omitted: Vec<store::PathReason> = walk.omitted.iter().filter(enrolled).cloned().collect();
+    let nested: Vec<store::PathReason> = walk.nested.iter().filter(enrolled).cloned().collect();
+    if omitted.is_empty() && nested.is_empty() {
         return;
     }
     if explicit {
-        for line in super::tracked::omission_report(&omitted) {
+        for line in super::tracked::omission_report(&omitted, &nested) {
             warn!("history: {line}");
         }
     } else {
-        info!("history: {}", super::tracked::omission_summary(&omitted));
+        info!(
+            "history: {}",
+            super::tracked::omission_summary(&omitted, &nested)
+        );
     }
 }
 
@@ -1222,6 +1270,89 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The key the drop matches on is the string the rebuilt record will
+    /// hold, because both come from the tree path by the same route.
+    ///
+    /// This is the whole of the Windows case, checked from any host: the
+    /// trailer is written with `portable_path`, read back with
+    /// `tree_path_to_display`, and the skip is matched on the result of
+    /// exactly those two — never against `display_path`'s spelling, which
+    /// keeps the host separator and leaves `$HOME` expanded off unix.
+    #[test]
+    fn a_skip_is_matched_on_the_spelling_the_rebuilt_record_holds() {
+        let home = crate::dirs::HOME.join(".native");
+        let plugin = home.join("plugin");
+        let mut checkpoint = test_checkpoint("nested", None);
+        // built the way a capture builds it, so a coverage field added
+        // later cannot leave this test describing something else
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(
+            home.clone(),
+            "track",
+            crate::system::files::FilePolicy::for_mode(crate::system::files::FileMode::Track),
+        ));
+        checkpoint.tree.coverage = tracked.coverage(&crate::system::history::tracked::Walk {
+            entries: tracked.entries.clone(),
+            ..Default::default()
+        });
+        let skip = store::PathReason {
+            path: crate::file::display_path(&plugin),
+            reason: crate::system::history::tracked::NESTED_REPOSITORY_REASON.into(),
+        };
+        checkpoint.tree.coverage.nested.push(skip.clone());
+
+        // what the trailer carries, and what a reader rebuilds from it
+        let record = checkpoint.for_commit();
+        let rebuilt: Vec<String> = record
+            .omitted
+            .iter()
+            .map(|path| tree_path_to_display(path))
+            .collect();
+        assert_eq!(rebuilt, vec!["~/.native/plugin".to_string()]);
+
+        // the drop matches those exact strings and nothing else, so the
+        // skip is named once wherever the two display spellings differ
+        let skipped = skipped_as_rebuilt(&checkpoint, std::slice::from_ref(&skip));
+        assert_eq!(
+            skipped,
+            rebuilt.iter().cloned().collect::<BTreeSet<String>>(),
+            "the drop is not matching on what the rebuilt record holds"
+        );
+
+        // On Windows this is the whole bug: `display_path` keeps the host
+        // separator and leaves `$HOME` expanded, so the walked spelling is
+        // not the rebuilt one and matching against it left the skip in
+        // both lists. The key is derived from the tree path for that
+        // reason, and this asserts the reason rather than assuming it.
+        #[cfg(windows)]
+        {
+            assert_ne!(
+                skip.path, rebuilt[0],
+                "the two writers agree here, so the derivation is untested"
+            );
+            assert!(!skipped.contains(&skip.path));
+        }
+
+        // and nothing is folded, so a file genuinely named with a
+        // backslash is a different path from the one with a separator
+        let mut omitted = vec![
+            store::PathReason {
+                path: "~/.native/plugin".into(),
+                reason: "not captured in this commit".into(),
+            },
+            store::PathReason {
+                path: r"~/.native\plugin".into(),
+                reason: "not captured in this commit".into(),
+            },
+        ];
+        omitted.retain(|omitted| !skipped.contains(&omitted.path));
+        assert_eq!(
+            omitted.iter().map(|o| o.path.as_str()).collect::<Vec<_>>(),
+            vec![r"~/.native\plugin"],
+            "a name containing a backslash was taken for a separated path"
+        );
+    }
 
     #[test]
     fn rebuild_reuses_commit_metadata_without_retaining_removed_annotations() -> Result<()> {
