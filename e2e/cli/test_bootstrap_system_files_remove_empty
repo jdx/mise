@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "skipping: managed system files require Linux"
+  exit 0
+fi
+
+managed_file="$PWD/user-managed-system/proxy.conf"
+mkdir user-managed-system
+
+write_config() {
+  cat <<EOF >mise.toml
+[vars]
+proxy_host = "$1"
+
+[bootstrap.files."$managed_file"]
+template = true
+remove_empty = true
+content = """
+{% if vars.proxy_host %}proxy = {{ vars.proxy_host }}
+{% endif %}{% if env.EXTRA_PROXY_LINE %}extra = {{ env.EXTRA_PROXY_LINE }}
+{% endif %}"""
+EOF
+}
+
+write_config "proxy.internal:3128"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "cat '$managed_file'" "proxy = proxy.internal:3128"
+
+# Flipping the var makes the template render only whitespace, which removes
+# the file. The plan explains the removal before anything changes.
+write_config ""
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "absent (template rendered empty)"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run" "would remove file $managed_file"
+assert_succeed "test -f '$managed_file'"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert_fail "test -e '$managed_file'"
+assert_directory_exists "$PWD/user-managed-system"
+
+# A second apply with the target already gone has nothing to do.
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "absent (template rendered empty)"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert_fail "test -e '$managed_file'"
+
+# An environment variable can bring the file back without editing config.
+assert_succeed "EXTRA_PROXY_LINE=yes MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "cat '$managed_file'" "extra = yes"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert_fail "test -e '$managed_file'"
+
+# Flipping the var back recreates the file.
+write_config "proxy.internal:3128"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "cat '$managed_file'" "proxy = proxy.internal:3128"
+
+# A directory at the target is refused rather than removed.
+write_config ""
+rm "$managed_file"
+mkdir "$managed_file"
+assert_fail "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes" "refusing to remove directory"
+assert_directory_exists "$managed_file"
+
+# An entry that currently renders empty applied nothing, so unapplying the
+# environment that declares it leaves an unrelated file at the target alone.
+cat <<EOF >mise.proxy.toml
+[bootstrap.files."$PWD/module.conf"]
+template = true
+remove_empty = true
+content = "{{ env.MODULE_PROXY | default(value='') }}"
+EOF
+echo "hand-written" >"$PWD/module.conf"
+assert_contains "mise -E proxy --verbose bootstrap unapply proxy --yes 2>&1" "file $PWD/module.conf: keeping it, template rendered empty"
+assert "cat '$PWD/module.conf'" "hand-written"
+
+# remove_empty only makes sense for a rendered template.
+cat <<EOF >mise.toml
+[bootstrap.files."$managed_file"]
+remove_empty = true
+content = ""
+EOF
+assert_fail "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes" "remove_empty requires template = true"

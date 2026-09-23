@@ -104,7 +104,14 @@ pub(crate) async fn plan(
     directories.retain(|directory| !base_directory_paths.contains(&directory.path));
 
     for mut file in files {
-        if declares_absence(file.state, "file", &file.path, opts, &mut unapply) {
+        // A template that renders empty applied nothing, so like a declared
+        // absence there is nothing for unapply to undo.
+        let reason = if file.rendered_empty() {
+            "template rendered empty, nothing was applied for it"
+        } else {
+            DECLARED_ABSENT
+        };
+        if declares_absence(file.state, "file", &file.path, reason, opts, &mut unapply) {
             continue;
         }
         let Some(removal) = classify(&file.plan()?.action, "file", &file.path, opts, &mut unapply)
@@ -288,6 +295,7 @@ pub(crate) async fn plan(
             directory.state,
             "directory",
             &directory.path,
+            DECLARED_ABSENT,
             opts,
             &mut unapply,
         ) {
@@ -364,6 +372,7 @@ fn declares_absence(
     state: ManagedState,
     kind: &'static str,
     path: &Path,
+    reason: &str,
     opts: &UnapplyOpts,
     unapply: &mut Unapply,
 ) -> bool {
@@ -374,11 +383,13 @@ fn declares_absence(
         unapply.skipped.push(Skip {
             kind,
             name: path.to_string_lossy().into_owned(),
-            reason: "declared absent, nothing was applied for it".into(),
+            reason: reason.into(),
         });
     }
     true
 }
+
+const DECLARED_ABSENT: &str = "declared absent, nothing was applied for it";
 
 /// Decide whether a managed path can be removed from its current state.
 ///

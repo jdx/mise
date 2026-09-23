@@ -4551,6 +4551,10 @@
               "template": {
                 "type": "boolean"
               },
+              "remove_empty": {
+                "type": "boolean",
+                "description": "remove the target when the template renders to empty or whitespace-only content; requires template = true"
+              },
               "state": {
                 "type": "string",
                 "enum": ["present", "absent"]
