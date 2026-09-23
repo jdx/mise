@@ -3984,6 +3984,8 @@ re-resolved against the latest matching remote versions, so the lockfile
 advances without installing anything. Config files are never modified:
 exactly pinned versions resolve to themselves and stay unchanged
 (use `mise upgrade --bump` to rewrite pins in mise.toml).
+If the remote versions cannot be fetched, it fails rather than keep
+the locked version.
 """#
     }
     flag --json help="Output version changes as JSON" {

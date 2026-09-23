@@ -296,6 +296,7 @@ impl Upgrade {
         let opts = ResolveOptions {
             use_locked_version: false,
             latest_versions: true,
+            latest_versions_for_all_requests: false,
             resolve_rolling_channels: false,
             prefer_exact_version: false,
             before_date,
@@ -639,6 +640,7 @@ impl Upgrade {
             resolve_options: ResolveOptions {
                 use_locked_version: false,
                 latest_versions: true,
+                latest_versions_for_all_requests: false,
                 resolve_rolling_channels: false,
                 prefer_exact_version: false,
                 before_date,

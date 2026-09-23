@@ -10,7 +10,9 @@ use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
 use crate::task::Task;
-use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
+use crate::toolset::{
+    ResolveOptions, ToolRequest, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
@@ -151,6 +153,8 @@ pub(crate) struct Lock {
     /// advances without installing anything. Config files are never modified:
     /// exactly pinned versions resolve to themselves and stay unchanged
     /// (use `mise upgrade --bump` to rewrite pins in mise.toml).
+    /// If the remote versions cannot be fetched, it fails rather than keep
+    /// the locked version.
     #[usage(long, verbatim_doc_comment)]
     pub bump: bool,
 
@@ -391,6 +395,7 @@ impl Lock {
             before_date,
             filter_installed_versions_by_release_date: true,
             latest_versions: self.bump,
+            latest_versions_for_all_requests: self.bump,
             use_locked_version: !self.bump,
             // Lock moving channels to their current concrete value without making
             // ordinary `latest` requests ignore an installed concrete version.
@@ -1914,20 +1919,44 @@ impl Lock {
                         .ok()
                         .and_then(|request| request.resolve_options(context.resolve_options).ok());
                     let is_rolling = backend
+                        .as_ref()
                         .is_some_and(|backend| backend.is_rolling_channel(&effective_version));
+                    // An installed exact pin resolves to itself, so `--bump` has
+                    // nothing to look up for it. `latest` and rolling channels are
+                    // selectors even when a directory by that name is installed.
+                    let installed_exact = !is_rolling
+                        && effective_version != "latest"
+                        && backend.is_some_and(|backend| {
+                            backend
+                                .list_installed_versions()
+                                .contains(&effective_version)
+                        });
                     if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
                         && (self.bump || resolve_options.before_date.is_some() || is_rolling)
                     {
-                        resolve_options.use_locked_version = false;
-                        resolve_options.latest_versions = true;
-                        match request.resolve(config, &resolve_options).await {
-                            Ok(resolved_tv) => tv = resolved_tv,
-                            Err(err) if is_rolling => {
-                                return Err(err.wrap_err(format!(
-                                    "failed to resolve specified rolling channel {request}"
-                                )));
+                        if self.bump && installed_exact {
+                            // The request itself, not the configured tool's, so an
+                            // alias is locked as the version it resolved to.
+                            tv = ToolVersion::new(request, effective_version);
+                        } else {
+                            resolve_options.use_locked_version = false;
+                            resolve_options.latest_versions = true;
+                            match request.resolve(config, &resolve_options).await {
+                                Ok(resolved_tv) => tv = resolved_tv,
+                                Err(err) if is_rolling => {
+                                    return Err(err.wrap_err(format!(
+                                        "failed to resolve specified rolling channel {request}"
+                                    )));
+                                }
+                                // Keeping the locked version would report success for a
+                                // bump that never looked at the remote versions.
+                                Err(err) if self.bump => {
+                                    return Err(err.wrap_err(format!(
+                                        "failed to resolve {request} for `mise lock --bump`"
+                                    )));
+                                }
+                                Err(err) => debug!("failed to resolve specified {request}: {err}"),
                             }
-                            Err(err) => debug!("failed to resolve specified {request}: {err}"),
                         }
                     } else if version == "latest" {
                         if let Some(latest_version) = crate::backend::get(&ba)
