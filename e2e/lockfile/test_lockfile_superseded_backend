@@ -123,3 +123,15 @@ assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "[tools.hk.\"platforms.$MISE_PL
 assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'placeholder'
 # the relock kept the lockfile's one platform instead of the common defaults
 assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'platforms.windows-x64'
+
+echo "=== a global lockfile already switched does not unlock the project's backend ==="
+# The global lockfile now locks hk on packslip; the project's own entries,
+# all on aqua, still decide its backend when --bump picks a new version.
+cat <<'TOML' >mise.toml
+[tools]
+hk = "1"
+TOML
+reset_lockfile
+mise lock --bump hk --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'version = "1.58.1"'
+assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
