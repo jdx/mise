@@ -1263,7 +1263,15 @@ impl State {
 /// links themselves so dangling links remain observable. Targets are not enrolled.
 fn watched_set(tracked: &TrackedSet) -> Result<(TrackedSet, Vec<PathBuf>)> {
     let walk = tracked.walk()?;
-    walk.report_warnings();
+    // Keep scan diagnostics from detached startup and reload walks.
+    // Capture warnings belong to the save path, after the snapshot is durable.
+    for warning in &walk.warnings {
+        let message = format!("history: {warning}");
+        if let Err(err) = crate::system::history::notices::record(&message) {
+            warn!("{message}");
+            debug!("history: could not keep the notice: {err}");
+        }
+    }
     // Rediscover dangling links on startup without enrolling their targets.
     let links = walk
         .files

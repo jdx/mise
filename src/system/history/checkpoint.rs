@@ -262,7 +262,12 @@ impl Store {
             }
             Err(err) => return Err(err),
         };
-        walk.report_warnings();
+        let scan_notices: Vec<_> = walk
+            .warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        self.deliver_capture_notices(&scan_notices, !draft.protective && heard(&draft));
         report_omissions(&walk, &draft);
         // manual-save entries: carried forward from their promoted version
         // unless named explicitly (promoted) or captured protectively
@@ -595,7 +600,37 @@ impl Store {
             changes,
             operation,
         };
-        let entry = self.commit_record_locked(checkpoint, index, reserved_id)?;
+        let mut messages: Vec<String> = walk
+            .capture_warnings
+            .iter()
+            .map(|warning| format!("history: {warning}"))
+            .collect();
+        if available
+            && snapshot.is_some()
+            && let Some(repo) = &self.repo
+        {
+            let previous_commit = previous_tree
+                .as_ref()
+                .and_then(|(checkpoint, _)| {
+                    index
+                        .entries
+                        .iter()
+                        .rev()
+                        .find(|entry| entry.uuid == checkpoint.uuid)
+                })
+                .map(|entry| entry.commit.as_str());
+            match narrowed_notices(repo, previous_commit, tracked) {
+                Ok(narrowed) => messages.extend(narrowed),
+                Err(err) => debug!("history: could not compare the previous selection: {err:#}"),
+            }
+        }
+        let entry = self.commit_record_locked(
+            checkpoint,
+            index,
+            reserved_id,
+            &messages,
+            !draft.protective && heard(&draft),
+        )?;
         if available
             && snapshot.is_some()
             && let Some(repo) = &self.repo
@@ -605,12 +640,28 @@ impl Store {
         Ok(Outcome::Created(entry))
     }
 
+    fn deliver_capture_notices(&self, messages: &[String], speak: bool) {
+        for message in messages {
+            if speak {
+                super::notices::say(message);
+            } else if let Err(err) = super::notices::record_in(&self.state_dir, message) {
+                super::notices::say(message);
+                debug!("history: could not keep the notice: {err}");
+            }
+        }
+        if speak && let Err(err) = super::notices::forget_in(&self.state_dir, messages) {
+            debug!("history: could not take back the said notices: {err}");
+        }
+    }
+
     /// Append one ordinary record while the store lock is held.
     fn commit_record_locked(
         &self,
         mut checkpoint: Checkpoint,
         mut index: Index,
         reserved_id: Option<u64>,
+        messages: &[String],
+        speak: bool,
     ) -> Result<Box<Entry>> {
         let id = reserved_id.unwrap_or_else(|| {
             let id = index.next_id.max(1);
@@ -618,9 +669,31 @@ impl Store {
             id
         });
         let commit = match &self.repo {
-            Some(repo) => repo
-                .write_checkpoint(checkpoint.tree.snapshot.as_deref(), &checkpoint)
-                .wrap_err("writing the checkpoint")?,
+            Some(repo) => {
+                let parent = repo.ref_oid(HistoryRepo::HISTORY_REF)?;
+                let commit = repo
+                    .write_checkpoint_commit(checkpoint.tree.snapshot.as_deref(), &checkpoint)
+                    .wrap_err("writing the checkpoint")?;
+                let advanced = repo.update_history_head(&commit, parent.as_deref());
+                // Updating the ref makes the snapshot durable. Even a later
+                // symbolic-HEAD, metadata-cache, index, or enrollment failure
+                // must not lose its warnings. A failed snapshot can still
+                // produce a journal record, but did not capture these files.
+                if checkpoint.tree.available
+                    && checkpoint.tree.snapshot.is_some()
+                    && (advanced.is_ok()
+                        || repo
+                            .ref_oid(HistoryRepo::HISTORY_REF)
+                            .ok()
+                            .flatten()
+                            .as_deref()
+                            == Some(commit.as_str()))
+                {
+                    self.deliver_capture_notices(messages, speak);
+                }
+                advanced.wrap_err("advancing the checkpoint")?;
+                commit
+            }
             None => String::new(),
         };
         if let Some(repo) = &self.repo {
@@ -996,6 +1069,89 @@ fn under_entry(path: &str, entry: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
+/// Explicit capture triggers report inline. Other triggers may run in
+/// the background and queue notices; foreground dotfiles and bootstrap
+/// commands drain that queue on both success and failure.
+fn heard(draft: &Draft) -> bool {
+    matches!(
+        draft.trigger,
+        Some(
+            store::Trigger::Save
+                | store::Trigger::Capture
+                | store::Trigger::Agent
+                | store::Trigger::Update
+                | store::Trigger::Baseline
+                | store::Trigger::BootstrapBefore
+                | store::Trigger::Bootstrap
+        )
+    )
+}
+
+/// Says how much an entry's `include` list now leaves out of what an
+/// earlier checkpoint held.
+///
+/// Narrowing a list drops paths already in history from every checkpoint
+/// after it. That is what the user asked for, but it happens silently —
+/// nothing about the tree changed — so it is said at the point of change.
+///
+/// **There is exactly one opportunity to say it, and it is taken
+/// whatever caused the save.** The checkpoint that applies the narrowing
+/// is the last one whose parent still holds those paths; from the next
+/// one on there is nothing left to compare against and the drop can
+/// never be reported. Which command ran is not something the paths care
+/// about, and the watcher saving first is not a reason for the user to
+/// hear nothing — so a `mise dot save`, a `mise dot track` applying a
+/// hand-edited list, and the watcher's own save all report it. It cannot
+/// repeat: the narrowing changes the tree, so the checkpoint is written,
+/// and the next parent is the narrowed one.
+fn narrowed_notices(
+    repo: &HistoryRepo,
+    parent_commit: Option<&str>,
+    tracked: &TrackedSet,
+) -> Result<Vec<String>> {
+    let Some(parent) = parent_commit else {
+        return Ok(vec![]);
+    };
+    if tracked.entries.iter().all(|entry| entry.include.is_none()) {
+        return Ok(vec![]);
+    }
+    // **Nothing narrowed, nothing to scan.** The lists are recorded with
+    // the checkpoint, so the cheap question — are this save's enrollment
+    // and `include` values the ones the parent already holds? — is
+    // answered from the manifest, and only a difference pays for a walk
+    // of the parent tree. An entry added or removed counts as a
+    // difference, because either can change what an existing entry owns.
+    if let Some(previous) = super::manifest::Manifest::read(repo, parent)? {
+        let selection = |manifest: &super::manifest::Manifest| {
+            manifest
+                .enrollment
+                .iter()
+                .map(|entry| (entry.path.clone(), entry.include.clone()))
+                .collect::<Vec<_>>()
+        };
+        if selection(&previous) == selection(&tracked.manifest) {
+            return Ok(vec![]);
+        }
+    }
+    let roots = super::sync::layout::Roots::current();
+    let mut dropped: BTreeMap<String, u64> = BTreeMap::new();
+    for file in repo.ls_tree(parent)? {
+        let located = roots.locate(&file.path);
+        let Some(path) = located.path() else { continue };
+        let Some(entry) = tracked.entry_for(path) else {
+            continue;
+        };
+        if entry.include.is_none() || entry.is_included(path) {
+            continue;
+        }
+        *dropped.entry(entry.display()).or_default() += 1;
+    }
+    let previous = super::short(parent);
+    Ok(dropped.into_iter().map(|(entry, count)| format!(
+        "history: {entry}: its include list leaves out {count} path(s) held by checkpoint {previous}; they are no longer saved"
+    )).collect())
+}
+
 /// A failed observation is not evidence of deletion. Carry only saved objects
 /// still permitted by explicit enrollment and exclusions; successful reads win.
 fn retain_omitted(
@@ -1275,6 +1431,65 @@ pub(crate) fn test_checkpoint(uuid: &str, snapshot: Option<&str>) -> Checkpoint 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_notices_survive_a_metadata_cache_failure() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let store = Store::open_in(temp.path())?;
+        let repo = store.repo().expect("git is required for checkpoint tests");
+        let tree = repo.empty_object("tree")?;
+        let checkpoint = test_checkpoint("cache-failure", Some(&tree));
+        let cache = store::meta_cache_path_in(temp.path(), &checkpoint.uuid);
+        let cache_dir = cache.parent().unwrap();
+        if cache_dir.exists() {
+            std::fs::remove_dir_all(cache_dir)?;
+        }
+        std::fs::write(cache_dir, b"not a directory")?;
+        let notice = "history: synthetic credential saved in plaintext".to_string();
+        assert!(
+            store
+                .commit_record_locked(
+                    checkpoint,
+                    Index::default(),
+                    None,
+                    std::slice::from_ref(&notice),
+                    false
+                )
+                .is_err()
+        );
+        assert!(repo.ref_oid(HistoryRepo::HISTORY_REF)?.is_some());
+        let pending = std::fs::read_to_string(store::store_dir_in(temp.path()).join("notices"))?;
+        assert!(pending.contains(&notice));
+        Ok(())
+    }
+
+    #[test]
+    fn failed_snapshots_and_failed_commits_do_not_report_capture() -> Result<()> {
+        for fail_commit in [false, true] {
+            let temp = tempfile::tempdir()?;
+            let store = Store::open_in(temp.path())?;
+            let repo = store.repo().expect("git is required for checkpoint tests");
+            let tree = repo.empty_object("tree")?;
+            let checkpoint =
+                test_checkpoint("failed-capture", fail_commit.then_some(tree.as_str()));
+            if fail_commit {
+                let lock = HistoryRepo::path_in(temp.path())
+                    .join(format!("{}.lock", HistoryRepo::HISTORY_REF));
+                std::fs::create_dir_all(lock.parent().unwrap())?;
+                std::fs::write(lock, b"locked")?;
+            }
+            let result = store.commit_record_locked(
+                checkpoint,
+                Index::default(),
+                None,
+                &["history: synthetic credential saved in plaintext".into()],
+                false,
+            );
+            assert_eq!(result.is_err(), fail_commit);
+            assert!(!store::store_dir_in(temp.path()).join("notices").exists());
+        }
+        Ok(())
+    }
 
     /// The key the drop matches on is the string the rebuilt record will
     /// hold, because both come from the tree path by the same route.
