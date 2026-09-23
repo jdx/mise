@@ -94,6 +94,21 @@ one privileged batch. Plans and file content are sent to narrowly scoped mise
 helpers over stdin, so file content does not appear in process arguments or
 logs.
 
+How mise resolves a file's path depends on who makes the change. A change the
+current user can make is made as that user, and symlinked parent directories
+are followed like any other path they open, so `~/.ssh/config` works when
+`~/.ssh` is a symlink. A change made as root, such as one that declares `owner`
+or `group` or writes into a directory the user cannot modify, resolves the
+parent directories one at a time, then inspects, writes, renames, or removes
+the file relative to the directory it opened. A symlink in a directory owned by
+root that no other user can write is followed, as `/etc` is on macOS. Any other
+symlinked parent directory is refused, because a user who could write that
+directory could otherwise redirect root's change to a file such as
+`/etc/shadow`. When mise itself runs as root, every file is inspected and
+changed this way. Status and dry-run report such a file as `unknown` with the
+symlink it crosses, and apply fails with the same reason. Declare the resolved
+path instead.
+
 ## Permissions without content
 
 Leave out `source` and `content` to manage a file's mode, owner, or group while
@@ -127,18 +142,11 @@ These entries never create, replace, or remove the file:
 
 `notify` fires when mise changes the file's permissions.
 
-How mise resolves the path depends on who makes the change. A mode change to
-a file the current user owns is made as that user, and symlinked parent
-directories are followed like any other path they open, so
-`~/.ssh/config` works when `~/.ssh` is a symlink. A change that needs root,
-such as a declared `owner` or `group` or a mode change to another user's file,
-resolves the parent directories one at a time. A symlink in a directory owned by
-root that no other user can write is followed, as `/etc` is on macOS. Any other
-symlinked parent directory is refused, because a user who could write that
-directory could otherwise redirect root's change to a file such as
-`/etc/shadow`. Status and dry-run report such an entry as `unknown` with the
-reason, and apply warns and leaves the file unchanged. Declare the resolved
-path instead.
+A mode change to a file the current user owns is made as that user; a
+declared `owner` or `group`, or a mode change to another user's file, is made
+as root. Parent directories are resolved as described above, except that apply
+warns and leaves the file unchanged instead of failing when root would cross an
+untrusted symlink.
 
 ## Files before packages
 
