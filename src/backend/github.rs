@@ -1660,7 +1660,9 @@ impl UnifiedGitBackend {
             .get(&platform_key)
             .and_then(|platform| platform.provenance.clone());
 
-        self.verify_checksum(ctx, tv, &file_path)?;
+        if let Err(err) = self.verify_checksum(ctx, tv, &file_path) {
+            return Err(github::with_checksum_mismatch_note(err, &asset.url, &file_path).await);
+        }
 
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
@@ -3481,6 +3483,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                     browser_download_url: format!("https://example.com/{name}"),
                     url: format!("https://api.example.com/{name}"),
                     digest: None,
+                    updated_at: None,
                 })
                 .collect(),
         }

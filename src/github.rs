@@ -9,7 +9,7 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{LazyLock as Lazy, Mutex};
 use tokio::sync::RwLock;
 use tokio::sync::RwLockReadGuard;
@@ -83,6 +83,10 @@ pub(crate) struct GithubAsset {
     /// Will be null for releases created before this feature was added
     #[serde(default)]
     pub digest: Option<String>,
+    /// When the asset was last uploaded; later than the release's
+    /// `published_at` when the maintainer replaced it after publishing.
+    #[serde(default)]
+    pub updated_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -731,6 +735,83 @@ pub(crate) fn release_asset_from_url(url: &str) -> Option<(String, String, Strin
     Some((format!("{owner}/{repo}"), tag, asset))
 }
 
+/// Explain a checksum mismatch on a GitHub release asset whose upstream bytes
+/// changed after the expected checksum was recorded.
+///
+/// Only runs once verification has already failed, so it asks GitHub directly
+/// and skips the release cache and mise-versions: either may still hold the
+/// digest of the replaced upload. `None` when `download_url` is not a
+/// github.com release download, the lookup fails, or GitHub's current digest
+/// does not match the downloaded file.
+pub(crate) async fn checksum_mismatch_note(download_url: &str, file: &Path) -> Option<String> {
+    let (repo, tag, asset_name) = release_asset_from_url(download_url)?;
+    let release = match get_release_with_options(API_URL, &repo, &tag, false).await {
+        Ok(release) => release,
+        Err(err) => {
+            debug!("failed to check GitHub release {repo}@{tag} after checksum mismatch: {err:#}");
+            return None;
+        }
+    };
+    let actual = match crate::hash::file_hash_sha256(file, None) {
+        Ok(actual) => actual,
+        Err(err) => {
+            debug!(
+                "failed to hash {} after checksum mismatch: {err:#}",
+                file.display()
+            );
+            return None;
+        }
+    };
+    replaced_asset_note(&repo, &release, &asset_name, &actual)
+}
+
+/// Append [`checksum_mismatch_note`] to a failed verification, if it applies.
+///
+/// Install failures are rendered with `{:#}`, which drops color-eyre sections,
+/// so the hint goes into the message itself.
+pub(crate) async fn with_checksum_mismatch_note(
+    err: eyre::Report,
+    download_url: &str,
+    file: &Path,
+) -> eyre::Report {
+    match checksum_mismatch_note(download_url, file).await {
+        Some(note) => eyre::eyre!("{err:#}\nhint: {note}"),
+        None => err,
+    }
+}
+
+fn replaced_asset_note(
+    repo: &str,
+    release: &GithubRelease,
+    asset_name: &str,
+    actual_sha256: &str,
+) -> Option<String> {
+    let asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == asset_name)?;
+    let digest = asset.digest.as_deref()?;
+    if !digest
+        .strip_prefix("sha256:")
+        .is_some_and(|hash| hash.eq_ignore_ascii_case(actual_sha256))
+    {
+        return None;
+    }
+    let tag = &release.tag_name;
+    let timing = match (&asset.updated_at, &release.published_at) {
+        (Some(updated_at), Some(published_at)) => {
+            format!(" (asset updated {updated_at}, release published {published_at})")
+        }
+        (Some(updated_at), None) => format!(" (asset updated {updated_at})"),
+        _ => String::new(),
+    };
+    Some(format!(
+        "GitHub's current digest for {asset_name} in {repo} {tag} matches this download{timing}, \
+         so the expected checksum is out of date: the maintainer likely re-uploaded the asset. \
+         If you trust the new upload, update the checksum in mise.lock."
+    ))
+}
+
 /// The API endpoint that serves the release asset a browser-facing URL names.
 ///
 /// A private repository answers `github.com/.../releases/download/...` with 404
@@ -1125,6 +1206,51 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn replaced_release(digest: Option<&str>) -> GithubRelease {
+        GithubRelease {
+            tag_name: "v0.2.76".to_string(),
+            draft: false,
+            prerelease: false,
+            created_at: "2026-09-23T01:40:00Z".to_string(),
+            published_at: Some("2026-09-23T01:45:05Z".to_string()),
+            assets: vec![GithubAsset {
+                name: "rumdl.tar.gz".to_string(),
+                browser_download_url: String::new(),
+                url: String::new(),
+                digest: digest.map(str::to_string),
+                updated_at: Some("2026-09-23T08:25:23Z".to_string()),
+            }],
+        }
+    }
+
+    #[test]
+    fn test_replaced_asset_note_when_github_digest_matches_download() {
+        let release = replaced_release(Some("sha256:90A8"));
+        let note = replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8").unwrap();
+        assert!(note.contains("rumdl.tar.gz in rvben/rumdl v0.2.76 matches this download"));
+        assert!(note.contains(
+            "(asset updated 2026-09-23T08:25:23Z, release published 2026-09-23T01:45:05Z)"
+        ));
+    }
+
+    #[test]
+    fn test_replaced_asset_note_skips_when_download_differs_from_github() {
+        let release = replaced_release(Some("sha256:90a8"));
+        assert_eq!(
+            replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "3a02"),
+            None
+        );
+        let release = replaced_release(None);
+        assert_eq!(
+            replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8"),
+            None
+        );
+        assert_eq!(
+            replaced_asset_note("rvben/rumdl", &release, "other.tar.gz", "90a8"),
+            None
+        );
+    }
 
     const ASSET_API_URL: &str = "https://api.github.com/repos/o/r/releases/assets/1";
 
@@ -1651,6 +1777,7 @@ something_else = "value"
             browser_download_url: format!("https://example.invalid/{name}"),
             url: format!("https://example.invalid/api/{name}"),
             digest: None,
+            updated_at: None,
         }
     }
 
@@ -1821,6 +1948,7 @@ something_else = "value"
             browser_download_url: format!("https://github.com/owner/repo/releases/download/{name}"),
             url: format!("https://api.github.com/repos/owner/repo/releases/assets/{name}"),
             digest: None,
+            updated_at: None,
         }
     }
 
