@@ -114,8 +114,12 @@ export default {
       registry[key] = {
         short: key,
         // Prefer the registry's `url`; the backend URLs are guesses from the backend
-        // slug, and some backends (such as http) have none.
-        url: tool.url || backends.find((backend) => backend.url)?.url || "",
+        // slug, and some backends (such as http) have none. Only http(s) links are
+        // rendered, matching the check build.rs applies to `url`.
+        url:
+          [tool.url, ...backends.map((backend) => backend.url)].find((url) =>
+            /^https?:\/\/[^{}\s]+$/.test(url ?? ""),
+          ) ?? "",
         backends,
         aliases: tool.aliases ?? [],
         os: tool.os ?? [],
