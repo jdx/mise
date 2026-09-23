@@ -25,7 +25,7 @@ pub(crate) enum MatchType {
 /// Prefix NAME with a backend to also search that backend's package registry:
 /// `npm:`, `cargo:`, `gem:`, or `dotnet:`. Use `--all` to search every backend,
 /// including all of those package registries. Otherwise, unprefixed searches do
-/// not use the network.
+/// not query package registries.
 ///
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.

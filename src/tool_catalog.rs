@@ -143,7 +143,7 @@ pub(crate) async fn search(query: &str) -> Vec<ToolCatalogEntry> {
 /// Searches built-in backends' package registries. A `backend:query` search,
 /// e.g. `npm:prettier`, searches that backend's registry. An unprefixed query
 /// searches every registry when `all` is set and none otherwise, so plain
-/// searches and shell completion stay offline.
+/// searches and shell completion never query package registries.
 pub(crate) async fn search_package_registry(query: &str, all: bool) -> Vec<ToolCatalogEntry> {
     match query.split_once(':') {
         Some((backend, query)) => search_backend_registry(backend, query, SEARCH_LIMIT).await,
