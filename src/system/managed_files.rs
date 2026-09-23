@@ -3286,8 +3286,8 @@ mod tests {
             return;
         }
         let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o7777;
-        let temp = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
+        let temp = ResolvedTempDir::new();
+        let outside = ResolvedTempDir::new();
         let target = outside.path().join("config");
         fs::write(&target, "content").unwrap();
         fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
@@ -3366,6 +3366,28 @@ mod tests {
         );
     }
 
+    /// A temporary directory addressed by its resolved path. macOS keeps them
+    /// under `/var`, a root-owned symlink to `/private/var` that the strict walk
+    /// follows, so symlinks past it are reported by their resolved paths.
+    #[cfg(unix)]
+    struct ResolvedTempDir {
+        _dir: tempfile::TempDir,
+        path: PathBuf,
+    }
+
+    #[cfg(unix)]
+    impl ResolvedTempDir {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let path = fs::canonicalize(dir.path()).unwrap();
+            Self { _dir: dir, path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
     #[test]
     fn untrusted_parents_plan_as_unknown_and_refuse_to_apply() {
         let untrusted = || {
@@ -3413,8 +3435,8 @@ mod tests {
             .unwrap()
             .unwrap()
             .name;
-        let temp = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
+        let temp = ResolvedTempDir::new();
+        let outside = ResolvedTempDir::new();
         let linked = temp.path().join("linked");
         std::os::unix::fs::symlink(outside.path(), &linked).unwrap();
         let existing = linked.join("existing");
@@ -3566,8 +3588,8 @@ mod tests {
         if nix::unistd::geteuid().is_root() {
             return;
         }
-        let temp = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
+        let temp = ResolvedTempDir::new();
+        let outside = ResolvedTempDir::new();
         let target = outside.path().join("config");
         fs::write(&target, "original").unwrap();
         let linked = temp.path().join("linked");
@@ -3628,7 +3650,7 @@ mod tests {
     fn strict_file_operations_match_the_by_path_versions() {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-        let temp = tempfile::tempdir().unwrap();
+        let temp = ResolvedTempDir::new();
         let path = temp.path().join("config");
         let inspect = |content: &str| {
             inspect_path_strictly(
