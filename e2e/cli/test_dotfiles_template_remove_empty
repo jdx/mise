@@ -64,6 +64,9 @@ assert_fail "test -e $HOME/.blank"
 # the ownership record lives in the state directory: a machine that never
 # wrote the file has none, so its content is not mise's to remove
 rm -rf "$MISE_STATE_DIR/dotfiles/targets"
+# ~/.config/app went with the removal: mise created it and it was left empty
+assert_fail "test -e $HOME/.config/app"
+mkdir -p "$HOME/.config/app"
 echo "work = true" >"$target"
 assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
 assert_contains "cat $target" "work = true"

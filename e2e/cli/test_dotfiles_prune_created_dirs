@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Directories mise creates for a single-file target are removed with the
+# target once they are empty. Directories that were already there, or that
+# hold anything else, stay. Each scenario uses its own directory under
+# ~/.config and its own mise.toml.
+require_cmd git
+
+mkdir -p dotfiles dotfiles/empty "$HOME/.config"
+cat <<'EOF' >dotfiles/work.toml.tera
+{% if env.WORK == "1" %}
+work = true
+{% endif %}
+EOF
+echo "copied" >dotfiles/copied
+
+# a template that renders empty takes the directories mise created along
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/newapp/sub/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+target="$HOME/.config/newapp/sub/work.toml"
+assert_succeed "WORK=1 mise dot apply --yes"
+assert_contains "cat $target" "work = true"
+# tracked, so undo can bring it back
+assert_succeed "mise dot track ~/.config/newapp/sub/work.toml"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/.config/newapp"
+# the parent that was already there stays
+assert_succeed "test -d $HOME/.config"
+# undo recreates the directories along with the file. It does not restore
+# the record, so removing the file again leaves them.
+assert_succeed "mise dot undo --yes"
+assert_contains "cat $target" "work = true"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+assert_succeed "test -d $HOME/.config/newapp/sub"
+
+# a parent holding an unrelated file stays; the empty one below it goes
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/notesapp/sub/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+notesapp="$HOME/.config/notesapp"
+assert_succeed "WORK=1 mise dot apply --yes"
+echo "mine" >"$notesapp/notes.txt"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $notesapp/sub"
+assert_contains "cat $notesapp/notes.txt" "mine"
+# the record keeps the directory it could not remove and adds the ones a
+# later apply creates, so both go once the user's file is gone
+rm "$notesapp/notes.txt"
+assert_succeed "WORK=1 mise dot apply --yes"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $notesapp"
+
+# unapplying a target that is already gone still removes the directories
+# mise created for it once they are empty
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/leftapp/sub/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+leftapp="$HOME/.config/leftapp"
+assert_succeed "WORK=1 mise dot apply --yes"
+echo "mine" >"$leftapp/notes.txt"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $leftapp/sub"
+rm "$leftapp/notes.txt"
+assert_succeed "mise dot unapply --yes"
+assert_fail "test -e $leftapp"
+
+# a target mise cannot read is removed with --force, and its created
+# directories go with it
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/lockedapp/sub/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+assert_succeed "WORK=1 mise dot apply --yes"
+chmod 000 "$HOME/.config/lockedapp/sub/work.toml"
+assert_succeed "mise dot apply --yes --force"
+assert_fail "test -e $HOME/.config/lockedapp"
+
+# a record written before mise recorded directories removes none
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/oldapp/sub/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+assert_succeed "WORK=1 mise dot apply --yes"
+for record in "$MISE_STATE_DIR"/dotfiles/targets/*.toml; do
+  awk '/^created_dirs/ { exit } { print }' "$record" >"$record.old"
+  mv "$record.old" "$record"
+done
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/.config/oldapp/sub/work.toml"
+assert_succeed "test -d $HOME/.config/oldapp/sub"
+
+# sibling targets removed in one apply take their shared parent along,
+# whichever of them created it and whichever is removed first. Only a.toml
+# exists at first, so it alone records the directory.
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/pair1/a.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+"~/.config/pair2/a.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+assert_succeed "WORK=1 mise dot apply --yes"
+# pair1 removes its creator first, pair2 removes it last
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/pair1/a.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+"~/.config/pair1/b.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+"~/.config/pair2/b.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+"~/.config/pair2/a.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+assert_succeed "WORK=1 mise dot apply --yes"
+assert_contains "cat $HOME/.config/pair1/b.toml" "work = true"
+assert_contains "cat $HOME/.config/pair2/b.toml" "work = true"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/.config/pair1"
+assert_fail "test -e $HOME/.config/pair2"
+
+# unapplying a copy into a fresh nested directory removes what mise created
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/copyapp/deep/copied" = { source = "dotfiles/copied", mode = "copy" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $HOME/.config/copyapp/deep/copied" "copied"
+assert_succeed "mise dot track ~/.config/copyapp/deep/copied"
+assert_contains "mise dot unapply --dry-run" "rmdir ~/.config/copyapp/deep (if empty)"
+assert_contains "mise dot unapply --dry-run" "rmdir ~/.config/copyapp (if empty)"
+assert_succeed "test -d $HOME/.config/copyapp/deep"
+assert_succeed "mise dot unapply --yes"
+assert_fail "test -e $HOME/.config/copyapp"
+assert_succeed "test -d $HOME/.config"
+# and undo restores them
+assert_succeed "mise dot undo --yes"
+assert_contains "cat $HOME/.config/copyapp/deep/copied" "copied"
+
+# a copy the user deleted by hand: unapply still removes the directories mise
+# created for it and clears its record
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/handapp/deep/copied" = { source = "dotfiles/copied", mode = "copy" }
+EOF
+assert_succeed "mise dot apply --yes"
+rm "$HOME/.config/handapp/deep/copied"
+assert_contains "mise dot unapply --dry-run" "rmdir ~/.config/handapp/deep (if empty)"
+assert_succeed "mise dot unapply --yes"
+assert_fail "test -e $HOME/.config/handapp"
+# the record went with it: nothing is left to unapply
+assert_contains "mise dot unapply --yes 2>&1" "all files are unapplied"
+
+# a copy changed to mode = "absent": the file goes and so do the directories
+# mise created for it
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/goneapp/deep/copied" = { source = "dotfiles/copied", mode = "copy" }
+EOF
+assert_succeed "mise dot apply --yes"
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/goneapp/deep/copied" = { mode = "absent" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $HOME/.config/goneapp"
+assert_succeed "test -d $HOME/.config"
+
+# a directory another entry still needs stays, even when mise created it
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/claimapp/deep/copied" = { source = "dotfiles/copied", mode = "copy" }
+EOF
+assert_succeed "mise dot apply --yes"
+cat <<'EOF' >>mise.toml
+"~/.config/claimapp/deep" = { source = "dotfiles/empty", mode = "symlink-each" }
+EOF
+assert_succeed "mise dot unapply --yes ~/.config/claimapp/deep/copied"
+assert_fail "test -e $HOME/.config/claimapp/deep/copied"
+assert_succeed "test -d $HOME/.config/claimapp/deep"

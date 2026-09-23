@@ -564,7 +564,7 @@ pub(crate) async fn execute(
         edits::execute_unapply(&edit_plan, &edit_opts)?;
     }
     if !unapply.dotfiles.is_empty() {
-        files::execute_unapply(&dotfile_plan, &dotfile_opts)?;
+        files::execute_unapply(config, &dotfile_plan, &dotfile_opts)?;
     }
 
     if !unapply.files.is_empty() || !unapply.directories.is_empty() {

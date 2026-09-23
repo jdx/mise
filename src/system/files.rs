@@ -20,7 +20,7 @@
 //! (global -> local, local overrides by target key) and are only ever
 //! applied by an explicit command, never implicitly.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -540,6 +540,11 @@ struct TargetState {
     target: PathBuf,
     /// sha256 of the content mise last wrote to the target
     content_digest: Option<String>,
+    /// directories mise created to hold the target. Only these are removed
+    /// with the target, and only once they are empty; a record without them
+    /// (or from an older mise) removes none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    created_dirs: Vec<PathBuf>,
 }
 
 /// What an empty template render means for the target currently on disk.
@@ -2718,11 +2723,33 @@ fn load_target_state(req: &FileRequest) -> Option<TargetState> {
 /// Record `content` as what mise last wrote to `req`'s target. A record that
 /// cannot be written only costs a later `--force`, so it warns.
 fn save_target_state(req: &FileRequest, content: &str) {
+    update_target_state(req, |state| {
+        state.content_digest = Some(content_digest(content));
+    });
+}
+
+/// Add `created` to the directories recorded as mise's for `req`'s target,
+/// keeping those recorded by earlier applies. A record that cannot be written
+/// only leaves the directories in place later, so it warns.
+fn record_created_dirs(req: &FileRequest, created: &[PathBuf]) {
+    if created.is_empty() {
+        return;
+    }
+    update_target_state(req, |state| {
+        for dir in created {
+            if !state.created_dirs.contains(dir) {
+                state.created_dirs.push(dir.clone());
+            }
+        }
+    });
+}
+
+fn update_target_state(req: &FileRequest, update: impl FnOnce(&mut TargetState)) {
     let path = target_state_path(req);
     let mut state = load_target_state(req).unwrap_or_default();
     state.version = TARGET_STATE_VERSION;
     state.target = lexical_normalize(&req.target);
-    state.content_digest = Some(content_digest(content));
+    update(&mut state);
     let result = (|| -> Result<()> {
         file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
         file::write_atomic(&path, toml::to_string_pretty(&state)?)
@@ -2741,6 +2768,253 @@ fn remove_target_state(req: &FileRequest) -> Result<()> {
         file::remove_file(path)?;
     }
     Ok(())
+}
+
+/// Whether mise records the directories it creates for `req`: entries whose
+/// target is a single file or link. Entries that walk a source directory
+/// share their target with unmanaged files, permissions-only entries never
+/// create or remove theirs, and absent entries create nothing (they prune
+/// from a record an earlier entry for the same target left; see
+/// [`removal_created_dirs`]).
+fn records_created_dirs(req: &FileRequest) -> bool {
+    match req.mode {
+        FileMode::Symlink | FileMode::Template | FileMode::Content => true,
+        FileMode::Copy => !req.source.is_dir(),
+        FileMode::SymlinkEach | FileMode::Track | FileMode::Permissions | FileMode::Absent => false,
+    }
+}
+
+/// The directories removing `target` may take with it: the `created` ones in
+/// an unbroken run upward from its parent, deepest first. A directory that is
+/// already gone (an earlier removal took it) holds nothing, so the run passes
+/// over it. Only directories strictly inside `home` qualify: `home` itself,
+/// everything above it, and everything outside it (such as `/opt/app` for a
+/// target `/opt/app/file`) may be shared with other software, so they stay
+/// even when mise created them.
+fn created_dirs_to_prune(target: &Path, created: &[PathBuf], home: &Path) -> Vec<PathBuf> {
+    let mut chain = vec![];
+    for dir in target.ancestors().skip(1) {
+        if dir == home || !dir.starts_with(home) {
+            break;
+        }
+        if created.iter().any(|c| c == dir) {
+            chain.push(dir.to_path_buf());
+        } else if dir.exists() || dir.is_symlink() {
+            break;
+        }
+    }
+    chain
+}
+
+/// Remove the empty directories of `chain` (deepest first), stopping at the
+/// first one that holds anything, is not a directory, or is `claimed` by
+/// another entry. One already gone, taken by an earlier walk, is passed
+/// over. The chain is checked against `home` by path only, so a symlinked
+/// ancestor (`~/.config -> /opt/config`) can put a directory physically
+/// outside home: the walk stops there and gives the directory up, since
+/// mise will never remove it. Returns what was removed or given up, which
+/// the records drop.
+fn remove_created_dirs(chain: &[PathBuf], claimed: &HashSet<PathBuf>, home: &Path) -> Vec<PathBuf> {
+    use std::io::ErrorKind;
+    // Best effort: the targets are already gone, so a directory that cannot
+    // be removed only stays behind. It stays in the record too, so a later
+    // removal retries it.
+    let give_up = |dir: &Path, err: std::io::Error| {
+        if matches!(
+            err.kind(),
+            ErrorKind::NotFound | ErrorKind::DirectoryNotEmpty
+        ) {
+            // something else removed it or wrote into it meanwhile
+            debug!("files: keeping {}: {err}", dir.display_user());
+        } else {
+            warn!(
+                "files: cannot remove empty directory {}: {err}",
+                dir.display_user()
+            );
+        }
+    };
+    let physical_home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    let mut settled = vec![];
+    for dir in chain {
+        match std::fs::symlink_metadata(dir) {
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => {
+                give_up(dir, err);
+                break;
+            }
+            Ok(metadata) if !metadata.is_dir() => break,
+            Ok(_) => {}
+        }
+        let physical = match std::fs::canonicalize(dir) {
+            Ok(physical) => physical,
+            Err(err) => {
+                give_up(dir, err);
+                break;
+            }
+        };
+        if physical == physical_home || !physical.starts_with(&physical_home) {
+            debug!(
+                "files: keeping {}: it is {}, outside the home directory",
+                dir.display_user(),
+                physical.display()
+            );
+            settled.push(dir.clone());
+            break;
+        }
+        // Check and remove the resolved path that passed the home check, so
+        // an ancestor swapped for a symlink afterwards cannot redirect them.
+        // The journal and records keep the path as the user sees it.
+        // `remove_dir` only removes an empty directory, so a remaining race
+        // can at worst remove an empty directory that is inside home.
+        if claimed.contains(dir) {
+            break;
+        }
+        match physical.read_dir() {
+            Ok(mut entries) => {
+                if entries.next().is_some() {
+                    break;
+                }
+            }
+            Err(err) => {
+                give_up(dir, err);
+                break;
+            }
+        }
+        debug!("files: removing empty directory {}", dir.display_user());
+        if let Err(err) = std::fs::remove_dir(&physical) {
+            give_up(dir, err);
+            break;
+        }
+        settled.push(dir.clone());
+    }
+    settled
+}
+
+/// The directories recorded as created for `req`'s target, if its kind
+/// records them.
+fn recorded_created_dirs(req: &FileRequest) -> Vec<PathBuf> {
+    if !records_created_dirs(req) {
+        return vec![];
+    }
+    load_target_state(req)
+        .map(|state| state.created_dirs)
+        .unwrap_or_default()
+}
+
+/// The recorded directories an apply that removes `req`'s target may prune.
+/// Records are keyed by target, so an absent entry finds the one a copy,
+/// symlink, template, or content entry left for the same path.
+fn removal_created_dirs(req: &FileRequest) -> Vec<PathBuf> {
+    if req.mode == FileMode::Absent {
+        load_target_state(req)
+            .map(|state| state.created_dirs)
+            .unwrap_or_default()
+    } else {
+        recorded_created_dirs(req)
+    }
+}
+
+/// Whether this apply of `req` removes its target.
+fn apply_removes_target(req: &FileRequest, rendered: Option<&str>) -> bool {
+    req.mode == FileMode::Absent || removes_target(req, rendered)
+}
+
+/// Remove the directories mise created for targets it has just removed,
+/// each paired with its recorded directories. This runs once every target
+/// of the batch is gone, and each walk counts the directories recorded by
+/// any of them: only the first entry written into a new directory records
+/// it, so a directory shared by sibling targets still goes, whatever order
+/// they were removed in. Each walk is journaled on its own. With
+/// `update_records`, the removed directories are dropped from the records
+/// that held them, which stay for the ownership evidence they hold.
+///
+/// This never fails: the targets are already removed, and an error here
+/// would skip the steps after it while the next apply saw the targets as
+/// converged. A directory that cannot be removed is warned about and stays
+/// in its record, so a later removal retries it.
+fn prune_created_dirs(
+    removals: &[(&FileRequest, Vec<PathBuf>)],
+    claimed: &HashSet<PathBuf>,
+    home: &Path,
+    update_records: bool,
+) {
+    let created = removals
+        .iter()
+        .flat_map(|(_, dirs)| dirs.iter().cloned())
+        .unique()
+        .collect::<Vec<_>>();
+    if created.is_empty() {
+        return;
+    }
+    for (req, _) in removals
+        .iter()
+        .sorted_by_key(|(req, _)| std::cmp::Reverse(req.target.components().count()))
+    {
+        let chain = created_dirs_to_prune(&req.target, &created, home);
+        if !chain.iter().any(|dir| dir.is_dir()) {
+            continue;
+        }
+        let holders = removals
+            .iter()
+            .filter(|(_, dirs)| update_records && dirs.iter().any(|dir| chain.contains(dir)))
+            .map(|(holder, _)| *holder)
+            .collect::<Vec<_>>();
+        // the directories and the records that list them change together
+        let paths = chain
+            .iter()
+            .map(|dir| (dir.clone(), Capture::Shallow))
+            .chain(
+                holders
+                    .iter()
+                    .map(|holder| (target_state_path(holder), Capture::Full)),
+            )
+            .collect::<Vec<_>>();
+        // nothing is removed without its write-ahead record
+        let pending = match journal::begin_changes_with(DOTFILES_PART, &req.target_raw, paths) {
+            Ok(pending) => pending,
+            Err(err) => {
+                warn!(
+                    "files: keeping the directories created for {}: {err:#}",
+                    req.target.display_user()
+                );
+                continue;
+            }
+        };
+        let settled = remove_created_dirs(&chain, claimed, home);
+        if !settled.is_empty() {
+            for holder in &holders {
+                update_target_state(holder, |state| {
+                    state.created_dirs.retain(|dir| !settled.contains(dir));
+                });
+            }
+        }
+        journal::commit_changes(pending);
+    }
+}
+
+/// The recorded directories a removal of `req`'s target may take with it,
+/// deepest first, for dry runs.
+fn prunable_created_dirs(req: &FileRequest) -> Vec<PathBuf> {
+    created_dirs_to_prune(&req.target, &recorded_created_dirs(req), &dirs::HOME)
+}
+
+/// Directories other entries need to stay: their targets, and for entries
+/// that walk a source directory every directory their files go in. An absent
+/// entry needs nothing.
+fn claimed_dirs<'a>(
+    requests: impl IntoIterator<Item = &'a FileRequest>,
+) -> Result<HashSet<PathBuf>> {
+    let mut out = HashSet::new();
+    for req in requests {
+        if req.mode == FileMode::Absent {
+            continue;
+        }
+        if matches!(req.mode, FileMode::Copy | FileMode::SymlinkEach) && req.source.is_dir() {
+            out.extend(needed_dirs(req)?);
+        }
+        out.insert(req.target.clone());
+    }
+    Ok(out)
 }
 
 fn content_digest(content: &str) -> String {
@@ -3145,6 +3419,9 @@ pub(crate) struct ApplyPlan<'a> {
     /// converged templates whose ownership record is missing or stale, with
     /// the content to record
     record_templates: Vec<(&'a FileRequest, String)>,
+    /// directories active entries need, which a removed target never takes
+    /// along; only computed when a removal has directories it could prune
+    claimed_dirs: HashSet<PathBuf>,
     reconciliation: SymlinkEachReconciliation,
 }
 
@@ -3252,11 +3529,15 @@ pub(crate) fn execute_apply(
             journal::commit_changes(pending);
         }
     }
+    let mut removals = vec![];
     for (req, rendered) in &plan.todo {
         recheck_removal(req, rendered.as_deref(), opts.force)?;
         let pending =
             journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
         apply_one(req, rendered.as_deref(), written)?;
+        if apply_removes_target(req, rendered.as_deref()) {
+            removals.push((*req, removal_created_dirs(req)));
+        }
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
         }
@@ -3270,6 +3551,7 @@ pub(crate) fn execute_apply(
             info!("files: {}", describe_applied(req)?);
         }
     }
+    prune_created_dirs(&removals, &plan.claimed_dirs, &dirs::HOME, true);
     record_template_states(&plan.record_templates)?;
     for req in plan.record_symlink_each {
         if !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, req)) {
@@ -3448,10 +3730,18 @@ pub(crate) fn plan_apply_with_active<'a>(
         }
     }
     todo.extend(deferred);
+    let claimed_dirs = if todo.iter().any(|(req, rendered)| {
+        apply_removes_target(req, rendered.as_deref()) && !removal_created_dirs(req).is_empty()
+    }) {
+        claimed_dirs(active_requests)?
+    } else {
+        HashSet::new()
+    };
     Ok(ApplyPlan {
         todo,
         record_symlink_each,
         record_templates,
+        claimed_dirs,
         reconciliation: plan_symlink_each_reconciliation(active_requests, requests)?,
     })
 }
@@ -3500,26 +3790,14 @@ fn record_template_states(updates: &[(&FileRequest, String)]) -> Result<()> {
 
 fn cleanup_reconciled_directories(reconciliation: &SymlinkEachReconciliation) -> Result<()> {
     for target in &reconciliation.targets {
-        for start in reconciliation
-            .stale_links
-            .iter()
-            .filter(|link| link.target.starts_with(target))
-            .filter_map(|link| link.target.parent())
-            .sorted_by_key(|path| std::cmp::Reverse(path.components().count()))
-            .unique()
-        {
-            let mut dir = start;
-            while dir != target && dir.starts_with(target) {
-                if !dir.is_dir() || dir.read_dir()?.next().is_some() {
-                    break;
-                }
-                file::remove_dir(dir)?;
-                let Some(parent) = dir.parent() else {
-                    break;
-                };
-                dir = parent;
-            }
-        }
+        remove_empty_dirs_upward(
+            reconciliation
+                .stale_links
+                .iter()
+                .filter(|link| link.target.starts_with(target))
+                .filter_map(|link| link.target.parent()),
+            |dir| dir != target && dir.starts_with(target),
+        )?;
     }
     Ok(())
 }
@@ -3644,7 +3922,11 @@ pub(crate) fn resolve_unapply(
     Ok(())
 }
 
-pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
+pub(crate) fn execute_unapply(
+    config: &Config,
+    plans: &[UnapplyPlan<'_>],
+    opts: &UnapplyOpts,
+) -> Result<()> {
     let todo = plans;
     if todo.is_empty() {
         info!("files: all files are unapplied");
@@ -3659,6 +3941,9 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
                     ""
                 };
                 miseprintln!("rm {}{suffix}", path.display_user());
+            }
+            for dir in prunable_created_dirs(plan.req) {
+                miseprintln!("rmdir {} (if empty)", dir.display_user());
             }
             if plan.cleanup_empty_dirs {
                 miseprintln!("rmdir {} (if empty)", plan.req.target.display_user());
@@ -3682,6 +3967,30 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
             return Ok(());
         }
     }
+    // The records go with their targets, so they are read up front. A plan
+    // with no paths only clears the record of a target that is already gone;
+    // the directories mise created for it may still be there and empty.
+    let removals = todo
+        .iter()
+        .map(|plan| (plan.req, recorded_created_dirs(plan.req)))
+        .filter(|(_, dirs)| !dirs.is_empty())
+        .collect::<Vec<_>>();
+    // Directories mise created go only when no entry that stays needs them.
+    // Loaded before anything changes, so a config that cannot be read fails
+    // the unapply rather than leaving it half done.
+    let claimed = if !removals.is_empty() {
+        let unapplied = todo
+            .iter()
+            .map(|plan| lexical_normalize(&plan.req.target))
+            .collect::<HashSet<_>>();
+        claimed_dirs(
+            files_from_config(config)?
+                .iter()
+                .filter(|req| !unapplied.contains(&lexical_normalize(&req.target))),
+        )?
+    } else {
+        HashSet::new()
+    };
     for plan in todo {
         let mut paths: Vec<(PathBuf, Capture)> = plan
             .paths
@@ -3691,8 +4000,7 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
         if plan.clear_symlink_each_state {
             paths.push((symlink_each_state_path(plan.req), Capture::Full));
         }
-        let clear_target_state =
-            plan.req.mode == FileMode::Template && target_state_path(plan.req).exists();
+        let clear_target_state = target_state_path(plan.req).exists();
         if clear_target_state {
             paths.push((target_state_path(plan.req), Capture::Full));
         }
@@ -3717,6 +4025,8 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
         }
         journal::commit_changes(pending);
     }
+    // once every target is gone, so siblings no longer hold their parents
+    prune_created_dirs(&removals, &claimed, &dirs::HOME, false);
     info!(
         "files: unapplied {}",
         todo.iter()
@@ -3734,6 +4044,19 @@ fn plan_unapply_one<'a>(
     let mut cleanup_empty_dirs = false;
     let mut conditional = false;
     let mut clear_symlink_each_state = false;
+    if records_created_dirs(req) && !req.target.exists() && !req.target.is_symlink() {
+        // Nothing to remove, but a record left by an earlier removal (a
+        // `remove_empty` apply, or the user deleting the file) still claims
+        // the path and the directories mise created for it; execute clears
+        // the record and prunes those directories with the (empty) plan.
+        return Ok(target_state_path(req).exists().then_some(UnapplyPlan {
+            req,
+            paths: vec![],
+            cleanup_empty_dirs: false,
+            conditional: false,
+            clear_symlink_each_state: false,
+        }));
+    }
     match req.mode {
         // A Windows file link that came out as a copy is planned by content further down; one
         // that is a real symlink belongs here, where the link target is what identifies it as
@@ -3822,10 +4145,8 @@ fn plan_unapply_one<'a>(
             );
             return Ok(None);
         }
+        // an absent target was handled above
         FileMode::Content => {
-            if !req.target.exists() && !req.target.is_symlink() {
-                return Ok(None);
-            }
             if opts.force {
                 paths.insert(req.target.clone(), ());
             } else {
@@ -3839,18 +4160,6 @@ fn plan_unapply_one<'a>(
             bail!("mode symlink-each requires the source to be a directory");
         }
         FileMode::Template => {
-            if !req.target.exists() && !req.target.is_symlink() {
-                // nothing to remove, but a record left by an earlier
-                // `remove_empty` removal still claims the path; execute
-                // clears it with the (empty) plan
-                return Ok(target_state_path(req).exists().then_some(UnapplyPlan {
-                    req,
-                    paths: vec![],
-                    cleanup_empty_dirs: false,
-                    conditional: false,
-                    clear_symlink_each_state: false,
-                }));
-            }
             if opts.force {
                 paths.insert(req.target.clone(), ());
             } else if opts.dry_run {
@@ -4024,26 +4333,10 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
     }
     if plan.cleanup_empty_dirs && plan.req.target.is_dir() {
         parents.push(plan.req.target.clone());
-        for start in parents
-            .into_iter()
-            .sorted_by_key(|p| std::cmp::Reverse(p.components().count()))
-            .unique()
-        {
-            let mut dir = start.as_path();
-            while dir.starts_with(&plan.req.target) {
-                if !dir.is_dir() || dir.read_dir()?.next().is_some() {
-                    break;
-                }
-                file::remove_dir(dir)?;
-                if dir == plan.req.target {
-                    break;
-                }
-                let Some(parent) = dir.parent() else {
-                    break;
-                };
-                dir = parent;
-            }
-        }
+        // the walk ends at the target: its parent does not start with it
+        remove_empty_dirs_upward(parents.iter().map(PathBuf::as_path), |dir| {
+            dir.starts_with(&plan.req.target)
+        })?;
     }
     Ok(())
 }
@@ -4469,6 +4762,15 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
             paths.insert(symlink_each_state_path(req), Capture::Full);
         }
     }
+    // Directories a removal empties are journaled by `prune_created_dirs`,
+    // which runs after the whole batch.
+    if records_created_dirs(req) {
+        // the record gains the directories created on the way: the only
+        // shallow paths of a single-file entry are the missing ancestors
+        if paths.values().any(|capture| *capture == Capture::Shallow) {
+            paths.entry(target_state_path(req)).or_insert(Capture::Full);
+        }
+    }
     Ok(paths.into_iter().collect())
 }
 
@@ -4485,6 +4787,34 @@ fn dirs_between(path: &Path, root: &Path) -> Vec<PathBuf> {
         dir = d.parent();
     }
     dirs
+}
+
+/// Remove each of `starts` and then its parents while `may_remove` allows it
+/// and the directory is empty, stopping each walk at the first directory that
+/// stays. Deepest starts go first, so emptying a nested directory can empty
+/// its parent too. Returns the removed directories.
+fn remove_empty_dirs_upward<'a>(
+    starts: impl IntoIterator<Item = &'a Path>,
+    may_remove: impl Fn(&Path) -> bool,
+) -> Result<Vec<PathBuf>> {
+    let mut removed = vec![];
+    for start in starts
+        .into_iter()
+        .sorted_by_key(|dir| std::cmp::Reverse(dir.components().count()))
+        .unique()
+    {
+        let mut dir = Some(start);
+        while let Some(d) = dir {
+            if !may_remove(d) || !d.is_dir() || d.read_dir()?.next().is_some() {
+                break;
+            }
+            debug!("files: removing empty directory {}", d.display_user());
+            file::remove_dir(d)?;
+            removed.push(d.to_path_buf());
+            dir = d.parent();
+        }
+    }
+    Ok(removed)
 }
 
 /// Ancestors of `path` that do not exist yet, outermost first.
@@ -4541,6 +4871,12 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         }
         return Ok(());
     }
+    // what is missing now is what mise creates, and so may remove again
+    let created_dirs = if records_created_dirs(req) {
+        missing_ancestors(&req.target)
+    } else {
+        vec![]
+    };
     if req.mode != FileMode::Permissions
         && let Some(parent) = req.target.parent()
     {
@@ -4682,6 +5018,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
         }
     }
+    record_created_dirs(req, &created_dirs);
     Ok(())
 }
 
@@ -4810,26 +5147,10 @@ fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()
         file::remove_file(path)?;
         written.push(path.clone());
     }
-    let needed: std::collections::HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
-    // deepest first, so emptying a nested directory can empty its parent too
-    for dir in stale
-        .iter()
-        .filter_map(|p| p.parent())
-        .sorted_by_key(|d| std::cmp::Reverse(d.components().count()))
-        .unique()
-    {
-        let mut dir = dir;
-        while dir != req.target && dir.starts_with(&req.target) && !needed.contains(dir) {
-            if !dir.is_dir() || dir.read_dir()?.next().is_some() {
-                break;
-            }
-            file::remove_dir(dir)?;
-            match dir.parent() {
-                Some(parent) => dir = parent,
-                None => break,
-            }
-        }
-    }
+    let needed: HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
+    remove_empty_dirs_upward(stale.iter().filter_map(|p| p.parent()), |dir| {
+        dir != req.target && dir.starts_with(&req.target) && !needed.contains(dir)
+    })?;
     Ok(())
 }
 
@@ -7068,8 +7389,354 @@ source = "oldrc""#,
                 version: 1,
                 target: PathBuf::from("/x"),
                 content_digest: None,
+                created_dirs: vec![],
             }
         );
+        Ok(())
+    }
+
+    /// `home/.config` exists; `newapp/sub` under it is what mise created.
+    fn created_dirs_fixture(home: &Path) -> Result<(PathBuf, Vec<PathBuf>)> {
+        let newapp = home.join(".config/newapp");
+        let sub = newapp.join("sub");
+        file::create_dir_all(&sub)?;
+        Ok((sub.join("work.toml"), vec![newapp, sub]))
+    }
+
+    /// Prune after the targets of `removals` are gone, each paired with the
+    /// directories its record lists.
+    fn prune_after(
+        removals: &[(&Path, Vec<PathBuf>)],
+        claimed: &HashSet<PathBuf>,
+        home: &Path,
+    ) -> Result<()> {
+        let reqs = removals
+            .iter()
+            .map(|(target, _)| link_req(Path::new("/source"), target, FileMode::Copy))
+            .collect::<Vec<_>>();
+        let pairs = reqs
+            .iter()
+            .zip(removals)
+            .map(|(req, (_, dirs))| (req, dirs.clone()))
+            .collect::<Vec<_>>();
+        prune_created_dirs(&pairs, claimed, home, false);
+        Ok(())
+    }
+
+    #[test]
+    fn removing_created_dirs_keeps_pre_existing_ones() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let (target, created) = created_dirs_fixture(&home)?;
+        prune_after(&[(&target, created.clone())], &HashSet::new(), &home)?;
+        assert!(!created[0].exists());
+        assert!(home.join(".config").is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn removing_created_dirs_stops_at_one_holding_anything() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let (target, created) = created_dirs_fixture(&home)?;
+        file::write(created[0].join("mine.toml"), "")?;
+        prune_after(&[(&target, created.clone())], &HashSet::new(), &home)?;
+        assert!(!created[1].exists());
+        assert!(created[0].join("mine.toml").exists());
+
+        // a directory still holding the target is not touched at all
+        file::create_dir_all(&created[1])?;
+        file::write(&target, "")?;
+        prune_after(&[(&target, created.clone())], &HashSet::new(), &home)?;
+        assert!(target.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn removing_created_dirs_stops_at_one_not_recorded() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let (target, created) = created_dirs_fixture(&home)?;
+        // only the outer one recorded: the walk never reaches it
+        prune_after(&[(&target, created[..1].to_vec())], &HashSet::new(), &home)?;
+        assert!(created[1].is_dir());
+        // an old record with none removes nothing
+        prune_after(&[(&target, vec![])], &HashSet::new(), &home)?;
+        assert!(created[1].is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn removing_created_dirs_passes_over_one_already_gone() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let (target, created) = created_dirs_fixture(&home)?;
+        // an earlier removal took `sub` and dropped it from the record, and
+        // the user's file kept `newapp`; now that file is gone too
+        file::remove_dir(&created[1])?;
+        prune_after(&[(&target, created[..1].to_vec())], &HashSet::new(), &home)?;
+        assert!(!created[0].exists());
+        assert!(home.join(".config").is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn a_created_dir_that_cannot_be_checked_stays_recorded_without_failing() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let (target, created) = created_dirs_fixture(&home)?;
+        // `sub` became a file, so looking inside it fails (ENOTDIR, even as
+        // root) for a recorded directory beneath it
+        file::remove_dir(&created[1])?;
+        file::write(&created[1], "")?;
+        let below = created[1].join("inner");
+        let target_below = below.join("file");
+        let mut recorded = created.clone();
+        recorded.push(below.clone());
+        let chain = created_dirs_to_prune(&target_below, &recorded, &home);
+        assert_eq!(chain.first(), Some(&below));
+        assert!(remove_created_dirs(&chain, &HashSet::new(), &home).is_empty());
+
+        // the whole prune is best effort: nothing fails, the record keeps
+        // what could not be removed, and the file in the way stays
+        let source = dir.path().join("source");
+        file::write(&source, "")?;
+        let req = link_req(&source, &target_below, FileMode::Copy);
+        record_created_dirs(&req, &recorded);
+        prune_created_dirs(&[(&req, recorded.clone())], &HashSet::new(), &home, true);
+        assert_eq!(recorded_created_dirs(&req), recorded);
+        assert!(created[1].is_file());
+        assert!(!target.exists());
+        remove_target_state(&req)?;
+        Ok(())
+    }
+
+    #[test]
+    fn removing_created_dirs_never_removes_home_or_above() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        file::create_dir_all(&home)?;
+        let created = vec![dir.path().to_path_buf(), home.clone()];
+        let target = home.join(".rc");
+        assert!(created_dirs_to_prune(&target, &created, &home).is_empty());
+        prune_after(&[(&target, created)], &HashSet::new(), &home)?;
+        assert!(home.is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn removing_created_dirs_keeps_directories_outside_home() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        file::create_dir_all(&home)?;
+        // an absolute target outside home, such as /opt/newapp/file
+        let newapp = dir.path().join("opt/newapp");
+        file::create_dir_all(&newapp)?;
+        let target = newapp.join("file");
+        let created = vec![dir.path().join("opt"), newapp.clone()];
+        assert!(created_dirs_to_prune(&target, &created, &home).is_empty());
+        prune_after(&[(&target, created)], &HashSet::new(), &home)?;
+        assert!(newapp.is_dir());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removing_created_dirs_keeps_one_a_symlinked_ancestor_puts_outside_home() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        file::create_dir_all(&home)?;
+        // ~/.config -> <tmp>/opt/config: ~/.config/app is really outside home
+        let outside = dir.path().join("opt/config");
+        file::create_dir_all(outside.join("app"))?;
+        std::os::unix::fs::symlink(&outside, home.join(".config"))?;
+        let app = home.join(".config/app");
+        let target = app.join("file");
+        prune_after(&[(&target, vec![app.clone()])], &HashSet::new(), &home)?;
+        assert!(outside.join("app").is_dir());
+
+        // a symlinked ancestor that resolves inside home: the directory is
+        // checked and removed at its resolved location
+        let real = home.join("real-config");
+        file::create_dir_all(real.join("app"))?;
+        std::os::unix::fs::symlink(&real, home.join(".linked"))?;
+        let linked = home.join(".linked/app");
+        prune_after(
+            &[(&linked.join("file"), vec![linked.clone()])],
+            &HashSet::new(),
+            &home,
+        )?;
+        assert!(!real.join("app").exists());
+        assert!(real.is_dir());
+
+        // the same layout with a real ~/.config inside home goes
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let app = home.join(".config/app");
+        file::create_dir_all(&app)?;
+        prune_after(
+            &[(&app.join("file"), vec![app.clone()])],
+            &HashSet::new(),
+            &home,
+        )?;
+        assert!(!app.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn removing_sibling_targets_prunes_their_shared_parent_in_any_order() -> Result<()> {
+        for owner_first in [true, false] {
+            let dir = tempfile::tempdir()?;
+            let home = dir.path().join("home");
+            let newapp = home.join(".config/newapp");
+            file::create_dir_all(&newapp)?;
+            // only the first entry written into newapp recorded it
+            let owner = (newapp.join("a.toml"), vec![newapp.clone()]);
+            let sibling = (newapp.join("b.toml"), vec![]);
+            let mut removals = vec![
+                (owner.0.as_path(), owner.1),
+                (sibling.0.as_path(), sibling.1),
+            ];
+            if !owner_first {
+                removals.reverse();
+            }
+            prune_after(&removals, &HashSet::new(), &home)?;
+            assert!(!newapp.exists(), "owner first: {owner_first}");
+            assert!(home.join(".config").is_dir());
+        }
+
+        // a sibling in a deeper directory it created itself, and a shallower
+        // one whose parent another record lists
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let newapp = home.join(".config/newapp");
+        let deep = newapp.join("p/q");
+        file::create_dir_all(&deep)?;
+        file::create_dir_all(newapp.join("t"))?;
+        let s = deep.join("s");
+        let t = newapp.join("t/u");
+        let removals = [
+            (
+                s.as_path(),
+                vec![newapp.clone(), newapp.join("p"), deep.clone()],
+            ),
+            (t.as_path(), vec![newapp.join("t")]),
+        ];
+        prune_after(&removals, &HashSet::new(), &home)?;
+        assert!(!newapp.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn removing_created_dirs_keeps_one_another_entry_needs() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let (target, created) = created_dirs_fixture(&home)?;
+        let claimed = HashSet::from([created[0].clone()]);
+        prune_after(&[(&target, created.clone())], &claimed, &home)?;
+        assert!(!created[1].exists());
+        assert!(created[0].is_dir());
+
+        // a symlink-each entry claims its target and every directory below it
+        let source = dir.path().join("links");
+        file::create_dir_all(source.join("nested"))?;
+        file::write(source.join("nested/file"), "")?;
+        let links = link_req(&source, &created[0], FileMode::SymlinkEach);
+        let claimed = claimed_dirs([&links])?;
+        assert!(claimed.contains(&created[0]));
+        assert!(claimed.contains(&created[0].join("nested")));
+
+        // a permissions-only entry naming a directory claims it, and never
+        // records directories of its own
+        let perms = permissions_req(&created[0], 0o700);
+        assert!(!records_created_dirs(&perms));
+        let claimed = claimed_dirs([&perms])?;
+        file::create_dir_all(&created[1])?;
+        prune_after(&[(&target, created.clone())], &claimed, &home)?;
+        assert!(!created[1].exists());
+        assert!(created[0].is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn an_absent_entry_prunes_what_an_earlier_entry_for_its_target_created() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "copied")?;
+        let newapp = dir.path().join("newapp");
+        let target = newapp.join("sub/file");
+        let copy = link_req(&source, &target, FileMode::Copy);
+        apply_one(&copy, None, &mut vec![])?;
+
+        // the entry is changed to mode = "absent": it records nothing, needs
+        // nothing, and finds the copy's record under the same target
+        let absent = absent_req(&target);
+        assert!(!records_created_dirs(&absent));
+        assert!(claimed_dirs([&absent])?.is_empty());
+        assert!(apply_removes_target(&absent, None));
+        let created = removal_created_dirs(&absent);
+        assert_eq!(created, vec![newapp.clone(), newapp.join("sub")]);
+        apply_one(&absent, None, &mut vec![])?;
+        assert!(!target.exists());
+        // the tempdir stands in for home
+        prune_created_dirs(&[(&absent, created)], &HashSet::new(), dir.path(), true);
+        assert!(!newapp.exists());
+        assert!(removal_created_dirs(&absent).is_empty());
+        remove_target_state(&copy)?;
+        Ok(())
+    }
+
+    #[test]
+    fn apply_one_records_the_directories_it_creates() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "copied")?;
+        let newapp = dir.path().join("newapp");
+        let req = link_req(&source, &newapp.join("sub/file"), FileMode::Copy);
+        apply_one(&req, None, &mut vec![])?;
+        let recorded = load_target_state(&req).expect("record").created_dirs;
+        assert_eq!(recorded, vec![newapp.clone(), newapp.join("sub")]);
+
+        // a second apply creates nothing and keeps what was recorded
+        apply_one(&req, None, &mut vec![])?;
+        assert_eq!(
+            load_target_state(&req).expect("record").created_dirs,
+            recorded
+        );
+        assert!(
+            touched_paths(&req)?
+                .iter()
+                .all(|(path, _)| path != &target_state_path(&req))
+        );
+
+        // a symlink-each entry shares its target with unmanaged files
+        let links = dir.path().join("links");
+        file::create_dir_all(&links)?;
+        let each = link_req(
+            &links,
+            &dir.path().join("each/target"),
+            FileMode::SymlinkEach,
+        );
+        apply_one(&each, None, &mut vec![])?;
+        assert!(load_target_state(&each).is_none());
+
+        // pruning drops what it removed from the record; the tempdir stands
+        // in for home
+        file::remove_file(&req.target)?;
+        prune_created_dirs(
+            &[(&req, recorded_created_dirs(&req))],
+            &HashSet::new(),
+            dir.path(),
+            true,
+        );
+        assert!(!newapp.exists());
+        assert!(
+            load_target_state(&req)
+                .expect("record")
+                .created_dirs
+                .is_empty()
+        );
+        remove_target_state(&req)?;
         Ok(())
     }
 
@@ -7093,6 +7760,20 @@ source = "oldrc""#,
     }
 
     #[test]
+    fn creating_a_parent_journals_it_with_the_record() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source.tera");
+        file::write(&source, "")?;
+        let newapp = dir.path().join("newapp");
+        let req = link_req(&source, &newapp.join("work.toml"), FileMode::Content);
+        // the missing parent before the target, and the record it goes in
+        let paths = touched_paths(&req)?;
+        assert_eq!(paths[0], (newapp.clone(), Capture::Shallow));
+        assert!(paths.contains(&(target_state_path(&req), Capture::Full)));
+        Ok(())
+    }
+
+    #[test]
     fn unapply_clears_the_record_of_an_already_removed_target() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let req = template_req(dir.path(), true)?;
@@ -7107,6 +7788,41 @@ source = "oldrc""#,
         let plan = plan_unapply_one(&req, &opts)?.expect("a plan that clears the record");
         assert!(plan.paths.is_empty());
         remove_target_state(&req)?;
+        Ok(())
+    }
+
+    #[test]
+    fn unapply_plans_every_single_file_kind_whose_target_is_gone_by_its_record() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "copied")?;
+        let links = dir.path().join("links");
+        file::create_dir_all(&links)?;
+        let opts = UnapplyOpts {
+            dry_run: false,
+            verbose: false,
+            force: false,
+            yes: true,
+        };
+        for mode in [FileMode::Copy, FileMode::Symlink, FileMode::Content] {
+            let newapp = dir.path().join(format!("{}-app", mode.name()));
+            let mut req = link_req(&source, &newapp.join("sub/file"), mode);
+            if mode == FileMode::Content {
+                req.content = Some("inline".into());
+            }
+            apply_one(&req, None, &mut vec![])?;
+            assert!(!recorded_created_dirs(&req).is_empty(), "{mode:?}");
+            // the user deletes the file by hand
+            file::remove_file(&req.target)?;
+            let plan = plan_unapply_one(&req, &opts)?.expect("a plan that clears the record");
+            assert!(plan.paths.is_empty(), "{mode:?}");
+            remove_target_state(&req)?;
+            // without a record there is nothing to do
+            assert!(plan_unapply_one(&req, &opts)?.is_none(), "{mode:?}");
+        }
+        // a directory copy keeps no record and plans as before
+        let each = link_req(&links, &dir.path().join("each"), FileMode::Copy);
+        assert!(plan_unapply_one(&each, &opts)?.is_none());
         Ok(())
     }
 
