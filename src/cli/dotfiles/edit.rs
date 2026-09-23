@@ -157,6 +157,9 @@ fn source_for_target(
                 req.target.clone()
             }
             FileMode::Content => req.origin.config.clone(),
+            // mise manages only the permissions; the file itself is the
+            // only copy of its content
+            FileMode::Permissions => req.target.clone(),
             _ => req.source.clone(),
         }));
     }

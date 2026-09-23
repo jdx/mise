@@ -82,9 +82,9 @@ impl DotfilesStatus {
             };
             any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
-                json_files.push(json!({
+                let mut entry = json!({
                     "target": req.target_raw,
-                    "source": (req.mode != system::files::FileMode::Content)
+                    "source": req.mode.has_source()
                         .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
                     "origin": &req.origin,
@@ -95,15 +95,19 @@ impl DotfilesStatus {
                         FileState::Differs(_) => "differs",
                         FileState::Tracked => "tracked",
                     },
-                }));
+                });
+                if let Some(permissions) = req.permissions {
+                    entry["permissions"] = json!(format!("{permissions:04o}"));
+                }
+                json_files.push(entry);
             } else {
                 file_rows.push(vec![
                     req.target_raw.clone(),
                     req.mode.name().to_string(),
-                    if req.mode == system::files::FileMode::Content {
-                        "inline".to_string()
-                    } else {
-                        req.source.display_user()
+                    match req.mode {
+                        system::files::FileMode::Content => "inline".to_string(),
+                        system::files::FileMode::Permissions => "-".to_string(),
+                        _ => req.source.display_user(),
                     },
                     req.origin.config.display_user(),
                     state_str,

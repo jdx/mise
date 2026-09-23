@@ -1049,6 +1049,7 @@ mod tests {
                 mode,
                 exclude: vec![],
                 manifest: None,
+                permissions: None,
                 base: tmp.path().to_path_buf(),
                 origin: ResourceOrigin {
                     config: tmp.path().join("config.toml"),

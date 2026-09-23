@@ -171,6 +171,14 @@ impl DotfilesAdd {
                     "{target_raw}: tracked in place; pass `--mode copy` after `mise dot untrack {target_raw}` to seed a source instead"
                 );
             }
+            if managed
+                .iter()
+                .any(|req| req.mode == FileMode::Permissions && req.target == target)
+            {
+                bail!(
+                    "{target_raw}: only its permissions are managed; remove that permissions-only [dotfiles] entry, or give it a source, before adding the file"
+                );
+            }
             if managed_edits.iter().any(|req| {
                 system::files::matches_target(
                     &req.path,
@@ -547,6 +555,7 @@ impl PlannedAdd {
             mode: self.mode,
             exclude: vec![],
             manifest: None,
+            permissions: None,
             base: config_path
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
@@ -626,7 +635,7 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
-        FileMode::Content | FileMode::Track => {
+        FileMode::Content | FileMode::Track | FileMode::Permissions => {
             unreachable!("dotfiles add always captures a source file")
         }
     }

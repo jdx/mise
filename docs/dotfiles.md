@@ -298,7 +298,8 @@ Templates can use `env`, `vars`, `exec()`, and the rest of the
 <span v-pre>`{{ secret(name="logical_name") }}`</span>. Use
 `--prompt-secrets` with a dotfiles command to securely prompt for missing
 values. Applying a template writes its rendered content and gives the target
-the source file's permissions. A later apply also repairs changed permissions.
+the source file's permissions, or the ones [`permissions`](#permissions) sets.
+A later apply also repairs changed permissions.
 
 `status`, `diff`, and `apply` render templates to check their output. This
 executes any `exec()` calls in those templates, using your trusted config.
@@ -346,7 +347,8 @@ always written explicitly.
 
 Use `content` to declare a literal whole file inline instead of keeping a
 separate source file. On Unix, the resulting file has permissions `0600`,
-so only its owner can read and write it:
+so only its owner can read and write it, unless
+[`permissions`](#permissions) sets others:
 
 ```toml
 [dotfiles]
@@ -356,6 +358,40 @@ so only its owner can read and write it:
 Use `content` on its own. It cannot be combined with `source`, `mode`,
 `exclude`, `manifest`, or the edit options `block`, `line`, `template`, and
 `comment`.
+
+### Permissions
+
+Set `permissions` to an octal string to give the target those permissions
+instead of the ones it would otherwise get. It works with `copy` and
+`template` entries that have a file source, and with inline `content`:
+
+```toml
+[dotfiles]
+"~/.netrc" = { source = "netrc.tera", mode = "template", permissions = "0600" }
+```
+
+`mise dot status` reports a target whose permissions have changed since, and
+the next apply sets them again.
+
+On its own, `permissions` manages only the permissions of a file or
+directory that already exists. mise never creates it, never changes its
+content, and never infers a source for it from `dotfiles.root`:
+
+```toml
+[dotfiles]
+"~/.ssh" = { permissions = "0700" }
+"~/.ssh/config" = { permissions = "0600" }
+```
+
+When the target does not exist, apply warns and skips it; status reports it
+as `missing`. When the target is a symlink, mise does not follow it: status
+reports it and apply skips it with a warning. Unapply never removes a target
+whose permissions are all mise manages.
+
+`permissions` cannot be combined with `symlink` or `symlink-each`, which have
+no permissions of their own, with `track`, whose history records the file's
+mode, or with a directory source. A permissions-only target cannot contain
+wildcards. On Windows, `permissions` is ignored with a warning.
 
 ### Matching multiple source files
 
@@ -516,6 +552,7 @@ filesystem, and recorded `symlink-each` state to determine what the entry owns:
   matches. Modified targets require `--force`.
 - Directory copies are removed file by file. Unmanaged neighbors always
   survive, and directories are removed only when empty.
+- Targets with only [`permissions`](#permissions) are never removed.
 - Marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
 

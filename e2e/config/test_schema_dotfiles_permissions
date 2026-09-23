@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+mise use -g tombi@$TOMBI_VERSION
+TOMBI_LINT="mise x tombi@$TOMBI_VERSION -- tombi lint --offline --no-cache --error-on-warnings --quiet"
+cat >"$HOME/tombi.toml" <<TOML
+[schema]
+enabled = true
+strict = true
+[[schemas]]
+path = "file://$ROOT/schema/mise.json"
+include = ["permissions-valid.toml", "permissions-invalid.toml"]
+TOML
+cat >permissions-valid.toml <<'TOML'
+[dotfiles]
+"~/.ssh/config" = { permissions = "0600" }
+"~/.netrc" = { source = "netrc.tera", mode = "template", permissions = "0600" }
+"~/.config/app.toml" = { source = "app.toml", mode = "copy", permissions = "0640" }
+"~/.config/token" = { content = "secret", permissions = "0400" }
+TOML
+assert_succeed "$TOMBI_LINT permissions-valid.toml"
+for entry in \
+  '{ source = "x", mode = "symlink", permissions = "0600" }' \
+  '{ mode = "track", permissions = "0600" }' \
+  '{ block = "x", permissions = "0600" }' \
+  '{ line = "x", permissions = "0600" }' \
+  '{ permissions = "rw-------" }'; do
+  printf '[dotfiles]\n"~/.app" = %s\n' "$entry" >permissions-invalid.toml
+  assert_fail "$TOMBI_LINT permissions-invalid.toml"
+done

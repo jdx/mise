@@ -4363,6 +4363,11 @@
                 "description": "source manifest used to select managed files from a directory",
                 "enum": ["git"]
               },
+              "permissions": {
+                "type": "string",
+                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
+                "pattern": "^(0o)?[0-7]{1,4}$"
+              },
               "block": {
                 "type": "string",
                 "description": "block content, maintained between marker comments"
@@ -4443,6 +4448,7 @@
                     "properties": {
                       "source": {},
                       "content": false,
+                      "permissions": false,
                       "mode": {
                         "enum": ["copy", "symlink-each"]
                       },
@@ -4457,6 +4463,26 @@
                   {
                     "properties": {
                       "manifest": false
+                    }
+                  }
+                ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": ["permissions"],
+                    "properties": {
+                      "mode": {
+                        "enum": ["copy", "template"]
+                      },
+                      "block": false,
+                      "template": false,
+                      "comment": false
+                    }
+                  },
+                  {
+                    "properties": {
+                      "permissions": false
                     }
                   }
                 ]
@@ -4481,6 +4507,7 @@
                     "required": ["line"],
                     "properties": {
                       "content": false,
+                      "permissions": false,
                       "mode": false,
                       "exclude": false,
                       "source": false,

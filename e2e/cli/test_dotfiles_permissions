@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+# `permissions` sets the mode of a file mise writes, and on its own manages
+# only the permissions of an existing file without touching its content.
+
+case "$(uname -s)" in
+  Darwin) mode_of="stat -f %Lp" ;;
+  *) mode_of="stat -c %a" ;;
+esac
+
+mkdir -p dotfiles ~/.ssh
+echo "machine {{ 1 + 1 }}" >dotfiles/netrc.tera
+chmod 644 dotfiles/netrc.tera
+printf 'Host *\n  User me\n' >~/.ssh/config
+chmod 644 ~/.ssh/config
+chmod 755 ~/.ssh
+echo "real" >~/.real
+chmod 644 ~/.real
+ln -s .real ~/.linked
+
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.netrc" = { source = "dotfiles/netrc.tera", mode = "template", permissions = "0600" }
+"~/.ssh" = { permissions = "0700" }
+"~/.ssh/config" = { permissions = "0600" }
+"~/.missing" = { permissions = "0600" }
+"~/.linked" = { permissions = "0600" }
+EOF
+
+assert_contains "mise dot status ~/.ssh/config" "permissions differ"
+assert_contains "mise dot status ~/.missing" "missing"
+assert_contains "mise dot status ~/.linked" "permissions are not set through links"
+assert_contains "mise dot status --json ~/.ssh/config" '"permissions": "0600"'
+assert_contains "mise dot diff ~/.ssh/config" "permissions differ: 0644 (current) -> 0600 (desired)"
+
+# a missing target is skipped with a warning, and a link is never followed
+apply_output="$(mise dot apply --yes 2>&1)"
+assert_contains_text "$apply_output" "~/.missing does not exist; permissions not set"
+assert_contains_text "$apply_output" "~/.linked is a symlink, which is never followed; permissions not set"
+assert_fail "test -e ~/.missing"
+assert "$mode_of ~/.real" "644"
+
+# the template gets the declared permissions instead of its source's
+assert "cat ~/.netrc" "machine 2"
+assert "$mode_of ~/.netrc" "600"
+# permissions-only entries change the mode and nothing else
+assert "$mode_of ~/.ssh/config" "600"
+assert "$mode_of ~/.ssh" "700"
+assert "cat ~/.ssh/config" "Host *
+  User me"
+assert_succeed "mise dot status --missing ~/.netrc ~/.ssh ~/.ssh/config"
+
+# drift is reported and repaired
+chmod 644 ~/.netrc ~/.ssh/config
+assert_contains "mise dot status ~/.netrc" "permissions differ"
+assert_contains "mise dot status ~/.ssh/config" "permissions differ"
+assert_succeed "mise dot apply --yes"
+assert "$mode_of ~/.netrc" "600"
+assert "$mode_of ~/.ssh/config" "600"
+assert "cat ~/.ssh/config" "Host *
+  User me"
+
+# unapply removes what mise wrote, never a file whose mode it only manages
+assert_succeed "mise dot unapply --yes"
+assert_fail "test -e ~/.netrc"
+assert "cat ~/.ssh/config" "Host *
+  User me"
+assert_directory_exists "$HOME/.ssh"
+
+# permissions cannot be combined with a link
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.netrc" = { source = "dotfiles/netrc.tera", mode = "symlink", permissions = "0600" }
+EOF
+assert_contains "mise dot status 2>&1" "permissions requires mode copy or template"

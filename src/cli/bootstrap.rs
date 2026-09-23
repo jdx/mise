@@ -3965,17 +3965,19 @@ impl BootstrapStatus {
             report.row(
                 "dotfiles",
                 req.target_raw.clone(),
-                if req.mode == system::files::FileMode::Content {
-                    "content inline".to_string()
-                } else {
-                    format!("{} {}", req.mode.name(), req.source.display_user())
+                match req.mode {
+                    system::files::FileMode::Content => "content inline".to_string(),
+                    system::files::FileMode::Permissions => {
+                        format!("permissions {:04o}", req.permissions.unwrap_or_default())
+                    }
+                    _ => format!("{} {}", req.mode.name(), req.source.display_user()),
                 },
                 state_str,
                 missing,
             );
             json_files.push(json!({
                 "target": req.target_raw,
-                "source": (req.mode != system::files::FileMode::Content)
+                "source": req.mode.has_source()
                     .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,
