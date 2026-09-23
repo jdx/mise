@@ -168,6 +168,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("daemons", Read),
     ("daemons register", Write),
     ("daemons ls", Read),
+    ("daemons providers", Read),
+    ("daemons providers ls", Read),
     // Deletes the state and database data of projects that no longer exist.
     ("daemons prune", Destructive),
     ("daemons status", Read),
@@ -361,6 +363,16 @@ pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     ("daemons stop", "runs daemon stop hooks"),
     ("daemons tui", "interactively manages daemons"),
     ("daemons __init", "initializes daemon data"),
+    (
+        "daemons providers start",
+        "installs tools and starts shared servers",
+    ),
+    ("daemons providers stop", "stops shared servers"),
+    ("daemons providers restart", "restarts shared servers"),
+    (
+        "daemons __provider-exec",
+        "executes a generated provider command",
+    ),
     ("asdf", "proxies whatever asdf command a plugin invoked"),
     (
         "bootstrap dotfiles capture",

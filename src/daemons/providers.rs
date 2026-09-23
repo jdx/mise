@@ -320,9 +320,13 @@ pub(crate) struct Providers {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum ProviderCommand {
+    /// List configured and previously managed shared servers.
     Ls(ProviderList),
+    /// Start the named shared servers.
     Start(Names),
+    /// Stop the named shared servers without deleting their data.
     Stop(Names),
+    /// Restart the named shared servers with their current configuration.
     Restart(Names),
 }
 #[derive(Debug, usage_rs::Args)]
@@ -338,7 +342,7 @@ struct Names {
 impl Providers {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let providers = load(&config.config_files)?;
+        let mut providers = load(&config.config_files)?;
         let (action, names, json) = match self.command {
             Some(ProviderCommand::Start(n)) => ("start", n.names, false),
             Some(ProviderCommand::Stop(n)) => ("stop", n.names, false),
@@ -346,6 +350,35 @@ impl Providers {
             Some(ProviderCommand::Ls(n)) => ("ls", vec![], n.json),
             None => ("ls", vec![], false),
         };
+        if matches!(action, "ls" | "stop") {
+            for entry in std::fs::read_dir(crate::dirs::STATE.join("daemon-providers"))
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if !name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                    || providers.contains_key(&name)
+                {
+                    continue;
+                }
+                let path = entry.path().join("definition.json");
+                if let Ok(bytes) = std::fs::read(&path) {
+                    let declaration = serde_json::from_slice(&bytes)
+                        .wrap_err_with(|| format!("reading saved provider {}", path.display()))?;
+                    providers.insert(
+                        name.clone(),
+                        Provider {
+                            name,
+                            source: crate::config::global_config_path(),
+                            declaration,
+                        },
+                    );
+                }
+            }
+        }
         for name in &names {
             if !providers.contains_key(name) {
                 bail!("unknown daemon provider {name:?}");

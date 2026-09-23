@@ -6297,7 +6297,8 @@
             "type": "object"
           },
           "data_dir": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "tool": {
             "type": "string"

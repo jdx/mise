@@ -45,5 +45,10 @@ TOML
 assert_contains 'mise daemons providers start pg 2>&1 || true' 'configuration changed while running'
 mise daemons providers restart pg
 assert_contains 'mise daemons providers ls --json' '"status": "running"'
+pid=$(pitchfork status mise-provider-pg/server --json | jq -r .pid)
+# Removing a declaration must leave its running server visible and stoppable.
+printf '' >"$MISE_CONFIG_DIR/config.toml"
+assert_contains 'mise daemons providers ls --json' '"name": "pg"'
+assert_fail 'mise daemons providers start pg'
 mise daemons providers stop pg
 assert_fail "kill -0 '$pid'"

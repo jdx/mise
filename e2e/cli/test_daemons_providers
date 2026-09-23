@@ -14,6 +14,13 @@ assert_contains 'mise daemons providers ls --json' '"name": "local-postgres"'
 assert "test ! -d '$MISE_STATE_DIR/daemon-providers'"
 assert_fail 'mise daemons providers start nonexistent'
 assert_fail 'mise daemons providers stop'
+cat >"$MISE_CONFIG_DIR/config.local.toml" <<'TOML'
+[daemon_providers.local-postgres]
+preset = "postgres"
+version = "18"
+port = 54321
+TOML
+assert_contains 'mise daemons providers ls --json' '"port": 54321'
 cat >>mise.toml <<'TOML'
 [daemon_providers.untrusted]
 preset = "postgres"
