@@ -2625,7 +2625,15 @@ impl AquaBackend {
                 .get(&platform_key)
                 .and_then(|platform| platform.url.clone());
             return Err(match url {
-                Some(url) => github::with_checksum_mismatch_note(err, &url, &tarball_path).await,
+                Some(url) => {
+                    github::with_checksum_mismatch_note(
+                        err,
+                        &url,
+                        &tarball_path,
+                        lockfile_has_checksum,
+                    )
+                    .await
+                }
                 None => err,
             });
         }

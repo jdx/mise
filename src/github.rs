@@ -743,7 +743,11 @@ pub(crate) fn release_asset_from_url(url: &str) -> Option<(String, String, Strin
 /// digest of the replaced upload. `None` when `download_url` is not a
 /// github.com release download, the lookup fails, or GitHub's current digest
 /// does not match the downloaded file.
-pub(crate) async fn checksum_mismatch_note(download_url: &str, file: &Path) -> Option<String> {
+pub(crate) async fn checksum_mismatch_note(
+    download_url: &str,
+    file: &Path,
+    from_lockfile: bool,
+) -> Option<String> {
     let (repo, tag, asset_name) = release_asset_from_url(download_url)?;
     let release = match get_release_with_options(API_URL, &repo, &tag, false).await {
         Ok(release) => release,
@@ -762,10 +766,13 @@ pub(crate) async fn checksum_mismatch_note(download_url: &str, file: &Path) -> O
             return None;
         }
     };
-    replaced_asset_note(&repo, &release, &asset_name, &actual)
+    replaced_asset_note(&repo, &release, &asset_name, &actual, from_lockfile)
 }
 
-/// Append [`checksum_mismatch_note`] to a failed verification, if it applies.
+/// Append [`checksum_mismatch_note`] to a failed verification when it failed
+/// on a checksum mismatch; size, I/O, and malformed-checksum errors pass through.
+/// `from_lockfile` says whether mise.lock held the expected checksum, rather
+/// than release metadata fetched for this install.
 ///
 /// Install failures are rendered with `{:#}`, which drops color-eyre sections,
 /// so the hint goes into the message itself.
@@ -773,8 +780,15 @@ pub(crate) async fn with_checksum_mismatch_note(
     err: eyre::Report,
     download_url: &str,
     file: &Path,
+    from_lockfile: bool,
 ) -> eyre::Report {
-    match checksum_mismatch_note(download_url, file).await {
+    if !err
+        .chain()
+        .any(|cause| cause.is::<crate::hash::ChecksumMismatch>())
+    {
+        return err;
+    }
+    match checksum_mismatch_note(download_url, file, from_lockfile).await {
         Some(note) => eyre::eyre!("{err:#}\nhint: {note}"),
         None => err,
     }
@@ -785,6 +799,7 @@ fn replaced_asset_note(
     release: &GithubRelease,
     asset_name: &str,
     actual_sha256: &str,
+    from_lockfile: bool,
 ) -> Option<String> {
     let asset = release
         .assets
@@ -805,10 +820,16 @@ fn replaced_asset_note(
         (Some(updated_at), None) => format!(" (asset updated {updated_at})"),
         _ => String::new(),
     };
+    let remedy = if from_lockfile {
+        "If you trust the new upload, update the checksum in mise.lock."
+    } else {
+        "The expected checksum came from cached release metadata, which refreshes within \
+         about an hour; `mise cache clear` drops mise's local copy."
+    };
     Some(format!(
         "GitHub's current digest for {asset_name} in {repo} {tag} matches this download{timing}, \
          so the expected checksum is out of date: the maintainer likely re-uploaded the asset. \
-         If you trust the new upload, update the checksum in mise.lock."
+         {remedy}"
     ))
 }
 
@@ -1227,27 +1248,49 @@ mod tests {
     #[test]
     fn test_replaced_asset_note_when_github_digest_matches_download() {
         let release = replaced_release(Some("sha256:90A8"));
-        let note = replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8").unwrap();
+        let note =
+            replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8", true).unwrap();
         assert!(note.contains("rumdl.tar.gz in rvben/rumdl v0.2.76 matches this download"));
         assert!(note.contains(
             "(asset updated 2026-09-23T08:25:23Z, release published 2026-09-23T01:45:05Z)"
         ));
+        assert!(note.contains("update the checksum in mise.lock"));
+        let note =
+            replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8", false).unwrap();
+        assert!(note.contains("cached release metadata"));
+        assert!(!note.contains("mise.lock"));
+    }
+
+    #[tokio::test]
+    async fn test_checksum_mismatch_note_skips_other_verification_errors() {
+        // A size mismatch must not trigger the GitHub lookup or the hint.
+        let err = with_checksum_mismatch_note(
+            eyre::eyre!("Size mismatch for rumdl.tar.gz: expected 1, got 2"),
+            "https://github.com/rvben/rumdl/releases/download/v0.2.76/rumdl.tar.gz",
+            Path::new("/nonexistent"),
+            true,
+        )
+        .await;
+        assert_eq!(
+            format!("{err:#}"),
+            "Size mismatch for rumdl.tar.gz: expected 1, got 2"
+        );
     }
 
     #[test]
     fn test_replaced_asset_note_skips_when_download_differs_from_github() {
         let release = replaced_release(Some("sha256:90a8"));
         assert_eq!(
-            replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "3a02"),
+            replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "3a02", true),
             None
         );
         let release = replaced_release(None);
         assert_eq!(
-            replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8"),
+            replaced_asset_note("rvben/rumdl", &release, "rumdl.tar.gz", "90a8", true),
             None
         );
         assert_eq!(
-            replaced_asset_note("rvben/rumdl", &release, "other.tar.gz", "90a8"),
+            replaced_asset_note("rvben/rumdl", &release, "other.tar.gz", "90a8", true),
             None
         );
     }
