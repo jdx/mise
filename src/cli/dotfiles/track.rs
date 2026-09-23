@@ -12,7 +12,9 @@ use crate::system::files::{FileMode, FileRequest};
 use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
-use crate::system::history::tracked::{TrackedSet, normalize_target};
+use crate::system::history::tracked::{
+    CREDENTIAL_REASON, TrackedSet, capture_exclusion, normalize_target,
+};
 
 /// Track a file or directory in place
 ///
@@ -80,7 +82,8 @@ impl DotfilesTrack {
             }
             crate::system::history::tracked::ensure_portable_ancestors(&target)?;
             let target_key = normalized_target(&target);
-            if !target.exists() && !target.is_symlink() {
+            let present = target.exists() || target.is_symlink();
+            if !present {
                 warn!(
                     "dotfiles: {} does not exist yet; it is captured once it does",
                     target.display_user()
@@ -116,10 +119,49 @@ impl DotfilesTrack {
                 .filter(|req| req.origin.config == config_path)
                 .map_or(target_key.as_str(), |req| req.target_raw.as_str());
             locations.insert(target_key.clone(), config_path);
-            let entry = self.entry(existing);
-            if entry.get("autosave").and_then(Value::as_bool) == Some(false) {
+            let policy = self.policy(existing);
+            if !policy.autosave {
                 manual.push(target_key.clone());
             }
+            // a file the guard drops must not look protected once tracked:
+            // say so before the declaration is written.
+            //
+            // **The kind is the declaration's, never `is_dir()` on a path
+            // that is not there.** The guard reads a file's own name and
+            // never a directory's, so a tracked directory is walked and
+            // its files are decided one by one — but `is_dir()` is also
+            // false for a path this command has just said is captured once
+            // it exists. A directory named `credentials` or `oauth-apps`
+            // would otherwise be promised a protection it never gets, and
+            // the user would put a real secret inside it. A path with no
+            // kind yet is told what happens to it as a file instead.
+            if !target.is_dir()
+                && let Some(reason) = capture_exclusion(&target, &policy)
+            {
+                let advice = if reason == CREDENTIAL_REASON {
+                    "; `mise dot track --encrypt` saves it encrypted"
+                } else {
+                    ""
+                };
+                if present {
+                    warn!(
+                        "dotfiles: {target_key} will be omitted from every save ({reason}){advice}"
+                    );
+                } else {
+                    warn!(
+                        "dotfiles: {target_key} is omitted from every save if it is created as a file, never as a directory ({reason}){advice}"
+                    );
+                }
+            }
+            // the keys this file's declaration wrote, whether as an inline
+            // table or a `[dotfiles."path"]` table
+            let previous: Vec<String> = doc
+                .get("dotfiles")
+                .and_then(|dotfiles| dotfiles.get(declaration_key))
+                .and_then(Item::as_table_like)
+                .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
+                .unwrap_or_default();
+            let entry = self.entry(existing, &previous);
             let dotfiles = doc
                 .entry("dotfiles")
                 .or_insert(Item::Table(toml_edit::Table::new()));
@@ -178,12 +220,9 @@ impl DotfilesTrack {
         Ok(())
     }
 
-    /// The inline table for a target: an existing track entry's fields with
-    /// this command's changes on top, so a local override keeps variants and
-    /// the other policies.
-    fn entry(&self, existing: Option<&FileRequest>) -> InlineTable {
-        let mut table = InlineTable::new();
-        table.insert("mode", string("track"));
+    /// The policy a target is tracked under: the existing entry's, with
+    /// this command's flags on top.
+    fn policy(&self, existing: Option<&FileRequest>) -> crate::system::files::FilePolicy {
         let mut policy = existing
             .map(|req| req.policy)
             .unwrap_or_else(|| crate::system::files::FilePolicy::for_mode(FileMode::Track));
@@ -193,11 +232,34 @@ impl DotfilesTrack {
         if self.encrypt {
             policy.encrypt = true;
         }
-        if policy.encrypt {
-            table.insert("encrypt", Value::Boolean(toml_edit::Formatted::new(true)));
+        policy
+    }
+
+    /// The inline table for a target: an existing track entry's fields with
+    /// this command's changes on top, so a local override keeps variants and
+    /// the other policies. `previous` holds the keys the declaration this
+    /// file held before wrote: a policy it wrote explicitly stays written,
+    /// even at its default value, while one it inherited from another
+    /// layer stays unwritten so that layer keeps deciding it.
+    fn entry(&self, existing: Option<&FileRequest>, previous: &[String]) -> InlineTable {
+        let mut table = InlineTable::new();
+        table.insert("mode", string("track"));
+        let policy = self.policy(existing);
+        // a policy is written when this command sets it or this file wrote
+        // it before; one inherited from another layer stays unwritten so
+        // that layer keeps deciding it
+        let written = |key: &str| previous.iter().any(|written| written == key);
+        if self.encrypt || written("encrypt") {
+            table.insert(
+                "encrypt",
+                Value::Boolean(toml_edit::Formatted::new(policy.encrypt)),
+            );
         }
-        if !policy.autosave {
-            table.insert("autosave", Value::Boolean(toml_edit::Formatted::new(false)));
+        if self.no_autosave || written("autosave") {
+            table.insert(
+                "autosave",
+                Value::Boolean(toml_edit::Formatted::new(policy.autosave)),
+            );
         }
         let mut variants: Vec<Variant> =
             existing.map(|req| req.variants.clone()).unwrap_or_default();
@@ -534,6 +596,87 @@ pub(crate) fn edit_exclude(glob: &str, add: bool) -> Result<bool> {
 #[cfg(test)]
 mod declaration_tests {
     use super::*;
+
+    #[test]
+    fn rewritten_declarations_keep_their_own_explicit_policies_only() {
+        use crate::system::files::{ExplicitFields, FilePolicy};
+        use crate::system::resources::ResourceOrigin;
+        let command = DotfilesTrack {
+            targets: vec![],
+            os: None,
+            profile: None,
+            no_autosave: false,
+            encrypt: false,
+            yes: true,
+        };
+        let mut policy = FilePolicy::for_mode(FileMode::Track);
+        policy.explicit = ExplicitFields {
+            autosave: true,
+            encrypt: true,
+            ..Default::default()
+        };
+        let existing = FileRequest {
+            target_raw: "~/.zshrc".into(),
+            target: PathBuf::from("/home/test/.zshrc"),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Track,
+            exclude: vec![],
+            manifest: None,
+            base: PathBuf::from("/home/test"),
+            origin: ResourceOrigin {
+                config: PathBuf::from("/home/test/.config/mise/config.toml"),
+                config_root: PathBuf::from("/home/test/.config/mise"),
+                environment: vec![],
+                source: None,
+            },
+            policy,
+            variants: vec![],
+            enabled: true,
+        };
+        // this file wrote both fields: they stay written at their values
+        let previous = ["mode", "autosave", "encrypt"].map(String::from);
+        let table = command.entry(Some(&existing), &previous);
+        assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(true));
+        assert_eq!(table.get("encrypt").and_then(Value::as_bool), Some(false));
+        // another layer wrote them (the composed flags say explicit): this
+        // file must not pin the inherited values
+        let table = command.entry(Some(&existing), &["mode".to_string()]);
+        assert!(table.get("autosave").is_none());
+        assert!(table.get("encrypt").is_none());
+        let table = command.entry(None, &[]);
+        assert!(table.get("autosave").is_none());
+        assert!(table.get("encrypt").is_none());
+        // an inherited non-default value is not pinned either; this
+        // command's own flag is
+        let mut inherited = existing.clone();
+        inherited.policy.autosave = false;
+        inherited.policy.encrypt = true;
+        let table = command.entry(Some(&inherited), &["mode".to_string()]);
+        assert!(table.get("autosave").is_none());
+        assert!(table.get("encrypt").is_none());
+        let flagged = DotfilesTrack {
+            no_autosave: true,
+            ..command
+        };
+        let table = flagged.entry(Some(&inherited), &["mode".to_string()]);
+        assert_eq!(table.get("autosave").and_then(Value::as_bool), Some(false));
+        assert!(table.get("encrypt").is_none());
+        // the keys are read from either table form
+        for text in [
+            "[dotfiles]\n\"~/.zshrc\" = { mode = \"track\", autosave = true }\n",
+            "[dotfiles.\"~/.zshrc\"]\nmode = \"track\"\nautosave = true\n",
+        ] {
+            let doc: DocumentMut = text.parse().unwrap();
+            let keys: Vec<String> = doc
+                .get("dotfiles")
+                .and_then(|dotfiles| dotfiles.get("~/.zshrc"))
+                .and_then(Item::as_table_like)
+                .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
+                .unwrap_or_default();
+            assert_eq!(keys, ["mode", "autosave"].map(String::from));
+        }
+    }
 
     #[test]
     fn resolved_sources_use_tracking_path_representation() {
