@@ -5,12 +5,14 @@
 
 export MISE_MINIMUM_RELEASE_AGE=0
 
+# Pin the global request below the newest 2.x, so a plain lock must keep the
+# pin and --bump must move it. hk releases before 1.58.1 carry no packslip.
 write_global_lock() {
   cat >"$MISE_CONFIG_DIR/mise.lock" <<'TOML'
 [[tools.hk]]
-version = "1.58.1"
+version = "2.0.0"
 backend = "packslip:github.com/jdx/hk"
-specifiers = ["1"]
+specifiers = ["2"]
 
 [tools.hk."platforms.linux-x64"]
 TOML
@@ -18,7 +20,7 @@ TOML
 
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [tools]
-hk = "1"
+hk = "2"
 TOML
 cat >mise.toml <<'TOML'
 [tools]
@@ -27,12 +29,24 @@ TOML
 
 write_global_lock
 assert_succeed "mise lock --global --platform linux-x64"
-assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "1.58.1"'
-assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "hk-x86_64-unknown-linux-gnu.tar.gz"
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "2.0.0"'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "download/v2.0.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'checksum = "sha256:'
 assert_fail "test -f mise.lock"
 
 write_global_lock
 assert_succeed "mise lock --global hk --platform linux-x64"
-assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "1.58.1"'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "2.0.0"'
 assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'checksum = "sha256:'
+
+# --bump advances the shadowed global request without touching either config.
+write_global_lock
+assert_succeed "mise lock --global --bump --platform linux-x64"
+assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "2.0.0"'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'version = "2.'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'checksum = "sha256:'
+assert "cat $MISE_CONFIG_DIR/config.toml" '[tools]
+hk = "2"'
+assert "cat mise.toml" '[tools]
+hk = "1.58.1"'
+assert_fail "test -f mise.lock"
