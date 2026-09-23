@@ -236,6 +236,9 @@ async fn which_shim(
             bail!("command wrapper for {shim_name} cannot delegate to itself");
         }
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
+        if !completion_offline {
+            install_missing_wrapper_command(config, &mut ts, wrapper.command()).await?;
+        }
         return Ok((PathBuf::from(wrapper.command()), ts, Some(wrapper.clone())));
     }
     // A configured tool may intentionally override an executable bundled by another installed
@@ -345,6 +348,25 @@ async fn which_shim(
         Ok(_) => unreachable!("err_no_version_set always returns an error"),
         Err(err) => Err(err),
     }
+}
+
+/// A wrapper's command usually comes from another configured tool (cargo → mbx
+/// from mr-boxington). Install a missing provider the way that command's own
+/// shim would, or the wrapper execs a command that is not on PATH.
+async fn install_missing_wrapper_command(
+    config: &mut Arc<Config>,
+    ts: &mut Toolset,
+    command: &str,
+) -> Result<()> {
+    if command.contains(['/', '\\']) || ts.which(config, command).await.is_some() {
+        return Ok(());
+    }
+    if ts.has_missing_lazy_bin_provider(config, command).await? {
+        ts.install_missing_lazy_bin(config, command).await?;
+    } else if Settings::get().not_found_auto_install {
+        ts.install_missing_bin(config, command).await?;
+    }
+    Ok(())
 }
 
 async fn backend_which_shim(
