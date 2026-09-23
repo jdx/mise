@@ -437,6 +437,9 @@ export const commands: { [key: string]: Command } = {
       "__provider-exec": {
         hide: true,
       },
+      __resource: {
+        hide: true,
+      },
       logs: {
         hide: false,
       },

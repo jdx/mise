@@ -747,6 +747,7 @@ pub(crate) fn expand(
         data_dir: Some(data.into()),
         task: None,
         tool: Some((tool, version.into())),
+        provider: None,
         exports,
         imported: extras.imported,
         port: Some(claim),

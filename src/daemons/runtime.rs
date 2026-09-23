@@ -449,6 +449,12 @@ impl Runtime {
         owns_profile: bool,
         starting: &[String],
     ) -> Result<(State, super::ProjectLock)> {
+        let providers = if starting.is_empty() {
+            set.clone()
+        } else {
+            set.with_dependencies(starting)
+        };
+        super::providers::prepare_set(self, &providers, force_registration).await?;
         let lock = super::ProjectLock::acquire(root)?;
         let previous = read_state(root)?;
         // This root's configuration was read under the current profile, whoever
@@ -718,6 +724,12 @@ pub(crate) fn render(set: &DaemonSet, state: &State) -> Result<String> {
             daemon.source.to_string_lossy().replace(['\r', '\n'], " ")
         ));
         let mut table = daemon.table.clone();
+        if let Some(binding) = &daemon.provider {
+            table.insert(
+                "depends".into(),
+                toml::Value::Array(vec![binding.provider.id().into()]),
+            );
+        }
         // Pitchfork wraps the main process in mise, but runs readiness probes
         // directly. Resolve custom probes in this checkout too: the supervisor
         // may have inherited another worktree's tools and endpoint variables.
@@ -1102,6 +1114,7 @@ mod tests {
             data_dir: None,
             task: None,
             tool: None,
+            provider: None,
             exports: Default::default(),
             port: Some(PortClaim::fixed(port)),
             imported: false,
@@ -1247,6 +1260,7 @@ mod tests {
             data_dir: None,
             task: None,
             tool: None,
+            provider: None,
             exports: Default::default(),
             imported: false,
             port: None,
@@ -1319,6 +1333,7 @@ mod tests {
             data_dir: None,
             task: None,
             tool: None,
+            provider: None,
             exports: Default::default(),
             imported: false,
             port: None,
@@ -1380,6 +1395,7 @@ mod tests {
             data_dir: None,
             task: task.map(str::to_string),
             tool: None,
+            provider: None,
             exports: Default::default(),
             imported: false,
             port: None,

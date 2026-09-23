@@ -2299,6 +2299,11 @@ With no subcommand, list configured and previously managed daemons.
         arg <MANIFEST>
         arg <COMMAND>
     }
+    cmd __resource hide=#true help="A project-owned readiness process: it never starts or stops the server itself." {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <PROVIDER>
+        arg <RESOURCE>
+    }
     cmd start help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[ARGS]…" required=#false double_dash=automatic var=#true

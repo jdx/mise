@@ -235,6 +235,9 @@ pub(crate) async fn start(
         // This root's own configuration, which is the only view that knows
         // about imports the referenced project itself declares.
         let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        if install_tools {
+            super::providers::install_set(&will_start).await?;
+        }
         super::ensure_not_blocked(&set, &will_start, Some(&root))?;
         // Let the configuration hash short-circuit re-registration. Forcing it
         // would re-probe `pitchfork usage` and re-run `config add` on every
@@ -368,6 +371,7 @@ mod tests {
                             data_dir: None,
                             task: None,
                             tool: None,
+                            provider: None,
                             exports: Default::default(),
                             imported: false,
                             port: None,

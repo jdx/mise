@@ -6227,6 +6227,12 @@
                 },
                 {
                   "required": ["args"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
                 }
               ]
             },
@@ -6276,6 +6282,12 @@
                 },
                 {
                   "required": ["project"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
                 }
               ]
             },
@@ -6316,6 +6328,12 @@
                 },
                 {
                   "required": ["args"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
                 }
               ]
             },
@@ -6377,6 +6395,22 @@
               }
             },
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["provider"],
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "description": "Name of a globally defined shared server provider."
+              },
+              "resource": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                "description": "Database shared by consumers choosing this same name. Omit for a checkout-specific database."
+              }
+            }
           }
         ]
       }

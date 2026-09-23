@@ -6,7 +6,7 @@ use crate::env_diff::EnvMap;
 use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -21,19 +21,29 @@ pub(crate) fn directory(name: &str) -> PathBuf {
 }
 
 pub(crate) fn load(files: &ConfigMap) -> Result<IndexMap<String, Provider>> {
+    load_selected(files, None)
+}
+
+pub(crate) fn load_selected(
+    files: &ConfigMap,
+    names: Option<&std::collections::HashSet<String>>,
+) -> Result<IndexMap<String, Provider>> {
     let mut providers = IndexMap::new();
     for cf in files.values().rev() {
         let declarations = cf.daemon_providers();
         if declarations.is_empty() {
             continue;
         }
-        if !crate::config::is_global_config(cf.get_path()) {
-            bail!(
-                "[daemon_providers] belongs in global mise configuration, not {}",
-                cf.get_path().display()
-            );
-        }
         for (name, declaration) in declarations {
+            if names.is_some_and(|names| !names.contains(&name)) {
+                continue;
+            }
+            if !crate::config::is_global_config(cf.get_path()) {
+                bail!(
+                    "[daemon_providers] belongs in global mise configuration, not {}",
+                    cf.get_path().display()
+                );
+            }
             super::validate_name("provider", &name)?;
             if !name
                 .chars()
@@ -208,7 +218,40 @@ impl Provider {
         Ok(rt)
     }
 
-    pub(crate) async fn prepare(&self, rt: &runtime::Runtime) -> Result<()> {
+    pub(crate) async fn install(&self) -> Result<()> {
+        let daemon = self.daemon()?;
+        let mut config = self.tool_config(&daemon).await?;
+        let mut ts = crate::toolset::Toolset::default();
+        for cf in config.config_files.values() {
+            ts.merge(cf.to_toolset()?);
+        }
+        ts.resolve_with_opts(
+            &config,
+            &crate::toolset::ResolveOptions {
+                offline: true,
+                ..Default::default()
+            },
+        )
+        .await?;
+        let (_, missing) = ts
+            .install_missing_versions(
+                &mut config,
+                &crate::toolset::InstallOptions {
+                    missing_args_only: false,
+                    reload_config: false,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        ts.notify_missing_versions(missing);
+        Ok(())
+    }
+
+    pub(crate) async fn prepare(
+        &self,
+        rt: &runtime::Runtime,
+        force_registration: bool,
+    ) -> Result<()> {
         let root = directory(&self.name);
         std::fs::create_dir_all(&root)?;
         let _lock = crate::lock_file::LockFile::at(&root.join("provider.lock")).lock()?;
@@ -235,7 +278,7 @@ impl Provider {
             );
         }
         let mut daemon = self.daemon()?;
-        let mut config = self.tool_config(&daemon).await?;
+        let config = self.tool_config(&daemon).await?;
         let mut ts = crate::toolset::Toolset::default();
         for cf in config.config_files.values() {
             ts.merge(cf.to_toolset()?);
@@ -248,17 +291,6 @@ impl Provider {
             },
         )
         .await?;
-        let (_, missing) = ts
-            .install_missing_versions(
-                &mut config,
-                &crate::toolset::InstallOptions {
-                    missing_args_only: false,
-                    reload_config: false,
-                    ..Default::default()
-                },
-            )
-            .await?;
-        ts.notify_missing_versions(missing);
         runtime::validate_tools(
             &DaemonSet {
                 daemons: IndexMap::from([("server".into(), daemon.clone())]),
@@ -288,12 +320,14 @@ impl Provider {
         }
         let manifest = root.join("execution.json");
         let execution = Execution {
+            preset: daemon.preset.clone().expect("provider preset"),
+            port: daemon.port.expect("provider port").port,
             env,
             commands,
             root: root.clone(),
         };
         let bytes = serde_json::to_vec_pretty(&execution)?;
-        if std::fs::read(&manifest).is_ok_and(|old| old != bytes)
+        if std::fs::read(&manifest).is_ok_and(|old| !execution.matches_process(&old))
             && rt.active(&root, &runtime::read_state(&root)?).await?
         {
             bail!(
@@ -319,8 +353,7 @@ impl Provider {
             namespaces: IndexMap::from([(root.clone(), format!("mise-provider-{}", self.name))]),
             ..Default::default()
         };
-        rt.prepare(&root, &set, true, true, &["server".into()])
-            .await?;
+        Box::pin(rt.prepare(&root, &set, force_registration, true, &["server".into()])).await?;
         runtime::write_if_changed(&path, &desired)?;
         Ok(())
     }
@@ -366,9 +399,23 @@ fn base_env() -> EnvMap {
 
 #[derive(Serialize, Deserialize)]
 struct Execution {
+    // Older provider manifests still serve process and probe execution.
+    #[serde(default)]
+    preset: String,
+    #[serde(default)]
+    port: u16,
     env: EnvMap,
     commands: IndexMap<String, String>,
     root: PathBuf,
+}
+
+impl Execution {
+    // Resource metadata may grow across releases without changing the server.
+    fn matches_process(&self, previous: &[u8]) -> bool {
+        serde_json::from_slice::<Self>(previous).is_ok_and(|old| {
+            self.env == old.env && self.commands == old.commands && self.root == old.root
+        })
+    }
 }
 
 #[derive(Debug, usage_rs::Args)]
@@ -505,7 +552,8 @@ impl Providers {
                 rt.exec(&root, vec!["stop".into(), provider.id()]).await?;
             }
             if action != "stop" {
-                provider.prepare(rt).await?;
+                provider.install().await?;
+                provider.prepare(rt, true).await?;
                 rt.exec(&root, vec!["start".into(), provider.id()]).await?;
             }
         }
@@ -525,6 +573,230 @@ impl Providers {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Binding {
+    pub provider: Provider,
+    pub resource: String,
+}
+
+fn validate_resource(resource: &str) -> Result<()> {
+    if resource.is_empty()
+        || resource.len() > 63
+        || !resource.starts_with(|c: char| c.is_ascii_lowercase())
+        || !resource
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    {
+        bail!(
+            "resource names must begin with a lowercase letter and contain at most 63 lowercase letters, digits or underscores"
+        );
+    }
+    Ok(())
+}
+
+fn resource_name(root: &Path, name: &str) -> String {
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    format!("mise_{}", crate::hash::hash_to_str(&(root, name)))
+}
+
+pub(crate) fn binding(
+    providers: &IndexMap<String, Provider>,
+    name: &str,
+    mut table: toml::Table,
+    source: PathBuf,
+    root: PathBuf,
+) -> Result<Daemon> {
+    let provider_name = super::take_string(&mut table, "provider")?
+        .ok_or_else(|| eyre::eyre!("provider must be a string"))?;
+    let resource =
+        super::take_string(&mut table, "resource")?.unwrap_or_else(|| resource_name(&root, name));
+    validate_resource(&resource)?;
+    if let Some(key) = table.keys().next() {
+        bail!(
+            "[daemons.{name}] cannot override {key:?} alongside provider; configure the server globally"
+        );
+    }
+    let provider = providers
+        .get(&provider_name)
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "unknown daemon provider {provider_name:?}; define it in global [daemon_providers]"
+            )
+        })?
+        .clone();
+    let mut export_provider = provider.clone();
+    let preset = provider
+        .declaration
+        .get("preset")
+        .and_then(toml::Value::as_str)
+        .unwrap_or_default();
+    if !matches!(preset, "postgres" | "cockroachdb") {
+        bail!("{preset} does not support provider resources yet");
+    }
+    let options = export_provider
+        .declaration
+        .entry("options".to_string())
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+        .as_table_mut()
+        .ok_or_else(|| eyre::eyre!("provider options must be a table"))?;
+    options.insert("database".into(), resource.clone().into());
+    let exports = export_provider.daemon()?.exports;
+    let command = format!(
+        "{} daemons __resource {} {}",
+        presets::quote(crate::env::MISE_BIN.to_string_lossy()),
+        presets::quote(directory(&provider.name).to_string_lossy()),
+        presets::quote(&resource)
+    );
+    Ok(Daemon {
+        name: name.into(),
+        source,
+        root,
+        table: toml::toml! { run = command mise = false proxy = false ready_output = { pattern = "mise shared resource ready", timeout = "120s" } },
+        preset: Some(preset.into()),
+        data_dir: None,
+        task: None,
+        tool: None,
+        provider: Some(Binding { provider, resource }),
+        exports,
+        imported: false,
+        port: None,
+        host: None,
+    })
+}
+
+pub(crate) async fn install_set(set: &DaemonSet) -> Result<()> {
+    let mut seen = std::collections::HashSet::new();
+    for binding in set.daemons.values().filter_map(|d| d.provider.as_ref()) {
+        if seen.insert(&binding.provider.name) {
+            binding.provider.install().await?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) async fn prepare_set(
+    rt: &runtime::Runtime,
+    set: &DaemonSet,
+    force_registration: bool,
+) -> Result<()> {
+    let mut seen = std::collections::HashSet::new();
+    for binding in set.daemons.values().filter_map(|d| d.provider.as_ref()) {
+        if seen.insert(&binding.provider.name) {
+            Box::pin(binding.provider.prepare(rt, force_registration)).await?;
+        }
+    }
+    Ok(())
+}
+
+/// A project-owned readiness process: it never starts or stops the server itself.
+#[derive(Debug, usage_rs::Args)]
+pub(crate) struct Resource {
+    provider: PathBuf,
+    resource: String,
+}
+
+impl Resource {
+    pub(crate) async fn run(self) -> Result<()> {
+        validate_resource(&self.resource)?;
+        let root = self.provider;
+        let execution: Execution =
+            serde_json::from_slice(&std::fs::read(root.join("execution.json"))?)?;
+        if !matches!(execution.preset.as_str(), "postgres" | "cockroachdb") || execution.port == 0 {
+            bail!(
+                "provider metadata predates resource support; explicitly restart its provider first"
+            );
+        }
+        {
+            let _lock = crate::lock_file::LockFile::at(&root.join("resources.lock")).lock()?;
+            let port = execution.port;
+            let postgres = execution.preset == "postgres";
+            // Concurrent starts can encounter a provider whose first start is
+            // still in flight. Check SQL readiness before provisioning.
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+            loop {
+                match sql(&execution, postgres, port, "SELECT 1").await {
+                    Ok(_) => break,
+                    Err(err) if tokio::time::Instant::now() >= deadline => return Err(err),
+                    Err(_) => tokio::time::sleep(std::time::Duration::from_millis(200)).await,
+                }
+            }
+
+            let query = format!(
+                "SELECT 1 FROM pg_database WHERE datname = '{}'",
+                self.resource
+            );
+            if sql(&execution, postgres, port, &query).await?.trim() != "1" {
+                sql(
+                    &execution,
+                    postgres,
+                    port,
+                    &format!("CREATE DATABASE \"{}\"", self.resource),
+                )
+                .await?;
+            }
+        }
+        // Readiness is output only after provisioning succeeded. Pitchfork owns
+        // this small process, so stopping a consumer cannot stop the provider.
+        println!("mise shared resource ready");
+        use std::io::Write;
+        std::io::stdout().flush()?;
+        std::future::pending::<()>().await;
+        Ok(())
+    }
+}
+
+async fn sql(execution: &Execution, postgres: bool, port: u16, query: &str) -> Result<String> {
+    let mut cmd = tokio::process::Command::new(if postgres { "psql" } else { "cockroach" });
+    cmd.env_clear()
+        .envs(&execution.env)
+        .env("PGCONNECT_TIMEOUT", "5")
+        .current_dir(&execution.root)
+        .kill_on_drop(true);
+    if postgres {
+        cmd.env("PGOPTIONS", "-c statement_timeout=30000").args([
+            "-X",
+            "-A",
+            "-t",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-h",
+            "127.0.0.1",
+            "-p",
+            &port.to_string(),
+            "-U",
+            "postgres",
+            "-d",
+            "postgres",
+            "-c",
+            query,
+        ]);
+    } else {
+        cmd.args([
+            "sql",
+            "--insecure",
+            &format!("--host=127.0.0.1:{port}"),
+            "--database=defaultdb",
+            "--format=tsv",
+            "--execute",
+            query,
+        ]);
+    }
+    let output = tokio::time::timeout(std::time::Duration::from_secs(40), cmd.output()).await??;
+    if !output.status.success() {
+        bail!(
+            "resource provisioning failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let output = String::from_utf8(output.stdout)?;
+    // Cockroach's TSV includes a column heading, unlike psql's tuples-only mode.
+    Ok(if postgres {
+        output
+    } else {
+        output.lines().skip(1).collect::<Vec<_>>().join("\n")
+    })
 }
 
 #[cfg(test)]
@@ -580,10 +852,60 @@ mod tests {
     }
 
     #[test]
+    fn process_comparison_ignores_metadata_but_protects_execution() {
+        let old = serde_json::json!({"env": {"PATH": "/bin"}, "commands": {"run": "postgres"}, "root": "/tmp/provider"});
+        let bytes = serde_json::to_vec(&old).unwrap();
+        let mut desired: Execution = serde_json::from_value(old).unwrap();
+        desired.preset = "postgres".into();
+        desired.port = 5432;
+        assert!(desired.matches_process(&bytes));
+        desired.env.insert("INJECTED".into(), "value".into());
+        assert!(!desired.matches_process(&bytes));
+        desired.env.remove("INJECTED");
+        desired.commands.insert("run".into(), "other".into());
+        assert!(!desired.matches_process(&bytes));
+        assert!(!desired.matches_process(b"{broken"));
+    }
+
+    #[test]
+    fn old_manifests_remain_readable_for_processes_and_probes() {
+        let execution: Execution = serde_json::from_value(serde_json::json!({
+            "env": {"PATH": "/bin"}, "commands": {"ready_cmd": "true"}, "root": "/tmp/provider"
+        }))
+        .unwrap();
+        assert_eq!(execution.commands["ready_cmd"], "true");
+        assert_eq!(execution.env["PATH"], "/bin");
+        assert_eq!(execution.root, PathBuf::from("/tmp/provider"));
+    }
+
+    #[test]
     fn provider_ports_are_stable_and_use_nonzero_slots() {
         let p = provider("stable", toml::Table::new());
         let first = p.daemon().unwrap().port.unwrap();
         assert_eq!(first, p.daemon().unwrap().port.unwrap());
         assert!(first.port > first.base);
+    }
+    #[test]
+    fn resource_identity_is_per_checkout_and_daemon() {
+        let root = tempfile::tempdir().unwrap();
+        let one = resource_name(root.path(), "db");
+        assert_eq!(one, resource_name(root.path(), "db"));
+        assert_ne!(one, resource_name(root.path(), "other"));
+        assert_ne!(one, resource_name(&root.path().join("other"), "db"));
+        validate_resource(&one).unwrap();
+        for invalid in ["", "../db", "a'b", "A", "a-b", &"a".repeat(64)] {
+            assert!(validate_resource(invalid).is_err());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resource_identity_follows_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("real");
+        let link = root.path().join("link");
+        std::fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert_eq!(resource_name(&real, "db"), resource_name(&link, "db"));
     }
 }
