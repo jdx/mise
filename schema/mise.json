@@ -6265,6 +6265,46 @@
         ]
       }
     },
+    "daemon_providers": {
+      "description": "Experimental shared servers owned by the user. Only allowed in global configuration.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["preset", "version"],
+        "additionalProperties": false,
+        "properties": {
+          "preset": {
+            "enum": ["postgres", "cockroachdb", "nats"]
+          },
+          "version": {
+            "type": "string"
+          },
+          "port": {
+            "$ref": "#/$defs/daemon_port"
+          },
+          "ports": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          },
+          "options": {
+            "type": "object"
+          },
+          "data_dir": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "daemons_settings": {
       "description": "Experimental project-wide daemon options.",
       "type": "object",

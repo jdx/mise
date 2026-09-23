@@ -28,6 +28,9 @@ pub(crate) struct Daemons {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
+    Providers(daemons::providers::Providers),
+    #[usage(name = "__provider-exec", hide = true)]
+    ProviderExec(daemons::providers::Exec),
     Start(Args),
     Register(Register),
     Stop(Args),
@@ -146,6 +149,8 @@ impl Daemons {
                     args.legacy_database.as_deref(),
                 );
             }
+            Some(Commands::Providers(args)) => return args.run().await,
+            Some(Commands::ProviderExec(args)) => return args.run(),
             Some(Commands::Prune(args)) => return args.run().await,
             Some(Commands::Start(args)) => ("start", args.args, false),
             Some(Commands::Register(_)) => ("register", vec![], false),

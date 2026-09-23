@@ -409,6 +409,8 @@ pub(crate) struct MiseToml {
     #[serde(default)]
     daemons_settings: Option<crate::daemons::DaemonSettings>,
     #[serde(default)]
+    daemon_providers: IndexMap<String, toml::Table>,
+    #[serde(default)]
     daemon_groups: IndexMap<String, crate::daemons::GroupDeclaration>,
     #[serde(default)]
     wrappers: IndexMap<String, CommandWrapper>,
@@ -1278,6 +1280,10 @@ impl ConfigFile for MiseToml {
         self.daemons.clone()
     }
 
+    fn daemon_providers(&self) -> IndexMap<String, toml::Table> {
+        self.daemon_providers.clone()
+    }
+
     fn daemon_settings(&self) -> Option<crate::daemons::DaemonSettings> {
         self.daemons_settings.clone()
     }
@@ -1988,6 +1994,7 @@ impl Clone for MiseToml {
             shell_alias: self.shell_alias.clone(),
             daemons: self.daemons.clone(),
             daemons_settings: self.daemons_settings.clone(),
+            daemon_providers: self.daemon_providers.clone(),
             daemon_groups: self.daemon_groups.clone(),
             wrappers: self.wrappers.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),

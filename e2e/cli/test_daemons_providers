@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+export MISE_EXPERIMENTAL=1
+mkdir -p "$MISE_CONFIG_DIR" project
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[daemon_providers.local-postgres]
+preset = "postgres"
+version = "18"
+port = "auto"
+TOML
+cd project
+printf '[env]\nCONSUMER_ONLY = "never-export"\n' >mise.toml
+assert_contains 'mise daemons providers ls --json' '"ownership": "provider"'
+assert_contains 'mise daemons providers ls --json' '"name": "local-postgres"'
+assert "test ! -d '$MISE_STATE_DIR/daemon-providers'"
+assert_fail 'mise daemons providers start nonexistent'
+assert_fail 'mise daemons providers stop'
+cat >>mise.toml <<'TOML'
+[daemon_providers.untrusted]
+preset = "postgres"
+version = "18"
+TOML
+assert_contains 'mise daemons providers ls 2>&1 || true' 'belongs in global mise configuration'

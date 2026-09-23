@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+export MISE_EXPERIMENTAL=1
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  mise install pitchfork@2.27.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.27.0)"
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_PROXY_ENABLE=false
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+mkdir -p "$MISE_CONFIG_DIR" project
+pg_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[daemon_providers.pg]
+preset = "postgres"
+version = "18"
+port = $pg_port
+TOML
+cd project
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[env]
+PGPORT = "1"
+PGDATA = "/nonexistent/consumer-data"
+[daemons.local]
+run = "exec sleep 600"
+ready_delay = 0
+TOML
+mise daemons providers start pg
+assert_contains 'mise daemons providers ls --json' '"status": "running"'
+pid=$(pitchfork status mise-provider-pg/server --json | jq -r .pid)
+assert "test -f '$MISE_STATE_DIR/daemon-providers/pg/data/PG_VERSION'"
+mise daemons start
+mise daemons stop
+assert "kill -0 '$pid'"
+# Starting from a different profile cannot mutate the server's environment.
+MISE_ENV=other mise daemons providers start pg
+assert "test '$pid' = \"$(pitchfork status mise-provider-pg/server --json | jq -r .pid)\""
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+options.database = "added"
+TOML
+assert_contains 'mise daemons providers start pg 2>&1 || true' 'configuration changed while running'
+mise daemons providers restart pg
+assert_contains 'mise daemons providers ls --json' '"status": "running"'
+mise daemons providers stop pg
+assert_fail "kill -0 '$pid'"
