@@ -695,6 +695,10 @@ impl ManagedFileRequest {
                 "refusing to remove directory {} as a file; declare it in [bootstrap.directories]",
                 self.path.display()
             ),
+            ResourceAction::Unknown if self.is_metadata_only() => bail!(
+                "refusing to set permissions on non-file path {}; entries without source or content only manage existing regular files",
+                self.path.display()
+            ),
             ResourceAction::Unknown => bail!(
                 "refusing to replace non-file path {}; set replace = true to allow replacement",
                 self.path.display()
@@ -898,6 +902,16 @@ pub(crate) fn apply_with_accounts(
         let resource = file.plan()?;
         if dry_run && resource.action == ResourceAction::Unknown {
             unknown.push(resource);
+            continue;
+        }
+        // Nothing can make a non-file target right for an entry that never
+        // replaces its target, so it is reported and left, not an error.
+        if resource.action == ResourceAction::Unknown && file.is_metadata_only() {
+            warn!(
+                "not setting permissions on {}: current {}, but only regular files are managed without source or content",
+                file.path.display(),
+                resource.current
+            );
             continue;
         }
         if let Some(action) = file.operation()? {
@@ -1881,17 +1895,73 @@ fn set_file_metadata(
     mode: Option<u32>,
 ) -> Result<()> {
     use nix::fcntl::{OFlag, open};
-    use nix::sys::stat::{Mode, SFlag, fstat};
+    use nix::sys::stat::Mode;
 
     // O_NONBLOCK keeps a FIFO swapped in after inspection from blocking the
     // open; it is refused below like any other non-regular file.
-    let file = open(
+    let file = match open(
         path,
         OFlag::O_RDONLY
             | OFlag::O_NOFOLLOW
             | OFlag::O_NONBLOCK
             | OFlag::O_NOCTTY
             | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(file) => file,
+        // The owner of an unreadable file may still change its mode.
+        #[cfg(target_os = "linux")]
+        Err(nix::errno::Errno::EACCES) => {
+            return set_unreadable_file_metadata(path, owner, group, mode);
+        }
+        Err(error) => {
+            return Err(error).wrap_err_with(|| {
+                format!(
+                    "failed to open file {} without following symlinks",
+                    path.display()
+                )
+            });
+        }
+    };
+    ensure_regular_file(&file, path)?;
+    set_descriptor_metadata(&file, owner, group, mode)
+        .wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
+}
+
+#[cfg(unix)]
+fn ensure_regular_file(file: &std::os::fd::OwnedFd, path: &Path) -> Result<()> {
+    use nix::sys::stat::{SFlag, fstat};
+
+    let stat = fstat(file)?;
+    if stat.st_mode & SFlag::S_IFMT.bits() != SFlag::S_IFREG.bits() {
+        bail!(
+            "refusing to set permissions on non-file path: {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Set metadata on a file the current user cannot read. An `O_PATH`
+/// descriptor needs no read permission and, with `O_NOFOLLOW`, refers to a
+/// final symlink itself, which the regular-file check then refuses. Linux has
+/// no `fchmod` for such a descriptor, so the change goes through its
+/// `/proc/self/fd` entry, which resolves to the opened inode rather than to
+/// the path again.
+#[cfg(target_os = "linux")]
+fn set_unreadable_file_metadata(
+    path: &Path,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: Option<u32>,
+) -> Result<()> {
+    use nix::fcntl::{OFlag, open};
+    use nix::sys::stat::Mode;
+    use std::os::fd::AsRawFd;
+
+    let file = open(
+        path,
+        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )
     .wrap_err_with(|| {
@@ -1900,15 +1970,23 @@ fn set_file_metadata(
             path.display()
         )
     })?;
-    let stat = fstat(&file)?;
-    if stat.st_mode & SFlag::S_IFMT.bits() != SFlag::S_IFREG.bits() {
-        bail!(
-            "refusing to set permissions on non-file path: {}",
-            path.display()
-        );
-    }
-    set_descriptor_metadata(&file, owner, group, mode)
-        .wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
+    ensure_regular_file(&file, path)?;
+    let descriptor_path = PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+    let (uid, gid) = resolve_owner_and_group(owner, group)?;
+    let result = nix::unistd::chown(&descriptor_path, uid, gid)
+        .map_err(eyre::Report::from)
+        .and_then(|()| match mode {
+            Some(mode) => nix::sys::stat::fchmodat(
+                nix::fcntl::AT_FDCWD,
+                &descriptor_path,
+                platform_mode(mode),
+                nix::sys::stat::FchmodatFlags::FollowSymlink,
+            )
+            .map_err(Into::into),
+            None => Ok(()),
+        });
+    drop(file);
+    result.wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
 }
 
 #[cfg(not(unix))]
@@ -1931,6 +2009,20 @@ fn set_descriptor_metadata(
     group: Option<&str>,
     mode: Option<u32>,
 ) -> Result<()> {
+    let (uid, gid) = resolve_owner_and_group(owner, group)?;
+    nix::unistd::fchown(descriptor, uid, gid)?;
+    // chown may clear setuid/setgid bits, so apply the requested mode last.
+    if let Some(mode) = mode {
+        nix::sys::stat::fchmod(descriptor, platform_mode(mode))?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn resolve_owner_and_group(
+    owner: Option<&str>,
+    group: Option<&str>,
+) -> Result<(Option<nix::unistd::Uid>, Option<nix::unistd::Gid>)> {
     let uid = owner
         .map(resolve_user)
         .transpose()?
@@ -1939,12 +2031,12 @@ fn set_descriptor_metadata(
         .map(resolve_group)
         .transpose()?
         .map(nix::unistd::Gid::from_raw);
-    nix::unistd::fchown(descriptor, uid, gid)?;
-    let Some(mode) = mode else {
-        return Ok(());
-    };
-    // chown may clear setuid/setgid bits, so apply the requested mode last.
-    let platform_mode = [
+    Ok((uid, gid))
+}
+
+#[cfg(unix)]
+fn platform_mode(mode: u32) -> nix::sys::stat::Mode {
+    [
         (0o4000, nix::sys::stat::Mode::S_ISUID),
         (0o2000, nix::sys::stat::Mode::S_ISGID),
         (0o1000, nix::sys::stat::Mode::S_ISVTX),
@@ -1960,9 +2052,7 @@ fn set_descriptor_metadata(
     ]
     .into_iter()
     .filter_map(|(bit, flag)| (mode & bit != 0).then_some(flag))
-    .fold(nix::sys::stat::Mode::empty(), |mode, flag| mode | flag);
-    nix::sys::stat::fchmod(descriptor, platform_mode)?;
-    Ok(())
+    .fold(nix::sys::stat::Mode::empty(), |mode, flag| mode | flag)
 }
 
 fn remove_directory(path: &Path, recursive: bool) -> Result<()> {
@@ -2310,7 +2400,8 @@ mod tests {
                 content_matches: None,
             });
             assert_eq!(wrong_type.plan().unwrap().action, ResourceAction::Unknown);
-            assert!(wrong_type.operation().is_err());
+            let error = wrong_type.operation().unwrap_err().to_string();
+            assert!(!error.contains("replace"), "unexpected error: {error}");
         }
     }
 
@@ -2339,6 +2430,18 @@ mod tests {
         assert_eq!(metadata.ino(), inode);
         assert_eq!(fs::read_to_string(&path).unwrap(), "content");
 
+        // The owner can change the mode of a file it cannot read.
+        #[cfg(target_os = "linux")]
+        if !nix::unistd::geteuid().is_root() {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+            set_file_metadata(&path, None, None, Some(0o600)).unwrap();
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+                0o600
+            );
+            assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
+        }
+
         // An unmanaged mode is left alone.
         set_file_metadata(&path, None, None, None).unwrap();
         assert_eq!(
@@ -2356,6 +2459,22 @@ mod tests {
         );
 
         assert!(set_file_metadata(temp.path(), None, None, Some(0o700)).is_err());
+
+        // The unreadable-file path refuses symlinks and directories too.
+        #[cfg(target_os = "linux")]
+        {
+            assert!(set_unreadable_file_metadata(&link, None, None, Some(0o644)).is_err());
+            assert!(set_unreadable_file_metadata(temp.path(), None, None, Some(0o700)).is_err());
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+                0o600
+            );
+            set_unreadable_file_metadata(&path, None, None, Some(0o640)).unwrap();
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+                0o640
+            );
+        }
     }
 
     #[test]

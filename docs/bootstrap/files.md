@@ -89,9 +89,11 @@ Changing the owner or group may clear setuid and setgid bits, as it does with
 These entries never create, replace, or remove the file:
 
 - A missing target is skipped with a warning, and apply still succeeds.
-- A symlink, directory, or other non-regular file is reported as `unknown` and
-  is not changed. The change is made through a handle opened without following
-  symlinks, so it never lands on a symlink's target.
+- A symlink, directory, or other non-regular file is reported as `unknown`;
+  apply warns and leaves it unchanged. The change is made through a handle
+  opened without following symlinks, so it never lands on a symlink's target.
+  On Linux, the owner of a file it cannot read can still change its mode
+  without `sudo`.
 - `template` and `replace` require `source` or `content` and are rejected here.
 - `mise bootstrap unapply` keeps the file, since mise never managed its content.
 

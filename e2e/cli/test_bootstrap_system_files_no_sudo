@@ -113,6 +113,25 @@ assert "cat '$perms_file'" "written elsewhere"
 assert "stat -c %i '$perms_file'" "$inode"
 assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "unchanged"
 
+# The owner of an unreadable file can repair its mode without elevation.
+chmod 0000 "$perms_file"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "stat -c %a '$perms_file'" "600"
+assert "stat -c %i '$perms_file'" "$inode"
+
+# A symlink is left alone with a warning, and its target keeps its mode.
+link_file="$PWD/perms-link.conf"
+ln -s "$perms_file" "$link_file"
+cat <<EOF >mise.toml
+[bootstrap.files."$link_file"]
+mode = "0644"
+EOF
+
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run 2>&1" "manual action required"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "only regular files are managed without source or content"
+assert "stat -c %a '$perms_file'" "600"
+assert_succeed "test -L '$link_file'"
+
 # A missing target is not created, and apply still succeeds.
 missing_file="$PWD/missing-perms.conf"
 cat <<EOF >mise.toml
