@@ -17,6 +17,14 @@ settings="$(mise __complete_word__ --shell fish --line 'mise config set settings
 assert_contains_text "$settings" $'settings.jobs\tHow many jobs to run concurrently'
 assert_not_contains_text "$settings" $'\001files'
 
+zsh_settings="$(mise __complete_word__ --shell zsh --line 'mise config set settings.jo')"
+assert_contains_text "$zsh_settings" $'settings.jobs\tHow many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.\tsettings.jobs'
+assert_not_contains_text "$zsh_settings" $'\001files'
+
+pwsh_settings="$(mise __complete_word__ --shell powershell --line 'mise config set settings.jo')"
+assert_contains_text "$pwsh_settings" $'settings.jobs\tHow many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.\tsettings.jobs\tvalue'
+assert_not_contains_text "$pwsh_settings" $'\001files'
+
 tools="$(mise __complete_word__ --shell fish --line 'mise cfg get tools.')"
 assert_contains_text "$tools" 'tools.node'
 assert_not_contains_text "$tools" 'tools.bun'
