@@ -176,14 +176,23 @@ async fn search_backend_registry(
         || settings.offline()
         || settings.disable_backends.iter().any(|b| b == backend)
         || (backend_type.is_experimental() && !settings.experimental)
+        // crates.io results would not be installable from another registry
+        || (backend_type == BackendType::Cargo && settings.cargo.registry_name.is_some())
     {
         return vec![];
     }
+    // Results depend on which registry is configured, not just the query
+    let registry = match backend_type {
+        BackendType::Npm => npm_registry::search_registry(query),
+        BackendType::Dotnet => settings.dotnet.registry_url.clone(),
+        _ => String::new(),
+    };
     let cache = CacheManagerBuilder::new(
         dirs::CACHE
             .join("package-registry-search")
             .join(format!("{backend}.msgpack.z")),
     )
+    .with_cache_key(registry)
     .with_cache_key(query.to_string())
     .with_fresh_duration(settings.fetch_remote_versions_cache())
     .build();
@@ -235,10 +244,16 @@ fn backend_entries(
             id,
             name: name.to_string(),
             // Registry descriptions can span several lines, which would break
-            // table rows and completion output.
+            // table rows and completion output, and are publisher-controlled, so
+            // control characters could inject terminal escape sequences.
             description: tool
                 .description
-                .map(|description| description.split_whitespace().join(" "))
+                .map(|description| {
+                    description
+                        .split_whitespace()
+                        .join(" ")
+                        .replace(char::is_control, "")
+                })
                 .filter(|description| !description.is_empty()),
             source: ToolCatalogSource::Backend,
         })
@@ -357,7 +372,7 @@ fn valid_tool_name(name: &str) -> bool {
             .is_some_and(|scoped| !scoped.contains('@'));
     !name.is_empty()
         && valid_at
-        && !name.chars().any(char::is_whitespace)
+        && !name.chars().any(|c| c.is_whitespace() || c.is_control())
         && !name.contains([':', '[', ']'])
 }
 
@@ -372,6 +387,7 @@ mod tests {
         assert!(!valid_tool_name(""));
         assert!(!valid_tool_name("other:tool"));
         assert!(!valid_tool_name("two tools"));
+        assert!(!valid_tool_name("tool\u{1b}[31m"));
         assert!(!valid_tool_name("tool[option=true]"));
         assert!(!valid_tool_name("tool@version"));
         assert!(!valid_tool_name("@scope/tool@version"));
@@ -407,6 +423,10 @@ mod tests {
                 description: Some("A linter.\n  It formats too.".into()),
             },
             vfox::BackendTool {
+                name: "escape".into(),
+                description: Some("\u{1b}]8;;https://evil\u{7}Nice tool".into()),
+            },
+            vfox::BackendTool {
                 name: "blank".into(),
                 description: Some(" \n".into()),
             },
@@ -416,13 +436,17 @@ mod tests {
             },
         ];
         let entries = backend_entries("gem", tools).collect_vec();
-        assert_eq!(entries.len(), 2);
+        assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].id, "gem:rubocop");
         assert_eq!(
             entries[0].description.as_deref(),
             Some("A linter. It formats too.")
         );
-        assert_eq!(entries[1].description, None);
+        assert_eq!(
+            entries[1].description.as_deref(),
+            Some("]8;;https://evilNice tool")
+        );
+        assert_eq!(entries[2].description, None);
     }
 
     #[test]

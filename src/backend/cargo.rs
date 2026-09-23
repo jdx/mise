@@ -557,9 +557,6 @@ struct CrateVersion {
 }
 
 /// Search crates.io for crates matching `query`.
-///
-/// Returns nothing when `cargo.registry_name` points installs at another
-/// registry, since crates.io results would not be installable from it.
 pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::BackendTool>> {
     #[derive(Deserialize)]
     struct SearchResponse {
@@ -571,9 +568,6 @@ pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::
         description: Option<String>,
     }
 
-    if Settings::get().cargo.registry_name.is_some() {
-        return Ok(vec![]);
-    }
     let url = Url::parse_with_params(
         "https://crates.io/api/v1/crates",
         &[("q", query), ("per_page", &limit.to_string())],

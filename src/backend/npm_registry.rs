@@ -23,7 +23,10 @@ use eyre::Result;
 use crate::backend::VersionInfo;
 use crate::backend::npm::is_semver_prerelease;
 use crate::config::Settings;
-use crate::http::HTTP_FETCH;
+
+/// npm registry configuration from the environment and the user's
+/// `~/.npmrc`, read once per process.
+static CONFIG: Lazy<NpmConfig> = Lazy::new(|| NpmConfig::load(&meta_dir()));
 
 /// Process-wide npm registry client. Registry URLs, scoped registries, and
 /// auth are read once from the environment and the user's `~/.npmrc`; the
@@ -38,7 +41,7 @@ static CLIENT: Lazy<RegistryClient> = Lazy::new(|| {
     // Before the first registry request, so the memoized User-Agent is
     // mise's rather than standalone aube's.
     crate::backend::aube_host::init();
-    let config = NpmConfig::load(&meta_dir());
+    let config = CONFIG.clone();
     let settings = Settings::get();
     let mode = if settings.offline() {
         NetworkMode::Offline
@@ -133,37 +136,31 @@ pub(crate) async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
         .cloned())
 }
 
-/// Search the configured default registry for packages matching `query`
-/// through its `/-/v1/search` endpoint.
+/// Search npm packages matching `query` through the `/-/v1/search` endpoint
+/// of the registry `.npmrc` routes the query to, with the same auth as
+/// metadata and tarball requests.
 pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::BackendTool>> {
-    #[derive(serde::Deserialize)]
-    struct SearchResponse {
-        objects: Vec<SearchObject>,
-    }
-    #[derive(serde::Deserialize)]
-    struct SearchObject {
-        package: SearchPackage,
-    }
-    #[derive(serde::Deserialize)]
-    struct SearchPackage {
-        name: String,
-        description: Option<String>,
-    }
-
-    let registry = NpmConfig::load(&meta_dir()).registry;
-    let url = url::Url::parse_with_params(
-        &format!("{}/-/v1/search", registry.trim_end_matches('/')),
-        &[("text", query), ("size", &limit.to_string())],
-    )?;
-    let res: SearchResponse = HTTP_FETCH.json(url).await?;
-    Ok(res
-        .objects
+    let timeout = Settings::get().fetch_remote_versions_timeout();
+    Ok(CLIENT
+        .search_packages(query, limit, timeout)
+        .await?
         .into_iter()
-        .map(|o| vfox::BackendTool {
-            name: o.package.name,
-            description: o.package.description,
+        .map(|p| vfox::BackendTool {
+            name: p.name,
+            description: p.description,
         })
         .collect())
+}
+
+/// The registry an npm search for `query` goes to, so cached search results
+/// are not reused after `.npmrc` points somewhere else.
+pub(crate) fn search_registry(query: &str) -> String {
+    let routing_name = if query.starts_with('@') && !query.contains('/') {
+        format!("{query}/")
+    } else {
+        query.to_string()
+    };
+    CONFIG.registry_for(&routing_name).to_string()
 }
 
 /// Download the exact npm registry tarball for a package version, honoring
