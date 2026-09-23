@@ -852,9 +852,12 @@ pub(crate) fn validate_absent_edit_targets(
     edits: &[crate::system::edits::EditRequest],
 ) -> Result<()> {
     for edit in edits {
+        // absent targets are lexically normalized; compare the edit's path
+        // the same way so a `..` spelling cannot slip past
+        let path = lexical_normalize(&edit.path);
         if let Some(file) = files
             .iter()
-            .find(|file| file.mode == FileMode::Absent && file.target == edit.path)
+            .find(|file| file.mode == FileMode::Absent && file.target == path)
         {
             bail!(
                 "conflicting dotfile declarations for {}: mode = \"absent\" removes the file that the edit {} changes\n\n  absent:\n    {}\n\n  edit:\n    {}",
@@ -4525,6 +4528,9 @@ source = "oldrc""#,
         let err =
             validate_absent_edit_targets(&[absent_req(&target)], &[edit(&target)]).unwrap_err();
         assert!(err.to_string().contains("conflicting dotfile declarations"));
+        // another spelling of the same path
+        let dotted = dirs::HOME.join(".dir").join("..").join(".oldrc");
+        assert!(validate_absent_edit_targets(&[absent_req(&target)], &[edit(&dotted)]).is_err());
         validate_absent_edit_targets(&[absent_req(&target)], &[edit(&target.with_extension("x"))])?;
         // a whole-file entry of another mode may still be edited
         let copy = link_req(&target, &target, FileMode::Copy);
