@@ -4353,7 +4353,14 @@
               },
               "exclude": {
                 "type": "array",
-                "description": "glob patterns to skip when the mode walks a source directory (symlink-each, or copy with a directory source); a pattern without \"/\" matches any path component, one with \"/\" is anchored to the source root",
+                "description": "glob patterns to skip when the mode walks a directory (symlink-each, copy with a directory source, or a tracked directory, where they are relative to the tracked path); a pattern without \"/\" matches any path component, one with \"/\" is anchored to the root",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "include": {
+                "type": "array",
+                "description": "history only (mode = \"track\"): the only paths of the tracked directory that are captured, relative to it and matched like \"exclude\"; without it the whole tree is captured with the builtin credential filtering, and an explicit \"exclude\" still wins. A selected file is captured even when it looks like a credential store, in plaintext unless the entry sets encrypt",
                 "items": {
                   "type": "string"
                 }
@@ -4521,6 +4528,23 @@
                       "content": false,
                       "line": false,
                       "position": false
+                    }
+                  }
+                ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": ["include", "mode"],
+                    "properties": {
+                      "mode": {
+                        "const": "track"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "include": false
                     }
                   }
                 ]

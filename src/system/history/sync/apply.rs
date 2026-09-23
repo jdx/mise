@@ -120,6 +120,9 @@ pub(crate) async fn apply_locked_with_scope(
     if !req.paths.is_empty() {
         bail!("partial pulls are not supported: apply the complete setup without PATH arguments");
     }
+    // A pull deletes, and a rule it could not compile is a path it would
+    // wrongly believe is selected here.
+    tracked.refuse_unusable_exclusions()?;
     let repo = store
         .repo()
         .ok_or_else(|| eyre::eyre!("applying requires git"))?;
@@ -261,6 +264,16 @@ pub(crate) async fn apply_locked_with_scope(
                 Some(head) => repo
                     .object_at(head, &conflict.branch_path)?
                     .map(|object| {
+                        // a nested repository pointer names objects this
+                        // repository does not hold: it cannot be taken
+                        if take_remote.contains(&local)
+                            && super::reconcile::is_gitlink(Some(&object))
+                        {
+                            bail!(
+                                "cannot take the repository's version of {path}: it is a nested repository pointer, whose files history does not hold. Keep this machine's files with `mise dot pull --keep-local {path}`, or replace them with a clone of that repository yourself",
+                                path = display_path(&local)
+                            );
+                        }
                         if !encrypted.contains(&conflict.branch_path) {
                             return Ok(object);
                         }
@@ -426,6 +439,18 @@ pub(crate) async fn apply_locked_with_scope(
             group,
         });
     }
+    // paths sync leaves alone are shown with every plan, so a nested
+    // repository that never arrives is not mistaken for one still pending
+    let skipped: Vec<(PathBuf, String)> = status
+        .skipped
+        .iter()
+        .filter_map(|skipped| {
+            roots
+                .locate(&skipped.branch_path)
+                .path()
+                .map(|path| (path.to_path_buf(), skipped.reason.clone()))
+        })
+        .collect();
     let fresh_adoption = planned_head.is_none() && status.upstream_commit.is_some();
     if steps.is_empty() && !fresh_adoption && inventory_tree.is_none() {
         if !req.dry_run && !req.automatic {
@@ -433,6 +458,9 @@ pub(crate) async fn apply_locked_with_scope(
             run::write_status(state_dir, &status)?;
         }
         if !req.automatic {
+            for (path, reason) in &skipped {
+                info!("history: {} skipped: {reason}", display_path(path));
+            }
             info!("history: nothing to apply");
         }
         return Ok(ApplyOutcome::default());
@@ -510,6 +538,13 @@ pub(crate) async fn apply_locked_with_scope(
         table.add_row(vec![
             display_path(&directory.path),
             "permissions".into(),
+            "setup".into(),
+        ]);
+    }
+    for (path, reason) in &skipped {
+        table.add_row(vec![
+            display_path(path),
+            format!("skipped: {reason}"),
             "setup".into(),
         ]);
     }

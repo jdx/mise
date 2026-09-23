@@ -30,8 +30,9 @@ allows only the intended service account or root to read them.
 File content may come from `source` or inline `content`. Relative source paths
 are resolved from the configuration file that declares them, and source paths
 beginning with `~/` are resolved from the user's home directory. Present files
-must declare exactly one content source. Targets must be absolute paths, and
-mise refuses to manage `/` itself.
+must declare exactly one content source. Targets must be absolute paths or
+begin with `~/`, which resolves from the user's home directory. mise refuses to
+manage `/` itself.
 
 Directory creation uses `mkdir -p` semantics, so missing parent directories are
 created automatically. The configured ownership and mode apply to the declared
@@ -128,6 +129,18 @@ state = "absent"
 [bootstrap.directories."/opt/obsolete"]
 state = "absent"
 ```
+
+Targets in the home directory work the same way, which is useful for
+retiring a file that an older setup created:
+
+```toml
+[bootstrap.files."~/.oldrc"]
+state = "absent"
+```
+
+An absent file is removed whatever its content, and applying again once it is
+gone changes nothing. A file you own in your home directory is removed without
+`sudo`.
 
 Directories must be empty before removal. Recursively deleting a directory
 requires the additional `recursive = true` setting and is shown as a

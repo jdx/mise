@@ -66,6 +66,9 @@ impl DotfilesStatus {
             })
             .cloned()
             .collect::<Vec<_>>();
+        // the history walk decides what a tracked entry really saves, so a
+        // tracked row can say how many of its files every save leaves out
+        let history = super::history_status::report().await?;
         let mut file_rows: Vec<Vec<String>> = vec![];
         let mut json_files = vec![];
         for req in &files {
@@ -73,11 +76,28 @@ impl DotfilesStatus {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
+            let (omitted, nested) = match state {
+                FileState::Tracked => (
+                    paths_under(&history.omitted, &req.target),
+                    paths_under(&history.nested, &req.target),
+                ),
+                _ => (0, 0),
+            };
             let state_str = match &state {
                 FileState::Applied => "applied".to_string(),
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
+                FileState::Tracked if omitted > 0 || nested > 0 => {
+                    let mut parts = vec![];
+                    if omitted > 0 {
+                        parts.push(format!("{omitted} omitted"));
+                    }
+                    if nested > 0 {
+                        parts.push(format!("{nested} nested"));
+                    }
+                    format!("tracked ({})", parts.join(", "))
+                }
                 FileState::Tracked => "tracked".to_string(),
             };
             any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
@@ -95,6 +115,8 @@ impl DotfilesStatus {
                         FileState::Differs(_) => "differs",
                         FileState::Tracked => "tracked",
                     },
+                    "omitted": omitted,
+                    "nested": nested,
                 });
                 if let Some(permissions) = req.permissions {
                     entry["permissions"] = json!(format!("{permissions:04o}"));
@@ -174,7 +196,6 @@ impl DotfilesStatus {
         if files.is_empty() && edits.is_empty() {
             super::warn_if_dotfiles_ignored();
         }
-        let history = super::history_status::report().await?;
         if self.json {
             miseprintln!(
                 "{}",
@@ -212,4 +233,17 @@ impl DotfilesStatus {
         }
         Ok(())
     }
+}
+
+/// How many reported paths are `target` itself or lie beneath it.
+fn paths_under(
+    reported: &[crate::system::history::store::PathReason],
+    target: &std::path::Path,
+) -> usize {
+    let target = crate::system::history::tracked::normalize_target(target);
+    let display = crate::file::display_path(&target);
+    reported
+        .iter()
+        .filter(|reported| crate::system::history::tracked::display_under(&reported.path, &display))
+        .count()
 }
