@@ -155,8 +155,10 @@ mise dot pull
 ```
 
 These commands also work in automatic mode when you want to sync immediately.
-When a shared change updates tools, services, or template sources, run
-`mise bootstrap` to apply that configuration and render templates.
+Pulling restores files but runs no setup. When a shared change updates tools,
+services, template sources, or the `bootstrap` task, run `mise bootstrap` to
+apply that configuration, render templates, and run the task. `mise dot status`
+reminds you until a complete bootstrap has run.
 
 ## Set up another machine
 
@@ -176,6 +178,19 @@ Review the proposed files before confirming. Bootstrap restores the tracked
 files and applies the saved mise configuration, including the watcher service.
 If configuration or required template sources are missing from history,
 bootstrap reports which files you need to track and share from the first machine.
+
+Put setup steps that files alone do not cover, such as installing shell plugins
+or fixing permissions, in `[tasks.bootstrap]` of the shared configuration:
+
+```toml
+[tasks.bootstrap]
+run = "chmod 700 ~/.ssh"
+```
+
+Adoption runs the task once the files are restored, and every later
+`mise bootstrap` runs it again, so make it safe to repeat. `[history.reload]`
+is not a substitute: mise reads reload commands before restoring files, so a
+table that arrives with the adoption does not run.
 
 Any Git host works. `OWNER/REPO` is shorthand for GitHub; for anything else,
 pass the full URL:
