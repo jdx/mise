@@ -177,10 +177,48 @@ impl Provider {
         Ok(config)
     }
 
+    /// Management follows the user's global configuration, never a consumer's
+    /// tools or env. Persist only connection identity, not the user's environment.
+    pub(crate) async fn runtime(&self) -> Result<runtime::Runtime> {
+        let config = Config::get().await?;
+        let files = config
+            .config_files
+            .iter()
+            .filter(|(path, _)| crate::config::is_global_config(path))
+            .map(|(path, cf)| (path.clone(), cf.clone()))
+            .collect();
+        let global = Config::load_from_config_files(files, true).await?;
+        let (_, ts) = runtime::toolset(&global, false).await?;
+        let root = directory(&self.name);
+        let previous = runtime::read_state(&root)?;
+        let fallback = if previous.bin.is_file() {
+            Some(previous.bin)
+        } else {
+            which::which("pitchfork").ok()
+        };
+        let mut rt = runtime::Runtime::from_toolset(&global, &ts, fallback.as_deref()).await?;
+        let path = root.join("supervisor.json");
+        if path.is_file() {
+            let identity: EnvMap = serde_json::from_slice(&std::fs::read(path)?)?;
+            rt.env.extend(identity);
+        }
+        Ok(rt)
+    }
+
     pub(crate) async fn prepare(&self, rt: &runtime::Runtime) -> Result<()> {
         let root = directory(&self.name);
         std::fs::create_dir_all(&root)?;
         let _lock = crate::lock_file::LockFile::at(&root.join("provider.lock")).lock()?;
+        let connection = root.join("supervisor.json");
+        let owner = Box::pin(self.runtime()).await?;
+        let identity = supervisor_identity(&owner.env);
+        if supervisor_identity(&rt.env) != identity {
+            bail!(
+                "provider {} belongs to the user's supervisor; remove the consumer's Pitchfork directory overrides",
+                self.name
+            );
+        }
+        runtime::write_if_changed(&connection, &serde_json::to_vec(&identity)?)?;
         let path = root.join("definition.json");
         let desired = serde_json::to_vec(&self.declaration)?;
         if std::fs::read(&path).is_ok_and(|old| old != desired)
@@ -282,6 +320,26 @@ impl Provider {
         runtime::write_if_changed(&path, &desired)?;
         Ok(())
     }
+}
+
+fn supervisor_identity(env: &EnvMap) -> EnvMap {
+    let value = |key: &str| {
+        env.get(key)
+            .cloned()
+            .or_else(|| crate::env::PRISTINE_ENV.get(key).cloned())
+    };
+    let home = value("HOME").unwrap_or_else(|| crate::dirs::HOME.to_string_lossy().into_owned());
+    let state = value("PITCHFORK_STATE_DIR").unwrap_or_else(|| {
+        let base = value("XDG_STATE_HOME").unwrap_or_else(|| format!("{home}/.local/state"));
+        format!("{base}/pitchfork")
+    });
+    let config =
+        value("PITCHFORK_CONFIG_DIR").unwrap_or_else(|| format!("{home}/.config/pitchfork"));
+    EnvMap::from_iter([
+        ("HOME".into(), home),
+        ("PITCHFORK_STATE_DIR".into(), state),
+        ("PITCHFORK_CONFIG_DIR".into(), config),
+    ])
 }
 
 fn base_env() -> EnvMap {
@@ -397,10 +455,8 @@ impl Providers {
                 }
                 let path = entry.path().join("definition.json");
                 if let Ok(bytes) = std::fs::read(&path) {
-                    // Stopping needs only the name, so a damaged definition must
-                    // not block cleanup of this or any other provider.
-                    let declaration = serde_json::from_slice(&bytes).unwrap_or_else(|err| {
-                        warn!("reading saved provider {}: {err}", path.display());
+                    let declaration = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
+                        warn!("invalid saved provider definition {}; lifecycle cleanup remains available", path.display());
                         toml::Table::new()
                     });
                     providers.insert(
@@ -422,32 +478,13 @@ impl Providers {
         if action != "ls" && names.is_empty() {
             bail!("name the providers to {action}");
         }
-        // Providers are managed identically from every directory: resolve
-        // pitchfork and its environment from global configuration only, never
-        // from the project the command happens to run in.
-        let global = Config::load_from_config_files(
-            config
-                .config_files
-                .iter()
-                .filter(|(path, _)| crate::config::is_global_config(path))
-                .map(|(path, cf)| (path.clone(), cf.clone()))
-                .collect(),
-            true,
-        )
-        .await?;
-        let (global, ts) = runtime::toolset(&global, false).await?;
         let mut rows = vec![];
         for provider in providers
             .values()
             .filter(|p| names.is_empty() || names.contains(&p.name))
         {
             let root = directory(&provider.name);
-            let fallback = runtime::read_state(&root)
-                .ok()
-                .map(|state| state.bin)
-                .filter(|bin| bin.is_file())
-                .or_else(|| which::which("pitchfork").ok());
-            let rt = runtime::Runtime::from_toolset(&global, &ts, fallback.as_deref()).await;
+            let rt = provider.runtime().await;
             if action == "ls" {
                 let daemon = provider.daemon().ok();
                 let status = if let Ok(rt) = &rt {
@@ -455,7 +492,7 @@ impl Providers {
                 } else {
                     None
                 };
-                rows.push(serde_json::json!({"name": provider.name, "id": provider.id(), "source": provider.source, "preset": daemon.as_ref().and_then(|d| d.preset.clone()), "port": daemon.as_ref().and_then(|d| d.port.map(|p| p.port)), "data_dir": daemon.and_then(|d| d.data_dir), "ownership": "provider", "status": status.and_then(|v| v.get("status").cloned()).unwrap_or("available".into())}));
+                rows.push(serde_json::json!({"name": provider.name, "id": provider.id(), "source": provider.source, "preset": daemon.as_ref().and_then(|d| d.preset.as_ref()), "port": daemon.as_ref().and_then(|d| d.port.as_ref()).map(|p| p.port), "data_dir": daemon.as_ref().and_then(|d| d.data_dir.as_ref()), "ownership": "provider", "status": status.and_then(|v| v.get("status").cloned()).unwrap_or("available".into())}));
                 continue;
             }
             let rt = rt.as_ref().map_err(|e| eyre::eyre!("{e:#}"))?;

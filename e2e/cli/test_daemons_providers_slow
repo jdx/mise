@@ -50,9 +50,17 @@ assert_contains 'mise daemons providers start pg 2>&1 || true' 'configuration ch
 mise daemons providers restart pg
 assert_contains 'mise daemons providers ls --json' '"status": "running"'
 pid=$(pitchfork status mise-provider-pg/server --json | jq -r .pid)
+# Project Pitchfork settings must not redirect provider management.
+cat >mise.local.toml <<'TOML'
+[env]
+PITCHFORK_STATE_DIR = "/nonexistent/consumer-supervisor"
+TOML
+assert_contains 'mise daemons providers ls --json' '"status": "running"'
 # Removing a declaration must leave its running server visible and stoppable.
 printf '' >"$MISE_CONFIG_DIR/config.toml"
 assert_contains 'mise daemons providers ls --json' '"name": "pg"'
 assert_fail 'mise daemons providers start pg'
+printf '{invalid' >"$MISE_STATE_DIR/daemon-providers/pg/definition.json"
+assert_contains 'mise daemons providers ls --json' '"name": "pg"'
 mise daemons providers stop pg
 assert_fail "kill -0 '$pid'"
