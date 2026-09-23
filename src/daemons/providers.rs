@@ -3,7 +3,7 @@ use super::{Daemon, DaemonSet, ports, presets, runtime};
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
-use eyre::{Context, Result, bail};
+use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -393,6 +393,7 @@ impl Exec {
             .current_dir(&manifest.root);
         #[cfg(unix)]
         {
+            use eyre::Context;
             use std::os::unix::process::CommandExt;
             Err(process.exec()).wrap_err("executing provider command")
         }
