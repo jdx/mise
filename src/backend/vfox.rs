@@ -476,13 +476,31 @@ impl Backend for VfoxBackend {
         _pr: &dyn crate::ui::progress_report::SingleReport,
         tv: &ToolVersion,
     ) -> eyre::Result<()> {
-        if self.is_backend_plugin() || !self.plugin.is_installed() {
+        if !self.plugin.is_installed() {
             return Ok(());
         }
 
         let (mut vfox, log_rx) = self.plugin.vfox()?;
         Self::forward_plugin_logs(log_rx);
         vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
+        if self.is_backend_plugin() {
+            let options = self
+                .tool_options_for_tv(config, tv)
+                .await
+                .into_backend_options()
+                .into_map();
+            vfox.backend_uninstall(
+                &self.pathname,
+                self.get_tool_name()?,
+                &tv.version,
+                tv.install_path(),
+                tv.download_path(),
+                options,
+            )
+            .await
+            .wrap_err("Backend uninstall method failed")?;
+            return Ok(());
+        }
         vfox.pre_uninstall(&self.pathname, &tv.version, tv.install_path())
             .await?;
         Ok(())
