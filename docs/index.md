@@ -226,7 +226,8 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
   </div>
 
   <div class="landing-cta">
-    <h2>Get started with mise</h2>
+    <p class="landing-kicker"><span>—</span> Ready when you are</p>
+    <h2><em>Allez.</em> Prep your station.</h2>
     <div class="landing-mini-install"><code>curl https://mise.run | sh</code></div>
     <div class="landing-links">
       <a href="/getting-started">Getting started</a>
