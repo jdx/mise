@@ -1948,11 +1948,15 @@ fn check_permissions(req: &FileRequest, content: Result<FileState>) -> Result<Fi
         let permissions_differ = || FileState::Differs("permissions differ".into());
         return match content {
             Ok(FileState::Applied) if mode_differs => Ok(permissions_differ()),
-            Err(err) if desired & 0o400 == 0 && is_permission_denied(&err) => Ok(if mode_differs {
-                permissions_differ()
-            } else {
-                FileState::Applied
-            }),
+            // an unreadable target either drifted to a mode that denies
+            // its owner read access (apply rewrites it) or was declared so
+            Err(err) if (mode_differs || desired & 0o400 == 0) && is_permission_denied(&err) => {
+                Ok(if mode_differs {
+                    permissions_differ()
+                } else {
+                    FileState::Applied
+                })
+            }
             other => other,
         };
     }
@@ -4157,8 +4161,8 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
 #[cfg(unix)]
 fn chmod_no_follow(path: &Path, mode: u32) -> Result<()> {
     use nix::errno::Errno;
-    use nix::fcntl::{AT_FDCWD, OFlag, open};
-    use nix::sys::stat::{FchmodatFlags, Mode, fchmod, fchmodat};
+    use nix::fcntl::{OFlag, open};
+    use nix::sys::stat::{Mode, fchmod};
 
     let mode = Mode::from_bits_truncate(mode as nix::libc::mode_t);
     let flags = OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC;
@@ -4184,9 +4188,61 @@ fn chmod_no_follow(path: &Path, mode: u32) -> Result<()> {
         }
     }
     // a target its owner can neither read nor write (mode 0000) cannot be
-    // opened at all, but its owner may still change its mode by name
-    fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink)
+    // opened for either, but its owner may still change its mode
+    chmod_unopenable_no_follow(path, mode)
+}
+
+/// Linux: an `O_PATH` descriptor needs no read or write permission, and with
+/// `O_NOFOLLOW` it refers to a final symlink itself, which the type check
+/// then refuses. Linux has no `fchmod` for such a descriptor, so the change
+/// goes through its `/proc/self/fd` entry, which resolves to the opened inode
+/// rather than to the path again. (`fchmodat` with `AT_SYMLINK_NOFOLLOW`
+/// fails with `ENOTSUP` on older kernels and C libraries.)
+#[cfg(target_os = "linux")]
+fn chmod_unopenable_no_follow(path: &Path, mode: nix::sys::stat::Mode) -> Result<()> {
+    use nix::fcntl::{AT_FDCWD, OFlag, open};
+    use nix::sys::stat::{FchmodatFlags, Mode, SFlag, fchmodat, fstat};
+    use std::os::fd::AsRawFd;
+
+    let fd = open(
+        path,
+        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .wrap_err_with(|| format!("failed to open {}", path.display_user()))?;
+    let kind = SFlag::from_bits_truncate(fstat(&fd)?.st_mode) & SFlag::S_IFMT;
+    if kind == SFlag::S_IFLNK {
+        bail!(
+            "{} is a symlink, which is never followed",
+            path.display_user()
+        );
+    }
+    if kind != SFlag::S_IFREG && kind != SFlag::S_IFDIR {
+        bail!("{} is not a file or directory", path.display_user());
+    }
+    let descriptor = PathBuf::from(format!("/proc/self/fd/{}", fd.as_raw_fd()));
+    fchmodat(AT_FDCWD, &descriptor, mode, FchmodatFlags::FollowSymlink)
         .wrap_err_with(|| format!("failed to set permissions of {}", path.display_user()))
+}
+
+/// Other Unix systems (macOS, the BSDs) implement `fchmodat` with
+/// `AT_SYMLINK_NOFOLLOW` directly.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn chmod_unopenable_no_follow(path: &Path, mode: nix::sys::stat::Mode) -> Result<()> {
+    use nix::errno::Errno;
+    use nix::fcntl::AT_FDCWD;
+    use nix::sys::stat::{FchmodatFlags, fchmodat};
+
+    match fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink) {
+        Ok(()) => Ok(()),
+        // one errno on some systems, two on others
+        Err(err) if err == Errno::ENOTSUP || err == Errno::EOPNOTSUPP => bail!(
+            "cannot set permissions of {} without following symlinks on this system; make it readable or writable by its owner first",
+            path.display_user()
+        ),
+        Err(err) => Err(err)
+            .wrap_err_with(|| format!("failed to set permissions of {}", path.display_user())),
+    }
 }
 
 /// delete this entry's leftover links (see [`stale_links`]) and any directory
@@ -5851,6 +5907,78 @@ variants = [{{ {field} = "linux" }}]"#
         );
         apply_one(&req, None, &mut vec![])?;
         assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o200);
+        Ok(())
+    }
+
+    /// Drift to a mode that denies the owner read access makes the content
+    /// unreadable; it must read as a permission difference apply repairs, not
+    /// as a broken entry. Root reads any file, so the case needs a non-root
+    /// user to mean anything.
+    #[cfg(unix)]
+    #[test]
+    fn drift_to_an_unreadable_mode_is_repaired() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        if nix::unistd::geteuid().is_root() {
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "managed")?;
+        for mode in [FileMode::Copy, FileMode::Template, FileMode::Content] {
+            let target = dir.path().join(mode.name());
+            let mut req = link_req(&source, &target, mode);
+            req.permissions = Some(0o600);
+            if mode == FileMode::Content {
+                req.content = Some("managed".into());
+            }
+            let rendered = (mode == FileMode::Template).then_some("managed");
+            apply_one(&req, rendered, &mut vec![])?;
+
+            for drifted in [0o000, 0o200] {
+                std::fs::set_permissions(&target, std::fs::Permissions::from_mode(drifted))?;
+                assert_eq!(
+                    check_rendered(&req, rendered)?,
+                    FileState::Differs("permissions differ".into()),
+                    "{} at {drifted:o}",
+                    mode.name()
+                );
+                apply_one(&req, rendered, &mut vec![])?;
+                assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o600);
+                assert_eq!(file::read_to_string(&target)?, "managed");
+                assert_eq!(check_rendered(&req, rendered)?, FileState::Applied);
+            }
+        }
+        Ok(())
+    }
+
+    /// The fallback for a target that cannot be opened for reading or
+    /// writing: it works on files and directories and never follows a link.
+    #[cfg(unix)]
+    #[test]
+    fn chmod_of_an_unopenable_target_never_follows_links() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let mode = |bits| nix::sys::stat::Mode::from_bits_truncate(bits);
+
+        let target = dir.path().join("file");
+        file::write(&target, "content")?;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o000))?;
+        chmod_unopenable_no_follow(&target, mode(0o600))?;
+        assert_eq!(permission_bits(&std::fs::symlink_metadata(&target)?), 0o600);
+
+        let directory = dir.path().join("directory");
+        file::create_dir_all(&directory)?;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o000))?;
+        chmod_unopenable_no_follow(&directory, mode(0o700))?;
+        assert_eq!(
+            permission_bits(&std::fs::symlink_metadata(&directory)?),
+            0o700
+        );
+
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&target, &link)?;
+        assert!(chmod_unopenable_no_follow(&link, mode(0o644)).is_err());
+        assert_eq!(permission_bits(&std::fs::symlink_metadata(&target)?), 0o600);
         Ok(())
     }
 }
