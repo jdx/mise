@@ -5427,11 +5427,57 @@
                           "type": "string"
                         }
                       },
+                      "before": {
+                        "type": "array",
+                        "description": "write Before ordering in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "binds_to": {
+                        "type": "array",
+                        "description": "write BindsTo dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "part_of": {
+                        "type": "array",
+                        "description": "write PartOf dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "conflicts": {
+                        "type": "array",
+                        "description": "write Conflicts dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "exec_start_pre": {
+                        "type": "array",
+                        "description": "write one ExecStartPre entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
+                      },
                       "exec_start": {
                         "type": "string",
                         "minLength": 1,
                         "pattern": ".*\\S.*",
                         "description": "write ExecStart in the [Service] section"
+                      },
+                      "exec_start_post": {
+                        "type": "array",
+                        "description": "write one ExecStartPost entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
                       },
                       "type": {
                         "type": "string",
@@ -5454,6 +5500,15 @@
                       "exec_stop": {
                         "type": "string",
                         "description": "write ExecStop in the [Service] section"
+                      },
+                      "exec_stop_post": {
+                        "type": "array",
+                        "description": "write one ExecStopPost entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
                       },
                       "timeout_start_sec": {
                         "type": "string",
@@ -5612,7 +5667,25 @@
                         "not": {
                           "anyOf": [
                             {
+                              "required": ["exec_start_pre"],
+                              "properties": {
+                                "exec_start_pre": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
+                            },
+                            {
                               "required": ["exec_start"]
+                            },
+                            {
+                              "required": ["exec_start_post"],
+                              "properties": {
+                                "exec_start_post": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
                             },
                             {
                               "required": ["type"]
@@ -5622,6 +5695,15 @@
                             },
                             {
                               "required": ["exec_stop"]
+                            },
+                            {
+                              "required": ["exec_stop_post"],
+                              "properties": {
+                                "exec_stop_post": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
                             },
                             {
                               "required": ["timeout_start_sec"]
