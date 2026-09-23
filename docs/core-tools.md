@@ -16,6 +16,7 @@ mise registry -b core
 
 ## Language guides
 
+- [Bare](/lang/bare)
 - [Bun](/lang/bun)
 - [Deno](/lang/deno)
 - [.NET](/lang/dotnet)

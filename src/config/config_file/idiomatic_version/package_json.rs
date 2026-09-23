@@ -143,7 +143,7 @@ pub(crate) fn parse_with_options(
 ) -> Result<Vec<(String, Option<ToolVersionOptions>)>> {
     let pkg = PackageJsonData::parse(path)?;
     let (version, checksum) = match tool_name {
-        "node" | "deno" => pkg
+        "node" | "deno" | "bare" => pkg
             .runtime_version(tool_name)
             .map(|version| (version, None)),
         "bun" => pkg
@@ -629,6 +629,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(pkg.runtime_version("deno"), Some("1.40.0".to_string()));
+    }
+
+    #[test]
+    fn test_bare_dev_engines() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "runtime": {
+                        "name": "bare",
+                        "version": "1.33.4"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(parse(&path, "bare").unwrap(), vec!["1.33.4".to_string()]);
     }
 
     #[test]

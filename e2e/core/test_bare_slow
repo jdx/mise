@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+mise use bare@1.28.3
+assert_contains "mise exec -- bare --version" "v1.28.3"
+
+mise use bare@1.33.4
+assert_contains "mise exec -- bare --version" "v1.33.4"
+assert_contains "mise exec -- bare --eval \"console.log('mise-bare-ok')\"" "mise-bare-ok"
