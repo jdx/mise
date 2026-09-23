@@ -16,6 +16,8 @@ use serde_yaml::Value;
 
 #[path = "build/lockfile_rollout.rs"]
 mod lockfile_rollout;
+#[path = "build/registry_url.rs"]
+mod registry_url;
 
 // cfg_aliases 0.2.1 emits semicolon-terminated helper macros in expression
 // position, which the latest nightly compiler rejects as future-incompatible.
@@ -372,8 +374,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                 .as_str()
                 .unwrap_or_else(|| panic!("[{short}] 'url' must be a string"));
             assert!(
-                (url.starts_with("https://") || url.starts_with("http://"))
-                    && !url.contains("{{"),
+                registry_url::is_project_url(url),
                 "[{short}] 'url' must be a project homepage or repository URL, not a download template"
             );
             url.to_string()

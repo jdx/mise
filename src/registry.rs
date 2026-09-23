@@ -458,8 +458,11 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
         .map(|value| {
             value
                 .as_str()
+                .filter(|value| crate::registry_url::is_project_url(value))
                 .map(|value| leak_string(value.to_string()))
-                .ok_or_else(|| eyre::eyre!("url must be a string"))
+                .ok_or_else(|| {
+                    eyre::eyre!("url must be a project homepage or repository URL, not {value}")
+                })
         })
         .transpose()?;
     let test = table.get("test").map(parse_registry_test).transpose()?;
@@ -1180,6 +1183,28 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
 
         assert!(
             format!("{err:#}").contains("unknown idiomatic file field: parser"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
+    fn test_dynamic_registry_rejects_download_template_url() {
+        use super::*;
+
+        let err = registry_from_sources(BTreeMap::from([(
+            "example".to_string(),
+            r#"
+backends = ["aqua:example/tool"]
+version_order = "source"
+url = "https://example.com/tool-{{ version }}.tar.gz"
+"#
+            .to_string(),
+        )]))
+        .err()
+        .unwrap();
+
+        assert!(
+            format!("{err:#}").contains("url must be a project homepage or repository URL"),
             "{err:#}"
         );
     }

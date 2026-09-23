@@ -57,3 +57,10 @@ mise tool go --json | jq -e '.security[] | select(.type == "checksum")' || fail 
 mise tool zig --json | jq -e '.security[] | select(.type == "checksum")' || fail "zig should have checksum"
 mise tool zig --json | jq -e '.security[] | select(.type == "minisign")' || fail "zig should have minisign"
 mise tool zig --json | jq -e '.security[] | select(.type == "minisign") | .public_key' || fail "zig minisign should have public_key"
+
+# A config alias of a registry tool shows the target tool's url
+cat >mise.toml <<'TOML'
+[tool_alias]
+mydart = "dart"
+TOML
+assert "mise tool mydart --url" "https://dart.dev"

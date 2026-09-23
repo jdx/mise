@@ -6,7 +6,6 @@ use serde::Serialize;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::registry::REGISTRY;
 use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
 use crate::ui::table;
 
@@ -100,10 +99,7 @@ impl Tool {
         let info = ToolInfo {
             backend: ba.full(),
             description,
-            url: REGISTRY
-                .get(ba.short.as_str())
-                .and_then(|rt| rt.url)
-                .map(str::to_string),
+            url: ba.registry_tool().and_then(|rt| rt.url).map(str::to_string),
             installed_versions: ts
                 .list_installed_versions(&config)
                 .await?
