@@ -124,6 +124,11 @@ impl HistoryShow {
                 ]);
             }
             table.print()?;
+            for entry in &coverage.entries {
+                for glob in entry.exclude.iter().flatten() {
+                    miseprintln!("  exclude ({}): {glob}", entry.path);
+                }
+            }
         }
         for omitted in &coverage.omitted {
             miseprintln!("  omitted: {} ({})", omitted.path, omitted.reason);

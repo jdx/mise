@@ -16,6 +16,7 @@ use crate::system::history::tracked::TrackedSet;
 
 pub(super) fn prospective(
     repo: &HistoryRepo,
+    state_dir: &Path,
     tracked: &TrackedSet,
     plans: &[PathPlan],
 ) -> Result<TrackedSet> {
@@ -121,11 +122,29 @@ pub(super) fn prospective(
         bail!("{}: {}", invalid.path, invalid.reason);
     }
     declarations.exclude_set()?;
-    // The repository inventory, not a source or output mentioned by incoming
-    // configuration, determines which files the batch may install.
-    let mut prospective = tracked.clone();
-    prospective.required_sources = declarations.required_sources;
-    Ok(prospective)
+    // finished the way `TrackedSet::from_config` finishes a set, so it can
+    // be resolved the way a live one is. Recipients are deliberately left
+    // unset: `reconcile` then keeps the saved ones, and a batch is not the
+    // place to decide who can decrypt.
+    declarations.manifest.exclude = declarations.exclude.clone();
+    declarations.declarations = Some(declarations.manifest.clone());
+    // **The prospective set is built the way the live set is built, so the
+    // two cannot disagree about what a path excludes.**
+    // `TrackedSet::effective` is `from_config` and then
+    // `enrollment::resolve`, and resolve is where an entry's exclusions
+    // come from when the local declaration does not carry them: the saved
+    // manifest another machine published. Copying the incoming
+    // declarations' lists onto the live entries read configuration alone,
+    // so a machine declaring `~/.ssh` with no `exclude` of its own, while
+    // the committed manifest excludes `id_*`, had that list replaced with
+    // an empty one here — `~/.ssh/id_rsa` then looked managed, its absence
+    // upstream read as a deletion, and the pull removed a private key.
+    // Reconcile decides per entry, and for the global list, where each one
+    // comes from, and it is now the only thing that decides it.
+    //
+    // Read-only: `resolve` reads the repository and the declarations
+    // cache, and writes neither.
+    crate::system::history::enrollment::resolve(state_dir, repo, &declarations, &[], &[])
 }
 
 /// Required source files must exist in the complete proposed write set or

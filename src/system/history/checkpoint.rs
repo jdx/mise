@@ -1650,6 +1650,7 @@ mod tests {
                     autosave: true,
                     encrypt: false,
                     variants: vec![],
+                    exclude: None,
                 }],
                 ..Default::default()
             },
@@ -1715,6 +1716,7 @@ mod tests {
                     autosave: false,
                     encrypt: false,
                     variants: vec![],
+                    exclude: None,
                 }],
                 ..Default::default()
             },

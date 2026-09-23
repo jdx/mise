@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+# A tracked directory carries its own exclude list, relative to its path,
+# on top of the global [history] exclude globs.
+require_cmd git
+repo="$MISE_STATE_DIR/history/repo.git"
+mkdir -p ~/.codex/sessions/deep ~/.codex/config/sessions ~/.codex/cache
+echo 'model = "x"' >~/.codex/config.toml
+echo 'a session' >~/.codex/sessions/one.jsonl
+echo 'deeper' >~/.codex/sessions/deep/two.jsonl
+echo 'kept' >~/.codex/config/sessions/keep.toml
+echo 'index' >~/.codex/cache/index
+echo 'log' >~/.codex/debug.log
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions/**", "cache", "*.log"] }
+TOML
+
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'model = "x"'
+assert "git --git-dir=$repo show HEAD:home/.codex/config/sessions/keep.toml" 'kept'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/one.jsonl"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/sessions/deep/two.jsonl"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/cache/index"
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/debug.log"
+
+# The entry is valid and its patterns are reported.
+assert "mise dot paths --json | jq '.invalid | length'" 0
+assert "mise dot paths --json | jq -r '.entries[0].exclude | join(\",\")'" 'sessions/**,cache,*.log'
+assert "mise dot paths --json | jq -r '.entries[0].files'" 2
+assert_contains 'mise dot paths' 'exclude (~/.codex): sessions/**'
+assert_contains 'mise dot history show' 'exclude (~/.codex): cache'
+assert_contains 'mise dot track --dry-run ~/.codex' '~/.codex: 2 files'
+assert_contains 'mise dot track --dry-run ~/.codex' 'exclude (~/.codex): sessions/**'
+
+# A dry run over several targets reports each target's own list.
+mkdir -p ~/.zed/logs
+echo 'settings' >~/.zed/settings.json
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions/**", "cache", "*.log"] }
+"~/.zed" = { mode = "track", exclude = ["logs/**"] }
+TOML
+assert_contains 'mise dot track --dry-run ~/.codex ~/.zed' 'exclude (~/.codex): sessions/**'
+assert_contains 'mise dot track --dry-run ~/.codex ~/.zed' 'exclude (~/.zed): logs/**'
+assert_not_contains 'mise dot track --dry-run ~/.codex ~/.zed' 'exclude (~/.zed): sessions/**'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions/**", "cache", "*.log"] }
+TOML
+
+# An excluded path cannot be saved explicitly, and a global re-include does
+# not override the entry's list.
+assert_fail 'mise dot save ~/.codex/sessions/one.jsonl' 'excluded, missing, or omitted'
+assert_succeed "mise dot exclude '!~/.codex/cache/**'"
+echo 'changed' >~/.codex/cache/index
+echo 'model = "y"' >~/.codex/config.toml
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/config.toml" 'model = "y"'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.codex/cache/index"
+
+# A file the list kept out of an earlier checkpoint is not deleted by a
+# rollback to it once the list no longer excludes it.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions/**", "*.log"] }
+TOML
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.codex/cache/index" 'changed'
+assert_succeed 'mise dot rollback ~/.codex --to 1 --yes'
+assert "cat ~/.codex/config.toml" 'model = "x"'
+assert "cat ~/.codex/cache/index" 'changed'
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions/**", "cache", "*.log"] }
+TOML
+
+# Re-tracking with the command keeps the entry's list.
+assert_succeed 'mise dot track ~/.codex --no-autosave'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'exclude = ["sessions/**", "cache", "*.log"]'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'autosave = false'
+# An explicitly empty list survives a rewrite too.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = [] }
+TOML
+assert_succeed 'mise dot track ~/.codex --no-autosave'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'exclude = []'
+
+# The other combinations stay invalid.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.codex" = { mode = "track", source = "x" }
+TOML
+assert_contains 'mise dot paths' 'invalid: ~/.codex'
+
+# Saying nothing and saying nothing-is-excluded are different answers.
+# A list the manifest carries stands while a declaration is silent about
+# it, and `exclude = []` is how that list is cleared — without the
+# distinction a machine could add to a published list but never take
+# anything away.
+mkdir -p ~/.twosided/sessions
+echo 'model = "x"' >~/.twosided/config.toml
+echo 'a transcript' >~/.twosided/sessions/one.jsonl
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.twosided" = { mode = "track", exclude = ["sessions/**"] }
+TOML
+assert_succeed 'mise dot save'
+assert "mise dot paths --json | jq -c '.entries[] | select(.path == \"~/.twosided\") | .exclude'" '["sessions/**"]'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.twosided/sessions/one.jsonl"
+
+# the key removed: silence, so the recorded list still stands
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.twosided" = { mode = "track" }
+TOML
+assert "mise dot paths --json | jq -c '.entries[] | select(.path == \"~/.twosided\") | .exclude'" '["sessions/**"]'
+assert_succeed 'mise dot save'
+assert_fail "git --git-dir=$repo cat-file -e HEAD:home/.twosided/sessions/one.jsonl"
+
+# an explicitly empty list: the one way to take it back
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.twosided" = { mode = "track", exclude = [] }
+TOML
+assert "mise dot paths --json | jq -c '.entries[] | select(.path == \"~/.twosided\") | .exclude'" '[]'
+assert_succeed 'mise dot save'
+assert "git --git-dir=$repo show HEAD:home/.twosided/sessions/one.jsonl" 'a transcript'
+
+# **A preview reads; it does not bring a repository into existence.**
+# Previewing under the effective exclude list means asking the history
+# repository what another machine published, and opening one
+# initializes it — so a dry run on a half-created state directory used
+# to write into it, and a damaged repository aborted a preview that
+# needs only configuration.
+rm -rf "$MISE_STATE_DIR/history/repo.git"
+mkdir -p "$MISE_STATE_DIR/history/repo.git"
+assert_succeed 'mise dot track --dry-run ~/.twosided'
+assert "find $MISE_STATE_DIR/history/repo.git -mindepth 1 | wc -l | tr -d ' '" '0'

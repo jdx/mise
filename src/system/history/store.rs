@@ -600,6 +600,11 @@ pub(crate) struct CoverageEntry {
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_in: Option<String>,
+    /// The entry's own `exclude` patterns, relative to its path.
+    /// Absent when the declaration states none, `[]` when it states an
+    /// empty one, which clears what another machine published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

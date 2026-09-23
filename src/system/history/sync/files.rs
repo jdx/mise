@@ -408,6 +408,7 @@ mod tests {
                 autosave: true,
                 encrypt: true,
                 variants: vec![],
+                exclude: None,
             }],
             ..Default::default()
         };

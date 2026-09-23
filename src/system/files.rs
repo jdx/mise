@@ -116,6 +116,7 @@ pub(crate) struct ExplicitFields {
     pub encrypt: bool,
     pub variants: bool,
     pub enabled: bool,
+    pub exclude: bool,
 }
 
 impl FilePolicy {
@@ -333,6 +334,9 @@ impl FileRequest {
         if explicit.variants {
             self.variants = later.variants;
         }
+        if explicit.exclude {
+            self.exclude = later.exclude;
+        }
         // the later file is the effective declaration
         self.origin = later.origin;
         let mine = self.policy.explicit;
@@ -341,6 +345,7 @@ impl FileRequest {
             encrypt: mine.encrypt || explicit.encrypt,
             variants: mine.variants || explicit.variants,
             enabled: mine.enabled || explicit.enabled,
+            exclude: mine.exclude || explicit.exclude,
         };
     }
 }
@@ -613,11 +618,14 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
         && first.content == second.content
         && first.mode == second.mode
         && first.manifest == second.manifest
-        && first
-            .exclude
-            .iter()
-            .map(glob::Pattern::as_str)
-            .eq(second.exclude.iter().map(glob::Pattern::as_str))
+        // a track entry's list is a policy a later layer may change, like
+        // autosave; a deployment entry's list is part of what it deploys
+        && (first.mode == FileMode::Track
+            || first
+                .exclude
+                .iter()
+                .map(glob::Pattern::as_str)
+                .eq(second.exclude.iter().map(glob::Pattern::as_str)))
         && (first.mode != FileMode::Template
             || first.base == second.base
                 && config.bootstrap_tera_ctx(&first.origin.config)
@@ -714,14 +722,9 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     None => default_mode(),
                 };
                 if mode == FileMode::Track
-                    && (source.is_some()
-                        || content.is_some()
-                        || manifest.is_some()
-                        || exclude.is_some())
+                    && (source.is_some() || content.is_some() || manifest.is_some())
                 {
-                    bail!(
-                        "tracked file {target} cannot declare source, content, manifest, or exclude"
-                    );
+                    bail!("tracked file {target} cannot declare source, content, or manifest");
                 }
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
@@ -940,6 +943,7 @@ fn merge_file_entry(
         encrypt: encrypt.is_some(),
         variants: variants.is_some(),
         enabled: enabled.is_some(),
+        exclude: exclude.is_some(),
     };
     let enabled = enabled.unwrap_or(true);
     let variants = variants.unwrap_or_default();
@@ -967,11 +971,11 @@ fn merge_file_entry(
         }
     };
     if mode.as_deref() == Some("track") {
-        if source.is_some() || content.is_some() || manifest.is_some() || exclude.is_some() {
+        if source.is_some() || content.is_some() || manifest.is_some() {
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, exclude, or manifest",
+                "mode = \"track\" leaves the file where it is and takes no source, content, or manifest",
             );
             return;
         }
@@ -984,13 +988,14 @@ fn merge_file_entry(
             );
             return;
         }
+        let exclude = compile_exclude(&target_raw, exclude);
         let request = FileRequest {
             target_raw,
             target: target.clone(),
             source: PathBuf::new(),
             content: None,
             mode: FileMode::Track,
-            exclude: vec![],
+            exclude,
             manifest: None,
             base: base.to_path_buf(),
             origin: origin.clone(),
@@ -1035,19 +1040,7 @@ fn merge_file_entry(
         );
         return;
     }
-    // compile once here so a typo is reported against the entry that wrote
-    // it, not on every walk of the source
-    let exclude = exclude
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|pattern| match glob::Pattern::new(&pattern) {
-            Ok(pattern) => Some(pattern),
-            Err(err) => {
-                warn!("[dotfiles].\"{target_raw}\": invalid exclude pattern '{pattern}': {err}");
-                None
-            }
-        })
-        .collect::<Vec<_>>();
+    let exclude = compile_exclude(&target_raw, exclude);
     let mode = match mode.as_deref() {
         None => default_mode(),
         Some(m) => match FileMode::parse(m) {
@@ -2050,13 +2043,30 @@ fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
     ))
 }
 
-/// Whether a source-relative path is dropped by the entry's `exclude`
-/// patterns. A pattern without `/` matches any single path component, so
-/// `exclude = ["mise.toml"]` drops that file wherever it sits in the tree
-/// and `["*.md"]` drops every markdown file; a pattern containing `/` is
-/// anchored to the source root. Either kind matching a directory takes
-/// everything under it, which is why ancestors are tested too.
-fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
+/// Compiled once here so a typo is reported against the entry that wrote
+/// it, not on every walk of the source (or of a tracked directory).
+fn compile_exclude(target_raw: &str, exclude: Option<Vec<String>>) -> Vec<glob::Pattern> {
+    exclude
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|pattern| match glob::Pattern::new(&pattern) {
+            Ok(pattern) => Some(pattern),
+            Err(err) => {
+                warn!("[dotfiles].\"{target_raw}\": invalid exclude pattern '{pattern}': {err}");
+                None
+            }
+        })
+        .collect()
+}
+
+/// Whether a source-relative (or entry-relative) path is dropped by the
+/// entry's `exclude` patterns. A pattern without `/` matches any single
+/// path component, so `exclude = ["mise.toml"]` drops that file wherever
+/// it sits in the tree and `["*.md"]` drops every markdown file; a pattern
+/// containing `/` is anchored to the source root. Either kind matching a
+/// directory takes everything under it, which is why ancestors are tested
+/// too. Track entries use the same rules relative to the tracked path.
+pub(crate) fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
     patterns.iter().any(|pattern| {
         if pattern.as_str().contains('/') {
             rel.ancestors().any(|a| pattern.matches_path(a))
@@ -3960,6 +3970,45 @@ variants = [{{ {field} = "linux" }}]"#
     #[test]
     fn test_exclude_empty_matches_nothing() {
         assert!(!is_excluded(Path::new("mise.toml"), &[]));
+    }
+
+    #[test]
+    fn a_later_layer_overrides_a_track_entry_exclude_list() {
+        let request = |exclude: Vec<&str>, explicit: bool| FileRequest {
+            target_raw: "~/.codex".into(),
+            target: PathBuf::from("/home/test/.codex"),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Track,
+            exclude: exclude
+                .into_iter()
+                .map(|p| glob::Pattern::new(p).unwrap())
+                .collect(),
+            manifest: None,
+            base: PathBuf::from("/home/test"),
+            origin: crate::system::resources::ResourceOrigin {
+                config: PathBuf::from("/home/test/.config/mise/config.toml"),
+                config_root: PathBuf::from("/home/test/.config/mise"),
+                environment: vec![],
+                source: None,
+            },
+            policy: FilePolicy {
+                explicit: ExplicitFields {
+                    exclude: explicit,
+                    ..Default::default()
+                },
+                ..FilePolicy::for_mode(FileMode::Track)
+            },
+            variants: vec![],
+            enabled: true,
+        };
+        let mut first = request(vec!["sessions"], true);
+        first.override_from(request(vec!["cache"], true));
+        assert_eq!(first.exclude[0].as_str(), "cache");
+        assert!(first.policy.explicit.exclude);
+        let mut first = request(vec!["sessions"], true);
+        first.override_from(request(vec![], false));
+        assert_eq!(first.exclude[0].as_str(), "sessions");
     }
 
     #[test]

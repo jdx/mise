@@ -40,6 +40,11 @@ struct PathRow {
     files: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     declared_in: Option<String>,
+    /// The entry's own `exclude` patterns, relative to its path.
+    /// Absent when the declaration states none, `[]` when it states an
+    /// empty one — which clears a list another machine published.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exclude: Option<Vec<String>>,
 }
 
 impl DotfilesPaths {
@@ -69,6 +74,7 @@ impl DotfilesPaths {
                 autosave: entry.policy.autosave,
                 files: counts[index],
                 declared_in: entry.declared_in.as_deref().map(display_path),
+                exclude: entry.exclude.clone(),
             })
             .collect();
         if self.json {
@@ -114,6 +120,11 @@ impl DotfilesPaths {
             table.print()?;
             for glob in &tracked.exclude {
                 miseprintln!("  exclude: {glob}");
+            }
+            for row in &rows {
+                for glob in row.exclude.iter().flatten() {
+                    miseprintln!("  exclude ({}): {glob}", row.path);
+                }
             }
         }
         for invalid in &tracked.invalid {

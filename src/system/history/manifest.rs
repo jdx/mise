@@ -10,7 +10,7 @@ use super::shadow::{HistoryRepo, Overlay};
 
 pub(crate) const PATH: &str = ".mise-history/manifest.json";
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Enrollment {
     /// A portable repository path, rooted at `home/` or `config/`.
@@ -18,6 +18,13 @@ pub(crate) struct Enrollment {
     pub autosave: bool,
     pub encrypt: bool,
     pub variants: Vec<Variant>,
+    /// The entry's own `exclude` globs, relative to its path. Written
+    /// only when the declaration states one, so a setup without them
+    /// stays readable by older clients — and a declared but empty list,
+    /// which clears what another machine published, is not mistaken for
+    /// no list at all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -258,6 +265,12 @@ impl Manifest {
                         &theirs.variants,
                         &format!("{path}: variants"),
                     )?,
+                    exclude: choose(
+                        &before.exclude,
+                        &ours.exclude,
+                        &theirs.exclude,
+                        &format!("{path}: exclude"),
+                    )?,
                 }),
                 _ => choose(&before, &ours, &theirs, path)?.cloned(),
             };
@@ -330,6 +343,7 @@ impl Manifest {
             policy.encrypt = enrollment.encrypt;
             let mut entry = super::tracked::TrackedEntry::new(local, "track", policy);
             entry.variant = variant;
+            entry.exclude = enrollment.exclude.clone();
             tracked.entries.push(entry);
         }
         Ok(tracked)
@@ -429,6 +443,14 @@ impl Manifest {
             }
             let mut variants = std::collections::BTreeSet::new();
             super::select::validate(&entry.variants)?;
+            for pattern in entry.exclude.iter().flatten() {
+                if let Err(err) = glob::Pattern::new(pattern) {
+                    bail!(
+                        "invalid exclude pattern {pattern:?} for {}: {err}",
+                        entry.path
+                    );
+                }
+            }
             for variant in &entry.variants {
                 let name = variant.name();
                 if name.contains('@')
@@ -876,6 +898,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
+            exclude: None,
         }
     }
 
@@ -948,6 +971,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: None,
             }],
             ..Default::default()
         };
@@ -1001,6 +1025,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![active, inactive],
+                exclude: None,
             }],
             ..Default::default()
         };
@@ -1071,6 +1096,7 @@ mod tests {
             autosave: true,
             encrypt: false,
             variants: vec![],
+            exclude: None,
         };
         let mut manifest = Manifest {
             enrollment: vec![enrollment.clone()],
@@ -1089,5 +1115,23 @@ mod tests {
             manifest.enrollment[0].path = path.into();
             assert!(manifest.validate().is_err());
         }
+    }
+    #[test]
+    fn an_unparsable_enrollment_exclude_pattern_is_rejected() {
+        let mut manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.codex".into(),
+                autosave: true,
+                encrypt: false,
+                variants: vec![],
+                exclude: Some(vec!["sessions".into()]),
+            }],
+            ..Default::default()
+        };
+        assert!(manifest.validate().is_ok());
+        manifest.enrollment[0].exclude = Some(vec!["[".into()]);
+        let error = manifest.validate().unwrap_err().to_string();
+        assert!(error.contains("invalid exclude pattern"), "{error}");
+        assert!(error.contains("home/.codex"), "{error}");
     }
 }

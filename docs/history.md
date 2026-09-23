@@ -558,6 +558,19 @@ A later `!glob` in `[history] exclude` reverses an earlier matching
 exclusion. Removing one rule does not override other rules that still
 exclude the path.
 
+A tracked directory can also carry its own `exclude` list, relative to the
+tracked path, with the rules of a deployment entry's list (a pattern
+without `/` matches a path component anywhere below it; one with `/` is
+anchored to the directory):
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions", "*.log"] }
+```
+
+Both lists apply: a file must pass the global globs and the entry's own,
+and a global `!glob` does not re-include what the entry excludes.
+
 ### Credential filtering and omissions
 
 Without encryption, built-in filename rules omit `.netrc`, `*.age`,

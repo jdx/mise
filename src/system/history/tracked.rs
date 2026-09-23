@@ -54,9 +54,37 @@ pub(crate) struct TrackedEntry {
     /// The shared stream of a tracked file with variants.
     pub variant: Option<String>,
     pub declared_in: Option<PathBuf>,
+    /// The entry's own `exclude` globs, relative to its path, with the
+    /// rules of a deployment entry's list (see
+    /// [`crate::system::files::is_excluded`]).
+    ///
+    /// `None` means the declaration said nothing, so whatever the saved
+    /// manifest carries stands. `Some` means it spoke — including
+    /// `Some([])`, which clears the list another machine published.
+    /// Flattening the two into one empty vec left no way to say "capture
+    /// all of it after all".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
 }
 
 impl TrackedEntry {
+    /// The compiled `exclude` patterns; an invalid one was already
+    /// reported when the declaration was read.
+    pub(crate) fn exclude_patterns(&self) -> Vec<glob::Pattern> {
+        self.exclude
+            .iter()
+            .flatten()
+            .filter_map(|pattern| glob::Pattern::new(pattern).ok())
+            .collect()
+    }
+
+    /// Whether the entry's own `exclude` list drops `path`: a path below
+    /// the entry whose entry-relative form matches, as for a deployment
+    /// entry. The entry path itself is never excluded by its own list.
+    pub(crate) fn is_excluded(&self, path: &Path) -> bool {
+        excluded_by_entry(&self.path, self.exclude.as_deref().unwrap_or(&[]), path)
+    }
+
     pub(crate) fn tree_path(&self, path: &Path) -> Result<String> {
         super::sync::layout::Roots::current()
             .branch_path(path, self.variant.as_deref())
@@ -79,6 +107,7 @@ impl TrackedEntry {
             policy,
             variant: None,
             declared_in: None,
+            exclude: None,
         }
     }
 }
@@ -225,6 +254,7 @@ impl TrackedSet {
                 autosave: request.policy.autosave,
                 encrypt: request.policy.encrypt,
                 variants: request.variants.clone(),
+                exclude: declared_exclude(&request),
             });
             set.manifest.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
             let declared_in = Some(request.origin.config.clone());
@@ -236,6 +266,7 @@ impl TrackedSet {
                         request.policy,
                     );
                     entry.declared_in = declared_in;
+                    entry.exclude = declared_exclude(&request);
                     match select::select(&request.variants, &environments) {
                         Selection::Single => {}
                         Selection::Variant(variant) => {
@@ -333,7 +364,27 @@ impl TrackedSet {
         if inside_nested_repository(owner, path) {
             return Ok(false);
         }
-        Ok(!self.exclude_set()?.is_match(path))
+        Ok(!self.excluded_by_lists(&self.exclude_set()?, path))
+    }
+
+    /// Whether the exclusion lists drop `path`: the global
+    /// `[history] exclude` globs, then the owning entry's own list,
+    /// which is applied after the global one and is not re-included by
+    /// a global `!glob`. A path no entry covers is dropped.
+    ///
+    /// **The one composition, because narrowing selection stops
+    /// management and does not delete.** A capture drops a newly
+    /// excluded file from the next snapshot while leaving it on disk —
+    /// which is the whole point of excluding it — so every other
+    /// consumer has to read that absence the same way. Asking ownership
+    /// alone made synchronization read it as a deletion to replay, and
+    /// `exclude = ["leave"]` on one machine became `rm` on every other
+    /// one.
+    pub(crate) fn excluded_by_lists(&self, exclude: &ExcludeSet, path: &Path) -> bool {
+        match self.entry_for(path) {
+            Some(owner) => exclude.is_match(path) || owner.is_excluded(path),
+            None => true,
+        }
     }
 
     pub(crate) fn exclude_set(&self) -> Result<ExcludeSet> {
@@ -447,6 +498,7 @@ impl TrackedSet {
                 encrypt: entry.policy.encrypt,
                 state: "live".into(),
                 declared_in: entry.declared_in.as_deref().map(display_path),
+                exclude: entry.exclude.clone(),
             })
             .collect();
         let mut omitted = walk.omitted.clone();
@@ -523,6 +575,7 @@ fn walk_entry(
                 && (candidate.file_name() == ".git"
                     || hard.iter().any(|dir| dir == candidate.path())))
         });
+    let entry_exclude = entry.exclude_patterns();
     let mut files = 0u64;
     let mut bytes = 0u64;
     let mut walker = walker;
@@ -565,6 +618,16 @@ fn walk_entry(
             continue;
         }
         let file_type = candidate.file_type();
+        // the entry's own exclusions: a matching directory is not entered
+        if !entry_exclude.is_empty()
+            && let Ok(rel) = path.strip_prefix(&entry.path)
+            && crate::system::files::is_excluded(&pattern_relative(rel), &entry_exclude)
+        {
+            if file_type.is_dir() {
+                walker.skip_current_dir();
+            }
+            continue;
+        }
         if file_type.is_dir() {
             if path.join(".git").exists() {
                 // A repository found inside a tracked directory is skipped
@@ -679,6 +742,46 @@ pub(crate) fn is_builtin_credential(path: &Path, name: &str) -> bool {
 /// How many omissions a capture report lists one by one before it
 /// summarizes them and points at `mise dot paths`.
 pub(crate) const OMISSION_LINES: usize = 10;
+
+/// An entry-relative path as its patterns see it.
+///
+/// **A pattern is written with `/`, and on Windows the path it is matched
+/// against arrives with `\`.** `cache/**` would never match
+/// `cache\index`, so a `~\.codex` entry's `exclude` list would quietly
+/// do nothing there. The separator is settled here, in the one helper the
+/// capture walk, a dry run and a replay all match through, so the three
+/// cannot disagree about what a list drops.
+///
+/// On unix a backslash is an ordinary character in a filename and is left
+/// alone: a file actually named `cache\index` is one component, not two.
+fn pattern_relative(rel: &Path) -> std::borrow::Cow<'_, Path> {
+    #[cfg(windows)]
+    {
+        std::borrow::Cow::Owned(PathBuf::from(rel.to_string_lossy().replace('\\', "/")))
+    }
+    #[cfg(not(windows))]
+    {
+        std::borrow::Cow::Borrowed(rel)
+    }
+}
+
+/// Whether `patterns` (an entry's own `exclude` list, relative to
+/// `entry_path`) drop `path`; the entry path itself never is.
+pub(crate) fn excluded_by_entry(entry_path: &Path, patterns: &[String], path: &Path) -> bool {
+    if patterns.is_empty() {
+        return false;
+    }
+    let patterns: Vec<glob::Pattern> = patterns
+        .iter()
+        .filter_map(|pattern| glob::Pattern::new(pattern).ok())
+        .collect();
+    match path.strip_prefix(entry_path) {
+        Ok(rel) if !rel.as_os_str().is_empty() => {
+            crate::system::files::is_excluded(&pattern_relative(rel), &patterns)
+        }
+        _ => false,
+    }
+}
 
 /// Whether the display path `path` is `root` itself or lies below it.
 /// Display paths use the platform separator (`\` on Windows), so the
@@ -916,6 +1019,24 @@ impl ExcludeSet {
         }
         excluded
     }
+}
+
+/// The `exclude` list a declaration wrote, or `None` when it wrote none.
+///
+/// **Saying nothing and saying nothing-is-excluded are different
+/// answers.** The composed request flattens both to an empty pattern
+/// list, so the explicitness the configuration layer already records is
+/// what tells them apart. Without it a machine could never clear a list
+/// another machine published: writing `exclude = []` would read as "I
+/// have no opinion" and the saved list would stand for ever.
+fn declared_exclude(request: &crate::system::files::FileRequest) -> Option<Vec<String>> {
+    request.policy.explicit.exclude.then(|| {
+        request
+            .exclude
+            .iter()
+            .map(|pattern| pattern.as_str().to_owned())
+            .collect()
+    })
 }
 
 /// Directories mise owns that are never captured.
@@ -1191,6 +1312,7 @@ mod tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: None,
             }],
             ..Default::default()
         };
@@ -1287,6 +1409,38 @@ mod tests {
             selected.files.keys().collect::<Vec<_>>(),
             vec![&outer.join("outer.toml")]
         );
+    }
+
+    /// A pattern is written with `/` on every platform; the path it is
+    /// matched against is not. Capture, dry run and replay all match
+    /// through `excluded_by_entry`, so this is where the two meet.
+    #[test]
+    fn an_entry_list_matches_a_path_with_the_host_separator() {
+        let root = PathBuf::from(if cfg!(windows) {
+            "C:\\Users\\me\\.codex"
+        } else {
+            "/home/me/.codex"
+        });
+        let patterns = ["cache/**".to_string()];
+        assert!(excluded_by_entry(
+            &root,
+            &patterns,
+            &root.join("cache").join("index"),
+        ));
+        assert!(!excluded_by_entry(
+            &root,
+            &patterns,
+            &root.join("config.toml"),
+        ));
+        // on unix a backslash is a character in a filename, not a
+        // separator, so one file named `cache\index` is not a file
+        // `index` inside `cache`
+        #[cfg(unix)]
+        assert!(!excluded_by_entry(
+            &root,
+            &patterns,
+            &root.join("cache\\index"),
+        ));
     }
 
     fn entry(path: &Path) -> TrackedEntry {
@@ -1621,6 +1775,118 @@ mod tests {
         assert_eq!(with_separators(1000), "1,000");
         assert_eq!(with_separators(22972), "22,972");
         assert_eq!(with_separators(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn an_entry_excludes_relative_to_its_own_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("codex");
+        std::fs::create_dir_all(root.join("sessions/deep")).unwrap();
+        std::fs::create_dir_all(root.join("config/sessions")).unwrap();
+        std::fs::create_dir_all(root.join("cache")).unwrap();
+        std::fs::write(root.join("config.toml"), "keep").unwrap();
+        std::fs::write(root.join("notes.md"), "drop").unwrap();
+        std::fs::write(root.join("sessions/one.jsonl"), "drop").unwrap();
+        std::fs::write(root.join("sessions/deep/two.jsonl"), "drop").unwrap();
+        std::fs::write(root.join("config/sessions/keep.toml"), "keep").unwrap();
+        std::fs::write(root.join("cache/index"), "drop").unwrap();
+        // a component pattern matches anywhere, an anchored one only at
+        // the entry root, and a matching directory takes its subtree
+        let mut entry = entry(&root);
+        entry.exclude = Some(vec!["*.md".into(), "sessions/**".into(), "cache".into()]);
+        let mut set = TrackedSet::default();
+        set.push(entry);
+        let walk = set.walk().unwrap();
+        assert_eq!(walk.files.len(), 2);
+        assert!(walk.files.contains_key(&root.join("config.toml")));
+        assert!(
+            walk.files
+                .contains_key(&root.join("config/sessions/keep.toml"))
+        );
+        assert!(walk.omitted.is_empty());
+        assert!(set.would_retain(&root.join("config.toml")).unwrap());
+        assert!(!set.would_retain(&root.join("notes.md")).unwrap());
+        assert!(
+            !set.would_retain(&root.join("sessions/deep/two.jsonl"))
+                .unwrap()
+        );
+        assert!(!set.would_retain(&root.join("cache/index")).unwrap());
+        assert!(
+            set.would_retain(&root.join("config/sessions/keep.toml"))
+                .unwrap()
+        );
+        // the entry path itself is never dropped by its own list
+        let mut entry =
+            super::TrackedEntry::new(root.clone(), "track", Policy::for_mode(FileMode::Track));
+        entry.exclude = Some(vec!["codex".into()]);
+        assert!(!entry.is_excluded(&root));
+        assert!(!entry.is_excluded(tmp.path()));
+        // a global `!glob` re-include does not override an entry's list
+        let mut entry =
+            super::TrackedEntry::new(root.clone(), "track", Policy::for_mode(FileMode::Track));
+        entry.exclude = Some(vec!["cache".into()]);
+        let mut set = TrackedSet {
+            exclude: vec![
+                format!("{}/**", root.display()),
+                format!("!{}/cache/**", root.display()),
+            ],
+            ..Default::default()
+        };
+        set.push(entry);
+        let walk = set.walk().unwrap();
+        assert!(walk.files.is_empty());
+        assert!(!set.would_retain(&root.join("cache/index")).unwrap());
+        assert_eq!(
+            set.coverage(&walk).entries[0].exclude,
+            Some(vec!["cache".to_string()])
+        );
+    }
+
+    #[test]
+    fn entry_excludes_travel_through_the_enrollment_manifest() {
+        use crate::system::files::FileRequest;
+        use crate::system::resources::ResourceOrigin;
+        let home = normalize(&dirs::HOME);
+        let target = home.join(".mise-test-entry-exclude");
+        let mut set = TrackedSet::default();
+        set.add_requests([FileRequest {
+            target_raw: "~/.mise-test-entry-exclude".into(),
+            target: target.clone(),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Track,
+            exclude: vec![glob::Pattern::new("sessions").unwrap()],
+            manifest: None,
+            base: home.clone(),
+            origin: ResourceOrigin {
+                config: home.join(".config/mise/config.toml"),
+                config_root: home.join(".config/mise"),
+                environment: vec![],
+                source: None,
+            },
+            // the declaration wrote `exclude`, which is what makes the
+            // list its own answer rather than silence
+            policy: Policy {
+                explicit: crate::system::files::ExplicitFields {
+                    exclude: true,
+                    ..Default::default()
+                },
+                ..Policy::for_mode(FileMode::Track)
+            },
+            variants: vec![],
+            enabled: true,
+        }]);
+        assert_eq!(set.manifest.enrollment.len(), 1);
+        assert_eq!(
+            set.manifest.enrollment[0].exclude,
+            Some(vec!["sessions".to_string()])
+        );
+        let rebuilt = set.manifest.tracking().unwrap();
+        assert_eq!(
+            rebuilt.entries[0].exclude,
+            Some(vec!["sessions".to_string()])
+        );
+        assert!(rebuilt.entries[0].is_excluded(&target.join("sessions/one")));
     }
 
     #[test]
