@@ -255,7 +255,8 @@ targets, `status` and `apply` report an error naming the path, even with
 `--force`. Remove it yourself.
 
 An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
-`encrypt`, or block and line edit keys. No other entry can place a file beneath an `absent` target.
+`encrypt`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
+and an edit entry cannot change the file it removes.
 
 `mise dot status` shows the entry as `absent` once the target is gone, and
 as `would remove` while a file or symlink is still there.

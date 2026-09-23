@@ -98,3 +98,13 @@ echo 'kept' >~/.oldrc
 assert_contains "mise dot status 2>&1" 'mode = "absent" removes the target and takes no source'
 assert_succeed "mise dot apply --yes"
 assert "cat ~/.oldrc" "kept"
+
+# an edit on a file an absent entry removes is refused before anything runs
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.oldrc" = { mode = "absent" }
+"~/.oldrc/greeting" = { line = "hello" }
+TOML
+assert_fail "mise dot apply --yes" 'mode = "absent" removes the file that the edit line:greeting changes'
+assert_fail "mise bootstrap --only dotfiles --yes" 'mode = "absent" removes the file'
+assert "cat ~/.oldrc" "kept"

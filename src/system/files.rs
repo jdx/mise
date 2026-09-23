@@ -845,6 +845,29 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
     Ok(())
 }
 
+/// An edit on a path an `absent` entry removes would recreate the file on
+/// every apply, so the two contradict each other.
+pub(crate) fn validate_absent_edit_targets(
+    files: &[FileRequest],
+    edits: &[crate::system::edits::EditRequest],
+) -> Result<()> {
+    for edit in edits {
+        if let Some(file) = files
+            .iter()
+            .find(|file| file.mode == FileMode::Absent && file.target == edit.path)
+        {
+            bail!(
+                "conflicting dotfile declarations for {}: mode = \"absent\" removes the file that the edit {} changes\n\n  absent:\n    {}\n\n  edit:\n    {}",
+                edit.path.display_user(),
+                edit.describe_op(),
+                file.origin.conflict_description(),
+                edit.origin.conflict_description(),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Aggregate `[dotfiles]` across a specific set of config files. This is
 /// used by OCI builds, which intentionally scope config to project files by
 /// default instead of blindly inheriting global dotfiles.
@@ -1766,6 +1789,11 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
 /// is an error rather than a `--force`-able conflict, because absent entries
 /// never delete recursively.
 fn check_absent(target: &Path) -> Result<FileState> {
+    // links first: a Windows directory symlink or junction is a directory
+    // carrying a reparse point, and is removed as a link, not refused
+    if file::is_symlink_or_junction(target) {
+        return Ok(FileState::Differs("present (symlink)".into()));
+    }
     match std::fs::symlink_metadata(target) {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(FileState::Applied),
         Err(err) => Err(err.into()),
@@ -1773,9 +1801,6 @@ fn check_absent(target: &Path) -> Result<FileState> {
             "{} is a directory; mode = \"absent\" only removes files and symlinks",
             target.display_user()
         ),
-        Ok(meta) if meta.file_type().is_symlink() => {
-            Ok(FileState::Differs("present (symlink)".into()))
-        }
         Ok(meta) if meta.is_file() => Ok(FileState::Differs("present".into())),
         // a FIFO, socket, or device node is not a configuration file
         Ok(_) => bail!(
@@ -3724,7 +3749,14 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         // checked again here, not only when planning: a directory that
         // appeared since must still never be removed
         if check_absent(&req.target)? != FileState::Applied {
-            file::remove_file(&req.target)?;
+            if file::is_symlink_or_junction(&req.target) {
+                // removes the link itself by handle; a Windows directory
+                // link needs this (`remove_file` refuses it), and the
+                // directory it points to is never entered
+                file::remove_symlink_or_junction(&req.target)?;
+            } else {
+                file::remove_file(&req.target)?;
+            }
             written.push(req.target.clone());
         }
         return Ok(());
@@ -4393,7 +4425,9 @@ source = "oldrc""#,
         Ok(())
     }
 
-    #[cfg(unix)]
+    /// Not `#[cfg(unix)]`: `make_symlink` writes a junction on Windows, a
+    /// directory link that must be removed as a link, not refused as a
+    /// directory, and never entered.
     #[test]
     fn absent_removes_a_symlink_but_not_what_it_points_at() -> Result<()> {
         let dir = tempfile::tempdir()?;
@@ -4468,6 +4502,33 @@ source = "oldrc""#,
         assert!(apply_one(&req, None, &mut written).is_err());
         assert!(written.is_empty());
         assert!(std::fs::symlink_metadata(&target).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_rejects_an_edit_on_the_same_file() -> Result<()> {
+        use crate::system::edits::{EditOp, EditRequest, LinePosition};
+        let target = dirs::HOME.join(".oldrc");
+        let origin = absent_req(&target).origin;
+        let edit = |path: &Path| EditRequest {
+            path_raw: path.display().to_string(),
+            path: path.to_path_buf(),
+            id: "x".into(),
+            op: EditOp::Line {
+                line: "x".into(),
+                position: LinePosition::Append,
+            },
+            base: PathBuf::from("/"),
+            config_path: PathBuf::from("/mise.toml"),
+            origin: origin.clone(),
+        };
+        let err =
+            validate_absent_edit_targets(&[absent_req(&target)], &[edit(&target)]).unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        validate_absent_edit_targets(&[absent_req(&target)], &[edit(&target.with_extension("x"))])?;
+        // a whole-file entry of another mode may still be edited
+        let copy = link_req(&target, &target, FileMode::Copy);
+        validate_absent_edit_targets(&[copy], &[edit(&target)])?;
         Ok(())
     }
 

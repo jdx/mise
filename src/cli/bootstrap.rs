@@ -1704,6 +1704,9 @@ impl Bootstrap {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles)
                 .await?;
             let files = system::files::files_from_config(&config)?;
+            // loaded before any file is written: this also refuses an edit on
+            // a file an absent entry removes
+            let edits = system::edits::edits_from_config(&config)?;
             if files.is_empty() {
                 debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
             } else {
@@ -1720,7 +1723,6 @@ impl Bootstrap {
                 }
             }
 
-            let edits = system::edits::edits_from_config(&config)?;
             if edits.is_empty() {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
             } else {
