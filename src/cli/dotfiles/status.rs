@@ -83,8 +83,14 @@ impl DotfilesStatus {
                 ),
                 _ => (0, 0),
             };
+            let absent = matches!(state, FileState::Applied)
+                .then(|| system::files::permissions_target_absent(req))
+                .flatten();
             let state_str = match &state {
-                FileState::Applied => "applied".to_string(),
+                FileState::Applied => match absent {
+                    Some(reason) => format!("applied ({reason})"),
+                    None => "applied".to_string(),
+                },
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
@@ -120,6 +126,9 @@ impl DotfilesStatus {
                 });
                 if let Some(permissions) = req.permissions {
                     entry["permissions"] = json!(format!("{permissions:04o}"));
+                }
+                if let Some(reason) = absent {
+                    entry["reason"] = json!(reason);
                 }
                 json_files.push(entry);
             } else {

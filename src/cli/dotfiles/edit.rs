@@ -158,8 +158,15 @@ fn source_for_target(
             }
             FileMode::Content => req.origin.config.clone(),
             // mise manages only the permissions; the file itself is the
-            // only copy of its content
-            FileMode::Permissions => req.target.clone(),
+            // only copy of its content, and mise never creates it
+            FileMode::Permissions => {
+                if std::fs::symlink_metadata(&req.target).is_err() {
+                    bail!(
+                        "{raw}: only its permissions are managed and it does not exist; create it first"
+                    );
+                }
+                req.target.clone()
+            }
             _ => req.source.clone(),
         }));
     }

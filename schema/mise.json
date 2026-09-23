@@ -4485,7 +4485,25 @@
                       "block": false,
                       "template": false,
                       "comment": false
-                    }
+                    },
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      },
+                      {
+                        "required": ["mode"]
+                      },
+                      {
+                        "properties": {
+                          "exclude": false,
+                          "manifest": false,
+                          "encrypt": false
+                        }
+                      }
+                    ]
                   },
                   {
                     "properties": {

@@ -24,6 +24,8 @@ for entry in \
   '{ mode = "track", permissions = "0600" }' \
   '{ block = "x", permissions = "0600" }' \
   '{ line = "x", permissions = "0600" }' \
+  '{ permissions = "0600", exclude = ["*.bak"] }' \
+  '{ permissions = "0600", encrypt = false }' \
   '{ permissions = "rw-------" }'; do
   printf '[dotfiles]\n"~/.app" = %s\n' "$entry" >permissions-invalid.toml
   assert_fail "$TOMBI_LINT permissions-invalid.toml"

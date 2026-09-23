@@ -3966,7 +3966,14 @@ impl BootstrapStatus {
                 Err(err) => system::files::FileState::Differs(format!("{err}")),
             };
             let (state_str, state_json, missing) = match &state {
-                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Applied => (
+                    match system::files::permissions_target_absent(&req) {
+                        Some(reason) => format!("applied ({reason})"),
+                        None => "applied".to_string(),
+                    },
+                    "applied",
+                    false,
+                ),
                 system::files::FileState::Missing => ("missing".to_string(), "missing", true),
                 system::files::FileState::SourceMissing => {
                     ("source missing".to_string(), "source_missing", true)

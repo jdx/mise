@@ -785,11 +785,16 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
             let Some(entry) = file_entry_from_toml(&target, value.clone()) else {
                 // Managed line/block edits are handled by the edit engine,
                 // not by this whole-file declaration parser.
-                if value.as_table().is_some_and(|table| {
+                if let Some(table) = value.as_table().filter(|table| {
                     ["block", "line", "template", "comment", "position"]
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
+                    if table.contains_key("permissions") {
+                        bail!(
+                            "dotfile {target}: permissions applies to whole-file entries, not block or line edits"
+                        );
+                    }
                     continue;
                 }
                 bail!("invalid dotfile declaration {target} in {}", path.display());
@@ -1884,20 +1889,23 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
             }
             check_copy_dir(req)
         }
-        FileMode::Copy => check_permissions(req, check_copy(&req.source, &req.target)?),
+        FileMode::Copy => {
+            let expected = file::read(&req.source)?;
+            check_permissions(req, check_content(&req.target, &expected))
+        }
         FileMode::Content => check_permissions(
             req,
             check_content(
                 &req.target,
                 req.content.as_deref().expect("inline content").as_bytes(),
-            )?,
+            ),
         ),
         FileMode::Template => check_permissions(
             req,
             check_content(
                 &req.target,
                 rendered.expect("rendered template content").as_bytes(),
-            )?,
+            ),
         ),
         FileMode::Permissions => check_permissions_only(req),
     }
@@ -1924,27 +1932,51 @@ fn permission_bits(metadata: &std::fs::Metadata) -> u32 {
     metadata.permissions().mode() & 0o7777
 }
 
-/// Downgrade an otherwise applied target to `Differs` when its permissions
-/// drifted (e.g. a later chmod), so apply repairs them too.
-fn check_permissions(req: &FileRequest, state: FileState) -> Result<FileState> {
+/// Combine a content check with the target's permissions: an otherwise
+/// applied target whose permissions drifted (e.g. a later chmod) is
+/// `Differs`, so apply repairs them too. The mode is read without opening the
+/// file, so a declared mode that denies its owner read access (`0200`,
+/// `0000`) is still compared; such a target is applied once its mode matches,
+/// because its content cannot be read back.
+fn check_permissions(req: &FileRequest, content: Result<FileState>) -> Result<FileState> {
     #[cfg(unix)]
-    if state == FileState::Applied
-        && let Some(desired) = desired_permissions(req)?
-        && permission_bits(&std::fs::symlink_metadata(&req.target)?) != desired
-    {
-        return Ok(FileState::Differs("permissions differ".into()));
+    if let Some(desired) = desired_permissions(req)? {
+        let mode_differs = match std::fs::symlink_metadata(&req.target) {
+            Ok(metadata) if metadata.file_type().is_file() => permission_bits(&metadata) != desired,
+            _ => false,
+        };
+        let permissions_differ = || FileState::Differs("permissions differ".into());
+        return match content {
+            Ok(FileState::Applied) if mode_differs => Ok(permissions_differ()),
+            Err(err) if desired & 0o400 == 0 && is_permission_denied(&err) => Ok(if mode_differs {
+                permissions_differ()
+            } else {
+                FileState::Applied
+            }),
+            other => other,
+        };
     }
     #[cfg(not(unix))]
     let _ = req;
-    Ok(state)
+    content
+}
+
+fn is_permission_denied(err: &eyre::Report) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+    })
 }
 
 /// A permissions-only entry never creates or rewrites its target and never
-/// follows a symlink there: it only compares the bits of what exists.
+/// follows a symlink there: it only compares the bits of what exists. A
+/// target that does not exist has nothing to adjust, so it counts as
+/// satisfied (see [`permissions_target_absent`]).
 fn check_permissions_only(req: &FileRequest) -> Result<FileState> {
     let metadata = match std::fs::symlink_metadata(&req.target) {
         Ok(metadata) => metadata,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(FileState::Missing),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(FileState::Applied),
         Err(err) => return Err(err.into()),
     };
     if metadata.file_type().is_symlink() {
@@ -1957,6 +1989,15 @@ fn check_permissions_only(req: &FileRequest) -> Result<FileState> {
         return Ok(FileState::Differs("permissions differ".into()));
     }
     Ok(FileState::Applied)
+}
+
+/// Why an applied permissions-only entry changed nothing: its target does not
+/// exist. Status shows this next to `applied`.
+pub(crate) fn permissions_target_absent(req: &FileRequest) -> Option<&'static str> {
+    (req.mode == FileMode::Permissions
+        && std::fs::symlink_metadata(&req.target)
+            .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound))
+    .then_some("target absent; permissions not applied")
 }
 
 const PERMISSIONS_THROUGH_LINK: &str =
@@ -2904,6 +2945,7 @@ pub(crate) fn plan_apply_with_active<'a>(
     let mut broken = vec![];
     let mut conflicts = vec![];
     let mut record_symlink_each = vec![];
+    let mut missing_permission_targets = vec![];
     for req in requests {
         // a tracked file is never written: history captures it as it is
         if req.mode == FileMode::Track {
@@ -2920,14 +2962,20 @@ pub(crate) fn plan_apply_with_active<'a>(
             continue;
         }
         // a permissions-only entry never creates its target and never
-        // follows a link there: nothing to do is not an error
+        // follows a link there: nothing to do is not an error. A missing
+        // directory another entry of this apply creates is decided once
+        // every entry is planned.
         if req.mode == FileMode::Permissions
             && let Some(reason) = permissions_target_unavailable(req)?
         {
-            warn!(
-                "[dotfiles].\"{}\": {reason}; permissions not set",
-                req.target_raw
-            );
+            if std::fs::symlink_metadata(&req.target).is_err() {
+                missing_permission_targets.push((req, reason));
+            } else {
+                warn!(
+                    "[dotfiles].\"{}\": {reason}; permissions not set",
+                    req.target_raw
+                );
+            }
             continue;
         }
         // rendering can run exec() — a dry run must not execute anything,
@@ -2988,6 +3036,22 @@ pub(crate) fn plan_apply_with_active<'a>(
     if !problems.is_empty() {
         bail!("files: {}", problems.join("\nfiles: "));
     }
+    // entries run in order, so one that creates a directory a
+    // permissions-only entry names has made it by the time the chmod runs
+    let mut deferred = vec![];
+    for (req, reason) in missing_permission_targets {
+        if todo.iter().any(|(other, _)| {
+            other.mode != FileMode::Permissions && other.target.starts_with(&req.target)
+        }) {
+            deferred.push((req, None));
+        } else {
+            warn!(
+                "[dotfiles].\"{}\": {reason}; permissions not set",
+                req.target_raw
+            );
+        }
+    }
+    todo.extend(deferred);
     Ok(ApplyPlan {
         todo,
         record_symlink_each,
@@ -3718,7 +3782,15 @@ fn current_regular_file_for_diff(req: &FileRequest) -> Result<Option<Vec<u8>>> {
         return Ok(None);
     }
     if req.target.is_file() {
-        return Ok(Some(file::read(&req.target)?));
+        return match file::read(&req.target) {
+            Ok(current) => Ok(Some(current)),
+            // a mode such as 0200 can deny even the owner read access
+            Err(err) if is_permission_denied(&err) => {
+                miseprintln!("  current: {} is not readable", req.target.display_user());
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        };
     }
     if req.target.exists() {
         miseprintln!(
@@ -4055,15 +4127,16 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             set_mode(&req.target, req.permissions.unwrap_or(0o600))?;
         }
         FileMode::Permissions => {
-            // planning skipped a missing target or a symlink; check again
-            // right before the chmod so a link that appeared since is never
-            // followed
+            // planning skipped a missing target or a symlink; this check only
+            // gives the clearer message, the chmod itself never follows a
+            // link that appeared since
             if let Some(reason) = permissions_target_unavailable(req)? {
                 bail!("[dotfiles].\"{}\": {reason}", req.target_raw);
             }
             #[cfg(unix)]
             if let Some(permissions) = req.permissions {
-                set_mode(&req.target, permissions)?;
+                chmod_no_follow(&req.target, permissions)
+                    .wrap_err_with(|| format!("[dotfiles].\"{}\"", req.target_raw))?;
                 written.push(req.target.clone());
             }
         }
@@ -4076,6 +4149,44 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
     Ok(())
+}
+
+/// Set the mode of a file mise does not own without ever following a symlink
+/// at `path`: the check and the chmod act on one descriptor, so a link
+/// swapped in after planning is refused instead of redirecting the change.
+#[cfg(unix)]
+fn chmod_no_follow(path: &Path, mode: u32) -> Result<()> {
+    use nix::errno::Errno;
+    use nix::fcntl::{AT_FDCWD, OFlag, open};
+    use nix::sys::stat::{FchmodatFlags, Mode, fchmod, fchmodat};
+
+    let mode = Mode::from_bits_truncate(mode as nix::libc::mode_t);
+    let flags = OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC;
+    // a write-only file cannot be opened for reading, nor a directory for
+    // writing; either descriptor is enough for fchmod
+    for access in [OFlag::O_RDONLY, OFlag::O_WRONLY] {
+        match open(path, flags | access, Mode::empty()) {
+            Ok(fd) => {
+                fchmod(&fd, mode).wrap_err_with(|| {
+                    format!("failed to set permissions of {}", path.display_user())
+                })?;
+                return Ok(());
+            }
+            Err(Errno::EACCES | Errno::EISDIR) => continue,
+            Err(Errno::ELOOP) => bail!(
+                "{} is a symlink, which is never followed",
+                path.display_user()
+            ),
+            Err(err) => {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed to open {}", path.display_user()));
+            }
+        }
+    }
+    // a target its owner can neither read nor write (mode 0000) cannot be
+    // opened at all, but its owner may still change its mode by name
+    fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink)
+        .wrap_err_with(|| format!("failed to set permissions of {}", path.display_user()))
 }
 
 /// delete this entry's leftover links (see [`stale_links`]) and any directory
@@ -5575,7 +5686,9 @@ variants = [{{ {field} = "linux" }}]"#
 
         let missing = dir.path().join("missing/config");
         let req = permissions_req(&missing, 0o600);
-        assert_eq!(check_rendered(&req, None)?, FileState::Missing);
+        // nothing to adjust counts as satisfied; status names the reason
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+        assert!(permissions_target_absent(&req).is_some());
         assert!(permissions_target_unavailable(&req)?.is_some());
         // applying is refused rather than creating the file or its parent
         assert!(apply_one(&req, None, &mut vec![]).is_err());
@@ -5667,6 +5780,77 @@ variants = [{{ {field} = "linux" }}]"#
         tree.permissions = Some(0o600);
         let err = validate_composed_file_footprints(&[tree]).unwrap_err();
         assert!(err.to_string().contains("requires a file source"));
+        Ok(())
+    }
+
+    #[test]
+    fn incoming_permissions_reject_edit_entries() {
+        let err =
+            incoming("[dotfiles]\n\"~/.bashrc/id\" = { block = \"x\", permissions = \"0600\" }\n")
+                .unwrap_err()
+                .to_string();
+        assert!(err.contains("whole-file entries"), "{err}");
+    }
+
+    /// The chmod acts on a descriptor opened without following a link, so a
+    /// symlink swapped in after planning is refused, and a target its owner
+    /// cannot read or write is still reachable.
+    #[cfg(unix)]
+    #[test]
+    fn chmod_no_follow_refuses_links_and_reaches_unreadable_targets() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let mode_of =
+            |path: &Path| -> Result<u32> { Ok(permission_bits(&std::fs::symlink_metadata(path)?)) };
+
+        let real = dir.path().join("real");
+        file::write(&real, "real")?;
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o644))?;
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link)?;
+        let err = chmod_no_follow(&link, 0o600).unwrap_err().to_string();
+        assert!(err.contains("symlink"), "{err}");
+        assert_eq!(mode_of(&real)?, 0o644);
+
+        for from in [0o000, 0o200, 0o400] {
+            let target = dir.path().join(format!("file{from:o}"));
+            file::write(&target, "content")?;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(from))?;
+            chmod_no_follow(&target, 0o600)?;
+            assert_eq!(mode_of(&target)?, 0o600, "from {from:o}");
+        }
+
+        let directory = dir.path().join("directory");
+        file::create_dir_all(&directory)?;
+        chmod_no_follow(&directory, 0o700)?;
+        assert_eq!(mode_of(&directory)?, 0o700);
+        Ok(())
+    }
+
+    /// A declared mode that denies the owner read access leaves content that
+    /// cannot be compared; the mode is still checked instead of failing.
+    #[cfg(unix)]
+    #[test]
+    fn a_write_only_copy_is_checked_by_its_mode() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "managed")?;
+        let target = dir.path().join("target");
+        let mut req = link_req(&source, &target, FileMode::Copy);
+        req.permissions = Some(0o200);
+
+        apply_one(&req, None, &mut vec![])?;
+        assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o200);
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o000))?;
+        assert_eq!(
+            check_rendered(&req, None)?,
+            FileState::Differs("permissions differ".into())
+        );
+        apply_one(&req, None, &mut vec![])?;
+        assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o200);
         Ok(())
     }
 }

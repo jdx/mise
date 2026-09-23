@@ -28,7 +28,10 @@ cat <<EOF >mise.toml
 EOF
 
 assert_contains "mise dot status ~/.ssh/config" "permissions differ"
-assert_contains "mise dot status ~/.missing" "missing"
+# a missing target has nothing to adjust, so it counts as satisfied
+assert_contains "mise dot status ~/.missing" "applied (target absent; permissions not applied)"
+assert_contains "mise dot status --json ~/.missing" '"reason": "target absent; permissions not applied"'
+assert_succeed "mise dot status --missing ~/.missing"
 assert_contains "mise dot status ~/.linked" "permissions are not set through links"
 assert_contains "mise dot status --json ~/.ssh/config" '"permissions": "0600"'
 assert_contains "mise dot diff ~/.ssh/config" "permissions differ: 0644 (current) -> 0600 (desired)"
@@ -73,3 +76,30 @@ cat <<EOF >mise.toml
 "~/.netrc" = { source = "dotfiles/netrc.tera", mode = "symlink", permissions = "0600" }
 EOF
 assert_contains "mise dot status 2>&1" "permissions requires mode copy or template"
+
+# permissions cannot ride along on a block or line edit
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.bashrc/example" = { block = "export EXAMPLE=1", permissions = "0600" }
+EOF
+assert_contains "mise dot status 2>&1" "permissions applies to whole-file entries"
+
+# editing a permissions-only target never creates it
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.absent" = { permissions = "0600" }
+EOF
+assert_fail_contains "EDITOR=true mise dot edit ~/.absent" "does not exist"
+assert_fail "test -e ~/.absent"
+
+# a directory another entry creates in the same apply still gets its mode,
+# and a write-only file stays checkable although it cannot be read back
+cat <<EOF >mise.toml
+[dotfiles]
+"~/.private" = { permissions = "0700" }
+"~/.private/drop" = { content = "drop", permissions = "0200" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "$mode_of ~/.private" "700"
+assert "$mode_of ~/.private/drop" "200"
+assert_succeed "mise dot status --missing"

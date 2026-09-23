@@ -398,10 +398,19 @@ content, and never infers a source for it from `dotfiles.root`:
 "~/.ssh/config" = { permissions = "0600" }
 ```
 
-When the target does not exist, apply warns and skips it; status reports it
-as `missing`. When the target is a symlink, mise does not follow it: status
-reports it and apply skips it with a warning. Unapply never removes a target
-whose permissions are all mise manages.
+When the target does not exist, there is nothing to adjust: apply warns and
+skips it, and status counts it as applied with the reason
+`target absent; permissions not applied`, so `mise dot status --missing`
+does not fail. A directory that another entry creates in the same apply still
+gets its permissions. When the target is a symlink, mise does not follow it:
+status reports it and apply skips it with a warning, and a link swapped in
+while mise runs is refused rather than followed. `mise dot edit` does not
+create a missing target. Unapply never removes a target whose permissions are
+all mise manages.
+
+A declared mode may deny even the owner read access, such as `0200`. mise
+then checks only the target's permissions, because it cannot read the
+content back.
 
 `permissions` cannot be combined with `symlink` or `symlink-each`, which have
 no permissions of their own, with `track`, whose history records the file's
