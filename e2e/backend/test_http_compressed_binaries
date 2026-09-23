@@ -5,14 +5,9 @@ set -euo pipefail
 
 # Create a temporary directory for test artifacts
 TEST_DIR="$(mktemp -d)"
-HTTP_PORT_FILE="$TEST_DIR/http_port"
-SERVER_PID=""
 
 # Cleanup function
 cleanup() {
-  if [ -n "$SERVER_PID" ]; then
-    kill "$SERVER_PID" 2>/dev/null || true
-  fi
   rm -rf "$TEST_DIR"
   rm -f mise.toml
 }
@@ -38,25 +33,7 @@ fi
 
 # Start a simple HTTP server
 echo "Starting HTTP server..."
-python3 -u - "$TEST_DIR" "$HTTP_PORT_FILE" <<'PY' >/dev/null 2>&1 &
-import functools
-import http.server
-import socketserver
-import sys
-from pathlib import Path
-
-root = sys.argv[1]
-port_file = Path(sys.argv[2])
-handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
-with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
-    port_file.write_text(str(httpd.server_address[1]))
-    httpd.serve_forever()
-PY
-SERVER_PID=$!
-
-# Wait for server to start
-wait_for_file "$HTTP_PORT_FILE" "HTTP test server port file" 30 "$SERVER_PID"
-HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+start_http_server --dir "$TEST_DIR"
 
 # Test with different compressed formats
 echo "Testing .gz compressed binary..."
