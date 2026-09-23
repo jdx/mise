@@ -2914,6 +2914,33 @@ fn removal_created_dirs(req: &FileRequest) -> Vec<PathBuf> {
     }
 }
 
+/// Whether the record for `req`'s already-removed target still lists a
+/// directory mise created that is there to prune.
+fn has_leftover_created_dirs(req: &FileRequest) -> bool {
+    created_dirs_to_prune(&req.target, &removal_created_dirs(req), &dirs::HOME)
+        .iter()
+        .any(|dir| dir.is_dir())
+}
+
+/// The pruning pass for a run: the targets it removed, and the converged
+/// ones whose leftover directories it retries, each with its record.
+fn prune_after_apply<'a>(removed: impl IntoIterator<Item = &'a FileRequest>, plan: &ApplyPlan<'a>) {
+    let removals = removed
+        .into_iter()
+        .chain(plan.prune_leftovers.iter().copied())
+        .map(|req| {
+            if plan.prune_leftovers.iter().any(|r| std::ptr::eq(*r, req)) {
+                debug!(
+                    "files: retrying the directories created for {}",
+                    req.target.display_user()
+                );
+            }
+            (req, removal_created_dirs(req))
+        })
+        .collect::<Vec<_>>();
+    prune_created_dirs(&removals, &plan.claimed_dirs, &dirs::HOME, true);
+}
+
 /// Whether this apply of `req` removes its target.
 fn apply_removes_target(req: &FileRequest, rendered: Option<&str>) -> bool {
     req.mode == FileMode::Absent || removes_target(req, rendered)
@@ -3419,6 +3446,11 @@ pub(crate) struct ApplyPlan<'a> {
     /// converged templates whose ownership record is missing or stale, with
     /// the content to record
     record_templates: Vec<(&'a FileRequest, String)>,
+    /// converged entries whose target is already gone but whose record
+    /// still lists directories mise created that are there: an earlier
+    /// prune could not remove them, so this run retries. Not a file change,
+    /// so never shown as one.
+    prune_leftovers: Vec<&'a FileRequest>,
     /// directories active entries need, which a removed target never takes
     /// along; only computed when a removal has directories it could prune
     claimed_dirs: HashSet<PathBuf>,
@@ -3457,6 +3489,7 @@ pub(crate) fn execute_apply(
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
+            prune_after_apply([], &plan);
             for req in plan.record_symlink_each {
                 let pending = journal::begin_changes(
                     DOTFILES_PART,
@@ -3536,7 +3569,7 @@ pub(crate) fn execute_apply(
             journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
         apply_one(req, rendered.as_deref(), written)?;
         if apply_removes_target(req, rendered.as_deref()) {
-            removals.push((*req, removal_created_dirs(req)));
+            removals.push(*req);
         }
         if req.mode == FileMode::SymlinkEach {
             save_symlink_each_state(req);
@@ -3551,7 +3584,7 @@ pub(crate) fn execute_apply(
             info!("files: {}", describe_applied(req)?);
         }
     }
-    prune_created_dirs(&removals, &plan.claimed_dirs, &dirs::HOME, true);
+    prune_after_apply(removals, &plan);
     record_template_states(&plan.record_templates)?;
     for req in plan.record_symlink_each {
         if !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, req)) {
@@ -3612,6 +3645,7 @@ pub(crate) fn plan_apply_with_active<'a>(
     let mut conflicts = vec![];
     let mut record_symlink_each = vec![];
     let mut record_templates = vec![];
+    let mut prune_leftovers = vec![];
     let mut missing_permission_targets = vec![];
     for req in requests {
         // a tracked file is never written: history captures it as it is
@@ -3665,6 +3699,12 @@ pub(crate) fn plan_apply_with_active<'a>(
         };
         match check_rendered(req, rendered.as_deref()) {
             Ok(FileState::Applied) => {
+                // a target already gone can still leave directories an
+                // earlier prune could not remove; retry them after the run
+                if apply_removes_target(req, rendered.as_deref()) && has_leftover_created_dirs(req)
+                {
+                    prune_leftovers.push(req);
+                }
                 if req.mode == FileMode::SymlinkEach && symlink_each_state_needs_update(req)? {
                     record_symlink_each.push(req);
                 }
@@ -3730,9 +3770,10 @@ pub(crate) fn plan_apply_with_active<'a>(
         }
     }
     todo.extend(deferred);
-    let claimed_dirs = if todo.iter().any(|(req, rendered)| {
-        apply_removes_target(req, rendered.as_deref()) && !removal_created_dirs(req).is_empty()
-    }) {
+    let claimed_dirs = if !prune_leftovers.is_empty()
+        || todo.iter().any(|(req, rendered)| {
+            apply_removes_target(req, rendered.as_deref()) && !removal_created_dirs(req).is_empty()
+        }) {
         claimed_dirs(active_requests)?
     } else {
         HashSet::new()
@@ -3741,6 +3782,7 @@ pub(crate) fn plan_apply_with_active<'a>(
         todo,
         record_symlink_each,
         record_templates,
+        prune_leftovers,
         claimed_dirs,
         reconciliation: plan_symlink_each_reconciliation(active_requests, requests)?,
     })
@@ -7683,6 +7725,45 @@ source = "oldrc""#,
         assert!(!newapp.exists());
         assert!(removal_created_dirs(&absent).is_empty());
         remove_target_state(&copy)?;
+        Ok(())
+    }
+
+    #[test]
+    fn a_converged_removal_retries_leftover_created_dirs() -> Result<()> {
+        // under the test home, since pruning never leaves it
+        let dir = tempfile::Builder::new().tempdir_in(*dirs::HOME)?;
+        let source = dir.path().join("source");
+        file::write(&source, "copied")?;
+        let newapp = dir.path().join("newapp");
+        let target = newapp.join("sub/file");
+        apply_one(
+            &link_req(&source, &target, FileMode::Copy),
+            None,
+            &mut vec![],
+        )?;
+        // the target went but an earlier prune left the directories
+        file::remove_file(&target)?;
+        let absent = absent_req(&target);
+        assert_eq!(check_rendered(&absent, None)?, FileState::Applied);
+        assert!(apply_removes_target(&absent, None));
+        assert!(has_leftover_created_dirs(&absent));
+
+        let plan = ApplyPlan {
+            todo: vec![],
+            record_symlink_each: vec![],
+            record_templates: vec![],
+            prune_leftovers: vec![&absent],
+            claimed_dirs: HashSet::new(),
+            reconciliation: SymlinkEachReconciliation {
+                stale_links: vec![],
+                targets: vec![],
+            },
+        };
+        prune_after_apply([], &plan);
+        assert!(!newapp.exists());
+        assert!(removal_created_dirs(&absent).is_empty());
+        assert!(!has_leftover_created_dirs(&absent));
+        remove_target_state(&absent)?;
         Ok(())
     }
 

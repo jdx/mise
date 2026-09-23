@@ -53,6 +53,23 @@ assert_succeed "WORK=1 mise dot apply --yes"
 assert_succeed "mise dot apply --yes"
 assert_fail "test -e $notesapp"
 
+# a directory a removal had to keep is retried by a later apply, even though
+# the target is already gone and nothing else changes
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/retryapp/sub/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", remove_empty = true }
+EOF
+retryapp="$HOME/.config/retryapp"
+assert_succeed "WORK=1 mise dot apply --yes"
+echo "mine" >"$retryapp/notes.txt"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $retryapp/sub"
+rm "$retryapp/notes.txt"
+assert_contains "mise dot status" "applied"
+assert_succeed "test -d $retryapp"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $retryapp"
+
 # unapplying a target that is already gone still removes the directories
 # mise created for it once they are empty
 cat <<'EOF' >mise.toml
