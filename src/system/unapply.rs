@@ -105,7 +105,9 @@ pub(crate) async fn plan(
 
     for mut file in files {
         // A template that renders empty applied nothing, so like a declared
-        // absence there is nothing for unapply to undo.
+        // absence there is nothing for unapply to undo. `--force` does not
+        // change that: it covers a target that drifted from what the module
+        // wrote, and an empty render leaves nothing to compare the target with.
         let reason = if file.rendered_empty() {
             "template rendered empty, nothing was applied for it"
         } else {

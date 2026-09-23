@@ -71,6 +71,9 @@ EOF
 echo "hand-written" >"$PWD/module.conf"
 assert_contains "mise -E proxy --verbose bootstrap unapply proxy --yes 2>&1" "file $PWD/module.conf: keeping it, template rendered empty"
 assert "cat '$PWD/module.conf'" "hand-written"
+# --force covers drift from what the module wrote; an empty render wrote nothing.
+assert_succeed "mise -E proxy bootstrap unapply proxy --force --yes"
+assert "cat '$PWD/module.conf'" "hand-written"
 
 # remove_empty only makes sense for a rendered template.
 cat <<EOF >mise.toml
