@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+export MISE_EXPERIMENTAL=1
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  mise install pitchfork@2.27.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.27.0)"
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pf-config"
+export PITCHFORK_PROXY_ENABLE=false
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+mkdir -p "$MISE_CONFIG_DIR" one two three four
+ports=$(
+  python3 - <<'PYPORT'
+import random
+import socket
+sockets = []
+for port in random.sample(range(20000, 30000), 1000):
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", port))
+    except OSError:
+        s.close()
+        continue
+    sockets.append(s)
+    if len(sockets) == 2:
+        print(*(s.getsockname()[1] for s in sockets))
+        break
+else:
+    raise RuntimeError("no available test ports")
+PYPORT
+)
+read -r nats_port monitor_port <<<"$ports"
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[daemon_providers.bus]
+preset = "nats"
+version = "2"
+port = $nats_port
+ports.monitor_port = $monitor_port
+TOML
+for dir in one two three four; do
+  cat >"$dir/mise.toml" <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.bus]
+provider = "bus"
+TOML
+done
+for dir in three four; do
+  printf 'resource = "shared_events"\n' >>"$dir/mise.toml"
+done
+python3 - <<'PYTEST'
+import json
+import socket
+import subprocess
+import urllib.parse
+import uuid
+from pathlib import Path
+
+base = Path.cwd()
+
+def mise(project, *args):
+    return subprocess.check_output(["mise", "--cd", str(base / project), *args], text=True)
+
+def start(project):
+    subprocess.run(["mise", "--cd", str(base / project), "daemons", "start", "bus"], check=True)
+
+def url(project):
+    return json.loads(mise(project, "env", "--json"))["NATS_URL"]
+
+class Client:
+    def __init__(self, url):
+        parsed = urllib.parse.urlparse(url)
+        self.socket = socket.create_connection((parsed.hostname, parsed.port), timeout=5)
+        self.file = self.socket.makefile("rb")
+        assert self.file.readline().startswith(b"INFO ")
+        self.events = []
+        connect = json.dumps({"verbose": False, "user": parsed.username, "pass": parsed.password})
+        self.send(f"CONNECT {connect}\r\n".encode())
+        self.ping()
+    def send(self, data):
+        self.socket.sendall(data)
+    def frame(self):
+        line = self.file.readline()
+        if line.startswith(b"PING"):
+            self.send(b"PONG\r\n")
+            return self.frame()
+        if line.startswith(b"MSG "):
+            fields = line.split()
+            data = self.file.read(int(fields[-1]))
+            assert self.file.read(2) == b"\r\n"
+            if fields[2] == b"1":
+                self.events.append(data)
+                return b"EVENT", data
+            return b"MSG", data
+        assert not line.startswith(b"-ERR"), "NATS rejected the account or operation"
+        assert line, "NATS closed an existing connection"
+        return line.strip(), b""
+    def ping(self):
+        self.send(b"PING\r\n")
+        while self.frame()[0] != b"PONG":
+            pass
+    def publish(self, subject, payload):
+        self.send(f"PUB {subject} {len(payload)}\r\n".encode() + payload + b"\r\n")
+    def request(self, subject, value):
+        inbox = "_INBOX." + uuid.uuid4().hex
+        data = json.dumps(value).encode()
+        self.send(f"UNSUB 99\r\nSUB {inbox} 99\r\nPUB {subject} {inbox} {len(data)}\r\n".encode() + data + b"\r\n")
+        while True:
+            kind, payload = self.frame()
+            if kind == b"MSG":
+                result = json.loads(payload)
+                assert "error" not in result, "JetStream rejected the request"
+                return result
+    def close(self):
+        self.file.close()
+        self.socket.close()
+
+start("one")
+first_url = url("one")
+a = Client(first_url)
+a.send(b"SUB events 1\r\n")
+a.ping()
+# This adds an account to a running server while a's connection stays open.
+start("two")
+second_url = url("two")
+assert first_url != second_url
+b = Client(second_url)
+b.publish("events", b"other account")
+b.ping()
+a.ping()
+assert not a.events, "subjects leaked between accounts"
+a.publish("events", b"own account")
+a.ping()
+assert a.events == [b"own account"]
+for client in [a, b]:
+    client.request("$JS.API.STREAM.CREATE.proof", {"name": "proof", "subjects": ["proof"], "storage": "file"})
+a.request("proof", {"n": 41})
+assert b.request("$JS.API.STREAM.INFO.proof", {})["state"]["messages"] == 0
+b.request("proof", {"n": 42})
+assert a.request("$JS.API.STREAM.INFO.proof", {})["state"]["messages"] == 1
+start("three")
+start("four")
+assert url("three") == url("four")
+c = Client(url("three"))
+c.request("$JS.API.STREAM.CREATE.shared", {"name": "shared", "subjects": ["shared"], "storage": "file"})
+c.request("shared", {"n": 73})
+d = Client(url("four"))
+assert d.request("$JS.API.STREAM.INFO.shared", {})["state"]["messages"] == 1
+# Consumer stop keeps other accounts, their subscriptions and their server alive.
+mise("one", "daemons", "stop")
+b.ping()
+for client in [a, b, c, d]:
+    client.close()
+mise("two", "daemons", "providers", "restart", "bus")
+assert url("one") == first_url
+assert url("two") == second_url
+for endpoint in [first_url, second_url]:
+    client = Client(endpoint)
+    assert client.request("$JS.API.STREAM.INFO.proof", {})["state"]["messages"] == 1
+    client.close()
+# Inspection must not contain passwords from the connection URLs.
+rows = mise("two", "daemons", "ls", "--json")
+assert urllib.parse.urlparse(second_url).password not in rows
+print("NATS subjects, streams, account sharing, reload connections and persistent data verified")
+PYTEST

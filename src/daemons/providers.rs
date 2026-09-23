@@ -105,6 +105,9 @@ impl Provider {
             }
         }
         let root = directory(&self.name);
+        if preset == "nats" {
+            super::providers_nats::configure(&mut table, &root)?;
+        }
         let request = table.remove("port").unwrap_or_else(|| "auto".into());
         let claim = match ports::parse(&self.name, request)? {
             ports::PortRequest::Fixed(port) => ports::PortClaim::fixed(port),
@@ -320,6 +323,13 @@ impl Provider {
         }
         let manifest = root.join("execution.json");
         let execution = Execution {
+            data_dir: daemon.data_dir.clone().expect("provider data"),
+            jetstream: self
+                .declaration
+                .get("options")
+                .and_then(|v| v.get("jetstream"))
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(true),
             preset: daemon.preset.clone().expect("provider preset"),
             port: daemon.port.expect("provider port").port,
             env,
@@ -334,6 +344,10 @@ impl Provider {
                 "provider {} execution environment changed; restart it explicitly",
                 self.name
             );
+        }
+        if execution.preset == "nats" && !rt.active(&root, &runtime::read_state(&root)?).await? {
+            let _resources = crate::lock_file::LockFile::at(&root.join("resources.lock")).lock()?;
+            super::providers_nats::prepare(&execution).await?;
         }
         runtime::write_if_changed(&manifest, &bytes)?;
         for key in execution.commands.keys() {
@@ -398,15 +412,19 @@ fn base_env() -> EnvMap {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Execution {
+pub(super) struct Execution {
     // Older provider manifests still serve process and probe execution.
     #[serde(default)]
-    preset: String,
+    pub(super) preset: String,
     #[serde(default)]
-    port: u16,
-    env: EnvMap,
+    pub(super) port: u16,
+    pub(super) env: EnvMap,
     commands: IndexMap<String, String>,
-    root: PathBuf,
+    pub(super) root: PathBuf,
+    #[serde(default)]
+    pub(super) data_dir: PathBuf,
+    #[serde(default)]
+    pub(super) jetstream: bool,
 }
 
 impl Execution {
@@ -581,7 +599,7 @@ pub(crate) struct Binding {
     pub resource: String,
 }
 
-fn validate_resource(resource: &str) -> Result<()> {
+pub(super) fn validate_resource(resource: &str) -> Result<()> {
     if resource.is_empty()
         || resource.len() > 63
         || !resource.starts_with(|c: char| c.is_ascii_lowercase())
@@ -632,17 +650,25 @@ pub(crate) fn binding(
         .get("preset")
         .and_then(toml::Value::as_str)
         .unwrap_or_default();
-    if !matches!(preset, "postgres" | "cockroachdb") {
-        bail!("{preset} does not support provider resources yet");
+    let mut exports = if preset == "nats" {
+        export_provider.daemon()?.exports
+    } else {
+        let options = export_provider
+            .declaration
+            .entry("options".to_string())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+            .as_table_mut()
+            .ok_or_else(|| eyre::eyre!("provider options must be a table"))?;
+        options.insert("database".into(), resource.clone().into());
+        export_provider.daemon()?.exports
+    };
+    if preset == "nats" {
+        let port = provider.daemon()?.port.expect("provider port").port;
+        exports.insert(
+            "NATS_URL".into(),
+            super::providers_nats::url(&directory(&provider.name), &resource, port)?,
+        );
     }
-    let options = export_provider
-        .declaration
-        .entry("options".to_string())
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()))
-        .as_table_mut()
-        .ok_or_else(|| eyre::eyre!("provider options must be a table"))?;
-    options.insert("database".into(), resource.clone().into());
-    let exports = export_provider.daemon()?.exports;
     let command = format!(
         "{} daemons __resource {} {}",
         presets::quote(crate::env::MISE_BIN.to_string_lossy()),
@@ -703,38 +729,47 @@ impl Resource {
         let root = self.provider;
         let execution: Execution =
             serde_json::from_slice(&std::fs::read(root.join("execution.json"))?)?;
-        if !matches!(execution.preset.as_str(), "postgres" | "cockroachdb") || execution.port == 0 {
+        if !matches!(
+            execution.preset.as_str(),
+            "postgres" | "cockroachdb" | "nats"
+        ) || execution.port == 0
+            || (execution.preset == "nats" && execution.data_dir.as_os_str().is_empty())
+        {
             bail!(
                 "provider metadata predates resource support; explicitly restart its provider first"
             );
         }
         {
             let _lock = crate::lock_file::LockFile::at(&root.join("resources.lock")).lock()?;
-            let port = execution.port;
-            let postgres = execution.preset == "postgres";
-            // Concurrent starts can encounter a provider whose first start is
-            // still in flight. Check SQL readiness before provisioning.
-            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
-            loop {
-                match sql(&execution, postgres, port, "SELECT 1").await {
-                    Ok(_) => break,
-                    Err(err) if tokio::time::Instant::now() >= deadline => return Err(err),
-                    Err(_) => tokio::time::sleep(std::time::Duration::from_millis(200)).await,
+            if execution.preset == "nats" {
+                super::providers_nats::provision(&execution, &self.resource).await?;
+            } else {
+                let port = execution.port;
+                let postgres = execution.preset == "postgres";
+                // Concurrent starts can encounter a provider whose first start is
+                // still in flight. Check SQL readiness before provisioning.
+                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+                loop {
+                    match sql(&execution, postgres, port, "SELECT 1").await {
+                        Ok(_) => break,
+                        Err(err) if tokio::time::Instant::now() >= deadline => return Err(err),
+                        Err(_) => tokio::time::sleep(std::time::Duration::from_millis(200)).await,
+                    }
                 }
-            }
 
-            let query = format!(
-                "SELECT 1 FROM pg_database WHERE datname = '{}'",
-                self.resource
-            );
-            if sql(&execution, postgres, port, &query).await?.trim() != "1" {
-                sql(
-                    &execution,
-                    postgres,
-                    port,
-                    &format!("CREATE DATABASE \"{}\"", self.resource),
-                )
-                .await?;
+                let query = format!(
+                    "SELECT 1 FROM pg_database WHERE datname = '{}'",
+                    self.resource
+                );
+                if sql(&execution, postgres, port, &query).await?.trim() != "1" {
+                    sql(
+                        &execution,
+                        postgres,
+                        port,
+                        &format!("CREATE DATABASE \"{}\"", self.resource),
+                    )
+                    .await?;
+                }
             }
         }
         // Readiness is output only after provisioning succeeded. Pitchfork owns
