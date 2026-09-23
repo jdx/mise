@@ -81,8 +81,11 @@ class Handler(BaseHTTPRequestHandler):
         if name not in PACKAGES:
             self.send_error(404)
             return
+        # Log the client (`mise` or `npm`, from the User-Agent) with the package
+        # so tests can tell the HTTP client and `npm view` lookups apart.
+        client = (self.headers.get('User-Agent') or 'unknown').split('/')[0]
         with (root / 'requests').open('a') as log:
-            log.write(name + '\n')
+            log.write(f'{client} {name}\n')
         host, port = self.server.server_address[:2]
         body = json.dumps(packument(name, f'http://{host}:{port}')).encode()
         self.send_response(200)

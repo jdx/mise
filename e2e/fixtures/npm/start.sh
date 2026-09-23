@@ -19,11 +19,15 @@ done
 NPM_CONFIG_REGISTRY="http://127.0.0.1:$(cat "$FAKE_NPM_REGISTRY_DIR/port")/"
 export NPM_CONFIG_REGISTRY
 
-# Asserts every named package was fetched from the fake registry.
+# Asserts every named package was fetched from the fake registry by the given
+# client: `mise` for its HTTP client, `npm` for `npm view` under npm.shell_out.
+# Checking each client separately keeps an earlier hit from one path from
+# hiding a later lookup on the other that went to the network.
 assert_fake_npm_registry_used() {
-  local package
+  local client="$1" package
+  shift
   for package in "$@"; do
-    grep -Fxq "$package" "$FAKE_NPM_REGISTRY_DIR/requests" 2>/dev/null ||
-      fail "npm:$package was not fetched from the fake registry at $NPM_CONFIG_REGISTRY"
+    grep -Fxq "$client $package" "$FAKE_NPM_REGISTRY_DIR/requests" 2>/dev/null ||
+      fail "npm:$package was not fetched by $client from the fake registry at $NPM_CONFIG_REGISTRY"
   done
 }
