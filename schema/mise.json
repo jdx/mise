@@ -4475,6 +4475,7 @@
                     },
                     "block": false,
                     "line": false,
+                    "position": false,
                     "template": false,
                     "comment": false
                   }

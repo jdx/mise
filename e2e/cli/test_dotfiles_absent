@@ -108,6 +108,15 @@ assert_contains "mise dot status 2>&1" 'takes no source, content, exclude, manif
 assert_succeed "mise dot apply --yes"
 assert "cat ~/.oldrc" "kept"
 
+# a wildcard target is rejected rather than checked as a literal path
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.old*" = { mode = "absent" }
+TOML
+assert_contains "mise dot status 2>&1" "an absent target cannot use wildcards"
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.oldrc" "kept"
+
 # an edit on a file an absent entry removes is refused before anything runs
 cat >mise.toml <<'TOML'
 [dotfiles]

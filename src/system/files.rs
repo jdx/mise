@@ -891,6 +891,9 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         "dotfile {target} with mode = \"absent\" cannot declare source, content, manifest, exclude, permissions, or encrypt"
                     );
                 }
+                if mode == FileMode::Absent && is_glob_pattern(&resolve_target_arg(&target)) {
+                    bail!("dotfile {target}: an absent target cannot use wildcards");
+                }
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
                 }
@@ -1414,6 +1417,13 @@ fn merge_file_entry(
         if target.is_relative() {
             warn!(
                 "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
+            );
+            return;
+        }
+        // a pattern would be checked as a literal path and remove nothing
+        if is_glob_pattern(&target) {
+            warn!(
+                "[dotfiles].\"{target_raw}\": an absent target cannot use wildcards, ignoring entry"
             );
             return;
         }
@@ -4926,6 +4936,27 @@ variants = [
         assert_eq!(request.mode, FileMode::Absent);
         assert_eq!(request.target, dirs::HOME.join(".oldrc"));
         assert_eq!(request.source, PathBuf::new());
+
+        // a pattern is rejected rather than checked as a literal path
+        assert!(
+            validate_incoming_body(
+                r#"
+[dotfiles]
+"~/.old*" = { mode = "absent" }
+"#
+            )
+            .is_err()
+        );
+        let mut merged = IndexMap::new();
+        let entry: FileTomlEntry = toml::from_str(r#"mode = "absent""#)?;
+        merge_file_entry(
+            "~/.old*".into(),
+            entry,
+            Path::new("/"),
+            &origin,
+            &mut merged,
+        );
+        assert!(merged.is_empty());
 
         let mut merged = IndexMap::new();
         let entry: FileTomlEntry = toml::from_str(
