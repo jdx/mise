@@ -6269,7 +6269,7 @@
       "description": "Experimental shared servers owned by the user. Only allowed in global configuration.",
       "type": "object",
       "propertyNames": {
-        "pattern": "^[a-z0-9-]+$"
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
       },
       "additionalProperties": {
         "type": "object",
