@@ -43,7 +43,10 @@ fn lock_tool_matches(a: &LockTool, b: &LockTool) -> bool {
         && a.1.request.source() == b.1.request.source()
 }
 
-fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
+fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
+    // Installed-version resolution can yield an install directory name such
+    // as `3.9.6~aube~<digest>`; lock the npm/PyPI version it stands for.
+    tool.1.strip_install_path_identity();
     if !tools
         .iter()
         .any(|existing| lock_tool_matches(existing, &tool))
@@ -524,6 +527,7 @@ impl Lock {
                             && actual.request.source() == tv.request.source()
                     }) {
                         *tv = actual.clone();
+                        tv.strip_install_path_identity();
                     }
                 }
                 if tools.is_empty() && !lockfile_path.exists() {

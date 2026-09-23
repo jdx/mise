@@ -323,6 +323,30 @@ impl ToolVersion {
             .unwrap_or(&self.version)
     }
 
+    /// Replace a version discovered by scanning install directories
+    /// (`<version>~aube~<digest>`, `<version>~uv~<digest>`) with the logical
+    /// version it stands for. Lockfiles and dependency resolvers must only
+    /// ever see the logical version; the digest is a private path identity.
+    pub(crate) fn strip_install_path_identity(&mut self) {
+        let version = if self.aube_lock.is_none() {
+            self.aube_install_path_version()
+                .or_else(|| self.legacy_aube_install_path_version())
+        } else {
+            None
+        }
+        .or_else(|| {
+            self.uv_lock
+                .is_none()
+                .then(|| self.uv_install_path_version())
+                .flatten()
+        });
+        if let Some(version) = version.map(str::to_string) {
+            // Keep pointing at the directory that was found.
+            self.install_path = Some(self.install_path());
+            self.version = version;
+        }
+    }
+
     pub(crate) fn aube_install_path_version(&self) -> Option<&str> {
         if !self.ba().full_without_opts().starts_with("npm:") {
             return None;
@@ -1351,6 +1375,25 @@ mod tests {
             ToolVersion::new(request, version.into()).display_version(),
             "release"
         );
+    }
+
+    #[test]
+    fn strip_install_path_identity_keeps_the_found_directory() {
+        let dir = "3.9.6~aube~de4f77e9115401ed";
+        let npm = Arc::new(BackendArg::from("npm:prettier"));
+        let request = ToolRequest::new(npm, "latest", ToolSource::Argument).unwrap();
+        let mut tv = ToolVersion::new(request, dir.into());
+        let install_path = tv.install_path();
+        tv.strip_install_path_identity();
+        assert_eq!(tv.version, "3.9.6");
+        assert_eq!(tv.install_path(), install_path);
+        assert!(install_path.ends_with(dir));
+
+        let github = Arc::new(BackendArg::from("github:owner/tool"));
+        let request = ToolRequest::new(github, "latest", ToolSource::Argument).unwrap();
+        let mut tv = ToolVersion::new(request, dir.into());
+        tv.strip_install_path_identity();
+        assert_eq!(tv.version, dir);
     }
 
     #[test]

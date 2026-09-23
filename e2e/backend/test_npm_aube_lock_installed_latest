@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# A graph-locked npm install lives in `<version>~aube~<digest>`. Resolving
+# `latest` against installed versions must yield the npm version, never that
+# private directory name, or `mise lock` asks aube for a nonexistent version.
+cat >mise.toml <<'MISE_TOML'
+[tools]
+node = "20.11.1"
+"npm:inflight" = "latest"
+MISE_TOML
+MISE_LOCKFILE=1 mise install
+assert_succeed "find '$MISE_DATA_DIR/installs/npm-inflight' -maxdepth 1 -name '1.0.6~aube~*' | grep -q ."
+
+rm -rf mise.lock .mise
+assert_contains "mise lock npm:inflight 2>&1" "npm:inflight@1.0.6"
+assert_not_contains "cat mise.lock" "~aube~"
+assert_contains "cat mise.lock" 'version = "1.0.6"'
+assert_contains "cat mise.lock" 'path = ".mise/locks/npm-inflight/1.0.6"'
+
+# A full lock resolves the same way and replays in locked mode.
+mise lock
+assert_not_contains "cat mise.lock" "~aube~"
+assert_succeed "MISE_LOCKFILE=1 mise install --locked"
+assert_contains "mise ls npm:inflight" "1.0.6"
