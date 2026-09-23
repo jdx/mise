@@ -5634,7 +5634,11 @@ HTTP backend type to use
 .RE
 .TP
 \fB\-\-lock\fR
-Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls
+Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub
+
+The data goes into the `mise.lock` of the nearest project config above the
+stub, and the stub keeps its version request. It is an error when no project
+config is found.
 .TP
 \fB\-\-platform\-bin\fR \fI<PLATFORM_BIN>\fR
 Platform\-specific binary paths in the format platform:path
@@ -5698,7 +5702,7 @@ Fill missing checksums and sizes in an existing stub
 mise generate tool\-stub ./bin/node \-\-fetch
 .RE
 .PP
-For an existing registry\-backed stub, resolve and embed version/platform lock data
+For an existing registry\-backed stub, resolve and record version/platform lock data
 .PP
 .RS 4
 mise generate tool\-stub ./bin/registry\-node \-\-lock \-\-version 22

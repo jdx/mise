@@ -239,6 +239,11 @@ pub(crate) struct Lockfile {
     /// Revision of the source lockfile for each entry in a merged lookup.
     #[serde(skip)]
     entry_lockfile_versions: BTreeMap<LockfileEntryKey, u32>,
+    /// Tool stubs whose entries this lockfile holds, relative to its directory.
+    /// A stub finds its lockfile by walking up from where it lives; this list
+    /// is the reverse link that lets `mise lock` keep those entries current.
+    #[serde(skip)]
+    tool_stubs: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -266,6 +271,7 @@ impl Default for Lockfile {
             conda_packages: BTreeMap::new(),
             pkgx_packages: BTreeMap::new(),
             entry_lockfile_versions: BTreeMap::new(),
+            tool_stubs: BTreeSet::new(),
         }
     }
 }
@@ -1248,6 +1254,11 @@ impl Lockfile {
             );
         }
 
+        if let Some(tool_stubs) = table.remove("tool-stubs") {
+            let tool_stubs: Vec<String> = tool_stubs.try_into()?;
+            lockfile.tool_stubs = tool_stubs.into_iter().collect();
+        }
+
         // Parse conda-packages section: platform -> basename -> CondaPackageInfo
         if let Some(conda_packages) = table.remove("conda-packages") {
             let platforms: toml::Table = conda_packages.try_into()?;
@@ -1334,6 +1345,13 @@ impl Lockfile {
             lockfile.insert(
                 "lockfile_version".to_string(),
                 i64::from(self.lockfile_version).into(),
+            );
+        }
+
+        if !self.tool_stubs.is_empty() {
+            lockfile.insert(
+                "tool-stubs".to_string(),
+                self.tool_stubs.iter().cloned().collect::<Vec<_>>().into(),
             );
         }
 
@@ -1612,6 +1630,30 @@ impl Lockfile {
             entries
                 .retain(|entry| (entry.uv.is_none() && entry.aube.is_none()) || keep(short, entry));
         }
+    }
+
+    pub(crate) fn tool_stubs(&self) -> &BTreeSet<String> {
+        &self.tool_stubs
+    }
+
+    /// Record that `stub` reads its entries from the lockfile at `lockfile_path`.
+    pub(crate) fn add_tool_stub(&mut self, lockfile_path: &Path, stub: &Path) -> Result<()> {
+        self.tool_stubs
+            .insert(tool_stub_reference(lockfile_path, stub)?);
+        Ok(())
+    }
+
+    /// Drop references to stubs that were deleted, or that now find a
+    /// different lockfile. Returns whether any reference was dropped.
+    pub(crate) fn retain_live_tool_stubs(&mut self, lockfile_path: &Path) -> bool {
+        let before = self.tool_stubs.len();
+        self.tool_stubs.retain(|reference| {
+            let stub = tool_stub_path(lockfile_path, reference);
+            stub.is_file()
+                && lockfile_path_for_tool_stub(&stub)
+                    .is_some_and(|(path, _)| same_file_path(&path, lockfile_path))
+        });
+        self.tool_stubs.len() != before
     }
 
     pub(crate) fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
@@ -2081,12 +2123,85 @@ fn lockfile_path_for_tool_source_with_root(
             })
             .max_by_key(|(root_depth, is_base, idx, _)| (*root_depth, *is_base, *idx))
             .map(|(_, _, _, lockfile)| lockfile),
+        // The current directory's monorepo root does not apply to a stub
+        // that lives elsewhere; it derives its own.
+        ToolSource::ToolStub(path) => lockfile_path_for_tool_stub(path),
         _ => None,
     }
 }
 
+/// The mise.lock a tool stub reads from: the lockfile of the nearest project
+/// config above where the stub lives. The stub file's symlink is resolved
+/// first, so a stub linked onto PATH still finds its project's lockfile, and
+/// the directory it is invoked from never matters. Local and environment
+/// configs are skipped: a committed stub resolves the same way everywhere.
+pub(crate) fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
+    let stub = resolve_tool_stub_path(stub)?;
+    let monorepo_root = crate::config::monorepo_lockfile_root_from_dir(stub.parent()?);
+    let monorepo_root = monorepo_root.as_deref();
+    let dirs = file::all_dirs(stub.parent()?, &env::MISE_CEILING_PATHS).ok()?;
+    dirs.iter().find_map(|dir| {
+        crate::config::config_paths_in_dir(dir)
+            .into_iter()
+            .find(|path| {
+                path.extension().is_some_and(|ext| ext == "toml")
+                    && !is_local_config(path)
+                    && extract_env_from_config_path(path).is_none()
+                    && !crate::config::is_global_config(path)
+                    && !crate::config::is_system_config(path)
+            })
+            .map(|config_path| lockfile_path_for_config(&config_path, monorepo_root))
+    })
+}
+
+fn resolve_tool_stub_path(stub: &Path) -> Option<PathBuf> {
+    if stub.is_symlink() {
+        fs::canonicalize(stub).ok()
+    } else {
+        use path_absolutize::Absolutize;
+        stub.absolutize().ok().map(|p| p.to_path_buf())
+    }
+}
+
+/// A stub's path relative to its lockfile's directory, with `/` separators so
+/// the reference is the same on every platform.
+fn tool_stub_reference(lockfile_path: &Path, stub: &Path) -> Result<String> {
+    let dir = lockfile_path.parent().unwrap_or(Path::new("."));
+    let dir = fs::canonicalize(dir)?;
+    let stub = fs::canonicalize(stub)?;
+    let relative = stub.strip_prefix(&dir).map_err(|_| {
+        eyre!(
+            "tool stub {} is outside the directory of {}",
+            display_path(&stub),
+            display_path(lockfile_path)
+        )
+    })?;
+    Ok(relative
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .join("/"))
+}
+
+pub(crate) fn tool_stub_path(lockfile_path: &Path, reference: &str) -> PathBuf {
+    let dir = lockfile_path.parent().unwrap_or(Path::new("."));
+    reference
+        .split('/')
+        .fold(dir.to_path_buf(), |p, c| p.join(c))
+}
+
+/// Compare lockfile paths that may differ only by symlinked directories.
+pub(crate) fn same_file_path(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    let canonical_dir = |p: &Path| p.parent().and_then(|d| fs::canonicalize(d).ok());
+    a.file_name() == b.file_name()
+        && canonical_dir(a).is_some()
+        && canonical_dir(a) == canonical_dir(b)
+}
+
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
-fn is_local_config(path: &Path) -> bool {
+pub(crate) fn is_local_config(path: &Path) -> bool {
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -5216,6 +5331,60 @@ mod tests {
             aube: None,
             uv: None,
         }
+    }
+
+    #[test]
+    fn tool_stub_finds_nearest_base_config_lockfile_from_where_it_lives() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = fs::canonicalize(temp.path()).unwrap().join("project");
+        fs::create_dir_all(project.join("bin")).unwrap();
+        fs::create_dir_all(project.join("elsewhere")).unwrap();
+        // The test harness overrides the config filenames.
+        file::write(project.join(".test.mise.toml"), "").unwrap();
+        let stub = project.join("bin/tool");
+        file::write(&stub, "version = \"1\"\n").unwrap();
+
+        let expected = (project.join("mise.lock"), false);
+        assert_eq!(lockfile_path_for_tool_stub(&stub), Some(expected.clone()));
+
+        #[cfg(unix)]
+        {
+            let link = project.join("elsewhere/tool");
+            std::os::unix::fs::symlink(&stub, &link).unwrap();
+            assert_eq!(lockfile_path_for_tool_stub(&link), Some(expected));
+        }
+    }
+
+    #[test]
+    fn tool_stub_references_round_trip_and_drop_deleted_stubs() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = fs::canonicalize(temp.path()).unwrap();
+        fs::create_dir_all(project.join("bin")).unwrap();
+        file::write(project.join(".test.mise.toml"), "").unwrap();
+        let stub = project.join("bin/tool");
+        file::write(&stub, "version = \"1\"\n").unwrap();
+        let path = project.join("mise.lock");
+
+        let mut lockfile = Lockfile::default();
+        lockfile.add_tool_stub(&path, &stub).unwrap();
+        lockfile.save(&path).unwrap();
+        let contents = file::read_to_string(&path).unwrap();
+        assert!(
+            contents.contains("tool-stubs = [\"bin/tool\"]"),
+            "{contents}"
+        );
+
+        let mut lockfile = Lockfile::read(&path).unwrap();
+        assert_eq!(
+            lockfile.tool_stubs(),
+            &BTreeSet::from(["bin/tool".to_string()])
+        );
+        assert_eq!(tool_stub_path(&path, "bin/tool"), stub);
+        assert!(!lockfile.retain_live_tool_stubs(&path));
+
+        fs::remove_file(&stub).unwrap();
+        assert!(lockfile.retain_live_tool_stubs(&path));
+        assert!(lockfile.tool_stubs().is_empty());
     }
 
     #[test]

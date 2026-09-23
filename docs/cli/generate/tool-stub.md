@@ -49,7 +49,11 @@ to incrementally build cross-platform tool stubs.
 - **`--http <HTTP>`** — HTTP backend type to use
 
   **Default:** `http`
-- **`--lock`** — Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls
+- **`--lock`** — Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub
+
+  The data goes into the `mise.lock` of the nearest project config above the
+  stub, and the stub keeps its version request. It is an error when no project
+  config is found.
 - **`--platform-bin <PLATFORM_BIN>`** — Platform-specific binary paths in the format platform:path
 
   Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
@@ -96,7 +100,7 @@ Fill missing checksums and sizes in an existing stub
 mise generate tool-stub ./bin/node --fetch
 ```
 
-For an existing registry-backed stub, resolve and embed version/platform lock data
+For an existing registry-backed stub, resolve and record version/platform lock data
 
 ```
 mise generate tool-stub ./bin/registry-node --lock --version 22

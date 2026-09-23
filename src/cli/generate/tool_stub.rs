@@ -7,7 +7,7 @@ use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::file::{self, ExtractionFormat};
 use crate::http::HTTP;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{self, Lockfile, PlatformInfo};
 use crate::minisign;
 use crate::platform::Platform;
 use crate::toolset::{ResolveOptions, ToolVersion};
@@ -18,10 +18,10 @@ use bytesize::ByteSize;
 use color_eyre::eyre::bail;
 use indexmap::IndexMap;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use toml_edit::DocumentMut;
 
@@ -40,7 +40,7 @@ use toml_edit::DocumentMut;
     example(r###"mise generate tool-stub ./bin/my-tool --url https://example.com/my-tool.tar.gz --skip-download
 # Replace the URL with a real artifact before fetching metadata or executing it"###, help = r###"Create a draft for your own artifact without fetching the placeholder URL"###),
     example(r###"mise generate tool-stub ./bin/node --fetch"###, help = r###"Fill missing checksums and sizes in an existing stub"###),
-    example(r###"mise generate tool-stub ./bin/registry-node --lock --version 22"###, help = r###"For an existing registry-backed stub, resolve and embed version/platform lock data"###))]
+    example(r###"mise generate tool-stub ./bin/registry-node --lock --version 22"###, help = r###"For an existing registry-backed stub, resolve and record version/platform lock data"###))]
 pub(super) struct ToolStub {
     /// Output file path for the tool stub
     #[usage(value_hint = ValueHint::FilePath)]
@@ -92,9 +92,12 @@ pub(super) struct ToolStub {
     #[usage(long, default = "http")]
     pub http: String,
 
-    /// Resolve and embed lockfile data (exact version + platform URLs/checksums)
-    /// into an existing stub file for reproducible installs without runtime API calls
-    #[usage(long, conflicts = &["url", "platform_url", "bin", "platform_bin", "fetch", "skip_download"])]
+    /// Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub
+    ///
+    /// The data goes into the `mise.lock` of the nearest project config above the
+    /// stub, and the stub keeps its version request. It is an error when no project
+    /// config is found.
+    #[usage(long, conflicts = &["url", "platform_url", "bin", "platform_bin", "fetch", "skip_download"], verbatim_doc_comment)]
     pub lock: bool,
 
     /// Platform-specific binary paths in the format platform:path
@@ -153,18 +156,24 @@ impl ChecksumAlgorithm {
 
 impl ToolStub {
     pub(super) async fn run(self) -> Result<()> {
-        let stub_content = if self.fetch {
-            self.fetch_checksums().await?
+        let (stub_content, sidecar) = if self.fetch {
+            (self.fetch_checksums().await?, None)
         } else if self.lock {
             self.lock_stub().await?
         } else {
-            self.generate_stub().await?
+            (self.generate_stub().await?, None)
         };
 
         // Before the stub is written, so a launcher that is not ours stops the run rather than
         // leaving a regenerated stub whose launcher was silently skipped. Same ordering, and the
         // same reason, as `task-stubs`.
         self.validate_windows_launcher(&stub_content)?;
+
+        // Before the stub is written, so a failed lockfile write leaves the
+        // stub unchanged.
+        if let Some(sidecar) = &sidecar {
+            sidecar.write(&self.output)?;
+        }
 
         if let Some(parent) = self.output.parent() {
             file::create_dir_all(parent)?;
@@ -184,6 +193,9 @@ impl ToolStub {
         miseprintln!("{verb} tool stub: {}", display_path(&self.output));
         if let Some(launcher) = launcher {
             miseprintln!("{verb} Windows launcher: {}", display_path(&launcher));
+        }
+        if let Some(sidecar) = sidecar {
+            miseprintln!("Updated lockfile: {}", display_path(&sidecar.lockfile_path));
         }
         Ok(())
     }
@@ -765,13 +777,25 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         );
     }
 
-    async fn lock_stub(&self) -> Result<String> {
+    async fn lock_stub(&self) -> Result<(String, Option<SidecarLock>)> {
         if !self.output.exists() {
             bail!(
                 "Tool stub file does not exist: {}",
                 display_path(&self.output)
             );
         }
+        if !Settings::get().lockfile_enabled() {
+            bail!(
+                "--lock records lock data in mise.lock, but lockfiles are disabled (`lockfile = false`)"
+            );
+        }
+        let Some((lockfile_path, _)) = lockfile::lockfile_path_for_tool_stub(&self.output) else {
+            bail!(
+                "no project config found above {}\n\
+                hint: a stub's lock data lives in its project's mise.lock; add a mise.toml in the stub's project",
+                display_path(&self.output)
+            );
+        };
 
         let mut stub = ToolStubFile::from_file(&self.output)?;
         let config = Config::get().await?;
@@ -792,9 +816,11 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
 
         // Resolve lock info for each target platform (including variants)
         let mut lock_platforms: BTreeMap<String, PlatformInfo> = BTreeMap::new();
-        for p in lock_stub_target_platforms()? {
+        let mut lock_targets = vec![PlatformTarget::from_current()];
+        for p in lockfile::determine_existing_platforms(&lockfile_path)? {
             for platform in backend.platform_variants(&p) {
                 let target = PlatformTarget::new(platform);
+                lock_targets.push(target.clone());
                 match backend.resolve_lock_info(&tv, &target).await {
                     Ok(info) if info.url.is_some() => {
                         lock_platforms.insert(target.to_key(), info);
@@ -804,36 +830,25 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
             }
         }
 
-        // Read existing stub and update TOML
+        // Like a mise.toml request, the stub keeps its version request and
+        // mise.lock records the resolution.
         let content = file::read_to_string(&self.output)?;
         let toml_content = extract_toml_from_stub(&content);
         let mut doc = toml_content.parse::<DocumentMut>()?;
-
-        // Pin exact version
-        doc["version"] = toml_edit::value(&tv.version);
-
-        // Write [lock.platforms.*] sections
-        doc.remove("lock");
-        let mut lock_table = toml_edit::Table::new();
-        let mut platforms_table = toml_edit::Table::new();
-        for (platform_key, info) in &lock_platforms {
-            let mut pt = toml_edit::Table::new();
-            if let Some(url) = &info.url {
-                pt["url"] = toml_edit::value(url);
-            }
-            if let Some(checksum) = &info.checksum {
-                pt["checksum"] = toml_edit::value(checksum);
-            }
-            platforms_table[platform_key] = toml_edit::Item::Table(pt);
+        if self.version != "latest" {
+            doc["version"] = toml_edit::value(&self.version);
         }
-        lock_table["platforms"] = toml_edit::Item::Table(platforms_table);
-        doc["lock"] = toml_edit::Item::Table(lock_table);
-
-        // Reconstruct with shebang
+        // Lock data only lives in mise.lock.
+        doc.remove("lock");
         let toml_content = doc.to_string();
-        Ok(format!(
-            "#!/usr/bin/env -S mise tool-stub\n\n{toml_content}"
-        ))
+        let content = format!("#!/usr/bin/env -S mise tool-stub\n\n{toml_content}");
+        let sidecar = SidecarLock {
+            lockfile_path,
+            tv,
+            targets: lock_targets,
+            platforms: lock_platforms,
+        };
+        Ok((content, Some(sidecar)))
     }
 
     async fn fetch_checksums(&self) -> Result<String> {
@@ -917,13 +932,45 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
     }
 }
 
-fn lock_stub_target_platforms() -> Result<Vec<Platform>> {
-    if let Some(configured) = Settings::get().lockfile_platforms()? {
-        let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
-        platforms.insert(Platform::current());
-        Ok(platforms.into_iter().collect())
-    } else {
-        Ok(Platform::common_platforms())
+/// A stub's resolved lock data bound for its project's mise.lock.
+struct SidecarLock {
+    lockfile_path: PathBuf,
+    tv: ToolVersion,
+    /// Every platform variant locked, including the current host and those
+    /// the backend returned no URL for.
+    targets: Vec<PlatformTarget>,
+    platforms: BTreeMap<String, PlatformInfo>,
+}
+
+impl SidecarLock {
+    fn write(&self, stub: &Path) -> Result<()> {
+        let _lock = crate::lock_file::LockFile::new(&self.lockfile_path)
+            .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+            .lock()?;
+        let mut lockfile = Lockfile::read(&self.lockfile_path)?;
+        let tv = &self.tv;
+        let short = &tv.ba().short;
+        let backend_full = tv.ba().stored_full();
+        let backend = tv.backend()?;
+        // Options can differ per platform, and `mise lock` files each
+        // platform's data under its own options, so do the same here.
+        for target in &self.targets {
+            let options = backend.resolve_lockfile_options(&tv.request, target)?;
+            let info = self.platforms.get(&target.to_key()).cloned();
+            // An empty info still creates the entry, so a backend without
+            // URL locking pins the version.
+            lockfile.set_platform_info(
+                short,
+                &tv.version,
+                Some(&backend_full),
+                &options,
+                &target.to_key(),
+                info.unwrap_or_default(),
+            );
+            lockfile.bind_request(short, &tv.request.version(), &tv.version, &options);
+        }
+        lockfile.add_tool_stub(&self.lockfile_path, stub)?;
+        lockfile.write(&self.lockfile_path)
     }
 }
 
