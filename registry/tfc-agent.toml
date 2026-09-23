@@ -1,5 +1,6 @@
 description = "HCP Terraform Agents allow HCP Terraform to communicate with isolated, private, or on-premises infrastructure"
 os = ["linux"]
+url = "https://developer.hashicorp.com/terraform/cloud-docs/agents"
 version_order = "semver"
 
 bins = ["tfc-agent", "tfc-agent-core"]

@@ -15,12 +15,14 @@ type Registry = {
           }
       )[];
       os?: string[];
+      url?: string;
     }
   >;
 };
 
 type Tool = {
   short: string;
+  url: string;
   backends: { name: string; url: string }[];
   aliases: string[];
   os: string[];
@@ -85,31 +87,40 @@ export default {
     for (const key in tools) {
       const tool = tools[key];
 
+      const backends = tool.backends.map((backend) => {
+        const name = typeof backend === "string" ? backend : backend.full;
+        const match = name.match(nameRegex);
+        const prefix = match?.groups?.prefix ?? "";
+        const slug = match?.groups?.slug ?? "";
+        const options = {
+          ...(typeof backend === "object" && backend.options
+            ? backend.options
+            : {}),
+          ...(match?.groups?.options
+            ? Object.fromEntries(
+                match.groups.options.split(",").map((opt) => {
+                  const [k, v] = opt.split("=");
+                  return [k, v];
+                }),
+              )
+            : {}),
+        };
+        return {
+          name: `${prefix}:${slug}`,
+          url: urlBuilders[prefix] ? urlBuilders[prefix](slug, options) : "",
+        };
+      });
+
       registry[key] = {
         short: key,
-        backends: tool.backends.map((backend) => {
-          const name = typeof backend === "string" ? backend : backend.full;
-          const match = name.match(nameRegex);
-          const prefix = match?.groups?.prefix ?? "";
-          const slug = match?.groups?.slug ?? "";
-          const options = {
-            ...(typeof backend === "object" && backend.options
-              ? backend.options
-              : {}),
-            ...(match?.groups?.options
-              ? Object.fromEntries(
-                  match.groups.options.split(",").map((opt) => {
-                    const [k, v] = opt.split("=");
-                    return [k, v];
-                  }),
-                )
-              : {}),
-          };
-          return {
-            name: `${prefix}:${slug}`,
-            url: urlBuilders[prefix] ? urlBuilders[prefix](slug, options) : "",
-          };
-        }),
+        // Prefer the registry's `url`; the backend URLs are guesses from the backend
+        // slug, and some backends (such as http) have none. Only http(s) links are
+        // rendered, matching the check build.rs applies to `url`.
+        url:
+          [tool.url, ...backends.map((backend) => backend.url)].find((url) =>
+            /^https?:\/\/[^{}\s]+$/.test(url ?? ""),
+          ) ?? "",
+        backends,
         aliases: tool.aliases ?? [],
         os: tool.os ?? [],
       };
