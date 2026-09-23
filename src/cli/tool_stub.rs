@@ -7,7 +7,7 @@ use crate::config::env_directive::EnvValue;
 use crate::dirs;
 use crate::file;
 use crate::hash;
-use crate::lockfile::PlatformInfo;
+use crate::lockfile::{LockfileTool, PlatformInfo};
 use crate::toolset::{
     CoreToolOptions, InstallOptions, ToolRequest, ToolSource, ToolVersionOptions,
 };
@@ -75,6 +75,46 @@ where
     }
 
     Ok(opts)
+}
+
+/// The pin recorded by `mise generate tool-stub --lock`, which takes the place
+/// of a mise.lock for the stub's tool. Resolution and installation both read
+/// it, so its URLs and checksums apply to every install and it satisfies
+/// locked mode on its own.
+pub(crate) fn locked_tool_from_stub(
+    stub_path: &Path,
+    version: &str,
+    options: &BTreeMap<String, String>,
+) -> Result<Option<LockfileTool>> {
+    let stub = ToolStubFile::from_file(stub_path)?;
+    let Some(lock) = stub.lock else {
+        return Ok(None);
+    };
+    if stub.version != version {
+        return Ok(None);
+    }
+    let platforms = lock
+        .platforms
+        .into_iter()
+        .map(|(key, platform)| {
+            let info = PlatformInfo {
+                url: platform.url,
+                checksum: platform.checksum,
+                ..Default::default()
+            };
+            (key, info)
+        })
+        .collect();
+    Ok(Some(LockfileTool {
+        version: stub.version,
+        // Keep the request's backend, which carries the stub's options
+        backend: None,
+        specifiers: Default::default(),
+        options: options.clone(),
+        platforms,
+        aube: None,
+        uv: None,
+    }))
 }
 
 fn default_version() -> String {
@@ -523,25 +563,9 @@ async fn execute_with_tool_request(
     let mut toolset = crate::toolset::Toolset::new(source);
     toolset.add_version(tool_request);
 
-    // Resolve the toolset to populate current versions
+    // Resolve the toolset to populate current versions. A `[lock]` section in
+    // the stub is read as its lockfile (see `locked_tool_from_stub`).
     toolset.resolve(config).await?;
-
-    // Inject lock data from stub into tool versions
-    // The toolset contains only the single tool from this stub, so apply to all versions
-    if let Some(lock) = &stub.lock {
-        for (_ba, tvl) in toolset.versions.iter_mut() {
-            for tv in &mut tvl.versions {
-                for (platform_key, lock_platform) in &lock.platforms {
-                    let pi = PlatformInfo {
-                        url: lock_platform.url.clone(),
-                        checksum: lock_platform.checksum.clone(),
-                        ..Default::default()
-                    };
-                    tv.lock_platforms.insert(platform_key.clone(), pi);
-                }
-            }
-        }
-    }
 
     // Ensure we have current versions after resolving
     ensure!(

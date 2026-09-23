@@ -4206,6 +4206,12 @@ pub(crate) fn get_locked_version(
     let Some(source) = request.lockfile_source() else {
         return Ok(None);
     };
+    if let ToolSource::ToolStub(path) = source
+        && let Some(tool) =
+            crate::cli::tool_stub::locked_tool_from_stub(path, specifier, request_options)?
+    {
+        return Ok(Some(tool));
+    }
     let lockfile = match source {
         ToolSource::MiseToml(path) => {
             trace!(

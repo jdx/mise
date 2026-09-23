@@ -285,6 +285,11 @@ private-download authentication or every backend's verification and policy
 requests. Review the generated platforms and checksums; a backend that cannot
 provide a URL cannot supply the same download shortcut.
 
+The `[lock]` section acts as the stub's lockfile: installs verify the recorded
+checksums, and the stub runs in locked mode (`--locked` or `MISE_LOCKED=1`)
+without a `mise.lock`. A stub without `[lock]` still needs a `mise.lock` entry
+next to it in locked mode.
+
 #### Locking a Stub
 
 ```bash
