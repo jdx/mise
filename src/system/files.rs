@@ -58,6 +58,9 @@ pub(crate) enum FileMode {
     Content,
     /// the live file stays where it is; history protects (and shares) it
     Track,
+    /// remove the target: a regular file or symlink is deleted, a directory
+    /// is refused and never removed recursively
+    Absent,
     /// set the permissions of an existing target without managing its
     /// content: an entry with `permissions` and no source, content, or mode
     Permissions,
@@ -85,6 +88,7 @@ impl FileMode {
             "copy" => Some(Self::Copy),
             "template" => Some(Self::Template),
             "track" => Some(Self::Track),
+            "absent" => Some(Self::Absent),
             _ => None,
         }
     }
@@ -98,13 +102,14 @@ impl FileMode {
             Self::Content => "content",
             Self::Track => "track",
             Self::Permissions => "permissions",
+            Self::Absent => "absent",
         }
     }
 
-    /// Whether requests in this mode read a source path. Inline content and
-    /// permissions-only entries have none.
+    /// Whether requests in this mode read a source path. Inline content,
+    /// permissions-only entries, and absent targets have none.
     pub(crate) fn has_source(self) -> bool {
-        !matches!(self, Self::Content | Self::Permissions)
+        !matches!(self, Self::Content | Self::Permissions | Self::Absent)
     }
 }
 
@@ -299,7 +304,12 @@ fn validate_file_variants(
     if has_target_override && content.is_some() {
         bail!("destination variants with inline content are not supported");
     }
-    let implied_source = if has_target_override && source.is_none() && !permissions_only {
+    // an absent entry removes its destination and reads no source
+    let implied_source = if has_target_override
+        && source.is_none()
+        && !permissions_only
+        && mode != Some("absent")
+    {
         if !variants.iter().all(|v| v.target.is_some()) {
             bail!(
                 "destination variants require an explicit source when any variant uses the entry key as its target"
@@ -693,6 +703,9 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
         // A missing source has an unknown eventual shape, but it still claims
         // its target. Whole-resource modes reserve a leaf; symlink-each has a
         // known directory-shaped target even before its children are known.
+        // An absent entry has no source and claims its target as a leaf, so
+        // declaring the same path present elsewhere (or a file beneath it)
+        // conflicts.
         let source_unavailable = request.mode.has_source()
             && (!request.source.exists()
                 || request.mode == FileMode::SymlinkEach && !request.source.is_dir());
@@ -867,9 +880,9 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 mode,
                 manifest,
                 exclude,
+                encrypt,
                 include,
                 permissions,
-                encrypt,
                 variants,
                 remove_empty,
                 ..
@@ -904,6 +917,31 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 {
                     bail!("tracked file {target} cannot declare source, content, or manifest");
                 }
+                if mode == FileMode::Absent
+                    && (source.is_some()
+                        || manifest.is_some()
+                        || exclude.is_some()
+                        || permissions.is_some()
+                        || encrypt == Some(true))
+                {
+                    bail!(
+                        "dotfile {target} with mode = \"absent\" cannot declare source, content, manifest, exclude, permissions, or encrypt"
+                    );
+                }
+                // composition checks whichever destination a variant selects,
+                // so every one of them must be a single path
+                if mode == FileMode::Absent
+                    && std::iter::once(target.as_str())
+                        .chain(
+                            variants
+                                .iter()
+                                .flatten()
+                                .filter_map(|variant| variant.target.as_deref()),
+                        )
+                        .any(|path| is_glob_pattern(&resolve_target_arg(path)))
+                {
+                    bail!("dotfile {target}: an absent target cannot use wildcards");
+                }
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
                 }
@@ -934,7 +972,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 {
                     bail!("dotfile {target}: remove_empty requires mode = \"template\"");
                 }
-                if mode != FileMode::Track
+                if !matches!(mode, FileMode::Track | FileMode::Absent)
                     && !permissions_only
                     && source.is_none()
                     && content.is_none()
@@ -978,6 +1016,32 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     glob::Pattern::new(&pattern)?;
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// An edit on a path an `absent` entry removes would recreate the file on
+/// every apply, so the two contradict each other.
+pub(crate) fn validate_absent_edit_targets(
+    files: &[FileRequest],
+    edits: &[crate::system::edits::EditRequest],
+) -> Result<()> {
+    for edit in edits {
+        // absent targets are lexically normalized; compare the edit's path
+        // the same way so a `..` spelling cannot slip past
+        let path = lexical_normalize(&edit.path);
+        if let Some(file) = files
+            .iter()
+            .find(|file| file.mode == FileMode::Absent && file.target == path)
+        {
+            bail!(
+                "conflicting dotfile declarations for {}: mode = \"absent\" removes the file that the edit {} changes\n\n  absent:\n    {}\n\n  edit:\n    {}",
+                edit.path.display_user(),
+                edit.describe_op(),
+                file.origin.conflict_description(),
+                edit.origin.conflict_description(),
+            );
         }
     }
     Ok(())
@@ -1087,6 +1151,22 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
             target,
             config,
             "encrypted dotfiles require an external source, not inline content or edits",
+        );
+        return None;
+    }
+    // Deserializing a whole-file entry drops the edit keys, so an edit that
+    // also says `mode = "absent"` would silently become a removal of the
+    // file it meant to edit.
+    if value.as_table().is_some_and(|t| {
+        t.get("mode").and_then(toml::Value::as_str) == Some("absent")
+            && ["block", "line", "template", "comment", "position"]
+                .iter()
+                .any(|key| t.contains_key(*key))
+    }) {
+        record_invalid(
+            target,
+            config,
+            "mode = \"absent\" removes the whole file and cannot be combined with block or line edits",
         );
         return None;
     }
@@ -1378,6 +1458,60 @@ fn merge_file_entry(
     if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some()) {
         warn!(
             "[dotfiles].\"{target_raw}\": inline content does not support mode, exclude, or manifest, ignoring entry"
+        );
+        return;
+    }
+    if mode.as_deref() == Some("absent") {
+        if source.is_some()
+            || exclude.is_some()
+            || manifest.is_some()
+            || permissions.is_some()
+            || encrypt == Some(true)
+        {
+            warn!(
+                "[dotfiles].\"{target_raw}\": mode = \"absent\" removes the target and takes no source, content, exclude, manifest, permissions, or encrypt, ignoring entry"
+            );
+            return;
+        }
+        if remove_empty {
+            warn!(
+                "[dotfiles].\"{target_raw}\": remove_empty requires mode = \"template\", ignoring entry"
+            );
+            return;
+        }
+        let target = resolve_target_arg(&target_raw);
+        if target.is_relative() {
+            warn!(
+                "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
+            );
+            return;
+        }
+        // a pattern would be checked as a literal path and remove nothing
+        if is_glob_pattern(&target) {
+            warn!(
+                "[dotfiles].\"{target_raw}\": an absent target cannot use wildcards, ignoring entry"
+            );
+            return;
+        }
+        merged.insert(
+            (target.clone(), false),
+            FileRequest {
+                target_raw,
+                target,
+                source: PathBuf::new(),
+                content: None,
+                mode: FileMode::Absent,
+                exclude: vec![],
+                include: None,
+                manifest: None,
+                permissions: None,
+                base: base.to_path_buf(),
+                origin: origin.clone(),
+                policy: policy_for(FileMode::Absent),
+                variants: vec![],
+                enabled,
+                remove_empty: false,
+            },
         );
         return;
     }
@@ -1943,6 +2077,7 @@ pub(crate) fn check(
 fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState> {
     match req.mode {
         FileMode::Track => Ok(FileState::Tracked),
+        FileMode::Absent => check_absent(&req.target),
         FileMode::Symlink => check_symlink(&req.source, &req.target),
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy if req.source.is_dir() => {
@@ -2094,6 +2229,41 @@ fn permissions_target_unavailable(req: &FileRequest) -> Result<Option<String>> {
             req.target.display_user()
         ))),
         Err(err) => Err(err.into()),
+    }
+}
+
+/// An absent target is converged once nothing is there. A regular file or a
+/// symlink (to anything, even a directory) is removed without comparing its
+/// content: the declaration itself says it must not exist. A real directory
+/// is an error rather than a `--force`-able conflict, because absent entries
+/// never delete recursively.
+fn check_absent(target: &Path) -> Result<FileState> {
+    // links first: a Windows directory symlink or junction is a directory
+    // carrying a reparse point, and is removed as a link, not refused
+    if file::is_symlink_or_junction(target) {
+        return Ok(FileState::Differs("present (symlink)".into()));
+    }
+    match std::fs::symlink_metadata(target) {
+        // a parent that is a file means the target cannot exist either
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Ok(FileState::Applied)
+        }
+        Err(err) => Err(err.into()),
+        Ok(meta) if meta.is_dir() => bail!(
+            "{} is a directory; mode = \"absent\" only removes files and symlinks",
+            target.display_user()
+        ),
+        Ok(meta) if meta.is_file() => Ok(FileState::Differs("present".into())),
+        // a FIFO, socket, or device node is not a configuration file
+        Ok(_) => bail!(
+            "{} is not a regular file or symlink; mode = \"absent\" only removes files and symlinks",
+            target.display_user()
+        ),
     }
 }
 
@@ -3265,7 +3435,9 @@ pub(crate) fn plan_apply_with_active<'a>(
     let mut deferred = vec![];
     for (req, reason) in missing_permission_targets {
         if todo.iter().any(|(other, _)| {
-            other.mode != FileMode::Permissions && other.target.starts_with(&req.target)
+            // an absent entry removes rather than creates
+            !matches!(other.mode, FileMode::Permissions | FileMode::Absent)
+                && other.target.starts_with(&req.target)
         }) {
             deferred.push((req, None));
         } else {
@@ -3633,6 +3805,14 @@ fn plan_unapply_one<'a>(
             );
             return Ok(None);
         }
+        // undoing an absence would mean recreating a file mise never wrote
+        FileMode::Absent => {
+            debug!(
+                "files: {} is declared absent; nothing to unapply",
+                req.target.display_user()
+            );
+            return Ok(None);
+        }
         // mise only changed the permissions of a file it does not own, so
         // unapplying never removes it, not even with --force
         FileMode::Permissions => {
@@ -3915,7 +4095,9 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                 out.push(req.target.clone());
             }
         }
-        FileMode::Track | FileMode::Permissions => {}
+        // removal is the declared intent; a directory is refused by
+        // `check_absent` instead, even with --force
+        FileMode::Track | FileMode::Absent | FileMode::Permissions => {}
     }
     Ok(out)
 }
@@ -3925,6 +4107,7 @@ fn describe(req: &FileRequest) -> Result<String> {
     let tgt = req.target.display_user();
     Ok(match req.mode {
         FileMode::Track => format!("track {tgt} in place"),
+        FileMode::Absent => format!("rm {tgt}"),
         FileMode::Symlink => format!("ln -sf {src} {tgt}"),
         FileMode::SymlinkEach => {
             let stale = stale_links(req)?.len();
@@ -3950,6 +4133,7 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
     let tgt = req.target.display_user();
     Ok(match req.mode {
         FileMode::Track => format!("tracked {tgt} in place"),
+        FileMode::Absent => format!("removed {tgt}"),
         FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
         FileMode::SymlinkEach => format!(
             "created {} symlink(s) from {src} in {tgt}",
@@ -3990,6 +4174,19 @@ fn print_diff(config: &Config, req: &FileRequest, rendered: Option<&str>) -> Res
     }
     match req.mode {
         FileMode::Track => {}
+        FileMode::Absent => {
+            if req.target.is_symlink() {
+                let dest = std::fs::read_link(&req.target)?;
+                miseprintln!(
+                    "  current symlink: {} -> {}",
+                    req.target.display_user(),
+                    dest.display_user()
+                );
+            } else {
+                miseprintln!("  current: {} exists", req.target.display_user());
+            }
+            miseprintln!("  desired: {} absent", req.target.display_user());
+        }
         FileMode::Symlink => {
             if req.target.is_symlink() {
                 let dest = std::fs::read_link(&req.target)?;
@@ -4222,7 +4419,8 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
         FileMode::Permissions => {
             paths.insert(req.target.clone(), dir_capture(&req.target));
         }
-        FileMode::Symlink | FileMode::Content => {
+        // captured whole, so rollback restores a removed file or link
+        FileMode::Absent | FileMode::Symlink | FileMode::Content => {
             paths.insert(req.target.clone(), Capture::Full);
         }
         FileMode::Template => {
@@ -4327,6 +4525,22 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         return Ok(());
     }
     debug!("files: {}", describe(req)?);
+    if req.mode == FileMode::Absent {
+        // checked again here, not only when planning: a directory that
+        // appeared since must still never be removed
+        if check_absent(&req.target)? != FileState::Applied {
+            if file::is_symlink_or_junction(&req.target) {
+                // removes the link itself by handle; a Windows directory
+                // link needs this (`remove_file` refuses it), and the
+                // directory it points to is never entered
+                file::remove_symlink_or_junction(&req.target)?;
+            } else {
+                file::remove_file(&req.target)?;
+            }
+            written.push(req.target.clone());
+        }
+        return Ok(());
+    }
     if req.mode != FileMode::Permissions
         && let Some(parent) = req.target.parent()
     {
@@ -4445,6 +4659,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             save_target_state(req, rendered);
         }
         FileMode::Track => unreachable!("tracked files are never written"),
+        FileMode::Absent => unreachable!("absent targets are removed above"),
         FileMode::Content => {
             replace_recorded(&req.target, written, || {
                 file::write(&req.target, req.content.as_deref().expect("inline content"))
@@ -4957,7 +5172,368 @@ variants = [{{ {field} = "linux" }}]"#
         assert_eq!(FileMode::parse("symlink-each"), Some(FileMode::SymlinkEach));
         assert_eq!(FileMode::parse("copy"), Some(FileMode::Copy));
         assert_eq!(FileMode::parse("template"), Some(FileMode::Template));
+        assert_eq!(FileMode::parse("absent"), Some(FileMode::Absent));
+        assert_eq!(FileMode::Absent.name(), "absent");
+        assert!(!FileMode::Absent.has_source());
         assert_eq!(FileMode::parse("hardlink"), None);
+    }
+
+    fn absent_req(target: &Path) -> FileRequest {
+        FileRequest {
+            target_raw: target.to_string_lossy().to_string(),
+            target: target.to_path_buf(),
+            source: PathBuf::new(),
+            content: None,
+            mode: FileMode::Absent,
+            exclude: vec![],
+            include: None,
+            manifest: None,
+            permissions: None,
+            base: PathBuf::from("/"),
+            origin: ResourceOrigin {
+                config: PathBuf::from("/mise.toml"),
+                config_root: PathBuf::from("/"),
+                environment: vec![],
+                source: None,
+            },
+            policy: FilePolicy::for_mode(FileMode::Absent),
+            variants: vec![],
+            enabled: true,
+            remove_empty: false,
+        }
+    }
+
+    fn validate_incoming_body(body: &str) -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let mut configs = ConfigMap::new();
+        configs.insert(
+            path.clone(),
+            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+        );
+        validate_incoming_files(&configs)
+    }
+
+    #[test]
+    fn absent_entries_take_no_source() -> Result<()> {
+        validate_incoming_body(
+            r#"
+[dotfiles]
+"~/.oldrc" = { mode = "absent" }
+"#,
+        )?;
+        for extra in [
+            r#"source = "oldrc""#,
+            r#"content = "x""#,
+            r#"manifest = "git""#,
+            r#"exclude = ["*.bak"]"#,
+            r#"permissions = "0600""#,
+            "encrypt = true",
+        ] {
+            let body = format!(
+                r#"
+[dotfiles."~/.oldrc"]
+mode = "absent"
+{extra}
+"#
+            );
+            assert!(validate_incoming_body(&body).is_err(), "{extra}");
+        }
+        Ok(())
+    }
+
+    /// A destination override needs no source when the entry removes it.
+    #[test]
+    fn absent_entries_accept_destination_variants() -> Result<()> {
+        validate_incoming_body(
+            r#"
+[dotfiles."~/.oldrc"]
+mode = "absent"
+variants = [
+    { os = "windows", target = 'C:\Users\example\oldrc' },
+    { os = ["linux", "macos"] },
+]
+"#,
+        )
+    }
+
+    #[test]
+    fn merged_absent_entries_have_no_source() -> Result<()> {
+        let origin = absent_req(Path::new("/unused")).origin;
+        let mut merged = IndexMap::new();
+        let entry: FileTomlEntry = toml::from_str(r#"mode = "absent""#)?;
+        merge_file_entry(
+            "~/.oldrc".into(),
+            entry,
+            Path::new("/"),
+            &origin,
+            &mut merged,
+        );
+        let [request] = merged.values().collect::<Vec<_>>()[..] else {
+            bail!("expected one absent request");
+        };
+        assert_eq!(request.mode, FileMode::Absent);
+        assert_eq!(request.target, dirs::HOME.join(".oldrc"));
+        assert_eq!(request.source, PathBuf::new());
+
+        // a pattern is rejected rather than checked as a literal path
+        assert!(
+            validate_incoming_body(
+                r#"
+[dotfiles]
+"~/.old*" = { mode = "absent" }
+"#
+            )
+            .is_err()
+        );
+        // so is one a variant selects as its destination
+        let err = validate_incoming_body(
+            r#"
+[dotfiles."~/.oldrc"]
+mode = "absent"
+variants = [{ os = "windows", target = "~/.old[0-9]" }, { default = true }]
+"#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("cannot use wildcards"), "{err}");
+        let mut merged = IndexMap::new();
+        let entry: FileTomlEntry = toml::from_str(r#"mode = "absent""#)?;
+        merge_file_entry(
+            "~/.old*".into(),
+            entry,
+            Path::new("/"),
+            &origin,
+            &mut merged,
+        );
+        assert!(merged.is_empty());
+
+        let mut merged = IndexMap::new();
+        let entry: FileTomlEntry = toml::from_str(
+            r#"mode = "absent"
+source = "oldrc""#,
+        )?;
+        merge_file_entry(
+            "~/.oldrc".into(),
+            entry,
+            Path::new("/"),
+            &origin,
+            &mut merged,
+        );
+        assert!(merged.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_claims_its_target_in_the_footprint() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::write(&source, "content")?;
+
+        let err = validate_composed_file_footprints(&[
+            absent_req(&target),
+            link_req(&source, &target, FileMode::Copy),
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        // a permissions-only entry cannot chmod a file an absent entry removes
+        let mut permissions_only = absent_req(&target);
+        permissions_only.mode = FileMode::Permissions;
+        permissions_only.permissions = Some(0o600);
+        let err = validate_composed_file_footprints(&[absent_req(&target), permissions_only])
+            .unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        // a file beneath an absent target would need it as a directory
+        let err = validate_composed_file_footprints(&[
+            absent_req(&target),
+            link_req(&source, &target.join("nested"), FileMode::Copy),
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        Ok(())
+    }
+
+    #[test]
+    fn absent_removes_a_file_without_a_content_check() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let target = dir.path().join("oldrc");
+        let req = absent_req(&target);
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+
+        file::write(&target, "anything")?;
+        assert_eq!(
+            check_rendered(&req, None)?,
+            FileState::Differs("present".into())
+        );
+        assert!(find_conflicts(&req)?.is_empty());
+        assert_eq!(touched_paths(&req)?, vec![(target.clone(), Capture::Full)]);
+
+        let mut written = vec![];
+        apply_one(&req, None, &mut written)?;
+        assert!(!target.exists());
+        assert_eq!(written, vec![target.clone()]);
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+
+        // converged: nothing is removed or recorded
+        let mut written = vec![];
+        apply_one(&req, None, &mut written)?;
+        assert!(written.is_empty());
+        Ok(())
+    }
+
+    /// Not `#[cfg(unix)]`: `make_symlink` writes a junction on Windows, a
+    /// directory link that must be removed as a link, not refused as a
+    /// directory, and never entered.
+    #[test]
+    fn absent_removes_a_symlink_but_not_what_it_points_at() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let pointee = dir.path().join("pointee");
+        let target = dir.path().join("link");
+        file::create_dir_all(&pointee)?;
+        file::write(pointee.join("keep"), "keep")?;
+        file::make_symlink(&pointee, &target)?;
+        let req = absent_req(&target);
+        assert!(matches!(check_rendered(&req, None)?, FileState::Differs(_)));
+
+        // the journal captures the link itself (std reports a junction as a
+        // symlink), never walking into the directory it points to; undo
+        // restores it with `make_symlink`, which writes a junction again
+        let state = tempfile::tempdir()?;
+        for (path, capture) in touched_paths(&req)? {
+            let snapshot = journal::PathSnapshot::capture_with(state.path(), &path, capture);
+            assert!(
+                matches!(snapshot, journal::PathSnapshot::Symlink { .. }),
+                "{}",
+                snapshot.describe()
+            );
+        }
+
+        let mut written = vec![];
+        apply_one(&req, None, &mut written)?;
+        assert!(!target.is_symlink());
+        assert!(pointee.join("keep").is_file());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_under_a_file_is_already_applied() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let parent = dir.path().join("oldrc");
+        file::write(&parent, "a file, not a directory")?;
+        let req = absent_req(&parent.join("x"));
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+        let mut written = vec![];
+        apply_one(&req, None, &mut written)?;
+        assert!(written.is_empty());
+        assert!(parent.is_file());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_refuses_a_directory() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let target = dir.path().join("olddir");
+        file::create_dir_all(&target)?;
+        file::write(target.join("keep"), "keep")?;
+        let req = absent_req(&target);
+
+        let err = check_rendered(&req, None).unwrap_err();
+        assert!(err.to_string().contains("is a directory"), "{err}");
+        let mut written = vec![];
+        assert!(apply_one(&req, None, &mut written).is_err());
+        assert!(written.is_empty());
+        assert!(target.join("keep").is_file());
+        Ok(())
+    }
+
+    /// Deserializing a whole-file entry would drop the edit keys, turning an
+    /// edit into a removal of the file it meant to edit.
+    #[test]
+    fn absent_entries_reject_edit_keys() {
+        for extra in [
+            r#"block = "x""#,
+            r#"line = "x""#,
+            r#"template = "tera""#,
+            r#"comment = ";""#,
+            r#"position = "prepend""#,
+        ] {
+            let value: toml::Value =
+                toml::from_str(&format!("mode = \"absent\"\n{extra}")).expect("toml");
+            assert!(
+                parse_file_entry("~/.oldrc", value, Path::new("/mise.toml")).is_none(),
+                "{extra}"
+            );
+        }
+    }
+
+    /// Only regular files and symlinks are removed: a socket (like a FIFO or
+    /// device node) may belong to a running service.
+    #[cfg(unix)]
+    #[test]
+    fn absent_refuses_special_files() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let target = dir.path().join("socket");
+        let _listener = std::os::unix::net::UnixListener::bind(&target)?;
+        let req = absent_req(&target);
+
+        let err = check_rendered(&req, None).unwrap_err();
+        assert!(
+            err.to_string().contains("not a regular file or symlink"),
+            "{err}"
+        );
+        let mut written = vec![];
+        assert!(apply_one(&req, None, &mut written).is_err());
+        assert!(written.is_empty());
+        assert!(std::fs::symlink_metadata(&target).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_rejects_an_edit_on_the_same_file() -> Result<()> {
+        use crate::system::edits::{EditOp, EditRequest, LinePosition};
+        let target = dirs::HOME.join(".oldrc");
+        let origin = absent_req(&target).origin;
+        let edit = |path: &Path| EditRequest {
+            path_raw: path.display().to_string(),
+            path: path.to_path_buf(),
+            id: "x".into(),
+            op: EditOp::Line {
+                line: "x".into(),
+                position: LinePosition::Append,
+            },
+            base: PathBuf::from("/"),
+            config_path: PathBuf::from("/mise.toml"),
+            origin: origin.clone(),
+        };
+        let err =
+            validate_absent_edit_targets(&[absent_req(&target)], &[edit(&target)]).unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        // another spelling of the same path
+        let dotted = dirs::HOME.join(".dir").join("..").join(".oldrc");
+        assert!(validate_absent_edit_targets(&[absent_req(&target)], &[edit(&dotted)]).is_err());
+        validate_absent_edit_targets(&[absent_req(&target)], &[edit(&target.with_extension("x"))])?;
+        // a whole-file entry of another mode may still be edited
+        let copy = link_req(&target, &target, FileMode::Copy);
+        validate_absent_edit_targets(&[copy], &[edit(&target)])?;
+        Ok(())
+    }
+
+    #[test]
+    fn absent_has_nothing_to_unapply() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let target = dir.path().join("oldrc");
+        file::write(&target, "put back by hand")?;
+        let req = absent_req(&target);
+        let opts = UnapplyOpts {
+            dry_run: false,
+            verbose: false,
+            force: true,
+            yes: true,
+        };
+        assert!(plan_unapply_one(&req, &opts)?.is_none());
+        Ok(())
     }
 
     fn patterns(patterns: &[&str]) -> Vec<glob::Pattern> {
@@ -6349,6 +6925,7 @@ variants = [{{ {field} = "linux" }}]"#
         )?;
         for entry in [
             r#"{ permissions = "0600", remove_empty = true }"#,
+            r#"{ mode = "absent", remove_empty = true }"#,
             r#"{ source = "a", mode = "copy", remove_empty = true }"#,
             r#"{ source = "a", mode = "symlink", remove_empty = true }"#,
             r#"{ content = "x", remove_empty = true }"#,
@@ -6380,6 +6957,7 @@ variants = [{{ {field} = "linux" }}]"#
         assert!(merge("source = \"a\"\nmode = \"copy\"\nremove_empty = true").is_empty());
         assert!(merge("content = \"x\"\nremove_empty = true").is_empty());
         assert!(merge("permissions = \"0600\"\nremove_empty = true").is_empty());
+        assert!(merge("mode = \"absent\"\nremove_empty = true").is_empty());
         Ok(())
     }
 

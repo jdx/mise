@@ -996,6 +996,9 @@ fn build_dotfiles_layer(
             // permissions-only entry adjusts a file the image does not
             // provide; an image has nothing to copy for either
             FileMode::Track | FileMode::Permissions => continue,
+            // an absent target is not added, and a whiteout hides one a
+            // base layer may already hold there
+            FileMode::Absent => entries.add_whiteout(&oci_target_path(req)?)?,
             // footprint validation rejects `permissions` on a directory copy
             FileMode::Symlink | FileMode::Copy => match req.permissions {
                 Some(permissions) => {

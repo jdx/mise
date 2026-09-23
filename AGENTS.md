@@ -2,60 +2,21 @@
 
 This file is the canonical agent guide. `CLAUDE.md` is a symlink to `AGENTS.md` for compatibility with existing tooling.
 
+Task-specific procedures live as skills in `.agents/skills/` (`.claude/skills` is a symlink to it). Load the named skill when this guide points to one; agents without skill support can read its `SKILL.md` directly.
+
 ## Registry Submissions: READ THIS FIRST
 
-**Most new registry additions from agents get rejected.** Before adding a new tool to `registry/`, understand the rules:
+**Most new registry additions from agents get rejected.** mise's `registry/` is curated for tools that are already widely used — generally thousands of GitHub stars, not hundreds. jdx closes PRs that miss the bar without giving a reason.
 
-- **mise does not host self-written, personal, niche, or low-popularity tools.** The registry is curated for tools that are *already* widely used. "It works" or "it has tests" is not the bar.
-- **There is a high bar for new registry additions: tools generally need thousands of GitHub stars, not hundreds.** jdx will reject projects that do not meet this popularity bar and will not give a reason. Per [contributing.md](docs/contributing.md): "@jdx won't explain why a given tool wasn't accepted." There is no appeal, no checklist, no second chance — the PR is closed and that's it.
-- **Wasted PRs are the default outcome** for tools the agent or user has not vetted against this bar. Do not submit one speculatively.
+Before adding a **new** tool or shorthand to `registry/`, follow the `registry-submission` skill ([`.agents/skills/registry-submission/SKILL.md`](.agents/skills/registry-submission/SKILL.md)). In short:
 
-### Required check for new registry additions
+- Warn the user about the bar, look up real popularity numbers, and stop if the tool is personal, internal, a fork, or niche.
+- Put a `## Popularity` section with those numbers in the PR description.
+- Confirm `mise ls-remote <backend>` lists installable versions.
+- Prefer `packslip:`, then `aqua:`, `github:`, or `gitlab:`. `conda:` has a high bar; `npm:`, `pipx:`, `gem:`, `cargo:`, `go:`, and `dotnet:` are almost never accepted. New `asdf:`, `vfox:`, and `ubi:` entries are not accepted.
+- Users can install any tool without a registry entry (`mise use github:owner/repo`, `mise use cargo:name`, …); the registry only adds a shorthand.
 
-Before adding a new tool or shorthand to `registry/`, ALWAYS do the following. This check does not apply when editing an existing registry entry; do not ask the user about popularity for maintenance or fixes to tools already in the registry.
-
-1. **Warn the user clearly and ask:** "New registry additions have a high popularity bar: jdx generally rejects projects without thousands of GitHub stars and will not give a reason. Is this tool already widely used outside your own projects and does it meet that bar?" If it's the user's own tool, a fork, an internal/company tool, or something with a small audience, **stop and tell them the PR will be rejected.** Do not submit.
-2. **Actively check popularity for every new registry addition — no exceptions.** Look up real numbers; do not guess. Useful sources:
-   - GitHub stars and fork count (`gh repo view owner/repo --json stargazerCount,forkCount`)
-   - Recent release activity / last commit date (`gh repo view owner/repo --json pushedAt,latestRelease`)
-   - Download counts on relevant package registries (npm `npmjs.com/package/x`, crates.io, PyPI, Homebrew analytics, etc.)
-   - Whether the project shows up in third-party docs, awesome-lists, or other tools
-3. **Apply the bar.** Rough signals — very low numbers are disqualifying:
-   - GitHub stars in the thousands, not hundreds
-   - Active maintenance (recent releases, not abandoned)
-   - Real third-party usage (referenced in docs, blog posts, other tools, package registries)
-   - Recognizable in its ecosystem
-4. **Include the popularity data in the PR description.** Every PR adding a new registry tool or shorthand MUST contain a short section like:
-
-   ```
-   ## Popularity
-   - GitHub: 12.3k stars, 480 forks, last release 2026-04-12
-   - crates.io: 1.2M downloads
-   - Used by: <project A>, <project B>
-   ```
-
-   This is non-negotiable for new additions — it lets the maintainer evaluate the submission without re-doing the research. New-tool PRs without it look speculative and are more likely to be rejected.
-5. **If the tool is borderline or numbers are low, warn the user clearly** that the PR is likely to be rejected without reason, and ask if they still want to proceed. Do not soften this — users have repeatedly been surprised when their PR was closed, and the agent should have warned them up front.
-6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.jdx.dev/tool-plugin-development.html). The registry is *only* for shorthand convenience for popular tools — not for enabling installation.
-
-### Backend choice: packslip (preferred), then aqua, github, or gitlab
-
-For registry entries the backend tiers are:
-
-- **Version listing is mandatory.** Before adding a registry entry, run `mise ls-remote <backend>` and confirm it returns installable versions. A backend that can install only an explicitly pinned version is not sufficient, even if the package exists in an upstream registry. If the preferred backend cannot list versions, use another accepted backend (for example, a custom `http:` backend with a reliable `version_list_url`) or stop.
-- **Tier 1 — preferred:** `packslip:`. Use it when the project publishes signed release manifests; mise verifies the signer and artifact digests without requiring a plugin or separate package manager.
-- **Tier 2 — routinely accepted:** `aqua:`, `github:`, and `gitlab:`.
-  - **Prefer `aqua:`** when the project does not publish packslips and the tool is in the [aqua registry](https://github.com/aquaproj/aqua-registry). Better UX, SLSA verification, and per-version logic.
-  - **Use `github:`** when the tool isn't in aqua but ships GitHub releases.
-  - **Use `gitlab:`** for tools released through GitLab.
-- **Tier 3 — high bar, but lower than tier 4:** `conda:`. Potentially acceptable when the tool can't be supported via packslip/aqua/github/gitlab. The bar is lower than tier 4 because **the conda backend in mise does not require a separately-installed package manager** — mise downloads and extracts packages directly from anaconda.org via rattler, so users don't need conda/mamba on PATH. Still requires a popular, well-maintained tool.
-- **Tier 4 — extremely high bar, almost never accepted:** `npm:`, `pipx:`, `gem:`, `cargo:`, `go:`, `dotnet:`. These all rely on a separately-installed runtime/toolchain being present on PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is fragile — the wrong version, a missing install, or PATH ordering quirks all break them. `npm:`/`pipx:`/`gem:` are particularly painful because tools installed via them silently bind to whichever `node`/`python`/`ruby` was on PATH at install time. Don't reach for these for a registry PR unless the user has explicitly confirmed @jdx wants it that way for this specific tool.
-- **Not accepted at all:**
-  - **New `asdf:` plugins** — supply-chain security. Use packslip/aqua/github/gitlab instead.
-  - **New `vfox:` plugins** — same reason. Use packslip/aqua/github/gitlab instead.
-  - **`ubi:`** is deprecated and will not be accepted under any circumstances.
-
-Users can still install via any backend themselves with explicit syntax (`mise use vfox:...`, `mise use cargo:...`, etc.) — they just don't get a registry shorthand for it.
+None of this applies to editing an existing registry entry; do not ask the user about popularity for maintenance or fixes.
 
 ## Development Commands
 
@@ -71,7 +32,7 @@ Users can still install via any backend themselves with explicit syntax (`mise u
 - Use `MISE_DEBUG=1` or `MISE_TRACE=1` environment variables to enable debug output (not `RUST_LOG`)
 
 ### Code Quality and Testing
-- `mise run lint` - Run all linting tasks
+- `mise run lint` - Run all linting tasks (hk; does not run clippy — see below)
 - `mise run lint-fix` - Run linting and automatically fix issues
 - `mise run format` - Format code (part of CI task)
 - `mise run ci` - Run format, build, and test
@@ -85,6 +46,7 @@ Users can still install via any backend themselves with explicit syntax (`mise u
 
 - Do not add `#[allow(clippy::...)]`, `#[expect(clippy::...)]`, Cargo lint levels set to `allow`, or `-A clippy::...` command-line flags.
 - Refactor the code so `cargo clippy --workspace --all-features --all-targets -- -D warnings` passes without exclusions.
+- `mise run lint` does not cover this: the clippy step in `hk.pkl` is disabled, and `cargo check` does not enforce `-D warnings`. CI runs clippy separately, so run the command above yourself before pushing Rust changes.
 - If a feature or fix needs a preparatory refactor to satisfy Clippy cleanly, put that refactor in a prerequisite PR and stack the behavior change on top of it.
 
 ### Documentation and Generation
@@ -151,7 +113,7 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 - Windows-specific tests in `e2e-win/`
 
 ### Build System
-- Rust project using Cargo with workspace for `crates/vfox`
+- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-agent-env`, `mise-interactive-config`)
 - Custom build script in `build.rs` for generating metadata
 - Multiple build profiles including `release` and `serious` (with LTO)
 - Cross-compilation support via `Cross.toml`
@@ -205,44 +167,7 @@ imperative mood and breaking-change details remain review rules.
 
 ### PR titles and descriptions are release-note inputs
 
-Communique uses PR titles and descriptions to generate release notes. Write them
-for a mise user who has not read the diff or this conversation.
-
-- **Describe the final result.** Before requesting review and again after feedback
-  changes the implementation, compare the title and body with the complete current
-  diff. Rewrite both when the scope changes. Remove abandoned approaches, stale
-  requirements, and claims that the final code or validation no longer supports.
-- **Lead with the user-visible change.** Keep the conventional commit format, but
-  name the affected behavior and outcome in the title. Open the body with the
-  problem or use case and what users can now do. Avoid titles such as "address
-  feedback" or "fix CI" when the PR's actual purpose is a feature or behavior fix.
-  For internal-only work, explain the concrete maintainer or contributor benefit
-  without inventing a user-facing impact.
-- **Make the change concrete.** For new configuration or commands, include a small,
-  valid example and explain its result. For a bug fix, describe the trigger and
-  before/after behavior. For visible UI or output changes, include actual before/after
-  screenshots or a short recording when they help reviewers assess the change;
-  CLI input/output snippets are often clearer than screenshots of a terminal.
-  Use measured results for performance claims and state how they were measured.
-- **Keep the essential facts in text.** Caption screenshots and explain examples.
-  A reader or release-note generator should understand the change without opening
-  an image, following an external link, or reading the diff. Do not fabricate
-  screenshots, output, measurements, or validation results.
-- **State adoption details when relevant.** Include new flags or settings, defaults,
-  supported platforms, experimental status, required dependency versions, and any
-  compatibility changes or migration steps that affect using the feature. Distinguish
-  current behavior from planned follow-ups; do not advertise unfinished work.
-- **Keep review details proportionate.** Summarize meaningful validation and its
-  limitations. Include implementation details only when they explain behavior or a
-  tradeoff reviewers need to assess. Omit agent work logs, intermediate commit
-  summaries, and exhaustive test-command lists. A small fix can be a short paragraph
-  and a test result; screenshots and sections are not mandatory for every PR.
-
-For example, prefer `fix(task): install missing tools before running referenced tasks`
-over `fix(task): address review feedback`. Its description should explain which
-command previously failed, show the same command succeeding with automatic tool
-installation, and mention any relevant prerequisites. Keep this guidance alongside
-the required AI disclosure below; it does not replace that disclosure.
+Communique generates release notes from PR titles and descriptions, so write them for a mise user who has not read the diff: lead with the user-visible problem and outcome, show a concrete example, and keep them in sync with the final diff. Follow the `pr-description` skill ([`.agents/skills/pr-description/SKILL.md`](.agents/skills/pr-description/SKILL.md)) when opening or revising a PR.
 
 ### Pre-commit Process
 1. Run `mise run lint-fix` and `git add` any lint fixes before committing
@@ -264,16 +189,7 @@ the required AI disclosure below; it does not replace that disclosure.
 - Routine dependency updates should only change `Cargo.lock`. If the existing `Cargo.toml` requirement accepts the target version, do not change it merely to force or record the update; use `cargo update -p <crate> --precise <version>` instead.
 - Keep lockfile updates focused on the requested dependency and its required transitive changes. Remove unrelated resolver churn before committing.
 
-#### Updating embedded aube
-
-- Update `aube` and `aube-registry` together and refresh all aube workspace crates in `Cargo.lock`.
-- Review the upstream changes for embedder API or behavior changes and make any required mise integration changes.
-- Update the standalone `aube` development tool entry in `mise.lock` to the same version so local and CI workflows exercise the version mise embeds.
-- Run these focused checks:
-  - `cargo check --locked`
-  - `cargo test --locked --bin mise aube`
-  - `cargo test --locked --bin mise task::workspace::node::tests`
-  - `mise run test:e2e e2e/backend/test_npm_aube`
+When updating the embedded `aube` crates, follow the `update-aube` skill ([`.agents/skills/update-aube/SKILL.md`](.agents/skills/update-aube/SKILL.md)).
 
 ## Deprecation Policy
 
@@ -326,7 +242,9 @@ The configuration system supports multiple file formats and environment-specific
 - Slow tests (marked with `_slow` suffix) test actual tool compilation/installation
 
 ### Cross-Platform Considerations
-- Windows-specific implementations in files ending with `_windows.rs`
+- Windows modules follow one of two conventions:
+  - `*_windows.rs` is a platform-swapped sibling of a same-named module, selected with `#[cfg_attr(windows, path = "..._windows.rs")]` (e.g. `src/fake_asdf.rs` / `src/fake_asdf_windows.rs`)
+  - `windows_*.rs` is a single module about Windows with no non-Windows counterpart to swap in. Declare it on every platform and cfg-split it internally when other code calls it on all targets or its tests should run on Linux (e.g. `src/windows_posix.rs`, `src/windows_console.rs`); declare it under `#[cfg(windows)]` when only Windows code uses it (e.g. `src/windows_job.rs`)
 - Platform-specific tool installation logic in core plugins
 - Shim system varies by platform (especially Windows)
 - we don't chmod mise e2e tests to be executable
@@ -350,8 +268,6 @@ contributor. Do not post or facilitate spam consisting of drive-by AI-generated 
 Discussions from accounts with no connection to the questions or project; those accounts are
 blocked. Preserve this anti-spam distinction when writing or enforcing community policy, and
 do not discourage individual AI-assisted responses from people trying to help.
-
-Write pull request descriptions for users and reviewers, not as a list of files or implementation steps. Lead with the user-visible problem and outcome. For user-facing behavior, include concrete command or configuration examples that show how the change works, and explain materially different use cases or tradeoffs (for example, bounded catalogs versus query-driven search). Keep implementation details and test commands in secondary sections.
 
 When AI contributes GitHub content—including a pull request description, review, pull request
 comment, or discussion post—append this disclosure:

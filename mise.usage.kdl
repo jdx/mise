@@ -4021,9 +4021,25 @@ Lists the tools mise knows about: versions that are installed, and versions requ
 by a config file (active) whether or not they are installed.
 """#
     flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
+    flag "-b --backend" help="Only show tools from this backend, e.g. aqua, cargo, core, go" var=#true {
+        long_help #"""
+Only show tools from this backend, e.g. aqua, cargo, core, go
+
+Registry shorthands count as the backend they resolve to, so `jq` is listed
+under aqua. Repeat the flag to show several backends.
+"""#
+        arg <BACKEND>
+    }
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml" conflicts=--local
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
+    flag --grouped help="List tools in a separate section for each backend" conflicts=--json {
+        long_help #"""
+List tools in a separate section for each backend
+
+Cannot be combined with --json; use --backend to filter JSON output.
+"""#
+    }
     flag "-J --json" help="Output in JSON format"
     flag "-l --local" help="Only show tool versions currently specified in the local mise.toml" conflicts=--global
     flag "-m --missing" help="Display missing tool versions" conflicts=--installed
@@ -4059,6 +4075,8 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     example "mise ls --json" help="Machine-readable output: an object keyed by tool name"
     example "mise ls node --json" help="With a tool argument, JSON output is an array of its version records"
     example "mise ls --all-sources" help="Include references from every tracked configuration file"
+    example "mise ls --backend go --backend cargo" help="Show only tools from the go or cargo backends"
+    example "mise ls --grouped" help="List tools in a separate section for each backend"
 }
 cmd ls-remote help="List tool versions available to install" effect=read {
     alias list-all list-remote
@@ -6042,9 +6060,10 @@ cmd tool help="Show information about a tool" effect=read {
     flag --installed help="Only show installed versions"
     flag --requested help="Only show requested versions"
     flag --tool-options help="Only show tool options"
+    flag --url help="Only show the project URL from the registry"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL> help="Tool name to get information about"
-    group tool-info-filter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options"
+    group tool-info-filter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options" "--url"
     example #"""
 mise tool node
 Backend:            core

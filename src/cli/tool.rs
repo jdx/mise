@@ -64,6 +64,10 @@ pub(super) struct ToolInfoFilter {
     /// Only show tool options
     #[usage(long, group = "tool-info-filter")]
     tool_options: bool,
+
+    /// Only show the project URL from the registry
+    #[usage(long, group = "tool-info-filter")]
+    url: bool,
 }
 
 impl Tool {
@@ -95,6 +99,7 @@ impl Tool {
         let info = ToolInfo {
             backend: ba.full(),
             description,
+            url: ba.registry_tool().and_then(|rt| rt.url).map(str::to_string),
             installed_versions: ts
                 .list_installed_versions(&config)
                 .await?
@@ -147,6 +152,8 @@ impl Tool {
             miseprintln!("{}", serde_json::to_string_pretty(&info.config_source)?);
         } else if self.filter.tool_options {
             miseprintln!("{}", serde_json::to_string_pretty(&info.tool_options)?);
+        } else if self.filter.url {
+            miseprintln!("{}", serde_json::to_string_pretty(&info.url)?);
         } else {
             miseprintln!("{}", serde_json::to_string_pretty(&info)?);
         }
@@ -206,11 +213,20 @@ impl Tool {
                     miseprintln!("{k}={v:?}");
                 }
             }
+        } else if self.filter.url {
+            if let Some(url) = info.url {
+                miseprintln!("{}", url);
+            } else {
+                miseprintln!("[none]");
+            }
         } else {
             let mut table = vec![];
             table.push(("Backend:", info.backend));
             if let Some(description) = info.description {
                 table.push(("Description:", description));
+            }
+            if let Some(url) = info.url {
+                table.push(("URL:", url));
             }
             // Bold currently active versions within the installed list for clarity
             let active_set = info
@@ -298,6 +314,7 @@ impl Tool {
 struct ToolInfo {
     backend: String,
     description: Option<String>,
+    url: Option<String>,
     installed_versions: Vec<String>,
     requested_versions: Option<Vec<String>>,
     active_versions: Option<Vec<String>>,

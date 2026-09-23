@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use versions::Versioning;
 
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, TruncateOptions};
 use crate::cli::prune;
 use crate::config;
@@ -52,6 +53,14 @@ use crate::ui::table::MiseTable;
     example(
         r###"mise ls --all-sources"###,
         help = r###"Include references from every tracked configuration file"###
+    ),
+    example(
+        r###"mise ls --backend go --backend cargo"###,
+        help = r###"Show only tools from the go or cargo backends"###
+    ),
+    example(
+        r###"mise ls --grouped"###,
+        help = r###"List tools in a separate section for each backend"###
     )
 )]
 pub(crate) struct Ls {
@@ -61,6 +70,13 @@ pub(crate) struct Ls {
     /// Only show tool versions from [TOOL]
     #[usage(conflicts = "tool_flag")]
     installed_tool: Option<Vec<BackendArg>>,
+
+    /// Only show tools from this backend, e.g. aqua, cargo, core, go
+    ///
+    /// Registry shorthands count as the backend they resolve to, so `jq` is listed
+    /// under aqua. Repeat the flag to show several backends.
+    #[usage(long, short, value_name = "BACKEND", verbatim_doc_comment)]
+    backend: Vec<BackendType>,
 
     /// Only show tool versions currently specified in a mise.toml
     #[usage(long, short)]
@@ -74,6 +90,12 @@ pub(crate) struct Ls {
     /// (Hides tools defined in mise.toml but not installed)
     #[usage(long, short)]
     installed: bool,
+
+    /// List tools in a separate section for each backend
+    ///
+    /// Cannot be combined with --json; use --backend to filter JSON output.
+    #[usage(long, conflicts = "json", verbatim_doc_comment)]
+    grouped: bool,
 
     /// Output in JSON format
     #[usage(long, short = 'J')]
@@ -168,6 +190,9 @@ impl Ls {
         }
         if let Some(prefix) = &self.prefix {
             runtimes.retain(|(_, _, tv, _)| tv.version.starts_with(prefix));
+        }
+        if !self.backend.is_empty() {
+            runtimes.retain(|(_, p, _, _)| self.backend.contains(&listed_backend_type(p.as_ref())));
         }
         let scheduled_removals = match crate::tool_purgatory::scheduled_removals() {
             Ok(scheduled_removals) => scheduled_removals,
@@ -284,6 +309,25 @@ impl Ls {
                 remove_after: scheduled_removals.get(&tv.install_path()).copied(),
             });
         }
+        if !self.grouped {
+            return self.print_table(rows);
+        }
+        let groups = rows
+            .into_iter()
+            .into_group_map_by(|r| listed_backend_type(r.tool.as_ref()).to_string())
+            .into_iter()
+            .sorted_by(|(a, _), (b, _)| a.cmp(b));
+        for (idx, (backend, rows)) in groups.enumerate() {
+            if idx > 0 {
+                miseprintln!();
+            }
+            miseprintln!("{}", console::style(backend).bold());
+            self.print_table(rows)?;
+        }
+        Ok(())
+    }
+
+    fn print_table(&self, rows: Vec<Row>) -> Result<()> {
         let mut table = MiseTable::new(self.no_header, &["Tool", "Version", "Source", "Requested"]);
         table.truncate(self.truncate.truncate);
         for r in rows {
@@ -473,6 +517,17 @@ fn matches_requested_tool(requested: &[BackendArg], ba: &BackendArg) -> bool {
     requested
         .iter()
         .any(|req| req == ba || ba.matches_bin_name(&req.short))
+}
+
+/// The backend `--backend` and `--grouped` file a tool under.
+///
+/// A `plugin:tool` entry from a vfox backend plugin reports the plugin's name as its type, which
+/// is not a value `--backend` accepts; it is a vfox plugin all the same, so it counts as vfox.
+fn listed_backend_type(backend: &dyn Backend) -> BackendType {
+    match backend.get_type() {
+        BackendType::VfoxBackend(_) => BackendType::Vfox,
+        backend_type => backend_type,
+    }
 }
 
 type JSONOutput = IndexMap<String, Vec<JSONToolVersion>>;
@@ -841,5 +896,14 @@ mod tests {
     #[test]
     fn no_filter_entries_match_nothing() {
         assert!(!matches_requested_tool(&[], &ba("node")));
+    }
+
+    /// `--grouped` heads the pipx section `pypi`, so `--backend` has to take that name back.
+    #[test]
+    fn backend_flag_accepts_the_grouped_heading() {
+        for name in ["pypi", "pipx"] {
+            assert_eq!(name.parse::<BackendType>().unwrap(), BackendType::Pipx);
+        }
+        assert_eq!(BackendType::Pipx.to_string(), "pypi");
     }
 }

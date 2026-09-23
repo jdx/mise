@@ -107,6 +107,9 @@ impl DotfilesAdd {
             Some("track") => bail!(
                 "`--mode track` tracks a file where it is and takes no source; use `mise dot track <path>`"
             ),
+            Some("absent") => bail!(
+                "`--mode absent` removes a file rather than capturing it; declare `mode = \"absent\"` in [dotfiles]"
+            ),
             Some(mode) => {
                 FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))
             }
@@ -197,6 +200,14 @@ impl DotfilesAdd {
                     std::slice::from_ref(target_raw),
                 )
             });
+            if let Some(req) = existing
+                && req.mode == FileMode::Absent
+            {
+                bail!(
+                    "{target_raw}: declared absent in {}; remove that entry before adding the file",
+                    req.origin.config.display_user()
+                );
+            }
             let source = if let Some(req) = existing {
                 req.source.clone()
             } else if let Some(source) = &self.source {
@@ -637,7 +648,7 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
-        FileMode::Content | FileMode::Track | FileMode::Permissions => {
+        FileMode::Content | FileMode::Track | FileMode::Absent | FileMode::Permissions => {
             unreachable!("dotfiles add always captures a source file")
         }
     }

@@ -23,7 +23,14 @@
         v-for="(entry, index) in filteredData"
         :key="`backend-${index}`"
       >
-        <td v-html="highlightMatches(entry.short)"></td>
+        <td>
+          <a
+            v-if="entry.url"
+            :href="entry.url"
+            v-html="highlightMatches(entry.short)"
+          ></a>
+          <span v-else v-html="highlightMatches(entry.short)"></span>
+        </td>
         <td>
           <span v-for="(backend, index) in entry.backends">
             <a

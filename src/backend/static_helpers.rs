@@ -709,7 +709,7 @@ pub(crate) fn install_artifact(
                 bin_dir.join(decompressed_name)
             }
         } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
-            install_path.join(&bin_name)
+            install_path.join(bin_name_for_download(decompressed_name, &bin_name))
         } else if let Some(rename_to) = rename_exe {
             install_path.join(rename_binary_name(decompressed_name, &rename_to))
         } else {
@@ -736,7 +736,8 @@ pub(crate) fn install_artifact(
             file::make_executable(&dest)?;
         } else if let Some(bin_name) = lookup_with_fallback(opts, "bin") {
             // If bin is specified, rename the file to this name
-            let dest = install_path.join(&bin_name);
+            let original_name = file_path.file_name().unwrap().to_string_lossy();
+            let dest = install_path.join(bin_name_for_download(&original_name, &bin_name));
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
         } else if let Some(rename_to) = lookup_with_fallback(opts, "rename_exe") {
@@ -1315,6 +1316,9 @@ fn rename_executable_in_app_bundle(
     Ok(false)
 }
 
+/// Extensions Windows needs in order to launch a file directly.
+const WINDOWS_REQUIRED_EXTENSIONS: &[&str] = &[".exe", ".cmd", ".bat"];
+
 fn keep_required_extensions(
     dir: &Path,
     file_name: &str,
@@ -1327,7 +1331,7 @@ fn keep_required_extensions(
             file_name,
             new_name,
             target_path,
-            &[".exe", ".cmd", ".bat"],
+            WINDOWS_REQUIRED_EXTENSIONS,
         );
     }
     target_path
@@ -1340,12 +1344,33 @@ fn keep_extensions(
     target_path: PathBuf,
     exts: &[&str],
 ) -> PathBuf {
-    for ext in exts {
-        if file_name.to_lowercase().ends_with(ext) && !new_name.to_lowercase().ends_with(ext) {
-            return dir.join(format!("{}{}", new_name, ext));
-        }
+    match name_with_kept_extension(file_name, new_name, exts) {
+        Some(name) => dir.join(name),
+        None => target_path,
     }
-    target_path
+}
+
+/// Appends the first of `exts` that `file_name` ends with, unless `new_name`
+/// already ends with it. Returns `None` when nothing needs appending.
+fn name_with_kept_extension(file_name: &str, new_name: &str, exts: &[&str]) -> Option<String> {
+    exts.iter()
+        .find(|ext| {
+            file_name.to_lowercase().ends_with(*ext) && !new_name.to_lowercase().ends_with(*ext)
+        })
+        .map(|ext| format!("{new_name}{ext}"))
+}
+
+/// The filename to install a single downloaded binary under when `bin` names it.
+/// On Windows, keeps the executable extension of the download so that
+/// `bin = "tool"` for `tool-windows.exe` installs `tool.exe`, which Windows can run.
+pub(crate) fn bin_name_for_download(source_name: &str, bin_name: &str) -> String {
+    if cfg!(windows)
+        && let Some(name) =
+            name_with_kept_extension(source_name, bin_name, WINDOWS_REQUIRED_EXTENSIONS)
+    {
+        return name;
+    }
+    bin_name.to_string()
 }
 
 pub(crate) fn rename_binary_name(original_name: &str, new_name: &str) -> String {
@@ -1954,6 +1979,28 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
             assert_eq!(
                 keep_required_extensions(dir, "mytool.exe", "new_tool", initial_target.clone()),
                 initial_target
+            );
+        }
+    }
+
+    #[test]
+    fn test_bin_name_for_download() {
+        // Nested bin paths and names that already carry the extension.
+        for (source, bin, windows) in [
+            ("tool-windows-x64.exe", "tool", "tool.exe"),
+            ("tool.x64.EXE", "tool", "tool.exe"),
+            ("tool-windows.cmd", "bin/tool", "bin/tool.cmd"),
+            ("tool-windows-x64.exe", "tool.exe", "tool.exe"),
+            ("tool-windows-x64.exe", "TOOL.EXE", "TOOL.EXE"),
+            // Only the extensions Windows needs are kept.
+            ("tool.sh", "tool", "tool"),
+            ("tool-linux-x64", "tool", "tool"),
+        ] {
+            let expected = if cfg!(windows) { windows } else { bin };
+            assert_eq!(
+                bin_name_for_download(source, bin),
+                expected,
+                "{source} with bin={bin}"
             );
         }
     }
