@@ -756,23 +756,31 @@ impl ManagedFileRequest {
     fn operation(&self) -> Result<Option<PrivilegedAction>> {
         match self.plan()?.action {
             ResourceAction::Noop => return Ok(None),
-            ResourceAction::Unknown if let Some(reason) = self.refusal() => bail!(
-                "refusing to {} {}: {reason}",
-                match self.state {
-                    ManagedState::Absent => "remove file",
-                    ManagedState::Present if self.is_metadata_only() => "set permissions on",
-                    ManagedState::Present => "write file",
-                },
-                self.path.display()
-            ),
-            ResourceAction::Unknown if self.state == ManagedState::Absent => bail!(
-                "refusing to remove directory {} as a file; declare it in [bootstrap.directories]",
-                self.path.display()
-            ),
-            ResourceAction::Unknown => bail!(
-                "refusing to replace non-file path {}; set replace = true to allow replacement",
-                self.path.display()
-            ),
+            ResourceAction::Unknown => {
+                if let Some(reason) = self.refusal() {
+                    bail!(
+                        "refusing to {} {}: {reason}",
+                        match self.state {
+                            ManagedState::Absent => "remove file",
+                            ManagedState::Present if self.is_metadata_only() => {
+                                "set permissions on"
+                            }
+                            ManagedState::Present => "write file",
+                        },
+                        self.path.display()
+                    )
+                }
+                if self.state == ManagedState::Absent {
+                    bail!(
+                        "refusing to remove directory {} as a file; declare it in [bootstrap.directories]",
+                        self.path.display()
+                    )
+                }
+                bail!(
+                    "refusing to replace non-file path {}; set replace = true to allow replacement",
+                    self.path.display()
+                )
+            }
             _ => {}
         }
         Ok(Some(match (self.state, &self.content) {
@@ -1337,11 +1345,11 @@ fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
             ResourceAction::Unknown,
         )),
         (ManagedState::Present, PathInspection::Present { current, .. })
-            if let Some(reason) = request.refusal() =>
+            if request.refusal().is_some() =>
         {
             Ok(ResourcePlan::new(
                 id,
-                format!("{current} ({reason})"),
+                format!("{current} ({})", request.refusal().unwrap_or_default()),
                 desired,
                 ResourceAction::Unknown,
             ))
