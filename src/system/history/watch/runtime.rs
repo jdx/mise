@@ -1222,13 +1222,14 @@ impl State {
         {
             return false;
         }
-        if self.exclude.is_match(path) {
-            return false;
-        }
-        match self.watched.entry_for(path) {
-            Some(entry) => entry.policy.autosave,
-            None => false,
-        }
+        // exclusion is read relative to the entry that owns the path, so
+        // the owner is found first
+        self.watched
+            .entry_for(path)
+            .is_some_and(|entry| entry.policy.autosave)
+            && !self
+                .watched
+                .excluded_by_lists(&self.exclude, path, tracked::Asked::Possibly)
     }
 
     /// Whether a path that does not exist right now may still be one the
@@ -1237,16 +1238,24 @@ impl State {
     /// target between two versions, say. A path nothing declares for
     /// automatic saving any more is not kept for being missing.
     fn may_cover_missing(&self, path: &Path) -> bool {
-        if self.hard.iter().any(|dir| path.starts_with(dir)) || self.exclude.is_match(path) {
+        if self.hard.iter().any(|dir| path.starts_with(dir)) {
             return false;
         }
-        self.watched
+        (self
+            .watched
             .entry_for(path)
             .is_some_and(|entry| entry.policy.autosave)
-            || self.tracked.entry_for(path).is_some_and(|entry| {
+            && !self
+                .watched
+                .excluded_by_lists(&self.exclude, path, tracked::Asked::Possibly))
+            || (self.tracked.entry_for(path).is_some_and(|entry| {
                 entry.policy.autosave
                     && !tracked::is_refused_root(&entry.path, &normalize(&crate::dirs::HOME))
-            })
+            }) && !self.tracked.excluded_by_lists(
+                &self.exclude,
+                path,
+                tracked::Asked::Possibly,
+            ))
     }
 }
 
@@ -1254,6 +1263,15 @@ impl State {
 /// links themselves so dangling links remain observable. Targets are not enrolled.
 fn watched_set(tracked: &TrackedSet) -> Result<(TrackedSet, Vec<PathBuf>)> {
     let walk = tracked.walk()?;
+    // Keep scan diagnostics from detached startup and reload walks.
+    // Capture warnings belong to the save path, after the snapshot is durable.
+    for warning in &walk.warnings {
+        let message = format!("history: {warning}");
+        if let Err(err) = crate::system::history::notices::record(&message) {
+            warn!("{message}");
+            debug!("history: could not keep the notice: {err}");
+        }
+    }
     // Rediscover dangling links on startup without enrolling their targets.
     let links = walk
         .files
@@ -1853,6 +1871,29 @@ mod tests {
     use super::*;
     use crate::system::files::{FileMode, FilePolicy};
     use crate::system::history::tracked::TrackedEntry;
+
+    #[test]
+    fn a_new_nested_repository_stops_watcher_capture_and_holds() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = normalize(temp.path());
+        let nested = parent.join("checkout");
+        std::fs::create_dir(&nested).unwrap();
+        let file = nested.join("config.txt");
+        std::fs::write(&file, "local").unwrap();
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut tracked = TrackedSet::default();
+        tracked.push(TrackedEntry::new(parent, "track", policy));
+        let state = State::from_tracked(tracked.clone()).unwrap();
+        assert!(state.relevant(&file));
+        std::fs::create_dir(nested.join(".git")).unwrap();
+        assert!(!state.relevant(&file));
+        assert!(!state.relevant(&nested));
+        std::fs::remove_file(&file).unwrap();
+        assert!(!state.may_cover_missing(&file));
+        tracked.push(TrackedEntry::new(nested, "track", policy));
+        let explicit = State::from_tracked(tracked).unwrap();
+        assert!(explicit.may_cover_missing(&file));
+    }
 
     #[test]
     fn unfinished_reconciliation_preserves_success_timestamp() {

@@ -45,7 +45,7 @@ echo 'new' >~/.config/hypr/plugin/new.txt
 git -C ~/.config/hypr/plugin add new.txt
 git -C ~/.config/hypr/plugin -c user.name=t -c user.email=t@t commit -q -m init
 assert_succeed "mise bootstrap dotfiles save"
-assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/plugin --to $plain_id --dry-run 2>&1" "nested repository"
+assert_contains "mise bootstrap dotfiles rollback ~/.config/hypr/plugin --to $plain_id --dry-run 2>&1" "a separate Git repository; track it directly"
 assert_not_contains "mise bootstrap dotfiles rollback ~/.config/hypr/plugin --to $plain_id --dry-run 2>&1" "old.txt"
 assert_fail "test -e ~/.config/hypr/plugin/old.txt"
 assert "cat ~/.config/hypr/plugin/new.txt" "new"

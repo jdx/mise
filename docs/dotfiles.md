@@ -35,6 +35,21 @@ configuration (`~/.config/mise/config.toml` by default):
 "~/.zshrc" = { mode = "track" }
 ```
 
+Tracking a directory saves everything under it, so preview a large one
+first. `mise dot track --dry-run <dir>` (or `mise dot paths --preview <dir>`)
+prints how many files and bytes it expands to and what is left out, and
+writes nothing:
+
+```sh
+$ mise dot track --dry-run ~/.codex
+~/.codex: 22,972 files, 1.2 GiB
+```
+
+The confirmation prompt shows the same count and size, and mise warns when
+a tree is larger than 5,000 files or 256 MiB. Trim a directory with a
+scoped exclusion before tracking it, for example
+`mise dot exclude '~/.codex/sessions/**'`.
+
 ### Save edits automatically
 
 Add the watcher service to the same global configuration file:
@@ -374,9 +389,10 @@ matching wildcards so each source expands to a unique target:
 ## Excluding files
 
 Modes that walk a source directory — `symlink-each`, and `copy` with a
-directory source — take an `exclude` list of glob patterns. This is the way
-to point an entry at a directory you don't fully own, such as the one holding
-`mise.toml` itself:
+directory source — take an `exclude` list of glob patterns, as does a
+[tracked directory](#files-directories-and-symlinks) (relative to the
+tracked path). This is the way to point an entry at a directory you don't
+fully own, such as the one holding `mise.toml` itself:
 
 ```toml
 [dotfiles]
@@ -500,7 +516,9 @@ For a symlink, point the edit at the real file you want to change.
 
 Removing an entry from config leaves its file, block, or line in place.
 To remove them too, run `mise dot unapply` before deleting
-the entry from your config.
+the entry from your config. To remove a file from machines that already
+applied an old entry, replace the entry with a `state = "absent"` declaration
+under [`[bootstrap.files]`](/bootstrap/files.html#removing-resources).
 
 ## Unapplying
 
@@ -599,6 +617,24 @@ existing source from the live target.
 
 ## Tracking options
 
+### Preview before tracking
+
+Preview a directory before tracking it:
+
+```sh
+mise dot track --dry-run ~/.config/nvim
+mise dot paths --preview ~/.config/nvim
+```
+
+Both commands report the file count and size without changing configuration
+or saving a checkpoint. `paths --preview` also lists the files. Check the
+omissions and nested repositories, then exclude unwanted subtrees, for
+example with `mise dot exclude '~/.config/nvim/plugged/**'`.
+
+Tracking shows the count and size before confirmation and warns above
+5,000 files or 256 MiB. These warnings do not prevent tracking. A scan
+that reaches its limit is reported as incomplete.
+
 ### Saving and encryption {#policies}
 
 | Field      | Default | Meaning                                                                                                                   |
@@ -647,12 +683,20 @@ added beneath it later, subject to those exclusions.
 
 Start with individual configuration files so you can choose what to save.
 Leave logs, caches, databases, and application session state out of history.
-Credential files and `*.local.toml` files are excluded by default; see
-[encrypted tracking](/history.html#encrypted-shared-files) to save credentials.
+Built-in credential rules can omit files even when their parent directory
+is tracked. `mise dot save`, `mise dot track`, and `mise dot status` report
+these omissions; `mise dot paths` lists the affected files and reasons.
+See [credential filtering](/history.html#credential-filtering-and-omissions)
+for the filename rules and [encrypted tracking](/history.html#encrypted-shared-files)
+to save credentials. Files ending in `.local.toml` are never captured.
 
 Tracking a symlink saves the link itself. Track its target separately to
 save the target's contents. If a parent directory is a symlink, track that
 link and use the real directory path to track files beneath it.
+
+Repositories found inside a tracked directory are skipped and reported.
+To save a repository's working files, track its root as a separate entry;
+`.git` is always excluded. See [nested repositories](/history.html#nested-repositories).
 
 Your home directory and mise configuration directory can themselves be
 symlinks. mise maps these roots to the corresponding directories on each
@@ -660,10 +704,44 @@ machine when sharing history.
 
 Add an explicit tracking entry for each file or directory you want to
 save, including the mise configuration directory or `dotfiles.root`.
-Track entries cannot contain `source`, `content`, `exclude`, or `manifest`.
+Track entries cannot contain `source`, `content`, or `manifest`.
 `mise dot paths` reports such combinations as invalid and
 leaves them out of history. The `track` command exits non-zero if the
 entry it writes is not active.
+
+### Select files within a tracked directory
+
+Use per-entry exclusions to omit files beneath one directory:
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", exclude = ["sessions", "*.log"] }
+```
+
+The patterns are relative to `~/.codex`. `sessions` excludes directories
+with that name and their contents; `*.log` excludes matching files at any
+depth. Patterns containing `/` are anchored to the tracked directory.
+Global `[history] exclude` rules also apply and cannot override the entry's
+exclusions with `!glob`.
+
+If you only want a few files, use an include list instead:
+
+```toml
+[dotfiles]
+"~/.codex" = { mode = "track", include = ["config.toml", "rules/**"] }
+```
+
+No `include` field considers the whole directory; `include = []` selects
+nothing. Explicit exclusions always win. Includes also select credential-
+named files, so use `encrypt = true` for private contents. See
+[choosing files](/history.html#choose-which-files-a-directory-saves) for
+matching rules, previews, and compatibility requirements.
+
+These lists travel with the shared setup and are recorded in checkpoints,
+so rollback knows which files were outside their coverage. Upgrade every
+machine sharing the setup before using this field. See
+[history selection rules](/history.html#explicit-tracking-and-exclusions)
+for details.
 
 ### Stop tracking a file
 

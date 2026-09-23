@@ -22,7 +22,7 @@ use crate::file::display_path;
 use crate::system::history::checkpoint::Store;
 use crate::system::history::config::OriginTomlConfig;
 use crate::system::history::store as hstore;
-use crate::system::history::tracked::TrackedSet;
+use crate::system::history::tracked::{Asked, ExcludeSet, TrackedSet};
 
 const PUSH_RETRIES: usize = 5;
 
@@ -42,6 +42,13 @@ pub(crate) struct PendingApplication {
     /// significant: saving a newer version never authorizes overwriting it.
     #[serde(default)]
     pub local: Option<Object>,
+}
+
+/// A path sync leaves alone, and why; listed by `mise dot status`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct SkippedPath {
+    pub branch_path: String,
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -78,6 +85,9 @@ pub(crate) struct SyncStatus {
     pub conflicts: Vec<Conflict>,
     #[serde(default)]
     pub pending_applications: Vec<PendingApplication>,
+    /// Paths neither applied nor removed, with why (nested repositories).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<SkippedPath>,
     /// Repository metadata and inactive streams can change without live writes.
     #[serde(default)]
     pub pending_repository: bool,
@@ -243,6 +253,10 @@ pub(crate) fn sync_locked(
     tracked: &TrackedSet,
     request: &SyncRequest,
 ) -> Result<SyncOutcome> {
+    // Synchronizing publishes and applies, so it does not run on a rule
+    // set that could not be fully built: the missing rules are exactly
+    // the paths that would then look selected here.
+    tracked.refuse_unusable_exclusions()?;
     let origin = match &request.origin {
         Some(origin) => origin.clone(),
         None => origin()?,
@@ -330,6 +344,7 @@ pub(crate) fn sync_locked(
             let sync_state = state::load(repo)?;
             plans = prepare(
                 repo,
+                state_dir,
                 tracked,
                 &shared.objects(),
                 &upstream,
@@ -406,6 +421,7 @@ pub(crate) fn sync_locked(
                     )?;
                     plans = prepare(
                         repo,
+                        state_dir,
                         tracked,
                         &shared.objects(),
                         &upstream,
@@ -607,6 +623,15 @@ fn record_pending(
         .iter()
         .filter_map(|plan| plan.conflict.clone())
         .collect();
+    status.skipped = plans
+        .iter()
+        .filter_map(|plan| {
+            Some(SkippedPath {
+                branch_path: plan.branch_path.clone(),
+                reason: plan.skipped.clone()?,
+            })
+        })
+        .collect();
     status.pending_applications = plans
         .iter()
         .filter(|plan| plan.conflict.is_none())
@@ -653,6 +678,7 @@ pub(crate) fn refresh_with_interaction(
     )?;
     let plans = prepare(
         repo,
+        store.state_dir(),
         tracked,
         &shared.objects(),
         &upstream,
@@ -668,6 +694,7 @@ pub(crate) fn refresh_with_interaction(
 /// set in memory. Publication never gets ahead of this second preflight.
 fn prepare(
     repo: &crate::system::history::shadow::HistoryRepo,
+    state_dir: &Path,
     tracked: &TrackedSet,
     shared: &BTreeMap<String, Object>,
     upstream: &reconcile::Upstream,
@@ -724,21 +751,31 @@ fn prepare(
         })
         .collect();
     let reconcile_set = |set: &TrackedSet| {
+        // one compiled exclude set for the whole pass: the question is
+        // asked once per upstream path and the patterns do not change
+        let exclude = set.exclude_set()?;
         let selected = reconcile::Upstream {
             commit: upstream.commit.clone(),
             files: upstream
                 .files
                 .iter()
-                .filter(|(path, _)| eligible(&roots, set, path))
+                .filter(|(path, object)| {
+                    eligible(&roots, set, &exclude, path)
+                        || (reconcile::is_gitlink(Some(object)) && owns_stream(&roots, set, path))
+                })
                 .map(|(path, object)| (path.clone(), object.clone()))
                 .collect(),
         };
         let mut plans = reconcile::reconcile(repo, shared, &selected, &sync_state, unsaved)?;
         // Old acknowledgements are not authority to delete a path this
         // machine no longer declares or selects.
-        plans.retain(|plan| eligible(&roots, set, &plan.branch_path));
+        plans.retain(|plan| {
+            eligible(&roots, set, &exclude, &plan.branch_path)
+                || (plan.skipped.is_some() && owns_stream(&roots, set, &plan.branch_path))
+        });
         for (path, object) in shared {
-            if !eligible(&roots, set, path)
+            if reconcile::is_gitlink(Some(object))
+                || !eligible(&roots, set, &exclude, path)
                 || local_manifest.file_permissions(path, Some(object))
                     == set.manifest.file_permissions(path, Some(object))
             {
@@ -766,14 +803,16 @@ fn prepare(
     };
     let mut plans = reconcile_set(tracked)?;
     apply_resolutions(repo, status, shared, upstream, &mut plans)?;
+    reconcile::skip_pointer_applications(&mut plans, shared);
     status.validation_error = None;
     // Source deletion and invalid source types matter even when the bootstrap
     // configuration itself is unchanged or deliberately not tracked.
     if plans.iter().any(|plan| plan.apply.is_some()) {
         let validation = (|| -> Result<()> {
-            let prospective = super::preflight::prospective(repo, tracked, &plans)?;
+            let prospective = super::preflight::prospective(repo, state_dir, tracked, &plans)?;
             plans = reconcile_set(&prospective)?;
             apply_resolutions(repo, status, shared, upstream, &mut plans)?;
+            reconcile::skip_pointer_applications(&mut plans, shared);
             super::preflight::sources(repo, &prospective, &plans)
         })();
         if let Err(error) = validation {
@@ -968,15 +1007,52 @@ fn apply_resolutions(
 /// another platform's version is never applied here and never read as a
 /// change. Undeclared paths wait for prospective incoming configuration;
 /// their absence from this machine is not a publication of a deletion.
-pub(super) fn eligible(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
+fn owns_stream(roots: &Roots, tracked: &TrackedSet, branch_path: &str) -> bool {
     match roots.locate(branch_path) {
-        Located::Tracked { path, variant } => match tracked.entry_for(&path) {
-            Some(entry) => entry.variant == variant,
-            None => false,
-        },
+        Located::Tracked { path, variant } => tracked
+            .entry_for(&path)
+            .is_some_and(|entry| entry.variant == variant),
         Located::Config(path) => tracked
             .entry_for(&path)
             .is_some_and(|entry| entry.variant.is_none()),
+        Located::Marker | Located::Unmapped => false,
+    }
+}
+
+// Legacy pointers produce only skip diagnostics, so their owning stream
+// remains reportable even when live nested content is ineligible for apply.
+///
+/// **Declared is not the same as selected, and only a selected path can
+/// be deleted.** A path the exclude lists drop is still covered by its
+/// entry, so ownership alone says "managed here" about a file the
+/// setup deliberately stopped capturing. Reconciliation then reads its
+/// absence from the incoming snapshot as a deletion and removes the
+/// local copy — narrowing on one machine deleting files on every other
+/// one. `exclude` is asked here, against the same incoming set whose
+/// snapshot the absence is being read from, so the two agree: a path
+/// missing because selection no longer covers it is unmanaged, while a
+/// path missing although selection still covers it was deleted, and
+/// that deletion is propagated as before.
+pub(super) fn eligible(
+    roots: &Roots,
+    tracked: &TrackedSet,
+    exclude: &ExcludeSet,
+    branch_path: &str,
+) -> bool {
+    match roots.locate(branch_path) {
+        Located::Tracked { path, variant } => match tracked.entry_for(&path) {
+            Some(entry) => {
+                entry.variant == variant
+                    && !tracked.excluded_by_lists(exclude, &path, Asked::Exactly)
+            }
+            None => false,
+        },
+        Located::Config(path) => {
+            tracked
+                .entry_for(&path)
+                .is_some_and(|entry| entry.variant.is_none())
+                && !tracked.excluded_by_lists(exclude, &path, Asked::Exactly)
+        }
         Located::Marker => false,
         Located::Unmapped => false,
     }
@@ -1028,13 +1104,15 @@ pub(super) fn incoming_repository_tree(
     let (merged, conflicts) = repo.merge_tree(local, remote)?;
     let tree = tracked.manifest.write(repo, &merged)?;
     let roots = Roots::current();
+    let exclude = tracked.exclude_set()?;
     if repo.output_tree_of(local)? == tree && conflicts.is_empty() {
         return Ok(None);
     }
     let unresolved: Vec<_> = conflicts
         .into_iter()
         .filter(|path| {
-            path != crate::system::history::manifest::PATH && !eligible(&roots, tracked, path)
+            path != crate::system::history::manifest::PATH
+                && !eligible(&roots, tracked, &exclude, path)
         })
         .collect();
     if !unresolved.is_empty() {
@@ -1228,6 +1306,8 @@ mod capture_tests {
                 autosave: true,
                 encrypt: false,
                 variants: vec![],
+                exclude: None,
+                include: None,
             }],
             ..Default::default()
         }
@@ -1379,5 +1459,121 @@ mod status_tests {
             status.declarations_changed = false;
         })
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod nested_repository_tests {
+    use super::*;
+    use crate::system::files::{FileMode, FilePolicy};
+    use crate::system::history::tracked::{TrackedEntry, normalize};
+
+    #[test]
+    fn incoming_files_leave_live_nested_repositories_alone() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = normalize(temp.path());
+        let roots = Roots {
+            home: home.clone(),
+            config_dir: home.join(".config/mise"),
+        };
+        for (parent, prefix) in [
+            (home.join("plugins"), "home/plugins"),
+            (roots.config_dir.join("plugins"), "config/plugins"),
+        ] {
+            let nested = parent.join("checkout");
+            std::fs::create_dir_all(nested.join(".git")).unwrap();
+            std::fs::write(nested.join("local.txt"), "local").unwrap();
+            let policy = FilePolicy::for_mode(FileMode::Track);
+            let mut tracked = TrackedSet::default();
+            tracked.push(TrackedEntry::new(parent, "track", policy));
+            let exclude = tracked.exclude_set().unwrap();
+            for suffix in ["checkout", "checkout/local.txt", "checkout/incoming.txt"] {
+                let path = format!("{prefix}/{suffix}");
+                assert!(!eligible(&roots, &tracked, &exclude, &path), "{path}");
+            }
+            assert!(eligible(
+                &roots,
+                &tracked,
+                &exclude,
+                &format!("{prefix}/ordinary.txt")
+            ));
+            tracked.push(TrackedEntry::new(nested, "track", policy));
+            assert!(eligible(
+                &roots,
+                &tracked,
+                &exclude,
+                &format!("{prefix}/checkout/incoming.txt")
+            ));
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::system::files::{FileMode, FilePolicy};
+    use crate::system::history::tracked::TrackedEntry;
+
+    /// Declared is not selected. A path the exclude lists drop is not
+    /// managed here, so its absence from an incoming snapshot is the
+    /// setup having stopped capturing it — never a deletion to replay.
+    #[test]
+    fn an_excluded_path_is_not_eligible_for_deletion() {
+        let roots = Roots {
+            home: "/home/u".into(),
+            config_dir: "/config/mise".into(),
+        };
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut entry = TrackedEntry::new("/home/u/.sample".into(), "track", policy);
+        entry.exclude = Some(vec!["leave".into()]);
+        let tracked = TrackedSet {
+            entries: vec![entry],
+            exclude: vec!["*.log".into()],
+            ..Default::default()
+        };
+        let exclude = tracked.exclude_set().unwrap();
+        assert!(eligible(&roots, &tracked, &exclude, "home/.sample/keep"));
+        assert!(!eligible(&roots, &tracked, &exclude, "home/.sample/leave"));
+        // the global list answers the same question
+        assert!(!eligible(
+            &roots,
+            &tracked,
+            &exclude,
+            "home/.sample/app.log"
+        ));
+        // and a path no entry covers is still not eligible
+        assert!(!eligible(&roots, &tracked, &exclude, "home/.elsewhere"));
+    }
+
+    /// Synchronization asks the strict question, the same one retention
+    /// asks. A local copy whose kind cannot be read — it is gone, or it
+    /// sits under a directory this machine cannot search — is not
+    /// managed here unless the lists actually select it. Answered
+    /// permissively, a name-only `include` pattern prunes nothing, the
+    /// path looks managed, and a narrowing made on another machine
+    /// deletes it here.
+    #[test]
+    fn a_path_with_no_readable_kind_is_not_eligible_for_deletion() {
+        let roots = Roots {
+            home: "/home/u".into(),
+            config_dir: "/config/mise".into(),
+        };
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let mut entry = TrackedEntry::new("/home/u/.sample".into(), "track", policy);
+        entry.include = Some(vec!["keep".into()]);
+        let tracked = TrackedSet {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        let exclude = tracked.exclude_set().unwrap();
+        // nothing of this test exists on disk, so every path below has
+        // no kind to read
+        assert!(eligible(&roots, &tracked, &exclude, "home/.sample/keep"));
+        assert!(!eligible(
+            &roots,
+            &tracked,
+            &exclude,
+            "home/.sample/nested/leave"
+        ));
     }
 }
