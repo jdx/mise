@@ -113,14 +113,11 @@ specifiers = ["1"]
 url = "https://github.com/jdx/hk/releases/download/v1.58.1/placeholder"
 EOF
 assert_contains "mise backends switch --dry-run" "every tool in the project lockfile already uses the registry's backend"
-# `mise lock --global` locks hk from the project config that shadows it, so it
-# cannot relock the global entry; the switch refuses without touching it.
-cp "$MISE_CONFIG_DIR/mise.lock" global.lock.before
-assert_fail_contains "mise backends switch --global" "shadowed by"
-assert "cmp -s $MISE_CONFIG_DIR/mise.lock global.lock.before && echo same" "same"
-rm mise.toml
+cp mise.lock project.lock.before
 assert_contains "mise backends switch --global --dry-run 2>&1" 'would switch hk@1.58.1'
 mise backends switch --global
+# the project's own hk entry is not touched
+assert "cmp -s mise.lock project.lock.before && echo same" "same"
 assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'backend = "packslip:github.com/jdx/hk"'
 assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "[tools.hk.\"platforms.$MISE_PLATFORM\"]"
 assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'placeholder'
