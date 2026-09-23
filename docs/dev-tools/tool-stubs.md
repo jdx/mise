@@ -287,8 +287,9 @@ provide a URL cannot supply the same download shortcut.
 
 The `[lock]` section acts as the stub's lockfile: installs verify the recorded
 checksums, and the stub runs in locked mode (`--locked` or `MISE_LOCKED=1`)
-without a `mise.lock`. A stub without `[lock]` still needs a `mise.lock` entry
-next to it in locked mode.
+without a `mise.lock`. A `[lock]` that records platforms but not the current
+one is ignored, so locked mode rejects the stub on that platform. A stub
+without `[lock]` still needs a `mise.lock` entry next to it in locked mode.
 
 #### Locking a Stub
 

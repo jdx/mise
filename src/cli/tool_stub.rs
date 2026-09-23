@@ -81,9 +81,15 @@ where
 /// of a mise.lock for the stub's tool. Resolution and installation both read
 /// it, so its URLs and checksums apply to every install and it satisfies
 /// locked mode on its own.
+///
+/// A lock that records platforms but not `platform_key` does not pin this
+/// host's artifact, so it is ignored and locked mode rejects the stub. A lock
+/// with no platforms comes from a backend without URL locking and pins only
+/// the version.
 pub(crate) fn locked_tool_from_stub(
     stub_path: &Path,
     version: &str,
+    platform_key: &str,
     options: &BTreeMap<String, String>,
 ) -> Result<Option<LockfileTool>> {
     let stub = ToolStubFile::from_file(stub_path)?;
@@ -91,6 +97,14 @@ pub(crate) fn locked_tool_from_stub(
         return Ok(None);
     };
     if stub.version != version {
+        return Ok(None);
+    }
+    if !lock.platforms.is_empty()
+        && !lock
+            .platforms
+            .get(platform_key)
+            .is_some_and(|p| p.url.is_some())
+    {
         return Ok(None);
     }
     let platforms = lock
