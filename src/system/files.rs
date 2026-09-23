@@ -2610,7 +2610,13 @@ fn empty_render_target(req: &FileRequest) -> Result<EmptyRenderTarget> {
     if target.is_dir() {
         return Ok(EmptyRenderTarget::Conflict("it is a directory"));
     }
-    let current = file::read(target)?;
+    // ownership cannot be proven without reading the content (a template
+    // written with `permissions = "0200"`, say), so only --force removes it
+    let Ok(current) = file::read(target) else {
+        return Ok(EmptyRenderTarget::Conflict(
+            "it cannot be read to confirm mise wrote it",
+        ));
+    };
     let owned = match str::from_utf8(&current) {
         Ok(current) => renders_empty(current) || target_state_matches(req, current),
         // mise only writes rendered text, so non-UTF-8 content is not its own
@@ -6522,6 +6528,36 @@ variants = [{{ {field} = "linux" }}]"#
         save_target_state(&req, "work = true\n");
         let plan = plan_unapply_one(&req, &opts)?.expect("a plan that clears the record");
         assert!(plan.paths.is_empty());
+        remove_target_state(&req)?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_target_is_a_conflict_force_can_clear() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let req = template_req(dir.path(), true)?;
+        file::write(&req.target, "work = true\n")?;
+        save_target_state(&req, "work = true\n");
+        std::fs::set_permissions(&req.target, std::fs::Permissions::from_mode(0o000))?;
+        // root reads any file, so ownership is still provable there
+        if std::fs::read(&req.target).is_err() {
+            assert_eq!(
+                empty_render_target(&req)?,
+                EmptyRenderTarget::Conflict("it cannot be read to confirm mise wrote it")
+            );
+            assert!(matches!(
+                check_rendered(&req, Some(""))?,
+                FileState::Differs(reason) if reason.contains("cannot be read")
+            ));
+            assert!(recheck_removal(&req, Some(""), false).is_err());
+            recheck_removal(&req, Some(""), true)?;
+        }
+        // --force removes it: removal needs only the directory to be writable
+        let mut written = vec![];
+        apply_one(&req, Some(""), &mut written)?;
+        assert!(std::fs::symlink_metadata(&req.target).is_err());
         remove_target_state(&req)?;
         Ok(())
     }

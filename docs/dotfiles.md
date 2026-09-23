@@ -359,17 +359,24 @@ must be empty or whitespace-only, or it must still hold exactly the content
 mise last wrote there. Otherwise, apply reports a conflict and keeps the file,
 as it does for other [conflicts](#conflicts). Use `mise dot apply --force` to
 remove it anyway. mise never removes a directory at the target without
-`--force`.
+`--force`, and a target it cannot read (for example one written with
+`permissions = "0200"`) is also a conflict, because mise cannot confirm the
+content is its own.
 
 mise stores a digest of what it last wrote to each template target in
 `$MISE_STATE_DIR/dotfiles/`. It records this for every template, so turning on
-`remove_empty` later still allows a safe removal. Because the record is local,
-a machine that never wrote the file treats an existing non-empty target as a
-conflict. `mise dot rollback` and `mise dot undo` bring back a removed file when
+`remove_empty` later still allows a safe removal. An apply that finds a target
+already byte-for-byte identical to the render also records it, so that file
+counts as written by mise: removing it loses nothing the template cannot
+produce again, and any later edit makes it a conflict. Because the record is
+local, a machine that has never applied the template treats an existing
+target with other non-empty content as a conflict. `mise dot rollback` and `mise dot undo` bring back a removed file when
 [history](#tracking-files-in-place) tracks it.
 
 `remove_empty` is valid only with `mode = "template"`. With it set, `mise oci
-build` omits the file from the image when the template renders empty.
+build` leaves the file out of the image when the template renders empty. It
+also adds an OCI whiteout for that path, so a file the base image has there is
+hidden too.
 
 See [Windows](#windows) for differences in link behavior on that platform.
 

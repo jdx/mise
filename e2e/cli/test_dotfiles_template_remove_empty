@@ -108,6 +108,13 @@ assert_succeed "WORK=1 mise dot apply --yes"
 assert "stat -c %a $target" "600"
 assert_succeed "mise dot apply --yes"
 assert_fail "test -e $target"
+# a target mise cannot read cannot be proven its own, but --force removes it
+assert_succeed "WORK=1 mise dot apply --yes"
+chmod 000 "$target"
+assert_contains "mise dot status" "cannot be read to confirm mise wrote it"
+assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
+assert_succeed "mise dot apply --yes --force"
+assert_fail "test -e $target"
 
 # remove_empty is only valid on template entries
 cat <<'EOF' >mise.toml

@@ -1039,8 +1039,10 @@ fn build_dotfiles_layer(
             }
             FileMode::Template => {
                 let rendered = crate::system::files::render_template_for_oci(cfg, req)?;
-                // an empty render with remove_empty declares no file at all
+                // an empty render with remove_empty declares no file at all;
+                // a whiteout hides one a base layer may already hold there
                 if crate::system::files::removes_target(req, Some(&rendered)) {
+                    entries.add_whiteout(&oci_target_path(req)?)?;
                     continue;
                 }
                 entries.add_file(
@@ -1143,6 +1145,16 @@ impl DotfilesLayerEntries {
         }
         self.dirs.insert(path);
         Ok(())
+    }
+
+    /// Hide `path` from the layers below, per the OCI image spec: an empty
+    /// `.wh.<name>` file beside it. A path the base never had is unaffected.
+    fn add_whiteout(&mut self, path: &str) -> Result<()> {
+        let whiteout = match path.rsplit_once('/') {
+            Some((parent, name)) => format!("{parent}/.wh.{name}"),
+            None => format!(".wh.{path}"),
+        };
+        self.add_file(whiteout, vec![], 0o644)
     }
 
     fn into_layer_inputs(self) -> (DotfilesLayerFiles, DotfilesLayerDirs) {
@@ -1410,6 +1422,30 @@ fn cached_tool_path_entries(remote: &registry::RemoteImage, tool_root: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_removed_dotfile_is_whited_out_in_the_layer() -> Result<()> {
+        let mut entries = DotfilesLayerEntries::default();
+        entries.add_file("root/.bashrc".into(), b"kept\n".to_vec(), 0o644)?;
+        entries.add_whiteout("root/.config/app/work.toml")?;
+        let (files, dirs) = entries.into_layer_inputs();
+        let blob = layer::build_layer_from_files_and_dirs(&files, &dirs, LayerOwner::default())?;
+        let mut archive =
+            jdx_tar::Archive::new(flate2::read::GzDecoder::new(blob.bytes.as_slice()));
+        let mut whiteout = None;
+        let mut paths = vec![];
+        for entry in archive.entries()? {
+            let entry = entry?;
+            let path = entry.path()?.to_string_lossy().into_owned();
+            if path == "root/.config/app/.wh.work.toml" {
+                whiteout = Some((entry.entry_type(), entry.size()));
+            }
+            paths.push(path);
+        }
+        assert_eq!(whiteout, Some((jdx_tar::EntryType::File, 0)), "{paths:?}");
+        assert!(!paths.iter().any(|p| p == "root/.config/app/work.toml"));
+        Ok(())
+    }
 
     #[test]
     fn missing_install_preflight_waits_for_reinstall() {
