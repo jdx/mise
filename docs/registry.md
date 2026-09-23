@@ -142,15 +142,9 @@ Source: <https://github.com/jdx/mise/blob/main/registry/>
 
 Note that [`mise registry`](/cli/registry.html) can be used to list all tools in the registry. [`mise use`](/cli/use.html) without any arguments will show a `tui` to select a tool to install.
 
-Badges next to a backend show the signature or provenance checks mise performs when
-installing through it, in addition to checksums:
-
-- **packslip** — a [signed release manifest](/dev-tools/backends/packslip.html) verified against the project's pinned signer
-- **attestations**, **SLSA**, **cosign**, **minisign** — [aqua verification](/dev-tools/backends/aqua.html#security-verification) configured in the bundled aqua registry for at least one version of the package
-
-Aqua badges come from registry metadata, so a check may apply only to some versions or
-platforms. Other backends, such as `github:`, detect what a release publishes at install
-time and are not badged here; run `mise tool <name>` to see the security information mise
-reports for a tool.
+To see how mise verifies a tool's downloads (checksums, GitHub artifact attestations, SLSA
+provenance, or signatures such as Cosign and Minisign), browse
+[mise-versions.jdx.dev](https://mise-versions.jdx.dev/tools) or run `mise tool <name>`.
+`mise registry --json --security` reports the same information for every tool.
 
 <Registry />

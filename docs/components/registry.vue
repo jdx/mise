@@ -6,10 +6,6 @@
     v-model="filter"
     autofocus="autofocus"
   />
-  <label class="verified-filter">
-    <input type="checkbox" v-model="verifiedOnly" />
-    Only show tools with signature or provenance verification
-  </label>
   <table class="full-width">
     <thead>
       <tr>
@@ -41,13 +37,6 @@
               :href="`${backend.url}`"
               v-html="highlightMatches(backend.name)"
             ></a>
-            <span
-              v-for="feature in backend.verification"
-              :key="feature"
-              class="verification"
-              :title="verificationLabels[feature].title"
-              >{{ verificationLabels[feature].label }}</span
-            >
             <span v-if="index < entry.backends.length - 1"><br /></span>
           </span>
         </td>
@@ -69,34 +58,13 @@ export default {
     return {
       filter:
         new URLSearchParams(globalThis?.location?.search).get("filter") || "",
-      verifiedOnly:
-        new URLSearchParams(globalThis?.location?.search).get("verified") ===
-        "1",
       data: data,
-      verificationLabels: {
-        packslip: {
-          label: "packslip",
-          title: "Signed packslip release manifest",
-        },
-        "github-attestations": {
-          label: "attestations",
-          title: "GitHub artifact attestations",
-        },
-        slsa: { label: "SLSA", title: "SLSA provenance" },
-        cosign: { label: "cosign", title: "Cosign signature" },
-        minisign: { label: "minisign", title: "Minisign signature" },
-      },
     };
   },
   computed: {
     filteredData() {
-      const data = this.verifiedOnly
-        ? this.data.filter((entry) =>
-            entry.backends.some((b) => b.verification.length > 0),
-          )
-        : this.data;
-      if (this.filter.trim() === "") return data;
-      return data.filter((entry) => {
+      if (this.filter.trim() === "") return this.data;
+      return this.data.filter((entry) => {
         const searchTerm = this.filter.toLowerCase();
         const short = entry.short.toString().toLowerCase();
 
@@ -115,16 +83,6 @@ export default {
         url.searchParams.delete("filter");
       } else {
         url.searchParams.set("filter", newFilter);
-      }
-      window.history.pushState({}, "", url);
-    },
-    verifiedOnly(verifiedOnly) {
-      const url = new URL(window.location);
-      url.hash = "tools";
-      if (verifiedOnly) {
-        url.searchParams.set("verified", "1");
-      } else {
-        url.searchParams.delete("verified");
       }
       window.history.pushState({}, "", url);
     },
@@ -185,25 +143,6 @@ export default {
 .full-width th,
 .full-width td {
   word-wrap: break-word; /* Allows text to wrap within cells */
-}
-
-.verified-filter {
-  display: block;
-  margin-bottom: 10px;
-  font-size: 14px;
-  color: var(--vp-c-text-2);
-}
-
-.verification {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 0 6px;
-  border-radius: 8px;
-  background: var(--vp-c-green-soft);
-  color: var(--vp-c-green-1);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
 }
 
 .no-matches {
