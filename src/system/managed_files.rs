@@ -1541,9 +1541,18 @@ fn inspect_path(request: PrivilegedPathInspection) -> Result<PathInspection> {
         Ok(metadata) => {
             let entry = EntryMetadata::from_metadata(&metadata);
             let content_matches = match (&request.expected_content, entry.kind) {
-                (Some(expected), ManagedPathKind::File) => {
-                    Some(fs::read(&path)? == expected.as_bytes())
-                }
+                (Some(expected), ManagedPathKind::File) => match fs::read(&path) {
+                    Ok(content) => Some(content == expected.as_bytes()),
+                    // Root would compare it only by refusing the symlink, so
+                    // leave the content unknown and let the user rewrite it.
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::PermissionDenied
+                            && unreadable_file_is_rewritten_by_user(&request, &path, &entry)? =>
+                    {
+                        None
+                    }
+                    Err(error) => return Err(error.into()),
+                },
                 _ => None,
             };
             (Some(entry), content_matches)
@@ -1701,6 +1710,35 @@ fn change_runs_elevated(
     _path: &Path,
     _entry: Option<&EntryMetadata>,
     _inspection: &PathInspection,
+) -> Result<bool> {
+    Ok(false)
+}
+
+/// Whether a file the current user cannot read, reached through a parent
+/// symlink root refuses, is still written as that user. Its content cannot be
+/// compared: root inspects strictly and would only report the symlink,
+/// refusing a write the user can make. Apply rewrites it as the user instead,
+/// which then leaves it readable at its declared mode.
+#[cfg(unix)]
+fn unreadable_file_is_rewritten_by_user(
+    request: &PrivilegedPathInspection,
+    path: &Path,
+    entry: &EntryMetadata,
+) -> Result<bool> {
+    let uid = nix::unistd::geteuid();
+    Ok(request.check_parent_symlinks
+        && !uid.is_root()
+        && request.owner.is_none()
+        && request.group.is_none()
+        && user_can_modify_entry(path, Some(entry), uid.as_raw())?
+        && untrusted_parent_symlink(path)?.is_some())
+}
+
+#[cfg(not(unix))]
+fn unreadable_file_is_rewritten_by_user(
+    _request: &PrivilegedPathInspection,
+    _path: &Path,
+    _entry: &EntryMetadata,
 ) -> Result<bool> {
     Ok(false)
 }
@@ -3453,6 +3491,47 @@ mod tests {
                 ..
             }
         ));
+
+        // An unreadable file the user can replace is rewritten as the user,
+        // not inspected by root, which would only refuse the link.
+        let unreadable = linked.join("unreadable");
+        fs::write(&unreadable, "old").unwrap();
+        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+        let inspection = inspect(&unreadable, ManagedState::Present, Some("new"), false);
+        assert!(
+            matches!(
+                inspection,
+                PathInspection::Present {
+                    kind: ManagedPathKind::File,
+                    content_matches: None,
+                    ..
+                }
+            ),
+            "{inspection:?}"
+        );
+        let mut write = file(unreadable.to_str().unwrap(), ManagedState::Present);
+        write.content = Some("new".to_string());
+        write.inspection = Some(inspection);
+        assert_eq!(write.plan().unwrap().action, ResourceAction::Update);
+        write.operation().unwrap().unwrap().apply().unwrap();
+        assert_eq!(
+            fs::read_to_string(outside.path().join("unreadable")).unwrap(),
+            "new"
+        );
+        // Declared ownership is still applied, and so inspected, by root.
+        fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+        let error = inspect_path(PrivilegedPathInspection {
+            path: unreadable.clone(),
+            expected_content: Some("new".to_string()),
+            owner: Some(user.clone()),
+            group: None,
+            mode: Some(0o600),
+            check_metadata: true,
+            check_parent_symlinks: true,
+        })
+        .unwrap_err();
+        assert!(is_permission_denied(&error), "{error:#}");
+        fs::remove_file(&unreadable).unwrap();
 
         // A directory the user cannot modify sends writes and removals to root.
         fs::set_permissions(outside.path(), fs::Permissions::from_mode(0o555)).unwrap();
