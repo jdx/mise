@@ -4671,25 +4671,70 @@
                 }
               }
             },
-            "if": {
-              "required": ["remove_empty"],
-              "properties": {
-                "remove_empty": {
-                  "const": true
-                }
-              }
-            },
-            "then": {
-              "required": ["template"],
-              "properties": {
-                "template": {
-                  "const": true
+            "allOf": [
+              {
+                "if": {
+                  "required": ["remove_empty"],
+                  "properties": {
+                    "remove_empty": {
+                      "const": true
+                    }
+                  }
                 },
-                "state": {
-                  "const": "present"
+                "then": {
+                  "required": ["template"],
+                  "properties": {
+                    "template": {
+                      "const": true
+                    },
+                    "state": {
+                      "const": "present"
+                    }
+                  }
+                }
+              },
+              {
+                "$comment": "A present file without source or content manages only its permissions: it must declare some, and cannot be templated or replaced.",
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "present"
+                    }
+                  },
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      }
+                    ]
+                  }
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "required": ["mode"]
+                    },
+                    {
+                      "required": ["owner"]
+                    },
+                    {
+                      "required": ["group"]
+                    }
+                  ],
+                  "properties": {
+                    "template": {
+                      "const": false
+                    },
+                    "replace": {
+                      "const": false
+                    }
+                  }
                 }
               }
-            },
+            ],
             "additionalProperties": false
           }
         },

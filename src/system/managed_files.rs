@@ -83,7 +83,8 @@ pub(crate) struct ManagedFileRequest {
     pub content: Option<String>,
     pub owner: Option<String>,
     pub group: Option<String>,
-    pub mode: u32,
+    /// `None` only for a metadata-only file that leaves its mode unmanaged.
+    pub mode: Option<u32>,
     pub state: ManagedState,
     pub replace: bool,
     pub notify: Vec<String>,
@@ -122,6 +123,14 @@ pub(crate) enum PrivilegedAction {
     },
     RemoveFile {
         path: PathBuf,
+    },
+    /// Change an existing regular file's ownership or mode without touching
+    /// its content or replacing its inode.
+    SetFileMetadata {
+        path: PathBuf,
+        owner: Option<String>,
+        group: Option<String>,
+        mode: Option<u32>,
     },
     CreateDirectory {
         path: PathBuf,
@@ -181,8 +190,12 @@ struct PrivilegedPathInspection {
     expected_content: Option<String>,
     owner: Option<String>,
     group: Option<String>,
-    mode: u32,
+    mode: Option<u32>,
     check_metadata: bool,
+    /// Whether to report if reaching the path crosses a symlink the
+    /// root-only component walk refuses; see `crosses_untrusted_symlink`.
+    #[serde(default)]
+    check_parent_symlinks: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -194,6 +207,11 @@ enum PathInspection {
         current: String,
         metadata_matches: bool,
         content_matches: Option<bool>,
+        /// The owning user, which decides whether a mode change needs root.
+        #[serde(default)]
+        owner_uid: Option<u32>,
+        #[serde(default)]
+        crosses_untrusted_symlink: bool,
     },
 }
 
@@ -593,9 +611,23 @@ impl ManagedFileRequest {
         origin: ResourceOrigin,
         secrets: &super::secrets::SecretValues,
     ) -> Result<Self> {
+        let metadata_only = config.state == ManagedState::Present
+            && config.source.is_none()
+            && config.content.is_none();
+        if metadata_only {
+            validate_metadata_only(&path, &config)?;
+        }
         let owner = nonempty("owner", config.owner)?;
         let group = nonempty("group", config.group)?;
-        let mode = parse_mode(config.mode.as_deref(), 0o644)?;
+        let mode = if metadata_only {
+            config
+                .mode
+                .as_deref()
+                .map(parse_explicit_mode)
+                .transpose()?
+        } else {
+            Some(parse_mode(config.mode.as_deref(), DEFAULT_FILE_MODE)?)
+        };
         if config.remove_empty && !config.template {
             bail!(
                 "[bootstrap.files].\"{}\": remove_empty requires template = true",
@@ -626,11 +658,7 @@ impl ManagedFileRequest {
                 })?)
             }
             (None, Some(content), ManagedState::Present) => Some(content),
-            (None, None, ManagedState::Present) => bail!(
-                "[bootstrap.files].\"{}\": present files require source or content",
-                path.display()
-            ),
-            (None, None, ManagedState::Absent) => None,
+            (None, None, _) => None,
             (_, _, ManagedState::Absent) => bail!(
                 "[bootstrap.files].\"{}\": absent files must not declare source or content",
                 path.display()
@@ -675,6 +703,48 @@ impl ManagedFileRequest {
         })
     }
 
+    /// Whether this entry manages only an existing file's ownership or mode,
+    /// leaving its content, and whether it exists at all, to something else.
+    pub(crate) fn is_metadata_only(&self) -> bool {
+        self.state == ManagedState::Present && self.content.is_none()
+    }
+
+    /// Why apply leaves this metadata-only target alone, if it does. Status,
+    /// dry-run, and apply all use this, so they agree on what apply will do.
+    fn metadata_only_refusal(&self) -> Option<&'static str> {
+        if !self.is_metadata_only() {
+            return None;
+        }
+        match self.inspection.as_ref()? {
+            PathInspection::Present { kind, .. } if *kind != ManagedPathKind::File => {
+                Some("only existing regular files are managed without source or content")
+            }
+            PathInspection::Present {
+                metadata_matches: false,
+                crosses_untrusted_symlink: true,
+                owner_uid,
+                ..
+            } if self.runs_elevated(*owner_uid) => Some(
+                "the change needs root, and its path crosses a symlink root does not follow in a directory another user can write; declare the resolved path instead",
+            ),
+            _ => None,
+        }
+    }
+
+    /// Whether the change is made by root: declared ownership always is, and
+    /// only a file's owner can change its mode without root.
+    fn runs_elevated(&self, owner_uid: Option<u32>) -> bool {
+        self.owner.is_some()
+            || self.group.is_some()
+            || current_uid().is_none_or(|uid| uid == 0 || owner_uid != Some(uid))
+    }
+
+    /// A metadata-only target that does not exist is skipped, not created:
+    /// mise has no content to create it with.
+    fn is_missing_metadata_only_target(&self) -> bool {
+        self.is_metadata_only() && matches!(self.inspection, Some(PathInspection::Missing))
+    }
+
     /// Whether this file is being removed because its template rendered empty.
     pub(crate) fn rendered_empty(&self) -> bool {
         self.rendered_empty
@@ -705,26 +775,71 @@ impl ManagedFileRequest {
                 "refusing to remove directory {} as a file; declare it in [bootstrap.directories]",
                 self.path.display()
             ),
+            ResourceAction::Unknown if self.is_metadata_only() => bail!(
+                "refusing to set permissions on {}: {}",
+                self.path.display(),
+                self.metadata_only_refusal()
+                    .unwrap_or("its type or path cannot be managed")
+            ),
             ResourceAction::Unknown => bail!(
                 "refusing to replace non-file path {}; set replace = true to allow replacement",
                 self.path.display()
             ),
             _ => {}
         }
-        Ok(Some(match self.state {
-            ManagedState::Present => PrivilegedAction::WriteFile {
+        Ok(Some(match (self.state, &self.content) {
+            (ManagedState::Present, Some(content)) => PrivilegedAction::WriteFile {
                 path: self.path.clone(),
-                content: self.content.clone().expect("present file has content"),
+                content: content.clone(),
+                owner: self.owner.clone(),
+                group: self.group.clone(),
+                mode: self.mode.unwrap_or(DEFAULT_FILE_MODE),
+                replace: self.replace,
+            },
+            (ManagedState::Present, None) => PrivilegedAction::SetFileMetadata {
+                path: self.path.clone(),
                 owner: self.owner.clone(),
                 group: self.group.clone(),
                 mode: self.mode,
-                replace: self.replace,
             },
-            ManagedState::Absent => PrivilegedAction::RemoveFile {
+            (ManagedState::Absent, _) => PrivilegedAction::RemoveFile {
                 path: self.path.clone(),
             },
         }))
     }
+}
+
+const DEFAULT_FILE_MODE: u32 = 0o644;
+
+/// A present entry without `source` or `content` manages only the metadata it
+/// declares, so it must declare some, and must not ask for anything that
+/// would write or replace the file.
+fn validate_metadata_only(path: &Path, config: &ManagedFileTomlConfig) -> Result<()> {
+    if config.mode.is_none() && config.owner.is_none() && config.group.is_none() {
+        bail!(
+            "[bootstrap.files].\"{}\": present files require source, content, or at least one of mode, owner, or group",
+            path.display()
+        );
+    }
+    // remove_empty also requires template, but say what is actually missing.
+    for (enabled, key) in [
+        (config.template, "template"),
+        (config.remove_empty, "remove_empty"),
+    ] {
+        if enabled {
+            bail!(
+                "[bootstrap.files].\"{}\": {key} requires source or content",
+                path.display()
+            );
+        }
+    }
+    if config.replace {
+        bail!(
+            "[bootstrap.files].\"{}\": replace requires source or content; a file whose content mise does not manage is never replaced",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 fn resolve_source_path(base: &Path, source: &str) -> PathBuf {
@@ -860,9 +975,27 @@ pub(crate) fn apply_with_accounts(
         }
     }
     for file in files {
+        if file.is_missing_metadata_only_target() {
+            warn!(
+                "not setting permissions on {}: it is absent; its content is not managed by mise",
+                file.path.display()
+            );
+            continue;
+        }
         let resource = file.plan()?;
         if dry_run && resource.action == ResourceAction::Unknown {
             unknown.push(resource);
+            continue;
+        }
+        // Nothing in this entry can make such a target manageable, since it
+        // never replaces its target, so it is reported and left, not an error.
+        if resource.action == ResourceAction::Unknown
+            && let Some(reason) = file.metadata_only_refusal()
+        {
+            warn!(
+                "not setting permissions on {}: {reason}",
+                file.path.display()
+            );
             continue;
         }
         if let Some(action) = file.operation()? {
@@ -1037,6 +1170,7 @@ impl PrivilegedAction {
             } => Ok(owner.is_some()
                 || group.is_some()
                 || (*replace && replacement_is_not(path, ManagedPathKind::File)?)),
+            Self::SetFileMetadata { owner, group, .. } => Ok(owner.is_some() || group.is_some()),
             Self::CreateDirectory {
                 path,
                 owner,
@@ -1059,6 +1193,9 @@ impl PrivilegedAction {
         match self {
             Self::WriteFile { path, .. } => format!("write file {}", path.display()),
             Self::RemoveFile { path } => format!("remove file {}", path.display()),
+            Self::SetFileMetadata { path, .. } => {
+                format!("set permissions on file {}", path.display())
+            }
             Self::CreateDirectory { path, .. } => format!("create directory {}", path.display()),
             Self::RemoveDirectory { path, recursive } => format!(
                 "remove directory {}{}",
@@ -1116,6 +1253,17 @@ impl PrivilegedAction {
                 *replace,
             ),
             Self::RemoveFile { path } => remove_file(&validate_privileged_target(path)?),
+            Self::SetFileMetadata {
+                path,
+                owner,
+                group,
+                mode,
+            } => set_file_metadata(
+                &validate_privileged_target(path)?,
+                owner.as_deref(),
+                group.as_deref(),
+                *mode,
+            ),
             Self::CreateDirectory {
                 path,
                 owner,
@@ -1138,6 +1286,15 @@ impl PrivilegedAction {
 
 fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
     let desired = match request.state {
+        ManagedState::Present if request.is_metadata_only() => format!(
+            "{} (content unmanaged)",
+            desired_metadata(
+                "file",
+                request.mode,
+                request.owner.as_deref(),
+                request.group.as_deref(),
+            )
+        ),
         ManagedState::Present => desired_metadata(
             "file",
             request.mode,
@@ -1173,12 +1330,30 @@ fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
                 },
             ))
         }
+        // Without content there is nothing to create the file from. Apply
+        // warns and skips it; see `apply_with_accounts`.
+        (ManagedState::Present, PathInspection::Missing) if request.is_metadata_only() => Ok(
+            ResourcePlan::new(id, "absent", desired, ResourceAction::Noop),
+        ),
         (ManagedState::Present, PathInspection::Missing) => Ok(ResourcePlan::new(
             id,
             "absent",
             desired,
             ResourceAction::Create,
         )),
+        (ManagedState::Present, PathInspection::Present { current, .. })
+            if request.metadata_only_refusal().is_some() =>
+        {
+            Ok(ResourcePlan::new(
+                id,
+                format!(
+                    "{current} ({})",
+                    request.metadata_only_refusal().unwrap_or_default()
+                ),
+                desired,
+                ResourceAction::Unknown,
+            ))
+        }
         (
             ManagedState::Present,
             PathInspection::Present {
@@ -1186,6 +1361,7 @@ fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
                 current,
                 metadata_matches,
                 content_matches,
+                ..
             },
         ) => Ok(ResourcePlan::new(
             id,
@@ -1194,7 +1370,7 @@ fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
             if *kind != ManagedPathKind::File && !request.replace {
                 ResourceAction::Unknown
             } else if *kind == ManagedPathKind::File
-                && content_matches == &Some(true)
+                && (request.content.is_none() || content_matches == &Some(true))
                 && *metadata_matches
             {
                 ResourceAction::Noop
@@ -1219,12 +1395,13 @@ fn inspect_paths(
     for (index, file) in files.iter_mut().enumerate() {
         let request = PrivilegedPathInspection {
             path: file.path.clone(),
-            expected_content: (file.state == ManagedState::Present)
-                .then(|| file.content.clone().expect("present file has content")),
+            // Absent and metadata-only files have no content to compare.
+            expected_content: file.content.clone(),
             owner: file.owner.clone(),
             group: file.group.clone(),
             mode: file.mode,
             check_metadata: file.state == ManagedState::Present,
+            check_parent_symlinks: file.is_metadata_only(),
         };
         match inspect_path(request.clone()) {
             Ok(inspection) => file.inspection = Some(inspection),
@@ -1241,8 +1418,9 @@ fn inspect_paths(
             expected_content: None,
             owner: directory.owner.clone(),
             group: directory.group.clone(),
-            mode: directory.mode,
+            mode: Some(directory.mode),
             check_metadata: directory.state == ManagedState::Present,
+            check_parent_symlinks: false,
         };
         match inspect_path(request.clone()) {
             Ok(inspection) => directory.inspection = Some(inspection),
@@ -1286,7 +1464,7 @@ fn plan_directory(request: &ManagedDirectoryRequest) -> Result<ResourcePlan> {
     let desired = match request.state {
         ManagedState::Present => desired_metadata(
             "directory",
-            request.mode,
+            Some(request.mode),
             request.owner.as_deref(),
             request.group.as_deref(),
         ),
@@ -1368,12 +1546,45 @@ fn inspect_path(request: PrivilegedPathInspection) -> Result<PathInspection> {
             request.owner.as_deref(),
             request.group.as_deref(),
         )?;
+    let owner_uid = metadata_uid(&metadata);
+    // Only a change root will make needs the stricter walk, so skip it when
+    // the current user owns the file and declares no ownership.
+    let crosses_untrusted_symlink = request.check_parent_symlinks
+        && kind == ManagedPathKind::File
+        && !metadata_matches
+        && (request.owner.is_some()
+            || request.group.is_some()
+            || current_uid().is_none_or(|uid| uid == 0 || owner_uid != Some(uid)))
+        && crosses_untrusted_symlink(&path)?;
     Ok(PathInspection::Present {
         kind,
         current: describe_metadata_value(&metadata),
         metadata_matches,
         content_matches,
+        owner_uid,
+        crosses_untrusted_symlink,
     })
+}
+
+#[cfg(unix)]
+fn current_uid() -> Option<u32> {
+    Some(nix::unistd::geteuid().as_raw())
+}
+
+#[cfg(not(unix))]
+fn current_uid() -> Option<u32> {
+    None
+}
+
+#[cfg(unix)]
+fn metadata_uid(metadata: &fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    Some(metadata.uid())
+}
+
+#[cfg(not(unix))]
+fn metadata_uid(_metadata: &fs::Metadata) -> Option<u32> {
+    None
 }
 
 fn is_permission_denied(error: &eyre::Report) -> bool {
@@ -1425,9 +1636,10 @@ fn validate_privileged_target(path: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn parse_mode(mode: Option<&str>, default: u32) -> Result<u32> {
-    let Some(mode) = mode else {
-        return Ok(default);
-    };
+    mode.map_or(Ok(default), parse_explicit_mode)
+}
+
+fn parse_explicit_mode(mode: &str) -> Result<u32> {
     let mode = mode.strip_prefix("0o").unwrap_or(mode);
     let parsed = u32::from_str_radix(mode, 8).wrap_err("mode must be an octal string")?;
     if parsed > 0o7777 {
@@ -1444,8 +1656,16 @@ fn nonempty(field: &str, value: Option<String>) -> Result<Option<String>> {
     }
 }
 
-fn desired_metadata(kind: &str, mode: u32, owner: Option<&str>, group: Option<&str>) -> String {
-    let mut desired = format!("{kind} mode {mode:04o}");
+fn desired_metadata(
+    kind: &str,
+    mode: Option<u32>,
+    owner: Option<&str>,
+    group: Option<&str>,
+) -> String {
+    let mut desired = kind.to_string();
+    if let Some(mode) = mode {
+        desired.push_str(&format!(" mode {mode:04o}"));
+    }
     if let Some(owner) = owner {
         desired.push_str(&format!(" owner {owner}"));
     }
@@ -1458,7 +1678,7 @@ fn desired_metadata(kind: &str, mode: u32, owner: Option<&str>, group: Option<&s
 #[cfg(unix)]
 fn metadata_matches(
     metadata: &fs::Metadata,
-    mode: u32,
+    mode: Option<u32>,
     owner: Option<&str>,
     group: Option<&str>,
 ) -> Result<bool> {
@@ -1472,13 +1692,14 @@ fn metadata_matches(
         Some(group) => lookup_group(group)?.is_some_and(|gid| metadata.gid() == gid),
         None => true,
     };
-    Ok(metadata.permissions().mode() & 0o7777 == mode && owner_matches && group_matches)
+    let mode_matches = mode.is_none_or(|mode| metadata.permissions().mode() & 0o7777 == mode);
+    Ok(mode_matches && owner_matches && group_matches)
 }
 
 #[cfg(not(unix))]
 fn metadata_matches(
     _metadata: &fs::Metadata,
-    _mode: u32,
+    _mode: Option<u32>,
     _owner: Option<&str>,
     _group: Option<&str>,
 ) -> Result<bool> {
@@ -1663,7 +1884,7 @@ fn create_directory(
     {
         let directory = open_or_create_directory_tree(path)
             .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
-        set_directory_metadata(&directory, owner, group, mode)
+        set_descriptor_metadata(&directory, owner, group, Some(mode))
             .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
     }
 
@@ -1676,18 +1897,70 @@ fn create_directory(
     }
 }
 
+/// A path component that is a symlink in a directory someone other than root
+/// could have written, which the component-by-component walk refuses.
+#[cfg(unix)]
+#[derive(Debug)]
+struct UntrustedSymlink(PathBuf);
+
+#[cfg(unix)]
+impl std::fmt::Display for UntrustedSymlink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "refusing to follow symlink {} from an untrusted parent directory",
+            self.0.display()
+        )
+    }
+}
+
+#[cfg(unix)]
+impl std::error::Error for UntrustedSymlink {}
+
+#[cfg(unix)]
+fn is_untrusted_symlink(error: &eyre::Report) -> bool {
+    error
+        .chain()
+        .any(|error| error.downcast_ref::<UntrustedSymlink>().is_some())
+}
+
+/// Flags that open a directory only to look names up in it. Linux's `O_PATH`
+/// needs search permission alone, so a directory such as a `0711` home still
+/// opens. Elsewhere this falls back to `O_RDONLY`, which also needs read
+/// permission; that walk normally runs as root, where it makes no difference.
+#[cfg(target_os = "linux")]
+fn search_directory_flags() -> nix::fcntl::OFlag {
+    use nix::fcntl::OFlag;
+    OFlag::O_PATH | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn search_directory_flags() -> nix::fcntl::OFlag {
+    use nix::fcntl::OFlag;
+    OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC
+}
+
 /// Open an absolute directory path one component at a time without following
 /// symlinks, creating missing components with process-default metadata. The
 /// returned descriptor binds later metadata changes to the directory that was
 /// actually opened instead of resolving the path again.
 #[cfg(unix)]
 fn open_or_create_directory_tree(path: &Path) -> Result<std::os::fd::OwnedFd> {
-    open_or_create_directory_tree_inner(path, 0)
+    open_or_create_directory_tree_inner(path, true, 0)
+}
+
+/// Open an existing absolute directory path the same way, without creating
+/// anything: a symlink is only followed from a root-owned directory that no
+/// one else can write, where only root could have placed it.
+#[cfg(unix)]
+fn open_directory_tree(path: &Path) -> Result<std::os::fd::OwnedFd> {
+    open_or_create_directory_tree_inner(path, false, 0)
 }
 
 #[cfg(unix)]
 fn open_or_create_directory_tree_inner(
     path: &Path,
+    create: bool,
     followed_symlinks: usize,
 ) -> Result<std::os::fd::OwnedFd> {
     use nix::fcntl::{AtFlags, OFlag, open, openat};
@@ -1710,11 +1983,26 @@ fn open_or_create_directory_tree_inner(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW;
-    let mut directory = open(Path::new("/"), flags, Mode::empty())?;
+    // Walking a path needs only search permission on each directory. The
+    // directory being created is opened for reading because its descriptor
+    // is later passed to fchown and fchmod.
+    let read_flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW;
+    let flags_for = |last: bool| {
+        if create && last {
+            read_flags
+        } else {
+            search_directory_flags()
+        }
+    };
+    let mut directory = open(
+        Path::new("/"),
+        flags_for(components.is_empty()),
+        Mode::empty(),
+    )?;
     let mut current = PathBuf::from("/");
     for (index, name) in components.iter().enumerate() {
         let component_path = current.join(name);
+        let flags = flags_for(index + 1 == components.len());
         directory = match openat(&directory, name.as_os_str(), flags, Mode::empty()) {
             Ok(directory) => directory,
             Err(open_error) => {
@@ -1724,10 +2012,7 @@ fn open_or_create_directory_tree_inner(
                 }) {
                     let parent = fstat(&directory)?;
                     if parent.st_uid != 0 || parent.st_mode & 0o022 != 0 {
-                        bail!(
-                            "refusing to follow symlink {} from an untrusted parent directory",
-                            component_path.display()
-                        );
+                        return Err(UntrustedSymlink(component_path).into());
                     }
                     let target = nix::fcntl::readlinkat(&directory, name.as_os_str())?;
                     let mut resolved = if Path::new(&target).is_absolute() {
@@ -1743,9 +2028,13 @@ fn open_or_create_directory_tree_inner(
                             path.display()
                         );
                     }
-                    return open_or_create_directory_tree_inner(&resolved, followed_symlinks + 1);
+                    return open_or_create_directory_tree_inner(
+                        &resolved,
+                        create,
+                        followed_symlinks + 1,
+                    );
                 }
-                if open_error != nix::errno::Errno::ENOENT {
+                if open_error != nix::errno::Errno::ENOENT || !create {
                     return Err(open_error).wrap_err_with(|| {
                         format!(
                             "failed to open path component {} without following symlinks",
@@ -1798,13 +2087,282 @@ fn open_or_create_directory_tree_inner(
     Ok(directory)
 }
 
+/// Set an existing regular file's ownership and mode through a descriptor
+/// opened without following a final symlink, so the change lands on the file
+/// that was checked and never on a symlink's target. Content and inode are
+/// left untouched.
+///
+/// As root, the parent directories are also walked without following
+/// untrusted symlinks; see [`FileOpener`]. As any other user, a parent
+/// symlink is followed like any other path lookup, since the change can only
+/// reach what that user could change anyway.
 #[cfg(unix)]
-fn set_directory_metadata(
-    directory: &std::os::fd::OwnedFd,
+fn set_file_metadata(
+    path: &Path,
     owner: Option<&str>,
     group: Option<&str>,
-    mode: u32,
+    mode: Option<u32>,
 ) -> Result<()> {
+    use nix::fcntl::OFlag;
+
+    let opener = FileOpener::new(path)?;
+    // O_NONBLOCK keeps a FIFO swapped in after inspection from blocking the
+    // open; it is refused below like any other non-regular file.
+    let file = match opener.open(
+        OFlag::O_RDONLY
+            | OFlag::O_NOFOLLOW
+            | OFlag::O_NONBLOCK
+            | OFlag::O_NOCTTY
+            | OFlag::O_CLOEXEC,
+    ) {
+        Ok(file) => file,
+        // The owner of an unreadable file may still change its mode, so this
+        // stays in-process, as status and dry-run assume.
+        Err(nix::errno::Errno::EACCES) => {
+            return set_unreadable_file_metadata(&opener, path, owner, group, mode);
+        }
+        Err(nix::errno::Errno::ELOOP) => bail!(
+            "refusing to set permissions on symlink {}; it is never followed",
+            path.display()
+        ),
+        Err(error) => {
+            return Err(error).wrap_err_with(|| {
+                format!(
+                    "failed to open file {} without following symlinks",
+                    path.display()
+                )
+            });
+        }
+    };
+    ensure_regular_file(&file, path)?;
+    set_descriptor_metadata(&file, owner, group, mode)
+        .wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
+}
+
+/// Opens a file's final component without following it, and as root also
+/// resolves its parent without following untrusted symlinks. `O_NOFOLLOW`
+/// only guards the final component, so a user who can write an ancestor
+/// could otherwise swap it for a symlink and redirect a privileged change to
+/// a file such as `/etc/shadow`.
+#[cfg(unix)]
+enum FileOpener<'a> {
+    /// Relative to a parent opened component by component.
+    Parent(std::os::fd::OwnedFd, &'a std::ffi::OsStr),
+    /// By path, following parent symlinks as an ordinary lookup does.
+    Path(&'a Path),
+}
+
+#[cfg(unix)]
+impl<'a> FileOpener<'a> {
+    fn new(path: &'a Path) -> Result<Self> {
+        if runs_as_root() {
+            Self::strict(path)
+        } else {
+            Ok(Self::Path(path))
+        }
+    }
+
+    fn strict(path: &'a Path) -> Result<Self> {
+        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+            bail!("managed file has no parent: {}", path.display());
+        };
+        let parent = open_directory_tree(parent).wrap_err_with(|| {
+            format!(
+                "failed to open the parent of {} without following symlinks",
+                path.display()
+            )
+        })?;
+        Ok(Self::Parent(parent, name))
+    }
+
+    fn open(&self, flags: nix::fcntl::OFlag) -> nix::Result<std::os::fd::OwnedFd> {
+        let mode = nix::sys::stat::Mode::empty();
+        match self {
+            Self::Parent(parent, name) => nix::fcntl::openat(parent, *name, flags, mode),
+            Self::Path(path) => nix::fcntl::open(*path, flags, mode),
+        }
+    }
+}
+
+#[cfg(unix)]
+fn runs_as_root() -> bool {
+    nix::unistd::geteuid().is_root()
+}
+
+/// Whether reaching `path` crosses a symlink that the component-by-component
+/// walk refuses when running as root.
+#[cfg(unix)]
+fn crosses_untrusted_symlink(path: &Path) -> Result<bool> {
+    let Some(parent) = path.parent() else {
+        return Ok(false);
+    };
+    match open_directory_tree(parent) {
+        Ok(_) => Ok(false),
+        Err(error) if is_untrusted_symlink(&error) => Ok(true),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(not(unix))]
+fn crosses_untrusted_symlink(_path: &Path) -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(unix)]
+fn ensure_regular_file(file: &std::os::fd::OwnedFd, path: &Path) -> Result<()> {
+    use nix::sys::stat::{SFlag, fstat};
+
+    let stat = fstat(file)?;
+    if stat.st_mode & SFlag::S_IFMT.bits() != SFlag::S_IFREG.bits() {
+        bail!(
+            "refusing to set permissions on non-file path: {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Set metadata on a file the current user cannot read. Other Unix systems
+/// (macOS, the BSDs) have no `O_PATH`, but implement `fchmodat` and
+/// `fchownat` with `AT_SYMLINK_NOFOLLOW` directly. There they change a
+/// symlink's own metadata rather than failing, so a link is refused first; one
+/// swapped in after that check only has its own metadata changed, never its
+/// target's. Root can open any file, so only a user-level change, which
+/// follows parent symlinks anyway, gets here.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn set_unreadable_file_metadata(
+    opener: &FileOpener,
+    path: &Path,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: Option<u32>,
+) -> Result<()> {
+    use nix::errno::Errno;
+    use nix::fcntl::{AT_FDCWD, AtFlags};
+    use nix::sys::stat::{FchmodatFlags, fchmodat};
+
+    if !matches!(opener, FileOpener::Path(_)) {
+        return Err(Errno::EACCES).wrap_err_with(|| {
+            format!(
+                "failed to open file {} without following symlinks",
+                path.display()
+            )
+        });
+    }
+    if !fs::symlink_metadata(path)?.file_type().is_file() {
+        bail!(
+            "refusing to set permissions on non-file path: {}",
+            path.display()
+        );
+    }
+    let (uid, gid) = resolve_owner_and_group(owner, group)?;
+    let result = nix::unistd::fchownat(AT_FDCWD, path, uid, gid, AtFlags::AT_SYMLINK_NOFOLLOW)
+        .and_then(|()| match mode {
+            Some(mode) => fchmodat(
+                AT_FDCWD,
+                path,
+                platform_mode(mode),
+                FchmodatFlags::NoFollowSymlink,
+            ),
+            None => Ok(()),
+        });
+    result
+        .map_err(unsupported_no_follow_as_permission_denied)
+        .wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
+}
+
+/// Some Unix systems cannot change metadata without following symlinks
+/// (`ENOTSUP`). Report that as a permission error so the change is retried
+/// through the privileged helper, as it was before the in-process repair.
+#[cfg(all(unix, any(not(target_os = "linux"), test)))]
+fn unsupported_no_follow_as_permission_denied(error: nix::errno::Errno) -> nix::errno::Errno {
+    use nix::errno::Errno;
+
+    if error == Errno::ENOTSUP || error == Errno::EOPNOTSUPP {
+        Errno::EACCES
+    } else {
+        error
+    }
+}
+
+/// Set metadata on a file the current user cannot read. An `O_PATH`
+/// descriptor needs no read permission and, with `O_NOFOLLOW`, refers to a
+/// final symlink itself, which the regular-file check then refuses. Linux has
+/// no `fchmod` for such a descriptor, so the change goes through its
+/// `/proc/self/fd` entry, which resolves to the opened inode rather than to
+/// the path again.
+#[cfg(target_os = "linux")]
+fn set_unreadable_file_metadata(
+    opener: &FileOpener,
+    path: &Path,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: Option<u32>,
+) -> Result<()> {
+    use nix::fcntl::OFlag;
+    use std::os::fd::AsRawFd;
+
+    let file = opener
+        .open(OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC)
+        .wrap_err_with(|| {
+            format!(
+                "failed to open file {} without following symlinks",
+                path.display()
+            )
+        })?;
+    ensure_regular_file(&file, path)?;
+    let descriptor_path = PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+    let (uid, gid) = resolve_owner_and_group(owner, group)?;
+    let result = nix::unistd::chown(&descriptor_path, uid, gid)
+        .map_err(eyre::Report::from)
+        .and_then(|()| match mode {
+            Some(mode) => nix::sys::stat::fchmodat(
+                nix::fcntl::AT_FDCWD,
+                &descriptor_path,
+                platform_mode(mode),
+                nix::sys::stat::FchmodatFlags::FollowSymlink,
+            )
+            .map_err(Into::into),
+            None => Ok(()),
+        });
+    drop(file);
+    result.wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn set_file_metadata(
+    _path: &Path,
+    _owner: Option<&str>,
+    _group: Option<&str>,
+    _mode: Option<u32>,
+) -> Result<()> {
+    bail!("managed system files are only supported on Unix")
+}
+
+/// Change ownership, then mode, of an open file or directory. A `None` mode
+/// leaves the permission bits as they are, apart from any setuid or setgid
+/// bits the operating system clears on an ownership change.
+#[cfg(unix)]
+fn set_descriptor_metadata(
+    descriptor: &std::os::fd::OwnedFd,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: Option<u32>,
+) -> Result<()> {
+    let (uid, gid) = resolve_owner_and_group(owner, group)?;
+    nix::unistd::fchown(descriptor, uid, gid)?;
+    // chown may clear setuid/setgid bits, so apply the requested mode last.
+    if let Some(mode) = mode {
+        nix::sys::stat::fchmod(descriptor, platform_mode(mode))?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn resolve_owner_and_group(
+    owner: Option<&str>,
+    group: Option<&str>,
+) -> Result<(Option<nix::unistd::Uid>, Option<nix::unistd::Gid>)> {
     let uid = owner
         .map(resolve_user)
         .transpose()?
@@ -1813,9 +2371,12 @@ fn set_directory_metadata(
         .map(resolve_group)
         .transpose()?
         .map(nix::unistd::Gid::from_raw);
-    nix::unistd::fchown(directory, uid, gid)?;
-    // chown may clear setuid/setgid bits, so apply the requested mode last.
-    let platform_mode = [
+    Ok((uid, gid))
+}
+
+#[cfg(unix)]
+fn platform_mode(mode: u32) -> nix::sys::stat::Mode {
+    [
         (0o4000, nix::sys::stat::Mode::S_ISUID),
         (0o2000, nix::sys::stat::Mode::S_ISGID),
         (0o1000, nix::sys::stat::Mode::S_ISVTX),
@@ -1831,9 +2392,7 @@ fn set_directory_metadata(
     ]
     .into_iter()
     .filter_map(|(bit, flag)| (mode & bit != 0).then_some(flag))
-    .fold(nix::sys::stat::Mode::empty(), |mode, flag| mode | flag);
-    nix::sys::stat::fchmod(directory, platform_mode)?;
-    Ok(())
+    .fold(nix::sys::stat::Mode::empty(), |mode, flag| mode | flag)
 }
 
 fn remove_directory(path: &Path, recursive: bool) -> Result<()> {
@@ -1859,7 +2418,7 @@ mod tests {
             content: (state == ManagedState::Present).then(|| "content".to_string()),
             owner: None,
             group: None,
-            mode: 0o644,
+            mode: Some(0o644),
             state,
             replace: false,
             notify: vec![],
@@ -2084,6 +2643,8 @@ mod tests {
             current: "directory".to_string(),
             metadata_matches: false,
             content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
         });
         assert_eq!(present_file.plan().unwrap().action, ResourceAction::Unknown);
         present_file.replace = true;
@@ -2095,6 +2656,8 @@ mod tests {
             current: "file".to_string(),
             metadata_matches: false,
             content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
         });
         assert_eq!(
             present_directory.plan().unwrap().action,
@@ -2112,6 +2675,8 @@ mod tests {
             current: "directory".to_string(),
             metadata_matches: true,
             content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
         });
         assert_eq!(absent_file.plan().unwrap().action, ResourceAction::Unknown);
         assert!(absent_file.operation().is_err());
@@ -2122,12 +2687,318 @@ mod tests {
             current: "file".to_string(),
             metadata_matches: true,
             content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
         });
         assert_eq!(
             absent_directory.plan().unwrap().action,
             ResourceAction::Unknown
         );
         assert!(absent_directory.operation().is_err());
+    }
+
+    fn metadata_only(inspection: PathInspection) -> ManagedFileRequest {
+        let mut request = file("/opt/example", ManagedState::Present);
+        request.content = None;
+        request.mode = Some(0o600);
+        request.inspection = Some(inspection);
+        request
+    }
+
+    #[test]
+    fn metadata_only_files_compare_only_declared_metadata() {
+        let unchanged = metadata_only(PathInspection::Present {
+            kind: ManagedPathKind::File,
+            current: "file mode 0600".to_string(),
+            metadata_matches: true,
+            content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
+        });
+        assert_eq!(unchanged.plan().unwrap().action, ResourceAction::Noop);
+        assert!(unchanged.operation().unwrap().is_none());
+
+        let drifted = metadata_only(PathInspection::Present {
+            kind: ManagedPathKind::File,
+            current: "file mode 0644".to_string(),
+            metadata_matches: false,
+            content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
+        });
+        let plan = drifted.plan().unwrap();
+        assert_eq!(plan.action, ResourceAction::Update);
+        assert_eq!(plan.desired, "file mode 0600 (content unmanaged)");
+        let Some(PrivilegedAction::SetFileMetadata { mode, .. }) = drifted.operation().unwrap()
+        else {
+            panic!("expected a metadata-only update");
+        };
+        assert_eq!(mode, Some(0o600));
+
+        // Nothing to create the file from: skipped, never created.
+        let missing = metadata_only(PathInspection::Missing);
+        assert!(missing.is_missing_metadata_only_target());
+        assert_eq!(missing.plan().unwrap().action, ResourceAction::Noop);
+        assert!(missing.operation().unwrap().is_none());
+
+        for kind in [
+            ManagedPathKind::Symlink,
+            ManagedPathKind::Directory,
+            ManagedPathKind::Other,
+        ] {
+            let wrong_type = metadata_only(PathInspection::Present {
+                kind,
+                current: "symlink".to_string(),
+                metadata_matches: false,
+                content_matches: None,
+                owner_uid: None,
+                crosses_untrusted_symlink: false,
+            });
+            assert_eq!(wrong_type.plan().unwrap().action, ResourceAction::Unknown);
+            let error = wrong_type.operation().unwrap_err().to_string();
+            assert!(!error.contains("replace"), "unexpected error: {error}");
+        }
+    }
+
+    #[test]
+    fn metadata_only_files_require_metadata_and_reject_writes() {
+        let path = Path::new("/opt/example");
+        let validate = |toml: &str| {
+            let config = toml::from_str::<ManagedFileTomlConfig>(toml).unwrap();
+            validate_metadata_only(path, &config)
+        };
+        assert!(validate(r#"mode = "0600""#).is_ok());
+        assert!(validate(r#"owner = "root""#).is_ok());
+        assert!(validate(r#"group = "root""#).is_ok());
+        assert!(validate("").is_err());
+        for invalid in ["template = true", "remove_empty = true", "replace = true"] {
+            let error = validate(&format!("mode = \"0600\"\n{invalid}")).unwrap_err();
+            let key = invalid.split(' ').next().unwrap();
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("{key} requires source or content")),
+                "unexpected error: {error}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sets_file_metadata_in_place() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config");
+        fs::write(&path, "content").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        let inode = fs::metadata(&path).unwrap().ino();
+        set_file_metadata(&path, None, None, Some(0o600)).unwrap();
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o7777, 0o600);
+        assert_eq!(metadata.ino(), inode);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "content");
+
+        // The owner can change the mode of a file it cannot read, without
+        // the privileged helper, on every Unix.
+        if !nix::unistd::geteuid().is_root() {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+            set_file_metadata(&path, None, None, Some(0o600)).unwrap();
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+                0o600
+            );
+            assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
+        }
+
+        // An unmanaged mode is left alone.
+        set_file_metadata(&path, None, None, None).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
+
+        // A symlink is refused rather than followed to its target.
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(set_file_metadata(&link, None, None, Some(0o644)).is_err());
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
+
+        assert!(set_file_metadata(temp.path(), None, None, Some(0o700)).is_err());
+
+        // The unreadable-file path refuses symlinks and directories too,
+        // whichever way the parent was resolved.
+        #[cfg(target_os = "linux")]
+        {
+            let unreadable = |path: &Path, strict: bool, mode| {
+                let opener = if strict {
+                    FileOpener::strict(path)?
+                } else {
+                    FileOpener::Path(path)
+                };
+                set_unreadable_file_metadata(&opener, path, None, None, Some(mode))
+            };
+            for strict in [true, false] {
+                assert!(unreadable(&link, strict, 0o644).is_err());
+                assert!(unreadable(temp.path(), strict, 0o700).is_err());
+                assert_eq!(
+                    fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+                    0o600
+                );
+            }
+            unreadable(&path, true, 0o640).unwrap();
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+                0o640
+            );
+        }
+    }
+
+    /// Root resolves a file's parents without following a symlink someone
+    /// else could have planted; any other user follows them like a normal
+    /// lookup, since the change can only reach what that user can change.
+    #[cfg(unix)]
+    #[test]
+    fn parent_symlinks_are_only_refused_when_running_as_root() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Root-owned parents are trusted, so the refusal cannot be staged as
+        // root in a temporary directory.
+        if nix::unistd::geteuid().is_root() {
+            return;
+        }
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+        let temp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("config");
+        fs::write(&target, "content").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        let linked_parent = temp.path().join("linked");
+        std::os::unix::fs::symlink(outside.path(), &linked_parent).unwrap();
+        let through_link = linked_parent.join("config");
+
+        assert!(crosses_untrusted_symlink(&through_link).unwrap());
+        assert!(!crosses_untrusted_symlink(&target).unwrap());
+
+        // The strict walk used as root refuses the link, reading or not.
+        let error = FileOpener::strict(&through_link).err().unwrap();
+        assert!(is_untrusted_symlink(&error), "unexpected error: {error:#}");
+        assert!(format!("{error:#}").contains("refusing to follow symlink"));
+        assert_eq!(mode(&target), 0o644);
+
+        // A user-level change follows it, on every Unix, even when the file
+        // cannot be read, so it matches the plan's user-level `update`.
+        set_file_metadata(&through_link, None, None, Some(0o600)).unwrap();
+        assert_eq!(mode(&target), 0o600);
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o000)).unwrap();
+        let mut unreadable = metadata_only(PathInspection::Present {
+            kind: ManagedPathKind::File,
+            current: "file mode 0000".to_string(),
+            metadata_matches: false,
+            content_matches: None,
+            owner_uid: current_uid(),
+            crosses_untrusted_symlink: true,
+        });
+        unreadable.path = through_link.clone();
+        unreadable.mode = Some(0o640);
+        assert_eq!(unreadable.plan().unwrap().action, ResourceAction::Update);
+        unreadable.operation().unwrap().unwrap().apply().unwrap();
+        assert_eq!(mode(&target), 0o640);
+
+        // Walking a parent needs only search permission on Linux, so a
+        // directory its owner cannot list still resolves strictly.
+        #[cfg(target_os = "linux")]
+        {
+            let unlisted = temp.path().join("unlisted");
+            fs::create_dir(&unlisted).unwrap();
+            let inside = unlisted.join("config");
+            fs::write(&inside, "content").unwrap();
+            fs::set_permissions(&unlisted, fs::Permissions::from_mode(0o311)).unwrap();
+            let opened = FileOpener::strict(&inside).map(|_| ());
+            fs::set_permissions(&unlisted, fs::Permissions::from_mode(0o755)).unwrap();
+            opened.unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unsupported_no_follow_is_retried_with_privilege() {
+        use nix::errno::Errno;
+
+        for unsupported in [Errno::ENOTSUP, Errno::EOPNOTSUPP] {
+            let mapped = unsupported_no_follow_as_permission_denied(unsupported);
+            assert_eq!(mapped, Errno::EACCES);
+            let report = Err::<(), _>(mapped).wrap_err("wrapped").unwrap_err();
+            assert!(is_permission_denied(&report));
+        }
+        assert_eq!(
+            unsupported_no_follow_as_permission_denied(Errno::ENOENT),
+            Errno::ENOENT
+        );
+    }
+
+    #[test]
+    fn plans_follow_the_parent_symlink_rule_apply_uses() {
+        let through_symlink = |owner: Option<&str>, owner_uid: Option<u32>| {
+            let mut request = metadata_only(PathInspection::Present {
+                kind: ManagedPathKind::File,
+                current: "file mode 0644".to_string(),
+                metadata_matches: false,
+                content_matches: None,
+                owner_uid,
+                crosses_untrusted_symlink: true,
+            });
+            request.owner = owner.map(str::to_string);
+            request
+        };
+
+        // Declared ownership always runs as root, which refuses the link.
+        let elevated = through_symlink(Some("root"), current_uid());
+        let plan = elevated.plan().unwrap();
+        assert_eq!(plan.action, ResourceAction::Unknown);
+        assert!(
+            plan.current.contains("declare the resolved path"),
+            "{}",
+            plan.current
+        );
+        assert!(elevated.operation().is_err());
+
+        // A mode change to the user's own file runs as that user and follows it.
+        if current_uid().is_some_and(|uid| uid != 0) {
+            let user_level = through_symlink(None, current_uid());
+            assert_eq!(user_level.plan().unwrap().action, ResourceAction::Update);
+            assert!(user_level.operation().unwrap().is_some());
+
+            // Someone else's file needs root to change.
+            let other_owner = through_symlink(None, current_uid().map(|uid| uid + 1));
+            assert_eq!(other_owner.plan().unwrap().action, ResourceAction::Unknown);
+        }
+    }
+
+    #[test]
+    fn metadata_only_changes_round_trip_through_the_privileged_helper() {
+        let plan = PrivilegedPlan {
+            actions: vec![PrivilegedAction::SetFileMetadata {
+                path: PathBuf::from("/etc/example"),
+                owner: Some("root".to_string()),
+                group: None,
+                mode: None,
+            }],
+        };
+        let json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(json["actions"][0]["type"], "set_file_metadata");
+        let parsed: PrivilegedPlan = serde_json::from_value(json).unwrap();
+        let action = &parsed.actions[0];
+        assert!(matches!(
+            action,
+            PrivilegedAction::SetFileMetadata { owner: Some(owner), mode: None, .. } if owner == "root"
+        ));
+        // Ownership changes are sent to the helper without a first attempt.
+        assert!(action.requires_preemptive_elevation().unwrap());
+        assert_eq!(action.description(), "set permissions on file /etc/example");
     }
 
     #[test]
@@ -2143,6 +3014,8 @@ mod tests {
             current: "directory".to_string(),
             metadata_matches: false,
             content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
         });
 
         let notifications = pending_notifications(&[changed, unsafe_change], &[]).unwrap();
@@ -2312,6 +3185,8 @@ mod tests {
             current: "file".to_string(),
             metadata_matches: true,
             content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
         });
         let plan = removed.plan().unwrap();
         assert_eq!(plan.action, ResourceAction::Remove);
@@ -2335,6 +3210,8 @@ mod tests {
             current: "directory".to_string(),
             metadata_matches: false,
             content_matches: None,
+            owner_uid: None,
+            crosses_untrusted_symlink: false,
         });
         assert_eq!(removed.plan().unwrap().action, ResourceAction::Unknown);
         assert!(removed.operation().is_err());

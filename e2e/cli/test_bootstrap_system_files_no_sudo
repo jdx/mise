@@ -93,3 +93,97 @@ assert_fail "test -e '$HOME/.bootstrap-oldrc'"
 assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status --json | jq -e '.[0].action == \"noop\"'"
 assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "already converged"
 assert_fail "test -e '$HOME/.bootstrap-oldrc'"
+
+# A file with neither source nor content keeps its content: only the declared
+# mode is changed, in place.
+perms_file="$PWD/perms-only.conf"
+echo "written elsewhere" >"$perms_file"
+chmod 0644 "$perms_file"
+inode="$(stat -c %i "$perms_file")"
+cat <<EOF >mise.toml
+[bootstrap.files."$perms_file"]
+mode = "0600"
+EOF
+
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run" "would set permissions on file $perms_file"
+assert "stat -c %a '$perms_file'" "644"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "stat -c %a '$perms_file'" "600"
+assert "cat '$perms_file'" "written elsewhere"
+assert "stat -c %i '$perms_file'" "$inode"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "unchanged"
+
+# The owner of an unreadable file can repair its mode without elevation.
+chmod 0000 "$perms_file"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "stat -c %a '$perms_file'" "600"
+assert "stat -c %i '$perms_file'" "$inode"
+
+# A symlink is left alone with a warning, and its target keeps its mode.
+link_file="$PWD/perms-link.conf"
+ln -s "$perms_file" "$link_file"
+cat <<EOF >mise.toml
+[bootstrap.files."$link_file"]
+mode = "0644"
+EOF
+
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run 2>&1" "manual action required"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "only existing regular files are managed without source or content"
+assert "stat -c %a '$perms_file'" "600"
+assert_succeed "test -L '$link_file'"
+
+# A mode change the user makes to their own file follows a symlinked parent
+# directory, like any path they open themselves.
+mkdir -p real-ssh
+echo "host example" >real-ssh/config
+chmod 0644 real-ssh/config
+ln -s "$PWD/real-ssh" "$PWD/linked-ssh"
+cat <<EOF >mise.toml
+[bootstrap.files."$PWD/linked-ssh/config"]
+mode = "0600"
+EOF
+
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run" "would set permissions on file $PWD/linked-ssh/config"
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes"
+assert "stat -c %a real-ssh/config" "600"
+assert "cat real-ssh/config" "host example"
+
+# Declared ownership is changed as root, which does not follow a symlink in a
+# directory another user could write. Status and apply both say so, and apply
+# leaves the file alone instead of asking for sudo. CI runs this as root in a
+# root-owned directory, which root trusts, so make the symlink's directory
+# writable by others for this case.
+chmod o+w "$PWD"
+cat <<EOF >mise.toml
+[bootstrap.files."$PWD/linked-ssh/config"]
+mode = "0640"
+owner = "$(id -un)"
+EOF
+
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files status" "declare the resolved path instead"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --dry-run 2>&1" "manual action required"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "declare the resolved path instead"
+assert "stat -c %a real-ssh/config" "600"
+chmod o-w "$PWD"
+
+# A missing target is not created, and apply still succeeds.
+missing_file="$PWD/missing-perms.conf"
+cat <<EOF >mise.toml
+[bootstrap.files."$missing_file"]
+mode = "0600"
+EOF
+
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap files apply --yes 2>&1" "its content is not managed by mise"
+assert_fail "test -e '$missing_file'"
+
+# Removing a module never deletes a file whose content mise does not manage.
+: >mise.toml
+cat <<EOF >mise.perms.toml
+[bootstrap.files."$perms_file"]
+mode = "0640"
+EOF
+
+assert_succeed "MISE_SYSTEM_PACKAGES_SUDO=0 mise -E perms bootstrap files apply --yes"
+assert "stat -c %a '$perms_file'" "640"
+assert_contains "MISE_SYSTEM_PACKAGES_SUDO=0 mise bootstrap unapply perms --yes 2>&1" "keeping it, its content is not managed by mise"
+assert "cat '$perms_file'" "written elsewhere"

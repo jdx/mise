@@ -116,6 +116,17 @@ pub(crate) async fn plan(
         if declares_absence(file.state, "file", &file.path, reason, opts, &mut unapply) {
             continue;
         }
+        // The module only set this file's permissions; its content, and so
+        // the file itself, belongs to something else. Say so every time: the
+        // permissions it set stay behind.
+        if file.is_metadata_only() {
+            unapply.skipped.push(Skip {
+                kind: "file",
+                name: file.path.to_string_lossy().into_owned(),
+                reason: "its content is not managed by mise, only its permissions".into(),
+            });
+            continue;
+        }
         let Some(removal) = classify(&file.plan()?.action, "file", &file.path, opts, &mut unapply)
         else {
             continue;

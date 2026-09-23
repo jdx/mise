@@ -29,10 +29,11 @@ allows only the intended service account or root to read them.
 
 File content may come from `source` or inline `content`. Relative source paths
 are resolved from the configuration file that declares them, and source paths
-beginning with `~/` are resolved from the user's home directory. Present files
-must declare exactly one content source. Targets must be absolute paths or
-begin with `~/`, which resolves from the user's home directory. mise refuses to
-manage `/` itself.
+beginning with `~/` are resolved from the user's home directory. A file may
+declare at most one content source; a present file with neither manages only
+its [permissions](#permissions-without-content). Targets must be absolute paths
+or begin with `~/`, which resolves from the user's home directory. mise refuses
+to manage `/` itself.
 
 Directory creation uses `mkdir -p` semantics, so missing parent directories are
 created automatically. The configured ownership and mode apply to the declared
@@ -92,6 +93,52 @@ search one of its parent directories, mise compares its metadata and content in
 one privileged batch. Plans and file content are sent to narrowly scoped mise
 helpers over stdin, so file content does not appear in process arguments or
 logs.
+
+## Permissions without content
+
+Leave out `source` and `content` to manage a file's mode, owner, or group while
+something else manages what it contains, such as a package, an installer, or
+the user:
+
+```toml
+[bootstrap.files."/etc/ssh/sshd_config"]
+mode = "0600"
+owner = "root"
+```
+
+Declare at least one of `mode`, `owner`, or `group`. Only the declared fields
+are compared and changed: without `mode`, the mode is left as it is rather than
+reset to `0644`. mise changes the existing file in place, so its content and
+inode are untouched and hard links and open handles keep pointing at it.
+Changing the owner or group may clear setuid and setgid bits, as it does with
+`chown`; declare `mode` to keep them.
+
+These entries never create, replace, or remove the file:
+
+- A missing target is skipped with a warning, and apply still succeeds.
+- A symlink, directory, or other non-regular file is reported as `unknown`;
+  apply warns and leaves it unchanged. The change is made through a handle
+  opened without following symlinks, so it never lands on a symlink's target.
+  On Linux and macOS, the owner of a file it cannot read can still change its
+  mode without `sudo`; other Unix systems may retry that change through `sudo`.
+- `template`, `remove_empty`, and `replace` require `source` or `content` and
+  are rejected here.
+- `mise bootstrap unapply` keeps the file, since mise never managed its content.
+
+`notify` fires when mise changes the file's permissions.
+
+How mise resolves the path depends on who makes the change. A mode change to
+a file the current user owns is made as that user, and symlinked parent
+directories are followed like any other path they open, so
+`~/.ssh/config` works when `~/.ssh` is a symlink. A change that needs root,
+such as a declared `owner` or `group` or a mode change to another user's file,
+resolves the parent directories one at a time. A symlink in a directory owned by
+root that no other user can write is followed, as `/etc` is on macOS. Any other
+symlinked parent directory is refused, because a user who could write that
+directory could otherwise redirect root's change to a file such as
+`/etc/shadow`. Status and dry-run report such an entry as `unknown` with the
+reason, and apply warns and leaves the file unchanged. Declare the resolved
+path instead.
 
 ## Files before packages
 
