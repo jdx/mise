@@ -1798,7 +1798,15 @@ fn check_absent(target: &Path) -> Result<FileState> {
         return Ok(FileState::Differs("present (symlink)".into()));
     }
     match std::fs::symlink_metadata(target) {
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(FileState::Applied),
+        // a parent that is a file means the target cannot exist either
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Ok(FileState::Applied)
+        }
         Err(err) => Err(err.into()),
         Ok(meta) if meta.is_dir() => bail!(
             "{} is a directory; mode = \"absent\" only removes files and symlinks",
@@ -4459,6 +4467,20 @@ source = "oldrc""#,
         apply_one(&req, None, &mut written)?;
         assert!(!target.is_symlink());
         assert!(pointee.join("keep").is_file());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_under_a_file_is_already_applied() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let parent = dir.path().join("oldrc");
+        file::write(&parent, "a file, not a directory")?;
+        let req = absent_req(&parent.join("x"));
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+        let mut written = vec![];
+        apply_one(&req, None, &mut written)?;
+        assert!(written.is_empty());
+        assert!(parent.is_file());
         Ok(())
     }
 
