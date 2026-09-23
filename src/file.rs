@@ -202,8 +202,10 @@ pub(crate) fn remove_all_at<Fd: std::os::fd::AsFd>(
             Err(nix::errno::Errno::ENOENT) => return Ok(()),
             Err(err) => return Err(err.into()),
         };
-    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
-    if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+    // Compare the whole type field: sockets and block devices share the
+    // directory bit.
+    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode & nix::libc::S_IFMT);
+    if kind == nix::sys::stat::SFlag::S_IFDIR {
         let fd = nix::fcntl::openat(
             &parent,
             name,

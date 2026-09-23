@@ -4131,6 +4131,8 @@ mod tests {
         fs::write(tree.join("inner/file"), "").unwrap();
         std::os::unix::fs::symlink(outside.path(), tree.join("inner/dir-link")).unwrap();
         std::os::unix::fs::symlink(outside.path().join("keep"), tree.join("file-link")).unwrap();
+        // A socket shares the directory bit in its mode, but is unlinked.
+        let _socket = std::os::unix::net::UnixListener::bind(tree.join("inner/socket")).unwrap();
         let error = format!("{:#}", remove_directory_strictly(&tree, false).unwrap_err());
         assert!(error.contains("Directory not empty"), "{error}");
         assert!(tree.join("inner/file").exists());
