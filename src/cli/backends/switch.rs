@@ -148,16 +148,17 @@ impl BackendsSwitch {
                             .filter(|backend| backend != &switch.from)
                     },
                 );
-                if moved.is_empty() {
+                let not_moved = switch
+                    .versions
+                    .iter()
+                    .filter(|v| !moved.iter().any(|(moved, _, _)| moved == *v))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !not_moved.is_empty() {
                     missing.push(format!(
                         "{}@{} in {}",
                         switch.short,
-                        switch
-                            .versions
-                            .iter()
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join(", "),
+                        not_moved.join(", "),
                         display_path(path)
                     ));
                 }
@@ -230,7 +231,18 @@ impl BackendsSwitch {
             )));
         }
 
-        self.reinstall(&switched).await?;
+        // The lockfiles are switched and complete at this point; a failed
+        // reinstall only leaves installs from the old backend in place.
+        if let Err(err) = self.reinstall(&switched).await {
+            let tools = switched
+                .iter()
+                .map(|(short, version)| format!("{short}@{version}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            return Err(err.wrap_err(format!(
+                "switched the lockfiles, but reinstalling from the new backend failed; run `mise install --force {tools}` to finish"
+            )));
+        }
         Ok(missing)
     }
 
@@ -441,7 +453,14 @@ struct Snapshot {
 
 impl Snapshot {
     fn take(lockfile: &Path, content: Option<String>) -> Result<Self> {
-        let sidecars = lockfile::sidecar_root(lockfile);
+        // A symlinked lockfile keeps its sidecars beside the target, where
+        // reads and writes resolve it.
+        let target = if lockfile.is_symlink() {
+            std::fs::canonicalize(lockfile).unwrap_or_else(|_| lockfile.to_path_buf())
+        } else {
+            lockfile.to_path_buf()
+        };
+        let sidecars = lockfile::sidecar_root(&target);
         let sidecar_copy = if sidecars.is_dir() {
             let copy = tempfile::tempdir()?;
             crate::file::copy_dir_all_preserve_symlinks(&sidecars, &copy.path().join("sidecars"))?;
@@ -461,15 +480,26 @@ impl Snapshot {
         if let Some(content) = &self.content {
             crate::file::write(&self.lockfile, content)?;
         }
-        if self.sidecars.exists() {
-            crate::file::remove_all(&self.sidecars)?;
+        let restored = (|| -> Result<()> {
+            if self.sidecars.exists() {
+                crate::file::remove_all(&self.sidecars)?;
+            }
+            if let Some(copy) = &self.sidecar_copy {
+                crate::file::copy_dir_all_preserve_symlinks(
+                    &copy.path().join("sidecars"),
+                    &self.sidecars,
+                )?;
+            }
+            Ok(())
+        })();
+        match (restored, self.sidecar_copy) {
+            (Ok(()), _) => Ok(()),
+            // Keep the backup instead of letting the temp dir delete it.
+            (Err(err), Some(copy)) => Err(err.wrap_err(format!(
+                "the previous sidecars are kept in {}",
+                display_path(copy.keep().join("sidecars"))
+            ))),
+            (Err(err), None) => Err(err),
         }
-        if let Some(copy) = &self.sidecar_copy {
-            crate::file::copy_dir_all_preserve_symlinks(
-                &copy.path().join("sidecars"),
-                &self.sidecars,
-            )?;
-        }
-        Ok(())
     }
 }
