@@ -68,8 +68,9 @@ assert_not_contains "cat mise.lock" "jqlang"
 # mise.lock even when run from outside the monorepo.
 cd "$HOME/workdir" || exit 1
 mkdir -p mono/packages/a/bin
+# The deprecated alias still declares the monorepo root.
 cat >mono/mise.toml <<'TOML'
-monorepo_root = true
+experimental_monorepo_root = true
 
 [monorepo]
 lockfile = true

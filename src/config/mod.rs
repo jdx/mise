@@ -1854,7 +1854,7 @@ pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
             let Ok(body) = file::read_to_string(&path) else {
                 continue;
             };
-            if let Ok(cf) = MiseToml::for_history_preflight(&body, &path) {
+            if let Ok(cf) = MiseToml::for_monorepo_inspection(&body, &path) {
                 config_files.insert(path, Arc::new(cf));
             }
         }

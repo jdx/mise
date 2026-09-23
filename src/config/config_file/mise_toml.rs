@@ -586,6 +586,18 @@ impl MiseToml {
         Ok(parsed)
     }
 
+    /// Decode only the static monorepo declarations of a config, without
+    /// trusting or evaluating it, applying the same legacy
+    /// `experimental_monorepo_root` alias as normal loading. The deprecation
+    /// warning is left to normal loading.
+    pub(crate) fn for_monorepo_inspection(body: &str, path: &Path) -> eyre::Result<Self> {
+        let mut parsed = Self::for_history_preflight(body, path)?;
+        if let Some(legacy_monorepo_root) = parsed.experimental_monorepo_root.take() {
+            parsed.monorepo_root.get_or_insert(legacy_monorepo_root);
+        }
+        Ok(parsed)
+    }
+
     pub(crate) fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
         if !Self::is_trust_exempt(body, path) {
             trust_check(path)?;
