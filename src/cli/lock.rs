@@ -718,7 +718,7 @@ impl Lock {
             if !self.upgrade {
                 self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
             }
-            lockfile
+            let pruned_stubs = lockfile
                 .retain_live_tool_stubs(&lockfile_path, config.monorepo_lockfile_root().as_deref());
             if self.json {
                 all_changes.extend(self.compute_version_changes(&lockfile, &tools, &lockfile_path));
@@ -742,6 +742,7 @@ impl Lock {
             // Keep unchanged files out of the mutation/rollback set, but leave them
             // in initial_lockfiles so publication still checks concurrent edits.
             if can_skip_generation
+                && !pruned_stubs
                 && original_content.is_some()
                 && lockfile::generate::is_current(&lockfile, &tools, &target_platforms)?
             {
@@ -1825,6 +1826,15 @@ impl Lock {
                     continue;
                 }
             };
+            // `mise lock node` must not fail on an unrelated stub.
+            if !self.tool.is_empty()
+                && !self
+                    .tool
+                    .iter()
+                    .any(|tool| tool.ba.full() == request.ba().full())
+            {
+                continue;
+            }
             let resolve_options = request.resolve_options(context.resolve_options)?;
             let tv = request
                 .resolve(config, &resolve_options)
