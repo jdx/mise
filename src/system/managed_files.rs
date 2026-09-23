@@ -2112,8 +2112,8 @@ fn set_file_metadata(
             | OFlag::O_CLOEXEC,
     ) {
         Ok(file) => file,
-        // The owner of an unreadable file may still change its mode.
-        #[cfg(target_os = "linux")]
+        // The owner of an unreadable file may still change its mode, so this
+        // stays in-process, as status and dry-run assume.
         Err(nix::errno::Errno::EACCES) => {
             return set_unreadable_file_metadata(&opener, path, owner, group, mode);
         }
@@ -2216,6 +2216,61 @@ fn ensure_regular_file(file: &std::os::fd::OwnedFd, path: &Path) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Set metadata on a file the current user cannot read. Other Unix systems
+/// (macOS, the BSDs) have no `O_PATH`, but implement `fchmodat` and
+/// `fchownat` with `AT_SYMLINK_NOFOLLOW` directly. There they change a
+/// symlink's own metadata rather than failing, so a link is refused first; one
+/// swapped in after that check only has its own metadata changed, never its
+/// target's. Root can open any file, so only a user-level change, which
+/// follows parent symlinks anyway, gets here.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn set_unreadable_file_metadata(
+    opener: &FileOpener,
+    path: &Path,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: Option<u32>,
+) -> Result<()> {
+    use nix::errno::Errno;
+    use nix::fcntl::{AT_FDCWD, AtFlags};
+    use nix::sys::stat::{FchmodatFlags, fchmodat};
+
+    if !matches!(opener, FileOpener::Path(_)) {
+        return Err(Errno::EACCES).wrap_err_with(|| {
+            format!(
+                "failed to open file {} without following symlinks",
+                path.display()
+            )
+        });
+    }
+    if !fs::symlink_metadata(path)?.file_type().is_file() {
+        bail!(
+            "refusing to set permissions on non-file path: {}",
+            path.display()
+        );
+    }
+    let (uid, gid) = resolve_owner_and_group(owner, group)?;
+    let result = nix::unistd::fchownat(AT_FDCWD, path, uid, gid, AtFlags::AT_SYMLINK_NOFOLLOW)
+        .and_then(|()| match mode {
+            Some(mode) => fchmodat(
+                AT_FDCWD,
+                path,
+                platform_mode(mode),
+                FchmodatFlags::NoFollowSymlink,
+            ),
+            None => Ok(()),
+        });
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error == Errno::ENOTSUP || error == Errno::EOPNOTSUPP => bail!(
+            "cannot set permissions on {} without following symlinks on this system; make it readable by its owner first",
+            path.display()
+        ),
+        Err(error) => Err(error)
+            .wrap_err_with(|| format!("failed to set metadata on file {}", path.display())),
+    }
 }
 
 /// Set metadata on a file the current user cannot read. An `O_PATH`
@@ -2732,8 +2787,8 @@ mod tests {
         assert_eq!(metadata.ino(), inode);
         assert_eq!(fs::read_to_string(&path).unwrap(), "content");
 
-        // The owner can change the mode of a file it cannot read.
-        #[cfg(target_os = "linux")]
+        // The owner can change the mode of a file it cannot read, without
+        // the privileged helper, on every Unix.
         if !nix::unistd::geteuid().is_root() {
             fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
             set_file_metadata(&path, None, None, Some(0o600)).unwrap();
@@ -2822,15 +2877,24 @@ mod tests {
         assert!(format!("{error:#}").contains("refusing to follow symlink"));
         assert_eq!(mode(&target), 0o644);
 
-        // A user-level change follows it.
+        // A user-level change follows it, on every Unix, even when the file
+        // cannot be read, so it matches the plan's user-level `update`.
         set_file_metadata(&through_link, None, None, Some(0o600)).unwrap();
         assert_eq!(mode(&target), 0o600);
-        #[cfg(target_os = "linux")]
-        {
-            fs::set_permissions(&target, fs::Permissions::from_mode(0o000)).unwrap();
-            set_file_metadata(&through_link, None, None, Some(0o640)).unwrap();
-            assert_eq!(mode(&target), 0o640);
-        }
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o000)).unwrap();
+        let mut unreadable = metadata_only(PathInspection::Present {
+            kind: ManagedPathKind::File,
+            current: "file mode 0000".to_string(),
+            metadata_matches: false,
+            content_matches: None,
+            owner_uid: current_uid(),
+            crosses_untrusted_symlink: true,
+        });
+        unreadable.path = through_link.clone();
+        unreadable.mode = Some(0o640);
+        assert_eq!(unreadable.plan().unwrap().action, ResourceAction::Update);
+        unreadable.operation().unwrap().unwrap().apply().unwrap();
+        assert_eq!(mode(&target), 0o640);
 
         // Walking a parent needs only search permission on Linux, so a
         // directory its owner cannot list still resolves strictly.
