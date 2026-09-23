@@ -4033,7 +4033,13 @@ under aqua. Repeat the flag to show several backends.
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml" conflicts=--local
     flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
-    flag --grouped help="List tools in a separate section for each backend" conflicts=--json
+    flag --grouped help="List tools in a separate section for each backend" conflicts=--json {
+        long_help #"""
+List tools in a separate section for each backend
+
+Cannot be combined with --json; use --backend to filter JSON output.
+"""#
+    }
     flag "-J --json" help="Output in JSON format"
     flag "-l --local" help="Only show tool versions currently specified in the local mise.toml" conflicts=--global
     flag "-m --missing" help="Display missing tool versions" conflicts=--installed

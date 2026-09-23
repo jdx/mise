@@ -92,7 +92,9 @@ pub(crate) struct Ls {
     installed: bool,
 
     /// List tools in a separate section for each backend
-    #[usage(long, conflicts = "json")]
+    ///
+    /// Cannot be combined with --json; use --backend to filter JSON output.
+    #[usage(long, conflicts = "json", verbatim_doc_comment)]
     grouped: bool,
 
     /// Output in JSON format

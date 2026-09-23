@@ -30,6 +30,8 @@ by a config file (active) whether or not they are installed.
 - **`-g --global`** — Only show tool versions currently specified in the global mise.toml
 - **`-i --installed`** — Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
 - **`--grouped`** — List tools in a separate section for each backend
+
+  Cannot be combined with --json; use --backend to filter JSON output.
 - **`-J --json`** — Output in JSON format
 - **`-l --local`** — Only show tool versions currently specified in the local mise.toml
 - **`-m --missing`** — Display missing tool versions
