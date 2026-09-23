@@ -46,6 +46,24 @@ no_new_privileges = true
 private_tmp = true
 ```
 
+A service tied to the graphical session can stop with the session and run
+checks before it starts:
+
+```toml
+[bootstrap.linux.systemd.units.panel]
+description = "desktop panel"
+part_of = ["graphical-session.target"]
+after = ["graphical-session.target"]
+exec_start_pre = ["~/.local/bin/panel --check-config"]
+exec_start = "~/.local/bin/panel"
+wanted_by = ["graphical-session.target"]
+```
+
+`wanted_by` only starts the service with the session; `part_of` also stops and
+restarts it with `graphical-session.target`. If an `exec_start_pre` command
+fails, systemd does not run `exec_start`, and `systemctl --user status` shows
+the check as the command that failed.
+
 An entry containing a timer key is rendered as a `.timer` instead of a
 `.service`. For example:
 
@@ -94,10 +112,17 @@ Each unit is written to `~/.config/systemd/user/dev.mise.<name>.service` or
 | `after`                | `After`                        |
 | `wants`                | `Wants`                        |
 | `requires`             | `Requires`                     |
+| `before`               | `Before`                       |
+| `binds_to`             | `BindsTo`                      |
+| `part_of`              | `PartOf`                       |
+| `conflicts`            | `Conflicts`                    |
+| `exec_start_pre`       | `ExecStartPre`                 |
 | `exec_start`           | `ExecStart`                    |
+| `exec_start_post`      | `ExecStartPost`                |
 | `type`                 | `Type`                         |
 | `remain_after_exit`    | `RemainAfterExit`              |
 | `exec_stop`            | `ExecStop`                     |
+| `exec_stop_post`       | `ExecStopPost`                 |
 | `timeout_start_sec`    | `TimeoutStartSec`              |
 | `timeout_stop_sec`     | `TimeoutStopSec`               |
 | `no_new_privileges`    | `NoNewPrivileges`              |
@@ -133,8 +158,17 @@ explicit executable path and the environment the service needs. `ExecStart`
 uses systemd's command syntax; shell operators need an explicitly invoked shell
 or a wrapper script.
 
-`exec_start`, `exec_stop`, and `working_directory` expand bare `~` and `~/` to the current
-user's home directory before writing the service file. `wanted_by` defaults to
+`after`, `before`, `wants`, `requires`, `binds_to`, `part_of`, and `conflicts`
+are lists of unit names written to the `[Unit]` section, so they apply to both
+services and timers. `exec_start_pre`, `exec_start_post`, and `exec_stop_post`
+are lists of commands; each entry becomes its own `ExecStartPre=`,
+`ExecStartPost=`, or `ExecStopPost=` line, in order. They are service-only.
+
+The `exec_*` keys and `working_directory` expand bare `~` and `~/` to the current
+user's home directory before writing the service file. In the `exec_*` keys,
+systemd's command prefixes are kept in front of the expanded path, so
+`exec_start_pre = ["-~/bin/check"]` runs an optional check from your home
+directory. `wanted_by` defaults to
 `["default.target"]` for services and `["timers.target"]` for timers; set
 `wanted_by = []` to write the unit and disable any previous enablement. `start`
 defaults to `true`; set `start = false` to write and enable without keeping the
@@ -161,7 +195,7 @@ With that config in `~/src/my-project/mise.toml`, the generated unit contains
 only other way to write a home-relative path there.
 
 Every string value in a unit is rendered, including entries inside
-`environment`, `environment_file`, `after`, `wants`, and `requires`. A value with
+`environment`, `environment_file`, and the unit and command lists. A value with
 no template syntax skips the renderer unchanged, so systemd specifiers such as
 `%h` and `%i` reach the unit file as written; the `~` expansion described above
 still applies afterwards. A unit whose template fails to render is
