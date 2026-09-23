@@ -2584,12 +2584,16 @@ fn tools_by_source_for_update(
         HashMap::new();
     for (ba, tvl) in &ts.versions {
         for tv in &tvl.versions {
+            // An installed `latest` resolves to its install directory name;
+            // lock the version that directory holds.
+            let mut tv = tv.clone();
+            tv.strip_install_path_identity();
             tools_by_source
                 .entry(tv.request.source().clone())
                 .or_default()
                 .entry(ba.short.to_string())
                 .or_default()
-                .push(tv.clone());
+                .push(tv);
         }
     }
 
@@ -2602,7 +2606,9 @@ fn tools_by_source_for_update(
             .entry(new_tv.ba().short.to_string())
             .or_default();
         existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
-        existing_versions.push(new_tv.clone());
+        let mut new_tv = new_tv.clone();
+        new_tv.strip_install_path_identity();
+        existing_versions.push(new_tv);
     }
 
     tools_by_source
