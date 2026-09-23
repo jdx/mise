@@ -5,6 +5,7 @@ pub(crate) mod backend_list_tools;
 pub(crate) mod backend_list_versions;
 pub(crate) mod backend_search_tools;
 pub(crate) mod backend_tools;
+pub(crate) mod backend_uninstall;
 pub(crate) mod env_keys;
 pub(crate) mod mise_env;
 pub(crate) mod mise_path;
