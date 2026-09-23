@@ -6,13 +6,6 @@ set -euo pipefail
 # Create a temporary directory for test artifacts
 TEST_DIR="$(mktemp -d)"
 
-# Cleanup function
-cleanup() {
-  rm -rf "$TEST_DIR"
-  rm -f mise.toml
-}
-trap cleanup EXIT
-
 # Create a simple test binary
 cat >"$TEST_DIR/test-tool" <<'EOF'
 #!/usr/bin/env bash

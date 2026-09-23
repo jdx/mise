@@ -16,8 +16,9 @@ downloads_dir="$(mktemp -d -p /dev/shm mise-bun-cross-device.XXXXXX)"
 installs_dir="$(mktemp -d -p /tmp mise-bun-cross-device.XXXXXX)"
 
 cleanup() {
-  # Remove the temporary test harness state and both temp dirs.
-  rm -rf "$TEST_DIR" "$downloads_dir" "$installs_dir"
+  # Both dirs live outside the harness's per-test directory. TEST_DIR is
+  # inside it, and the fixture server is still serving from it.
+  rm -rf "$downloads_dir" "$installs_dir"
 }
 trap cleanup EXIT
 
