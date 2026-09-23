@@ -151,6 +151,8 @@ pub(crate) struct Lock {
     /// advances without installing anything. Config files are never modified:
     /// exactly pinned versions resolve to themselves and stay unchanged
     /// (use `mise upgrade --bump` to rewrite pins in mise.toml).
+    /// If the remote versions cannot be fetched, it fails rather than keep
+    /// the locked version.
     #[usage(long, verbatim_doc_comment)]
     pub bump: bool,
 
