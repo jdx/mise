@@ -81,7 +81,8 @@ pub(crate) struct ManagedFileRequest {
     pub content: Option<String>,
     pub owner: Option<String>,
     pub group: Option<String>,
-    pub mode: u32,
+    /// `None` only for a metadata-only file that leaves its mode unmanaged.
+    pub mode: Option<u32>,
     pub state: ManagedState,
     pub replace: bool,
     pub notify: Vec<String>,
@@ -117,6 +118,14 @@ pub(crate) enum PrivilegedAction {
     },
     RemoveFile {
         path: PathBuf,
+    },
+    /// Change an existing regular file's ownership or mode without touching
+    /// its content or replacing its inode.
+    SetFileMetadata {
+        path: PathBuf,
+        owner: Option<String>,
+        group: Option<String>,
+        mode: Option<u32>,
     },
     CreateDirectory {
         path: PathBuf,
@@ -176,7 +185,7 @@ struct PrivilegedPathInspection {
     expected_content: Option<String>,
     owner: Option<String>,
     group: Option<String>,
-    mode: u32,
+    mode: Option<u32>,
     check_metadata: bool,
 }
 
@@ -590,7 +599,24 @@ impl ManagedFileRequest {
     ) -> Result<Self> {
         let owner = nonempty("owner", config.owner)?;
         let group = nonempty("group", config.group)?;
-        let mode = parse_mode(config.mode.as_deref(), 0o644)?;
+        let metadata_only = config.state == ManagedState::Present
+            && config.source.is_none()
+            && config.content.is_none();
+        let mode = if metadata_only {
+            validate_metadata_only(
+                &path,
+                config.mode.is_some() || owner.is_some() || group.is_some(),
+                config.template,
+                config.replace,
+            )?;
+            config
+                .mode
+                .as_deref()
+                .map(parse_explicit_mode)
+                .transpose()?
+        } else {
+            Some(parse_mode(config.mode.as_deref(), DEFAULT_FILE_MODE)?)
+        };
         let mut content = match (config.source, config.content, config.state) {
             (Some(_), Some(_), _) => {
                 bail!(
@@ -609,11 +635,7 @@ impl ManagedFileRequest {
                 })?)
             }
             (None, Some(content), ManagedState::Present) => Some(content),
-            (None, None, ManagedState::Present) => bail!(
-                "[bootstrap.files].\"{}\": present files require source or content",
-                path.display()
-            ),
-            (None, None, ManagedState::Absent) => None,
+            (None, None, _) => None,
             (_, _, ManagedState::Absent) => bail!(
                 "[bootstrap.files].\"{}\": absent files must not declare source or content",
                 path.display()
@@ -647,6 +669,18 @@ impl ManagedFileRequest {
         })
     }
 
+    /// Whether this entry manages only an existing file's ownership or mode,
+    /// leaving its content, and whether it exists at all, to something else.
+    pub(crate) fn is_metadata_only(&self) -> bool {
+        self.state == ManagedState::Present && self.content.is_none()
+    }
+
+    /// A metadata-only target that does not exist is skipped, not created:
+    /// mise has no content to create it with.
+    fn is_missing_metadata_only_target(&self) -> bool {
+        self.is_metadata_only() && matches!(self.inspection, Some(PathInspection::Missing))
+    }
+
     pub(crate) fn plan(&self) -> Result<ResourcePlan> {
         plan_file(self).map(|plan| {
             plan.with_origin(self.origin.clone())
@@ -667,20 +701,58 @@ impl ManagedFileRequest {
             ),
             _ => {}
         }
-        Ok(Some(match self.state {
-            ManagedState::Present => PrivilegedAction::WriteFile {
+        Ok(Some(match (self.state, &self.content) {
+            (ManagedState::Present, Some(content)) => PrivilegedAction::WriteFile {
                 path: self.path.clone(),
-                content: self.content.clone().expect("present file has content"),
+                content: content.clone(),
+                owner: self.owner.clone(),
+                group: self.group.clone(),
+                mode: self.mode.unwrap_or(DEFAULT_FILE_MODE),
+                replace: self.replace,
+            },
+            (ManagedState::Present, None) => PrivilegedAction::SetFileMetadata {
+                path: self.path.clone(),
                 owner: self.owner.clone(),
                 group: self.group.clone(),
                 mode: self.mode,
-                replace: self.replace,
             },
-            ManagedState::Absent => PrivilegedAction::RemoveFile {
+            (ManagedState::Absent, _) => PrivilegedAction::RemoveFile {
                 path: self.path.clone(),
             },
         }))
     }
+}
+
+const DEFAULT_FILE_MODE: u32 = 0o644;
+
+/// A present entry without `source` or `content` manages only the metadata it
+/// declares, so it must declare some, and must not ask for anything that
+/// would write or replace the file.
+fn validate_metadata_only(
+    path: &Path,
+    declares_metadata: bool,
+    template: bool,
+    replace: bool,
+) -> Result<()> {
+    if !declares_metadata {
+        bail!(
+            "[bootstrap.files].\"{}\": present files require source, content, or at least one of mode, owner, or group",
+            path.display()
+        );
+    }
+    if template {
+        bail!(
+            "[bootstrap.files].\"{}\": template requires source or content",
+            path.display()
+        );
+    }
+    if replace {
+        bail!(
+            "[bootstrap.files].\"{}\": replace requires source or content; a file whose content mise does not manage is never replaced",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 fn resolve_source_path(base: &Path, source: &str) -> PathBuf {
@@ -816,6 +888,13 @@ pub(crate) fn apply_with_accounts(
         }
     }
     for file in files {
+        if file.is_missing_metadata_only_target() {
+            warn!(
+                "not setting permissions on {}: it is absent; its content is not managed by mise",
+                file.path.display()
+            );
+            continue;
+        }
         let resource = file.plan()?;
         if dry_run && resource.action == ResourceAction::Unknown {
             unknown.push(resource);
@@ -993,6 +1072,7 @@ impl PrivilegedAction {
             } => Ok(owner.is_some()
                 || group.is_some()
                 || (*replace && replacement_is_not(path, ManagedPathKind::File)?)),
+            Self::SetFileMetadata { owner, group, .. } => Ok(owner.is_some() || group.is_some()),
             Self::CreateDirectory {
                 path,
                 owner,
@@ -1015,6 +1095,9 @@ impl PrivilegedAction {
         match self {
             Self::WriteFile { path, .. } => format!("write file {}", path.display()),
             Self::RemoveFile { path } => format!("remove file {}", path.display()),
+            Self::SetFileMetadata { path, .. } => {
+                format!("set permissions on file {}", path.display())
+            }
             Self::CreateDirectory { path, .. } => format!("create directory {}", path.display()),
             Self::RemoveDirectory { path, recursive } => format!(
                 "remove directory {}{}",
@@ -1072,6 +1155,17 @@ impl PrivilegedAction {
                 *replace,
             ),
             Self::RemoveFile { path } => remove_file(&validate_privileged_target(path)?),
+            Self::SetFileMetadata {
+                path,
+                owner,
+                group,
+                mode,
+            } => set_file_metadata(
+                &validate_privileged_target(path)?,
+                owner.as_deref(),
+                group.as_deref(),
+                *mode,
+            ),
             Self::CreateDirectory {
                 path,
                 owner,
@@ -1094,6 +1188,15 @@ impl PrivilegedAction {
 
 fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
     let desired = match request.state {
+        ManagedState::Present if request.is_metadata_only() => format!(
+            "{} (content unmanaged)",
+            desired_metadata(
+                "file",
+                request.mode,
+                request.owner.as_deref(),
+                request.group.as_deref(),
+            )
+        ),
         ManagedState::Present => desired_metadata(
             "file",
             request.mode,
@@ -1126,6 +1229,11 @@ fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
                 },
             ))
         }
+        // Without content there is nothing to create the file from. Apply
+        // warns and skips it; see `apply_with_accounts`.
+        (ManagedState::Present, PathInspection::Missing) if request.is_metadata_only() => Ok(
+            ResourcePlan::new(id, "absent", desired, ResourceAction::Noop),
+        ),
         (ManagedState::Present, PathInspection::Missing) => Ok(ResourcePlan::new(
             id,
             "absent",
@@ -1147,7 +1255,7 @@ fn plan_file(request: &ManagedFileRequest) -> Result<ResourcePlan> {
             if *kind != ManagedPathKind::File && !request.replace {
                 ResourceAction::Unknown
             } else if *kind == ManagedPathKind::File
-                && content_matches == &Some(true)
+                && (request.content.is_none() || content_matches == &Some(true))
                 && *metadata_matches
             {
                 ResourceAction::Noop
@@ -1172,8 +1280,8 @@ fn inspect_paths(
     for (index, file) in files.iter_mut().enumerate() {
         let request = PrivilegedPathInspection {
             path: file.path.clone(),
-            expected_content: (file.state == ManagedState::Present)
-                .then(|| file.content.clone().expect("present file has content")),
+            // Absent and metadata-only files have no content to compare.
+            expected_content: file.content.clone(),
             owner: file.owner.clone(),
             group: file.group.clone(),
             mode: file.mode,
@@ -1194,7 +1302,7 @@ fn inspect_paths(
             expected_content: None,
             owner: directory.owner.clone(),
             group: directory.group.clone(),
-            mode: directory.mode,
+            mode: Some(directory.mode),
             check_metadata: directory.state == ManagedState::Present,
         };
         match inspect_path(request.clone()) {
@@ -1239,7 +1347,7 @@ fn plan_directory(request: &ManagedDirectoryRequest) -> Result<ResourcePlan> {
     let desired = match request.state {
         ManagedState::Present => desired_metadata(
             "directory",
-            request.mode,
+            Some(request.mode),
             request.owner.as_deref(),
             request.group.as_deref(),
         ),
@@ -1378,9 +1486,10 @@ fn validate_privileged_target(path: &Path) -> Result<PathBuf> {
 }
 
 fn parse_mode(mode: Option<&str>, default: u32) -> Result<u32> {
-    let Some(mode) = mode else {
-        return Ok(default);
-    };
+    mode.map_or(Ok(default), parse_explicit_mode)
+}
+
+fn parse_explicit_mode(mode: &str) -> Result<u32> {
     let mode = mode.strip_prefix("0o").unwrap_or(mode);
     let parsed = u32::from_str_radix(mode, 8).wrap_err("mode must be an octal string")?;
     if parsed > 0o7777 {
@@ -1397,8 +1506,16 @@ fn nonempty(field: &str, value: Option<String>) -> Result<Option<String>> {
     }
 }
 
-fn desired_metadata(kind: &str, mode: u32, owner: Option<&str>, group: Option<&str>) -> String {
-    let mut desired = format!("{kind} mode {mode:04o}");
+fn desired_metadata(
+    kind: &str,
+    mode: Option<u32>,
+    owner: Option<&str>,
+    group: Option<&str>,
+) -> String {
+    let mut desired = kind.to_string();
+    if let Some(mode) = mode {
+        desired.push_str(&format!(" mode {mode:04o}"));
+    }
     if let Some(owner) = owner {
         desired.push_str(&format!(" owner {owner}"));
     }
@@ -1411,7 +1528,7 @@ fn desired_metadata(kind: &str, mode: u32, owner: Option<&str>, group: Option<&s
 #[cfg(unix)]
 fn metadata_matches(
     metadata: &fs::Metadata,
-    mode: u32,
+    mode: Option<u32>,
     owner: Option<&str>,
     group: Option<&str>,
 ) -> Result<bool> {
@@ -1425,13 +1542,14 @@ fn metadata_matches(
         Some(group) => lookup_group(group)?.is_some_and(|gid| metadata.gid() == gid),
         None => true,
     };
-    Ok(metadata.permissions().mode() & 0o7777 == mode && owner_matches && group_matches)
+    let mode_matches = mode.is_none_or(|mode| metadata.permissions().mode() & 0o7777 == mode);
+    Ok(mode_matches && owner_matches && group_matches)
 }
 
 #[cfg(not(unix))]
 fn metadata_matches(
     _metadata: &fs::Metadata,
-    _mode: u32,
+    _mode: Option<u32>,
     _owner: Option<&str>,
     _group: Option<&str>,
 ) -> Result<bool> {
@@ -1616,7 +1734,7 @@ fn create_directory(
     {
         let directory = open_or_create_directory_tree(path)
             .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
-        set_directory_metadata(&directory, owner, group, mode)
+        set_descriptor_metadata(&directory, owner, group, Some(mode))
             .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
     }
 
@@ -1751,12 +1869,67 @@ fn open_or_create_directory_tree_inner(
     Ok(directory)
 }
 
+/// Set an existing regular file's ownership and mode through a descriptor
+/// opened without following a final symlink, so the change lands on the file
+/// that was checked and never on a symlink's target. Content and inode are
+/// left untouched.
 #[cfg(unix)]
-fn set_directory_metadata(
-    directory: &std::os::fd::OwnedFd,
+fn set_file_metadata(
+    path: &Path,
     owner: Option<&str>,
     group: Option<&str>,
-    mode: u32,
+    mode: Option<u32>,
+) -> Result<()> {
+    use nix::fcntl::{OFlag, open};
+    use nix::sys::stat::{Mode, SFlag, fstat};
+
+    // O_NONBLOCK keeps a FIFO swapped in after inspection from blocking the
+    // open; it is refused below like any other non-regular file.
+    let file = open(
+        path,
+        OFlag::O_RDONLY
+            | OFlag::O_NOFOLLOW
+            | OFlag::O_NONBLOCK
+            | OFlag::O_NOCTTY
+            | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .wrap_err_with(|| {
+        format!(
+            "failed to open file {} without following symlinks",
+            path.display()
+        )
+    })?;
+    let stat = fstat(&file)?;
+    if stat.st_mode & SFlag::S_IFMT.bits() != SFlag::S_IFREG.bits() {
+        bail!(
+            "refusing to set permissions on non-file path: {}",
+            path.display()
+        );
+    }
+    set_descriptor_metadata(&file, owner, group, mode)
+        .wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn set_file_metadata(
+    _path: &Path,
+    _owner: Option<&str>,
+    _group: Option<&str>,
+    _mode: Option<u32>,
+) -> Result<()> {
+    bail!("managed system files are only supported on Unix")
+}
+
+/// Change ownership, then mode, of an open file or directory. A `None` mode
+/// leaves the permission bits as they are, apart from any setuid or setgid
+/// bits the operating system clears on an ownership change.
+#[cfg(unix)]
+fn set_descriptor_metadata(
+    descriptor: &std::os::fd::OwnedFd,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: Option<u32>,
 ) -> Result<()> {
     let uid = owner
         .map(resolve_user)
@@ -1766,7 +1939,10 @@ fn set_directory_metadata(
         .map(resolve_group)
         .transpose()?
         .map(nix::unistd::Gid::from_raw);
-    nix::unistd::fchown(directory, uid, gid)?;
+    nix::unistd::fchown(descriptor, uid, gid)?;
+    let Some(mode) = mode else {
+        return Ok(());
+    };
     // chown may clear setuid/setgid bits, so apply the requested mode last.
     let platform_mode = [
         (0o4000, nix::sys::stat::Mode::S_ISUID),
@@ -1785,7 +1961,7 @@ fn set_directory_metadata(
     .into_iter()
     .filter_map(|(bit, flag)| (mode & bit != 0).then_some(flag))
     .fold(nix::sys::stat::Mode::empty(), |mode, flag| mode | flag);
-    nix::sys::stat::fchmod(directory, platform_mode)?;
+    nix::sys::stat::fchmod(descriptor, platform_mode)?;
     Ok(())
 }
 
@@ -1812,7 +1988,7 @@ mod tests {
             content: (state == ManagedState::Present).then(|| "content".to_string()),
             owner: None,
             group: None,
-            mode: 0o644,
+            mode: Some(0o644),
             state,
             replace: false,
             notify: vec![],
@@ -2080,6 +2256,129 @@ mod tests {
             ResourceAction::Unknown
         );
         assert!(absent_directory.operation().is_err());
+    }
+
+    fn metadata_only(inspection: PathInspection) -> ManagedFileRequest {
+        let mut request = file("/opt/example", ManagedState::Present);
+        request.content = None;
+        request.mode = Some(0o600);
+        request.inspection = Some(inspection);
+        request
+    }
+
+    #[test]
+    fn metadata_only_files_compare_only_declared_metadata() {
+        let unchanged = metadata_only(PathInspection::Present {
+            kind: ManagedPathKind::File,
+            current: "file mode 0600".to_string(),
+            metadata_matches: true,
+            content_matches: None,
+        });
+        assert_eq!(unchanged.plan().unwrap().action, ResourceAction::Noop);
+        assert!(unchanged.operation().unwrap().is_none());
+
+        let drifted = metadata_only(PathInspection::Present {
+            kind: ManagedPathKind::File,
+            current: "file mode 0644".to_string(),
+            metadata_matches: false,
+            content_matches: None,
+        });
+        let plan = drifted.plan().unwrap();
+        assert_eq!(plan.action, ResourceAction::Update);
+        assert_eq!(plan.desired, "file mode 0600 (content unmanaged)");
+        let Some(PrivilegedAction::SetFileMetadata { mode, .. }) = drifted.operation().unwrap()
+        else {
+            panic!("expected a metadata-only update");
+        };
+        assert_eq!(mode, Some(0o600));
+
+        // Nothing to create the file from: skipped, never created.
+        let missing = metadata_only(PathInspection::Missing);
+        assert!(missing.is_missing_metadata_only_target());
+        assert_eq!(missing.plan().unwrap().action, ResourceAction::Noop);
+        assert!(missing.operation().unwrap().is_none());
+
+        for kind in [
+            ManagedPathKind::Symlink,
+            ManagedPathKind::Directory,
+            ManagedPathKind::Other,
+        ] {
+            let wrong_type = metadata_only(PathInspection::Present {
+                kind,
+                current: "symlink".to_string(),
+                metadata_matches: false,
+                content_matches: None,
+            });
+            assert_eq!(wrong_type.plan().unwrap().action, ResourceAction::Unknown);
+            assert!(wrong_type.operation().is_err());
+        }
+    }
+
+    #[test]
+    fn metadata_only_files_require_metadata_and_reject_writes() {
+        let path = Path::new("/opt/example");
+        assert!(validate_metadata_only(path, true, false, false).is_ok());
+        assert!(validate_metadata_only(path, false, false, false).is_err());
+        assert!(validate_metadata_only(path, true, true, false).is_err());
+        assert!(validate_metadata_only(path, true, false, true).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sets_file_metadata_in_place() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("config");
+        fs::write(&path, "content").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        let inode = fs::metadata(&path).unwrap().ino();
+        set_file_metadata(&path, None, None, Some(0o600)).unwrap();
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o7777, 0o600);
+        assert_eq!(metadata.ino(), inode);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "content");
+
+        // An unmanaged mode is left alone.
+        set_file_metadata(&path, None, None, None).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
+
+        // A symlink is refused rather than followed to its target.
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(set_file_metadata(&link, None, None, Some(0o644)).is_err());
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+            0o600
+        );
+
+        assert!(set_file_metadata(temp.path(), None, None, Some(0o700)).is_err());
+    }
+
+    #[test]
+    fn metadata_only_changes_round_trip_through_the_privileged_helper() {
+        let plan = PrivilegedPlan {
+            actions: vec![PrivilegedAction::SetFileMetadata {
+                path: PathBuf::from("/etc/example"),
+                owner: Some("root".to_string()),
+                group: None,
+                mode: None,
+            }],
+        };
+        let json = serde_json::to_value(&plan).unwrap();
+        assert_eq!(json["actions"][0]["type"], "set_file_metadata");
+        let parsed: PrivilegedPlan = serde_json::from_value(json).unwrap();
+        let action = &parsed.actions[0];
+        assert!(matches!(
+            action,
+            PrivilegedAction::SetFileMetadata { owner: Some(owner), mode: None, .. } if owner == "root"
+        ));
+        // Ownership changes are sent to the helper without a first attempt.
+        assert!(action.requires_preemptive_elevation().unwrap());
+        assert_eq!(action.description(), "set permissions on file /etc/example");
     }
 
     #[test]

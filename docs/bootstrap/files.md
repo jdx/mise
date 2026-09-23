@@ -29,9 +29,10 @@ allows only the intended service account or root to read them.
 
 File content may come from `source` or inline `content`. Relative source paths
 are resolved from the configuration file that declares them, and source paths
-beginning with `~/` are resolved from the user's home directory. Present files
-must declare exactly one content source. Targets must be absolute paths, and
-mise refuses to manage `/` itself.
+beginning with `~/` are resolved from the user's home directory. A file may
+declare at most one content source; a present file with neither manages only
+its [permissions](#permissions-without-content). Targets must be absolute paths,
+and mise refuses to manage `/` itself.
 
 Directory creation uses `mkdir -p` semantics, so missing parent directories are
 created automatically. The configured ownership and mode apply to the declared
@@ -64,6 +65,36 @@ search one of its parent directories, mise compares its metadata and content in
 one privileged batch. Plans and file content are sent to narrowly scoped mise
 helpers over stdin, so file content does not appear in process arguments or
 logs.
+
+## Permissions without content
+
+Leave out `source` and `content` to manage a file's mode, owner, or group while
+something else manages what it contains, such as a package, an installer, or
+the user:
+
+```toml
+[bootstrap.files."/etc/ssh/sshd_config"]
+mode = "0600"
+owner = "root"
+```
+
+Declare at least one of `mode`, `owner`, or `group`. Only the declared fields
+are compared and changed: without `mode`, the mode is left as it is rather than
+reset to `0644`. mise changes the existing file in place, so its content and
+inode are untouched and hard links and open handles keep pointing at it.
+Changing the owner or group may clear setuid and setgid bits, as it does with
+`chown`; declare `mode` to keep them.
+
+These entries never create, replace, or remove the file:
+
+- A missing target is skipped with a warning, and apply still succeeds.
+- A symlink, directory, or other non-regular file is reported as `unknown` and
+  is not changed. The change is made through a handle opened without following
+  symlinks, so it never lands on a symlink's target.
+- `template` and `replace` require `source` or `content` and are rejected here.
+- `mise bootstrap unapply` keeps the file, since mise never managed its content.
+
+`notify` fires when mise changes the file's permissions.
 
 ## Files before packages
 
