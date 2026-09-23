@@ -220,9 +220,6 @@ pub(crate) async fn start(
             let ts = runtime::toolset_resolved(&scoped, false).await?;
             (scoped, ts)
         };
-        if install_tools {
-            super::providers::install_set(&set).await?;
-        }
         let rt = runtime::Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await?;
         let owned = !foreign.contains(&root);
         // Another project's root is registered whole but only checked for what
@@ -238,6 +235,9 @@ pub(crate) async fn start(
         // This root's own configuration, which is the only view that knows
         // about imports the referenced project itself declares.
         let will_start = set.with_dependencies(&names.iter().cloned().collect::<Vec<_>>());
+        if install_tools {
+            super::providers::install_set(&will_start).await?;
+        }
         super::ensure_not_blocked(&set, &will_start, Some(&root))?;
         // Let the configuration hash short-circuit re-registration. Forcing it
         // would re-probe `pitchfork usage` and re-run `config add` on every

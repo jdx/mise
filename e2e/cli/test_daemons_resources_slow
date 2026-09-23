@@ -37,9 +37,32 @@ resource = "shared_app"
 TOML
 done
 base="$PWD"
+assert "test ! -d '$PITCHFORK_STATE_DIR'"
+# A targeted application start must not install or prepare an unrelated provider.
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[daemon_providers.unavailable]
+preset = "postgres"
+version = "0.unavailable"
+port = 9876
+TOML
+cp one/mise.toml one/original.toml
+cat >>one/mise.toml <<'TOML'
+[daemons.unrelated]
+provider = "unavailable"
+[daemons.api]
+run = "exec sleep 600"
+ready_delay = 0
+[tasks.app]
+daemons = ["api"]
+run = "true"
+TOML
+mise --cd one daemons start api
+mise --cd one run app
+assert "test ! -d '$MISE_STATE_DIR/daemon-providers/unavailable'"
+mise --cd one daemons stop api
+mv one/original.toml one/mise.toml
 cd one
 first=$(mise env --json | jq -r .PGDATABASE)
-assert "test ! -d '$PITCHFORK_STATE_DIR'"
 mise daemons register
 assert "test ! -f '$MISE_STATE_DIR/daemon-providers/pg/data/PG_VERSION'"
 assert_contains 'mise daemons ls --json' '"ownership": "consumer"'

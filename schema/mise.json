@@ -804,7 +804,7 @@
         },
         "default_tool_versions_filename": {
           "default": ".tool-versions",
-          "description": "The default .tool-versions filename read. This will not ignore .tool-versions\u2014use override_tool_versions_filename for that. This must be an env var.",
+          "description": "The default .tool-versions filename read. This will not ignore .tool-versions—use override_tool_versions_filename for that. This must be an env var.",
           "type": "string"
         },
         "disable_backends": {
@@ -947,7 +947,7 @@
           "type": "boolean"
         },
         "experimental": {
-          "description": "Enable experimental mise features which are incomplete or unstable\u2014breakings changes may occur",
+          "description": "Enable experimental mise features which are incomplete or unstable—breakings changes may occur",
           "type": "boolean"
         },
         "fetch_remote_versions_cache": {
@@ -1329,7 +1329,7 @@
           }
         },
         "install_before": {
-          "description": "Minimum release age / supply chain protection \u2014 only install versions released before this date",
+          "description": "Minimum release age / supply chain protection — only install versions released before this date",
           "type": "string",
           "deprecated": true
         },
@@ -1417,7 +1417,7 @@
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "minimum_release_age": {
-          "description": "Minimum release age / supply chain protection \u2014 only install versions older than this threshold",
+          "description": "Minimum release age / supply chain protection — only install versions older than this threshold",
           "type": "string"
         },
         "minimum_release_age_excludes": {
@@ -1944,7 +1944,7 @@
           "deprecated": true
         },
         "silent": {
-          "description": "Suppress all `mise run|watch` output except errors\u2014including what tasks output.",
+          "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
         },
         "skills": {
@@ -3667,7 +3667,7 @@
         },
         "raw_args": {
           "default": false,
-          "description": "skip mise's argument parsing for this task \u2014 all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
+          "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
           "type": "boolean"
         },
         "run": {

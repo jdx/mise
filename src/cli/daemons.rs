@@ -523,7 +523,7 @@ impl Daemons {
             // depend on, since pitchfork starts dependencies with them.
             let here = set.restricted_to(&starting);
             if install {
-                daemons::providers::install_set(&set).await?;
+                daemons::providers::install_set(&here).await?;
                 // An unrelated daemon is registered but not started, so a
                 // missing tool or task reference of its own must not fail this
                 // command.

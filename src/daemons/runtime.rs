@@ -449,7 +449,12 @@ impl Runtime {
         owns_profile: bool,
         starting: &[String],
     ) -> Result<(State, super::ProjectLock)> {
-        super::providers::prepare_set(self, set).await?;
+        let providers = if starting.is_empty() {
+            set.clone()
+        } else {
+            set.with_dependencies(starting)
+        };
+        super::providers::prepare_set(self, &providers).await?;
         let lock = super::ProjectLock::acquire(root)?;
         let previous = read_state(root)?;
         // This root's configuration was read under the current profile, whoever
