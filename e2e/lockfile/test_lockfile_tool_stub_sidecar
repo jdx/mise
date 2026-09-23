@@ -76,6 +76,11 @@ lockfile = true
 config_roots = ["packages/*"]
 TOML
 echo '[tools]' >mono/packages/a/mise.toml
+# A local override is not committed, so it must not move a committed stub.
+cat >mono/mise.local.toml <<'TOML'
+[monorepo]
+lockfile = false
+TOML
 cat >mono/packages/a/bin/jq <<'STUB'
 #!/usr/bin/env -S mise tool-stub
 

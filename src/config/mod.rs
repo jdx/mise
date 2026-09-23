@@ -1838,15 +1838,23 @@ pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
     let mut config_files = ConfigMap::new();
     for ancestor in all_dirs_from(dir).unwrap_or_default() {
         for path in config_paths_in_dir(&ancestor) {
+            // The same committed layers the stub's lockfile is chosen from.
             if path.extension().is_none_or(|ext| ext != "toml")
+                || lockfile::is_local_config(&path)
+                || lockfile::extract_env_from_config_path(&path).is_some()
                 || is_global_config(&path)
-                || (paranoid && config_file::trust_check(&path).is_err())
+                || (paranoid && !config_file::is_path_trusted(&path))
             {
                 continue;
             }
-            // Only monorepo settings are read, so an unreadable config just
-            // cannot declare a root.
-            if let Ok(cf) = MiseToml::from_file(&path) {
+            // Only the static monorepo declarations are read, so the config
+            // is decoded without a trust check: nothing in it is evaluated,
+            // and a stub run must not prompt for or record trust. An
+            // unreadable config just cannot declare a root.
+            let Ok(body) = file::read_to_string(&path) else {
+                continue;
+            };
+            if let Ok(cf) = MiseToml::for_history_preflight(&body, &path) {
                 config_files.insert(path, Arc::new(cf));
             }
         }

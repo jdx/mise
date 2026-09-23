@@ -2208,7 +2208,7 @@ pub(crate) fn same_file_path(a: &Path, b: &Path) -> bool {
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
-fn is_local_config(path: &Path) -> bool {
+pub(crate) fn is_local_config(path: &Path) -> bool {
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
