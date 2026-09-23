@@ -3352,11 +3352,10 @@ impl AquaBackend {
         arch: &str,
     ) -> Result<Option<AquaFileLink>> {
         let explicit_link = f.link.is_some();
-        let src = match f.src(pkg, version, os, arch)? {
-            Some(src) => src,
-            None if explicit_link => f.name.clone(),
-            None => return Ok(None),
-        };
+        // Like aqua, a file without `src` is found at its `name`.
+        let src = f
+            .src(pkg, version, os, arch)?
+            .unwrap_or_else(|| f.name.clone());
         let link = f.link(pkg, version, os, arch)?;
 
         let mut src = install_path.join(src);
@@ -4729,6 +4728,47 @@ packages:
                 hard: false,
                 explicit_link: true,
             }]
+        );
+    }
+
+    #[test]
+    fn test_srcs_default_src_to_file_name() {
+        // mvdan/sh and (on Windows) astral-sh/uv list files by name only.
+        // `symlink_bins` builds `.mise-bins` from these links, so dropping
+        // them left the directory missing while PATH pointed at it.
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![
+            AquaFile {
+                name: "uv".to_string(),
+                ..Default::default()
+            },
+            AquaFile {
+                name: "uvx".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "windows", "amd64")
+                .unwrap();
+
+        let exe = |name: &str| PathBuf::from("install").join(format!("{name}.exe"));
+        assert_eq!(
+            links,
+            vec![
+                AquaFileLink {
+                    src: exe("uv"),
+                    dst: exe("uv"),
+                    hard: false,
+                    explicit_link: false,
+                },
+                AquaFileLink {
+                    src: exe("uvx"),
+                    dst: exe("uvx"),
+                    hard: false,
+                    explicit_link: false,
+                },
+            ]
         );
     }
 
