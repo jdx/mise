@@ -49,6 +49,12 @@ echo "low-script-ran GREETING=${GREETING:-unset}"
 EOF
 chmod +x mytasks/low.sh
 
+cat <<'EOF' >mytasks/refused.sh
+#!/usr/bin/env bash
+echo "refused-script-ran NOTE=${NOTE:-unset}"
+EOF
+chmod +x mytasks/refused.sh
+
 # `.mise/config.toml` is the config that selects the include list, and it ranks
 # below `mise.toml` but above `.config/mise.toml`.
 cat <<'EOF' >.mise/config.toml
@@ -66,6 +72,12 @@ env = { GREETING = "hi" }
 # so this is the lower of the two definitions naming that script.
 [tasks.hello]
 description = "stem block from a lower config"
+
+# Spelled with the stem rather than the script's name, but equally below the
+# config that selected the include.
+[tasks.refused]
+run = "echo refused-command-ran"
+env = { NOTE = "decorated" }
 EOF
 
 cat <<'EOF' >mise.toml
@@ -121,3 +133,9 @@ assert_contains "mise tasks" "decorated from a lower config"
 assert "mise run hello" "inline-ran"
 assert_not_contains "mise tasks" "stem block from a lower config"
 assert_not_contains "mise tasks ls --no-header" "hello.sh"
+
+# A command spelled with the stem is refused on the same terms as one spelled
+# with the script's name: it decorates the script rather than standing up a task
+# beside it that "mise run refused" would pick instead.
+assert "mise run refused" "refused-script-ran NOTE=decorated"
+assert_not_contains "mise run refused" "refused-command-ran"
