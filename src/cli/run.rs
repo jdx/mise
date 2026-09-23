@@ -724,8 +724,18 @@ impl Run {
         // so the OpenTelemetry root span is named after what was invoked
         // rather than the (much larger) resolved dep set.
         let requested_task_names: Vec<String> = task_list.iter().map(|t| t.name.clone()).collect();
+        // Start OpenTelemetry here so the root span covers the whole
+        // invocation, setup included. It is a local until the tasks start so
+        // that a setup failure drops it, which ends the root span as an error
+        // and flushes it.
+        let telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
         let execution_tasks = task_list.clone();
-        let resolved_tasks = resolve_depends(&config, task_list).await?;
+        let resolved_tasks = otel::TaskRunTelemetry::phase(
+            telemetry.as_ref(),
+            "resolve tasks",
+            resolve_depends(&config, task_list),
+        )
+        .await?;
 
         // Collect subdirectory config files from all resolved tasks. In
         // monorepos these come from sub mise.toml files referenced via the
@@ -815,7 +825,12 @@ impl Run {
             ..Default::default()
         };
         let previewed_tools = if !self.skip_tools {
-            let (installed, missing) = ts.install_missing_versions(&mut config, &opts).await?;
+            let (installed, missing) = otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "install tools",
+                ts.install_missing_versions(&mut config, &opts),
+            )
+            .await?;
             // Lazy tools stay uninstalled until a task runs one of their commands, which
             // only works if their bootstrap shims exist. A hand-edited `lazy = true`
             // entry has none until the farm is rebuilt (discussion #12678).
@@ -832,15 +847,18 @@ impl Run {
         // Run auto-enabled deps steps (unless --no-deps)
         if let Some(engine) = deps_engine {
             let (env, env_remove) = ts.env_with_path_and_removals(&config).await?;
-            let result = engine
-                .run(DepsOptions {
+            let result = otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "deps",
+                engine.run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
                     dry_run: self.dry_run,
                     env,
                     env_remove,
                     ..Default::default()
-                })
-                .await?;
+                }),
+            )
+            .await?;
             for step in result.steps {
                 if let DepsStepResult::WouldRun(id, reason) = step {
                     info!("[dry-run] Would install dependency: {id} ({reason})");
@@ -859,14 +877,23 @@ impl Run {
         // spawned task, and its daemons are not started; see the note in
         // docs/daemons.md.
         if !self.skip_deps {
-            crate::daemons::tasks::start(&config, &resolved_tasks, self.dry_run, !self.skip_tools)
-                .await?;
+            otel::TaskRunTelemetry::phase(
+                telemetry.as_ref(),
+                "start daemons",
+                crate::daemons::tasks::start(
+                    &config,
+                    &resolved_tasks,
+                    self.dry_run,
+                    !self.skip_tools,
+                ),
+            )
+            .await?;
         }
 
-        // Initialize OpenTelemetry before the timeout wrapper so traces are
+        // Hand telemetry to the run before the timeout wrapper so traces are
         // finalized even when the run is cancelled by --timeout:
         // TaskRunTelemetry finishes on drop.
-        self.telemetry = otel::TaskRunTelemetry::init_if_enabled(&requested_task_names);
+        self.telemetry = telemetry;
 
         // Apply global timeout for entire run if configured
         let timeout = if let Some(timeout_str) = &self.timeout {

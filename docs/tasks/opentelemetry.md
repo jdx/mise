@@ -37,7 +37,7 @@ If your collector is reachable, mise will export:
 
 - spans for individual tasks
 - grouped spans for monorepo task roots
-- a root span covering the executed tasks (see [Span Timing](#span-timing))
+- a root span covering the whole `mise run`, with child spans for setup such as tool installs
 
 ## Configuration
 
@@ -89,14 +89,19 @@ Each `mise run` creates one trace.
 
 That trace contains:
 
-- a root span covering the task-execution phase of `mise run`
+- a root span covering the whole `mise run`
+- setup spans for resolving tasks, installing tools, running deps providers, and starting daemons
 - task spans for individual tasks
 - monorepo group spans when tasks come from different `config_root`s
 
 Typical shape:
 
 ```
-mise run                          ← root span (see Root Span Timing)
+mise run                          ← root span
+├── resolve tasks                 ← setup span
+├── install tools                 ← setup span
+├── deps                          ← setup span
+├── start daemons                 ← setup span
 ├── packages/frontend             ← monorepo group span
 │   ├── lint                      ← task span
 │   ├── typecheck                 ← task span
@@ -112,13 +117,17 @@ For monorepos, this makes it easier to see which package or subproject a task ca
 ### Span Timing
 
 Spans are live for exactly as long as the thing they measure, so durations nest the way
-you'd expect: the root span opens once telemetry is initialized and closes after the last
-task finishes, and each group span covers its members.
+you'd expect: the root span opens once the tasks to run are known and closes after the
+last task finishes, and each group span covers its members.
 
-Telemetry is initialized after task resolution, tool installation, and automatic
-dependency setup, so those phases sit outside the root span. Everything after it —
-scheduler overhead, per-task queueing on the `jobs` semaphore, toolset and environment
-resolution — is inside it. A task span starts when the scheduler picks the task up, not
+Setup runs inside the root span, each phase under its own span with
+`mise.span_type = "setup"`: resolving the task graph, installing missing tools,
+running automatic deps providers, and starting daemons. A slow first run on a fresh CI
+runner shows up as a long `install tools` span, not as unexplained time before the first
+task. A failed phase is marked as an error, and so is the root span.
+
+The rest of the root span is scheduler overhead, per-task queueing on the `jobs`
+semaphore, and per-task toolset and environment resolution. A task span starts when the scheduler picks the task up, not
 when its process is spawned, so the gap between a task span's start and its first output
 is mise's own per-task setup rather than the task itself.
 

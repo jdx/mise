@@ -185,6 +185,29 @@ impl TaskRunTelemetry {
         span.end_with_timestamp(end_time);
     }
 
+    /// Run one of `mise run`'s setup phases (resolving tasks, installing
+    /// tools, running deps providers, starting daemons) under its own span,
+    /// a child of the root span. The span is marked as an error when the
+    /// phase fails. Without telemetry this just awaits `fut`.
+    pub(crate) async fn phase<T>(
+        telemetry: Option<&Self>,
+        name: &'static str,
+        fut: impl Future<Output = Result<T>>,
+    ) -> Result<T> {
+        let Some(t) = telemetry else {
+            return fut.await;
+        };
+        let mut span = t.inner.tracer.start_with_context(name, &t.inner.root_cx);
+        span.set_attribute(KeyValue::new("mise.span_type", "setup"));
+        let result = fut.await;
+        match &result {
+            Ok(_) => span.set_status(Status::Ok),
+            Err(err) => span.set_status(Status::error(err.to_string())),
+        }
+        span.end();
+        result
+    }
+
     /// Mark the run as succeeded. Must be called explicitly on the happy
     /// path — the default is a failed run so that cancelled futures (e.g.
     /// timeout) produce an errored root span.
@@ -639,6 +662,37 @@ mod tests {
         let root = span_by_name(&spans, "mise run nested");
         assert_eq!(root.span_context.trace_id(), parent_trace_id);
         assert_eq!(root.parent_span_id, parent_span_id);
+    }
+
+    #[tokio::test]
+    async fn phase_is_a_child_of_root_and_records_failure() {
+        let (t, exporter) = test_telemetry("mise run build");
+        TaskRunTelemetry::phase(Some(&t), "install tools", async { Ok(()) })
+            .await
+            .unwrap();
+        let err = TaskRunTelemetry::phase(Some(&t), "start daemons", async {
+            Err::<(), _>(eyre::eyre!("pitchfork is not installed"))
+        })
+        .await;
+        assert!(err.is_err());
+        t.finish();
+
+        let spans = exporter.finished_spans();
+        let root = span_by_name(&spans, "mise run build");
+        let install = span_by_name(&spans, "install tools");
+        let daemons = span_by_name(&spans, "start daemons");
+        for phase in [install, daemons] {
+            assert_eq!(phase.parent_span_id, root.span_context.span_id());
+            assert_eq!(attr(phase, "mise.span_type"), Some(&Value::from("setup")));
+        }
+        assert_eq!(install.status, Status::Ok);
+        assert!(is_error(&daemons.status));
+    }
+
+    #[tokio::test]
+    async fn phase_without_telemetry_just_runs() {
+        let out = TaskRunTelemetry::phase(None, "install tools", async { Ok(7) }).await;
+        assert_eq!(out.unwrap(), 7);
     }
 
     #[test]
