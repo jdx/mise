@@ -43,6 +43,8 @@ assert_contains "cat $target" "work = true"
 # a target edited since mise wrote it is a conflict and is kept
 echo "mine = 1" >>"$target"
 assert_contains "mise dot status" "changed since mise last wrote it"
+assert_contains "mise dot diff" "is kept unless applied with --force"
+assert_not_contains "mise dot diff" "template renders empty: remove"
 assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
 assert_contains "cat $target" "mine = 1"
 # --force removes it
@@ -80,6 +82,13 @@ assert_succeed "mise dot apply --yes"
 assert_fail "test -e $target"
 assert_succeed "mise dot rollback ~/.config/app/work.toml --to $before --yes"
 assert_contains "cat $target" "work = true"
+
+# unapply gives up ownership even when the target is already gone
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+assert "find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '" "1"
+assert_succeed "mise dot unapply ~/.config/app/work.toml --yes"
+assert "find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '" "0"
 
 # remove_empty is only valid on template entries
 cat <<'EOF' >mise.toml
