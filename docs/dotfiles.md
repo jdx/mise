@@ -201,6 +201,7 @@ Choose how mise creates a target from its source:
 | `symlink-each` | Create directories and link each file within them.                | The target directory also holds files you want mise to leave alone.   |
 | `copy`         | Copy a file or directory, overwriting matching files.             | The application needs a regular file or writes its own configuration. |
 | `template`     | Render a source file with the [template engine](/templates.html). | The output depends on machine-specific variables.                     |
+| `absent`       | Remove a file or symlink at the target; takes no source.          | A file you no longer use should not exist on any machine.             |
 
 For example, to link a directory:
 
@@ -218,6 +219,48 @@ or remove previously created links.
 Directory copies keep existing target files when you delete or exclude their
 sources. Review and remove those leftover copies yourself.
 
+### Removing files {#absent}
+
+Use `mode = "absent"` to remove a file you no longer want on your
+machines, such as the configuration of a tool you replaced:
+
+```toml
+[dotfiles]
+"~/.oldrc" = { mode = "absent" }
+```
+
+`mise dot apply` deletes `~/.oldrc` if it exists and does nothing once it
+is gone. The entry is the instruction, so mise removes a regular file or a
+symlink without comparing its content. It removes a symlink itself, never
+the file or directory the link points to.
+
+An `absent` entry never removes a directory. When the target is a
+directory, `status` and `apply` report an error naming it, even with
+`--force`. Remove the directory yourself.
+
+An `absent` entry takes no `source`, `content`, `exclude`, `manifest`, or
+`encrypt`. No other entry can place a file beneath an `absent` target.
+
+`mise dot status` shows the entry as `absent` once the target is gone, and
+as `would remove` while a file or symlink is still there.
+`mise dot apply --dry-run` prints `rm <target>`.
+
+When a [tracked](#tracking-files-in-place) path is removed, the removal is
+recorded like any other apply, so `mise dot undo` restores the file.
+`mise dot unapply` leaves the target alone, because mise did not create
+the file.
+
+[Destination variants](#platform-specific-destinations) work with
+`absent`, so you can remove a file on some machines only:
+
+```toml
+[dotfiles."~/.bash_profile"]
+mode = "absent"
+variants = [{ os = "macos" }]
+```
+
+Machines that match no variant skip the entry.
+
 ### Platform-specific destinations
 
 Use `variants` to deploy one source to different paths on different machines:
@@ -233,8 +276,8 @@ variants = [
 ]
 ```
 
-Destination variants work with `copy`, `symlink`, `symlink-each`, and
-`template`. They share the [tracking variant selectors](#variants): `os`
+Destination variants work with `copy`, `symlink`, `symlink-each`,
+`template`, and [`absent`](#absent). They share the [tracking variant selectors](#variants): `os`
 (optionally with an architecture), `profile` (a mise environment selected
 with `-E` or `MISE_ENV`), and `default = true`. The most specific matching
 variant wins; ties are reported as invalid, and no match without a default
@@ -502,6 +545,9 @@ Removing an entry from config leaves its file, block, or line in place.
 To remove them too, run `mise dot unapply` before deleting
 the entry from your config.
 
+To remove a file that no entry created, declare it with
+[`mode = "absent"`](#absent).
+
 ## Unapplying
 
 `mise dot unapply` removes configured targets without removing
@@ -518,6 +564,7 @@ filesystem, and recorded `symlink-each` state to determine what the entry owns:
   survive, and directories are removed only when empty.
 - Marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
+- `absent` entries are skipped. mise does not recreate the file they removed.
 
 If you deleted a source file from a copied directory, unapply cannot
 identify its old copy. Remove that leftover file yourself. Use `--dry-run`
@@ -570,7 +617,9 @@ change. mise also records which paths the operation touched. Run
 ### JSON output
 
 `mise dot status --json` uses `source_missing` for the
-`source missing` state. Each entry also includes an `origin` object
+`source missing` state. An `absent` entry has `"mode": "absent"` and
+`"source": null`. Its state is `applied` once the target is gone and
+`differs` while a file or symlink is still there. Each entry also includes an `origin` object
 describing where its configuration came from: the config file, its
 `config_root`, any mise environment in the config filename, and the resolved
 source path.

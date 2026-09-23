@@ -73,10 +73,13 @@ impl DotfilesStatus {
                 Ok(state) => state,
                 Err(err) => FileState::Differs(format!("{err}")),
             };
+            let absent = req.mode == system::files::FileMode::Absent;
             let state_str = match &state {
+                FileState::Applied if absent => "absent".to_string(),
                 FileState::Applied => "applied".to_string(),
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
+                FileState::Differs(reason) if absent => format!("would remove ({reason})"),
                 FileState::Differs(reason) => format!("differs ({reason})"),
                 FileState::Tracked => "tracked".to_string(),
             };
@@ -84,8 +87,11 @@ impl DotfilesStatus {
             if self.json {
                 json_files.push(json!({
                     "target": req.target_raw,
-                    "source": (req.mode != system::files::FileMode::Content)
-                        .then(|| req.source.display_user()),
+                    "source": (!matches!(
+                        req.mode,
+                        system::files::FileMode::Content | system::files::FileMode::Absent
+                    ))
+                    .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
                     "origin": &req.origin,
                     "state": match &state {
@@ -100,10 +106,10 @@ impl DotfilesStatus {
                 file_rows.push(vec![
                     req.target_raw.clone(),
                     req.mode.name().to_string(),
-                    if req.mode == system::files::FileMode::Content {
-                        "inline".to_string()
-                    } else {
-                        req.source.display_user()
+                    match req.mode {
+                        system::files::FileMode::Content => "inline".to_string(),
+                        system::files::FileMode::Absent => "-".to_string(),
+                        _ => req.source.display_user(),
                     },
                     req.origin.config.display_user(),
                     state_str,

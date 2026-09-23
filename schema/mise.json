@@ -4341,10 +4341,16 @@
               },
               "mode": {
                 "type": "string",
-                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source",
                 "anyOf": [
                   {
-                    "enum": ["symlink", "symlink-each", "copy", "template"]
+                    "enum": [
+                      "symlink",
+                      "symlink-each",
+                      "copy",
+                      "template",
+                      "absent"
+                    ]
                   },
                   {
                     "type": "string"
@@ -4436,6 +4442,31 @@
               }
             },
             "allOf": [
+              {
+                "if": {
+                  "required": ["mode"],
+                  "properties": {
+                    "mode": {
+                      "const": "absent"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "source": false,
+                    "content": false,
+                    "exclude": false,
+                    "manifest": false,
+                    "encrypt": {
+                      "const": false
+                    },
+                    "block": false,
+                    "line": false,
+                    "template": false,
+                    "comment": false
+                  }
+                }
+              },
               {
                 "oneOf": [
                   {

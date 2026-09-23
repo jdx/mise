@@ -2367,9 +2367,16 @@ fn config_files_after_dotfiles_dry_run(
     let mut bodies = indexmap::IndexMap::new();
     let mut unavailable_bodies = HashSet::new();
     for file in files {
-        if !is_mise_config_target(&file.target)
-            || (file.mode != system::files::FileMode::Content && !file.source.is_file())
-        {
+        if !is_mise_config_target(&file.target) {
+            continue;
+        }
+        if file.mode == FileMode::Absent {
+            // removed by the apply; a later edit starts from an empty file
+            config_files.shift_remove(&file.target);
+            bodies.insert(file.target.clone(), String::new());
+            continue;
+        }
+        if file.mode != FileMode::Content && !file.source.is_file() {
             continue;
         }
         if file.mode == FileMode::Template {
@@ -3951,11 +3958,18 @@ impl BootstrapStatus {
                 Ok(state) => state,
                 Err(err) => system::files::FileState::Differs(format!("{err}")),
             };
+            let absent = req.mode == FileMode::Absent;
             let (state_str, state_json, missing) = match &state {
+                system::files::FileState::Applied if absent => {
+                    ("absent".to_string(), "applied", false)
+                }
                 system::files::FileState::Applied => ("applied".to_string(), "applied", false),
                 system::files::FileState::Missing => ("missing".to_string(), "missing", true),
                 system::files::FileState::SourceMissing => {
                     ("source missing".to_string(), "source_missing", true)
+                }
+                system::files::FileState::Differs(reason) if absent => {
+                    (format!("would remove ({reason})"), "differs", true)
                 }
                 system::files::FileState::Differs(reason) => {
                     (format!("differs ({reason})"), "differs", true)
@@ -3965,17 +3979,17 @@ impl BootstrapStatus {
             report.row(
                 "dotfiles",
                 req.target_raw.clone(),
-                if req.mode == system::files::FileMode::Content {
-                    "content inline".to_string()
-                } else {
-                    format!("{} {}", req.mode.name(), req.source.display_user())
+                match req.mode {
+                    FileMode::Content => "content inline".to_string(),
+                    FileMode::Absent => "absent".to_string(),
+                    _ => format!("{} {}", req.mode.name(), req.source.display_user()),
                 },
                 state_str,
                 missing,
             );
             json_files.push(json!({
                 "target": req.target_raw,
-                "source": (req.mode != system::files::FileMode::Content)
+                "source": (!matches!(req.mode, FileMode::Content | FileMode::Absent))
                     .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,

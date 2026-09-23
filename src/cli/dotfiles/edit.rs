@@ -156,7 +156,9 @@ fn source_for_target(
                 warn_if_the_edit_escapes_history(config, &req.target);
                 req.target.clone()
             }
-            FileMode::Content => req.origin.config.clone(),
+            // neither has a source file: the declaring config is what
+            // changes them
+            FileMode::Content | FileMode::Absent => req.origin.config.clone(),
             _ => req.source.clone(),
         }));
     }

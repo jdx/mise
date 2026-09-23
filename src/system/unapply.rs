@@ -222,10 +222,15 @@ pub(crate) async fn plan(
             }
             Ok(false) => {
                 if opts.verbose {
+                    let reason = if request.mode == files::FileMode::Absent {
+                        "declared absent, nothing was applied for it"
+                    } else {
+                        "already absent"
+                    };
                     unapply.skipped.push(Skip {
                         kind: "dotfile",
                         name,
-                        reason: "already absent".into(),
+                        reason: reason.into(),
                     });
                 }
             }
