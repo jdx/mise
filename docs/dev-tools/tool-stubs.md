@@ -196,7 +196,7 @@ Use explicit platform prefixes when a filename is ambiguous.
 - `--platform-bin PLATFORM:PATH` - Set a platform-specific binary path
 - `--checksum-algorithm ALGORITHM` - Generate `blake3` (default) or `sha256` checksums
 - `--skip-download` - Generate without checksums or binary detection; review the binary path and run `--fetch` before relying on integrity checks
-- `--lock` - Resolve and embed lockfile data (pinned version + platform URLs/checksums) into an existing stub
+- `--lock` - Resolve and record lock data (exact version + platform URLs/checksums) for an existing stub, in its project's `mise.lock` or, outside a project, in the stub; see [Locked Tool Stub](#locked-tool-stub)
 - `--fetch` - Fetch missing checksums and sizes for an existing stub file
 
 `--checksum-algorithm` cannot be combined with `--lock` or `--skip-download`, because those modes do not calculate checksums.
@@ -302,9 +302,9 @@ Where the lock data goes depends on where the stub lives:
   keeps its version request (`24`), just as `mise.toml` does, and `mise.lock`
   records the resolved version. This uses the lockfile's existing platforms, or
   the default platforms for a new lockfile.
-- **Outside a project, or with `--embed`**, it goes into a `[lock]` section in
-  the stub and the stub's `version` is pinned to the resolved version. Use this
-  for a stub that is copied or downloaded without its project. It fetches URLs
+- **Outside a project**, it goes into a `[lock]` section in the stub and the
+  stub's `version` is pinned to the resolved version, so the stub carries its
+  lock wherever it is copied or downloaded. It fetches URLs
   for all common platforms (linux-x64, linux-x64-musl, linux-arm64,
   linux-arm64-musl, macos-x64, macos-arm64, and windows-x64), or
   `lockfile_platforms` plus the current platform when that is configured.
@@ -334,7 +334,8 @@ project's `mise.lock` from any working directory. Local and environment configs
 the same way on every machine.
 
 An embedded `[lock]` takes precedence over `mise.lock`, but only when it covers
-the current platform. In locked mode, a stub needs lock data for the current
+the current platform. Running `--lock` on a stub inside a project moves an
+existing `[lock]` into `mise.lock`. In locked mode, a stub needs lock data for the current
 platform from one of the two, or it is rejected like any unlocked tool.
 
 #### Bumping a Locked Version

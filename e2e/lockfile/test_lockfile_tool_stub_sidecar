@@ -54,15 +54,15 @@ assert_not_contains "cat mise.lock" "tool-stubs"
 assert_not_contains "cat mise.lock" "jqlang"
 mv jq.bak bin/jq
 
-# --embed keeps the lock in the stub and takes it out of mise.lock.
+# Outside a project, --lock embeds the lock in the stub. Moved into the
+# project and locked again, the lock moves into mise.lock.
+cp bin/jq ../elsewhere/jq
+assert_succeed "mise generate tool-stub ../elsewhere/jq --lock"
+assert_contains "cat ../elsewhere/jq" "[lock.platforms."
+cp ../elsewhere/jq bin/jq
 assert_succeed "mise generate tool-stub bin/jq --lock"
+assert_not_contains "cat bin/jq" "[lock"
 assert_contains "cat mise.lock" 'tool-stubs = ["bin/jq"]'
-assert_contains "mise generate tool-stub bin/jq --lock --embed" "Updated tool stub"
-assert_contains "cat bin/jq" "[lock.platforms."
-assert_contains "cat bin/jq" 'version = "1.7"'
-assert_not_contains "cat mise.lock" "tool-stubs"
-assert_succeed "mise lock"
-assert_not_contains "cat mise.lock" "jqlang"
 
 # In a monorepo with a root lockfile, a subproject's stub uses the root
 # mise.lock even when run from outside the monorepo.

@@ -1643,13 +1643,6 @@ impl Lockfile {
         Ok(())
     }
 
-    /// Forget `stub`, e.g. once it carries its own `[lock]`. Returns whether
-    /// it was listed.
-    pub(crate) fn remove_tool_stub(&mut self, lockfile_path: &Path, stub: &Path) -> bool {
-        tool_stub_reference(lockfile_path, stub)
-            .is_ok_and(|reference| self.tool_stubs.remove(&reference))
-    }
-
     /// Drop references to stubs that were deleted, or that now find a
     /// different lockfile. Returns whether any reference was dropped.
     pub(crate) fn retain_live_tool_stubs(&mut self, lockfile_path: &Path) -> bool {

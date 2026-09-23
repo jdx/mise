@@ -49,16 +49,12 @@ to incrementally build cross-platform tool stubs.
 - **`--http <HTTP>`** — HTTP backend type to use
 
   **Default:** `http`
-- **`--embed`** — Write the lock data into the stub's own `[lock]` section even inside a project
-
-  Use this for a stub that is copied or downloaded on its own, without its
-  project's `mise.lock`.
 - **`--lock`** — Resolve and record lock data (exact version, platform URLs and checksums) for an existing stub
 
   Inside a project, the data goes into the `mise.lock` of the nearest project
   config above the stub, and the stub keeps its version request. Outside a
-  project, or with `--embed`, the stub is pinned to the exact version and the
-  data goes into its `[lock]` section.
+  project, the stub is pinned to the exact version and the data goes into its
+  `[lock]` section.
 - **`--platform-bin <PLATFORM_BIN>`** — Platform-specific binary paths in the format platform:path
 
   Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
