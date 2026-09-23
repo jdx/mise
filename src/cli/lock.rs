@@ -1898,15 +1898,19 @@ impl Lock {
                         .as_ref()
                         .ok()
                         .and_then(|request| request.resolve_options(context.resolve_options).ok());
-                    // An installed exact pin resolves to itself, so `--bump` has
-                    // nothing to look up for it.
-                    let installed_exact = backend.as_ref().is_some_and(|backend| {
-                        backend
-                            .list_installed_versions()
-                            .contains(&effective_version)
-                    });
                     let is_rolling = backend
+                        .as_ref()
                         .is_some_and(|backend| backend.is_rolling_channel(&effective_version));
+                    // An installed exact pin resolves to itself, so `--bump` has
+                    // nothing to look up for it. `latest` and rolling channels are
+                    // selectors even when a directory by that name is installed.
+                    let installed_exact = !is_rolling
+                        && effective_version != "latest"
+                        && backend.is_some_and(|backend| {
+                            backend
+                                .list_installed_versions()
+                                .contains(&effective_version)
+                        });
                     if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
                         && (self.bump || resolve_options.before_date.is_some() || is_rolling)
                     {
