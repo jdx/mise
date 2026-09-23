@@ -84,7 +84,7 @@ Include references from every tracked configuration file
 mise ls --all-sources
 ```
 
-Show only tools installed through the go or cargo backends
+Show only tools from the go or cargo backends
 
 ```
 mise ls --backend go --backend cargo

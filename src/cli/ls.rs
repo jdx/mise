@@ -56,7 +56,7 @@ use crate::ui::table::MiseTable;
     ),
     example(
         r###"mise ls --backend go --backend cargo"###,
-        help = r###"Show only tools installed through the go or cargo backends"###
+        help = r###"Show only tools from the go or cargo backends"###
     ),
     example(
         r###"mise ls --grouped"###,

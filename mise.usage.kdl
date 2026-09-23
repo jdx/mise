@@ -4069,7 +4069,7 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     example "mise ls --json" help="Machine-readable output: an object keyed by tool name"
     example "mise ls node --json" help="With a tool argument, JSON output is an array of its version records"
     example "mise ls --all-sources" help="Include references from every tracked configuration file"
-    example "mise ls --backend go --backend cargo" help="Show only tools installed through the go or cargo backends"
+    example "mise ls --backend go --backend cargo" help="Show only tools from the go or cargo backends"
     example "mise ls --grouped" help="List tools in a separate section for each backend"
 }
 cmd ls-remote help="List tool versions available to install" effect=read {
