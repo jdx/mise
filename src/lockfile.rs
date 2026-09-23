@@ -1652,16 +1652,12 @@ impl Lockfile {
 
     /// Drop references to stubs that were deleted, or that now find a
     /// different lockfile. Returns whether any reference was dropped.
-    pub(crate) fn retain_live_tool_stubs(
-        &mut self,
-        lockfile_path: &Path,
-        monorepo_root: Option<&Path>,
-    ) -> bool {
+    pub(crate) fn retain_live_tool_stubs(&mut self, lockfile_path: &Path) -> bool {
         let before = self.tool_stubs.len();
         self.tool_stubs.retain(|reference| {
             let stub = tool_stub_path(lockfile_path, reference);
             stub.is_file()
-                && lockfile_path_for_tool_stub(&stub, monorepo_root)
+                && lockfile_path_for_tool_stub(&stub)
                     .is_some_and(|(path, _)| same_file_path(&path, lockfile_path))
         });
         self.tool_stubs.len() != before
@@ -2134,7 +2130,9 @@ fn lockfile_path_for_tool_source_with_root(
             })
             .max_by_key(|(root_depth, is_base, idx, _)| (*root_depth, *is_base, *idx))
             .map(|(_, _, _, lockfile)| lockfile),
-        ToolSource::ToolStub(path) => lockfile_path_for_tool_stub(path, monorepo_root),
+        // The current directory's monorepo root does not apply to a stub
+        // that lives elsewhere; it derives its own.
+        ToolSource::ToolStub(path) => lockfile_path_for_tool_stub(path),
         _ => None,
     }
 }
@@ -2144,11 +2142,10 @@ fn lockfile_path_for_tool_source_with_root(
 /// first, so a stub linked onto PATH still finds its project's lockfile, and
 /// the directory it is invoked from never matters. Local and environment
 /// configs are skipped: a committed stub resolves the same way everywhere.
-pub(crate) fn lockfile_path_for_tool_stub(
-    stub: &Path,
-    monorepo_root: Option<&Path>,
-) -> Option<(PathBuf, bool)> {
+pub(crate) fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
     let stub = resolve_tool_stub_path(stub)?;
+    let monorepo_root = crate::config::monorepo_lockfile_root_from_dir(stub.parent()?);
+    let monorepo_root = monorepo_root.as_deref();
     let dirs = file::all_dirs(stub.parent()?, &env::MISE_CEILING_PATHS).ok()?;
     dirs.iter().find_map(|dir| {
         crate::config::config_paths_in_dir(dir)
@@ -5365,16 +5362,13 @@ mod tests {
         file::write(&stub, "version = \"1\"\n").unwrap();
 
         let expected = (project.join("mise.lock"), false);
-        assert_eq!(
-            lockfile_path_for_tool_stub(&stub, None),
-            Some(expected.clone())
-        );
+        assert_eq!(lockfile_path_for_tool_stub(&stub), Some(expected.clone()));
 
         #[cfg(unix)]
         {
             let link = project.join("elsewhere/tool");
             std::os::unix::fs::symlink(&stub, &link).unwrap();
-            assert_eq!(lockfile_path_for_tool_stub(&link, None), Some(expected));
+            assert_eq!(lockfile_path_for_tool_stub(&link), Some(expected));
         }
     }
 
@@ -5403,10 +5397,10 @@ mod tests {
             &BTreeSet::from(["bin/tool".to_string()])
         );
         assert_eq!(tool_stub_path(&path, "bin/tool"), stub);
-        assert!(!lockfile.retain_live_tool_stubs(&path, None));
+        assert!(!lockfile.retain_live_tool_stubs(&path));
 
         fs::remove_file(&stub).unwrap();
-        assert!(lockfile.retain_live_tool_stubs(&path, None));
+        assert!(lockfile.retain_live_tool_stubs(&path));
         assert!(lockfile.tool_stubs().is_empty());
     }
 

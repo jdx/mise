@@ -63,3 +63,30 @@ assert_contains "cat bin/jq" 'version = "1.7"'
 assert_not_contains "cat mise.lock" "tool-stubs"
 assert_succeed "mise lock"
 assert_not_contains "cat mise.lock" "jqlang"
+
+# In a monorepo with a root lockfile, a subproject's stub uses the root
+# mise.lock even when run from outside the monorepo.
+cd "$HOME/workdir" || exit 1
+mkdir -p mono/packages/a/bin
+cat >mono/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+TOML
+echo '[tools]' >mono/packages/a/mise.toml
+cat >mono/packages/a/bin/jq <<'STUB'
+#!/usr/bin/env -S mise tool-stub
+
+tool = "aqua:jqlang/jq"
+version = "1.7"
+STUB
+chmod +x mono/packages/a/bin/jq
+assert_succeed "cd mono/packages/a && MISE_EXPERIMENTAL=1 mise generate tool-stub bin/jq --lock"
+assert_contains "cat mono/mise.lock" 'tool-stubs = ["packages/a/bin/jq"]'
+assert_fail "test -f mono/packages/a/mise.lock"
+# An installed version would satisfy locked mode without the lockfile.
+rm -rf "$MISE_DATA_DIR/installs/aqua-jqlang-jq"
+assert_fail "test -d $MISE_DATA_DIR/installs/aqua-jqlang-jq"
+assert_contains "cd elsewhere && MISE_EXPERIMENTAL=1 MISE_LOCKED=1 mise tool-stub ../mono/packages/a/bin/jq --version" "jq-1.7"

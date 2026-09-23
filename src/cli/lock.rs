@@ -55,7 +55,6 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
 /// Tool stubs listed in a lockfile that still find it from where they live,
 /// each paired with its parsed stub or the error parsing it.
 fn live_tool_stubs(
-    config: &Config,
     lockfile_path: &Path,
 ) -> Vec<(PathBuf, Result<crate::cli::tool_stub::ToolStubFile>)> {
     let mut lockfile = match Lockfile::read(lockfile_path) {
@@ -68,7 +67,7 @@ fn live_tool_stubs(
             return vec![];
         }
     };
-    lockfile.retain_live_tool_stubs(lockfile_path, config.monorepo_lockfile_root().as_deref());
+    lockfile.retain_live_tool_stubs(lockfile_path);
     lockfile
         .tool_stubs()
         .iter()
@@ -606,10 +605,7 @@ impl Lock {
                         &mut lockfile,
                         configured_selectors.as_ref(),
                     );
-                    let pruned_stubs = lockfile.retain_live_tool_stubs(
-                        &lockfile_path,
-                        config.monorepo_lockfile_root().as_deref(),
-                    );
+                    let pruned_stubs = lockfile.retain_live_tool_stubs(&lockfile_path);
                     let format_changed = if self.upgrade {
                         if lockfile.tools().is_empty() {
                             self.prepare_lockfile_format(&lockfile_path, &mut lockfile)
@@ -718,8 +714,7 @@ impl Lock {
             if !self.upgrade {
                 self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
             }
-            let pruned_stubs = lockfile
-                .retain_live_tool_stubs(&lockfile_path, config.monorepo_lockfile_root().as_deref());
+            let pruned_stubs = lockfile.retain_live_tool_stubs(&lockfile_path);
             if self.json {
                 all_changes.extend(self.compute_version_changes(&lockfile, &tools, &lockfile_path));
             }
@@ -1468,7 +1463,7 @@ impl Lock {
             }
         }
 
-        for (path, stub) in live_tool_stubs(config, target_lockfile_path) {
+        for (path, stub) in live_tool_stubs(target_lockfile_path) {
             let request = stub.and_then(|stub| stub.to_tool_request(&path));
             match request {
                 Ok(request) => {
@@ -1818,7 +1813,7 @@ impl Lock {
 
         // Third pass: tool stubs that read their entries from this lockfile.
         // They are not part of any config, so nothing above sees them.
-        for (path, stub) in live_tool_stubs(config, target_lockfile_path) {
+        for (path, stub) in live_tool_stubs(target_lockfile_path) {
             let request = match stub.and_then(|stub| stub.to_tool_request(&path)) {
                 Ok(request) => request,
                 Err(err) => {

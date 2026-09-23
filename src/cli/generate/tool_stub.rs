@@ -823,9 +823,7 @@ exec "$MISE_BIN" tool-stub "$0" "$@"
         let tv = ToolVersion::resolve(&config, request, &resolve_opts).await?;
 
         let project_lockfile = if Settings::get().lockfile_enabled() {
-            let monorepo_root = config.monorepo_lockfile_root();
-            lockfile::lockfile_path_for_tool_stub(&self.output, monorepo_root.as_deref())
-                .map(|(path, _)| path)
+            lockfile::lockfile_path_for_tool_stub(&self.output).map(|(path, _)| path)
         } else {
             None
         };
