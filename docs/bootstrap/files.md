@@ -119,8 +119,8 @@ These entries never create, replace, or remove the file:
 - A symlink, directory, or other non-regular file is reported as `unknown`;
   apply warns and leaves it unchanged. The change is made through a handle
   opened without following symlinks, so it never lands on a symlink's target.
-  The owner of a file it cannot read can still change its mode without
-  `sudo`.
+  On Linux and macOS, the owner of a file it cannot read can still change its
+  mode without `sudo`; other Unix systems may retry that change through `sudo`.
 - `template`, `remove_empty`, and `replace` require `source` or `content` and
   are rejected here.
 - `mise bootstrap unapply` keeps the file, since mise never managed its content.

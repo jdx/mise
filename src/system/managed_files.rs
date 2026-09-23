@@ -2262,14 +2262,22 @@ fn set_unreadable_file_metadata(
             ),
             None => Ok(()),
         });
-    match result {
-        Ok(()) => Ok(()),
-        Err(error) if error == Errno::ENOTSUP || error == Errno::EOPNOTSUPP => bail!(
-            "cannot set permissions on {} without following symlinks on this system; make it readable by its owner first",
-            path.display()
-        ),
-        Err(error) => Err(error)
-            .wrap_err_with(|| format!("failed to set metadata on file {}", path.display())),
+    result
+        .map_err(unsupported_no_follow_as_permission_denied)
+        .wrap_err_with(|| format!("failed to set metadata on file {}", path.display()))
+}
+
+/// Some Unix systems cannot change metadata without following symlinks
+/// (`ENOTSUP`). Report that as a permission error so the change is retried
+/// through the privileged helper, as it was before the in-process repair.
+#[cfg(all(unix, any(not(target_os = "linux"), test)))]
+fn unsupported_no_follow_as_permission_denied(error: nix::errno::Errno) -> nix::errno::Errno {
+    use nix::errno::Errno;
+
+    if error == Errno::ENOTSUP || error == Errno::EOPNOTSUPP {
+        Errno::EACCES
+    } else {
+        error
     }
 }
 
@@ -2909,6 +2917,23 @@ mod tests {
             fs::set_permissions(&unlisted, fs::Permissions::from_mode(0o755)).unwrap();
             opened.unwrap();
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unsupported_no_follow_is_retried_with_privilege() {
+        use nix::errno::Errno;
+
+        for unsupported in [Errno::ENOTSUP, Errno::EOPNOTSUPP] {
+            let mapped = unsupported_no_follow_as_permission_denied(unsupported);
+            assert_eq!(mapped, Errno::EACCES);
+            let report = Err::<(), _>(mapped).wrap_err("wrapped").unwrap_err();
+            assert!(is_permission_denied(&report));
+        }
+        assert_eq!(
+            unsupported_no_follow_as_permission_denied(Errno::ENOENT),
+            Errno::ENOENT
+        );
     }
 
     #[test]
