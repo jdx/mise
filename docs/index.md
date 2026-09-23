@@ -1,8 +1,8 @@
 ---
 layout: home
-title: Dev tools, environments, and tasks
+title: Development tools, environments, and tasks
 description: Manage developer tools, environment variables, tasks, packages, and dotfiles in one project configuration with mise.
-socialDescription: Your tools, environments, and workflows. One CLI, every project.
+socialDescription: Define tool versions, environment variables, and project commands in mise.toml for your shell, editor, and CI.
 
 # The custom HomeHero renders the hero. These values supply the llms.txt header.
 hero:
@@ -16,8 +16,7 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
 
 <section class="landing-page" aria-label="mise overview">
   <div class="landing-section landing-stations">
-    <p class="landing-kicker"><span>01</span> The essentials</p>
-    <h2>Start with tools. Add what you need.</h2>
+    <h2>What mise manages</h2>
     <div class="stations-grid">
       <a class="station pillar-tools" href="/dev-tools/">
         <p class="station-cmd">$ mise use node@24</p>
@@ -32,8 +31,8 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
         <p class="station-cmd">$ mise env</p>
         <h3>Environments</h3>
         <p>
-          Per-project env vars from <code>mise.toml</code>, .env files,
-          secrets, and shell commands. Set when you enter, gone when you leave.
+          Load project environment variables from <code>mise.toml</code>, .env
+          files, secrets, and shell commands when you enter a directory.
         </p>
         <span class="card-link">Environments</span>
       </a>
@@ -60,10 +59,9 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
   </div>
 
   <div class="landing-section landing-switch">
-    <p class="landing-kicker"><span>02</span> Day to day</p>
     <div class="landing-switch-grid">
       <div>
-        <h2>Change directory. <em>Everything follows.</em></h2>
+        <h2>Switch between project environments</h2>
         <p class="landing-lede">
           Activate mise in your shell once. From then on, entering a project
           puts its installed tool versions on your <code>PATH</code> and loads
@@ -81,7 +79,6 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
   </div>
 
   <div class="landing-section landing-machine">
-    <p class="landing-kicker"><span>03</span> New machine</p>
     <div class="landing-machine-grid">
       <figure class="bootstrap-diagram" aria-label="mise bootstrap applies one configuration to packages, repositories, dotfiles, and services">
         <div class="bootstrap-source">
@@ -99,7 +96,7 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
         <figcaption><code>mise bootstrap plan</code> previews declarative resource changes before you apply them.</figcaption>
       </figure>
       <div>
-        <h2>One config for the <em>whole machine.</em></h2>
+        <h2>Set up a machine with mise bootstrap</h2>
         <p class="landing-lede">
           Declare the packages, repositories, dotfiles, and services your
           machine needs, then apply them with <code>mise bootstrap</code>.
@@ -121,7 +118,7 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
   <div class="landing-pantry" aria-label="Supported tools">
     <div class="landing-pantry-inner">
       <div class="pantry-head">
-        <p class="landing-kicker"><span>—</span> The pantry</p>
+        <p class="landing-kicker"><span>—</span> Tool registry</p>
         <p class="pantry-stat">1000+<small>tools in the registry, from node to terraform</small></p>
       </div>
       <div class="landing-tools-list">
@@ -168,16 +165,15 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
 
   <a class="landing-special" href="https://mr-boxington.jdx.dev/" aria-label="Try Mr Boxington">
     <div>
-      <p class="landing-kicker"><span>—</span> Chef's special</p>
-      <h2>Mr Boxington: fix your target/.</h2>
+      <p class="landing-kicker"><span>—</span> Related project</p>
+      <h2>Share Cargo builds with Mr Boxington</h2>
       <p>Give every Cargo checkout one shared, self-pruning compilation cache, locally and in CI.</p>
     </div>
     <span class="card-link">mr-boxington.jdx.dev</span>
   </a>
 
   <div class="landing-section landing-recipe">
-    <p class="landing-kicker"><span>04</span> Quickstart</p>
-    <h2>Run your first project task.</h2>
+    <h2>Run your first project task</h2>
     <ol class="recipe">
       <li class="recipe-row">
         <div class="recipe-text">
@@ -230,8 +226,7 @@ import ProjectSwitchDiagram from "./.vitepress/theme/ProjectSwitchDiagram.vue";
   </div>
 
   <div class="landing-cta">
-    <p class="landing-kicker"><span>—</span> Ready when you are</p>
-    <h2><em>Allez.</em> Prep your station.</h2>
+    <h2>Get started with mise</h2>
     <div class="landing-mini-install"><code>curl https://mise.run | sh</code></div>
     <div class="landing-links">
       <a href="/getting-started">Getting started</a>
