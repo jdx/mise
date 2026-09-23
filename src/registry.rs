@@ -124,6 +124,8 @@ impl RegistryLookup {
 pub(crate) struct RegistryTool {
     pub short: &'static str,
     pub description: Option<&'static str>,
+    /// Project homepage or repository, when the one inferred from the backends is wrong
+    pub url: Option<&'static str>,
     pub(crate) version_order: VersionOrder,
     pub backends: &'static [RegistryBackend],
     pub bins: &'static [&'static str],
@@ -451,11 +453,21 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
                 .ok_or_else(|| eyre::eyre!("description must be a string"))
         })
         .transpose()?;
+    let url = table
+        .get("url")
+        .map(|value| {
+            value
+                .as_str()
+                .map(|value| leak_string(value.to_string()))
+                .ok_or_else(|| eyre::eyre!("url must be a string"))
+        })
+        .transpose()?;
     let test = table.get("test").map(parse_registry_test).transpose()?;
 
     let tool = RegistryTool {
         short: leak_string(short.to_string()),
         description,
+        url,
         version_order,
         backends: leak_vec(backends),
         bins: leak_vec(bins),
@@ -1069,6 +1081,7 @@ version_order = "source"
             r#"
 aliases = ["example-alias"]
 description = "Example tool"
+url = "https://example.com/tool"
 version_order = "semver"
 bins = ["example", "example-helper"]
 backends = [
@@ -1090,6 +1103,7 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
         let tool = registry.get("example-alias").unwrap();
         assert_eq!(tool.short, "example");
         assert_eq!(tool.description, Some("Example tool"));
+        assert_eq!(tool.url, Some("https://example.com/tool"));
         assert_eq!(tool.bins, &["example", "example-helper"]);
         assert!(tool.provides_bin("example"));
         assert!(!tool.provides_bin("other"));
@@ -1552,6 +1566,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         let tool = RegistryTool {
             short: "test",
             description: None,
+            url: None,
             version_order: VersionOrder::Source,
             backends: BACKENDS,
             bins: &[],
@@ -1602,6 +1617,7 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         let tool = RegistryTool {
             short: "test",
             description: None,
+            url: None,
             version_order: VersionOrder::Semver,
             backends: BACKENDS,
             bins: &[],

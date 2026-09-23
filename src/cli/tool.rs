@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
+use crate::registry::REGISTRY;
 use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
 use crate::ui::table;
 
@@ -95,6 +96,10 @@ impl Tool {
         let info = ToolInfo {
             backend: ba.full(),
             description,
+            url: REGISTRY
+                .get(ba.short.as_str())
+                .and_then(|rt| rt.url)
+                .map(str::to_string),
             installed_versions: ts
                 .list_installed_versions(&config)
                 .await?
@@ -212,6 +217,9 @@ impl Tool {
             if let Some(description) = info.description {
                 table.push(("Description:", description));
             }
+            if let Some(url) = info.url {
+                table.push(("URL:", url));
+            }
             // Bold currently active versions within the installed list for clarity
             let active_set = info
                 .active_versions
@@ -298,6 +306,7 @@ impl Tool {
 struct ToolInfo {
     backend: String,
     description: Option<String>,
+    url: Option<String>,
     installed_versions: Vec<String>,
     requested_versions: Option<Vec<String>>,
     active_versions: Option<Vec<String>>,

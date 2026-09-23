@@ -7,6 +7,11 @@ mise tool node | grep -q "Backend:" || fail "Backend field not found"
 # Test JSON output
 mise tool node --json | grep -q '"backend"' || fail "JSON backend field not found"
 
+# A registry url is shown when the registry entry sets one
+assert "mise tool dart --json | jq -r '.url'" "https://dart.dev"
+assert_contains "mise tool dart" "https://dart.dev"
+assert "mise tool node --json | jq -r '.url'" "null"
+
 # Test specific field filters
 backend_output=$(mise tool node --backend)
 [[ -n $backend_output ]] || fail "Backend output is empty"

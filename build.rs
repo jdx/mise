@@ -367,6 +367,17 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
         let description = info
             .get("description")
             .map(|d| d.as_str().unwrap().to_string());
+        let url = info.get("url").map(|url| {
+            let url = url
+                .as_str()
+                .unwrap_or_else(|| panic!("[{short}] 'url' must be a string"));
+            assert!(
+                (url.starts_with("https://") || url.starts_with("http://"))
+                    && !url.contains("{{"),
+                "[{short}] 'url' must be a project homepage or repository URL, not a download template"
+            );
+            url.to_string()
+        });
         let bins = info
             .get("bins")
             .map(|bins| {
@@ -486,10 +497,13 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
             })
             .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, url: {url}, version_order: {version_order}, backends: &[{backends}], bins: &[{bins}], aliases: &[{aliases}], test: &{test}, os: &[{os}], idiomatic_files: &[{idiomatic_files}], detect: &[{detect}], overrides: &[{overrides}]}}"#,
             version_order = version_order,
             description = description
                 .map(|d| format!("Some({})", raw_string_literal(&d)))
+                .unwrap_or("None".to_string()),
+            url = url
+                .map(|url| format!("Some({})", raw_string_literal(&url)))
                 .unwrap_or("None".to_string()),
             backends = backends.into_iter().collect::<Vec<_>>().join(", "),
             bins = bins

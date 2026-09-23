@@ -626,6 +626,7 @@ bins = ["your-tool"]
 test = { cmd = "your-tool --version", expected = "{{version}}" }
 aliases = ["alt-name"] # Optional alternative names
 os = ["linux", "macos"] # Optional OS restrictions
+url = "https://your-tool.dev" # Optional project homepage or repository
 ```
 
 Only list backends that support the tool: `packslip` requires signed release
@@ -648,6 +649,13 @@ When `aqua` is the first backend, mise derives the command names from the Aqua
 registry's file metadata. Omit `bins` when that inferred list is correct. Set it
 explicitly when the shorthand needs a different backend-independent command set,
 such as commands bundled by a fallback backend that Aqua does not describe.
+
+The registry page links each tool to a project URL inferred from its first
+backend: the repository for `aqua`, `github`, and similar backends, or the
+package page for `npm`, `cargo`, and other package registries. Set `url` when
+that guess is missing or wrong, such as for a tool that only has an `http`
+backend or a tool published from a monorepo. `mise tool` and
+`mise registry --json` also show it.
 
 #### Minimum backend versions
 
