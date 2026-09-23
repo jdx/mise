@@ -3368,6 +3368,7 @@ mod tests {
                 exclude: vec![],
                 include: None,
                 manifest: None,
+                permissions: None,
                 base: tmp.path().to_path_buf(),
                 origin: ResourceOrigin {
                     config: tmp.path().join("config.toml"),
@@ -4531,6 +4532,7 @@ mod tests {
             exclude: vec![glob::Pattern::new("sessions").unwrap()],
             include: None,
             manifest: None,
+            permissions: None,
             base: home.clone(),
             origin: ResourceOrigin {
                 config: home.join(".config/mise/config.toml"),

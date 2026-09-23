@@ -4375,6 +4375,11 @@
                 "default": false,
                 "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force"
               },
+              "permissions": {
+                "type": "string",
+                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
+                "pattern": "^(0o)?[0-7]{1,4}$"
+              },
               "block": {
                 "type": "string",
                 "description": "block content, maintained between marker comments"
@@ -4465,7 +4470,20 @@
                       "content": false,
                       "block": false,
                       "line": false
-                    }
+                    },
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["mode"]
+                      },
+                      {
+                        "properties": {
+                          "permissions": false
+                        }
+                      }
+                    ]
                   }
                 ]
               },
@@ -4476,6 +4494,7 @@
                     "properties": {
                       "source": {},
                       "content": false,
+                      "permissions": false,
                       "mode": {
                         "enum": ["copy", "symlink-each"]
                       },
@@ -4490,6 +4509,44 @@
                   {
                     "properties": {
                       "manifest": false
+                    }
+                  }
+                ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": ["permissions"],
+                    "properties": {
+                      "mode": {
+                        "enum": ["copy", "template"]
+                      },
+                      "block": false,
+                      "template": false,
+                      "comment": false
+                    },
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      },
+                      {
+                        "required": ["mode"]
+                      },
+                      {
+                        "properties": {
+                          "exclude": false,
+                          "manifest": false,
+                          "encrypt": false
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "permissions": false
                     }
                   }
                 ]
@@ -4514,6 +4571,7 @@
                     "required": ["line"],
                     "properties": {
                       "content": false,
+                      "permissions": false,
                       "mode": false,
                       "exclude": false,
                       "source": false,
@@ -5453,11 +5511,57 @@
                           "type": "string"
                         }
                       },
+                      "before": {
+                        "type": "array",
+                        "description": "write Before ordering in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "binds_to": {
+                        "type": "array",
+                        "description": "write BindsTo dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "part_of": {
+                        "type": "array",
+                        "description": "write PartOf dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "conflicts": {
+                        "type": "array",
+                        "description": "write Conflicts dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "exec_start_pre": {
+                        "type": "array",
+                        "description": "write one ExecStartPre entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
+                      },
                       "exec_start": {
                         "type": "string",
                         "minLength": 1,
                         "pattern": ".*\\S.*",
                         "description": "write ExecStart in the [Service] section"
+                      },
+                      "exec_start_post": {
+                        "type": "array",
+                        "description": "write one ExecStartPost entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
                       },
                       "type": {
                         "type": "string",
@@ -5480,6 +5584,15 @@
                       "exec_stop": {
                         "type": "string",
                         "description": "write ExecStop in the [Service] section"
+                      },
+                      "exec_stop_post": {
+                        "type": "array",
+                        "description": "write one ExecStopPost entry per command in the [Service] section",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": ".*\\S.*"
+                        }
                       },
                       "timeout_start_sec": {
                         "type": "string",
@@ -5638,7 +5751,25 @@
                         "not": {
                           "anyOf": [
                             {
+                              "required": ["exec_start_pre"],
+                              "properties": {
+                                "exec_start_pre": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
+                            },
+                            {
                               "required": ["exec_start"]
+                            },
+                            {
+                              "required": ["exec_start_post"],
+                              "properties": {
+                                "exec_start_post": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
                             },
                             {
                               "required": ["type"]
@@ -5648,6 +5779,15 @@
                             },
                             {
                               "required": ["exec_stop"]
+                            },
+                            {
+                              "required": ["exec_stop_post"],
+                              "properties": {
+                                "exec_stop_post": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
                             },
                             {
                               "required": ["timeout_start_sec"]

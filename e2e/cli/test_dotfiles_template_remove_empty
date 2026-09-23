@@ -99,6 +99,16 @@ assert "find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '" "1"
 assert_succeed "mise dot unapply ~/.config/app/work.toml --yes"
 assert "find '$MISE_STATE_DIR/dotfiles/targets' -type f | wc -l | tr -d ' '" "0"
 
+# permissions apply when the template writes the file, removal when it is empty
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/app/work.toml" = { source = "dotfiles/work.toml.tera", mode = "template", permissions = "0600", remove_empty = true }
+EOF
+assert_succeed "WORK=1 mise dot apply --yes"
+assert "stat -c %a $target" "600"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -e $target"
+
 # remove_empty is only valid on template entries
 cat <<'EOF' >mise.toml
 [dotfiles]

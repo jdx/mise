@@ -25,7 +25,7 @@ mod undo;
 mod untrack;
 mod watch;
 
-pub(crate) use apply::DotfilesApply;
+pub(crate) use apply::{DotfilesApply, write_and_reload};
 
 /// Load, validate, and filter whole-file and edit requests with the same
 /// target semantics for every command that acts on both kinds of entry.

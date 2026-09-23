@@ -983,7 +983,7 @@ fn build_dotfiles_layer(
     let mut entries = DotfilesLayerEntries::default();
 
     for req in requests {
-        if !matches!(req.mode, FileMode::Content | FileMode::Track) && !req.source.exists() {
+        if req.mode.has_source() && req.mode != FileMode::Track && !req.source.exists() {
             bail!(
                 "[dotfiles].\"{}\": source does not exist: {}",
                 req.target_raw,
@@ -992,15 +992,26 @@ fn build_dotfiles_layer(
         }
 
         match req.mode {
-            // a tracked file lives on the machine that tracks it; an image
-            // has nothing to copy
-            FileMode::Track => continue,
-            FileMode::Symlink | FileMode::Copy => {
-                collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
-                    .wrap_err_with(|| {
-                        format!("adding [dotfiles].\"{}\" to OCI image", req.target_raw)
-                    })?;
-            }
+            // a tracked file lives on the machine that tracks it, and a
+            // permissions-only entry adjusts a file the image does not
+            // provide; an image has nothing to copy for either
+            FileMode::Track | FileMode::Permissions => continue,
+            // footprint validation rejects `permissions` on a directory copy
+            FileMode::Symlink | FileMode::Copy => match req.permissions {
+                Some(permissions) => {
+                    entries.add_file(
+                        oci_target_path(req)?,
+                        file::read(&req.source)?,
+                        permissions,
+                    )?;
+                }
+                None => {
+                    collect_source_as_files(&req.source, &oci_target_path(req)?, &mut entries)
+                        .wrap_err_with(|| {
+                            format!("adding [dotfiles].\"{}\" to OCI image", req.target_raw)
+                        })?;
+                }
+            },
             FileMode::SymlinkEach => {
                 if !req.source.is_dir() {
                     bail!(
@@ -1035,7 +1046,10 @@ fn build_dotfiles_layer(
                 entries.add_file(
                     oci_target_path(req)?,
                     rendered.into_bytes(),
-                    source_mode(&req.source)?,
+                    match req.permissions {
+                        Some(permissions) => permissions,
+                        None => source_mode(&req.source)?,
+                    },
                 )?;
             }
             FileMode::Content => {
@@ -1046,7 +1060,7 @@ fn build_dotfiles_layer(
                         .expect("inline content")
                         .as_bytes()
                         .to_vec(),
-                    0o600,
+                    req.permissions.unwrap_or(0o600),
                 )?;
             }
         }

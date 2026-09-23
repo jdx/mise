@@ -83,8 +83,14 @@ impl DotfilesStatus {
                 ),
                 _ => (0, 0),
             };
+            let absent = matches!(state, FileState::Applied)
+                .then(|| system::files::permissions_target_absent(req))
+                .flatten();
             let state_str = match &state {
-                FileState::Applied => "applied".to_string(),
+                FileState::Applied => match absent {
+                    Some(reason) => format!("applied ({reason})"),
+                    None => "applied".to_string(),
+                },
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
                 FileState::Differs(reason) => format!("differs ({reason})"),
@@ -104,7 +110,7 @@ impl DotfilesStatus {
             if self.json {
                 let mut entry = json!({
                     "target": req.target_raw,
-                    "source": (req.mode != system::files::FileMode::Content)
+                    "source": req.mode.has_source()
                         .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
                     "origin": &req.origin,
@@ -118,8 +124,16 @@ impl DotfilesStatus {
                     "omitted": omitted,
                     "nested": nested,
                 });
-                // e.g. a template that renders empty and will be removed
-                if let FileState::Differs(reason) = &state {
+                if let Some(permissions) = req.permissions {
+                    entry["permissions"] = json!(format!("{permissions:04o}"));
+                }
+                // a permissions-only target that is absent, or why an entry
+                // differs (e.g. a template that renders empty will be removed)
+                let reason = match &state {
+                    FileState::Differs(reason) => Some(reason.as_str()),
+                    _ => absent,
+                };
+                if let Some(reason) = reason {
                     entry["reason"] = json!(reason);
                 }
                 json_files.push(entry);
@@ -127,10 +141,10 @@ impl DotfilesStatus {
                 file_rows.push(vec![
                     req.target_raw.clone(),
                     req.mode.name().to_string(),
-                    if req.mode == system::files::FileMode::Content {
-                        "inline".to_string()
-                    } else {
-                        req.source.display_user()
+                    match req.mode {
+                        system::files::FileMode::Content => "inline".to_string(),
+                        system::files::FileMode::Permissions => "-".to_string(),
+                        _ => req.source.display_user(),
                     },
                     req.origin.config.display_user(),
                     state_str,

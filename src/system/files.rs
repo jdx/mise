@@ -51,12 +51,16 @@ pub(crate) enum FileMode {
     /// copy the source file (or directory, recursively)
     Copy,
     /// render the source through the mise template engine and write the
-    /// result (permissions are taken from the source file)
+    /// result (permissions are taken from the source file unless the entry
+    /// sets `permissions`)
     Template,
     /// write literal content declared directly in mise.toml
     Content,
     /// the live file stays where it is; history protects (and shares) it
     Track,
+    /// set the permissions of an existing target without managing its
+    /// content: an entry with `permissions` and no source, content, or mode
+    Permissions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,8 +97,56 @@ impl FileMode {
             Self::Template => "template",
             Self::Content => "content",
             Self::Track => "track",
+            Self::Permissions => "permissions",
         }
     }
+
+    /// Whether requests in this mode read a source path. Inline content and
+    /// permissions-only entries have none.
+    pub(crate) fn has_source(self) -> bool {
+        !matches!(self, Self::Content | Self::Permissions)
+    }
+}
+
+/// Parse a `permissions` value: an octal string such as `"0600"`, with the
+/// same syntax `[bootstrap.files]` accepts for `mode`.
+fn parse_permissions(value: &str) -> Result<u32> {
+    crate::system::managed_files::parse_mode(Some(value), 0).map_err(|_| {
+        eyre::eyre!(
+            "permissions must be an octal string between \"0000\" and \"7777\", got {value:?}"
+        )
+    })
+}
+
+/// Why `permissions` cannot be combined with an entry's other keys, if it
+/// cannot. `mode` is the declared mode, or `None` for a permissions-only entry.
+fn permissions_conflict(
+    mode: Option<FileMode>,
+    exclude: bool,
+    manifest: bool,
+    encrypt: bool,
+) -> Option<&'static str> {
+    match mode {
+        Some(FileMode::Track) => Some(
+            "permissions is not supported with mode = \"track\"; history records a tracked file's mode itself",
+        ),
+        Some(FileMode::Symlink | FileMode::SymlinkEach) => Some(
+            "permissions requires mode copy or template, or inline content; a symlink has no permissions of its own",
+        ),
+        Some(_) if manifest => Some("permissions is not supported with a manifest directory copy"),
+        Some(_) => None,
+        None if exclude || manifest || encrypt => {
+            Some("a permissions-only entry takes no exclude, manifest, or encrypt")
+        }
+        None => None,
+    }
+}
+
+/// Windows has no Unix permission bits; entries there ignore `permissions`.
+#[cfg(not(unix))]
+fn warn_permissions_ignored() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| warn!("[dotfiles]: permissions is ignored on this platform"));
 }
 
 /// How history treats a destination: whether edits are saved automatically,
@@ -229,11 +281,13 @@ impl<'de> Deserialize<'de> for FileVariant {
 
 /// Validate selector combinations and destination syntax before selecting a variant.
 /// Returns a `dotfiles.root`-relative implied source for a logical entry key.
+/// A permissions-only entry has no source, so none is implied for it.
 fn validate_file_variants(
     target: &str,
     source: Option<&str>,
     content: Option<&str>,
     mode: Option<&str>,
+    permissions_only: bool,
     variants: &[FileVariant],
 ) -> Result<Option<PathBuf>> {
     let selectors: Vec<_> = variants.iter().map(|v| v.selector.clone()).collect();
@@ -245,7 +299,7 @@ fn validate_file_variants(
     if has_target_override && content.is_some() {
         bail!("destination variants with inline content are not supported");
     }
-    let implied_source = if has_target_override && source.is_none() {
+    let implied_source = if has_target_override && source.is_none() && !permissions_only {
         if !variants.iter().all(|v| v.target.is_some()) {
             bail!(
                 "destination variants require an explicit source when any variant uses the entry key as its target"
@@ -330,6 +384,10 @@ pub(crate) enum FileTomlEntry {
         include: Option<Vec<String>>,
         #[serde(default)]
         manifest: Option<String>,
+        /// octal permissions for the target, e.g. `"0600"`; on its own it
+        /// manages only the permissions of an existing target
+        #[serde(default)]
+        permissions: Option<String>,
         /// history: save edits automatically (default true)
         #[serde(default)]
         autosave: Option<bool>,
@@ -411,6 +469,9 @@ pub(crate) struct FileRequest {
     pub include: Option<Vec<glob::Pattern>>,
     /// optional source manifest limiting which directory entries are managed
     pub manifest: Option<FileManifest>,
+    /// permission bits the target must have, overriding what the mode would
+    /// otherwise give it (Unix only)
+    pub permissions: Option<u32>,
     /// directory of the declaring config file — base dir for template
     /// functions like `exec` and `read_file`
     pub base: PathBuf,
@@ -588,12 +649,27 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
     let mut leaves: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
     let mut directories: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
     let mut symlink_each_identities: HashMap<(&Path, &Path), &FileRequest> = HashMap::new();
+    let mut permissions_only = vec![];
 
     for request in requests {
         // Tracking observes native files; it does not own an apply leaf.
         // A tracked parent may contain independently managed destinations.
         if request.mode == FileMode::Track {
             continue;
+        }
+        // A permissions-only entry creates nothing, so a directory it
+        // chmods may hold other entries' files. It still must not fight
+        // another entry over the permissions of a file that entry writes.
+        if request.mode == FileMode::Permissions {
+            permissions_only.push(request);
+            continue;
+        }
+        if request.permissions.is_some() && request.source.is_dir() {
+            bail!(
+                "[dotfiles].\"{}\": permissions requires a file source, not a directory: {}",
+                request.target_raw,
+                request.source.display_user()
+            );
         }
         if request.manifest.is_some() && request.source.exists() && !request.source.is_dir() {
             bail!(
@@ -617,7 +693,7 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
         // A missing source has an unknown eventual shape, but it still claims
         // its target. Whole-resource modes reserve a leaf; symlink-each has a
         // known directory-shaped target even before its children are known.
-        let source_unavailable = request.mode != FileMode::Content
+        let source_unavailable = request.mode.has_source()
             && (!request.source.exists()
                 || request.mode == FileMode::SymlinkEach && !request.source.is_dir());
         let directory_walker = !source_unavailable
@@ -662,6 +738,15 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
             directories.entry(directory).or_insert(request);
         }
     }
+    for request in permissions_only {
+        if let Some(existing) = leaves.get(&request.target) {
+            return Err(composed_file_footprint_conflict(
+                &request.target,
+                existing,
+                request,
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -693,6 +778,7 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
         && first.mode == second.mode
         && first.manifest == second.manifest
         && first.remove_empty == second.remove_empty
+        && first.permissions == second.permissions
         // a track entry's list is a policy a later layer may change, like
         // autosave; a deployment entry's list is part of what it deploys
         && (first.mode == FileMode::Track
@@ -734,11 +820,16 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
             let Some(entry) = file_entry_from_toml(&target, value.clone()) else {
                 // Managed line/block edits are handled by the edit engine,
                 // not by this whole-file declaration parser.
-                if value.as_table().is_some_and(|table| {
+                if let Some(table) = value.as_table().filter(|table| {
                     ["block", "line", "template", "comment", "position"]
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
+                    if table.contains_key("permissions") {
+                        bail!(
+                            "dotfile {target}: permissions applies to whole-file entries, not block or line edits"
+                        );
+                    }
                     continue;
                 }
                 bail!("invalid dotfile declaration {target} in {}", path.display());
@@ -753,6 +844,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "exclude"
                             | "include"
                             | "manifest"
+                            | "permissions"
                             | "autosave"
                             | "encrypt"
                             | "variants"
@@ -767,7 +859,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 }
             }
             if let FileTomlEntry::Source(_) = &entry {
-                validate_file_variants(&target, None, None, None, &[])?;
+                validate_file_variants(&target, None, None, None, false, &[])?;
             }
             if let FileTomlEntry::Table {
                 source,
@@ -776,16 +868,23 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 manifest,
                 exclude,
                 include,
+                permissions,
+                encrypt,
                 variants,
                 remove_empty,
                 ..
             } = entry
             {
+                let permissions_only = permissions.is_some()
+                    && source.is_none()
+                    && content.is_none()
+                    && mode.is_none();
                 let implied_variant_source = validate_file_variants(
                     &target,
                     source.as_deref(),
                     content.as_deref(),
                     mode.as_deref(),
+                    permissions_only,
                     variants.as_deref().unwrap_or_default(),
                 )?;
                 if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some())
@@ -808,10 +907,35 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
                 }
-                if remove_empty == Some(true) && (content.is_some() || mode != FileMode::Template) {
+                if let Some(permissions) = &permissions {
+                    parse_permissions(permissions)
+                        .map_err(|err| eyre::eyre!("dotfile {target}: {err}"))?;
+                    let declared = if permissions_only {
+                        None
+                    } else if content.is_some() {
+                        Some(FileMode::Content)
+                    } else {
+                        Some(mode)
+                    };
+                    if let Some(reason) = permissions_conflict(
+                        declared,
+                        exclude.is_some(),
+                        manifest.is_some(),
+                        encrypt.is_some(),
+                    ) {
+                        bail!("dotfile {target}: {reason}");
+                    }
+                    if permissions_only && is_glob_pattern(&resolve_target_arg(&target)) {
+                        bail!("dotfile {target}: a permissions-only target cannot use wildcards");
+                    }
+                }
+                if remove_empty == Some(true)
+                    && (content.is_some() || permissions_only || mode != FileMode::Template)
+                {
                     bail!("dotfile {target}: remove_empty requires mode = \"template\"");
                 }
                 if mode != FileMode::Track
+                    && !permissions_only
                     && source.is_none()
                     && content.is_none()
                     && implied_variant_source.is_none()
@@ -994,7 +1118,9 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("variants")
                 || table.contains_key("enabled")
                 || table.contains_key("remove_empty")
-                || ((table.contains_key("source") || table.contains_key("content"))
+                || ((table.contains_key("source")
+                    || table.contains_key("content")
+                    || table.contains_key("permissions"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -1029,6 +1155,7 @@ fn merge_file_entry(
         exclude,
         include,
         manifest,
+        permissions,
         autosave,
         encrypt,
         variants,
@@ -1047,6 +1174,7 @@ fn merge_file_entry(
             None,
             None,
             None,
+            None,
         ),
         FileTomlEntry::Table {
             source,
@@ -1055,6 +1183,7 @@ fn merge_file_entry(
             exclude,
             include,
             manifest,
+            permissions,
             autosave,
             encrypt,
             variants,
@@ -1067,12 +1196,24 @@ fn merge_file_entry(
             exclude,
             include,
             manifest,
+            permissions,
             autosave,
             encrypt,
             variants,
             enabled,
             remove_empty,
         ),
+    };
+    // `{ permissions = "0600" }` alone manages only an existing target's
+    // permissions; it never implies a source under dotfiles.root
+    let permissions_only =
+        permissions.is_some() && source.is_none() && content.is_none() && mode.is_none();
+    let permissions = match permissions.as_deref().map(parse_permissions).transpose() {
+        Ok(permissions) => permissions,
+        Err(err) => {
+            warn!("[dotfiles].\"{target_raw}\": {err}, ignoring entry");
+            return;
+        }
     };
     let remove_empty = remove_empty.unwrap_or(false);
     if encrypt == Some(true) && content.is_some() {
@@ -1098,6 +1239,7 @@ fn merge_file_entry(
         source.as_deref(),
         content.as_deref(),
         mode.as_deref(),
+        permissions_only,
         &variants,
     ) {
         Ok(Some(relative)) => Some(dotfiles_root().join(relative)),
@@ -1131,6 +1273,12 @@ fn merge_file_entry(
                 &origin.config,
                 "mode = \"track\" leaves the file where it is and takes no source, content, manifest, or remove_empty",
             );
+            return;
+        }
+        if permissions.is_some()
+            && let Some(reason) = permissions_conflict(Some(FileMode::Track), false, false, false)
+        {
+            record_invalid(&target_raw, &origin.config, reason);
             return;
         }
         let target = resolve_target_arg(&target_raw);
@@ -1188,6 +1336,7 @@ fn merge_file_entry(
             exclude,
             include,
             manifest: None,
+            permissions: None,
             base: base.to_path_buf(),
             origin: origin.clone(),
             policy: policy_for(FileMode::Track),
@@ -1278,7 +1427,35 @@ fn merge_file_entry(
         );
         return;
     }
-    if remove_empty && (content.is_some() || mode != FileMode::Template) {
+    if permissions.is_some() {
+        let declared = if permissions_only {
+            None
+        } else if content.is_some() {
+            Some(FileMode::Content)
+        } else {
+            Some(mode)
+        };
+        if let Some(reason) = permissions_conflict(
+            declared,
+            !exclude.is_empty(),
+            manifest.is_some(),
+            encrypt.is_some(),
+        ) {
+            warn!("[dotfiles].\"{target_raw}\": {reason}, ignoring entry");
+            return;
+        }
+    }
+    #[cfg(not(unix))]
+    let permissions = {
+        if permissions.is_some() {
+            warn_permissions_ignored();
+            if permissions_only {
+                return;
+            }
+        }
+        None::<u32>
+    };
+    if remove_empty && (content.is_some() || permissions_only || mode != FileMode::Template) {
         warn!(
             "[dotfiles].\"{target_raw}\": remove_empty requires mode = \"template\", ignoring entry"
         );
@@ -1288,6 +1465,35 @@ fn merge_file_entry(
     if target.is_relative() {
         warn!(
             "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
+        );
+        return;
+    }
+    if permissions_only {
+        if is_glob_pattern(&target) {
+            warn!(
+                "[dotfiles].\"{target_raw}\": a permissions-only target cannot use wildcards, ignoring entry"
+            );
+            return;
+        }
+        merged.insert(
+            (target.clone(), false),
+            FileRequest {
+                target_raw,
+                target,
+                source: PathBuf::new(),
+                content: None,
+                mode: FileMode::Permissions,
+                exclude: vec![],
+                include: None,
+                manifest: None,
+                permissions,
+                base: base.to_path_buf(),
+                origin: origin.clone(),
+                policy: policy_for(FileMode::Permissions),
+                variants: vec![],
+                enabled,
+                remove_empty: false,
+            },
         );
         return;
     }
@@ -1303,6 +1509,7 @@ fn merge_file_entry(
                 exclude: vec![],
                 include: None,
                 manifest: None,
+                permissions,
                 base: base.to_path_buf(),
                 origin: origin.clone(),
                 policy: policy_for(FileMode::Content),
@@ -1345,6 +1552,7 @@ fn merge_file_entry(
         // `include` applies only to `mode = "track"`, which returned above
         include: None,
         manifest,
+        permissions,
         base: base.to_path_buf(),
         origin,
         policy: policy_for(mode),
@@ -1391,7 +1599,7 @@ pub(crate) fn implied_source(target: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn source_is_implied(req: &FileRequest) -> bool {
-    if req.mode == FileMode::Content {
+    if !req.mode.has_source() {
         return false;
     }
     match implied_source(&req.target) {
@@ -1456,6 +1664,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         exclude,
         include,
         manifest,
+        permissions,
         base,
         origin,
         policy,
@@ -1473,6 +1682,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             exclude,
             include,
             manifest,
+            permissions,
             base,
             origin,
             policy,
@@ -1523,6 +1733,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             exclude,
             include,
             manifest,
+            permissions,
             base,
             origin: ResourceOrigin {
                 source: Some(matches[0].clone()),
@@ -1561,6 +1772,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 exclude: exclude.clone(),
                 include: None,
                 manifest,
+                permissions,
                 base: base.clone(),
                 origin: ResourceOrigin {
                     source: Some(matched_source.clone()),
@@ -1714,7 +1926,7 @@ pub(crate) fn check(
     if req.mode == FileMode::Track {
         return Ok(FileState::Tracked);
     }
-    if req.mode != FileMode::Content && !req.source.exists() {
+    if req.mode.has_source() && !req.source.exists() {
         return Ok(FileState::SourceMissing);
     }
     // render at most once per call — templates may use exec()
@@ -1733,11 +1945,22 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
         FileMode::Track => Ok(FileState::Tracked),
         FileMode::Symlink => check_symlink(&req.source, &req.target),
         FileMode::SymlinkEach => check_symlink_each(req),
-        FileMode::Copy if req.source.is_dir() => check_copy_dir(req),
-        FileMode::Copy => check_copy(&req.source, &req.target),
-        FileMode::Content => check_content(
-            &req.target,
-            req.content.as_deref().expect("inline content").as_bytes(),
+        FileMode::Copy if req.source.is_dir() => {
+            if req.permissions.is_some() {
+                bail!("permissions requires a file source, not a directory");
+            }
+            check_copy_dir(req)
+        }
+        FileMode::Copy => {
+            let expected = file::read(&req.source)?;
+            check_permissions(req, check_content(&req.target, &expected))
+        }
+        FileMode::Content => check_permissions(
+            req,
+            check_content(
+                &req.target,
+                req.content.as_deref().expect("inline content").as_bytes(),
+            ),
         ),
         FileMode::Template if removes_target(req, rendered) => {
             Ok(match empty_render_target(req)? {
@@ -1750,24 +1973,127 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
                 )),
             })
         }
-        FileMode::Template => {
-            let state = check_content(
+        FileMode::Template => check_permissions(
+            req,
+            check_content(
                 &req.target,
                 rendered.expect("rendered template content").as_bytes(),
-            )?;
-            // templates promise the source file's permissions — repair
-            // drift (e.g. a later chmod), not just content
-            #[cfg(unix)]
-            if state == FileState::Applied {
-                use std::os::unix::fs::PermissionsExt;
-                let mode_of =
-                    |p: &Path| -> Result<u32> { Ok(p.metadata()?.permissions().mode() & 0o7777) };
-                if mode_of(&req.source)? != mode_of(&req.target)? {
-                    return Ok(FileState::Differs("permissions differ".into()));
-                }
+            ),
+        ),
+        FileMode::Permissions => check_permissions_only(req),
+    }
+}
+
+/// The permission bits apply must leave on a written target, when the entry
+/// promises any: an explicit `permissions`, or a template's source mode.
+/// Copies and inline content without `permissions` keep their historical
+/// behaviour and are not checked for permission drift.
+#[cfg(unix)]
+fn desired_permissions(req: &FileRequest) -> Result<Option<u32>> {
+    if req.permissions.is_some() {
+        return Ok(req.permissions);
+    }
+    if req.mode == FileMode::Template {
+        return Ok(Some(permission_bits(&req.source.metadata()?)));
+    }
+    Ok(None)
+}
+
+#[cfg(unix)]
+fn permission_bits(metadata: &std::fs::Metadata) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o7777
+}
+
+/// Combine a content check with the target's permissions: an otherwise
+/// applied target whose permissions drifted (e.g. a later chmod) is
+/// `Differs`, so apply repairs them too. The mode is read without opening the
+/// file, so a declared mode that denies its owner read access (`0200`,
+/// `0000`) is still compared; such a target is applied once its mode matches,
+/// because its content cannot be read back.
+fn check_permissions(req: &FileRequest, content: Result<FileState>) -> Result<FileState> {
+    #[cfg(unix)]
+    if let Some(desired) = desired_permissions(req)? {
+        let mode_differs = match std::fs::symlink_metadata(&req.target) {
+            Ok(metadata) if metadata.file_type().is_file() => permission_bits(&metadata) != desired,
+            _ => false,
+        };
+        let permissions_differ = || FileState::Differs("permissions differ".into());
+        return match content {
+            Ok(FileState::Applied) if mode_differs => Ok(permissions_differ()),
+            // an unreadable target either drifted to a mode that denies
+            // its owner read access (apply rewrites it) or was declared so
+            Err(err) if (mode_differs || desired & 0o400 == 0) && is_permission_denied(&err) => {
+                Ok(if mode_differs {
+                    permissions_differ()
+                } else {
+                    FileState::Applied
+                })
             }
-            Ok(state)
-        }
+            other => other,
+        };
+    }
+    #[cfg(not(unix))]
+    let _ = req;
+    content
+}
+
+fn is_permission_denied(err: &eyre::Report) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+    })
+}
+
+/// A permissions-only entry never creates or rewrites its target and never
+/// follows a symlink there: it only compares the bits of what exists. A
+/// target that does not exist has nothing to adjust, so it counts as
+/// satisfied (see [`permissions_target_absent`]).
+fn check_permissions_only(req: &FileRequest) -> Result<FileState> {
+    let metadata = match std::fs::symlink_metadata(&req.target) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(FileState::Applied),
+        Err(err) => return Err(err.into()),
+    };
+    if metadata.file_type().is_symlink() {
+        return Ok(FileState::Differs(PERMISSIONS_THROUGH_LINK.into()));
+    }
+    #[cfg(unix)]
+    if let Some(desired) = req.permissions
+        && permission_bits(&metadata) != desired
+    {
+        return Ok(FileState::Differs("permissions differ".into()));
+    }
+    Ok(FileState::Applied)
+}
+
+/// Why an applied permissions-only entry changed nothing: its target does not
+/// exist. Status shows this next to `applied`.
+pub(crate) fn permissions_target_absent(req: &FileRequest) -> Option<&'static str> {
+    (req.mode == FileMode::Permissions
+        && std::fs::symlink_metadata(&req.target)
+            .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound))
+    .then_some("target absent; permissions not applied")
+}
+
+const PERMISSIONS_THROUGH_LINK: &str =
+    "exists but is a symlink; permissions are not set through links";
+
+/// Why a permissions-only entry cannot act on its target right now, if it
+/// cannot: the target is missing, or it is a symlink mise must not follow.
+fn permissions_target_unavailable(req: &FileRequest) -> Result<Option<String>> {
+    match std::fs::symlink_metadata(&req.target) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Ok(Some(format!(
+            "{} is a symlink, which is never followed",
+            req.target.display_user()
+        ))),
+        Ok(_) => Ok(None),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Some(format!(
+            "{} does not exist",
+            req.target.display_user()
+        ))),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -2828,6 +3154,7 @@ pub(crate) fn plan_apply_with_active<'a>(
     let mut conflicts = vec![];
     let mut record_symlink_each = vec![];
     let mut record_templates = vec![];
+    let mut missing_permission_targets = vec![];
     for req in requests {
         // a tracked file is never written: history captures it as it is
         if req.mode == FileMode::Track {
@@ -2835,12 +3162,29 @@ pub(crate) fn plan_apply_with_active<'a>(
         }
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
-        if req.mode != FileMode::Content && !req.source.exists() {
+        if req.mode.has_source() && !req.source.exists() {
             missing_sources.push(format!(
                 "  [dotfiles].\"{}\": {}",
                 req.target_raw,
                 req.source.display_user()
             ));
+            continue;
+        }
+        // a permissions-only entry never creates its target and never
+        // follows a link there: nothing to do is not an error. A missing
+        // directory another entry of this apply creates is decided once
+        // every entry is planned.
+        if req.mode == FileMode::Permissions
+            && let Some(reason) = permissions_target_unavailable(req)?
+        {
+            if std::fs::symlink_metadata(&req.target).is_err() {
+                missing_permission_targets.push((req, reason));
+            } else {
+                warn!(
+                    "[dotfiles].\"{}\": {reason}; permissions not set",
+                    req.target_raw
+                );
+            }
             continue;
         }
         // rendering can run exec() — a dry run must not execute anything,
@@ -2910,6 +3254,22 @@ pub(crate) fn plan_apply_with_active<'a>(
     if !problems.is_empty() {
         bail!("files: {}", problems.join("\nfiles: "));
     }
+    // entries run in order, so one that creates a directory a
+    // permissions-only entry names has made it by the time the chmod runs
+    let mut deferred = vec![];
+    for (req, reason) in missing_permission_targets {
+        if todo.iter().any(|(other, _)| {
+            other.mode != FileMode::Permissions && other.target.starts_with(&req.target)
+        }) {
+            deferred.push((req, None));
+        } else {
+            warn!(
+                "[dotfiles].\"{}\": {reason}; permissions not set",
+                req.target_raw
+            );
+        }
+    }
+    todo.extend(deferred);
     Ok(ApplyPlan {
         todo,
         record_symlink_each,
@@ -3267,6 +3627,15 @@ fn plan_unapply_one<'a>(
             );
             return Ok(None);
         }
+        // mise only changed the permissions of a file it does not own, so
+        // unapplying never removes it, not even with --force
+        FileMode::Permissions => {
+            debug!(
+                "files: {} has only its permissions managed; nothing to remove",
+                req.target.display_user()
+            );
+            return Ok(None);
+        }
         FileMode::Content => {
             if !req.target.exists() && !req.target.is_symlink() {
                 return Ok(None);
@@ -3540,7 +3909,7 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                 out.push(req.target.clone());
             }
         }
-        FileMode::Track => {}
+        FileMode::Track | FileMode::Permissions => {}
     }
     Ok(out)
 }
@@ -3566,6 +3935,7 @@ fn describe(req: &FileRequest) -> Result<String> {
         FileMode::Copy => format!("cp {src} {tgt}"),
         FileMode::Template => format!("render {src} -> {tgt}"),
         FileMode::Content => format!("write inline content to {tgt}"),
+        FileMode::Permissions => format!("chmod {:04o} {tgt}", req.permissions.unwrap_or_default()),
     })
 }
 
@@ -3582,6 +3952,10 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
         FileMode::Copy => format!("copied {src} to {tgt}"),
         FileMode::Template => format!("rendered {src} to {tgt}"),
         FileMode::Content => format!("wrote inline content to {tgt}"),
+        FileMode::Permissions => format!(
+            "set permissions of {tgt} to {:04o}",
+            req.permissions.unwrap_or_default()
+        ),
     })
 }
 
@@ -3649,19 +4023,7 @@ fn print_diff(config: &Config, req: &FileRequest, rendered: Option<&str>) -> Res
             {
                 print_content_diff(config, req, &current, &desired)?;
             }
-            #[cfg(unix)]
-            if req.mode == FileMode::Template && !req.target.is_symlink() && req.target.is_file() {
-                use std::os::unix::fs::PermissionsExt;
-                let current_mode = req.target.metadata()?.permissions().mode() & 0o7777;
-                let desired_mode = req.source.metadata()?.permissions().mode() & 0o7777;
-                if current_mode != desired_mode {
-                    miseprintln!(
-                        "  permissions differ: {:04o} (current) -> {:04o} (desired)",
-                        current_mode,
-                        desired_mode
-                    );
-                }
-            }
+            print_permissions_diff(req)?;
         }
         FileMode::Copy | FileMode::Template => {
             miseprintln!(
@@ -3677,8 +4039,33 @@ fn print_diff(config: &Config, req: &FileRequest, rendered: Option<&str>) -> Res
             {
                 print_content_diff(config, req, &current, desired)?;
             }
+            print_permissions_diff(req)?;
+        }
+        FileMode::Permissions => match permissions_target_unavailable(req)? {
+            Some(reason) => miseprintln!("  current: {reason}"),
+            None => print_permissions_diff(req)?,
+        },
+    }
+    Ok(())
+}
+
+/// Print the permission change apply would make to an existing regular file
+/// or directory (never through a symlink).
+fn print_permissions_diff(req: &FileRequest) -> Result<()> {
+    #[cfg(unix)]
+    if !req.target.is_symlink()
+        && (req.target.is_file() || req.mode == FileMode::Permissions && req.target.exists())
+        && let Some(desired) = desired_permissions(req)?
+    {
+        let current = permission_bits(&std::fs::symlink_metadata(&req.target)?);
+        if current != desired {
+            miseprintln!(
+                "  permissions differ: {current:04o} (current) -> {desired:04o} (desired)"
+            );
         }
     }
+    #[cfg(not(unix))]
+    let _ = req;
     Ok(())
 }
 
@@ -3695,7 +4082,15 @@ fn current_regular_file_for_diff(req: &FileRequest) -> Result<Option<Vec<u8>>> {
         return Ok(None);
     }
     if req.target.is_file() {
-        return Ok(Some(file::read(&req.target)?));
+        return match file::read(&req.target) {
+            Ok(current) => Ok(Some(current)),
+            // a mode such as 0200 can deny even the owner read access
+            Err(err) if is_permission_denied(&err) => {
+                miseprintln!("  current: {} is not readable", req.target.display_user());
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        };
     }
     if req.target.exists() {
         miseprintln!(
@@ -3755,7 +4150,7 @@ pub(crate) fn print_diffs(
         if req.mode == FileMode::Track {
             continue;
         }
-        if req.mode != FileMode::Content && !req.source.exists() {
+        if req.mode.has_source() && !req.source.exists() {
             miseprintln!("{}: source missing", req.target_raw);
             changed = true;
             continue;
@@ -3817,6 +4212,10 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
     };
     match req.mode {
         FileMode::Track => {}
+        // only the mode changes; a directory's contents stay untouched
+        FileMode::Permissions => {
+            paths.insert(req.target.clone(), dir_capture(&req.target));
+        }
         FileMode::Symlink | FileMode::Content => {
             paths.insert(req.target.clone(), Capture::Full);
         }
@@ -3922,7 +4321,9 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         return Ok(());
     }
     debug!("files: {}", describe(req)?);
-    if let Some(parent) = req.target.parent() {
+    if req.mode != FileMode::Permissions
+        && let Some(parent) = req.target.parent()
+    {
         file::create_dir_all(parent)?;
     }
     match req.mode {
@@ -4017,13 +4418,24 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 replace_recorded(&req.target, written, || {
                     file::copy(&req.source, &req.target)
                 })?;
+                // the copy took the source's permissions; an explicit
+                // `permissions` overrides them
+                #[cfg(unix)]
+                if let Some(permissions) = req.permissions {
+                    set_mode(&req.target, permissions)?;
+                }
             }
         }
         FileMode::Template => {
             let rendered = rendered.expect("rendered template content");
             replace_recorded(&req.target, written, || file::write(&req.target, rendered))?;
             #[cfg(unix)]
-            std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
+            match req.permissions {
+                Some(permissions) => set_mode(&req.target, permissions)?,
+                None => {
+                    std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?
+                }
+            }
             save_target_state(req, rendered);
         }
         FileMode::Track => unreachable!("tracked files are never written"),
@@ -4032,13 +4444,135 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 file::write(&req.target, req.content.as_deref().expect("inline content"))
             })?;
             #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&req.target, std::fs::Permissions::from_mode(0o600))?;
+            set_mode(&req.target, req.permissions.unwrap_or(0o600))?;
+        }
+        FileMode::Permissions => {
+            // planning skipped a missing target or a symlink; this check only
+            // gives the clearer message, the chmod itself never follows a
+            // link that appeared since
+            if let Some(reason) = permissions_target_unavailable(req)? {
+                bail!("[dotfiles].\"{}\": {reason}", req.target_raw);
+            }
+            #[cfg(unix)]
+            if let Some(permissions) = req.permissions {
+                chmod_no_follow(&req.target, permissions)
+                    .wrap_err_with(|| format!("[dotfiles].\"{}\"", req.target_raw))?;
+                written.push(req.target.clone());
             }
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+/// Set the mode of a file mise does not own without ever following a symlink
+/// at `path`: the check and the chmod act on one descriptor, so a link
+/// swapped in after planning is refused instead of redirecting the change.
+#[cfg(unix)]
+fn chmod_no_follow(path: &Path, mode: u32) -> Result<()> {
+    use nix::errno::Errno;
+    use nix::fcntl::{OFlag, open};
+    use nix::sys::stat::{Mode, fchmod};
+
+    let mode = Mode::from_bits_truncate(mode as nix::libc::mode_t);
+    let flags = OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC;
+    // a write-only file cannot be opened for reading, nor a directory for
+    // writing; either descriptor is enough for fchmod
+    for access in [OFlag::O_RDONLY, OFlag::O_WRONLY] {
+        match open(path, flags | access, Mode::empty()) {
+            Ok(fd) => {
+                fchmod(&fd, mode).wrap_err_with(|| {
+                    format!("failed to set permissions of {}", path.display_user())
+                })?;
+                return Ok(());
+            }
+            Err(Errno::EACCES | Errno::EISDIR) => continue,
+            Err(Errno::ELOOP) => bail!(
+                "{} is a symlink, which is never followed",
+                path.display_user()
+            ),
+            Err(err) => {
+                return Err(err)
+                    .wrap_err_with(|| format!("failed to open {}", path.display_user()));
+            }
+        }
+    }
+    // a target its owner can neither read nor write (mode 0000) cannot be
+    // opened for either, but its owner may still change its mode
+    chmod_unopenable_no_follow(path, mode)
+}
+
+/// Linux: an `O_PATH` descriptor needs no read or write permission, and with
+/// `O_NOFOLLOW` it refers to a final symlink itself, which the type check
+/// then refuses. Linux has no `fchmod` for such a descriptor, so the change
+/// goes through its `/proc/self/fd` entry, which resolves to the opened inode
+/// rather than to the path again. (`fchmodat` with `AT_SYMLINK_NOFOLLOW`
+/// fails with `ENOTSUP` on older kernels and C libraries.)
+#[cfg(target_os = "linux")]
+fn chmod_unopenable_no_follow(path: &Path, mode: nix::sys::stat::Mode) -> Result<()> {
+    use nix::fcntl::{AT_FDCWD, OFlag, open};
+    use nix::sys::stat::{FchmodatFlags, Mode, SFlag, fchmodat, fstat};
+    use std::os::fd::AsRawFd;
+
+    let fd = open(
+        path,
+        OFlag::O_PATH | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .wrap_err_with(|| format!("failed to open {}", path.display_user()))?;
+    let kind = SFlag::from_bits_truncate(fstat(&fd)?.st_mode) & SFlag::S_IFMT;
+    if kind == SFlag::S_IFLNK {
+        bail!(
+            "{} is a symlink, which is never followed",
+            path.display_user()
+        );
+    }
+    if kind != SFlag::S_IFREG && kind != SFlag::S_IFDIR {
+        bail!("{} is not a file or directory", path.display_user());
+    }
+    let descriptor = PathBuf::from(format!("/proc/self/fd/{}", fd.as_raw_fd()));
+    fchmodat(AT_FDCWD, &descriptor, mode, FchmodatFlags::FollowSymlink)
+        .wrap_err_with(|| format!("failed to set permissions of {}", path.display_user()))
+}
+
+/// Other Unix systems (macOS, the BSDs) implement `fchmodat` with
+/// `AT_SYMLINK_NOFOLLOW` directly. There it changes a symlink's own mode
+/// rather than failing, so a link is refused first; one swapped in after that
+/// check only has its own mode changed, never its target's.
+#[cfg(all(unix, not(target_os = "linux")))]
+fn chmod_unopenable_no_follow(path: &Path, mode: nix::sys::stat::Mode) -> Result<()> {
+    use nix::errno::Errno;
+    use nix::fcntl::AT_FDCWD;
+    use nix::sys::stat::{FchmodatFlags, fchmodat};
+
+    let file_type = std::fs::symlink_metadata(path)
+        .wrap_err_with(|| format!("failed to inspect {}", path.display_user()))?
+        .file_type();
+    if file_type.is_symlink() {
+        bail!(
+            "{} is a symlink, which is never followed",
+            path.display_user()
+        );
+    }
+    if !file_type.is_file() && !file_type.is_dir() {
+        bail!("{} is not a file or directory", path.display_user());
+    }
+    match fchmodat(AT_FDCWD, path, mode, FchmodatFlags::NoFollowSymlink) {
+        Ok(()) => Ok(()),
+        // one errno on some systems, two on others
+        Err(err) if err == Errno::ENOTSUP || err == Errno::EOPNOTSUPP => bail!(
+            "cannot set permissions of {} without following symlinks on this system; make it readable or writable by its owner first",
+            path.display_user()
+        ),
+        Err(err) => Err(err)
+            .wrap_err_with(|| format!("failed to set permissions of {}", path.display_user())),
+    }
 }
 
 /// delete this entry's leftover links (see [`stale_links`]) and any directory
@@ -4285,6 +4819,7 @@ variants = [
                 source.as_deref(),
                 content.as_deref(),
                 mode.as_deref(),
+                false,
                 &variants,
             )?,
             Some(PathBuf::from("vscode/settings.json"))
@@ -4504,6 +5039,7 @@ variants = [{{ {field} = "linux" }}]"#
                 .collect(),
             include: None,
             manifest: None,
+            permissions: None,
             base: PathBuf::from("/home/test"),
             origin: crate::system::resources::ResourceOrigin {
                 config: PathBuf::from("/home/test/.config/mise/config.toml"),
@@ -4626,6 +5162,7 @@ variants = [{{ {field} = "linux" }}]"#
             exclude: vec![],
             include: None,
             manifest: None,
+            permissions: None,
             base: source.parent().expect("source parent").to_path_buf(),
             origin: ResourceOrigin {
                 config: PathBuf::from("/mise.toml"),
@@ -5387,6 +5924,396 @@ variants = [{{ {field} = "linux" }}]"#
         Ok(())
     }
 
+    fn permissions_req(target: &Path, permissions: u32) -> FileRequest {
+        FileRequest {
+            source: PathBuf::new(),
+            mode: FileMode::Permissions,
+            permissions: Some(permissions),
+            policy: FilePolicy::for_mode(FileMode::Permissions),
+            ..link_req(Path::new("/unused"), target, FileMode::Copy)
+        }
+    }
+
+    fn incoming(body: &str) -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let mut configs = ConfigMap::new();
+        configs.insert(
+            path.clone(),
+            Arc::new(MiseToml::for_history_preflight(body, &path)?),
+        );
+        validate_incoming_files(&configs)
+    }
+
+    #[test]
+    fn permissions_parse_as_octal_strings() {
+        assert_eq!(parse_permissions("0600").unwrap(), 0o600);
+        assert_eq!(parse_permissions("0o750").unwrap(), 0o750);
+        assert_eq!(parse_permissions("600").unwrap(), 0o600);
+        for invalid in ["", "0800", "rw-------", "17777"] {
+            assert!(parse_permissions(invalid).is_err(), "{invalid:?}");
+        }
+    }
+
+    /// A table holding only `permissions` is a whole-file entry, not an
+    /// edit, and it infers no source.
+    #[test]
+    fn a_permissions_only_table_is_a_whole_file_entry() {
+        let value: toml::Value = toml::from_str(r#"permissions = "0600""#).unwrap();
+        let Some(FileTomlEntry::Table {
+            source,
+            permissions,
+            ..
+        }) = file_entry_from_toml("~/.ssh/config", value)
+        else {
+            panic!("expected a whole-file table entry");
+        };
+        assert_eq!(source, None);
+        assert_eq!(permissions.as_deref(), Some("0600"));
+
+        // an edit key keeps the table an edit entry
+        let value: toml::Value = toml::from_str("block = \"x\"\npermissions = \"0600\"").unwrap();
+        assert!(file_entry_from_toml("~/.bashrc/id", value).is_none());
+    }
+
+    #[test]
+    fn incoming_permissions_accept_file_writing_entries() -> Result<()> {
+        incoming(
+            r#"
+[dotfiles]
+"~/.ssh/config" = { permissions = "0600" }
+"~/.netrc" = { source = "netrc.tera", mode = "template", permissions = "0600" }
+"~/.config/app.toml" = { source = "app.toml", mode = "copy", permissions = "0640" }
+"~/.config/token" = { content = "secret\n", permissions = "0400" }
+"#,
+        )
+    }
+
+    #[test]
+    fn incoming_permissions_reject_unsupported_combinations() {
+        for (entry, expected) in [
+            (r#"{ permissions = "0600", mode = "track" }"#, "track"),
+            (
+                r#"{ source = "x", mode = "symlink", permissions = "0600" }"#,
+                "mode copy or template",
+            ),
+            (
+                r#"{ source = "x", mode = "symlink-each", permissions = "0600" }"#,
+                "mode copy or template",
+            ),
+            (r#"{ permissions = "0999" }"#, "octal"),
+            (
+                r#"{ permissions = "0600", exclude = ["*.bak"] }"#,
+                "permissions-only",
+            ),
+            (
+                r#"{ permissions = "0600", encrypt = false }"#,
+                "permissions-only",
+            ),
+            (
+                r#"{ source = "x", mode = "copy", manifest = "git", permissions = "0600" }"#,
+                "manifest",
+            ),
+            (r#"{ permissions = "0600" }"#, "wildcards"),
+        ] {
+            let key = if expected == "wildcards" {
+                "~/.ssh/id_*"
+            } else {
+                "~/.ssh/config"
+            };
+            let err = incoming(&format!("[dotfiles]\n\"{key}\" = {entry}\n"))
+                .expect_err(entry)
+                .to_string();
+            assert!(err.contains(expected), "{entry}: {err}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_permissions_only_entry_changes_only_the_mode() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let target = dir.path().join("config");
+        file::write(&target, "user content")?;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644))?;
+        let req = permissions_req(&target, 0o600);
+
+        assert_eq!(
+            check_rendered(&req, None)?,
+            FileState::Differs("permissions differ".into())
+        );
+        assert!(find_conflicts(&req)?.is_empty());
+        let mut written = vec![];
+        apply_one(&req, None, &mut written)?;
+        assert_eq!(written, vec![target.clone()]);
+        assert_eq!(
+            std::fs::metadata(&target)?.permissions().mode() & 0o7777,
+            0o600
+        );
+        assert_eq!(file::read_to_string(&target)?, "user content");
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+
+        // unapply never removes a file mise only chmods, even with --force
+        let opts = UnapplyOpts {
+            dry_run: false,
+            verbose: false,
+            force: true,
+            yes: true,
+        };
+        assert!(plan_unapply_one(&req, &opts)?.is_none());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_permissions_only_entry_skips_missing_targets_and_links() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+
+        let missing = dir.path().join("missing/config");
+        let req = permissions_req(&missing, 0o600);
+        // nothing to adjust counts as satisfied; status names the reason
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+        assert!(permissions_target_absent(&req).is_some());
+        assert!(permissions_target_unavailable(&req)?.is_some());
+        // applying is refused rather than creating the file or its parent
+        assert!(apply_one(&req, None, &mut vec![]).is_err());
+        assert!(!missing.parent().unwrap().exists());
+
+        let real = dir.path().join("real");
+        file::write(&real, "linked")?;
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o644))?;
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link)?;
+        let req = permissions_req(&link, 0o600);
+        assert!(matches!(
+            check_rendered(&req, None)?,
+            FileState::Differs(reason) if reason.contains("symlink")
+        ));
+        assert!(apply_one(&req, None, &mut vec![]).is_err());
+        assert_eq!(
+            std::fs::metadata(&real)?.permissions().mode() & 0o7777,
+            0o644,
+            "the link must not be followed"
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permissions_override_what_copies_and_templates_would_set() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "managed")?;
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o644))?;
+        let mode_of = |path: &Path| -> Result<u32> {
+            Ok(std::fs::metadata(path)?.permissions().mode() & 0o7777)
+        };
+
+        for mode in [FileMode::Copy, FileMode::Template, FileMode::Content] {
+            let target = dir.path().join(mode.name());
+            let mut req = link_req(&source, &target, mode);
+            req.permissions = Some(0o600);
+            if mode == FileMode::Content {
+                req.content = Some("managed".into());
+            }
+            let rendered = (mode == FileMode::Template).then_some("managed");
+            apply_one(&req, rendered, &mut vec![])?;
+            assert_eq!(mode_of(&target)?, 0o600, "{}", mode.name());
+            assert_eq!(check_rendered(&req, rendered)?, FileState::Applied);
+
+            // drift is reported, and applying again repairs it
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644))?;
+            assert_eq!(
+                check_rendered(&req, rendered)?,
+                FileState::Differs("permissions differ".into()),
+                "{}",
+                mode.name()
+            );
+            apply_one(&req, rendered, &mut vec![])?;
+            assert_eq!(mode_of(&target)?, 0o600, "{}", mode.name());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn composed_file_footprints_scope_permissions_only_entries() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_file = dir.path().join("file");
+        let source_tree = dir.path().join("tree");
+        file::write(&source_file, "file")?;
+        file::create_dir_all(&source_tree)?;
+        file::write(source_tree.join("config"), "tree")?;
+        let target = dir.path().join("target");
+
+        // chmodding a directory another entry writes into claims nothing
+        let copy = link_req(&source_file, &target.join("config"), FileMode::Copy);
+        let directory = permissions_req(&target, 0o700);
+        validate_composed_file_footprints(&[directory.clone(), copy.clone()])?;
+        validate_composed_file_footprints(&[copy, directory])?;
+
+        // but it must not fight another entry over a file that entry writes
+        let tree = link_req(&source_tree, &target, FileMode::Copy);
+        let leaf = permissions_req(&target.join("config"), 0o600);
+        for requests in [[tree.clone(), leaf.clone()], [leaf, tree.clone()]] {
+            let err = validate_composed_file_footprints(&requests).unwrap_err();
+            assert!(err.to_string().contains("conflicting dotfile declarations"));
+        }
+
+        // permissions on a directory copy apply to no single file
+        let mut tree = tree;
+        tree.permissions = Some(0o600);
+        let err = validate_composed_file_footprints(&[tree]).unwrap_err();
+        assert!(err.to_string().contains("requires a file source"));
+        Ok(())
+    }
+
+    #[test]
+    fn incoming_permissions_reject_edit_entries() {
+        let err =
+            incoming("[dotfiles]\n\"~/.bashrc/id\" = { block = \"x\", permissions = \"0600\" }\n")
+                .unwrap_err()
+                .to_string();
+        assert!(err.contains("whole-file entries"), "{err}");
+    }
+
+    /// The chmod acts on a descriptor opened without following a link, so a
+    /// symlink swapped in after planning is refused, and a target its owner
+    /// cannot read or write is still reachable.
+    #[cfg(unix)]
+    #[test]
+    fn chmod_no_follow_refuses_links_and_reaches_unreadable_targets() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let mode_of =
+            |path: &Path| -> Result<u32> { Ok(permission_bits(&std::fs::symlink_metadata(path)?)) };
+
+        let real = dir.path().join("real");
+        file::write(&real, "real")?;
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o644))?;
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link)?;
+        let err = chmod_no_follow(&link, 0o600).unwrap_err().to_string();
+        assert!(err.contains("symlink"), "{err}");
+        assert_eq!(mode_of(&real)?, 0o644);
+
+        for from in [0o000, 0o200, 0o400] {
+            let target = dir.path().join(format!("file{from:o}"));
+            file::write(&target, "content")?;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(from))?;
+            chmod_no_follow(&target, 0o600)?;
+            assert_eq!(mode_of(&target)?, 0o600, "from {from:o}");
+        }
+
+        let directory = dir.path().join("directory");
+        file::create_dir_all(&directory)?;
+        chmod_no_follow(&directory, 0o700)?;
+        assert_eq!(mode_of(&directory)?, 0o700);
+        Ok(())
+    }
+
+    /// A declared mode that denies the owner read access leaves content that
+    /// cannot be compared; the mode is still checked instead of failing.
+    #[cfg(unix)]
+    #[test]
+    fn a_write_only_copy_is_checked_by_its_mode() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "managed")?;
+        let target = dir.path().join("target");
+        let mut req = link_req(&source, &target, FileMode::Copy);
+        req.permissions = Some(0o200);
+
+        apply_one(&req, None, &mut vec![])?;
+        assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o200);
+        assert_eq!(check_rendered(&req, None)?, FileState::Applied);
+
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o000))?;
+        assert_eq!(
+            check_rendered(&req, None)?,
+            FileState::Differs("permissions differ".into())
+        );
+        apply_one(&req, None, &mut vec![])?;
+        assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o200);
+        Ok(())
+    }
+
+    /// Drift to a mode that denies the owner read access makes the content
+    /// unreadable; it must read as a permission difference apply repairs, not
+    /// as a broken entry. Root reads any file, so the case needs a non-root
+    /// user to mean anything.
+    #[cfg(unix)]
+    #[test]
+    fn drift_to_an_unreadable_mode_is_repaired() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        if nix::unistd::geteuid().is_root() {
+            return Ok(());
+        }
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        file::write(&source, "managed")?;
+        for mode in [FileMode::Copy, FileMode::Template, FileMode::Content] {
+            let target = dir.path().join(mode.name());
+            let mut req = link_req(&source, &target, mode);
+            req.permissions = Some(0o600);
+            if mode == FileMode::Content {
+                req.content = Some("managed".into());
+            }
+            let rendered = (mode == FileMode::Template).then_some("managed");
+            apply_one(&req, rendered, &mut vec![])?;
+
+            for drifted in [0o000, 0o200] {
+                std::fs::set_permissions(&target, std::fs::Permissions::from_mode(drifted))?;
+                assert_eq!(
+                    check_rendered(&req, rendered)?,
+                    FileState::Differs("permissions differ".into()),
+                    "{} at {drifted:o}",
+                    mode.name()
+                );
+                apply_one(&req, rendered, &mut vec![])?;
+                assert_eq!(permission_bits(&std::fs::metadata(&target)?), 0o600);
+                assert_eq!(file::read_to_string(&target)?, "managed");
+                assert_eq!(check_rendered(&req, rendered)?, FileState::Applied);
+            }
+        }
+        Ok(())
+    }
+
+    /// The fallback for a target that cannot be opened for reading or
+    /// writing: it works on files and directories and never follows a link.
+    #[cfg(unix)]
+    #[test]
+    fn chmod_of_an_unopenable_target_never_follows_links() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir()?;
+        let mode = |bits| nix::sys::stat::Mode::from_bits_truncate(bits);
+
+        let target = dir.path().join("file");
+        file::write(&target, "content")?;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o000))?;
+        chmod_unopenable_no_follow(&target, mode(0o600))?;
+        assert_eq!(permission_bits(&std::fs::symlink_metadata(&target)?), 0o600);
+
+        let directory = dir.path().join("directory");
+        file::create_dir_all(&directory)?;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o000))?;
+        chmod_unopenable_no_follow(&directory, mode(0o700))?;
+        assert_eq!(
+            permission_bits(&std::fs::symlink_metadata(&directory)?),
+            0o700
+        );
+
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&target, &link)?;
+        assert!(chmod_unopenable_no_follow(&link, mode(0o644)).is_err());
+        assert_eq!(permission_bits(&std::fs::symlink_metadata(&target)?), 0o600);
+        Ok(())
+    }
+
     fn template_req(dir: &Path, remove_empty: bool) -> Result<FileRequest> {
         let source = dir.join("source.tera");
         file::write(&source, "")?;
@@ -5411,7 +6338,11 @@ variants = [{{ {field} = "linux" }}]"#
             validate_incoming_files(&configs)
         };
         validate(r#"{ source = "a.tera", mode = "template", remove_empty = true }"#)?;
+        validate(
+            r#"{ source = "a.tera", mode = "template", permissions = "0600", remove_empty = true }"#,
+        )?;
         for entry in [
+            r#"{ permissions = "0600", remove_empty = true }"#,
             r#"{ source = "a", mode = "copy", remove_empty = true }"#,
             r#"{ source = "a", mode = "symlink", remove_empty = true }"#,
             r#"{ content = "x", remove_empty = true }"#,
@@ -5442,6 +6373,7 @@ variants = [{{ {field} = "linux" }}]"#
         assert!(accepted[0].remove_empty);
         assert!(merge("source = \"a\"\nmode = \"copy\"\nremove_empty = true").is_empty());
         assert!(merge("content = \"x\"\nremove_empty = true").is_empty());
+        assert!(merge("permissions = \"0600\"\nremove_empty = true").is_empty());
         Ok(())
     }
 

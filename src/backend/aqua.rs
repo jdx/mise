@@ -2619,7 +2619,24 @@ impl AquaBackend {
         }
 
         let tarball_path = tv.download_path().join(filename);
-        self.verify_checksum(ctx, tv, &tarball_path)?;
+        if let Err(err) = self.verify_checksum(ctx, tv, &tarball_path) {
+            let url = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|platform| platform.url.clone());
+            return Err(match url {
+                Some(url) => {
+                    github::with_checksum_mismatch_note(
+                        err,
+                        &url,
+                        &tarball_path,
+                        lockfile_has_checksum,
+                    )
+                    .await
+                }
+                None => err,
+            });
+        }
         Ok(())
     }
 
@@ -3335,11 +3352,10 @@ impl AquaBackend {
         arch: &str,
     ) -> Result<Option<AquaFileLink>> {
         let explicit_link = f.link.is_some();
-        let src = match f.src(pkg, version, os, arch)? {
-            Some(src) => src,
-            None if explicit_link => f.name.clone(),
-            None => return Ok(None),
-        };
+        // Like aqua, a file without `src` is found at its `name`.
+        let src = f
+            .src(pkg, version, os, arch)?
+            .unwrap_or_else(|| f.name.clone());
         let link = f.link(pkg, version, os, arch)?;
 
         let mut src = install_path.join(src);
@@ -4716,6 +4732,47 @@ packages:
     }
 
     #[test]
+    fn test_srcs_default_src_to_file_name() {
+        // mvdan/sh and (on Windows) astral-sh/uv list files by name only.
+        // `symlink_bins` builds `.mise-bins` from these links, so dropping
+        // them left the directory missing while PATH pointed at it.
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![
+            AquaFile {
+                name: "uv".to_string(),
+                ..Default::default()
+            },
+            AquaFile {
+                name: "uvx".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let links =
+            AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "windows", "amd64")
+                .unwrap();
+
+        let exe = |name: &str| PathBuf::from("install").join(format!("{name}.exe"));
+        assert_eq!(
+            links,
+            vec![
+                AquaFileLink {
+                    src: exe("uv"),
+                    dst: exe("uv"),
+                    hard: false,
+                    explicit_link: false,
+                },
+                AquaFileLink {
+                    src: exe("uvx"),
+                    dst: exe("uvx"),
+                    hard: false,
+                    explicit_link: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn test_candidate_bin_paths_independent_of_filesystem() {
         // A package whose binary lives in a subdir of the install dir.
         let mut pkg = AquaPackage::default();
@@ -5908,6 +5965,7 @@ no_asset: true
             browser_download_url: format!("https://example.com/{name}"),
             url: format!("https://api.example.com/{name}"),
             digest: None,
+            updated_at: None,
         }
     }
 

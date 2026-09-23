@@ -17,11 +17,13 @@ cat >remove-empty-valid.toml <<'TOML'
 "~/.other" = { source = "other", mode = "copy", remove_empty = false }
 # an omitted mode may resolve to dotfiles.default_mode = "template"
 "~/.implied" = { source = "implied.tera", remove_empty = true }
+"~/.netrc" = { source = "netrc.tera", mode = "template", permissions = "0600", remove_empty = true }
 TOML
 assert_succeed "$TOMBI_LINT remove-empty-valid.toml"
 for entry in \
   '{ source = "other", mode = "copy", remove_empty = true }' \
-  '{ content = "inline", remove_empty = true }'; do
+  '{ content = "inline", remove_empty = true }' \
+  '{ permissions = "0600", remove_empty = true }'; do
   printf '[dotfiles]\n"~/.app" = %s\n' "$entry" >remove-empty-invalid.toml
   assert_fail "$TOMBI_LINT remove-empty-invalid.toml"
 done
