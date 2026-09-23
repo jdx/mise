@@ -79,6 +79,7 @@ When trace and/or log export is enabled, mise reads the following standard env v
 | `OTEL_EXPORTER_OTLP_HEADERS`         | Headers for export requests (comma-separated `key=value` pairs), e.g. for auth. |
 | `OTEL_EXPORTER_OTLP_TRACES_HEADERS`  | Signal-specific traces headers. Takes priority over the general headers.        |
 | `OTEL_EXPORTER_OTLP_LOGS_HEADERS`    | Signal-specific logs headers. Takes priority over the general headers.          |
+| `OTEL_EXPORTER_OTLP_PROTOCOL`        | `http/protobuf` (default) or `http/json`. gRPC is not supported.                |
 | `OTEL_SERVICE_NAME`                  | The `service.name` resource attribute (defaults to `mise`).                     |
 | `OTEL_RESOURCE_ATTRIBUTES`           | Additional resource attributes (comma-separated `key=value` pairs).             |
 

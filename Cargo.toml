@@ -292,6 +292,7 @@ opentelemetry_sdk = { version = "0.33", default-features = false, features = [
 ] }
 opentelemetry-otlp = { version = "0.33", default-features = false, features = [
   "http-proto",
+  "http-json",
   "trace",
   "logs",
   "reqwest-client",
