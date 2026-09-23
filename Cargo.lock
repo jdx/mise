@@ -2078,7 +2078,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.28.0",
- "tera 2.3.0",
+ "tera 2.4.0",
  "thiserror 2.0.20",
  "unicode-width 0.2.2",
 ]
@@ -6659,7 +6659,7 @@ dependencies = [
  "taplo",
  "tempfile",
  "tera 1.20.1",
- "tera 2.3.0",
+ "tera 2.4.0",
  "tera-contrib",
  "terminal_size",
  "test-log",
@@ -10535,9 +10535,9 @@ dependencies = [
 
 [[package]]
 name = "tera"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52fca06a22977165c6821c26e2bf0387cd7e0822107a6854d5fbb787307c4194"
+checksum = "61e0cadeeb54426080b4c5395d59769ce8293f542cc25511c167c742b2175809"
 dependencies = [
  "serde",
 ]
@@ -10562,7 +10562,7 @@ dependencies = [
  "regex",
  "serde_json",
  "slug",
- "tera 2.3.0",
+ "tera 2.4.0",
  "writeable",
 ]
 
@@ -11371,7 +11371,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "shell-words",
- "tera 2.3.0",
+ "tera 2.4.0",
  "thiserror 2.0.20",
  "tokio",
  "usage-lib",
@@ -11410,7 +11410,7 @@ dependencies = [
  "roff",
  "semver",
  "serde",
- "tera 2.3.0",
+ "tera 2.4.0",
  "thiserror 2.0.20",
  "unicode-width 0.2.2",
  "usage-argv",
