@@ -47,6 +47,11 @@ echo "=== --dry-run reports the switch without writing ==="
 assert_contains "mise backends switch --dry-run 2>&1" 'would switch hk@1.58.1 from aqua:jdx/hk to packslip:github.com/jdx/hk'
 assert_contains "cat mise.lock" 'backend = "aqua:jdx/hk"'
 
+echo "=== named tools accept a version or the locked backend ==="
+assert_contains "mise backends switch --dry-run hk@1.58.1 2>&1" 'would switch hk@1.58.1'
+assert_contains "mise backends switch --dry-run aqua:jdx/hk 2>&1" 'would switch hk@1.58.1'
+assert_fail_contains "mise backends switch --dry-run hk@1.57.0" "not locked to a backend the registry has replaced"
+
 echo "=== switch moves the lock entry at the same version and reinstalls ==="
 mise backends switch hk
 assert_contains "cat mise.lock" 'version = "1.58.1"'
@@ -55,7 +60,7 @@ assert_contains "cat mise.lock" "[tools.hk.\"platforms.$MISE_PLATFORM\"]"
 assert_contains "cat $MISE_DATA_DIR/installs/hk/.mise.backend.toml" 'full = "packslip:github.com/jdx/hk"'
 assert_contains "mise exec -- hk --version" "hk 1.58.1"
 assert_not_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch'
-assert_contains "mise backends switch" "every locked tool already uses the registry's backend"
+assert_contains "mise backends switch" "every tool in the project lockfile already uses the registry's backend"
 assert_fail_contains "mise backends switch hk" "not locked to a backend the registry has replaced"
 
 echo "=== a backend named in the config is the user's choice, not superseded ==="
@@ -71,3 +76,29 @@ version = "1.58.1"
 backend = "aqua:jdx/hk"
 EOF
 assert_not_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch'
+
+echo "=== the global lockfile switches only with --global ==="
+rm mise.toml mise.lock
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+hk = "1"
+EOF
+cat <<EOF >"$MISE_CONFIG_DIR/mise.lock"
+lockfile_version = 2
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+specifiers = ["1"]
+
+[tools.hk."platforms.$MISE_PLATFORM"]
+url = "https://github.com/jdx/hk/releases/download/v1.58.1/placeholder"
+EOF
+assert_contains "mise backends switch --dry-run" "every tool in the project lockfile already uses the registry's backend"
+assert_contains "mise backends switch --global --dry-run 2>&1" 'would switch hk@1.58.1'
+mise backends switch --global
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'backend = "packslip:github.com/jdx/hk"'
+assert_contains "cat $MISE_CONFIG_DIR/mise.lock" "[tools.hk.\"platforms.$MISE_PLATFORM\"]"
+assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'placeholder'
+# the relock kept the lockfile's one platform instead of the common defaults
+assert_not_contains "cat $MISE_CONFIG_DIR/mise.lock" 'platforms.windows-x64'

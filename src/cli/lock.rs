@@ -1542,6 +1542,14 @@ impl Lock {
         Ok(())
     }
 
+    /// The lockfiles a run with these flags writes for the loaded config.
+    pub(crate) fn lockfile_targets(&self, config: &Config) -> BTreeSet<PathBuf> {
+        let scoped = self.config_paths_in_lock_scope(config, &config.config_files);
+        self.get_lockfile_targets(config, &config.config_files, &scoped)
+            .into_keys()
+            .collect()
+    }
+
     fn config_paths_in_lock_scope(
         &self,
         config: &Config,

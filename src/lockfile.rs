@@ -1153,24 +1153,24 @@ impl Lockfile {
         self.tools.get_mut(&key)
     }
 
-    /// Move `short`'s entries locked under `from` to the backend `to` returns
-    /// for their version, keeping the version and dropping the artifact data
-    /// recorded for the old backend so the next lock records the new one's.
-    /// Returns the versions moved.
+    /// Move `short`'s entries at `versions` locked under `from` to the backend
+    /// `to` returns for their version, keeping the version and dropping the
+    /// artifact data recorded for the old backend so the next lock records the
+    /// new one's. Returns the versions moved.
     pub(crate) fn switch_backend(
         &mut self,
         short: &str,
         from: &str,
+        versions: &BTreeSet<String>,
         to: impl Fn(&str) -> Option<String>,
     ) -> Vec<String> {
         let Some(entries) = self.tools_for_mut(short) else {
             return vec![];
         };
         let mut moved = vec![];
-        for entry in entries
-            .iter_mut()
-            .filter(|entry| entry.backend.as_deref() == Some(from))
-        {
+        for entry in entries.iter_mut().filter(|entry| {
+            entry.backend.as_deref() == Some(from) && versions.contains(&entry.version)
+        }) {
             if let Some(backend) = to(&entry.version) {
                 entry.backend = Some(backend);
                 entry.platforms.clear();

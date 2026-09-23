@@ -1329,8 +1329,11 @@ from the backend recorded in mise.lock and warns that the registry has a
 newer one. This moves those lock entries to the registry's backend at the
 same versions, relocks them to record the new backend's checksums and URLs,
 and reinstalls installed versions so they come from the new backend.
+
+It covers the lockfiles `mise lock` writes: the current project's, or the
+global config's with `\-\-global`.
 .PP
-\fBUsage:\fR mise backends switch [OPTIONS] [<TOOL>] ...
+\fBUsage:\fR mise backends switch [OPTIONS] [<TOOL@VERSION>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -1338,16 +1341,19 @@ and reinstalls installed versions so they come from the new backend.
 \fB\-n, \-\-dry\-run\fR
 Show what would switch without changing the lockfile or installs
 .TP
+\fB\-g, \-\-global\fR
+Switch tools in the global config's lockfile instead of the project's
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
 .PP
 .TP
-\fB<TOOL>\fR
+\fB<TOOL@VERSION>\fR
 Tools to switch
 
 Defaults to every configured tool whose locked backend the registry
-has replaced.
+has replaced. A version (`hk@1.58.1`) limits the switch to that version.
 \fBExamples:\fR
 .PP
 Move communique to the registry's current backend
