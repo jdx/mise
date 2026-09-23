@@ -1,6 +1,3 @@
-use crate::config::{
-    ConfigPathOptions, resolve_target_config_path, system_config_path, top_toml_config,
-};
 use crate::file::display_path;
 use eyre::bail;
 use std::path::PathBuf;
@@ -20,6 +17,7 @@ use std::path::PathBuf;
 )]
 pub(super) struct ConfigGet {
     /// Dotted key path to display, e.g. `tools.python`; omit to print the whole file
+    #[usage(complete = complete_key)]
     pub key: Option<String>,
 
     /// The path to the mise.toml file to read
@@ -39,24 +37,16 @@ pub(super) struct ConfigGet {
     pub system: bool,
 }
 
+fn complete_key(
+    partial: &<ConfigGet as usage_rs::spec::CommandArgs>::Partial,
+    ctx: &usage_rs::complete::CompleteCtx<'_>,
+) -> Vec<usage_rs::complete::Candidate<'static>> {
+    super::keys::complete(ctx, partial.file.as_deref(), partial.global, partial.system)
+}
+
 impl ConfigGet {
     pub(super) fn run(self) -> eyre::Result<()> {
-        // Only an explicitly named target goes through the shared resolver — the default is a
-        // different rule (the top TOML config of the loaded set, not the nearest writable one).
-        let file = match self.file {
-            Some(path) => Some(resolve_target_config_path(ConfigPathOptions {
-                path: Some(path),
-                prefer_toml: true,
-                ..Default::default()
-            })?),
-            None if self.global => Some(resolve_target_config_path(ConfigPathOptions {
-                global: true,
-                prefer_toml: true,
-                ..Default::default()
-            })?),
-            None if self.system => Some(system_config_path()),
-            None => top_toml_config(),
-        };
+        let file = super::target_file(self.file, self.global, self.system)?;
         if let Some(file) = file {
             if !file.exists() {
                 bail!("config file not found: {}", display_path(&file));

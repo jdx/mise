@@ -1,8 +1,5 @@
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::settings::{SETTINGS_META, SettingsType};
-use crate::config::{
-    ConfigPathOptions, resolve_target_config_path, system_config_path, top_toml_config,
-};
 use crate::file::display_path;
 use crate::toml::dedup_toml_array;
 use eyre::bail;
@@ -36,6 +33,7 @@ mise config set --remove env._.path ~/.local/bin"###
 )]
 pub(super) struct ConfigSet {
     /// Dotted key path to set, e.g. `tools.python`
+    #[usage(complete = complete_key)]
     pub key: String,
 
     /// The value to set the key to (optional if provided as KEY=VALUE)
@@ -88,6 +86,13 @@ pub(super) enum TomlValueTypes {
     Set,
 }
 
+fn complete_key(
+    partial: &<ConfigSet as usage_rs::spec::CommandArgs>::Partial,
+    ctx: &usage_rs::complete::CompleteCtx<'_>,
+) -> Vec<usage_rs::complete::Candidate<'static>> {
+    super::keys::complete(ctx, partial.file.as_deref(), partial.global, partial.system)
+}
+
 impl ConfigSet {
     pub(super) fn run(self) -> eyre::Result<()> {
         let (full_key, value) = match self.value {
@@ -101,22 +106,7 @@ impl ConfigSet {
                 (k.to_string(), v.to_string())
             }
         };
-        // Only an explicitly named target goes through the shared resolver — the default is a
-        // different rule (the top TOML config of the loaded set, not the nearest writable one).
-        let file = match self.file {
-            Some(path) => Some(resolve_target_config_path(ConfigPathOptions {
-                path: Some(path),
-                prefer_toml: true,
-                ..Default::default()
-            })?),
-            None if self.global => Some(resolve_target_config_path(ConfigPathOptions {
-                global: true,
-                prefer_toml: true,
-                ..Default::default()
-            })?),
-            None if self.system => Some(system_config_path()),
-            None => top_toml_config(),
-        };
+        let file = super::target_file(self.file, self.global, self.system)?;
         let Some(file) = file else {
             bail!("No mise.toml file found");
         };
