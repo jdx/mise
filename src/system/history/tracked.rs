@@ -288,7 +288,7 @@ impl TrackedSet {
             .max_by_key(|entry| entry.path.components().count())
     }
 
-    fn entry_index_for(&self, path: &Path) -> Option<usize> {
+    pub(crate) fn entry_index_for(&self, path: &Path) -> Option<usize> {
         self.entries
             .iter()
             .enumerate()
@@ -342,6 +342,25 @@ impl TrackedSet {
 
     /// Walks every entry and decides, file by file, what the capture holds.
     pub(crate) fn walk(&self) -> Result<Walk> {
+        self.walk_entries(None)
+    }
+
+    /// Walks only the entries at `selected`, while the set keeps all of
+    /// them.
+    ///
+    /// **Which entry owns a path is a question about the whole set;
+    /// walking is what costs.** A preview needs every declaration
+    /// present, so a target nested under an existing entry — or an
+    /// existing entry nested under the target — is attributed the way a
+    /// capture would attribute it. It does not need the other entries
+    /// walked: `mise dot track --dry-run` on one directory would
+    /// otherwise re-walk and re-stat every directory already tracked on
+    /// the machine, which is the opposite of cheap.
+    pub(crate) fn walk_selected(&self, selected: &[usize]) -> Result<Walk> {
+        self.walk_entries(Some(selected))
+    }
+
+    fn walk_entries(&self, selected: Option<&[usize]>) -> Result<Walk> {
         let set = self;
         let exclude = set.exclude_set()?;
         let hard = hard_exclusions();
@@ -352,6 +371,9 @@ impl TrackedSet {
         };
         walk.manifest.exclude = set.exclude.clone();
         for (index, entry) in set.entries.iter().enumerate() {
+            if selected.is_some_and(|selected| !selected.contains(&index)) {
+                continue;
+            }
             walk_entry(set, index, entry, &exclude, &hard, &mut walk);
         }
         // Protected files are excluded from capture itself, never kept in
@@ -401,9 +423,12 @@ impl TrackedSet {
                 bytes: 0,
             });
             root.files.push(relative);
+            // a symlink's length is its target string and a nested
+            // repository's its directory entry: neither is captured content
             root.bytes += std::fs::symlink_metadata(path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+                .ok()
+                .filter(|m| m.is_file())
+                .map_or(0, |m| m.len());
         }
         walk.roots = roots.into_values().collect();
         Ok(walk)
@@ -520,11 +545,20 @@ fn walk_entry(
         if path == entry.path {
             continue;
         }
-        // a more specific entry owns this subtree and walks it itself
+        // A more specific entry owns this subtree and walks it itself.
+        // **Skipped whole, not file by file**: ownership is by the most
+        // specific entry, so nothing below a directory another entry
+        // owns can belong to this one, and stat'ing all of it to decide
+        // that again is the cost this avoids — a tracked directory
+        // inside another tracked directory would otherwise be walked
+        // twice on every save.
         if set
             .entry_index_for(path)
             .is_some_and(|owner| owner != index)
         {
+            if candidate.file_type().is_dir() {
+                walker.skip_current_dir();
+            }
             continue;
         }
         if exclude.is_match(path) {
@@ -657,6 +691,126 @@ pub(crate) fn display_under(path: &str, root: &str) -> bool {
         || path
             .strip_prefix(&root)
             .is_some_and(|rest| rest.starts_with(['/', '\\']))
+}
+
+/// A tree this large is worth a second look before it is tracked: more
+/// files than this, or more bytes, and `mise dot track` warns.
+pub(crate) const LARGE_TREE_FILES: usize = 5_000;
+pub(crate) const LARGE_TREE_BYTES: u64 = 256 * 1024 * 1024;
+
+impl Walk {
+    /// How many files the walk captures.
+    pub(crate) fn file_count(&self) -> usize {
+        self.roots.iter().map(|root| root.files.len()).sum()
+    }
+
+    /// The bytes of the captured files.
+    pub(crate) fn bytes(&self) -> u64 {
+        self.roots.iter().map(|root| root.bytes).sum()
+    }
+
+    /// `22,972 files, 1.2 GiB`.
+    pub(crate) fn summary(&self) -> String {
+        count_and_size(self.file_count(), self.bytes())
+    }
+}
+
+/// What tracking one entry of a preview set captures: the files that entry
+/// owns (a more specific entry owns its own subtree), and what a save
+/// would leave out under it.
+#[derive(Debug, Default)]
+pub(crate) struct EntryPreview {
+    pub files: usize,
+    pub bytes: u64,
+    pub omitted: Vec<PathReason>,
+    pub nested: Vec<PathReason>,
+    pub incomplete: Vec<PathReason>,
+}
+
+impl EntryPreview {
+    pub(crate) fn summary(&self) -> String {
+        count_and_size(self.files, self.bytes)
+    }
+
+    pub(crate) fn is_large(&self) -> bool {
+        self.files > LARGE_TREE_FILES || self.bytes > LARGE_TREE_BYTES
+    }
+}
+
+impl Walk {
+    /// The preview of the entry at `index` of `set`, which this walk was
+    /// taken from: nested targets in one command partition instead of the
+    /// outer one counting the inner one's files too.
+    pub(crate) fn preview_of(&self, set: &TrackedSet, index: usize) -> EntryPreview {
+        let mut preview = EntryPreview::default();
+        for (path, (owner, _)) in &self.files {
+            if *owner != index {
+                continue;
+            }
+            preview.files += 1;
+            preview.bytes += std::fs::symlink_metadata(path)
+                .ok()
+                .filter(|m| m.is_file())
+                .map_or(0, |m| m.len());
+        }
+        let owned = |reported: &PathReason| {
+            set.entry_index_for(&file::replace_path(Path::new(&reported.path))) == Some(index)
+        };
+        preview.omitted = self.omitted.iter().filter(|r| owned(r)).cloned().collect();
+        preview.nested = self.nested.iter().filter(|r| owned(r)).cloned().collect();
+        let display = set.entries[index].display();
+        preview.incomplete = self
+            .incomplete
+            .iter()
+            .filter(|r| r.path == display)
+            .cloned()
+            .collect();
+        preview
+    }
+}
+
+/// `1 file, 12 B` or `22,972 files, 1.2 GiB`.
+pub(crate) fn count_and_size(files: usize, bytes: u64) -> String {
+    format!(
+        "{} {}, {}",
+        with_separators(files),
+        if files == 1 { "file" } else { "files" },
+        bytesize::ByteSize::b(bytes).display().iec()
+    )
+}
+
+fn with_separators(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// The set tracking `path` alone would capture, under the `[history]`
+/// exclusions: what `mise dot paths --preview` lists and what `mise dot
+/// track` sizes up before it writes a declaration.
+pub(crate) fn preview_set(path: &Path, policy: Policy) -> Result<TrackedSet> {
+    Ok(preview_set_with(
+        path,
+        policy,
+        super::config::exclude_globs()?,
+    ))
+}
+
+/// [`preview_set`] with the `[history] exclude` globs already read, so a
+/// command previewing several paths reads the configuration once.
+pub(crate) fn preview_set_with(path: &Path, policy: Policy, exclude: Vec<String>) -> TrackedSet {
+    let mut set = TrackedSet {
+        exclude,
+        ..Default::default()
+    };
+    set.push(TrackedEntry::new(normalize_target(path), "track", policy));
+    set
 }
 
 /// The lines a capture reports about what it left out: every omission and
@@ -1064,6 +1218,77 @@ mod tests {
         );
     }
 
+    /// A preview walks the target and nothing else, while the set still
+    /// holds every declaration so ownership is decided the way a capture
+    /// decides it.
+    #[test]
+    fn a_selected_walk_visits_only_what_was_asked_for() {
+        let tmp = tempfile::tempdir().unwrap();
+        let other = tmp.path().join("other");
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(other.join("deep")).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(other.join("deep/one.toml"), "other").unwrap();
+        std::fs::write(target.join("two.toml"), "target").unwrap();
+
+        let mut set = TrackedSet::default();
+        set.push(entry(&other));
+        set.push(entry(&target));
+        let index = set.entry_index_for(&target).unwrap();
+
+        let all = set.walk().unwrap();
+        assert!(all.files.contains_key(&other.join("deep/one.toml")));
+        assert!(all.files.contains_key(&target.join("two.toml")));
+
+        let selected = set.walk_selected(&[index]).unwrap();
+        assert!(
+            !selected.files.contains_key(&other.join("deep/one.toml")),
+            "an entry nobody asked about was walked"
+        );
+        assert!(selected.files.contains_key(&target.join("two.toml")));
+        // and the answer about the target is the same one a full walk
+        // gives, because ownership was decided from the whole set
+        assert_eq!(
+            selected.preview_of(&set, index).files,
+            all.preview_of(&set, index).files
+        );
+    }
+
+    /// A tracked directory inside another tracked directory is walked
+    /// by its own entry, once — not descended into twice and then
+    /// discarded file by file.
+    #[test]
+    fn an_entry_inside_another_is_not_walked_twice() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("config");
+        let inner = outer.join("nvim");
+        std::fs::create_dir_all(inner.join("lua")).unwrap();
+        std::fs::write(outer.join("outer.toml"), "outer").unwrap();
+        for i in 0..20 {
+            std::fs::write(inner.join(format!("lua/{i}.lua")), "inner").unwrap();
+        }
+
+        let mut set = TrackedSet::default();
+        set.push(entry(&outer));
+        set.push(entry(&inner));
+        let outer_index = set.entry_index_for(&outer).unwrap();
+        let inner_index = set.entry_index_for(&inner).unwrap();
+
+        // the files land under the entry that owns them, exactly as
+        // before: what changed is only how the other entry got there
+        let walk = set.walk().unwrap();
+        assert_eq!(walk.files[&outer.join("outer.toml")].0, outer_index);
+        assert_eq!(walk.files[&inner.join("lua/3.lua")].0, inner_index);
+        assert_eq!(walk.files.len(), 21);
+
+        // and walking the outer entry alone reaches only its own file
+        let selected = set.walk_selected(&[outer_index]).unwrap();
+        assert_eq!(
+            selected.files.keys().collect::<Vec<_>>(),
+            vec![&outer.join("outer.toml")]
+        );
+    }
+
     fn entry(path: &Path) -> TrackedEntry {
         TrackedEntry::new(
             path.to_path_buf(),
@@ -1336,6 +1561,66 @@ mod tests {
         assert!(walk.nested.is_empty());
         assert!(set.would_capture(&plugin.join("init.lua")).unwrap());
         assert!(!set.would_capture(&plugin.join(".git/HEAD")).unwrap());
+    }
+
+    #[test]
+    fn nested_targets_partition_a_preview() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("codex");
+        let inner = outer.join("sessions");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::fs::write(outer.join("config.toml"), "outer").unwrap();
+        std::fs::write(inner.join("one.jsonl"), "inner-1").unwrap();
+        std::fs::write(inner.join("two.jsonl"), "inner-2").unwrap();
+        std::fs::write(inner.join("auth-token"), "x").unwrap();
+        let mut set = TrackedSet::default();
+        set.push(entry(&outer));
+        set.push(entry(&inner));
+        let walk = set.walk().unwrap();
+        let outer_preview = walk.preview_of(&set, 0);
+        let inner_preview = walk.preview_of(&set, 1);
+        assert_eq!(outer_preview.files, 1);
+        assert_eq!(outer_preview.bytes, 5);
+        assert!(outer_preview.omitted.is_empty());
+        assert_eq!(inner_preview.files, 2);
+        assert_eq!(inner_preview.bytes, 14);
+        assert_eq!(inner_preview.omitted.len(), 1);
+        assert_eq!(outer_preview.summary(), "1 file, 5 B");
+    }
+
+    #[test]
+    fn walk_summaries_count_files_and_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("tree");
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("a"), "12345").unwrap();
+        std::fs::write(root.join("sub/b"), "123").unwrap();
+        std::fs::write(root.join("sub/secret.key"), "x").unwrap();
+        let set = preview_set(&root, Policy::for_mode(FileMode::Track)).unwrap();
+        assert_eq!(set.entries.len(), 1);
+        assert_eq!(set.entries[0].path, normalize_target(&root));
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("a", root.join("link")).unwrap();
+        let walk = set.walk().unwrap();
+        // a symlink counts as a file but adds no bytes
+        assert_eq!(walk.file_count(), if cfg!(unix) { 3 } else { 2 });
+        assert_eq!(walk.bytes(), 8);
+        assert_eq!(
+            walk.summary(),
+            if cfg!(unix) {
+                "3 files, 8 B"
+            } else {
+                "2 files, 8 B"
+            }
+        );
+        assert_eq!(walk.omitted.len(), 1);
+        assert!(!walk.preview_of(&set, 0).is_large());
+        assert_eq!(count_and_size(1, 0), "1 file, 0 B");
+        assert_eq!(with_separators(0), "0");
+        assert_eq!(with_separators(999), "999");
+        assert_eq!(with_separators(1000), "1,000");
+        assert_eq!(with_separators(22972), "22,972");
+        assert_eq!(with_separators(1234567), "1,234,567");
     }
 
     #[test]

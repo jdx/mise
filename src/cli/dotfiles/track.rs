@@ -13,7 +13,7 @@ use crate::system::history::checkpoint::{Draft, Outcome, Store};
 use crate::system::history::select::Variant;
 use crate::system::history::store::Trigger;
 use crate::system::history::tracked::{
-    CREDENTIAL_REASON, TrackedSet, capture_exclusion, normalize_target,
+    CREDENTIAL_REASON, TrackedEntry, TrackedSet, capture_exclusion, normalize_target,
 };
 
 /// Track a file or directory in place
@@ -52,12 +52,26 @@ pub(crate) struct DotfilesTrack {
     /// Accept without prompting
     #[usage(long, short)]
     yes: bool,
+
+    /// Show what each path expands to (files, size, what is left out) without tracking it
+    #[usage(long, short = 'n')]
+    dry_run: bool,
 }
+
+/// How many omitted or nested paths a dry run lists before it counts the
+/// rest, so a tree full of them cannot flood the terminal.
+const DRY_RUN_LINES: usize = 20;
 
 impl DotfilesTrack {
     /// Write the requested declarations and capture their initial history baseline.
     pub(crate) async fn run(self) -> Result<()> {
-        let _declarations = declaration_lock()?;
+        // a dry run reads and walks but writes nothing, so it must not
+        // hold up (or be held up by) a declaration command
+        let _declarations = if self.dry_run {
+            None
+        } else {
+            Some(declaration_lock()?)
+        };
         let config = Config::get().await?;
         if self.encrypt && !Settings::get().history.enabled {
             bail!("dotfiles: cannot enroll encrypted paths while history is disabled");
@@ -73,6 +87,16 @@ impl DotfilesTrack {
         let mut locations = BTreeMap::new();
         let mut declared: Vec<(String, PathBuf)> = vec![];
         let mut manual = vec![];
+        // what each path expands to, sized up before anything is written:
+        // one walk of every target of this run beside the entries already
+        // tracked, so nested targets partition instead of the outer one
+        // counting the inner one's files too
+        let exclude = crate::system::history::config::exclude_globs()?;
+        let mut preview_set = TrackedSet {
+            exclude: exclude.clone(),
+            ..Default::default()
+        };
+        let mut resolved: Vec<(PathBuf, PathBuf)> = vec![];
         for target_raw in &self.targets {
             let target = crate::system::files::resolve_target_arg(target_raw)
                 .components()
@@ -81,6 +105,32 @@ impl DotfilesTrack {
                 bail!("{target_raw}: target must be absolute or start with ~/");
             }
             crate::system::history::tracked::ensure_portable_ancestors(&target)?;
+            let existing = managed
+                .iter()
+                .find(|req| req.target == target && req.mode == FileMode::Track);
+            let normalized = normalize_target(&target);
+            preview_set.push(TrackedEntry::new(
+                normalized.clone(),
+                "track",
+                self.policy(existing),
+            ));
+            resolved.push((target, normalized));
+        }
+        // every declaration is in the set, so a target nested under one
+        // of them is attributed the way a capture would attribute it
+        for entry in TrackedSet::from_config(&config)?.entries {
+            preview_set.push(entry);
+        }
+        // but only the targets are walked: the preview reports on them,
+        // and walking the rest would re-stat every tracked directory on
+        // the machine to print nothing about them
+        let targets: Vec<usize> = resolved
+            .iter()
+            .filter_map(|(_, normalized)| preview_set.entry_index_for(normalized))
+            .collect();
+        let preview_walk = preview_set.walk_selected(&targets)?;
+        let mut previews: Vec<String> = vec![];
+        for (target, normalized) in resolved {
             let target_key = normalized_target(&target);
             let present = target.exists() || target.is_symlink();
             if !present {
@@ -153,6 +203,62 @@ impl DotfilesTrack {
                     );
                 }
             }
+            let set = &preview_set;
+            let preview = preview_walk.preview_of(
+                set,
+                set.entry_index_for(&normalized)
+                    .expect("every target is an entry of the preview set"),
+            );
+            let summary = preview.summary();
+            if self.dry_run {
+                miseprintln!("{target_key}: {summary}");
+                // what an exclusion glob left out is not walked at all, so
+                // the globs in force are the only account of it
+                for glob in &set.exclude {
+                    miseprintln!("  exclude: {glob}");
+                }
+                // nothing is enrolled yet, so `mise dot paths` cannot list
+                // these until the path is tracked: a bounded list here
+                let lines: Vec<String> = preview
+                    .omitted
+                    .iter()
+                    .map(|omitted| format!("omitted: {} ({})", omitted.path, omitted.reason))
+                    .chain(
+                        preview
+                            .nested
+                            .iter()
+                            .map(|nested| format!("nested: {} ({})", nested.path, nested.reason)),
+                    )
+                    .collect();
+                for line in lines.iter().take(DRY_RUN_LINES) {
+                    miseprintln!("  {line}");
+                }
+                if lines.len() > DRY_RUN_LINES {
+                    miseprintln!(
+                        "  ... {} more; `mise dot paths` lists them all once the path is tracked",
+                        lines.len() - DRY_RUN_LINES
+                    );
+                }
+                for incomplete in &preview.incomplete {
+                    miseprintln!("  incomplete: {} ({})", incomplete.path, incomplete.reason);
+                }
+            }
+            // a truncated tree must be visible before it is approved, since
+            // the baseline walks under the same cap
+            if !self.dry_run {
+                for incomplete in &preview.incomplete {
+                    warn!(
+                        "dotfiles: {}: {}; the rest would not be captured either",
+                        incomplete.path, incomplete.reason
+                    );
+                }
+            }
+            if preview.is_large() {
+                warn!(
+                    "dotfiles: {target_key} is a large tree ({summary}); exclude what does not belong in history, for example `mise dot exclude '{target_key}/<subdir>/**'`, or track its files individually"
+                );
+            }
+            previews.push(summary);
             // the keys this file's declaration wrote, whether as an inline
             // table or a `[dotfiles."path"]` table
             let previous: Vec<String> = doc
@@ -173,10 +279,15 @@ impl DotfilesTrack {
             }
             declared.push((target_key, target));
         }
+        if self.dry_run {
+            info!("dotfiles: dry run; nothing was tracked");
+            return Ok(());
+        }
         if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
             let list = declared
                 .iter()
-                .map(|(key, _)| key.as_str())
+                .zip(&previews)
+                .map(|((key, _), summary)| format!("{key} ({summary})"))
                 .collect::<Vec<_>>()
                 .join(", ");
             if !crate::ui::prompt::confirm(format!("dotfiles: track {list}?"))?.is_yes() {
@@ -202,9 +313,9 @@ impl DotfilesTrack {
             }
             return Err(error);
         }
-        for (key, _) in &declared {
+        for ((key, _), summary) in declared.iter().zip(&previews) {
             info!(
-                "dotfiles: tracking {key} (declared in {})",
+                "dotfiles: tracking {key} ({summary}; declared in {})",
                 display_path(&locations[key])
             );
         }
@@ -549,6 +660,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise dot track ~/.zshrc ~/.config/hypr</bold>
+    $ <bold>mise dot track --dry-run ~/.codex</bold>
     $ <bold>mise dot track ~/.zshrc --os macos</bold>
     $ <bold>mise dot track ~/.config/app/credentials --encrypt</bold>
     $ <bold>mise dot track ~/.config/app/state.json --no-autosave</bold>
@@ -608,6 +720,7 @@ mod declaration_tests {
             no_autosave: false,
             encrypt: false,
             yes: true,
+            dry_run: false,
         };
         let mut policy = FilePolicy::for_mode(FileMode::Track);
         policy.explicit = ExplicitFields {
