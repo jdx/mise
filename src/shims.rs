@@ -358,7 +358,19 @@ async fn install_missing_wrapper_command(
     ts: &mut Toolset,
     command: &str,
 ) -> Result<()> {
-    if command.contains(['/', '\\']) || ts.which(config, command).await.is_some() {
+    if command.contains(['/', '\\']) {
+        return Ok(());
+    }
+    // Match which_shim: a configured registry provider wins over an incidental install.
+    if Settings::get().not_found_auto_install
+        && ts
+            .should_install_missing_registry_bin_provider(config, command)
+            .await?
+    {
+        ts.install_missing_bin(config, command).await?;
+        return Ok(());
+    }
+    if ts.which(config, command).await.is_some() {
         return Ok(());
     }
     if ts.has_missing_lazy_bin_provider(config, command).await? {
