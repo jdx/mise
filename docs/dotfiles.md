@@ -252,7 +252,9 @@ the file or directory the link points to.
 An `absent` entry never removes a directory, or anything else that is
 not a regular file or symlink, such as a socket or FIFO. For those
 targets, `status` and `apply` report an error naming the path, even with
-`--force`. Remove it yourself.
+`--force`. Remove it yourself. The one exception is a parent directory mise
+created when an earlier entry wrote this target: once the file is gone and
+the directory is empty, it goes too, as [for templates](#remove-empty).
 
 An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
 `permissions`, `encrypt`, `remove_empty`, or block and line edit keys. No other entry can place a file beneath an `absent` target,
@@ -414,8 +416,17 @@ remove it anyway. mise never removes a directory at the target without
 `permissions = "0200"`) is also a conflict, because mise cannot confirm the
 content is its own.
 
-mise stores a digest of what it last wrote to each template target in
-`$MISE_STATE_DIR/dotfiles/`. It records this for every template, so turning on
+Parent directories that mise created for the target are removed with it once
+they are empty. In the example, if `~/.config/app` did not exist before the
+first apply, removing `work.toml` also removes `app`. Directories that already
+existed, directories that still hold other files, and directories another entry
+needs are kept. Only directories physically inside your home directory are
+removed: your home directory itself and anything outside it are kept. That
+covers `/opt/app` for a target `/opt/app/app.toml`, and `~/.config/app` when
+`~/.config` is a symlink to a directory outside your home.
+
+mise stores a digest of what it last wrote to each template target, and the
+directories it created, in `$MISE_STATE_DIR/dotfiles/`. It records this for every template, so turning on
 `remove_empty` later still allows a safe removal. An apply that finds a target
 already byte-for-byte identical to the render also records it, so that file
 counts as written by mise: removing it loses nothing the template cannot
@@ -686,6 +697,15 @@ filesystem, and recorded `symlink-each` state to determine what the entry owns:
 - Marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
 - `absent` entries are skipped. mise does not recreate the file they removed.
+
+When a `symlink`, `copy`, `template`, or inline `content` target is removed,
+the parent directories mise created for it go too, once they are empty.
+Directories that existed before mise wrote the target, or that hold other
+files, are kept, as are directories another remaining entry needs. Only
+directories physically inside your home directory are removed, never the home
+directory itself or anything outside it, including through a symlinked parent. mise records the directories it creates in
+`$MISE_STATE_DIR/dotfiles/`, so targets written by an older version remove
+none.
 
 If you deleted a source file from a copied directory, unapply cannot
 identify its old copy. Remove that leftover file yourself. Use `--dry-run`
