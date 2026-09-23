@@ -24,11 +24,11 @@ type LockTool = (crate::cli::args::BackendArg, crate::toolset::ToolVersion);
 
 /// Without its version list a request can only resolve to itself, and that
 /// string is not known to be a version: `4` would be locked as a release that
-/// may not exist. An installed version is known to exist, and a locked one
-/// resolved from the lockfile rather than to the request.
+/// may not exist. A version the lockfile already holds, or one that is
+/// installed, is known to exist.
 fn reject_unverified_versions(tools: &[LockTool]) -> Result<()> {
     for (ba, tv) in tools {
-        if tv.version != tv.request.version() {
+        if tv.version != tv.request.version() || tv.resolved_from_lockfile() {
             continue;
         }
         let Some(cause) = crate::backend::version_listing_failure(ba) else {
