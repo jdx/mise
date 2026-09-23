@@ -145,10 +145,10 @@ assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
 # Existing symlink-each installations without ownership state are migrated by
 # the next real apply, even when every target is already converged. Once state
 # exists, status inspects managed paths instead of recursively walking a shared
-# target such as HOME.
+# target such as HOME. Template ownership records live one level down.
 rm -rf "$MISE_STATE_DIR/dotfiles"
 assert_succeed "mise dotfiles apply --yes"
-assert "find '$MISE_STATE_DIR/dotfiles' -type f | wc -l | tr -d ' '" "1"
+assert "find '$MISE_STATE_DIR/dotfiles' -maxdepth 1 -type f | wc -l | tr -d ' '" "1"
 mkdir ~/.local/mybin/private
 chmod 000 ~/.local/mybin/private
 assert_not_contains "MISE_DEBUG=1 mise dotfiles status 2>&1" "$HOME/.local/mybin/private"

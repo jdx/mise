@@ -1059,6 +1059,7 @@ mod tests {
                 policy: Policy::for_mode(mode),
                 variants: vec![],
                 enabled: true,
+                remove_empty: false,
             }]);
         }
         assert!(set.entries.is_empty());

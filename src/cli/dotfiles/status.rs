@@ -82,7 +82,7 @@ impl DotfilesStatus {
             };
             any_missing |= !matches!(state, FileState::Applied | FileState::Tracked);
             if self.json {
-                json_files.push(json!({
+                let mut entry = json!({
                     "target": req.target_raw,
                     "source": (req.mode != system::files::FileMode::Content)
                         .then(|| req.source.display_user()),
@@ -95,7 +95,12 @@ impl DotfilesStatus {
                         FileState::Differs(_) => "differs",
                         FileState::Tracked => "tracked",
                     },
-                }));
+                });
+                // e.g. a template that renders empty and will be removed
+                if let FileState::Differs(reason) = &state {
+                    entry["reason"] = json!(reason);
+                }
+                json_files.push(entry);
             } else {
                 file_rows.push(vec![
                     req.target_raw.clone(),

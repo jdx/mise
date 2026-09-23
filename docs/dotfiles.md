@@ -311,6 +311,50 @@ With `--dry-run`, mise skips rendering dotfile templates and labels them
 `(if changed)`. Other configuration expressions can still run during a dry
 run, so use it with trusted configuration.
 
+#### Removing a target when a template renders empty {#remove-empty}
+
+A template normally writes its output even when that output is empty. With
+`remove_empty = true`, an output that is empty or contains only whitespace
+removes the target instead. This lets one template decide whether a file
+exists at all, for example a work-only config:
+
+```toml
+[dotfiles]
+"~/.config/app/work.toml" = { source = "work.toml.tera", mode = "template", remove_empty = true }
+```
+
+<div v-pre>
+
+```jinja
+{% if env.WORK == "1" %}
+[proxy]
+url = "http://proxy.example.com"
+{% endif %}
+```
+
+</div>
+
+With `WORK=1`, `mise dot apply` writes the file. Without it, the template
+renders empty and the next apply removes the file. Setting the variable again
+recreates it. `status` and `diff` show a pending removal before any apply.
+
+mise removes a target only when it can tell the file is its own. The target
+must be empty or whitespace-only, or it must still hold exactly the content
+mise last wrote there. Otherwise, apply reports a conflict and keeps the file,
+as it does for other [conflicts](#conflicts). Use `mise dot apply --force` to
+remove it anyway. mise never removes a directory at the target without
+`--force`.
+
+mise stores a digest of what it last wrote to each template target in
+`$MISE_STATE_DIR/dotfiles/`. It records this for every template, so turning on
+`remove_empty` later still allows a safe removal. Because the record is local,
+a machine that never wrote the file treats an existing non-empty target as a
+conflict. `mise dot rollback` and `mise dot undo` bring back a removed file when
+[history](#tracking-files-in-place) tracks it.
+
+`remove_empty` is valid only with `mode = "template"`. `mise oci build` leaves
+a template that renders empty out of the image.
+
 See [Windows](#windows) for differences in link behavior on that platform.
 
 ## Whole-file entries
@@ -570,7 +614,8 @@ change. mise also records which paths the operation touched. Run
 ### JSON output
 
 `mise dot status --json` uses `source_missing` for the
-`source missing` state. Each entry also includes an `origin` object
+`source missing` state. A `differs` entry also carries a human-readable
+`reason`, such as a template that renders empty and will be removed. Each entry also includes an `origin` object
 describing where its configuration came from: the config file, its
 `config_root`, any mise environment in the config filename, and the resolved
 source path.

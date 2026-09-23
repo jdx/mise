@@ -3973,13 +3973,17 @@ impl BootstrapStatus {
                 state_str,
                 missing,
             );
-            json_files.push(json!({
+            let mut entry = json!({
                 "target": req.target_raw,
                 "source": (req.mode != system::files::FileMode::Content)
                     .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,
-            }));
+            });
+            if let system::files::FileState::Differs(reason) = &state {
+                entry["reason"] = json!(reason);
+            }
+            json_files.push(entry);
         }
 
         let mut json_edits = vec![];

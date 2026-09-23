@@ -554,6 +554,7 @@ impl PlannedAdd {
             policy: system::files::FilePolicy::for_mode(self.mode),
             variants: vec![],
             enabled: true,
+            remove_empty: false,
             origin: crate::system::resources::ResourceOrigin {
                 config: config_path.to_path_buf(),
                 config_root: crate::config::config_file::config_root::config_root(config_path),

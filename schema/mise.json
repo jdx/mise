@@ -4363,6 +4363,11 @@
                 "description": "source manifest used to select managed files from a directory",
                 "enum": ["git"]
               },
+              "remove_empty": {
+                "type": "boolean",
+                "default": false,
+                "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force"
+              },
               "block": {
                 "type": "string",
                 "description": "block content, maintained between marker comments"
@@ -4436,6 +4441,27 @@
               }
             },
             "allOf": [
+              {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "remove_empty": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": {
+                        "const": "template"
+                      },
+                      "content": false,
+                      "block": false,
+                      "line": false
+                    }
+                  }
+                ]
+              },
               {
                 "oneOf": [
                   {

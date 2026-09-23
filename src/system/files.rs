@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::{Config, ConfigMap, Settings};
 use crate::dirs;
 use crate::file;
-use crate::hash::hash_to_str;
+use crate::hash::{hash_sha256_to_str, hash_to_str};
 use crate::path::PathExt;
 use crate::system::history::journal::{self, Capture};
 use crate::system::resources::ResourceOrigin;
@@ -312,6 +312,9 @@ pub(crate) enum FileTomlEntry {
         /// `false` disables an inherited declaration on this machine
         #[serde(default)]
         enabled: Option<bool>,
+        /// template only: remove the target when the template renders empty
+        #[serde(default)]
+        remove_empty: Option<bool>,
     },
 }
 
@@ -373,6 +376,9 @@ pub(crate) struct FileRequest {
     pub variants: Vec<crate::system::history::select::Variant>,
     /// `false` when a later layer disabled the declaration
     pub enabled: bool,
+    /// template only: an empty (whitespace-only) render removes the target
+    /// instead of writing an empty file
+    pub remove_empty: bool,
 }
 
 const SYMLINK_EACH_STATE_VERSION: u8 = 1;
@@ -401,6 +407,34 @@ enum LoadedSymlinkEachState {
     Missing,
     Invalid,
     Present(SymlinkEachState),
+}
+
+const TARGET_STATE_VERSION: u8 = 1;
+
+/// What mise knows about a single-file target it wrote, keyed by the target
+/// path and kept under `$MISE_STATE_DIR/dotfiles/targets/`. It is the
+/// ownership evidence for removing a target mise no longer wants: a file is
+/// only removed without `--force` when it still holds what mise last wrote.
+/// New fields must default, so a record written by an older mise still
+/// loads; bump the version only for an incompatible change.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+struct TargetState {
+    version: u8,
+    target: PathBuf,
+    /// sha256 of the content mise last wrote to the target
+    content_digest: Option<String>,
+}
+
+/// What an empty template render means for the target currently on disk.
+#[derive(Debug, PartialEq, Eq)]
+enum EmptyRenderTarget {
+    /// nothing there: already converged
+    Absent,
+    /// an empty file, or the content mise last wrote: safe to remove
+    Owned,
+    /// anything else needs `--force`; the reason is human-readable
+    Conflict(&'static str),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -613,6 +647,7 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
         && first.content == second.content
         && first.mode == second.mode
         && first.manifest == second.manifest
+        && first.remove_empty == second.remove_empty
         && first
             .exclude
             .iter()
@@ -673,6 +708,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "encrypt"
                             | "variants"
                             | "enabled"
+                            | "remove_empty"
                     ) {
                         bail!(
                             "unknown dotfile key {key:?} for {target} in {}",
@@ -691,6 +727,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 manifest,
                 exclude,
                 variants,
+                remove_empty,
                 ..
             } = entry
             {
@@ -725,6 +762,9 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 }
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
+                }
+                if remove_empty == Some(true) && (content.is_some() || mode != FileMode::Template) {
+                    bail!("dotfile {target}: remove_empty requires mode = \"template\"");
                 }
                 if mode != FileMode::Track
                     && source.is_none()
@@ -880,6 +920,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("encrypt")
                 || table.contains_key("variants")
                 || table.contains_key("enabled")
+                || table.contains_key("remove_empty")
                 || ((table.contains_key("source") || table.contains_key("content"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
@@ -908,25 +949,55 @@ fn merge_file_entry(
     origin: &ResourceOrigin,
     merged: &mut IndexMap<(PathBuf, bool), FileRequest>,
 ) {
-    let (source, content, mode, exclude, manifest, autosave, encrypt, variants, enabled) =
-        match entry {
-            FileTomlEntry::Source(source) => {
-                (Some(source), None, None, None, None, None, None, None, None)
-            }
-            FileTomlEntry::Table {
-                source,
-                content,
-                mode,
-                exclude,
-                manifest,
-                autosave,
-                encrypt,
-                variants,
-                enabled,
-            } => (
-                source, content, mode, exclude, manifest, autosave, encrypt, variants, enabled,
-            ),
-        };
+    let (
+        source,
+        content,
+        mode,
+        exclude,
+        manifest,
+        autosave,
+        encrypt,
+        variants,
+        enabled,
+        remove_empty,
+    ) = match entry {
+        FileTomlEntry::Source(source) => (
+            Some(source),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
+        FileTomlEntry::Table {
+            source,
+            content,
+            mode,
+            exclude,
+            manifest,
+            autosave,
+            encrypt,
+            variants,
+            enabled,
+            remove_empty,
+        } => (
+            source,
+            content,
+            mode,
+            exclude,
+            manifest,
+            autosave,
+            encrypt,
+            variants,
+            enabled,
+            remove_empty,
+        ),
+    };
+    let remove_empty = remove_empty.unwrap_or(false);
     if encrypt == Some(true) && content.is_some() {
         record_invalid(
             &target_raw,
@@ -967,7 +1038,12 @@ fn merge_file_entry(
         }
     };
     if mode.as_deref() == Some("track") {
-        if source.is_some() || content.is_some() || manifest.is_some() || exclude.is_some() {
+        if source.is_some()
+            || content.is_some()
+            || manifest.is_some()
+            || exclude.is_some()
+            || remove_empty
+        {
             record_invalid(
                 &target_raw,
                 &origin.config,
@@ -997,6 +1073,7 @@ fn merge_file_entry(
             policy: policy_for(FileMode::Track),
             variants: selectors,
             enabled,
+            remove_empty: false,
         };
         // a later file of the same directory (`config.local.toml` after
         // `config.toml`) repeating a track declaration overrides only what
@@ -1074,6 +1151,12 @@ fn merge_file_entry(
         );
         return;
     }
+    if remove_empty && (content.is_some() || mode != FileMode::Template) {
+        warn!(
+            "[dotfiles].\"{target_raw}\": remove_empty requires mode = \"template\", ignoring entry"
+        );
+        return;
+    }
     let target = resolve_target_arg(&target_raw);
     if target.is_relative() {
         warn!(
@@ -1097,6 +1180,7 @@ fn merge_file_entry(
                 policy: policy_for(FileMode::Content),
                 variants: vec![],
                 enabled,
+                remove_empty: false,
             },
         );
         return;
@@ -1136,6 +1220,7 @@ fn merge_file_entry(
         policy: policy_for(mode),
         variants: vec![],
         enabled,
+        remove_empty,
     }) {
         merged.insert((req.target.clone(), false), req);
     }
@@ -1244,6 +1329,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         origin,
         policy,
         enabled,
+        remove_empty,
         ..
     } = req;
     if !is_glob_pattern(&source) {
@@ -1260,6 +1346,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             policy,
             variants: vec![],
             enabled,
+            remove_empty,
         }];
     }
 
@@ -1311,6 +1398,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             policy,
             variants: vec![],
             enabled,
+            remove_empty,
         }];
     }
 
@@ -1347,6 +1435,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 policy,
                 variants: vec![],
                 enabled,
+                remove_empty,
             })
         })
         .collect()
@@ -1516,6 +1605,17 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
             &req.target,
             req.content.as_deref().expect("inline content").as_bytes(),
         ),
+        FileMode::Template if removes_target(req, rendered) => {
+            Ok(match empty_render_target(req)? {
+                EmptyRenderTarget::Absent => FileState::Applied,
+                EmptyRenderTarget::Owned => {
+                    FileState::Differs("template renders empty, target will be removed".into())
+                }
+                EmptyRenderTarget::Conflict(reason) => FileState::Differs(format!(
+                    "template renders empty, but {reason}; use --force to remove it"
+                )),
+            })
+        }
         FileMode::Template => {
             let state = check_content(
                 &req.target,
@@ -1945,6 +2045,124 @@ fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
     Ok(())
 }
 
+fn target_state_path(req: &FileRequest) -> PathBuf {
+    let target = lexical_normalize(&req.target);
+    dirs::STATE
+        .join("dotfiles")
+        .join("targets")
+        .join(format!("{}.toml", hash_to_str(&target.as_path())))
+}
+
+/// The record for `req`'s target. A missing, unreadable, or foreign record
+/// proves nothing, so it reads as no record at all.
+fn load_target_state(req: &FileRequest) -> Option<TargetState> {
+    let path = target_state_path(req);
+    if !path.exists() {
+        return None;
+    }
+    let state = match file::read_to_string(&path)
+        .and_then(|contents| toml::from_str::<TargetState>(&contents).map_err(Into::into))
+    {
+        Ok(state) => state,
+        Err(err) => {
+            warn!(
+                "files: failed to read dotfiles state {}: {err}",
+                path.display_user()
+            );
+            return None;
+        }
+    };
+    if state.version == TARGET_STATE_VERSION
+        && lexical_normalize(&state.target) == lexical_normalize(&req.target)
+    {
+        Some(state)
+    } else {
+        warn!(
+            "files: ignoring invalid dotfiles state {}",
+            path.display_user()
+        );
+        None
+    }
+}
+
+/// Record `content` as what mise last wrote to `req`'s target. A record that
+/// cannot be written only costs a later `--force`, so it warns.
+fn save_target_state(req: &FileRequest, content: &str) {
+    let path = target_state_path(req);
+    let mut state = load_target_state(req).unwrap_or_default();
+    state.version = TARGET_STATE_VERSION;
+    state.target = lexical_normalize(&req.target);
+    state.content_digest = Some(content_digest(content));
+    let result = (|| -> Result<()> {
+        file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
+        file::write_atomic(&path, toml::to_string_pretty(&state)?)
+    })();
+    if let Err(err) = result {
+        warn!(
+            "files: failed to write dotfiles state {}: {err}",
+            path.display_user()
+        );
+    }
+}
+
+fn remove_target_state(req: &FileRequest) -> Result<()> {
+    let path = target_state_path(req);
+    if path.exists() {
+        file::remove_file(path)?;
+    }
+    Ok(())
+}
+
+fn content_digest(content: &str) -> String {
+    hash_sha256_to_str(content)
+}
+
+/// Whether the record already holds `rendered` as the target's content.
+fn target_state_matches(req: &FileRequest, rendered: &str) -> bool {
+    load_target_state(req)
+        .and_then(|state| state.content_digest)
+        .is_some_and(|digest| digest == content_digest(rendered))
+}
+
+/// Empty means nothing but whitespace, so a template that leaves a stray
+/// newline between `{% if %}` blocks still counts.
+fn renders_empty(rendered: &str) -> bool {
+    rendered.trim().is_empty()
+}
+
+/// Whether applying `req` with this render removes its target instead of
+/// writing it.
+pub(crate) fn removes_target(req: &FileRequest, rendered: Option<&str>) -> bool {
+    req.mode == FileMode::Template && req.remove_empty && rendered.is_some_and(renders_empty)
+}
+
+/// Classify the target of a template that rendered empty. Only an empty file
+/// or one still holding exactly what mise last wrote is mise's to remove;
+/// anything else may hold a user's edits.
+fn empty_render_target(req: &FileRequest) -> Result<EmptyRenderTarget> {
+    let target = &req.target;
+    if target.is_symlink() {
+        return Ok(EmptyRenderTarget::Conflict("it is a symlink"));
+    }
+    if !target.exists() {
+        return Ok(EmptyRenderTarget::Absent);
+    }
+    if target.is_dir() {
+        return Ok(EmptyRenderTarget::Conflict("it is a directory"));
+    }
+    let current = file::read(target)?;
+    let owned = match str::from_utf8(&current) {
+        Ok(current) => renders_empty(current) || target_state_matches(req, current),
+        // mise only writes rendered text, so non-UTF-8 content is not its own
+        Err(_) => false,
+    };
+    Ok(if owned {
+        EmptyRenderTarget::Owned
+    } else {
+        EmptyRenderTarget::Conflict("it changed since mise last wrote it")
+    })
+}
+
 fn link_points_to(source: &Path, target: &Path) -> bool {
     if !target.is_symlink() {
         return false;
@@ -2260,6 +2478,9 @@ pub(crate) struct ApplyOpts {
 pub(crate) struct ApplyPlan<'a> {
     todo: Vec<(&'a FileRequest, Option<String>)>,
     record_symlink_each: Vec<&'a FileRequest>,
+    /// converged templates whose ownership record is missing or stale, with
+    /// the content to record
+    record_templates: Vec<(&'a FileRequest, String)>,
     reconciliation: SymlinkEachReconciliation,
 }
 
@@ -2304,6 +2525,7 @@ pub(crate) fn execute_apply(
                 save_symlink_each_state(req);
                 journal::commit_changes(pending);
             }
+            record_template_states(&plan.record_templates)?;
         }
         info!("files: all files are applied");
         return Ok(true);
@@ -2374,8 +2596,16 @@ pub(crate) fn execute_apply(
             save_symlink_each_state(req);
         }
         journal::commit_changes(pending);
-        info!("files: {}", describe_applied(req)?);
+        if removes_target(req, rendered.as_deref()) {
+            info!(
+                "files: removed {} (template rendered empty)",
+                req.target.display_user()
+            );
+        } else {
+            info!("files: {}", describe_applied(req)?);
+        }
     }
+    record_template_states(&plan.record_templates)?;
     for req in plan.record_symlink_each {
         if !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, req)) {
             let pending = journal::begin_changes(
@@ -2434,6 +2664,7 @@ pub(crate) fn plan_apply_with_active<'a>(
     let mut broken = vec![];
     let mut conflicts = vec![];
     let mut record_symlink_each = vec![];
+    let mut record_templates = vec![];
     for req in requests {
         // a tracked file is never written: history captures it as it is
         if req.mode == FileMode::Track {
@@ -2472,6 +2703,9 @@ pub(crate) fn plan_apply_with_active<'a>(
                 if req.mode == FileMode::SymlinkEach && symlink_each_state_needs_update(req)? {
                     record_symlink_each.push(req);
                 }
+                if let Some(update) = template_state_update(req, rendered) {
+                    record_templates.push((req, update));
+                }
                 continue;
             }
             Ok(_) => {}
@@ -2480,7 +2714,13 @@ pub(crate) fn plan_apply_with_active<'a>(
                 continue;
             }
         }
-        conflicts.extend(find_conflicts(req)?);
+        if removes_target(req, rendered.as_deref()) {
+            if matches!(empty_render_target(req)?, EmptyRenderTarget::Conflict(_)) {
+                conflicts.push(req.target.clone());
+            }
+        } else {
+            conflicts.extend(find_conflicts(req)?);
+        }
         todo.push((req, rendered));
     }
     let mut problems = vec![];
@@ -2510,8 +2750,36 @@ pub(crate) fn plan_apply_with_active<'a>(
     Ok(ApplyPlan {
         todo,
         record_symlink_each,
+        record_templates,
         reconciliation: plan_symlink_each_reconciliation(active_requests, requests)?,
     })
+}
+
+/// The ownership-record change a converged template needs, if any. Recording
+/// every template, not just `remove_empty` ones, means turning `remove_empty`
+/// on later still finds the evidence that the current file is mise's.
+fn template_state_update(req: &FileRequest, rendered: Option<String>) -> Option<String> {
+    if req.mode != FileMode::Template {
+        return None;
+    }
+    let rendered = rendered?;
+    // a converged removal wrote nothing; the record keeps the last write
+    if removes_target(req, Some(&rendered)) || target_state_matches(req, &rendered) {
+        None
+    } else {
+        Some(rendered)
+    }
+}
+
+/// Journal and write the records of converged templates.
+fn record_template_states(updates: &[(&FileRequest, String)]) -> Result<()> {
+    for (req, content) in updates {
+        let pending =
+            journal::begin_changes(DOTFILES_PART, &req.target_raw, [target_state_path(req)])?;
+        save_target_state(req, content);
+        journal::commit_changes(pending);
+    }
+    Ok(())
 }
 
 fn cleanup_reconciled_directories(reconciliation: &SymlinkEachReconciliation) -> Result<()> {
@@ -2707,6 +2975,11 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
         if plan.clear_symlink_each_state {
             paths.push((symlink_each_state_path(plan.req), Capture::Full));
         }
+        let clear_target_state =
+            plan.req.mode == FileMode::Template && target_state_path(plan.req).exists();
+        if clear_target_state {
+            paths.push((target_state_path(plan.req), Capture::Full));
+        }
         if plan.cleanup_empty_dirs {
             // the upward walk removes directories that end up empty
             for path in &plan.paths {
@@ -2722,6 +2995,9 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
         unapply_one(plan)?;
         if plan.clear_symlink_each_state {
             remove_symlink_each_state(plan.req)?;
+        }
+        if clear_target_state {
+            remove_target_state(plan.req)?;
         }
         journal::commit_changes(pending);
     }
@@ -3123,6 +3399,18 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
 }
 
 fn print_diff(config: &Config, req: &FileRequest, rendered: Option<&str>) -> Result<()> {
+    if removes_target(req, rendered) {
+        miseprintln!(
+            "  template renders empty: remove {}",
+            req.target.display_user()
+        );
+        if let Some(current) = current_regular_file_for_diff(req)?
+            && !current.is_empty()
+        {
+            print_content_diff(config, req, &current, &[])?;
+        }
+        return Ok(());
+    }
     match req.mode {
         FileMode::Track => {}
         FileMode::Symlink => {
@@ -3332,8 +3620,14 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
     };
     match req.mode {
         FileMode::Track => {}
-        FileMode::Symlink | FileMode::Template | FileMode::Content => {
+        FileMode::Symlink | FileMode::Content => {
             paths.insert(req.target.clone(), Capture::Full);
+        }
+        FileMode::Template => {
+            paths.insert(req.target.clone(), Capture::Full);
+            // the ownership record changes with the target, so a rollback
+            // restores the two together
+            paths.insert(target_state_path(req), Capture::Full);
         }
         FileMode::Copy => {
             if req.source.is_dir() {
@@ -3417,6 +3711,19 @@ pub(crate) fn missing_ancestors(path: &Path) -> Vec<PathBuf> {
 /// the files it exposes, so a `[history.reload]` glob under the target
 /// matches. Directories created on the way are not listed.
 fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBuf>) -> Result<()> {
+    if removes_target(req, rendered) {
+        // conflicts were vetted (or --force given) when the plan was made
+        debug!(
+            "files: rm {} (template rendered empty)",
+            req.target.display_user()
+        );
+        if remove_existing(&req.target)? {
+            written.push(req.target.clone());
+        }
+        // The record keeps what mise last wrote, so a file brought back by
+        // `mise dot undo` is still recognised as mise's own.
+        return Ok(());
+    }
     debug!("files: {}", describe(req)?);
     if let Some(parent) = req.target.parent() {
         file::create_dir_all(parent)?;
@@ -3520,6 +3827,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             replace_recorded(&req.target, written, || file::write(&req.target, rendered))?;
             #[cfg(unix)]
             std::fs::set_permissions(&req.target, req.source.metadata()?.permissions())?;
+            save_target_state(req, rendered);
         }
         FileMode::Track => unreachable!("tracked files are never written"),
         FileMode::Content => {
@@ -4066,6 +4374,7 @@ variants = [{{ {field} = "linux" }}]"#
             policy: FilePolicy::for_mode(mode),
             variants: vec![],
             enabled: true,
+            remove_empty: false,
         }
     }
 
@@ -4813,6 +5122,176 @@ variants = [{{ {field} = "linux" }}]"#
             check_symlink(&source, &target)?,
             FileState::Applied
         ));
+        Ok(())
+    }
+
+    fn template_req(dir: &Path, remove_empty: bool) -> Result<FileRequest> {
+        let source = dir.join("source.tera");
+        file::write(&source, "")?;
+        let mut req = link_req(&source, &dir.join("target"), FileMode::Template);
+        req.remove_empty = remove_empty;
+        Ok(req)
+    }
+
+    #[test]
+    fn remove_empty_is_rejected_outside_template_mode() -> Result<()> {
+        use crate::config::config_file::mise_toml::MiseToml;
+        use std::sync::Arc;
+
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let validate = |entry: &str| -> Result<()> {
+            let body = format!("[dotfiles]\n\"~/.remove-empty-test\" = {entry}\n");
+            let mut configs = ConfigMap::new();
+            configs.insert(
+                path.clone(),
+                Arc::new(MiseToml::for_history_preflight(&body, &path)?),
+            );
+            validate_incoming_files(&configs)
+        };
+        validate(r#"{ source = "a.tera", mode = "template", remove_empty = true }"#)?;
+        for entry in [
+            r#"{ source = "a", mode = "copy", remove_empty = true }"#,
+            r#"{ source = "a", mode = "symlink", remove_empty = true }"#,
+            r#"{ content = "x", remove_empty = true }"#,
+            r#"{ mode = "track", remove_empty = true }"#,
+        ] {
+            assert!(validate(entry).is_err(), "{entry} should be rejected");
+        }
+
+        let origin = ResourceOrigin {
+            config: PathBuf::from("/mise.toml"),
+            config_root: PathBuf::from("/"),
+            environment: vec![],
+            source: None,
+        };
+        let merge = |entry: &str| {
+            let entry: FileTomlEntry = toml::from_str(entry).unwrap();
+            let mut merged = IndexMap::new();
+            merge_file_entry(
+                "/remove-empty-test".into(),
+                entry,
+                Path::new("/"),
+                &origin,
+                &mut merged,
+            );
+            merged.into_values().collect::<Vec<_>>()
+        };
+        let accepted = merge("source = \"a.tera\"\nmode = \"template\"\nremove_empty = true");
+        assert!(accepted[0].remove_empty);
+        assert!(merge("source = \"a\"\nmode = \"copy\"\nremove_empty = true").is_empty());
+        assert!(merge("content = \"x\"\nremove_empty = true").is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn an_empty_render_classifies_the_target_by_ownership() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let req = template_req(dir.path(), true)?;
+        assert_eq!(empty_render_target(&req)?, EmptyRenderTarget::Absent);
+        assert_eq!(check_rendered(&req, Some(" \n"))?, FileState::Applied);
+
+        // an empty or whitespace-only file holds nothing to lose
+        file::write(&req.target, " \n\t")?;
+        assert_eq!(empty_render_target(&req)?, EmptyRenderTarget::Owned);
+
+        // content with no record is someone else's
+        file::write(&req.target, "work = true\n")?;
+        assert!(matches!(
+            empty_render_target(&req)?,
+            EmptyRenderTarget::Conflict(_)
+        ));
+        assert!(matches!(
+            check_rendered(&req, Some(""))?,
+            FileState::Differs(reason) if reason.contains("--force")
+        ));
+
+        // what mise last wrote is its own to remove
+        save_target_state(&req, "work = true\n");
+        assert_eq!(empty_render_target(&req)?, EmptyRenderTarget::Owned);
+        assert!(matches!(
+            check_rendered(&req, Some("\n"))?,
+            FileState::Differs(reason) if reason.contains("will be removed")
+        ));
+
+        // a later edit takes it back
+        file::write(&req.target, "work = true\nedited = 1\n")?;
+        assert!(matches!(
+            empty_render_target(&req)?,
+            EmptyRenderTarget::Conflict(_)
+        ));
+
+        file::remove_file(&req.target)?;
+        file::create_dir_all(&req.target)?;
+        assert_eq!(
+            empty_render_target(&req)?,
+            EmptyRenderTarget::Conflict("it is a directory")
+        );
+        remove_target_state(&req)?;
+        Ok(())
+    }
+
+    #[test]
+    fn an_empty_render_without_remove_empty_still_writes_the_file() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let req = template_req(dir.path(), false)?;
+        assert!(!removes_target(&req, Some("")));
+        assert_eq!(check_rendered(&req, Some(""))?, FileState::Missing);
+        Ok(())
+    }
+
+    #[test]
+    fn apply_one_records_what_it_wrote_and_removes_it_when_it_renders_empty() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let req = template_req(dir.path(), true)?;
+        let mut written = vec![];
+        apply_one(&req, Some("work = true\n"), &mut written)?;
+        assert_eq!(file::read_to_string(&req.target)?, "work = true\n");
+        assert!(target_state_matches(&req, "work = true\n"));
+        // converged with a current record: nothing to record
+        assert_eq!(
+            template_state_update(&req, Some("work = true\n".into())),
+            None
+        );
+
+        written.clear();
+        apply_one(&req, Some("  \n"), &mut written)?;
+        assert!(!req.target.exists());
+        assert_eq!(written, vec![req.target.clone()]);
+        // removed: converged, and the record still holds the last write so
+        // a file brought back by undo is recognised
+        assert_eq!(check_rendered(&req, Some(""))?, FileState::Applied);
+        assert_eq!(template_state_update(&req, Some(String::new())), None);
+        assert!(target_state_matches(&req, "work = true\n"));
+        remove_target_state(&req)?;
+        Ok(())
+    }
+
+    #[test]
+    fn a_converged_template_without_a_record_gets_one() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let req = template_req(dir.path(), false)?;
+        file::write(&req.target, "work = true\n")?;
+        assert_eq!(
+            template_state_update(&req, Some("work = true\n".into())),
+            Some("work = true\n".into())
+        );
+        save_target_state(&req, "work = true\n");
+        assert!(target_state_matches(&req, "work = true\n"));
+        remove_target_state(&req)?;
+        Ok(())
+    }
+
+    #[test]
+    fn target_state_ignores_unknown_fields_and_defaults_missing_ones() -> Result<()> {
+        let state: TargetState = toml::from_str("version = 1\ntarget = \"/x\"\nfuture = [1]\n")?;
+        assert_eq!(
+            state,
+            TargetState {
+                version: 1,
+                target: PathBuf::from("/x"),
+                content_digest: None,
+            }
+        );
         Ok(())
     }
 }

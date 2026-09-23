@@ -1028,6 +1028,10 @@ fn build_dotfiles_layer(
             }
             FileMode::Template => {
                 let rendered = crate::system::files::render_template_for_oci(cfg, req)?;
+                // an empty render with remove_empty declares no file at all
+                if crate::system::files::removes_target(req, Some(&rendered)) {
+                    continue;
+                }
                 entries.add_file(
                     oci_target_path(req)?,
                     rendered.into_bytes(),
