@@ -9,7 +9,7 @@ use heck::ToKebabCase;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::dotfiles::{Dotfiles, DotfilesApply};
+use super::dotfiles::{Dotfiles, DotfilesApply, write_and_reload};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -1704,36 +1704,21 @@ impl Bootstrap {
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles)
                 .await?;
             let files = system::files::files_from_config(&config)?;
+            let edits = system::edits::edits_from_config(&config)?;
             if files.is_empty() {
                 debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
-            } else {
-                info!("bootstrap: dotfiles");
-                let opts = system::files::ApplyOpts {
-                    dry_run: self.dry_run,
-                    verbose: false,
-                    force: self.force_dotfiles,
-                    force_hint: "use --force-dotfiles or run `mise dot apply --force`",
-                    yes: self.yes,
-                };
-                if !system::files::apply(&config, &files, &opts, &secrets, &mut vec![])? {
-                    return Ok(declined());
-                }
             }
-
-            let edits = system::edits::edits_from_config(&config)?;
             if edits.is_empty() {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
-            } else {
-                info!("bootstrap: dotfile edits");
-                let opts = system::edits::ApplyOpts {
-                    part: "dotfiles",
-                    dry_run: self.dry_run,
-                    verbose: false,
-                    yes: self.yes,
-                };
-                if !system::edits::apply(&config, &edits, &opts, &mut vec![])? {
-                    return Ok(declined());
-                }
+            }
+            // the same [history.reload] commands `mise dot apply` runs, for
+            // the targets this phase writes
+            if (!files.is_empty() || !edits.is_empty())
+                && !write_and_reload(self.dry_run, |written| {
+                    self.apply_dotfiles(&config, &files, &edits, &secrets, written)
+                })?
+            {
+                return Ok(declined());
             }
             if self.dry_run {
                 let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
@@ -2105,6 +2090,45 @@ impl Bootstrap {
             bail!("bootstrap from repository failed with {status}");
         }
         Ok(())
+    }
+
+    /// The dotfiles phase's whole-file entries, then its edits, appending
+    /// each written target to `written`. Returns `false` when a prompt was
+    /// declined.
+    fn apply_dotfiles(
+        &self,
+        config: &Config,
+        files: &[system::files::FileRequest],
+        edits: &[system::edits::EditRequest],
+        secrets: &system::secrets::SecretValues,
+        written: &mut Vec<PathBuf>,
+    ) -> Result<bool> {
+        if !files.is_empty() {
+            info!("bootstrap: dotfiles");
+            let opts = system::files::ApplyOpts {
+                dry_run: self.dry_run,
+                verbose: false,
+                force: self.force_dotfiles,
+                force_hint: "use --force-dotfiles or run `mise dot apply --force`",
+                yes: self.yes,
+            };
+            if !system::files::apply(config, files, &opts, secrets, written)? {
+                return Ok(false);
+            }
+        }
+        if !edits.is_empty() {
+            info!("bootstrap: dotfile edits");
+            let opts = system::edits::ApplyOpts {
+                part: "dotfiles",
+                dry_run: self.dry_run,
+                verbose: false,
+                yes: self.yes,
+            };
+            if !system::edits::apply(config, edits, &opts, written)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     async fn run_hooks(
@@ -3966,7 +3990,14 @@ impl BootstrapStatus {
                 Err(err) => system::files::FileState::Differs(format!("{err}")),
             };
             let (state_str, state_json, missing) = match &state {
-                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Applied => (
+                    match system::files::permissions_target_absent(&req) {
+                        Some(reason) => format!("applied ({reason})"),
+                        None => "applied".to_string(),
+                    },
+                    "applied",
+                    false,
+                ),
                 system::files::FileState::Missing => ("missing".to_string(), "missing", true),
                 system::files::FileState::SourceMissing => {
                     ("source missing".to_string(), "source_missing", true)
@@ -3979,17 +4010,19 @@ impl BootstrapStatus {
             report.row(
                 "dotfiles",
                 req.target_raw.clone(),
-                if req.mode == system::files::FileMode::Content {
-                    "content inline".to_string()
-                } else {
-                    format!("{} {}", req.mode.name(), req.source.display_user())
+                match req.mode {
+                    system::files::FileMode::Content => "content inline".to_string(),
+                    system::files::FileMode::Permissions => {
+                        format!("permissions {:04o}", req.permissions.unwrap_or_default())
+                    }
+                    _ => format!("{} {}", req.mode.name(), req.source.display_user()),
                 },
                 state_str,
                 missing,
             );
             json_files.push(json!({
                 "target": req.target_raw,
-                "source": (req.mode != system::files::FileMode::Content)
+                "source": req.mode.has_source()
                     .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,

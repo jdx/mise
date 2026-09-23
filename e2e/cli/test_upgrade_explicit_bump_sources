@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# A daemon request has a path, but must not be rewritten as a [tools] entry.
+cat <<'TOML' >mise.toml
+[daemons.worker]
+preset = "postgres"
+version = "18"
+tool = "dummy"
+TOML
+output=$(mise upgrade --bump dummy@latest --dry-run 2>&1 || :)
+assert_contains "echo '$output'" "cannot persist explicit bump for dummy"
+assert_contains "echo '$output'" "[daemons]"
+output=$(mise upgrade --bump dummy@latest 2>&1 || :)
+assert_contains "echo '$output'" "cannot persist explicit bump for dummy"
+assert_not_contains "cat mise.toml" '[tools]'
+
+# Multiple configured requests retain the old unsupported warning and are unchanged.
+cat <<'TOML' >mise.toml
+[tools]
+dummy = ["1.0.0", "2.0.0"]
+TOML
+output=$(mise upgrade --bump dummy@latest --dry-run 2>&1 || :)
+assert_contains "echo '$output'" "upgrading multiple versions with --bump is not yet supported"
+assert_not_contains "cat mise.toml" 'latest'
+
+# Explicit bumps continue to work for .tool-versions sources.
+rm -f mise.toml
+echo 'dummy 1.0.0' >.tool-versions
+mise install dummy@1.0.0 dummy@3.0.0
+mise upgrade --bump dummy@3 --prune
+assert "awk '\$1 == \"dummy\" { print \$2 }' .tool-versions" "3"
+
+# Higher-precedence environment requests are diagnosed and do not rewrite config.
+rm -f .tool-versions
+cat <<'TOML' >mise.toml
+[tools]
+dummy = "1.0.0"
+TOML
+output=$(MISE_DUMMY_VERSION=1.0.0 mise upgrade --bump dummy@latest --dry-run 2>&1 || :)
+assert_contains "echo '$output'" "cannot persist explicit bump for dummy from"
+assert_contains "echo '$output'" "MISE_DUMMY_VERSION"
+assert_contains "cat mise.toml" 'dummy = "1.0.0"'
+
+# A tool with no matching config source gets a distinct diagnostic.
+rm -f mise.toml .tool-versions
+output=$(mise upgrade --bump dummy@latest --dry-run 2>&1 || :)
+assert_contains "echo '$output'" "cannot persist explicit bump for dummy from no matching writable config source"
