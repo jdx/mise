@@ -10,7 +10,7 @@ use crate::cli::lock::Lock;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::lockfile::{self, Lockfile};
-use crate::toolset::{InstallOptions, ToolVersion};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, Toolset};
 
 /// Switch tools to the backend the registry now installs them from
 ///
@@ -63,6 +63,7 @@ impl BackendsSwitch {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let switches = self.find_switches(&config).await?;
+        self.ensure_not_shadowed(&config, &switches).await?;
         if switches.is_empty() {
             let scope = if self.global { "global" } else { "project" };
             if self.tool.is_empty() {
@@ -86,20 +87,20 @@ impl BackendsSwitch {
                 .push(switch);
         }
         let mut switched: BTreeSet<(String, String)> = BTreeSet::new();
+        // Each lockfile's switched tools and the platforms it covered before the
+        // rewrite cleared the switched entries' artifacts.
+        let mut relocks: Vec<(&PathBuf, BTreeSet<String>, Vec<String>)> = vec![];
         // Entries that had artifact data must get the new backend's back.
         let mut needs_platforms: Vec<(&PathBuf, String, String)> = vec![];
-        // Read before the rewrite clears the switched entries' platforms, so the
-        // relock targets the platforms these lockfiles already cover.
-        let mut platforms: BTreeSet<String> = BTreeSet::new();
         // Restored if relocking fails, so a failed switch never leaves entries on
         // the new backend without artifact data.
         let mut originals: Vec<(&PathBuf, Option<String>)> = vec![];
         for (path, switches) in &by_lockfile {
-            platforms.extend(
-                lockfile::determine_existing_platforms(path)?
-                    .iter()
-                    .map(|p| p.to_key()),
-            );
+            let platforms = lockfile::determine_existing_platforms(path)?
+                .iter()
+                .map(|p| p.to_key())
+                .collect::<Vec<_>>();
+            let mut tools = BTreeSet::new();
             let mut lockfile = Lockfile::read(path)?;
             for switch in switches {
                 let registry = crate::registry::REGISTRY.get(switch.short.as_str());
@@ -139,7 +140,11 @@ impl BackendsSwitch {
                         display_path(path)
                     );
                 }
+                tools.insert(switch.short.clone());
                 switched.extend(moved.into_iter().map(|(v, _, _)| (switch.short.clone(), v)));
+            }
+            if !tools.is_empty() {
+                relocks.push((path, tools, platforms));
             }
             if !self.dry_run {
                 originals.push((path, crate::file::read_to_string(path).ok()));
@@ -150,21 +155,28 @@ impl BackendsSwitch {
             return Ok(());
         }
 
-        // The rewritten entries carry no artifact data yet; relocking the same
-        // scope records the new backend's checksums and URLs at those versions.
+        // The rewritten entries carry no artifact data yet. Relock each
+        // lockfile on its own, for the platforms it already covered, to record
+        // the new backend's checksums and URLs at those versions.
         lockfile::invalidate_caches();
-        let shorts: BTreeSet<&str> = switched.iter().map(|(short, _)| short.as_str()).collect();
-        let tool = shorts
-            .iter()
-            .map(|short| ToolArg::from_str(short))
-            .collect::<Result<Vec<_>>>()?;
-        let relocked = Lock {
-            platform: platforms.into_iter().collect(),
-            ..self.lock(tool)
+        let mut relocked = Ok(());
+        for (path, tools, platforms) in relocks {
+            let tool = tools
+                .iter()
+                .map(|short| ToolArg::from_str(short))
+                .collect::<Result<Vec<_>>>()?;
+            relocked = Lock {
+                platform: platforms,
+                lockfiles: Some(BTreeSet::from([path.clone()])),
+                ..self.lock(tool)
+            }
+            .run()
+            .await;
+            if relocked.is_err() {
+                break;
+            }
         }
-        .run()
-        .await
-        .and_then(|()| {
+        let relocked = relocked.and_then(|()| {
             let missing = needs_platforms
                 .iter()
                 .filter(|(path, short, version)| {
@@ -208,6 +220,7 @@ impl BackendsSwitch {
             local: false,
             minimum_release_age: None,
             upgrade: false,
+            lockfiles: None,
         }
     }
 
@@ -219,25 +232,74 @@ impl BackendsSwitch {
             })
     }
 
+    /// The versions each lockfile in this command's scope locks, resolved from
+    /// the config files that lockfile serves. Resolving each config on its own
+    /// keeps a project tool from hiding a global one with the same name.
+    async fn scoped_versions(&self, config: &Arc<Config>) -> Result<Vec<(PathBuf, ToolVersion)>> {
+        let mut versions = vec![];
+        for (lockfile, config_paths) in self.lock(vec![]).lockfile_targets(config) {
+            for path in config_paths {
+                let Some(cf) = config.config_files.get(&path) else {
+                    continue;
+                };
+                let mut ts: Toolset = cf.to_tool_request_set()?.into();
+                ts.resolve_with_opts(config, &ResolveOptions::default())
+                    .await?;
+                versions.extend(
+                    ts.list_current_versions()
+                        .into_iter()
+                        .map(|(_, tv)| (lockfile.clone(), tv)),
+                );
+            }
+        }
+        Ok(versions)
+    }
+
+    /// `mise lock` locks each tool from the config that wins for it, so it
+    /// cannot relock a lock entry whose tool another config shadows (a project
+    /// tool with the same name as a global one). Refuse before rewriting it.
+    async fn ensure_not_shadowed(&self, config: &Arc<Config>, switches: &[Switch]) -> Result<()> {
+        let ts = config.get_toolset().await?;
+        let shadowed = ts
+            .list_current_versions()
+            .into_iter()
+            .filter_map(|(_, tv)| {
+                let (active, _) =
+                    lockfile::lockfile_path_for_tool_source(config, tv.request.source())?;
+                switches
+                    .iter()
+                    .find(|s| s.short == tv.short() && s.lockfile != active)
+                    .map(|s| {
+                        format!(
+                            "{} in {} is shadowed by {}",
+                            s.short,
+                            display_path(&s.lockfile),
+                            tv.request.source()
+                        )
+                    })
+            })
+            .collect::<BTreeSet<_>>();
+        if shadowed.is_empty() {
+            return Ok(());
+        }
+        bail!(
+            "{}; run this from a directory whose config does not set it",
+            shadowed.into_iter().collect::<Vec<_>>().join(", ")
+        )
+    }
+
     /// Every configured tool, or each named one, that a lock entry in this
     /// command's scope keeps on a backend the registry has replaced.
     async fn find_switches(&self, config: &Arc<Config>) -> Result<Vec<Switch>> {
-        let targets = self.lock(vec![]).lockfile_targets(config);
-        let ts = config.get_toolset().await?;
         let mut switches: Vec<Switch> = vec![];
-        for (_, tv) in ts.list_current_versions() {
-            let Some((from, _)) = tv.ba().superseded_locked_backend(&tv.version) else {
+        for (lockfile, tv) in self.scoped_versions(config).await? {
+            if !tv.resolved_from_lockfile() {
+                continue;
+            }
+            let Some((from, _)) = tv.ba().superseded_backend(&tv.version) else {
                 continue;
             };
             if !self.selected(&tv, &from) {
-                continue;
-            }
-            let Some((lockfile, _)) =
-                lockfile::lockfile_path_for_tool_source(config, tv.request.source())
-            else {
-                continue;
-            };
-            if !targets.contains(&lockfile) {
                 continue;
             }
             let short = tv.short().to_string();
@@ -265,16 +327,14 @@ impl BackendsSwitch {
     /// lock entry.
     async fn reinstall(&self, switched: &BTreeSet<(String, String)>) -> Result<()> {
         let mut config = Config::reset().await?;
-        let mut ts = config.get_toolset().await?.clone();
-        let requests = ts
-            .list_current_versions()
-            .into_iter()
-            .filter(|(backend, tv)| {
-                switched.contains(&(tv.short().to_string(), tv.version.clone()))
-                    && backend.is_version_installed(&config, tv, false)
-            })
-            .map(|(_, tv)| tv.request)
-            .collect::<Vec<_>>();
+        let mut requests = vec![];
+        for (_, tv) in self.scoped_versions(&config).await? {
+            if switched.contains(&(tv.short().to_string(), tv.version.clone()))
+                && tv.backend()?.is_version_installed(&config, &tv, false)
+            {
+                requests.push(tv.request);
+            }
+        }
         if requests.is_empty() {
             return Ok(());
         }
@@ -283,6 +343,7 @@ impl BackendsSwitch {
             force: true,
             ..Default::default()
         };
+        let mut ts = config.get_toolset().await?.clone();
         ts.install_all_versions(&mut config, requests, &opts)
             .await?;
         Ok(())

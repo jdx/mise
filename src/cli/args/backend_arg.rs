@@ -673,17 +673,16 @@ impl BackendArg {
             .is_none_or(|tool| tool.backend_supports_version(backend, version))
     }
 
-    /// The registry's backend for this tool at `version`, when a lock entry
-    /// keeps the tool on a different one. `None` for a backend the user named
-    /// (`github:owner/repo`), an environment override, or a tool the registry
-    /// does not know. A tool restored from its lock entry counts as explicit, so
-    /// this asks whether the user wrote a bare shorthand instead.
-    pub(crate) fn superseded_locked_backend(&self, version: &str) -> Option<(String, String)> {
+    /// The backend this tool resolved to and the registry's backend for it at
+    /// `version`, when they differ. `None` for a backend the user named
+    /// (`github:owner/repo`), an environment or alias override, or a tool the
+    /// registry does not know. A tool restored from its lock entry counts as
+    /// explicit, so this asks whether the user wrote a bare shorthand instead.
+    pub(crate) fn superseded_backend(&self, version: &str) -> Option<(String, String)> {
         if self.short.contains(':') || self.has_env_backend_override() || !config::is_loaded() {
             return None;
         }
-        let config = Config::get_();
-        if config
+        if Config::get_()
             .all_aliases
             .get(&self.short)
             .is_some_and(|alias| alias.backend.is_some())
@@ -695,8 +694,17 @@ impl BackendArg {
             .backends_for_version(Some(version))
             .first()?
             .to_string();
-        let locked = lockfile::get_locked_backend_for_version(&config, &self.short, Some(version))?;
-        (locked == self.full_without_opts() && locked != registry).then_some((locked, registry))
+        let current = self.full_without_opts();
+        (current != registry).then_some((current, registry))
+    }
+
+    /// [`Self::superseded_backend`], when it is a lock entry that keeps the
+    /// tool on the replaced backend.
+    pub(crate) fn superseded_locked_backend(&self, version: &str) -> Option<(String, String)> {
+        let (current, registry) = self.superseded_backend(version)?;
+        let locked =
+            lockfile::get_locked_backend_for_version(&Config::get_(), &self.short, Some(version))?;
+        (locked == current).then_some((current, registry))
     }
 
     /// Warn that the lockfile keeps this tool on a backend the registry has

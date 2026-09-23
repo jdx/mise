@@ -1151,9 +1151,9 @@ impl Lockfile {
     /// Whether `short`'s entry at `version` records artifact data for any platform.
     pub(crate) fn has_platforms(&self, short: &str, version: &str) -> bool {
         self.tools_for(short).is_some_and(|entries| {
-            entries
-                .iter()
-                .any(|entry| entry.version == version && !entry.platforms.is_empty())
+            entries.iter().any(|entry| {
+                entry.version == version && entry.platforms.values().any(|p| !p.is_empty())
+            })
         })
     }
 
@@ -1166,7 +1166,7 @@ impl Lockfile {
     /// `to` returns for their version, keeping the version and dropping the
     /// artifact data recorded for the old backend so the next lock records the
     /// new one's. Returns each moved version with its new backend and whether
-    /// the old entry carried platform data.
+    /// the old entry carried artifact data.
     pub(crate) fn switch_backend(
         &mut self,
         short: &str,
@@ -1182,7 +1182,7 @@ impl Lockfile {
             entry.backend.as_deref() == Some(from) && versions.contains(&entry.version)
         }) {
             if let Some(backend) = to(&entry.version) {
-                let had_platforms = !entry.platforms.is_empty();
+                let had_platforms = entry.platforms.values().any(|p| !p.is_empty());
                 entry.backend = Some(backend.clone());
                 entry.platforms.clear();
                 moved.push((entry.version.clone(), backend, had_platforms));
@@ -6812,6 +6812,68 @@ options = { exe = "rg" }
         assert_eq!(first, second, "lockfile serialization was not idempotent");
         assert_eq!(second.matches("[[tools.ruby]]").count(), 2);
         assert_eq!(second.matches("platforms.windows-x64").count(), 1);
+    }
+
+    #[test]
+    fn switch_backend_moves_only_the_given_versions() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        std::fs::write(
+            &path,
+            r#"lockfile_version = 2
+
+[[tools.hk]]
+version = "1.57.0"
+backend = "aqua:jdx/hk"
+
+[tools.hk."platforms.linux-x64"]
+url = "https://example.com/hk-1.57.0"
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "aqua:jdx/hk"
+
+[tools.hk."platforms.linux-x64"]
+checksum = "sha256:abc"
+url = "https://example.com/hk-1.58.1"
+
+[tools.hk."platforms.macos-arm64"]
+url = "https://example.com/hk-1.58.1-mac"
+"#,
+        )
+        .unwrap();
+        let mut lockfile = Lockfile::read(&path).unwrap();
+        let moved = lockfile.switch_backend(
+            "hk",
+            "aqua:jdx/hk",
+            &BTreeSet::from(["1.58.1".to_string()]),
+            |_| Some("packslip:github.com/jdx/hk".to_string()),
+        );
+        assert_eq!(
+            moved,
+            vec![(
+                "1.58.1".to_string(),
+                "packslip:github.com/jdx/hk".to_string(),
+                true
+            )]
+        );
+        assert!(!lockfile.has_platforms("hk", "1.58.1"));
+        assert!(lockfile.has_platforms("hk", "1.57.0"));
+        lockfile.save(&path).unwrap();
+
+        // The switched entry drops the old backend's artifacts; the version
+        // that was not asked for keeps its backend and artifacts.
+        let reread = Lockfile::read(&path).unwrap();
+        let entries = reread.tools_for("hk").unwrap();
+        let switched = entries.iter().find(|t| t.version == "1.58.1").unwrap();
+        assert_eq!(
+            switched.backend.as_deref(),
+            Some("packslip:github.com/jdx/hk")
+        );
+        assert!(switched.platforms.is_empty());
+        let kept = entries.iter().find(|t| t.version == "1.57.0").unwrap();
+        assert_eq!(kept.backend.as_deref(), Some("aqua:jdx/hk"));
+        assert!(reread.has_platforms("hk", "1.57.0"));
     }
 
     #[test]

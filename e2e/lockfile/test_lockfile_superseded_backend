@@ -84,7 +84,20 @@ EOF
 assert_not_contains "mise lock --platform $MISE_PLATFORM 2>&1" 'mise backends switch'
 
 echo "=== the global lockfile switches only with --global ==="
-rm mise.toml mise.lock
+# The project's own hk, already on the registry's backend, must not hide the
+# global one.
+cat <<'EOF' >mise.toml
+[tools]
+hk = "1.58.1"
+EOF
+cat <<'EOF' >mise.lock
+lockfile_version = 2
+
+[[tools.hk]]
+version = "1.58.1"
+backend = "packslip:github.com/jdx/hk"
+specifiers = ["1.58.1"]
+EOF
 cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
 [tools]
 hk = "1"
@@ -101,6 +114,12 @@ specifiers = ["1"]
 url = "https://github.com/jdx/hk/releases/download/v1.58.1/placeholder"
 EOF
 assert_contains "mise backends switch --dry-run" "every tool in the project lockfile already uses the registry's backend"
+# `mise lock --global` locks hk from the project config that shadows it, so it
+# cannot relock the global entry; the switch refuses without touching it.
+cp "$MISE_CONFIG_DIR/mise.lock" global.lock.before
+assert_fail_contains "mise backends switch --global" "is shadowed by"
+assert "cmp -s $MISE_CONFIG_DIR/mise.lock global.lock.before && echo same" "same"
+rm mise.toml mise.lock global.lock.before
 assert_contains "mise backends switch --global --dry-run 2>&1" 'would switch hk@1.58.1'
 mise backends switch --global
 assert_contains "cat $MISE_CONFIG_DIR/mise.lock" 'backend = "packslip:github.com/jdx/hk"'

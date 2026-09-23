@@ -195,6 +195,11 @@ pub(crate) struct Lock {
     /// combined with tool arguments.
     #[usage(long, verbatim_doc_comment)]
     pub upgrade: bool,
+
+    /// Restrict the run to these lockfiles, for callers that relock the
+    /// entries they rewrote (`mise backends switch`).
+    #[usage(skip)]
+    pub lockfiles: Option<BTreeSet<PathBuf>>,
 }
 
 /// A lockfile version change reported by `--json`
@@ -367,6 +372,7 @@ impl Lock {
             local: false,
             minimum_release_age: None,
             upgrade: false,
+            lockfiles: None,
         }
         .run_with_installed(Some(installed), config)
         .await
@@ -1542,12 +1548,14 @@ impl Lock {
         Ok(())
     }
 
-    /// The lockfiles a run with these flags writes for the loaded config.
-    pub(crate) fn lockfile_targets(&self, config: &Config) -> BTreeSet<PathBuf> {
+    /// The lockfiles a run with these flags writes for the loaded config, each
+    /// with the config files whose tools it locks.
+    pub(crate) fn lockfile_targets(
+        &self,
+        config: &Config,
+    ) -> indexmap::IndexMap<PathBuf, Vec<PathBuf>> {
         let scoped = self.config_paths_in_lock_scope(config, &config.config_files);
         self.get_lockfile_targets(config, &config.config_files, &scoped)
-            .into_keys()
-            .collect()
     }
 
     fn config_paths_in_lock_scope(
@@ -1645,6 +1653,13 @@ impl Lock {
                 config.monorepo_lockfile_root().as_deref(),
             );
             if self.local && !is_local {
+                continue;
+            }
+            if self
+                .lockfiles
+                .as_ref()
+                .is_some_and(|only| !only.contains(&lockfile_path))
+            {
                 continue;
             }
             targets.entry(lockfile_path).or_default().push(path.clone());
@@ -2342,6 +2357,7 @@ mod tests {
             minimum_release_age: None,
             bump: false,
             upgrade: false,
+            lockfiles: None,
             json: false,
         }
     }
