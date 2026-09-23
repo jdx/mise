@@ -1087,3 +1087,40 @@ after upgrading to get shell PID tracking; old activation scripts display a hint
 
 Project sessions also apply to native pitchfork daemons configured for automatic
 lifecycle management. See [pitchfork's shell sessions](https://pitchfork.jdx.dev/guides/shell-hook.html).
+
+## Shared server providers
+
+Define shared servers in your global mise configuration. Providers have their own
+ports, tool versions and persistent storage, independent of any project checkout:
+
+```toml
+[daemon_providers.local-postgres]
+preset = "postgres"
+version = "18"
+port = "auto"
+```
+
+Providers support the PostgreSQL, CockroachDB and NATS presets. Provider names use
+lowercase letters, digits and hyphens. Like project daemons, they require
+`experimental = true` and Pitchfork.
+
+```sh
+mise daemons providers ls --json
+mise daemons providers start local-postgres
+mise daemons providers stop local-postgres
+mise daemons providers restart local-postgres
+```
+
+Management commands require explicit provider names. Providers do not join project
+daemon groups or shell start/stop sessions, and do not shut down when idle. Change
+server settings in global configuration, then explicitly restart the provider.
+Mise refuses to replace a running provider's configuration through another start.
+
+By default, provider data lives under `$MISE_STATE_DIR/daemon-providers/<name>/data`.
+Set `data_dir` to choose another location; relative paths resolve beneath that
+provider's state directory. Removing a project or pruning deleted worktrees does
+not remove provider data. Renaming a provider does not move its existing data.
+
+Provider processes and their readiness probes use the provider's tools and a
+minimal environment, without the invoking project's environment, tools or profile.
+Servers listen locally and use the presets' local-development authentication.

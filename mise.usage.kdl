@@ -2275,6 +2275,30 @@ With no subcommand, list configured and previously managed daemons.
 """#
     flag --json
     flag "-h --help" help="Print help" action=help builtin=#true
+    cmd providers help="Manage shared servers defined in global [daemon_providers]." effect=read {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        cmd ls help="List configured and previously managed shared servers." effect=read {
+            flag --json
+            flag "-h --help" help="Print help" action=help builtin=#true
+        }
+        cmd start help="Start the named shared servers." {
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[NAMES]…" required=#false var=#true
+        }
+        cmd stop help="Stop the named shared servers without deleting their data." {
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[NAMES]…" required=#false var=#true
+        }
+        cmd restart help="Restart the named shared servers with their current configuration." {
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[NAMES]…" required=#false var=#true
+        }
+    }
+    cmd __provider-exec hide=#true {
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <MANIFEST>
+        arg <COMMAND>
+    }
     cmd start help="Arguments passed to pitchfork; daemon names may be short or qualified." unknown_flags=value {
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[ARGS]…" required=#false double_dash=automatic var=#true
