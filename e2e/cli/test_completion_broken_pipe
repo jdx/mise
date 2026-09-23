@@ -8,13 +8,17 @@ cat >mise.toml <<'EOF_TOML'
 run = 'true'
 EOF_TOML
 
-# The reader closes its stdin before mise can write, so every write hits EPIPE.
-# Under pipefail the pipeline's status is mise's, since the reader succeeds.
+# mise starts only after the reader has closed its stdin (signalled through the
+# FIFO), so its first write always hits EPIPE. Under pipefail the pipeline's
+# status is mise's, since the reader succeeds.
+mkfifo reader_closed
 status=0
-mise __complete_word__ --shell bash --line 'mise run ' --bash-word '' \
-  2>stderr.txt | {
+{
+  read -r _ <reader_closed
+  exec mise __complete_word__ --shell bash --line 'mise run ' --bash-word '' 2>stderr.txt
+} | {
   exec 0<&-
-  sleep 1
+  echo >reader_closed
 } || status=$?
 [[ $status == 0 ]] || fail "completion exited $status on a closed stdout: $(cat stderr.txt)"
 assert_not_contains "cat stderr.txt" "panicked"
