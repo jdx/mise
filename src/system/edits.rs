@@ -180,7 +180,16 @@ pub(crate) fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
             composed.insert(key, request);
         }
     }
-    Ok(composed.into_values().collect())
+    let edits = composed.into_values().collect::<Vec<_>>();
+    // every command that applies or reports edits loads them here, so the
+    // contradiction is refused before either kind of entry is applied
+    if !edits.is_empty() {
+        crate::system::files::validate_absent_edit_targets(
+            &crate::system::files::files_from_config(config)?,
+            &edits,
+        )?;
+    }
+    Ok(edits)
 }
 
 /// Returns whether sibling declarations produce the same file edit.

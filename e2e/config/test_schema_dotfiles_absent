@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+mise use -g tombi@$TOMBI_VERSION
+TOMBI_LINT="mise x tombi@$TOMBI_VERSION -- tombi lint --offline --no-cache --error-on-warnings --quiet"
+cat >"$HOME/tombi.toml" <<TOML
+[schema]
+enabled = true
+strict = true
+[[schemas]]
+path = "file://$ROOT/schema/mise.json"
+include = ["absent-valid.toml", "absent-invalid.toml"]
+TOML
+cat >absent-valid.toml <<'TOML'
+[dotfiles]
+"~/.oldrc" = { mode = "absent" }
+"~/.bash_profile" = { mode = "absent", variants = [{ os = "macos" }] }
+TOML
+assert_succeed "$TOMBI_LINT absent-valid.toml"
+for entry in \
+  '{ mode = "absent", source = "x" }' \
+  '{ mode = "absent", content = "x" }' \
+  '{ mode = "absent", exclude = ["*.bak"] }' \
+  '{ mode = "absent", manifest = "git" }' \
+  '{ mode = "absent", permissions = "0600" }' \
+  '{ mode = "absent", encrypt = true }' \
+  '{ mode = "absent", block = "x" }' \
+  '{ mode = "absent", line = "x" }' \
+  '{ mode = "absent", position = "prepend" }'; do
+  printf '[dotfiles]\n"~/.app" = %s\n' "$entry" >absent-invalid.toml
+  assert_fail "$TOMBI_LINT absent-invalid.toml"
+done

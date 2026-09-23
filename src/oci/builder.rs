@@ -996,6 +996,8 @@ fn build_dotfiles_layer(
             // permissions-only entry adjusts a file the image does not
             // provide; an image has nothing to copy for either
             FileMode::Track | FileMode::Permissions => continue,
+            // an image starts empty: an absent target is simply not added
+            FileMode::Absent => continue,
             // footprint validation rejects `permissions` on a directory copy
             FileMode::Symlink | FileMode::Copy => match req.permissions {
                 Some(permissions) => {
