@@ -1210,6 +1210,7 @@ mod declaration_tests {
             exclude: vec![],
             include: None,
             manifest: None,
+            permissions: None,
             base: PathBuf::from("/home/test"),
             origin: ResourceOrigin {
                 config: PathBuf::from("/home/test/.config/mise/config.toml"),

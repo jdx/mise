@@ -1377,7 +1377,7 @@ fn validate_privileged_target(path: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn parse_mode(mode: Option<&str>, default: u32) -> Result<u32> {
+pub(crate) fn parse_mode(mode: Option<&str>, default: u32) -> Result<u32> {
     let Some(mode) = mode else {
         return Ok(default);
     };

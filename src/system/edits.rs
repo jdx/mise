@@ -236,13 +236,23 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
         toml::Value::Table(table) => {
             let is_whole_file_table = table.is_empty()
                 || table.contains_key("mode")
-                || (table.contains_key("source") || table.contains_key("content"))
+                || (table.contains_key("source")
+                    || table.contains_key("content")
+                    || table.contains_key("permissions"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
                     && !table.contains_key("comment")
                     && !table.contains_key("position");
             if is_whole_file_table {
+                return None;
+            }
+            // an edit owns lines in a file, not the file itself; dropping
+            // the key silently would leave the declared mode unapplied
+            if table.contains_key("permissions") {
+                warn!(
+                    "[dotfiles].\"{path_and_id}\": permissions applies to whole-file entries, not block or line edits, ignoring entry"
+                );
                 return None;
             }
         }

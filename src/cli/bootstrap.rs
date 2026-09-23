@@ -4005,7 +4005,14 @@ impl BootstrapStatus {
                 system::files::FileState::Applied if absent => {
                     ("absent".to_string(), "applied", false)
                 }
-                system::files::FileState::Applied => ("applied".to_string(), "applied", false),
+                system::files::FileState::Applied => (
+                    match system::files::permissions_target_absent(&req) {
+                        Some(reason) => format!("applied ({reason})"),
+                        None => "applied".to_string(),
+                    },
+                    "applied",
+                    false,
+                ),
                 system::files::FileState::Missing => ("missing".to_string(), "missing", true),
                 system::files::FileState::SourceMissing => {
                     ("source missing".to_string(), "source_missing", true)
@@ -4022,8 +4029,11 @@ impl BootstrapStatus {
                 "dotfiles",
                 req.target_raw.clone(),
                 match req.mode {
-                    FileMode::Content => "content inline".to_string(),
-                    FileMode::Absent => "absent".to_string(),
+                    system::files::FileMode::Content => "content inline".to_string(),
+                    system::files::FileMode::Permissions => {
+                        format!("permissions {:04o}", req.permissions.unwrap_or_default())
+                    }
+                    system::files::FileMode::Absent => "absent".to_string(),
                     _ => format!("{} {}", req.mode.name(), req.source.display_user()),
                 },
                 state_str,
@@ -4031,7 +4041,7 @@ impl BootstrapStatus {
             );
             let mut entry = json!({
                 "target": req.target_raw,
-                "source": (!matches!(req.mode, FileMode::Content | FileMode::Absent))
+                "source": req.mode.has_source()
                     .then(|| req.source.display_user()),
                 "mode": req.mode.name(),
                 "state": state_json,

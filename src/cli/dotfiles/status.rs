@@ -78,7 +78,7 @@ impl DotfilesStatus {
                 Ok(state) => (state, true),
                 Err(err) => (FileState::Differs(format!("{err}")), false),
             };
-            let absent = req.mode == system::files::FileMode::Absent && removable;
+            let removal = req.mode == system::files::FileMode::Absent && removable;
             let (omitted, nested) = match state {
                 FileState::Tracked => (
                     paths_under(&history.omitted, &req.target),
@@ -86,12 +86,18 @@ impl DotfilesStatus {
                 ),
                 _ => (0, 0),
             };
+            let absent = matches!(state, FileState::Applied)
+                .then(|| system::files::permissions_target_absent(req))
+                .flatten();
             let state_str = match &state {
-                FileState::Applied if absent => "absent".to_string(),
-                FileState::Applied => "applied".to_string(),
+                FileState::Applied if removal => "absent".to_string(),
+                FileState::Applied => match absent {
+                    Some(reason) => format!("applied ({reason})"),
+                    None => "applied".to_string(),
+                },
                 FileState::Missing => "missing".to_string(),
                 FileState::SourceMissing => "source missing".to_string(),
-                FileState::Differs(reason) if absent => format!("would remove ({reason})"),
+                FileState::Differs(reason) if removal => format!("would remove ({reason})"),
                 FileState::Differs(reason) => format!("differs ({reason})"),
                 FileState::Tracked if omitted > 0 || nested > 0 => {
                     let mut parts = vec![];
@@ -109,11 +115,8 @@ impl DotfilesStatus {
             if self.json {
                 let mut entry = json!({
                     "target": req.target_raw,
-                    "source": (!matches!(
-                        req.mode,
-                        system::files::FileMode::Content | system::files::FileMode::Absent
-                    ))
-                    .then(|| req.source.display_user()),
+                    "source": req.mode.has_source()
+                        .then(|| req.source.display_user()),
                     "mode": req.mode.name(),
                     "origin": &req.origin,
                     "state": match &state {
@@ -126,13 +129,19 @@ impl DotfilesStatus {
                     "omitted": omitted,
                     "nested": nested,
                 });
-                // e.g. an absent target that is still present
+                if let Some(permissions) = req.permissions {
+                    entry["permissions"] = json!(format!("{permissions:04o}"));
+                }
+                // e.g. an absent target that is still present, or a
+                // permissions-only target that does not exist
                 if let FileState::Differs(reason) = &state {
-                    entry["reason"] = json!(if absent {
+                    entry["reason"] = json!(if removal {
                         format!("{reason}; will be removed")
                     } else {
                         reason.clone()
                     });
+                } else if let Some(reason) = absent {
+                    entry["reason"] = json!(reason);
                 }
                 json_files.push(entry);
             } else {
@@ -142,6 +151,7 @@ impl DotfilesStatus {
                     match req.mode {
                         system::files::FileMode::Content => "inline".to_string(),
                         system::files::FileMode::Absent => "-".to_string(),
+                        system::files::FileMode::Permissions => "-".to_string(),
                         _ => req.source.display_user(),
                     },
                     req.origin.config.display_user(),
