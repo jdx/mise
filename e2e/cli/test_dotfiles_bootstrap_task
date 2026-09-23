@@ -46,8 +46,8 @@ assert "cat $B/setup.log" "v1"
 
 # ---- A changes the task (keeping the rest of the configuration) and
 # shares it
-sed -i.bak 's/echo v1/echo v2/' "$MISE_CONFIG_DIR/config.toml"
-rm "$MISE_CONFIG_DIR/config.toml.bak"
+config="$(cat "$MISE_CONFIG_DIR/config.toml")"
+printf '%s\n' "${config/echo v1/echo v2}" >"$MISE_CONFIG_DIR/config.toml"
 assert_contains "mise bootstrap dotfiles sync 2>&1" "published"
 
 # a sync fetches it and a pull restores the new configuration, but neither
