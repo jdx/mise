@@ -244,7 +244,7 @@ The configuration system supports multiple file formats and environment-specific
 ### Cross-Platform Considerations
 - Windows modules follow one of two conventions:
   - `*_windows.rs` is a platform-swapped sibling of a same-named module, selected with `#[cfg_attr(windows, path = "..._windows.rs")]` (e.g. `src/fake_asdf.rs` / `src/fake_asdf_windows.rs`)
-  - `windows_*.rs` is a single module about Windows that is declared on every platform and cfg-split internally, so its tests also run on Linux (e.g. `src/windows_posix.rs`, `src/windows_console.rs`). Use this when there is no non-Windows counterpart to swap in
+  - `windows_*.rs` is a single module about Windows with no non-Windows counterpart to swap in. Declare it on every platform and cfg-split it internally when other code calls it on all targets or its tests should run on Linux (e.g. `src/windows_posix.rs`, `src/windows_console.rs`); declare it under `#[cfg(windows)]` when only Windows code uses it (e.g. `src/windows_job.rs`)
 - Platform-specific tool installation logic in core plugins
 - Shim system varies by platform (especially Windows)
 - we don't chmod mise e2e tests to be executable
