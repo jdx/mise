@@ -35,7 +35,8 @@ impl ToolVersionList {
             // explicitly specify "latest". This ensures `mise x node@20 npm@latest` only
             // fetches latest for npm, not node.
             // However, we always respect the caller's use_locked_version setting.
-            let request_opts = if tvr.version() == "latest"
+            let request_opts = if opts.latest_versions_for_all_requests
+                || tvr.version() == "latest"
                 || tvr
                     .ba()
                     .backend()

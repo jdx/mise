@@ -391,6 +391,7 @@ impl Lock {
             before_date,
             filter_installed_versions_by_release_date: true,
             latest_versions: self.bump,
+            latest_versions_for_all_requests: self.bump,
             use_locked_version: !self.bump,
             // Lock moving channels to their current concrete value without making
             // ordinary `latest` requests ignore an installed concrete version.
@@ -1905,6 +1906,13 @@ impl Lock {
                             Err(err) if is_rolling => {
                                 return Err(err.wrap_err(format!(
                                     "failed to resolve specified rolling channel {request}"
+                                )));
+                            }
+                            // Keeping the locked version would report success for a
+                            // bump that never looked at the remote versions.
+                            Err(err) if self.bump => {
+                                return Err(err.wrap_err(format!(
+                                    "failed to resolve {request} for `mise lock --bump`"
                                 )));
                             }
                             Err(err) => debug!("failed to resolve specified {request}: {err}"),
